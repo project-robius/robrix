@@ -3,7 +3,7 @@ use std::ops::Not;
 use makepad_widgets::*;
 use url::Url;
 
-use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
+use crate::sliding_sync::{submit_async_request, LoginByPassword, MatrixRequest, AuthRequest};
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
 
@@ -334,7 +334,7 @@ impl MatchEvent for LoginScreen {
                 login_status_modal_inner.set_title(cx, "Logging in...");
                 login_status_modal_inner.set_status(cx, "Waiting for a login response...");
                 login_status_modal_inner.button_ref().set_text(cx, "Cancel");
-                submit_async_request(MatrixRequest::Login(LoginRequest::LoginByPassword(LoginByPassword {
+                submit_async_request(MatrixRequest::Auth(AuthRequest::LoginByPassword(LoginByPassword {
                     user_id,
                     password,
                     homeserver: homeserver.is_empty().not().then_some(homeserver),

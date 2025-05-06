@@ -131,18 +131,18 @@ async fn build_client(
     ))
 }
 
-/// Logs in to the given Matrix homeserver using the given username and password.
+/// Handles authentication requests to the Matrix server, including login and registration.
 ///
-/// This function is used by the login screen to log in to the Matrix server.
+/// This function is used by the login and register screens to authenticate with the Matrix server.
 ///
-/// Upon success, this function returns the logged-in client and an optional sync token.
-async fn login(
+/// Upon success, this function returns the authenticated client and an optional sync token.
+async fn handle_auth_request(
     cli: &Cli,
-    login_request: LoginRequest,
+    auth_request: AuthRequest,
 ) -> Result<(Client, Option<String>)> {
-    match login_request {
-        LoginRequest::LoginByCli | LoginRequest::LoginByPassword(_) => {
-            let cli = if let LoginRequest::LoginByPassword(login_by_password) = login_request {
+    match auth_request {
+        AuthRequest::LoginByCli | AuthRequest::LoginByPassword(_) => {
+            let cli = if let AuthRequest::LoginByPassword(login_by_password) = auth_request {
                 &Cli::from(login_by_password)
             } else {
                 cli
@@ -174,14 +174,53 @@ async fn login(
             }
         }
 
-        LoginRequest::LoginBySSOSuccess(client, client_session) => {
+        AuthRequest::LoginBySSOSuccess(client, client_session) => {
             if let Err(e) = persistent_state::save_session(&client, client_session).await {
                 error!("Failed to save session state to storage: {e:?}");
             }
             Ok((client, None))
         }
-        LoginRequest::HomeserverLoginTypesQuery(_) => {
+        AuthRequest::HomeserverLoginTypesQuery(_) => {
             bail!("LoginRequest::HomeserverLoginTypesQuery not handled earlier");
+        }
+        AuthRequest::RegisterRequest(register_request) => {
+            let cli = &Cli {
+                user_id: register_request.username.clone(),
+                password: register_request.password.clone(),
+                homeserver: register_request.homeserver,
+                ..Default::default()
+            };
+            let (client, client_session) = build_client(cli, app_data_dir()).await?;
+            
+            // Attempt to register using the provided username & password
+            use matrix_sdk::ruma::api::client::account::register;
+            
+            let mut request = register::v3::Request::new();
+            request.username = Some(register_request.username.clone());
+            request.password = Some(register_request.password.clone());
+            request.initial_device_display_name = Some("robrix-un-pw".to_string());
+            
+            let register_result = client
+                .matrix_auth()
+                .register(request)
+                .await?;
+                
+            if client.logged_in() {
+                log!("Registered and logged in successfully? {:?}", client.logged_in());
+                let status = format!("Registered and logged in as {}.\n → Loading rooms...", register_request.username);
+                enqueue_rooms_list_update(RoomsListUpdate::Status { status });
+                if let Err(e) = persistent_state::save_session(&client, client_session).await {
+                    let err_msg = format!("Failed to save session state to storage: {e}");
+                    error!("{err_msg}");
+                    enqueue_popup_notification(err_msg);
+                }
+                Ok((client, None))
+            } else {
+                let err_msg = format!("Failed to register as {}: {:?}", register_request.username, register_result);
+                enqueue_popup_notification(err_msg.clone());
+                enqueue_rooms_list_update(RoomsListUpdate::Status { status: err_msg.clone() });
+                bail!(err_msg);
+            }
         }
     }
 }
@@ -218,10 +257,8 @@ pub type OnMediaFetchedFn = fn(
 
 /// The set of requests for async work that can be made to the worker thread.
 pub enum MatrixRequest {
-    /// Request from the login screen to log in with the given credentials.
-    Login(LoginRequest),
-    /// Request to register a new account with the given credentials.
-    Register(RegisterRequest),
+    /// Request for authentication operations (login, register, etc.)
+    Auth(AuthRequest),
     /// Request to paginate the older (or newer) events of a room's timeline.
     PaginateRoomTimeline {
         room_id: OwnedRoomId,
@@ -378,13 +415,13 @@ pub fn submit_async_request(req: MatrixRequest) {
         .expect("BUG: async worker task receiver has died!");
 }
 
-/// Details of a login request that get submitted within [`MatrixRequest::Login`].
-pub enum LoginRequest{
+/// Details of an authentication request that get submitted within [`MatrixRequest::Login`] or [`MatrixRequest::Register`].
+pub enum AuthRequest{
     LoginByPassword(LoginByPassword),
     LoginBySSOSuccess(Client, ClientSessionPersisted),
     LoginByCli,
     HomeserverLoginTypesQuery(String),
-
+    RegisterRequest(RegisterRequest),
 }
 /// Information needed to log in to a Matrix homeserver.
 pub struct LoginByPassword {
@@ -406,23 +443,28 @@ pub struct RegisterRequest {
 /// and then executes them within an async runtime context.
 async fn async_worker(
     mut request_receiver: UnboundedReceiver<MatrixRequest>,
-    login_sender: Sender<LoginRequest>,
+    auth_sender: Sender<AuthRequest>,
 ) -> Result<()> {
     log!("Started async_worker task.");
     let mut tasks_list: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
     while let Some(request) = request_receiver.recv().await {
         match request {
-            MatrixRequest::Login(login_request) => {
-                        if let Err(e) = login_sender.send(login_request).await {
-                            error!("Error sending login request to login_sender: {e:?}");
-                            Cx::post_action(LoginAction::LoginFailure(String::from(
-                                "BUG: failed to send login request to async worker thread."
-                            )));
+            MatrixRequest::Auth(auth_request) => {
+                        let is_register_request = matches!(auth_request, AuthRequest::RegisterRequest(_));
+                        
+                        if let Err(e) = auth_sender.send(auth_request).await {
+                            error!("Error sending authentication request to auth_sender: {e:?}");
+                            if is_register_request {
+                                use crate::login::register_screen::RegisterAction;
+                                Cx::post_action(RegisterAction::RegisterFailure(String::from(
+                                    "BUG: failed to send registration request to async worker thread."
+                                )));
+                            } else {
+                                Cx::post_action(LoginAction::LoginFailure(String::from(
+                                    "BUG: failed to send login request to async worker thread."
+                                )));
+                            }
                         }
-                    }
-
-            MatrixRequest::Register(register_request) => {
-
             },
             MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
                         let (timeline, sender) = {
@@ -822,7 +864,7 @@ async fn async_worker(
                         tasks_list.insert(room_id.clone(), subscribe_own_read_receipt_task);
                     }
             MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
-                        spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
+                        spawn_sso_server(brand, homeserver_url, identity_provider_id, auth_sender.clone()).await;
                     }
             MatrixRequest::ResolveRoomAlias(room_alias) => {
                         let Some(client) = CLIENT.get() else { continue };
@@ -1036,14 +1078,14 @@ pub fn start_matrix_tokio() -> Result<()> {
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
     REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
 
-    let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
+    let (auth_sender, auth_receiver) = tokio::sync::mpsc::channel(1);
     // Start a high-level async task that will start and monitor all other tasks.
     let _monitor = rt.spawn(async move {
         // Spawn the actual async worker thread.
-        let mut worker_join_handle = rt.spawn(async_worker(receiver, login_sender));
+        let mut worker_join_handle = rt.spawn(async_worker(receiver, auth_sender));
 
         // Start the main loop that drives the Matrix client SDK.
-        let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
+        let mut main_loop_join_handle = rt.spawn(async_main_loop(auth_receiver));
 
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
@@ -1245,7 +1287,7 @@ fn username_to_full_user_id(
 }
 
 async fn async_main_loop(
-    mut login_receiver: Receiver<LoginRequest>,
+    mut login_receiver: Receiver<AuthRequest>,
 ) -> Result<()> {
     tracing_subscriber::fmt::init();
 
@@ -1287,7 +1329,7 @@ async fn async_main_loop(
                     user_id: cli.user_id.clone(),
                     homeserver: cli.homeserver.clone(),
                 });
-                match login(cli, LoginRequest::LoginByCli).await {
+                match handle_auth_request(cli, AuthRequest::LoginByCli).await {
                     Ok(new_login) => Some(new_login),
                     Err(e) => {
                         error!("CLI-based login failed: {e:?}");
@@ -1315,7 +1357,7 @@ async fn async_main_loop(
                 log!("Waiting for login request...");
                 match login_receiver.recv().await {
                     Some(login_request) => {
-                        match login(&cli, login_request).await {
+                        match handle_auth_request(&cli, login_request).await {
                             Ok((client, sync_token)) => {
                                 break (client, sync_token);
                             }
@@ -2239,7 +2281,7 @@ async fn spawn_sso_server(
     brand: String,
     homeserver_url: String,
     identity_provider_id: String,
-    login_sender: Sender<LoginRequest>,
+    login_sender: Sender<AuthRequest>,
 ) {
     Cx::post_action(LoginAction::SsoPending(true));
     // Post a status update to inform the user that we're waiting for the client to be built.
@@ -2338,7 +2380,7 @@ async fn spawn_sso_server(
             }) {
             Ok(identity_provider_res) => {
                 if !is_logged_in {
-                    if let Err(e) = login_sender.send(LoginRequest::LoginBySSOSuccess(client, client_session)).await {
+                    if let Err(e) = login_sender.send(AuthRequest::LoginBySSOSuccess(client, client_session)).await {
                         error!("Error sending login request to login_sender: {e:?}");
                         Cx::post_action(LoginAction::LoginFailure(String::from(
                             "BUG: failed to send login request to async worker thread."

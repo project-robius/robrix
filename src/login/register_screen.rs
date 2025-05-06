@@ -4,8 +4,7 @@ use std::ops::Not;
 
 use makepad_widgets::*;
 
-
-use crate::sliding_sync::{submit_async_request, MatrixRequest, RegisterRequest};
+use crate::sliding_sync::{submit_async_request, AuthRequest, MatrixRequest, RegisterRequest};
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
 
@@ -204,8 +203,10 @@ live_design! {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct RegisterScreen {
-    #[deref] view: View,
-    #[rust] server_url: String,
+    #[deref]
+    view: View,
+    #[rust]
+    server_url: String,
 }
 
 impl Widget for RegisterScreen {
@@ -229,7 +230,9 @@ impl MatchEvent for RegisterScreen {
         let homeserver_input = self.view.text_input(id!(homeserver_input));
 
         let register_status_modal = self.view.modal(id!(register_status_modal));
-        let register_status_modal_inner = self.view.login_status_modal(id!(register_status_modal_inner));
+        let register_status_modal_inner = self
+            .view
+            .login_status_modal(id!(register_status_modal_inner));
 
         if login_button.clicked(actions) {
             log!("Back to login clicked");
@@ -250,30 +253,41 @@ impl MatchEvent for RegisterScreen {
             if username.is_empty() {
                 register_status_modal_inner.set_title(cx, "Missing Username");
                 register_status_modal_inner.set_status(cx, "Please enter a valid username.");
-                register_status_modal_inner.button_ref().set_text(cx, "Okay");
+                register_status_modal_inner
+                    .button_ref()
+                    .set_text(cx, "Okay");
                 register_status_modal.open(cx);
             } else if password.is_empty() {
                 register_status_modal_inner.set_title(cx, "Missing Password");
                 register_status_modal_inner.set_status(cx, "Please enter a valid password.");
-                register_status_modal_inner.button_ref().set_text(cx, "Okay");
+                register_status_modal_inner
+                    .button_ref()
+                    .set_text(cx, "Okay");
                 register_status_modal.open(cx);
             } else if password != confirm_password {
                 register_status_modal_inner.set_title(cx, "Passwords Don't Match");
-                register_status_modal_inner.set_status(cx, "The passwords you entered do not match. Please try again.");
-                register_status_modal_inner.button_ref().set_text(cx, "Okay");
+                register_status_modal_inner.set_status(
+                    cx,
+                    "The passwords you entered do not match. Please try again.",
+                );
+                register_status_modal_inner
+                    .button_ref()
+                    .set_text(cx, "Okay");
                 register_status_modal.open(cx);
             } else {
                 log!("Register attempt: {}", username);
                 register_status_modal_inner.set_title(cx, "Registering...");
                 register_status_modal_inner.set_status(cx, "Creating your account, please wait...");
-                register_status_modal_inner.button_ref().set_text(cx, "Cancel");
+                register_status_modal_inner
+                    .button_ref()
+                    .set_text(cx, "Cancel");
                 register_status_modal.open(cx);
-                
-                submit_async_request(MatrixRequest::Register(RegisterRequest {
+
+                submit_async_request(MatrixRequest::Auth(AuthRequest::RegisterRequest(RegisterRequest {
                     username,
                     password,
                     homeserver: homeserver.is_empty().not().then_some(homeserver),
-                }));
+                })));
             }
             self.redraw(cx);
         }
@@ -322,7 +336,9 @@ impl RegisterScreen {
     pub fn set_server_url(&mut self, cx: &mut Cx, url: &str) {
         self.server_url = url.to_string();
         if !url.is_empty() {
-            self.view.text_input(id!(homeserver_input)).set_text(cx, url);
+            self.view
+                .text_input(id!(homeserver_input))
+                .set_text(cx, url);
         }
     }
 }
