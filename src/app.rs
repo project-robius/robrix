@@ -232,6 +232,7 @@ impl MatchEvent for App {
                 log!("Received LoginAction::LoginSuccess, hiding login view.");
                 self.app_state.logged_in = true;
                 self.update_login_visibility(cx);
+                cx.action(RoomsPanelAction::DockLoad);
                 self.ui.redraw(cx);
             }
 

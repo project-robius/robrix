@@ -141,7 +141,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
 
 impl LogoutConfirmModal {
     /// Sets the message text displayed in the body of the modal.
-    fn set_message(&mut self, cx: &mut Cx, message: &str) {
+    pub fn set_message(&mut self, cx: &mut Cx, message: &str) {
         self.label(id!(message)).set_text(cx, message);
     }
 
