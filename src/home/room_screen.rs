@@ -943,6 +943,7 @@ live_design! {
             }
             text: "No More"
         }
+        date_divider_template: <DateDivider> {}
         animator: {
             typing_notice_animator = {
                 default: show,
@@ -976,6 +977,7 @@ pub struct RoomScreen {
     /// The timer for sending a search request after a delay when user stops typing.
     #[rust] search_delay_timer: Timer,
     #[live] pub no_more_template: Option<LivePtr>,
+    #[live] pub date_divider_template: Option<LivePtr>,
     #[rust] pub search_result_timeline_view: Option<ViewRef>,
     #[rust] pub search_bar_widget_uid: Option<WidgetUid>
 }
@@ -1403,8 +1405,8 @@ impl Widget for RoomScreen {
                 let item = {
                     let tl_idx = item_id;
                     let room_id = &tl_state.room_id;
-                    let (tl_items, main_event_indexes) = if search_timeline_widget.visible() { (&tl_state.search_result_state.items, tl_state.search_result_state.main_event_indexes.clone()) } else {
-                        (&tl_state.items, Vec::with_capacity(0))
+                    let (tl_items, main_event_indexes, context_before_event_indexes) = if search_timeline_widget.visible() { (&tl_state.search_result_state.items, tl_state.search_result_state.main_event_indexes.clone(), tl_state.search_result_state.context_before_event_indexes.clone()) } else {
+                        (&tl_state.items, Vec::with_capacity(0), Vec::with_capacity(0))
                     };
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
@@ -1428,6 +1430,7 @@ impl Widget for RoomScreen {
                                     let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
                                     let prev_event = prev_event.map(PreviousWrapperTI);
                                     let message = &MessageWrapperTM(message);
+                                    populate_search_date_divider(cx, event_tl_item_wrapper, context_before_event_indexes, tl_idx, self.date_divider_template);
                                     populate_message_view(
                                         cx,
                                         list,
@@ -1831,23 +1834,11 @@ impl RoomScreen {
                         }
                         return None
                     }
-                    fn look_for_items_and_date_divider(event_id: &EventId, items: &Vector<Arc<TimelineItem>>) -> Option<(Arc<TimelineItem>, Arc<TimelineItem>)> {
-                        let mut date_divider: Option<Arc<TimelineItem>> = None;
-                        for item in items.iter() {
-                            if let (Some(ev), Some(date_divider)) = (item.as_event(), date_divider.clone()) {
-                                if ev.event_id() == Some(event_id) {
-                                    return Some((item.clone(), date_divider));
-                                }
-                            } else if item.is_date_divider() {
-                                date_divider = Some(item.clone());
-                            }
-                        }
-                        return None
-                    }
                     for (index, item) in search_structure.events.iter().enumerate() {
                         let mut small_timelines = Vector::new();
-                        if let Some((timeline, date_divider) ) =  item.context_before.as_ref().and_then(|f| look_for_items_and_date_divider(&f, &tl.items)) {
-                            small_timelines.push_back(EventType::DateDivider(date_divider));
+                        let mut has_context_before = false;
+                        if let Some(timeline) =  item.context_before.as_ref().and_then(|f| look_for_items(&f, &tl.items)) {
+                            has_context_before = true;
                             small_timelines.push_back(EventType::Context(timeline));
                         } else if item.context_before.is_some(){
                             not_found.push((index, item.event.clone()));
@@ -1865,7 +1856,7 @@ impl RoomScreen {
                             not_found.push((index, item.event.clone()));
                             continue;
                         }
-                        v.insert(index, small_timelines);
+                        v.insert(index, (small_timelines, has_context_before));
                     }
                     tl.search_result_state.pre_processed_items = v;
                     if not_found.is_empty() {
@@ -1875,10 +1866,11 @@ impl RoomScreen {
                     }
                 }
                 TimelineUpdate::SearchAfterProcessed{timelines_to_be_merged, count, highlights} => {
-                    for item in &timelines_to_be_merged {
-                        tl.search_result_state.pre_processed_items.insert(item.0, item.1.clone());
+                    let timelines_to_be_merged_len = timelines_to_be_merged.len();
+                    for (index, timelines, has_context_before) in timelines_to_be_merged {
+                        tl.search_result_state.pre_processed_items.insert(index, (timelines, has_context_before));
                     }
-                    crate::search_structure::append_to_tl_state(&self.view, cx, tl, timelines_to_be_merged.len(), &mut done_loading, count, highlights);
+                    crate::search_structure::append_to_tl_state(&self.view, cx, tl, timelines_to_be_merged_len, &mut done_loading, count, highlights);
                 }   
             }
         }
@@ -2978,7 +2970,8 @@ pub enum TimelineUpdate {
         highlights: Vec<String>,
     },
     SearchAfterProcessed{
-        timelines_to_be_merged: Vec<(usize,Vector<EventType>)>,
+        // Index to insert to hashmap, and the vector of items and whether there was a context before
+        timelines_to_be_merged: Vec<(usize, Vector<EventType>, bool)>,
         count: u32,
         highlights: Vec<String>,
     }
@@ -3095,8 +3088,10 @@ pub struct SearchResultState {
     pub search_term: String,
     /// The list of searched events in this room.
     pub items: Vector<Arc<TimelineItem>>,
-    pub pre_processed_items: HashMap<usize, Vector<EventType>>,
+    /// The list of searched events in this room, split into batches and a boolean if there is event_before.
+    pub pre_processed_items: HashMap<usize, (Vector<EventType>, bool)>,
     pub main_event_indexes: Vec<usize>,
+    pub context_before_event_indexes: Vec<usize>,
     /// The list of batch tokens for the search results.
     /// 
     /// This field is used to prevent duplicate search requests when scrolling
@@ -4220,7 +4215,20 @@ pub fn populate_location_message_content(
     // at which point we can return true.
     true
 }
-
+fn populate_search_date_divider<T>(cx: &mut Cx2d, event_tl_item: &T, context_before_event_indexes: Vec<usize>, index: usize, date_divider_template: Option<LivePtr>) where T: MessageViewFromEvent,  {
+    if context_before_event_indexes.contains(&index) {
+        let millis = event_tl_item.timestamp();
+        let text = unix_time_millis_to_datetime(&millis)
+        // format the time as a shortened date (Sat, Sept 5, 2021)
+        .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
+        .unwrap_or_else(|| format!("{:?}", millis));
+        println!("date_divider_text: {} millis{:?}", text, millis);
+        let item = WidgetRef::new_from_ptr(cx, date_divider_template).as_label();
+        item.label(id!(date)).set_text(cx, &text);
+        item.draw_all(cx, &mut Scope::empty());
+    }
+   
+}
 /// Draws a ReplyPreview above a message if it was in-reply to another message.
 ///
 /// If the given `in_reply_to` details are `None`,

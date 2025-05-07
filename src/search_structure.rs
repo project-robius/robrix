@@ -27,11 +27,17 @@ pub fn append_to_tl_state(room_screen_view: &View,cx: &mut Cx, tl: &mut Timeline
     *done_loading = true;
     tl.search_result_state.highlighted_strings = highlights;
     let mut main_event_indexes: Vec<usize> = Vec::with_capacity(search_structure_len);
+    let mut context_before_event_indexes: Vec<usize> = Vec::with_capacity(search_structure_len);
     for i in 0..tl.search_result_state.pre_processed_items.len() {
-        if let Some(items) = tl.search_result_state.pre_processed_items.get(&(tl.search_result_state.pre_processed_items.len() - i)) {
+        if let Some((items, has_context_before)) = tl.search_result_state.pre_processed_items.get(&(tl.search_result_state.pre_processed_items.len() - i)) {
             for item in items.iter() {
                 match item {
                     EventType::Main(timeline) => {
+                        if *has_context_before {
+                            context_before_event_indexes.push(tl.search_result_state.items.len().saturating_sub(1));
+                        } else {
+                            context_before_event_indexes.push(tl.search_result_state.items.len());
+                        }
                         main_event_indexes.push(tl.search_result_state.items.len());
                         tl.search_result_state.items.push_back(timeline.clone());
                     },
@@ -42,6 +48,7 @@ pub fn append_to_tl_state(room_screen_view: &View,cx: &mut Cx, tl: &mut Timeline
             }
         }
     }
+    tl.search_result_state.context_before_event_indexes = context_before_event_indexes;
     tl.search_result_state.main_event_indexes = main_event_indexes;
     tl.search_result_state.pre_processed_items = HashMap::new();
 }

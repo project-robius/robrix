@@ -1152,16 +1152,20 @@ async fn async_worker(
                         if let Ok(timeline) = room.timeline_builder().with_focus(TimelineFocus::Event { target: item_event_id.clone(), num_context_events: 2 }).build().await {
                             let timelines = timeline.items().await;
                             let mut timelines_with_types = Vector::new();
-                            for timeline_item in timelines {
+                            let mut has_context_before = false;
+                            for (index, timeline_item) in timelines.iter().enumerate() {
                                 if let Some(event) = timeline_item.as_event() {
                                     if event.event_id() == Some(&item_event_id) {
                                         timelines_with_types.push_back(EventType::Main(timeline_item.clone()));
+                                        if index == 1 {
+                                            has_context_before = true;
+                                        }
                                     } else {
                                         timelines_with_types.push_back(EventType::Context(timeline_item.clone()));
                                     }
                                 }
                             }
-                            merged_timelines.push((index, timelines_with_types));
+                            merged_timelines.push((index, timelines_with_types, has_context_before));
                         }
                     }
                     if let Err(e) = sender.send(
