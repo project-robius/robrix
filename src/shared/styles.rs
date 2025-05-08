@@ -70,6 +70,7 @@ live_design! {
 
     pub ROOM_NAME_TEXT_COLOR = #x0
 
+    pub COLOR_ROBRIX_PURPLE = #572DCC; // the purple color from the Robrix logo
     pub COLOR_META = #xccc
 
     pub COLOR_PROFILE_CIRCLE = #xfff8ee

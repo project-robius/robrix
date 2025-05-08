@@ -27,19 +27,20 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::helpers::FillerX;
 
-    pub FOCUS_HOVER_COLOR = #eaecf0
+    pub FOCUS_HOVER_COLOR = #C
     pub KEYBOARD_FOCUS_OR_COLOR_HOVER = #1C274C
 
     // Template for user list items in the mention dropdown
     UserListItem = <View> {
         width: Fill,
         height: Fit,
+        margin: {left: 4, right: 4}
         padding: {left: 8, right: 8, top: 4, bottom: 4}
         show_bg: true
         cursor: Hand
         draw_bg: {
             color: #fff,
-            uniform border_radius: 6.0,
+            uniform border_radius: 4.0,
             instance hover: 0.0,
             instance selected: 0.0,
 
@@ -110,8 +111,18 @@ live_design! {
             spacing: 0.0
             padding: 0.0
 
+            draw_bg: {
+                color: (COLOR_SECONDARY),
+            }
             header_view = {
+                margin: {left: 4, right: 4}
+                draw_bg: {
+                    color: (COLOR_ROBRIX_PURPLE),
+                }
                 header_label = {
+                    draw_text: {
+                        color: (COLOR_PRIMARY_DARKER),
+                    }
                     text: "Users in this Room"
                 }
             }

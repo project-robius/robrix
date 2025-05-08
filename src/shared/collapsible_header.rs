@@ -24,7 +24,7 @@ live_design! {
     ICON_COLLAPSE = dep("crate://self/resources/icons/triangle_fill.svg")
 
     COLOR_HEADER_FG = #F;
-    COLOR_HEADER_BG = #572DCC; // the purple color from the Robrix logo
+    COLOR_HEADER_BG = (COLOR_ROBRIX_PURPLE); // the purple color from the Robrix logo
 
 
     pub CollapsibleHeader = {{CollapsibleHeader}}<RoundedView> {

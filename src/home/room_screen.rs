@@ -335,6 +335,7 @@ live_design! {
                     username = <Label> {
                         width: Fill,
                         flow: Right, // do not wrap
+                        padding: 0,
                         margin: {bottom: 9.0, top: 11.0, right: 10.0,}
                         draw_text: {
                             text_style: <USERNAME_TEXT_STYLE> {},
