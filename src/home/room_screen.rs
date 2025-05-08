@@ -22,10 +22,10 @@ use robius_location::Coordinates;
 use ruma::{events::AnySyncTimelineEvent, serde::Raw, OwnedUserId, UserId};
 
 use crate::{
-    app::AppState, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppState, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_search_result::{append_to_tl_state, SearchTimeline}}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
-    }, search_structure::{EventType, SearchStructure}, shared::{
+    }, shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, search_bar::SearchBarAction, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
@@ -36,7 +36,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{ContextMenuFromEvent, MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{handle_search_new_items, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultDrawState, SearchResultWidgetExt, SearchResultWidgetRefExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{ContextMenuFromEvent, MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{send_pagination_request_based_on_scroll_pos_for_search_result, CondensedSearchResult, SearchResultWidgetExt, SearchResultWidgetRefExt}, rooms_list::RoomsListWidgetExt};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -1366,14 +1366,15 @@ impl Widget for RoomScreen {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let room_screen_widget_uid = self.widget_uid();
         let search_timeline_widget = self.view(id!(search_timeline));
-        let rooms_list_widget = self.rooms_list(id!(rooms_list));
+        let _rooms_list_widget = self.rooms_list(id!(rooms_list));
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
             return DrawStep::done();
         }
+        let search_timeline_widget_visible = search_timeline_widget.visible();
         
-        while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
+        while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() { 
             // We only care about drawing the portal list.
             //let portal_list_ref = self.view.portal_list(id!(timeline.list));
             let portal_list_ref = subview.as_portal_list();
@@ -1384,9 +1385,9 @@ impl Widget for RoomScreen {
             let Some(tl_state) = self.tl_state.as_mut() else {
                 return DrawStep::done();
             };
-
+            
             // Set the portal list's range based on the number of timeline items.
-            let last_item_id = if !search_timeline_widget.visible() {
+            let last_item_id = if !search_timeline_widget_visible {
                 tl_state.items.len() 
             } else {
                 tl_state.search_result_state.items.len()
@@ -1402,10 +1403,14 @@ impl Widget for RoomScreen {
                 //     };
                 //     item
                 // } else {
+                if item_id == 0 && search_timeline_widget_visible {
+                    WidgetRef::new_from_ptr(cx, self.no_more_template).as_label().draw_all(cx, &mut Scope::empty());
+                    //WidgetRef::new_from_ptr(cx, self.no_more_template).as_label().draw_walk(cx, scope, walk);
+                }
                 let item = {
                     let tl_idx = item_id;
                     let room_id = &tl_state.room_id;
-                    let (tl_items, main_event_indexes, context_before_event_indexes) = if search_timeline_widget.visible() { (&tl_state.search_result_state.items, tl_state.search_result_state.main_event_indexes.clone(), tl_state.search_result_state.context_before_event_indexes.clone()) } else {
+                    let (tl_items, target_event_indexes, context_before_event_indexes) = if search_timeline_widget_visible { (&tl_state.search_result_state.items, tl_state.search_result_state.target_event_indexes.clone(), tl_state.search_result_state.context_before_event_indexes.clone()) } else {
                         (&tl_state.items, Vec::with_capacity(0), Vec::with_capacity(0))
                     };
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
@@ -1414,7 +1419,11 @@ impl Widget for RoomScreen {
                         list.item(cx, item_id, live_id!(Empty));
                         continue;
                     };
-
+                    let highlighted = if search_timeline_widget_visible {
+                        tl_state.search_result_state.highlighted_strings.clone()
+                    } else {
+                        vec![]
+                    };
                     // Determine whether this item's content and profile have been drawn since the last update.
                     // Pass this state to each of the `populate_*` functions so they can attempt to re-use
                     // an item in the timeline's portallist that was previously populated, if one exists.
@@ -1425,12 +1434,12 @@ impl Widget for RoomScreen {
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => {
                             let event_tl_item_wrapper = &MessageViewFromEventWrapperETI(event_tl_item);
+                            populate_search_date_divider(cx, event_tl_item_wrapper, context_before_event_indexes, tl_idx, self.date_divider_template);
                             match event_tl_item.content() {
                                 TimelineItemContent::Message(message) => {
                                     let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
                                     let prev_event = prev_event.map(PreviousWrapperTI);
                                     let message = &MessageWrapperTM(message);
-                                    populate_search_date_divider(cx, event_tl_item_wrapper, context_before_event_indexes, tl_idx, self.date_divider_template);
                                     populate_message_view(
                                         cx,
                                         list,
@@ -1441,7 +1450,8 @@ impl Widget for RoomScreen {
                                         prev_event.as_ref(),
                                         &mut tl_state.media_cache,
                                         &tl_state.user_power,
-                                        main_event_indexes.contains(&tl_idx),
+                                        !target_event_indexes.is_empty() && !target_event_indexes.contains(&tl_idx),
+                                        highlighted,
                                         item_drawn_status,
                                         room_screen_widget_uid,
                                     )
@@ -1459,7 +1469,8 @@ impl Widget for RoomScreen {
                                         prev_event.as_ref(),
                                         &mut tl_state.media_cache,
                                         &tl_state.user_power,
-                                        main_event_indexes.contains(&tl_idx),
+                                        !target_event_indexes.is_empty() && !target_event_indexes.contains(&tl_idx),
+                                        highlighted,
                                         item_drawn_status,
                                         room_screen_widget_uid,
                                     )
@@ -1820,10 +1831,13 @@ impl RoomScreen {
                         tl.search_result_state.items.push_front(item.clone());
                     }
                 }
-                TimelineUpdate::SearchBeforeProcessed { search_structure, count, highlights } => {
-                    let mut v = HashMap::new();
-                    let mut not_found: Vec<(usize, OwnedEventId)> = Vec::with_capacity(search_structure.events.len());
-                    
+                TimelineUpdate::SearchThroughStreamedTimelines { events, next_batch_token: _, count, highlights, search_term } => {
+                    let mut not_found: Vec<(usize, OwnedEventId)> = Vec::with_capacity(events.len());
+                    if tl.search_result_state.search_term != search_term {
+                        tl.search_result_state = SearchResultState::default();
+                        tl.search_result_state.search_term = search_term;
+                        tl.search_result_state.highlighted_strings = highlights.clone();
+                    }
                     fn look_for_items(event_id: &EventId, items: &Vector<Arc<TimelineItem>>) -> Option<Arc<TimelineItem>> {
                         for item in items.iter() {
                             if let Some(ev) = item.as_event() {
@@ -1832,45 +1846,46 @@ impl RoomScreen {
                                 }
                             }
                         }
-                        return None
+                        None
                     }
-                    for (index, item) in search_structure.events.iter().enumerate() {
+                    let pre_processed_items_initial_length = tl.search_result_state.pre_processed_items.len();
+                    for (index, item) in events.iter().enumerate() {
                         let mut small_timelines = Vector::new();
                         let mut has_context_before = false;
-                        if let Some(timeline) =  item.context_before.as_ref().and_then(|f| look_for_items(&f, &tl.items)) {
+                        let index = pre_processed_items_initial_length + index;
+                        if let Some(timeline) =  item.context_before.as_ref().and_then(|event_id| look_for_items(event_id, &tl.items)) {
                             has_context_before = true;
-                            small_timelines.push_back(EventType::Context(timeline));
-                        } else if item.context_before.is_some(){
+                            small_timelines.push_back(SearchTimeline::Context(timeline));
+                        } else if item.context_before.is_some() {
                             not_found.push((index, item.event.clone()));
                             continue;
                         }
                         if let Some(timeline ) = look_for_items(&item.event, &tl.items) {
-                            small_timelines.push_back(EventType::Main(timeline));
+                            small_timelines.push_back(SearchTimeline::Target(timeline));
                         } else {
                             not_found.push((index, item.event.clone()));
                             continue;
                         }
-                        if let Some(timeline ) =  item.context_after.as_ref().and_then(|f|look_for_items(&f, &tl.items)) {
-                            small_timelines.push_back(EventType::Context(timeline));
+                        if let Some(timeline ) =  item.context_after.as_ref().and_then(|event_id|look_for_items(event_id, &tl.items)) {
+                            small_timelines.push_back(SearchTimeline::Context(timeline));
                         } else {
                             not_found.push((index, item.event.clone()));
                             continue;
                         }
-                        v.insert(index, (small_timelines, has_context_before));
+                        tl.search_result_state.pre_processed_items.insert(index, (small_timelines, has_context_before));
                     }
-                    tl.search_result_state.pre_processed_items = v;
                     if not_found.is_empty() {
-                        crate::search_structure::append_to_tl_state(&self.view, cx, tl, search_structure.events.len(), &mut done_loading, count, highlights);
+                        append_to_tl_state(&self.view, cx, tl, events.len(), &mut done_loading, count, highlights);
                     } else {
                         submit_async_request(MatrixRequest::SearchFindMoreTimelines { not_found, room_id: tl.room_id.clone(), count, highlights });
                     }
                 }
-                TimelineUpdate::SearchAfterProcessed{timelines_to_be_merged, count, highlights} => {
+                TimelineUpdate::SearchThroughTimelineFocus{timelines_to_be_merged, count, highlights} => {
                     let timelines_to_be_merged_len = timelines_to_be_merged.len();
                     for (index, timelines, has_context_before) in timelines_to_be_merged {
                         tl.search_result_state.pre_processed_items.insert(index, (timelines, has_context_before));
                     }
-                    crate::search_structure::append_to_tl_state(&self.view, cx, tl, timelines_to_be_merged_len, &mut done_loading, count, highlights);
+                    append_to_tl_state(&self.view, cx, tl, timelines_to_be_merged_len, &mut done_loading, count, highlights);
                 }   
             }
         }
@@ -2472,7 +2487,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
-                search_result_state: SearchResultState::new(room_id.clone()),
+                search_result_state: SearchResultState::default(),
             };
             (new_tl_state, true)
         };
@@ -2749,7 +2764,7 @@ impl RoomScreen {
         let search_plane_widget_uid = self.search_result(id!(search_result_plane)).widget_uid();
         let widget_action = action.as_widget_action();
         match widget_action.cast() {
-            SearchBarAction::Search(search_query) => {
+            SearchBarAction::Search(search_term) => {
                 if let (Some(selected_room), Some(search_widget_id)) = {
                     let app_state = scope.data.get::<AppState>().unwrap();
                     (app_state.rooms_panel.selected_room.clone(), app_state.search_widget)
@@ -2760,9 +2775,9 @@ impl RoomScreen {
                             self.search_delay_timer = cx.start_timeout(1.0);
                             if let Some(ref mut tl_state) = self.tl_state {
                                 tl_state.search_result_state.items.clear();
-                                tl_state.search_result_state.search_term = search_query.clone();
+                                tl_state.search_result_state.search_term = search_term.clone();
                             }
-                            self.search_result(id!(search_result_plane)).set_search_criteria(cx, search_query.clone());
+                            self.search_result(id!(search_result_plane)).set_search_criteria(cx, search_term.clone());
                             self.view(id!(timeline)).set_visible(cx, false);
                         }
                     }
@@ -2777,9 +2792,7 @@ impl RoomScreen {
                         if widget_action.widget_uid == search_widget_id && Some(selected_room.room_id) == self.room_id {
                             cx.stop_timer(self.search_delay_timer);
                             let Some(tl) = self.tl_state.as_mut() else { return };
-                            if let Some(room_id) = &self.room_id {
-                                tl.search_result_state = SearchResultState::new(room_id.clone());
-                            }
+                            tl.search_result_state = SearchResultState::default();
                             self.view(id!(search_timeline)).set_visible(cx, false);
                             self.view(id!(search_result_overlay)).set_visible(cx, false);
                         }
@@ -2793,7 +2806,6 @@ impl RoomScreen {
                 } {
                     if let Some(widget_action) = widget_action {
                         if widget_action.widget_uid == search_widget_id && Some(selected_room.room_id) == self.room_id {
-                            //self.view(id!(search_result_overlay)).set_visible(cx, true);
                             let search_term = if let Some(ref mut tl_state) = self.tl_state { tl_state.search_result_state.search_term.clone() } else { return };
                             self.search_result(id!(search_result_plane)).set_search_criteria(cx, search_term);
                             self.view(id!(timeline)).set_visible(cx, false);
@@ -2808,8 +2820,8 @@ impl RoomScreen {
         if let SearchBarAction::ResetSearch = widget_action.widget_uid_eq(search_plane_widget_uid).cast() {
             self.search_result(id!(search_result_plane)).reset(cx);
             self.search_result(id!(search_result_plane)).set_visible(cx, false);
-            if let (Some(tl_state), Some(room_id)) = (&mut self.tl_state, &self.room_id) {
-                tl_state.search_result_state = SearchResultState::new(room_id.clone());
+            if let Some(tl_state) = &mut self.tl_state {
+                tl_state.search_result_state = SearchResultState::default();
             }
             self.view(id!(timeline)).set_visible(cx, true);
             self.view(id!(search_timeline)).set_visible(cx, false);
@@ -2962,16 +2974,17 @@ pub enum TimelineUpdate {
         highlights: Vec<String>,
         count: u32
     },
-    SearchBeforeProcessed {
-        /// The entire list of timeline items (events) for a room.
-        //new_items: Vector<SearchTimelineItem>,
-        search_structure: SearchStructure,
+    SearchThroughStreamedTimelines {
+        /// The list of search results containing only the event_ids.
+        events: Vec<CondensedSearchResult>,
+        next_batch_token: Option<String>,
         count: u32,
         highlights: Vec<String>,
+        search_term: String,
     },
-    SearchAfterProcessed{
+    SearchThroughTimelineFocus{
         // Index to insert to hashmap, and the vector of items and whether there was a context before
-        timelines_to_be_merged: Vec<(usize, Vector<EventType>, bool)>,
+        timelines_to_be_merged: Vec<(usize, Vector<SearchTimeline>, bool)>,
         count: u32,
         highlights: Vec<String>,
     }
@@ -3081,16 +3094,14 @@ pub struct TimelineUiState {
 
 #[derive(Default)]
 pub struct SearchResultState {
-    pub room_id: Option<OwnedRoomId>,
     /// The search query to be sent after the search delay timer ends.
     /// This field is reset when the user continues typing before the search delay timer ends.
-    pub search_query: String,
     pub search_term: String,
-    /// The list of searched events in this room.
+    /// The list of searched results in this room.
     pub items: Vector<Arc<TimelineItem>>,
-    /// The list of searched events in this room, split into batches and a boolean if there is event_before.
-    pub pre_processed_items: HashMap<usize, (Vector<EventType>, bool)>,
-    pub main_event_indexes: Vec<usize>,
+    /// The list of searched results in this room, split into batches and a boolean true if there is context event before target event.
+    pub pre_processed_items: HashMap<usize, (Vector<SearchTimeline>, bool)>,
+    pub target_event_indexes: Vec<usize>,
     pub context_before_event_indexes: Vec<usize>,
     /// The list of batch tokens for the search results.
     /// 
@@ -3110,10 +3121,8 @@ pub struct SearchResultState {
 }
 
 impl SearchResultState {
-    pub fn new(room_id: OwnedRoomId) -> Self {
-        SearchResultState { 
-            room_id: Some(room_id), ..Default::default()
-        }
+    pub fn new() -> Self {
+        SearchResultState::default()
     }
 }
 #[derive(Default, Debug)]
@@ -3464,6 +3473,7 @@ pub fn populate_message_view<T,P,M>(
     media_cache: &mut MediaCache,
     user_power_levels: &UserPowerLevels,
     is_contextual: bool,
+    highlighted: Vec<String>,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
 ) -> (WidgetRef, ItemDrawnStatus) where T: MessageViewFromEvent, P: PreviousMessageViewFromEvent<T>, M: ContextMenuFromEvent {
@@ -3489,12 +3499,28 @@ pub fn populate_message_view<T,P,M>(
             } else {
                 live_id!(Message)
             };
+            let mut formatted = formatted.clone();
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
+                if !highlighted.is_empty() {
+                    if let Some(ref mut formatted) = formatted {
+                        for highlight in highlighted.iter() {
+                            formatted.body = formatted.body.replace(highlight, &format!("<code>{}</code>", highlight));
+                        }
+                    } else {
+                        let mut formated_string = body.clone();
+                        for highlight in highlighted.iter() {
+                            formated_string = formated_string.replace(highlight, &format!("<code>{}</code>", highlight));
+                        }
+                        formatted = Some(FormattedBody::html(formated_string));
+                    }
+                }
+                
+                
                 let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
-                if message.is_searched_result() {
+                if !highlighted.is_empty() {
                     html_or_plaintext_ref.apply_over(cx, live!(
                         html_view = {
                             html = {
@@ -4215,14 +4241,14 @@ pub fn populate_location_message_content(
     // at which point we can return true.
     true
 }
-fn populate_search_date_divider<T>(cx: &mut Cx2d, event_tl_item: &T, context_before_event_indexes: Vec<usize>, index: usize, date_divider_template: Option<LivePtr>) where T: MessageViewFromEvent,  {
+
+fn populate_search_date_divider<T>(cx: &mut Cx2d, event_tl_item: &T, context_before_event_indexes: Vec<usize>, index: usize, date_divider_template: Option<LivePtr>) where T: MessageViewFromEvent {
     if context_before_event_indexes.contains(&index) {
         let millis = event_tl_item.timestamp();
         let text = unix_time_millis_to_datetime(&millis)
         // format the time as a shortened date (Sat, Sept 5, 2021)
         .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
         .unwrap_or_else(|| format!("{:?}", millis));
-        println!("date_divider_text: {} millis{:?}", text, millis);
         let item = WidgetRef::new_from_ptr(cx, date_divider_template).as_label();
         item.label(id!(date)).set_text(cx, &text);
         item.draw_all(cx, &mut Scope::empty());

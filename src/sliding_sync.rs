@@ -16,7 +16,7 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
-    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventItemOrigin, EventTimelineItem, MembershipChange, RepliedToInfo, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem}, RoomListService, Timeline
+    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
@@ -27,14 +27,14 @@ use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
-use ruma::{api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria, EventContext, OrderBy, Request}}, events::{room::encrypted::Relation, AnySyncTimelineEvent, AnyTimelineEvent}, serde::Raw, uint};
+use ruma::{api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria, EventContext, OrderBy, Request}}, uint};
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_screen::TimelineUpdate, room_search_result::convert_result_categories_to_search_item, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
+        room_screen::TimelineUpdate, room_search_result::{SearchTimeline, CondensedSearchResult}, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, search_structure::{EventType, ProcessedSearchResult, SearchStructure}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -1061,7 +1061,6 @@ async fn async_worker(
                 include_all_rooms, 
                 backward_pagination_batch, 
             } => {
-                
                 abort_core_task(CoreTask::Search).await;
                 let client = CLIENT.get().unwrap();
                 let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
@@ -1076,7 +1075,7 @@ async fn async_worker(
                 if include_all_rooms {
                     room_filter.rooms = None;
                 }
-                let mut criteria = Criteria::new(search_term);
+                let mut criteria = Criteria::new(search_term.clone());
                 criteria.filter = room_filter;
                 criteria.order_by = Some(OrderBy::Recent);
                 criteria.event_context = EventContext::new();
@@ -1085,12 +1084,10 @@ async fn async_worker(
                 criteria.event_context.include_profile = true;
                 search_categories.room_events = Some(criteria);
                 let mut req = Request::new(search_categories);
-                let forward_pagination_batch_token = backward_pagination_batch.clone();
-                req.next_batch = backward_pagination_batch;
+                req.next_batch = backward_pagination_batch.clone();
                 let handle = Handle::current().spawn(async move {
                     match client.send(req).await {
                         Ok(response) => {
-                            
                             let backward_pagination_batch = response.search_categories.room_events.next_batch.clone();
                             let count =  response.search_categories.room_events.count.and_then(|f| f.to_string().parse::<u32>().ok()).unwrap_or(0);
                             let highlights = response.search_categories.room_events.highlights.clone();
@@ -1099,35 +1096,31 @@ async fn async_worker(
                                 if let Some(event) = result.result {
                                     if let Ok(e) = event.deserialize() {
                                         let owned_event_id = e.event_id().to_owned();
-                                        let mut processed_search_result = ProcessedSearchResult {
+                                        let mut processed_search_result = CondensedSearchResult {
                                             event: owned_event_id.clone(),
                                             context_before: None,
                                             context_after: None,
                                         };
-                                        result.context.events_before.iter().for_each(|f| {
-                                            f.deserialize().map(|e| {
-                                                processed_search_result.context_before = Some(e.event_id().to_owned());
-                                            });
+                                        result.context.events_before.iter().for_each(|raw_timeline_event| {
+                                            processed_search_result.context_before = raw_timeline_event.deserialize().ok().map(|e| e.event_id().to_owned())
                                         });
-                                        result.context.events_after.iter().for_each(|f| {
-                                            f.deserialize().map(|e| {
-                                                processed_search_result.context_after = Some(e.event_id().to_owned());
-                                            });
+                                        result.context.events_after.iter().for_each(|raw_timeline_event| {
+                                            processed_search_result.context_after = raw_timeline_event.deserialize().ok().map(|e| e.event_id().to_owned())
                                         });
                                         processed_search_result_list.push(processed_search_result);
                                     }
                                 }
                             }
-                            
-                        
                             if let Err(e) = sender.send(
-                                TimelineUpdate::SearchBeforeProcessed { search_structure: SearchStructure { events: processed_search_result_list, highlighted_strings: highlights.clone(), next_batch_token: backward_pagination_batch },
+                                TimelineUpdate::SearchThroughStreamedTimelines { search_term: search_term.clone(), events: processed_search_result_list, next_batch_token: backward_pagination_batch.clone(),
                                 count,
                                 highlights }) {
                                 error!("Failed to search message in {room_id}; error: {e:?}");
                                 enqueue_popup_notification(format!("Failed to search message. Error: {e}"));
                             }
-                            
+                            if backward_pagination_batch.is_some() {
+                                submit_async_request(MatrixRequest::SearchMessages { room_id, include_all_rooms, search_term, backward_pagination_batch });
+                            }
                             SignalToUI::set_ui_signal();
                         }
                         Err(e) => {
@@ -1146,7 +1139,7 @@ async fn async_worker(
                 };
                 let room = room_info.room.clone();
                 let sender = room_info.timeline_update_sender.clone();
-                let handle = Handle::current().spawn(async move {
+                let _handle = Handle::current().spawn(async move {
                     let mut merged_timelines = vec![];
                     for (index, item_event_id) in not_found {
                         if let Ok(timeline) = room.timeline_builder().with_focus(TimelineFocus::Event { target: item_event_id.clone(), num_context_events: 2 }).build().await {
@@ -1156,12 +1149,12 @@ async fn async_worker(
                             for (index, timeline_item) in timelines.iter().enumerate() {
                                 if let Some(event) = timeline_item.as_event() {
                                     if event.event_id() == Some(&item_event_id) {
-                                        timelines_with_types.push_back(EventType::Main(timeline_item.clone()));
+                                        timelines_with_types.push_back(SearchTimeline::Target(timeline_item.clone()));
                                         if index == 1 {
                                             has_context_before = true;
                                         }
                                     } else {
-                                        timelines_with_types.push_back(EventType::Context(timeline_item.clone()));
+                                        timelines_with_types.push_back(SearchTimeline::Context(timeline_item.clone()));
                                     }
                                 }
                             }
@@ -1169,7 +1162,7 @@ async fn async_worker(
                         }
                     }
                     if let Err(e) = sender.send(
-                        TimelineUpdate::SearchAfterProcessed {
+                        TimelineUpdate::SearchThroughTimelineFocus {
                             timelines_to_be_merged: merged_timelines,
                             count,
                             highlights
