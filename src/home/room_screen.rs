@@ -2077,6 +2077,7 @@ impl RoomScreen {
         // In `show_editing_pane()` above, we hid the input_bar while the editing pane
         // is being shown, so here we need to make it visible again.
         self.view.room_input_bar(id!(input_bar)).set_visible(cx, true);
+        self.text_input(id!(input_bar.message_input.text_input)).set_key_focus(cx);
         self.redraw(cx);
         // We don't need to do anything with the editing pane itself here,
         // because it has already been hidden by the time this function gets called.
@@ -2121,7 +2122,7 @@ impl RoomScreen {
         // we should automatically focus the keyboard on the message input box
         // so that the user can immediately start typing their reply
         // without having to manually click on the message input box.
-        self.text_input(id!(message_input)).set_key_focus(cx);
+        self.text_input(id!(input_bar.message_input.text_input)).set_key_focus(cx);
         self.redraw(cx);
     }
 
@@ -2262,7 +2263,7 @@ impl RoomScreen {
         };
 
         let portal_list = self.portal_list(id!(list));
-        let message_input_box = self.text_input(id!(message_input));
+        let message_input_box = self.text_input(id!(input_bar.message_input.text_input));
         let editing_event = self.editing_pane(id!(editing_pane)).get_event_being_edited();
         let state = SavedState {
             first_index_and_scroll: Some((portal_list.first_id(), portal_list.scroll_position())),
@@ -2270,6 +2271,7 @@ impl RoomScreen {
             replying_to: tl.replying_to.clone(),
             editing_event,
         };
+        log!("Saving TimelineUiState for room {}: {:?}", tl.room_id, state);
         tl.saved_state = state;
         // Store this Timeline's `TimelineUiState` in the global map of states.
         TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
@@ -2298,8 +2300,8 @@ impl RoomScreen {
 
         // 2. Restore the state of the message input box.
         let saved_message_input_state = std::mem::take(message_input_state);
-        self.text_input(id!(message_input))
-            .restore_state(saved_message_input_state);
+        self.text_input(id!(input_bar.message_input.text_input))
+            .restore_state(cx, saved_message_input_state);
 
         // 3. Restore the state of the replying-to preview.
         if let Some(replying_to_event) = replying_to.take() {
