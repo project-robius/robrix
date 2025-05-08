@@ -10,7 +10,7 @@ use crate::sliding_sync::UserPowerLevels;
 
 use super::room_screen::{MessageAction, MessageOrSticker};
 
-const BUTTON_HEIGHT: f64 = 30.0; // KEEP IN SYNC WITH BUTTON_HEIGHT BELOW
+const BUTTON_HEIGHT: f64 = 35.0; // KEEP IN SYNC WITH BUTTON_HEIGHT BELOW
 const MENU_WIDTH: f64 = 215.0;   // KEEP IN SYNC WITH MENU_WIDTH BELOW
 
 live_design! {
@@ -23,7 +23,7 @@ live_design! {
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
 
-    BUTTON_HEIGHT = 30  // KEEP IN SYNC WITH BUTTON_HEIGHT ABOVE
+    BUTTON_HEIGHT = 35  // KEEP IN SYNC WITH BUTTON_HEIGHT ABOVE
     MENU_WIDTH = 215    // KEEP IN SYNC WITH MENU_WIDTH ABOVE
 
     pub NewMessageContextMenu = {{NewMessageContextMenu}} {
@@ -48,8 +48,8 @@ live_design! {
             flow: Down
             width: (MENU_WIDTH),
             height: Fit,
-            padding: 15
-            spacing: 2
+            padding: 10
+            spacing: 0,
             align: {x: 0, y: 0}
 
             show_bg: true
@@ -64,6 +64,7 @@ live_design! {
             react_view = <View> {
                 flow: Overlay
                 height: (BUTTON_HEIGHT)
+                align: {y: 0.5}
                 react_button = <RobrixIconButton> {
                     height: (BUTTON_HEIGHT)
                     width: Fill,
@@ -77,6 +78,7 @@ live_design! {
                 reaction_input_view = <View> {
                     width: Fill,
                     height: (BUTTON_HEIGHT)
+                    align: {y: 0.5}
                     flow: Right,
                     visible: false, // will be shown once the react_button is clicked
 
@@ -85,6 +87,7 @@ live_design! {
                         height: Fit,
                         align: {x: 0, y: 0.5}
                         empty_text: "Enter reaction..."
+                        flow: Right, // do not wrap
                         draw_text: {
                             // TODO: we want the TextInput flow to show all text
                             // within the single-line box by scrolling horizontally
@@ -98,7 +101,8 @@ live_design! {
                     reaction_send_button = <RobrixIconButton> {
                         height: (BUTTON_HEIGHT)
                         align: {x: 0.5, y: 0.5}
-                        padding: {left: 10, right: 10}
+                        padding: {left: 10, right: 10, top: 8, bottom: 8}
+                        spacing: 0,
                         draw_icon: {
                             svg_file: (ICON_SEND)
                             color: (COLOR_ACCEPT_GREEN),
@@ -123,7 +127,7 @@ live_design! {
                 draw_icon: {
                     svg_file: (ICON_REPLY)
                 }
-                icon_walk: {width: 16, height: 16, margin: {right: 3}}
+                icon_walk: {width: 16, height: 16, margin: {top: 1, right: 3}}
                 text: "Reply"
             }
 
@@ -631,9 +635,8 @@ impl NewMessageContextMenu {
         (num_visible_buttons as f64 * (BUTTON_HEIGHT + 2.0 + 2.0))
             + if show_divider_after_react_reply { 10.0 } else { 0.0 }
             + if show_divider_before_report_delete { 10.0 } else { 0.0 }
-            + 20.0  // top and bottom padding
+            + 30.0  // top and bottom padding
             + 1.0   // top and bottom border
-            - 4.0   // no 2.0 spacers at the top and bottom
     }
 
     fn close(&mut self, cx: &mut Cx) {
