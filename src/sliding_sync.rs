@@ -29,7 +29,7 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not,
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        main_desktop_ui::RoomsPanelAction, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
+        invite_screen::{JoinRoomAction, LeaveRoomAction}, main_desktop_ui::MainDesktopUiAction, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_last_user_id, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -579,7 +579,7 @@ async fn async_worker(
             }
 
             MatrixRequest::JoinRoom { room_id } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _join_room_task = Handle::current().spawn(async move {
                     log!("Sending request to join room {room_id}...");
                     let result_action = if let Some(room) = client.get_room(&room_id) {
@@ -607,7 +607,7 @@ async fn async_worker(
             }
 
             MatrixRequest::LeaveRoom { room_id } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _leave_room_task = Handle::current().spawn(async move {
                     log!("Sending request to leave room {room_id}...");
                     let result_action = if let Some(room) = client.get_room(&room_id) {
@@ -2507,7 +2507,8 @@ fn update_latest_event(
 
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: Room) {
-    Handle::current().spawn(async move {
+    let room_id_clone = room.room_id().to_owned().clone();
+    let fetch_room_avater = Handle::current().spawn(async move {
         let room_id = room.room_id().to_owned();
         let room_name_str = room.cached_display_name().map(|dn| dn.to_string());
         let avatar = room_avatar(&room, room_name_str.as_deref()).await;
@@ -2935,14 +2936,13 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     take_client(); 
     take_sync_service();
     // Note: unwrap() might panic if the lock is poisoned
-    ALL_ROOM_INFO.lock().unwrap().clear();
     TOMBSTONED_ROOMS.lock().unwrap().clear();
     IGNORED_USERS.lock().unwrap().clear();
     DEFAULT_SSO_CLIENT.lock().unwrap().take();
     log!("Client state and caches cleared.");
 
     log!("Requesting to close all tabs...");
-    Cx::post_action(RoomsPanelAction::CloseAllTabs);
+    Cx::post_action(MainDesktopUiAction::CloseAllTabs);
     
     // FIXME:
     // Add a short delay to ensure UI fully updates

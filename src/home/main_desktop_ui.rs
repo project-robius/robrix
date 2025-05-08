@@ -224,10 +224,8 @@ impl MainDesktopUI {
         }
         
         self.redraw(cx);
-        cx.action(RoomsPanelAction::DockSave);
+        cx.action(MainDesktopUiAction::DockSave);
     }
-
-}
 
     /// Replaces an invite with a joined room in the dock.
     fn replace_invite_with_joined_room(
@@ -281,18 +279,15 @@ impl WidgetMatchEvent for MainDesktopUI {
         for action in actions {
             let widget_action = action.as_widget_action();
 
-        // handle close all tabs action directly
-        if let Some(close_tabs) = action.downcast_ref::<RoomsPanelAction>() {
-            if matches!(close_tabs, RoomsPanelAction::CloseAllTabs) {
-                log!("Directly handling CloseAllTabs action");
-                self.close_all_tabs(cx);
-                return; 
+            // handle close all tabs action directly
+            if let Some(close_tabs) = action.downcast_ref::<MainDesktopUiAction>() {
+                if matches!(close_tabs, MainDesktopUiAction::CloseAllTabs) {
+                    log!("Directly handling CloseAllTabs action");
+                    self.close_all_tabs(cx);
+                    return; 
+                }
             }
-        }
 
-        if let Some(action) = action.as_widget_action() {
-            // Handle Dock actions
-            let mut should_save_dock_action: bool = false;
             // Handle actions emitted by the dock within the MainDesktopUI
             match widget_action.cast() { // TODO: don't we need to call `widget_uid_eq(dock.widget_uid())` here?
                 // Whenever a tab (except for the home_tab) is pressed, notify the app state.
@@ -427,7 +422,7 @@ impl WidgetMatchEvent for MainDesktopUI {
 
 /// Actions sent to the MainDesktopUI widget for saving/restoring its dock state.
 #[derive(Clone, Debug, DefaultNone)]
-enum MainDesktopUiAction {
+pub enum MainDesktopUiAction {
     /// Save the dock state from the dock to the AppState.
     DockSave,
     /// Load the room panel state from the AppState to the dock.
