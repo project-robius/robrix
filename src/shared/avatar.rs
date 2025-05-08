@@ -56,8 +56,9 @@ live_design! {
             }
             
             text = <Label> {
+                padding: 0,
                 width: Fit, height: Fit,
-                padding: { top: 0.5 } // for better vertical alignment
+                flow: Right, // do not wrap
                 draw_text: {
                     text_style: <TITLE_TEXT>{ font_size: 15. }
                     color: #f,

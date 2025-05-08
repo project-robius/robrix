@@ -102,9 +102,13 @@ live_design! {
         ui: <Window> {
             window: {inner_size: vec2(1280, 800), title: "Robrix"},
             caption_bar = {caption_label = {label = {text: "Robrix"}}}
-            pass: {clear_color: #2A}
+            // pass: {clear_color: #2A}
+            pass: {clear_color: #FFFFFF00}
+            // pass: { clear_color: (THEME_COLOR_BG_APP) }
 
             body = {
+                padding: 0,
+
                 // A wrapper view for showing top-level app modals/dialogs/popups
                 <View> {
                     width: Fill, height: Fill,

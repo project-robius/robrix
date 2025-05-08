@@ -86,6 +86,7 @@ live_design! {
                 height: Fit,
                 margin: {left: 0, top: 4, bottom: 4, right: 4},
                 padding: 8,
+                spacing: 0,
                 align: {x: 0.5, y: 0.5}
                 draw_icon: {
                     svg_file: (ICON_CLOSE),

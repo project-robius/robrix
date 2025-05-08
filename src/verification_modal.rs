@@ -56,7 +56,6 @@ live_design! {
                     draw_text: {
                         text_style: <REGULAR_TEXT>{
                             font_size: 11.5,
-                            height_factor: 1.3
                         },
                         color: #000
                         wrap: Word
@@ -267,7 +266,11 @@ impl WidgetMatchEvent for VerificationModal {
                                 "Keys have been exchanged. Please verify the following emoji:\
                                 \n   {}\n\n\
                                 Do these emoji keys match?",
-                                emoji_list.emojis.iter().map(|em| em.description).collect::<Vec<_>>().join("\n   ")
+                                emoji_list.emojis
+                                    .iter()
+                                    .map(|em| format!("{}  ({})", em.symbol, em.description))
+                                    .collect::<Vec<_>>()
+                                    .join("\n   ")
                             )
                         } else {
                             format!(

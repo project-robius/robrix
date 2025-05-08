@@ -30,6 +30,11 @@ live_design! {
         padding: {left: 20, right: 20, top: 50}
         spacing: 30,
 
+        show_bg: true,
+        draw_bg: {
+            color: (COLOR_PRIMARY),
+        }
+
         inviter_view = <View> {
             width: Fill, height: Fit
             align: {x: 0.5, y: 0}
@@ -51,6 +56,7 @@ live_design! {
 
                 inviter_name = <Label> {
                     margin: {top: 2}
+                    padding: 0,
                     text: ""
                     draw_text: {
                         text_style: <TITLE_TEXT>{
@@ -99,7 +105,6 @@ live_design! {
             }
 
             room_name = <Label> {
-                margin: {top: 3.5}
                 text: ""
                 draw_text: {
                     text_style: <TITLE_TEXT>{

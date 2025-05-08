@@ -55,6 +55,7 @@ live_design! {
         padding: 15.0,
 
         label = <Label> {
+            padding: 0
             width: Fill,
             align: { x: 0.5, y: 0.5 }
             draw_text: {
