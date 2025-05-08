@@ -11,6 +11,7 @@ use crate::avatar_cache::*;
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::utils;
 
+use makepad_widgets::text::selection::Cursor;
 use makepad_widgets::*;
 use matrix_sdk::room::RoomMember;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
@@ -128,7 +129,7 @@ live_design! {
             bottom = { height: 0 }
             center = {
                 text_input = <RobrixTextInput> {
-                    empty_message: "Start typing..."
+                    empty_text: "Start typing..."
                 }
             }
         }
@@ -201,7 +202,7 @@ impl Widget for MentionableTextInput {
             if let Some(action) =
                 actions.find_widget_action(self.cmd_text_input.text_input_ref().widget_uid())
             {
-                if let TextInputAction::Change(text) = action.cast() {
+                if let TextInputAction::Changed(text) = action.cast() {
                     self.handle_text_change(cx, scope, text);
                 }
             }
@@ -225,7 +226,7 @@ impl MentionableTextInput {
         if let Some(start_idx) = self.current_mention_start_index {
             let text_input_ref = self.cmd_text_input.text_input_ref();
             let current_text = text_input_ref.text();
-            let head = text_input_ref.borrow().map_or(0, |p| p.get_cursor().head.index);
+            let head = text_input_ref.borrow().map_or(0, |p| p.cursor().index);
 
             // For now, we insert the markdown link to the mentioned user directly
             // instead of the user's display name because we don't yet have a way
@@ -249,7 +250,11 @@ impl MentionableTextInput {
             self.cmd_text_input.set_text(cx, &new_text);
             // Calculate new cursor position
             let new_pos = start_idx + mention_to_insert.len();
-            text_input_ref.set_cursor(new_pos, new_pos);
+            text_input_ref.set_cursor(
+                cx,
+                Cursor { index: new_pos, prefer_next_row: false },
+                false,
+            );
         }
 
         self.close_mention_popup(cx);
@@ -264,7 +269,7 @@ impl MentionableTextInput {
             self.possible_mentions.clear();
         }
 
-        let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.get_cursor().head.index);
+        let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.cursor().index);
 
         if let Some(trigger_pos) = self.find_mention_trigger_position(&text, cursor_pos) {
             self.current_mention_start_index = Some(trigger_pos);

@@ -23,6 +23,8 @@ live_design! {
 
     RoomName = <Label> {
         width: Fill, height: Fit
+        flow: Right, // do not wrap
+        padding: 0,
         draw_text:{
             color: #000,
             wrap: Ellipsis,
@@ -33,6 +35,7 @@ live_design! {
 
     Timestamp = <Label> {
         width: Fit, height: Fit
+        flow: Right, // do not wrap
         draw_text:{
             color: (TIMESTAMP_TEXT_COLOR)
             text_style: <TIMESTAMP_TEXT_STYLE>{
@@ -90,7 +93,8 @@ live_design! {
 
     RoomPreviewContent = {{RoomPreviewContent}} {
         flow: Right,
-        spacing: 10., padding: 10.
+        spacing: 10,
+        padding: 10,
         width: Fill, height: Fit
         show_bg: true
         draw_bg: {
@@ -151,7 +155,7 @@ live_design! {
                 align: {x: 0.5, y: 0.5}
                 avatar = <Avatar> {}
                 room_name = <RoomName> {}
-                unread_badge = <UnreadBadge> {}
+                unread_badge = <UnreadBadge>  {}
             }
             FullPreview = <RoomPreviewContent> {
                 padding: 10
@@ -165,23 +169,19 @@ live_design! {
                         spacing: 5,
                         flow: Right,
                         room_name = <RoomName> {}
-                        // Use a small top margin to align the timestamp text baseline with the room name text baseline. 
-                        timestamp = <Timestamp> { margin: { top: 1.3 } }
+                        timestamp = <Timestamp> { }
                     }
                     bottom = <View> {
                         width: Fill, height: Fill,
                         spacing: 2,
                         flow: Right,
                         preview = <MessagePreview> {
-                            margin: { top: 7. }
+                            margin: { top: 0 }
                         }
                         <View> {
                             width: Fit, height: Fit
                             align: { x: 1.0 }
-                            unread_badge = <UnreadBadge> {
-                                // Align the badge with the first line of the MessagePreview
-                                margin: { top: 4 }
-                            }
+                            unread_badge = <UnreadBadge> {}
                         }
                     }
                 }

@@ -41,8 +41,8 @@ live_design! {
                 return sdf.fill_keep(mix(
                     THEME_COLOR_D_HIDDEN,
                     mix(
-                        THEME_COLOR_SCROLLBAR_HOVER,
-                        THEME_COLOR_SCROLLBAR_HOVER * 1.2,
+                        THEME_COLOR_OUTSET_HOVER,
+                        THEME_COLOR_OUTSET_HOVER * 1.2,
                         self.down
                     ),
                     self.hover

@@ -294,6 +294,7 @@ live_design! {
                 width: Fit,
                 height: Fit,
                 align: {x: 0.0, y: 0.0},
+                spacing: 0,
                 margin: 7,
                 padding: 15,
 

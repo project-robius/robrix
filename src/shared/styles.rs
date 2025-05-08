@@ -46,12 +46,10 @@ live_design! {
     // notices (automated messages from bots) use a lighter color
     pub MESSAGE_NOTICE_TEXT_COLOR = #x888
     pub MESSAGE_TEXT_LINE_SPACING = 1.35
-    pub MESSAGE_TEXT_HEIGHT_FACTOR = 1.55
     // This font should only be used for plaintext labels. Don't use this for Html content,
     // as the Html widget sets different fonts for different text styles (e.g., bold, italic).
     pub MESSAGE_TEXT_STYLE = <THEME_FONT_REGULAR>{
         font_size: (MESSAGE_FONT_SIZE),
-        height_factor: (MESSAGE_TEXT_HEIGHT_FACTOR),
         line_spacing: (MESSAGE_TEXT_LINE_SPACING),
     }
 
@@ -62,7 +60,6 @@ live_design! {
     pub SMALL_STATE_TEXT_COLOR = #x888
     pub SMALL_STATE_TEXT_STYLE = <THEME_FONT_REGULAR>{
         font_size: (SMALL_STATE_FONT_SIZE),
-        height_factor: 1.3,
     }
 
     pub TIMESTAMP_FONT_SIZE = 8.5
@@ -82,6 +79,8 @@ live_design! {
     pub COLOR_ACCEPT_GREEN = #138808
     pub COLOR_DANGER_RED = #DC0005
     pub COLOR_DISABLE_GRAY = #B3B3B3
+
+    pub COLOR_SELECT_TEXT = #A6CDFE
 
 
     pub COLOR_PRIMARY = #ffffff
@@ -144,87 +143,84 @@ live_design! {
         width: Fill, height: Fit,
         margin: 0,
         align: {y: 0.5}
-        empty_message: "Enter text..."
+        empty_text: "Enter text..."
+
         draw_bg: {
             color: (COLOR_PRIMARY)
-            instance border_radius: 2.0
-            instance border_size: 0.0
-            instance border_color: #D0D5DD
-            instance inset: vec4(0.0, 0.0, 0.0, 0.0)
+            border_radius: 2.0
+            border_size: 0.0
 
-            fn get_color(self) -> vec4 {
-                return self.color
-            }
+            // TODO: determine these other colors below
+            color_hover: (COLOR_PRIMARY)
+            color_focus: (COLOR_PRIMARY)
+            color_down: (COLOR_PRIMARY)
+            color_empty: (COLOR_PRIMARY)
+            color_disabled: (COLOR_PRIMARY)
 
-            fn get_border_color(self) -> vec4 {
-                return self.border_color
-            }
+            border_color_1: (COLOR_PRIMARY)
+            border_color_1_hover: (COLOR_PRIMARY)
+            border_color_1_focus: (COLOR_PRIMARY)
+            border_color_1_down: (COLOR_PRIMARY)
+            border_color_1_empty: (COLOR_PRIMARY)
+            border_color_1_disabled: (COLOR_PRIMARY)
 
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                sdf.box(
-                    self.inset.x + self.border_size,
-                    self.inset.y + self.border_size,
-                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
-                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
-                    max(1.0, self.border_radius)
-                )
-                sdf.fill_keep(self.get_color())
-                if self.border_size > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_size)
-                }
-                return sdf.result;
-            }
+            border_color_2: (COLOR_PRIMARY)
+            border_color_2_hover: (COLOR_PRIMARY)
+            border_color_2_focus: (COLOR_PRIMARY)
+            border_color_2_down: (COLOR_PRIMARY)
+            border_color_2_empty: (COLOR_PRIMARY)
+            border_color_2_disabled: (COLOR_PRIMARY)
+        }
+
+        draw_selection: {
+            color: (COLOR_SELECT_TEXT)
+            // TODO: determine these other colors below
+            color_hover:  (COLOR_SELECT_TEXT)
+            color_focus:  (COLOR_SELECT_TEXT)
+            color_down:  (COLOR_SELECT_TEXT)
+            color_empty:  (COLOR_SELECT_TEXT)
+            color_disabled: (COLOR_SELECT_TEXT)
+        }
+
+        draw_cursor: {
+            color: (MESSAGE_TEXT_COLOR)
         }
 
         draw_text: {
-            color: (MESSAGE_TEXT_COLOR),
             text_style: <MESSAGE_TEXT_STYLE>{},
+            color: (MESSAGE_TEXT_COLOR),
+            // TODO: determine these colors
+            uniform color_hover: (MESSAGE_TEXT_COLOR),
+            uniform color_focus: (MESSAGE_TEXT_COLOR),
+            uniform color_down: (MESSAGE_TEXT_COLOR),
+            uniform color_disabled: (MESSAGE_TEXT_COLOR),
+            uniform color_empty: #B,
+            uniform color_empty_hover: #B,
+            uniform color_empty_focus: #B,
 
             fn get_color(self) -> vec4 {
-                return mix(
-                    self.color,
-                    #B,
-                    self.is_empty
-                )
-            }
-        }
-
-
-        // TODO find a way to override colors
-        draw_cursor: {
-            instance focus: 0.0
-            uniform border_radius: 0.5
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                sdf.box(
-                    0.,
-                    0.,
-                    self.rect_size.x,
-                    self.rect_size.y,
-                    self.border_radius
-                )
-                sdf.fill(mix(#fff, #bbb, self.focus));
-                return sdf.result
-            }
-        }
-
-        // TODO find a way to override colors
-        draw_highlight: {
-            instance hover: 0.0
-            instance focus: 0.0
-            uniform border_radius: 2.0
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                sdf.box(
-                    0.,
-                    0.,
-                    self.rect_size.x,
-                    self.rect_size.y,
-                    self.border_radius
-                )
-                sdf.fill(mix(#eee, #ddd, self.focus)); // Pad color
-                return sdf.result
+                return
+                    mix( 
+                        mix(
+                            mix(
+                                mix(
+                                    self.color,
+                                    mix(
+                                        self.color_hover,
+                                        self.color_down,
+                                        self.down
+                                    ),
+                                    self.hover
+                                ),
+                                self.color_focus,
+                                self.focus
+                            ),
+                            self.color_empty,
+                            self.empty
+                        ),
+                        self.color_disabled,
+                        self.disabled
+                    )
             }
         }
     }

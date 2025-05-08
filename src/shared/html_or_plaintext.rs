@@ -39,6 +39,7 @@ live_design! {
         }
 
         title = <Label> {
+            flow: Right, // do not wrap
             draw_text: {
                 color: #f,
                 text_style: <MESSAGE_TEXT_STYLE> { font_size: 10.0 },
@@ -55,13 +56,14 @@ live_design! {
     // The Matrix link is a pill-shaped widget with an avatar and a title.
     pub RobrixHtmlLink = {{RobrixHtmlLink}} {
         width: Fit, height: Fit,
-        flow: Overlay,
+        flow: RightWrap, // ensure the link text can wrap
         align: { y: 0.5 },
         cursor: Hand,
 
         html_link_view = <View> {
             visible: true,
             width: Fit, height: Fit,
+            flow: RightWrap,
 
             html_link = <HtmlLink> {
                 hover_color: #21b070
@@ -94,11 +96,11 @@ live_design! {
         align: { y: 0.5 }
         font_size: (MESSAGE_FONT_SIZE),
         font_color: (MESSAGE_TEXT_COLOR),
-        draw_normal:      { color: (MESSAGE_TEXT_COLOR), } // text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
-        draw_italic:      { color: (MESSAGE_TEXT_COLOR), } // text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
-        draw_bold:        { color: (MESSAGE_TEXT_COLOR), } // text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
-        draw_bold_italic: { color: (MESSAGE_TEXT_COLOR), } // text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
-        draw_fixed:       { color: (MESSAGE_TEXT_COLOR), } // text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
+        draw_normal:      { color: (MESSAGE_TEXT_COLOR) } //, text_style: { line_spacing: (1.0) } }
+        draw_italic:      { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (2.0) } }
+        draw_bold:        { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (2.0) } }
+        draw_bold_italic: { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (2.0) } }
+        draw_fixed:       { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (2.0) } }
         draw_block: {
             line_color: (MESSAGE_TEXT_COLOR)
             sep_color: (MESSAGE_TEXT_COLOR)
@@ -123,7 +125,7 @@ live_design! {
         body: "[<i> HTML message placeholder</i>]",
     }
 
-    // A view container that displays either plaintext s(a simple `Label`)
+    // A view container that displays either plaintext (a simple `Label`)
     // or rich HTML content (an instance of `MessageHtml`).
     //
     // Key Usage Notes:

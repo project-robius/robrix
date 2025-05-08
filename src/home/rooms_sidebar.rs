@@ -43,6 +43,7 @@ live_design! {
             }
 
             sidebar_title = <Label> {
+                flow: Right, // do not wrap
                 text: "All Rooms"
                 draw_text: {
                     color: #x0
@@ -61,6 +62,7 @@ live_design! {
 
             sidebar_title = <Label> {
                 text: "All Rooms"
+                flow: Right, // do not wrap
                 draw_text: {
                     color: #x0
                     text_style: <TITLE_TEXT>{}

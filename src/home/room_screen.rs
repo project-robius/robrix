@@ -81,6 +81,7 @@ live_design! {
 
     Timestamp = <Label> {
         width: Fit, height: Fit
+        flow: Right, // do not wrap
         padding: { bottom: 0.0, left: 0.0, right: 0.0 }
         draw_text: {
             text_style: <TIMESTAMP_TEXT_STYLE> {},
@@ -118,6 +119,7 @@ live_design! {
 
             reply_preview_username = <Label> {
                 width: Fill,
+                flow: Right, // do not wrap
                 margin: { left: 5.0 }
                 draw_text: {
                     text_style: <USERNAME_TEXT_STYLE> { font_size: 10 },
@@ -332,6 +334,7 @@ live_design! {
                     height: Fit,
                     username = <Label> {
                         width: Fill,
+                        flow: Right, // do not wrap
                         margin: {bottom: 9.0, top: 11.0, right: 10.0,}
                         draw_text: {
                             text_style: <USERNAME_TEXT_STYLE> {},
@@ -548,6 +551,7 @@ live_design! {
         width: Fill,
         height: Fit,
         align: {x: 0.5, y: 0}
+        flow: Right,
         show_bg: true,
         draw_bg: {
             color: #xDAF5E5F0, // mostly opaque light green
@@ -557,6 +561,7 @@ live_design! {
             width: Fill,
             height: Fit,
             align: {x: 0.5, y: 0.5},
+            flow: Right,
             padding: { top: 10.0, bottom: 7.0, left: 15.0, right: 15.0 }
             draw_text: {
                 text_style: <MESSAGE_TEXT_STYLE> { font_size: 10 },
@@ -637,7 +642,7 @@ live_design! {
 
                     typing_label = <Label> {
                         align: {x: 0.0, y: 0.5},
-                        padding: {left: 5.0, right: 0.0}
+                        padding: {left: 5.0, right: 0.0, top: 0.0, bottom: 0.0}
                         draw_text: {
                             color: (TYPING_NOTICE_TEXT_COLOR),
                             text_style: <REGULAR_TEXT>{font_size: 9}
@@ -674,6 +679,7 @@ live_design! {
 
                         <Label> {
                             width: Fill,
+                            flow: Right, // do not wrap
                             draw_text: {
                                 text_style: <USERNAME_TEXT_STYLE> {},
                                 color: #222,
@@ -686,6 +692,7 @@ live_design! {
                             width: Fit,
                             height: Fit,
                             padding: 13,
+                            spacing: 0,
                             margin: {left: 5, right: 5},
 
                             draw_bg: {
@@ -860,7 +867,7 @@ impl Widget for RoomScreen {
                             .unwrap_or_else(|| sender.to_string())
                     }).collect();
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
-                    tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
+                    tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.reaction));
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
@@ -960,7 +967,7 @@ impl Widget for RoomScreen {
             // Clear the replying-to preview pane if the "cancel reply" button was clicked
             // or if the `Escape` key was pressed within the message input box.
             if self.button(id!(cancel_reply_button)).clicked(actions)
-                || message_input.escape(actions)
+                || message_input.escaped(actions)
             {
                 self.clear_replying_to(cx);
                 self.redraw(cx);
@@ -1003,18 +1010,18 @@ impl Widget for RoomScreen {
 
             // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
             if self.button(id!(send_message_button)).clicked(actions)
-                || message_input.key_down_unhandled(actions).is_some_and(
-                    |ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary()
+                || message_input.returned(actions).is_some_and(
+                    |(_text, modifiers)| modifiers.is_primary()
                 )
             {
                 let entered_text = message_input.text().trim().to_string();
                 if !entered_text.is_empty() {
+                    let room_input_bar = self.room_input_bar(id!(input_bar));
                     let room_id = self.room_id.clone().unwrap();
                     let (message, mentions) = if let Some(html_text) = entered_text.strip_prefix("/html") {
                         (
                             RoomMessageEventContent::text_html(html_text, html_text),
-                            self.view.room_input_bar(id!(input_bar))
-                                .mentionable_text_input(id!(message_input))
+                            room_input_bar.mentionable_text_input(id!(message_input))
                                 .get_real_mentions_in_html_text(html_text),
                         )
                     } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
@@ -1025,8 +1032,7 @@ impl Widget for RoomScreen {
                     } else {
                         (
                             RoomMessageEventContent::text_markdown(&entered_text),
-                            self.view.room_input_bar(id!(input_bar))
-                                .mentionable_text_input(id!(message_input))
+                            room_input_bar.mentionable_text_input(id!(message_input))
                                 .get_real_mentions_in_markdown_text(&entered_text),
                         )
                     };
@@ -1042,6 +1048,8 @@ impl Widget for RoomScreen {
 
                     self.clear_replying_to(cx);
                     message_input.set_text(cx, "");
+                    room_input_bar.enable_send_message_button(cx, false);
+
                 }
             }
 

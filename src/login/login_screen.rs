@@ -102,13 +102,13 @@ live_design! {
 
                     user_id_input = <RobrixTextInput> {
                         width: 250, height: 40
-                        empty_message: "User ID"
+                        empty_text: "User ID"
                     }
 
                     password_input = <RobrixTextInput> {
                         width: 250, height: 40
-                        empty_message: "Password"
-                        draw_text: { text_style: { is_secret: true } }
+                        empty_text: "Password"
+                        is_password: true,
                     }
 
                     <View> {
@@ -117,7 +117,7 @@ live_design! {
 
                         homeserver_input = <RobrixTextInput> {
                             width: Fill, height: 30,
-                            empty_message: "matrix.org"
+                            empty_text: "matrix.org"
                             draw_text: {
                                 text_style: <TITLE_TEXT>{font_size: 10.0}
                             }

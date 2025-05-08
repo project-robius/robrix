@@ -51,6 +51,7 @@ live_design! {
             icon_walk: { width: 14, height: Fit, margin: 0, }
         }
         label = <Label> {
+            padding: 0,
             width: Fill,
             height: Fit,
             text: "",

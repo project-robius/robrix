@@ -13,6 +13,12 @@ live_design! {
     pub WelcomeScreen = <ScrollYView> {
         width: Fill, height: Fill
         align: {x: 0.0, y: 0.5}
+
+        show_bg: true,
+        draw_bg: {
+            color: (COLOR_PRIMARY),
+        }
+
         welcome_message = <RoundedView> {
             padding: 40.
             width: Fill, height: Fit

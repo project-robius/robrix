@@ -84,7 +84,7 @@ live_design! {
                         width: Fill,
                         height: Fit,
                         align: {x: 0, y: 0.5}
-                        empty_message: "Enter reaction..."
+                        empty_text: "Enter reaction..."
                         draw_text: {
                             // TODO: we want the TextInput flow to show all text
                             // within the single-line box by scrolling horizontally
@@ -402,7 +402,7 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             );
             close_menu = true;
         }
-        else if reaction_text_input.escape(actions) {
+        else if reaction_text_input.escaped(actions) {
             close_menu = true;
         }
         else if self.button(id!(react_button)).clicked(actions) {

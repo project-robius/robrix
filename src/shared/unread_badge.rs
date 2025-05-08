@@ -14,7 +14,6 @@ live_design! {
     pub UnreadBadge = {{UnreadBadge}} {
         width: 30, height: 20,
         align: { x: 0.5, y: 0.5 }
-        visible: false,
         flow: Overlay,
 
         rounded_view = <View> {
@@ -44,8 +43,10 @@ live_design! {
         }
         // Label that displays the unread message count
         label_count = <Label> {
+            padding: 0,
             width: Fit,
             height: Fit,
+            flow: Right, // do not wrap
             text: "",
             draw_text: {
                 color: #ffffff,
@@ -109,6 +110,7 @@ impl Widget for UnreadBadge {
                     highlight: 0.0
                 }
             });
+            log!("Displaying unread bdge with {} unread messages", self.unread_messages);
             self.visible = true;
         }
         else {

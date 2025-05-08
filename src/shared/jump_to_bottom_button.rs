@@ -77,6 +77,7 @@ live_design! {
                 unread_messages_count = <Label> {
                     width: Fit,
                     height: Fit,
+                    flow: Right, // do not wrap
                     text: "",
                     draw_text: {
                         color: #ffffff,
