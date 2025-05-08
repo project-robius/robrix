@@ -24,6 +24,7 @@ live_design! {
             align: {x: 0.5, y: 1.0},
             flow: Overlay,
             jump_to_bottom_button = <IconButton> {
+                spacing: 0,
                 width: 50, height: 50,
                 margin: {bottom: 8},
                 draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},

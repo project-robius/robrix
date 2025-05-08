@@ -28,7 +28,7 @@ live_design! {
 
             show_bg: true,
             draw_bg: {
-                instance bg_color: (COLOR_PRIMARY)
+                instance bg_color: (COLOR_PRIMARY_DARKER)
                 instance border_color: #f2f2f2
                 instance border_size: 0.003
 
@@ -69,7 +69,11 @@ live_design! {
                 }
             }
             <CachedWidget> {
-                <RoomFilterInputBar> { }
+                <RoomFilterInputBar> {
+                    draw_bg: {
+                        border_size: 1.0,
+                    }
+                }
             }
             <CachedWidget> {
                 rooms_list = <RoomsList> {}

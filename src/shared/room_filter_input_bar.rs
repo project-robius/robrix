@@ -25,7 +25,7 @@ live_design! {
         draw_bg: {
             color: (COLOR_PRIMARY),
             border_radius: 4.0,
-            border_color: #EAEFF1,
+            border_color: #(COLOR_SECONDARY),
             border_size: 0.0,
         }
         padding: {top: 3, bottom: 3, left: 10, right: 10}
@@ -57,7 +57,7 @@ live_design! {
 
         clear_button = <RobrixIconButton> {
             visible: false,
-            padding: {top: 7, bottom: 7, left: 8, right: 8},
+            padding: {top: 7, bottom: 7, left: 10, right: 10},
             spacing: 0,
             align: {x: 0.5, y: 0.5}
             draw_icon: {

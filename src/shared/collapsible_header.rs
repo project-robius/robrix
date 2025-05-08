@@ -37,7 +37,7 @@ live_design! {
 
         cursor: Hand,
         draw_bg: {
-            border_radius: 3.0,
+            border_radius: 4.0,
             color: (COLOR_HEADER_BG)
         }
 

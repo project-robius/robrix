@@ -23,8 +23,10 @@ live_design! {
                 color: (COLOR_SECONDARY),
             }
             width: Fill, height: Fill
-            padding: 0, margin: 0, align: {x: 0.0, y: 0.0}
             flow: Right
+            align: {x: 0.0, y: 0.0}
+            padding: 0,
+            margin: 0,
 
             spaces = <SpacesDock> {}
 
@@ -33,7 +35,7 @@ live_design! {
                 width: Fill, height: Fill
 
                 <CachedWidget> {
-                    <RoomFilterInputBar> { }
+                    <RoomFilterInputBar> {}
                 }
                 <MainDesktopUI> {}
             }

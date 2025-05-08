@@ -144,6 +144,8 @@ live_design! {
             width: Fill, height: Fit, // see above comment
             pt_label = <Label> {
                 width: Fill, height: Fit, // see above comment
+                flow: RightWrap,
+                padding: 0,
                 draw_text: {
                     wrap: Word,
                     color: (MESSAGE_TEXT_COLOR),

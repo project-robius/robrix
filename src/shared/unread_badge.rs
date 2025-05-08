@@ -110,7 +110,6 @@ impl Widget for UnreadBadge {
                     highlight: 0.0
                 }
             });
-            log!("Displaying unread bdge with {} unread messages", self.unread_messages);
             self.visible = true;
         }
         else {

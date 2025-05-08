@@ -82,7 +82,7 @@ live_design! {
     Timestamp = <Label> {
         width: Fit, height: Fit
         flow: Right, // do not wrap
-        padding: { bottom: 0.0, left: 0.0, right: 0.0 }
+        padding: 0,
         draw_text: {
             text_style: <TIMESTAMP_TEXT_STYLE> {},
             color: (TIMESTAMP_TEXT_COLOR)
@@ -317,7 +317,7 @@ live_design! {
                     // }
                 }
                 timestamp = <Timestamp> {
-                    padding: { top: 3.0 }
+                    padding: { top: 2.0 }
                 }
                 datestamp = <Timestamp> {
                     padding: { top: 3.0 }

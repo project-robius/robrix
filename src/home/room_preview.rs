@@ -34,6 +34,7 @@ live_design! {
     }
 
     Timestamp = <Label> {
+        padding: {top: 1},
         width: Fit, height: Fit
         flow: Right, // do not wrap
         draw_text:{
@@ -47,7 +48,6 @@ live_design! {
 
     MessagePreview = <View> {
         width: Fill, height: Fit
-
         latest_message = <HtmlOrPlaintext> {
             html_view = { html = {
                 font_size: 9.3,
@@ -166,7 +166,7 @@ live_design! {
                     align: { x: 0.0, y: 0.0 }
                     top = <View> {
                         width: Fill, height: Fit,
-                        spacing: 5,
+                        spacing: 3,
                         flow: Right,
                         room_name = <RoomName> {}
                         timestamp = <Timestamp> { }
@@ -176,7 +176,7 @@ live_design! {
                         spacing: 2,
                         flow: Right,
                         preview = <MessagePreview> {
-                            margin: { top: 0 }
+                            margin: { top: 2.5 }
                         }
                         <View> {
                             width: Fit, height: Fit
