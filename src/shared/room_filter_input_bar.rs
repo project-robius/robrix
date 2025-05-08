@@ -25,7 +25,7 @@ live_design! {
         draw_bg: {
             color: (COLOR_PRIMARY),
             border_radius: 4.0,
-            border_color: #(COLOR_SECONDARY),
+            border_color: (COLOR_SECONDARY),
             border_size: 0.0,
         }
         padding: {top: 3, bottom: 3, left: 10, right: 10}
