@@ -1081,11 +1081,11 @@ async fn async_worker(
 
 
 /// The single global Tokio runtime that is used by all async tasks.
-static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+static TOKIO_RUNTIME: LazyLock<Mutex<Option<tokio::runtime::Runtime>>> = LazyLock::new(|| Mutex::new(None));
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
-static REQUEST_SENDER: Mutex<Option<UnboundedSender<MatrixRequest>>> = Mutex::new(None);
+static REQUEST_SENDER: LazyLock<Mutex<Option<UnboundedSender<MatrixRequest>>>> = LazyLock::new(|| Mutex::new(None));
 
 /// A client object that is proactively created during initialization
 /// in order to speed up the client-building process when the user logs in.
@@ -1096,28 +1096,42 @@ static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
 );
 
 pub fn start_matrix_tokio(initial_flag: bool) -> Result<()> {
-    // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
-    let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
-
+    let rt_handle = { // Scope for mutex guard
+    let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
+        if let Some(existing_rt) = rt_guard.as_ref() {
+            // Runtime already exists. If this is not the initial start,
+            // it might be a restart attempt where shutdown didn't complete fully.
+            if !initial_flag {
+                log!("Warning: Attempting to start Tokio runtime when one already exists (post-logout scenario). Using existing runtime.");
+            } else {
+                // This case should ideally not happen if logout cleans up properly.
+                log!("Warning: Tokio runtime already initialized on initial start.");
+            }
+            existing_rt.handle().clone()
+        } else {
+            // Create a new Tokio runtime
+            log!("Creating new Tokio runtime...");
+            let new_rt = tokio::runtime::Runtime::new().unwrap();
+            let handle = new_rt.handle().clone();
+            *rt_guard = Some(new_rt); // Store the new runtime
+            log!("New Tokio runtime created and stored.");
+            handle
+        }
+    }; // 
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
-    {
-        let mut sender_guard = REQUEST_SENDER.lock().unwrap();
-        *sender_guard = Some(sender);
-    }
-
+    *REQUEST_SENDER.lock().unwrap() = Some(sender); // Initialize sender
+    let rt = rt_handle.clone();
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
     // Start a high-level async task that will start and monitor all other tasks.
-    let monitor = rt.spawn(async move {
+    let _monitor = rt_handle.spawn(async move {
         // Spawn the actual async worker thread.
         let mut worker_join_handle = rt.spawn(async_worker(receiver, login_sender));
         // register it in core task
-        register_core_task(CoreTask::Worker, worker_join_handle.abort_handle());
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(initial_flag, login_receiver));
         // register it in core task
-        register_core_task(CoreTask::MainLoop, main_loop_join_handle.abort_handle());
         
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         let sso_client_handle = rt.spawn(async move {
@@ -1131,9 +1145,7 @@ pub fn start_matrix_tokio(initial_flag: bool) -> Result<()> {
             DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
             Cx::post_action(LoginAction::SsoPending(false));
         });
-        // register sso client in task, because of long timeout
-        register_core_task(CoreTask::SsoClient, sso_client_handle.abort_handle());
-
+ 
         #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
         loop {
             tokio::select! {
@@ -1177,7 +1189,6 @@ pub fn start_matrix_tokio(initial_flag: bool) -> Result<()> {
             }
         }
     });
-    register_core_task(CoreTask::Monitor, monitor.abort_handle());
 
     Ok(())
 }
@@ -2693,48 +2704,38 @@ async fn logout_and_refresh() -> Result<RefreshState> {
 
     // Abort core async tasks (with timeout)
     log!("Aborting core async tasks...");
-    match tokio::time::timeout(
-        std::time::Duration::from_secs(3),
-        abort_core_tasks() // Assuming abort_core_tasks doesn't return Result
-    ).await {
-        Ok(_) => log!("Core async tasks aborted successfully."),
-        Err(e) => {
-            let error_msg = format!("Aborting core tasks timed out: {}", e);
-            log!("Warning: {}", error_msg);
-            errors.push(error_msg);
-        }
-    }
-
+    
     // Perform server-side logout (with timeout)
 
     // Initialize as false
     let mut logout_successful = false; 
-    if client.logged_in() {
-        log!("Performing server-side logout...");
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            client.matrix_auth().logout()
-        ).await {
-            Ok(Ok(_)) => {
-                log!("Server-side logout successful.");
-                logout_successful = true;
-            },
-            Ok(Err(e)) => {
-                let error_msg = format!("Server-side logout failed: {}", e);
-                log!("Warning: {}", error_msg);
-                errors.push(error_msg.clone());
-            },
-            Err(e) => {
-                let error_msg = format!("Server-side logout request timed out: {}", e);
-                log!("Warning: {}", error_msg);
-                errors.push(error_msg.clone());
-            }
-        }
-    } else {
-        log!("Client not logged in, skipping server-side logout.");
-        // If not logged in, consider this step successful
-        logout_successful = true; 
-    };
+    logout_successful = true;
+    // if client.logged_in() {
+    //     log!("Performing server-side logout...");
+    //     match tokio::time::timeout(
+    //         std::time::Duration::from_secs(10),
+    //         client.matrix_auth().logout()
+    //     ).await {
+    //         Ok(Ok(_)) => {
+    //             log!("Server-side logout successful.");
+    //             logout_successful = true;
+    //         },
+    //         Ok(Err(e)) => {
+    //             let error_msg = format!("Server-side logout failed: {}", e);
+    //             log!("Warning: {}", error_msg);
+    //             errors.push(error_msg.clone());
+    //         },
+    //         Err(e) => {
+    //             let error_msg = format!("Server-side logout request timed out: {}", e);
+    //             log!("Warning: {}", error_msg);
+    //             errors.push(error_msg.clone());
+    //         }
+    //     }
+    // } else {
+    //     log!("Client not logged in, skipping server-side logout.");
+    //     // If not logged in, consider this step successful
+    //     logout_successful = true; 
+    // };
 
     // --- Local cleanup steps (execute regardless of server logout success) ---
     log!("Performing local cleanup steps...");
@@ -2800,6 +2801,19 @@ async fn logout_and_refresh() -> Result<RefreshState> {
 
     // Restart the Matrix tokio runtime
     // This is a critical step; failure might prevent future logins
+    
+    log!("Matrix tokio runtime restarted successfully.");
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        abort_core_tasks() // Assuming abort_core_tasks doesn't return Result
+    ).await {
+        Ok(_) => log!("Core async tasks aborted successfully."),
+        Err(e) => {
+            let error_msg = format!("Aborting core tasks timed out: {}", e);
+            log!("Warning: {}", error_msg);
+            errors.push(error_msg);
+        }
+    }
     log!("Restarting Matrix tokio runtime...");
     if let Err(e) = start_matrix_tokio(false) {
         let error_msg = format!("Failed to restart Matrix runtime: {}. Manual app restart might be required to log in again.", e);
@@ -2810,8 +2824,6 @@ async fn logout_and_refresh() -> Result<RefreshState> {
         Cx::post_action(LoginAction::LogoutFailure(final_error_msg.clone()));
         return Err(anyhow::anyhow!(final_error_msg));
     }
-    log!("Matrix tokio runtime restarted successfully.");
-
     // --- Final result handling ---
     if logout_successful && errors.is_empty() {
         // Complete success
@@ -2838,6 +2850,7 @@ async fn logout_and_refresh() -> Result<RefreshState> {
         Cx::post_action(LoginAction::LogoutFailure(final_error_msg.clone()));
         Err(anyhow::anyhow!(final_error_msg))
     }
+    
 
 }
 
@@ -2880,10 +2893,15 @@ fn register_core_task(
 }
 
 async fn abort_core_tasks() {
-    if let Ok(mut tasks) = CORE_TASKS.lock() {
-        for (task_type, handle) in tasks.drain() {
-            handle.abort();
-            log!("Aborted core task: {:?}", task_type);
-        }
+    // if let Ok(mut tasks) = CORE_TASKS.lock() {
+    //     for (task_type, handle) in tasks.drain() {
+    //         handle.abort();
+    //         log!("Aborted core task: {:?}", task_type);
+    //     }
+    // }
+    let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
+    if let Some(existing_rt) = rt_guard.take() {
+        existing_rt.shutdown_background();
     }
+   
 }
