@@ -1,7 +1,7 @@
-//! A room screen is the UI page that displays a single Room's timeline of events/messages
+//! A room screen is the UI view that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::SystemTime};
+use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}};
 
 use bytesize::ByteSize;
 use imbl::Vector;
@@ -17,15 +17,14 @@ use matrix_sdk::{media::MediaFormat, room::RoomMember, ruma::{
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
-use robius_location::Coordinates;
 
 use crate::{
-    audio::{audio_controller::{insert_new_audio_or_get, parse_wav}, audio_message_ui::{AudioMessageUIRef, AudioMessageUIWidgetRefExt}}, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -34,12 +33,11 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, location_preview::LocationPreviewWidgetExt, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
-const COLOR_DANGER_RED: Vec3 = Vec3 { x: 0.862, y: 0.0, z: 0.02 };
 
 
 live_design! {
@@ -49,21 +47,22 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
-    use crate::shared::search_bar::SearchBar;
     use crate::shared::avatar::Avatar;
     use crate::shared::text_or_image::TextOrImage;
     use crate::audio::audio_message_ui::AudioMessageUI;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::icon_button::*;
-    use crate::home::room_read_receipt::*;
-    use crate::profile::user_profile::UserProfileSlidingPane;
     use crate::shared::typing_animation::TypingAnimation;
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
-    use crate::home::loading_pane::*;
-    use crate::home::event_reaction_list::*;
+    use crate::profile::user_profile::UserProfileSlidingPane;
     use crate::home::editing_pane::*;
+    use crate::home::event_reaction_list::*;
+    use crate::home::loading_pane::*;
+    use crate::home::location_preview::*;
     use crate::room::room_input_bar::*;
+    use crate::room::room_input_bar::*;
+    use crate::home::room_read_receipt::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -200,27 +199,6 @@ live_design! {
         }
     }
 
-    // An optional view used to show reactions beneath a message.
-    MessageAnnotations = <View> {
-        visible: false,
-        width: Fill,
-        height: Fit,
-        padding: {top: 5.0}
-
-        html_content = <MessageHtml> {
-            width: Fill,
-            height: Fit,
-            padding: { bottom: 5.0, top: 0.0 },
-            font_size: 10.5,
-            font_color: (REACTION_TEXT_COLOR),
-            draw_normal:      { color: (REACTION_TEXT_COLOR) },
-            draw_italic:      { color: (REACTION_TEXT_COLOR) },
-            draw_bold:        { color: (REACTION_TEXT_COLOR) },
-            draw_bold_italic: { color: (REACTION_TEXT_COLOR) },
-            draw_fixed:       { color: (REACTION_TEXT_COLOR) },
-            body: ""
-        }
-    }
 
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
@@ -654,91 +632,6 @@ live_design! {
         jump_to_bottom = <JumpToBottomButton> { }
     }
 
-    LocationPreview = {{LocationPreview}} {
-        visible: false
-        width: Fill
-        height: Fit
-        flow: Down
-        padding: {left: 12.0, top: 12.0, bottom: 12.0, right: 10.0}
-        spacing: 15
-
-        show_bg: true,
-        draw_bg: {
-            color: #xF0F5FF,
-        }
-
-        <Label> {
-            width: Fill,
-            height: Fit,
-            draw_text: {
-                wrap: Word,
-                color: (MESSAGE_TEXT_COLOR),
-                text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10.0 },
-            }
-            text: "Send your location to this room?"
-        }
-
-        location_label = <Label> {
-            width: Fill,
-            height: Fit,
-            align: {x: 0.0, y: 0.5},
-            padding: {left: 5.0}
-            draw_text: {
-                wrap: Word,
-                color: (MESSAGE_TEXT_COLOR),
-                text_style: <MESSAGE_TEXT_STYLE>{},
-            }
-            text: "Fetching current location..."
-        }
-
-        <View> {
-            width: Fill, height: Fit
-            flow: Right,
-            align: {x: 0.0, y: 0.5}
-            spacing: 15
-
-            cancel_location_button = <RobrixIconButton> {
-                align: {x: 0.5, y: 0.5}
-                padding: {left: 15, right: 15}
-                draw_icon: {
-                    svg_file: (ICON_BLOCK_USER)
-                    color: (COLOR_DANGER_RED),
-                }
-                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1, top: -1} }
-
-                draw_bg: {
-                    border_color: (COLOR_DANGER_RED),
-                    color: #fff0f0 // light red
-                }
-                text: "Cancel"
-                draw_text:{
-                    color: (COLOR_DANGER_RED),
-                }
-            }
-
-            send_location_button = <RobrixIconButton> {
-                // disabled by default; will be enabled upon receiving valid location update.
-                enabled: false,
-                align: {x: 0.5, y: 0.5}
-                padding: {left: 15, right: 15}
-                draw_icon: {
-                    svg_file: (ICON_SEND)
-                    color: (COLOR_ACCEPT_GREEN),
-                }
-                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
-
-                draw_bg: {
-                    border_color: (COLOR_ACCEPT_GREEN),
-                    color: #f0fff0 // light green
-                }
-                text: "Yes"
-                draw_text:{
-                    color: (COLOR_ACCEPT_GREEN),
-                }
-            }
-        }
-    }
-
 
     pub RoomScreen = {{RoomScreen}} {
         width: Fill, height: Fill,
@@ -907,7 +800,7 @@ live_design! {
 
 
             /*
-             * This is broken currently, so I'm disabling it.
+             * TODO: add the action bar back in as a series of floating buttons.
              *
             message_action_bar_popup = <PopupNotification> {
                 align: {x: 0.0, y: 0.0}
@@ -1544,7 +1437,7 @@ impl RoomScreen {
                     // TODO: after an (un)ignore user event, all timelines are cleared. Handle that here.
                     //
                     else {
-                        warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
+                        // warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
                     }
 
                     // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
@@ -2196,7 +2089,7 @@ impl RoomScreen {
     ) {
         // We must hide the input_bar while the editing pane is shown,
         // otherwise a very-tall input bar might show up underneath a shorter editing pane.
-        self.view(id!(input_bar)).set_visible(cx, false);
+        self.view.room_input_bar(id!(input_bar)).set_visible(cx, false);
 
         self.editing_pane(id!(editing_pane)).show(
             cx,
@@ -2210,7 +2103,7 @@ impl RoomScreen {
     fn on_hide_editing_pane(&mut self, cx: &mut Cx) {
         // In `show_editing_pane()` above, we hid the input_bar while the editing pane
         // is being shown, so here we need to make it visible again.
-        self.view(id!(input_bar)).set_visible(cx, true);
+        self.view.room_input_bar(id!(input_bar)).set_visible(cx, true);
         self.redraw(cx);
         // We don't need to do anything with the editing pane itself here,
         // because it has already been hidden by the time this function gets called.
@@ -2452,23 +2345,20 @@ impl RoomScreen {
     }
 
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
-    pub fn set_displayed_room(
+    pub fn set_displayed_room<S: Into<Option<String>>>(
         &mut self,
         cx: &mut Cx,
         room_id: OwnedRoomId,
-        room_name: String,
+        room_name: S,
     ) {
         // If the room is already being displayed, then do nothing.
-        if let Some(current_room_id) = &self.room_id {
-            if current_room_id.eq(&room_id) {
-                return;
-            }
-        }
+        if self.room_id.as_ref().is_some_and(|id| id == &room_id) { return; }
+        
 
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
         self.loading_pane(id!(loading_pane)).take_state();
-        self.room_name = room_name;
+        self.room_name = room_name_or_id(room_name.into(), &room_id);
         self.room_id = Some(room_id.clone());
 
         // Clear any mention input state
@@ -2580,11 +2470,11 @@ impl RoomScreen {
 
 impl RoomScreenRef {
     /// See [`RoomScreen::set_displayed_room()`].
-    pub fn set_displayed_room(
+    pub fn set_displayed_room<S: Into<Option<String>>>(
         &self,
         cx: &mut Cx,
         room_id: OwnedRoomId,
-        room_name: String,
+        room_name: S,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
@@ -4143,112 +4033,6 @@ fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String>
         profile.display_name.clone()
     } else {
         None
-    }
-}
-
-/// A simple deref wrapper around the `LocationPreview` widget that enables us to handle actions on it.
-#[derive(Live, LiveHook, Widget)]
-struct LocationPreview {
-    #[deref] view: View,
-    #[rust] coords: Option<Result<Coordinates, robius_location::Error>>,
-    #[rust] timestamp: Option<SystemTime>,
-}
-impl Widget for LocationPreview {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let mut needs_redraw = false;
-        if let Event::Actions(actions) = event {
-            for action in actions {
-                match action.downcast_ref() {
-                    Some(LocationAction::Update(LocationUpdate { coordinates, time })) => {
-                        self.coords = Some(Ok(*coordinates));
-                        self.timestamp = *time;
-                        self.button(id!(send_location_button)).set_enabled(cx, true);
-                        needs_redraw = true;
-                    }
-                    Some(LocationAction::Error(e)) => {
-                        self.coords = Some(Err(*e));
-                        self.timestamp = None;
-                        self.button(id!(send_location_button)).set_enabled(cx, false);
-                        needs_redraw = true;
-                    }
-                    _ => { }
-                }
-            }
-
-            // NOTE: the send location button click event is handled
-            //       in the RoomScreen handle_event function.
-
-            // Handle the cancel location button being clicked.
-            if self.button(id!(cancel_location_button)).clicked(actions) {
-                self.clear();
-                needs_redraw = true;
-            }
-        }
-
-        if needs_redraw {
-            self.redraw(cx);
-        }
-
-        self.view.handle_event(cx, event, scope);
-    }
-
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let text = match self.coords {
-            Some(Ok(c)) => {
-                // if let Some(st) = self.timestamp {
-                //     format!("Current location: {:.6},{:.6}\n   Timestamp: {:?}", c.latitude, c.longitude, st)
-                // } else {
-                    format!("Current location: {:.6},{:.6}", c.latitude, c.longitude)
-                // }
-            }
-            Some(Err(e)) => format!("Error getting location: {e:?}"),
-            None => String::from("Current location is not yet available."),
-        };
-        self.label(id!(location_label)).set_text(cx, &text);
-        self.view.draw_walk(cx, scope, walk)
-    }
-}
-
-
-impl LocationPreview {
-    fn show(&mut self) {
-        request_location_update(LocationRequest::UpdateOnce);
-        if let Some(loc) = get_latest_location() {
-            self.coords = Some(Ok(loc.coordinates));
-            self.timestamp = loc.time;
-        }
-        self.visible = true;
-    }
-
-    fn clear(&mut self) {
-        self.coords = None;
-        self.timestamp = None;
-        self.visible = false;
-    }
-
-    pub fn get_current_data(&self) -> Option<(Coordinates, Option<SystemTime>)> {
-        self.coords
-            .as_ref()
-            .and_then(|res| res.ok())
-            .map(|c| (c, self.timestamp))
-    }
-}
-
-impl LocationPreviewRef {
-    pub fn show(&self) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.show();
-        }
-    }
-
-    pub fn clear(&self) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.clear();
-        }
-    }
-
-    pub fn get_current_data(&self) -> Option<(Coordinates, Option<SystemTime>)> {
-        self.borrow().and_then(|inner| inner.get_current_data())
     }
 }
 

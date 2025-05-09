@@ -215,6 +215,7 @@ live_design! {
             direct_message_button = <RobrixIconButton> {
                 // TODO: support this button. Once this is implemented, uncomment the line in draw_walk()
                 enabled: false,
+                padding: {top: 10, bottom: 10, left: 8, right: 15}
                 draw_icon: {
                     svg_file: (ICON_DOUBLE_CHAT)
                 }
@@ -223,6 +224,7 @@ live_design! {
             }
 
             copy_link_to_user_button = <RobrixIconButton> {
+                padding: {top: 10, bottom: 10, left: 8, right: 15}
                 draw_icon: {
                     svg_file: (ICON_COPY)
                 }
@@ -232,19 +234,21 @@ live_design! {
 
             jump_to_read_receipt_button = <RobrixIconButton> {
                 enabled: false, // TODO: support this button
+                padding: {top: 10, bottom: 10, left: 8, right: 15}
                 draw_icon: {
                     svg_file: (ICON_JUMP)
                 }
-                icon_walk: {width: 14, height: 16, margin: {left: -1, right: 2}}
+                icon_walk: {width: 14, height: 16, margin: {left: -1, right: 1.5}}
                 text: "Jump to Read Receipt"
             }
 
             ignore_user_button = <RobrixIconButton> {
+                padding: {top: 10, bottom: 10, left: 8, right: 15}
                 draw_icon: {
                     svg_file: (ICON_BLOCK_USER)
                     color: (COLOR_DANGER_RED),
                 }
-                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -0.5} }
 
                 draw_bg: {
                     border_color: (COLOR_DANGER_RED),

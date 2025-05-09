@@ -19,7 +19,7 @@ mod verification_modal;
 pub mod shared;
 /// Generating text previews of timeline events/messages.
 mod event_preview;
-mod room;
+pub mod room;
 
 // Matrix stuff
 pub mod sliding_sync;
