@@ -19,7 +19,8 @@ live_design! {
     use crate::shared::popup_list::PopupList;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
-
+    use crate::audio::audio_controller::AudioController;
+    use crate::audio::audio_playback_window::AudioPlaybackWindow;
 
     APP_TAB_COLOR = #344054
     APP_TAB_COLOR_HOVER = #636e82
@@ -105,6 +106,7 @@ live_design! {
             pass: {clear_color: #2A}
 
             body = {
+                audio_controller = <AudioController> {}
                 // A wrapper view for showing top-level app modals/dialogs/popups
                 <View> {
                     width: Fill, height: Fill,
@@ -124,6 +126,12 @@ live_design! {
                         content: {
                             <PopupList> {}
                         }
+                    }
+
+                    <View> {
+                        width: Fill, height: Fill,
+                        align: { x: 0.99, y: 0.6 }
+                        audio_playback_window = <AudioPlaybackWindow> {}
                     }
 
                     // Context menus should be shown above other UI elements,
@@ -173,6 +181,7 @@ impl LiveRegister for App {
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
         crate::login::live_design(cx);
+        crate::audio::live_design(cx);
     }
 }
 
