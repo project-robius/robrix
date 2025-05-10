@@ -19,7 +19,7 @@ use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, InReplyToDetails, MemberProfileChange, ReactionsByKeyBySender, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use robius_location::Coordinates;
-use ruma::{api::client::search::search_events::v3::ResultCategories, events::AnySyncTimelineEvent, serde::Raw, OwnedUserId, UserId};
+use ruma::{api::client::search::search_events::v3::ResultCategories, events::{AnySyncTimelineEvent, AnyTimelineEvent}, serde::Raw, OwnedUserId, UserId};
 
 use crate::{
     app::AppState, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
@@ -938,7 +938,16 @@ live_design! {
             }
             */
         }
-
+        no_more_template: <Label> {
+            margin: {left: 10, top: 30},
+            draw_text: {
+                text_style: <REGULAR_TEXT> {
+                    font_size: 16.5,
+                },
+                color: #000,
+            }
+            text: "No More"
+        }
         animator: {
             typing_notice_animator = {
                 default: show,
@@ -977,6 +986,7 @@ pub struct RoomScreen {
     /// The search query to be sent adter the search delay timer ends.
     /// This field is reset when the user continues typing before the search delay timer ends.
     #[rust] search_query: String,
+    #[live] pub no_more_template: Option<LivePtr>
 }
 impl Drop for RoomScreen {
 
@@ -1020,7 +1030,9 @@ impl Widget for RoomScreen {
                     submit_async_request(MatrixRequest::SearchMessages { 
                         room_id: room_id.clone(), 
                         include_all_rooms: false,
-                        search_term: self.search_query.clone()
+                        search_term: self.search_query.clone(),
+                        next_batch: None,
+                        abort_previous_search: true
                     });
                 }
             }
@@ -1230,7 +1242,7 @@ impl Widget for RoomScreen {
                 if let Some(room_id) = self.room_id.clone() {
                     self.view(id!(search_result_overlay)).set_visible(cx, true);
                     self.search_result(id!(search_result_inner)).reset_summary(cx);
-                    submit_async_request(MatrixRequest::SearchMessages { room_id, include_all_rooms: true, search_term: self.search_query.clone() });
+                    submit_async_request(MatrixRequest::SearchMessages { room_id, include_all_rooms: true, search_term: self.search_query.clone(), next_batch: None, abort_previous_search: true });
                 }
             }
             // Handle the jump to bottom button: update its visibility, and handle clicks.
@@ -1775,48 +1787,102 @@ impl RoomScreen {
                 }
 
                 TimelineUpdate::SearchResult(result) => {
-                    tl.content_drawn_since_last_update.clear();
-                    tl.profile_drawn_since_last_update.clear();
+                    // tl.content_drawn_since_last_update.clear();
+                    // tl.profile_drawn_since_last_update.clear();
                     tl.fully_paginated = false;
                     // Set the portal list to the very bottom of the timeline.
-                    let mut timeline_events= Vector::new();
                     let mut last_room_id = None;
                     let rooms_names = self.view.rooms_list(id!(rooms_list)).get_all_rooms_names();
-                    timeline_events.push_back(SearchTimelineItem::with_no_more_messages());
-                    for item in result.room_events.results.iter().rev() {
-                        let Some(event) = item.result.clone().and_then(|f|f.deserialize().ok()) else { continue };
+                    
+                    // tl.searched_results.push_back(SearchTimelineItem::with_no_more_messages());
+                    // for item in result.room_events.results.iter().rev() {
+                    //     let Some(event) = item.result.as_ref().and_then(|f|f.deserialize().ok()) else { continue };
                         
+                    //     if let Some(ref mut last_room_id) = last_room_id {
+                    //         if last_room_id != event.room_id() {
+                    //             *last_room_id = event.room_id().to_owned();
+                    //             if let Some(room_name) = rooms_names.get(last_room_id).and_then(|f|f.clone()) {
+                    //                 tl.searched_results.push_back(SearchTimelineItem::with_room_header(room_name));
+                    //             }
+                    //         }
+                    //     } else {
+                    //         last_room_id = Some(event.room_id().to_owned());
+                    //         if let Some(room_name) = rooms_names.get(event.room_id()).and_then(|f|f.clone()) {
+                    //             tl.searched_results.push_back(SearchTimelineItem::with_room_header(room_name));
+                    //         }
+                    //     }
+                    //     let timestamp = match event {
+                    //         AnyTimelineEvent::MessageLike(ref event) => {
+                    //             if let Some(replace) = event.relations().replace {
+                    //                 replace.origin_server_ts()
+                    //             } else {
+                    //                 event.origin_server_ts()
+                    //             }
+                    //         }
+                    //         _ => {
+                    //             event.origin_server_ts()
+                    //         }
+                    //     };
+                    //     tl.searched_results.push_back(SearchTimelineItem::with_virtual(VirtualTimelineItem::DateDivider(timestamp)));
+                    //     item.context.events_before.iter().for_each(|f| {
+                    //         if let Ok(timeline_event) = f.deserialize() {
+                    //             tl.searched_results.push_back(SearchTimelineItem::with_context_event(timeline_event));
+                    //         }
+                    //     });
+                        
+                    //     tl.searched_results.push_back(SearchTimelineItem::with_event(event));
+                    //     item.context.events_after.iter().for_each(|f| {
+                    //         if let Ok(timeline_event) = f.deserialize() {
+                    //             tl.searched_results.push_back(SearchTimelineItem::with_context_event(timeline_event));
+                    //         }
+                    //     });
+                    // }
+                    for item in result.room_events.results.iter() {
+                        let Some(event) = item.result.as_ref().and_then(|f|f.deserialize().ok()) else { continue };
+                        item.context.events_after.iter().rev().for_each(|f| {
+                            if let Ok(timeline_event) = f.deserialize() {
+                                tl.searched_results.push_front(SearchTimelineItem::with_context_event(timeline_event));
+                            }
+                        });
+                        let timestamp = match event {
+                            AnyTimelineEvent::MessageLike(ref event) => {
+                                if let Some(replace) = event.relations().replace {
+                                    replace.origin_server_ts()
+                                } else {
+                                    event.origin_server_ts()
+                                }
+                            }
+                            _ => {
+                                event.origin_server_ts()
+                            }
+                        };
+                        let room_id = event.room_id().to_owned();
+                        tl.searched_results.push_front(SearchTimelineItem::with_event(event));
+                        
+                        item.context.events_before.iter().rev().for_each(|f| {
+                            if let Ok(timeline_event) = f.deserialize() {
+                                tl.searched_results.push_front(SearchTimelineItem::with_context_event(timeline_event));
+                            }
+                        });
+                        tl.searched_results.push_front(SearchTimelineItem::with_virtual(VirtualTimelineItem::DateDivider(timestamp)));
+
                         if let Some(ref mut last_room_id) = last_room_id {
-                            if last_room_id != event.room_id() {
-                                *last_room_id = event.room_id().to_owned();
+                            if last_room_id != &room_id {
+                                *last_room_id = room_id;
                                 if let Some(room_name) = rooms_names.get(last_room_id).and_then(|f|f.clone()) {
-                                    timeline_events.push_back(SearchTimelineItem::with_room_header(room_name));
+                                    tl.searched_results.push_front(SearchTimelineItem::with_room_header(room_name));
                                 }
                             }
                         } else {
-                            last_room_id = Some(event.room_id().to_owned());
-                            if let Some(room_name) = rooms_names.get(event.room_id()).and_then(|f|f.clone()) {
-                                timeline_events.push_back(SearchTimelineItem::with_room_header(room_name));
+                            last_room_id = Some(room_id.clone());
+                            if let Some(room_name) = rooms_names.get(&room_id).and_then(|f|f.clone()) {
+                                tl.searched_results.push_front(SearchTimelineItem::with_room_header(room_name));
                             }
                         }
-                        
-                        item.context.events_before.iter().for_each(|f| {
-                            if let Ok(timeline_event) = f.deserialize() {
-                                timeline_events.push_back(SearchTimelineItem::with_context_event(timeline_event));
-                            }
-                        });
-                        timeline_events.push_back(SearchTimelineItem::with_virtual(VirtualTimelineItem::DateDivider(event.origin_server_ts())));
-                        timeline_events.push_back(SearchTimelineItem::with_event(event.clone()));
-                        item.context.events_after.iter().for_each(|f| {
-                            if let Ok(timeline_event) = f.deserialize() {
-                                timeline_events.push_back(SearchTimelineItem::with_context_event(timeline_event));
-                            }
-                        });
                     }
-                    portal_list.set_first_id_and_scroll(timeline_events.len().saturating_sub(1), 0.0);
+                    portal_list.set_first_id_and_scroll(tl.searched_results.len().saturating_sub(1), 0.0);
                     portal_list.set_tail_range(true);
                     jump_to_bottom.update_visibility(cx, true);
-                    tl.searched_results = timeline_events;
                     if let Some(size) = result.room_events.count.and_then(|f| f.to_string().parse::<usize>().ok()) {
                         cx.action(SearchResultAction::Success(size, result.room_events.highlights.join(", ")));
                     }

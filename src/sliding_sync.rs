@@ -382,6 +382,8 @@ pub enum MatrixRequest {
         include_all_rooms: bool,
         /// Text in the search bar.
         search_term: String,
+        next_batch: Option<String>,
+        abort_previous_search: bool,
     }
 }
 
@@ -1048,12 +1050,14 @@ async fn async_worker(
                     }
                 });
             }
-            MatrixRequest::SearchMessages { room_id, search_term, include_all_rooms } => {
-                abort_core_task(CoreTask::Search).await;
+            MatrixRequest::SearchMessages { room_id, search_term, include_all_rooms, next_batch, abort_previous_search } => {
+                if abort_previous_search {
+                    abort_core_task(CoreTask::Search).await;
+                }                
                 let client = CLIENT.get().unwrap();
                 let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                 let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                    log!("Skipping pagination request for not-yet-known room {room_id}");
+                    log!("Skipping search message request for not-yet-known room {room_id}");
                     continue;
                 };
 
@@ -1064,20 +1068,27 @@ async fn async_worker(
                 if include_all_rooms {
                     room_filter.rooms = None;
                 }
-                let mut criteria = Criteria::new(search_term);
+                let mut criteria = Criteria::new(search_term.clone());
                 criteria.filter = room_filter;
                 criteria.order_by = Some(OrderBy::Recent);
                 criteria.event_context = EventContext::new();
                 criteria.event_context.after_limit = uint!(1);
                 criteria.event_context.before_limit = uint!(1);
                 criteria.event_context.include_profile = true;
+                
                 search_categories.room_events = Some(criteria);
+                let mut req = Request::new(search_categories);
+                req.next_batch = next_batch.clone();
                 let handle = Handle::current().spawn(async move {
-                    match client.send(Request::new(search_categories)).await {
+                    match client.send(req).await {
                         Ok(response) => {
+                            let next_batch = response.search_categories.room_events.next_batch.clone();
                             if let Err(e) = sender.send(TimelineUpdate::SearchResult(response.search_categories)) {
                                 error!("Failed to search message in {room_id}; error: {e:?}");
                                 enqueue_popup_notification(format!("Failed to search message. Error: {e}"));
+                            }
+                            if next_batch.is_some() {
+                                submit_async_request(MatrixRequest::SearchMessages { room_id: room_id.clone(), include_all_rooms, search_term, abort_previous_search: false, next_batch  });
                             }
                             SignalToUI::set_ui_signal();
                         }

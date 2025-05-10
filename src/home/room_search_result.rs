@@ -3,9 +3,9 @@ use std::ops::DerefMut;
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, VirtualTimelineItem};
-use ruma::{events::{receipt::Receipt, room::message::{FormattedBody, MessageType, RoomMessageEventContent}, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
+use ruma::{events::{receipt::Receipt, room::message::{FormattedBody, MessageType, Relation, RoomMessageEventContent}, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
 
-use crate::{event_preview::text_preview_of_other_state,  utils::unix_time_millis_to_datetime};
+use crate::{event_preview::text_preview_of_other_state, utils::unix_time_millis_to_datetime};
 
 use super::room_screen::{populate_message_view, populate_small_state_event, Eventable, ItemDrawnStatus, MessageOrSticker, MsgTypeAble, PreviousEventable, RoomScreen, SmallStateEventContent};
 
@@ -193,6 +193,8 @@ impl SearchResultRef {
 
 pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
     let room_screen_widget_uid = room_screen.widget_uid();
+    let search_timeline_widget = room_screen.view(id!(search_timeline));
+    let search_timeline_widget_visible = search_timeline_widget.visible();
     while let Some(subview) = room_screen.view.draw_walk(cx, scope, walk).step() {
         // We only care about drawing the portal list.
         let portal_list_ref = subview.as_portal_list();
@@ -212,6 +214,9 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
         list.set_item_range(cx, 0, last_item_id);
 
         while let Some(item_id) = list.next_visible_item(cx) {
+            if item_id == 0 && search_timeline_widget_visible {
+                WidgetRef::new_from_ptr(cx, room_screen.no_more_template).as_label().draw_all(cx, &mut Scope::empty());
+            }
             let item = {
                 let tl_idx = item_id;
                 let Some(timeline_item) = tl_items.get(tl_idx) else {
@@ -251,8 +256,23 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                         }
                         SearchTimelineItemKind::ContextEvent(event) | SearchTimelineItemKind::Event(event) => match event {
                             AnyTimelineEvent::MessageLike(msg) => {
-                                match msg.original_content() {
+                                let mut content = msg.original_content();
+                                if let Some(replace) = msg.relations().replace {
+                                    content = replace.original_content();
+                                }
+                                match content {
                                     Some(AnyMessageLikeEventContent::RoomMessage(mut message)) => {
+                                        if let Some(replace) = &message.relates_to {
+                                            match replace{
+                                                Relation::Replacement(replace) => {
+                                                    let new_content = &replace.new_content;
+                                                    message.msgtype = new_content.msgtype.clone();
+                                                }
+                                                _ => {
+
+                                                }
+                                            }
+                                        }
                                         let is_contextual = matches!(&current_item.kind, SearchTimelineItemKind::ContextEvent(_));
                                         if let MessageType::Text(text) = &mut message.msgtype {
                                             
@@ -313,11 +333,6 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                             item.set_text(cx, &format!("Room {}", room_name));
                             (item, ItemDrawnStatus::both_drawn())
                         }
-                        SearchTimelineItemKind::NoMoreMessages => {
-                            let item = list.item(cx, item_id, live_id!(NoMoreMessages));
-                            item.set_text(cx, "No More");
-                            (item, ItemDrawnStatus::both_drawn())
-                        }
                     }
                 };
                 if item_new_draw_status.content_drawn {
@@ -359,11 +374,6 @@ impl SearchTimelineItem{
             kind: SearchTimelineItemKind::RoomHeader(room_name)
         }
     }
-    pub fn with_no_more_messages() -> Self {
-        SearchTimelineItem {
-            kind: SearchTimelineItemKind::NoMoreMessages
-        }
-    }
 }
 #[derive(Clone)]
 pub enum SearchTimelineItemKind {
@@ -376,8 +386,6 @@ pub enum SearchTimelineItemKind {
     Virtual(VirtualTimelineItem),
     /// The room header displaying room name for all found messages in a room.
     RoomHeader(String),
-    /// The text to be displayed at the top of the search result to indicate end of results.
-    NoMoreMessages
 }
 
 /// Actions related to a specific message within a room timeline.
