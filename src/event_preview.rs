@@ -39,8 +39,16 @@ impl TextPreview {
         let Self { text, before_text } = self;
         match before_text {
             BeforeText::Nothing => text,
-            BeforeText::UsernameWithColon => format!("<b>{username}</b>: {text}"),
-            BeforeText::UsernameWithoutColon => format!("{username} {text}"),
+            BeforeText::UsernameWithColon => format!(
+                "<b>{}</b>: {}",
+                htmlize::escape_text(username),
+                text,
+            ),
+            BeforeText::UsernameWithoutColon => format!(
+                "{} {}",
+                htmlize::escape_text(username),
+                text,
+            ),
         }
     }
 }
@@ -57,7 +65,7 @@ pub fn text_preview_of_timeline_item(
             BeforeText::UsernameWithColon,
         )),
         TimelineItemContent::Sticker(sticker) => TextPreview::from((
-            format!("[Sticker]: <i>{}</i>", sticker.content().body),
+            format!("[Sticker]: <i>{}</i>", htmlize::escape_text(&sticker.content().body)),
             BeforeText::UsernameWithColon,
         )),
         TimelineItemContent::UnableToDecrypt(_encrypted_msg) => TextPreview::from((
@@ -90,8 +98,12 @@ pub fn text_preview_of_timeline_item(
             BeforeText::UsernameWithColon,
         )),
         TimelineItemContent::Poll(poll_state) => TextPreview::from((
-            format!("[Poll]: {}", poll_state.fallback_text()
-                .unwrap_or_else(|| poll_state.results().question)
+            format!(
+                "[Poll]: {}",
+                htmlize::escape_text(
+                    poll_state.fallback_text()
+                        .unwrap_or_else(|| poll_state.results().question)
+                ),
             ),
             BeforeText::UsernameWithColon,
         )),
@@ -355,7 +367,7 @@ pub fn text_preview_of_other_state(
             Some(format!("pinned {} events in this room.", content.pinned.len()))
         }
         AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
-            Some(format!("changed this room's name to {:?}.", content.name))
+            Some(format!("changed this room's name to {}.", htmlize::escape_text(&content.name)))
         }
         AnyOtherFullStateEventContent::RoomPowerLevels(_) => {
             Some(String::from("set the power levels for this room."))
@@ -367,13 +379,13 @@ pub fn text_preview_of_other_state(
             Some(format!("closed this room and upgraded it to {}", content.replacement_room.matrix_to_uri()))
         }
         AnyOtherFullStateEventContent::RoomTopic(FullStateEventContent::Original { content, .. }) => {
-            Some(format!("changed this room's topic to {:?}.", content.topic))
+            Some(format!("changed this room's topic to {}.", htmlize::escape_text(&content.topic)))
         }
         AnyOtherFullStateEventContent::SpaceParent(_) => {
-            Some(format!("set this room's parent space to {}.", other_state.state_key()))
+            Some(format!("set this room's parent space to {}.", htmlize::escape_text(other_state.state_key())))
         }
         AnyOtherFullStateEventContent::SpaceChild(_) => {
-            Some(format!("added a new child to this space: {}.", other_state.state_key()))
+            Some(format!("added a new child to this space: {}.", htmlize::escape_text(other_state.state_key())))
         }
         _other => {
             // log!("*** Unhandled: {:?}.", _other);
@@ -390,9 +402,11 @@ pub fn text_preview_of_member_profile_change(
     username: &str,
 ) -> TextPreview {
     let name_text = if let Some(name_change) = change.displayname_change() {
-        let old = name_change.old.as_deref().unwrap_or(username);
+        let old = htmlize::escape_text(
+            name_change.old.as_deref().unwrap_or(username)
+        );
         if let Some(new) = name_change.new.as_ref() {
-            format!("{old} changed their display name to {new:?}")
+            format!("{old} changed their display name to \"{}\"", htmlize::escape_text(new))
         } else {
             format!("{old} removed their display name")
         }
@@ -401,7 +415,7 @@ pub fn text_preview_of_member_profile_change(
     };
     let avatar_text = if let Some(_avatar_change) = change.avatar_url_change() {
         if name_text.is_empty() {
-            format!("{} changed their profile picture", username)
+            format!("{} changed their profile picture", htmlize::escape_text(username))
         } else {
             String::from(" and changed their profile picture")
         }
@@ -421,8 +435,10 @@ pub fn text_preview_of_room_membership_change(
     change: &RoomMembershipChange,
 ) -> Option<TextPreview> {
     let dn = change.display_name();
-    let change_user_id = dn.as_deref()
-        .unwrap_or_else(|| change.user_id().as_str());
+    let change_user_id = htmlize::escape_text(
+        dn.as_deref()
+            .unwrap_or_else(|| change.user_id().as_str())
+    );
     let text = match change.change() {
         None
         | Some(MembershipChange::NotImplemented)
