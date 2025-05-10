@@ -19,7 +19,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -1824,7 +1824,7 @@ impl RoomScreen {
                     let Some(tl) = self.tl_state.as_mut() else { return };
                     if let Some(text) = tl.items
                         .get(details.item_id)
-                        .and_then(|tl_item| tl_item.as_event().map(body_of_timeline_item))
+                        .and_then(|tl_item| tl_item.as_event().map(plaintext_body_of_timeline_item))
                     {
                         cx.copy_to_clipboard(&text);
                     }
@@ -3756,7 +3756,7 @@ fn populate_preview_of_timeline_item(
         }
     }
     let html = text_preview_of_timeline_item(timeline_item_content, sender_username)
-        .format_with(sender_username);
+        .format_with(sender_username, true);
     widget_out.show_html(cx, html);
 }
 
@@ -3809,7 +3809,7 @@ impl SmallStateEventContent for RedactedMessageEventMarker {
         item.label(id!(content)).set_text(
             cx,
             &text_preview_of_redacted_message(event_tl_item, original_sender)
-                .format_with(original_sender),
+                .format_with(original_sender, false),
         );
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
@@ -3828,9 +3828,9 @@ impl SmallStateEventContent for timeline::OtherState {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        let item = if let Some(text_preview) = text_preview_of_other_state(self) {
+        let item = if let Some(text_preview) = text_preview_of_other_state(self, false) {
             item.label(id!(content))
-                .set_text(cx, &text_preview.format_with(username));
+                .set_text(cx, &text_preview.format_with(username, false));
             new_drawn_status.content_drawn = true;
             item
         } else {
@@ -3856,7 +3856,8 @@ impl SmallStateEventContent for MemberProfileChange {
     ) -> (WidgetRef, ItemDrawnStatus) {
         item.label(id!(content)).set_text(
             cx,
-            &text_preview_of_member_profile_change(self, username).format_with(username),
+            &text_preview_of_member_profile_change(self, username, false)
+                .format_with(username, false),
         );
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
@@ -3875,7 +3876,7 @@ impl SmallStateEventContent for RoomMembershipChange {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        let Some(preview) = text_preview_of_room_membership_change(self) else {
+        let Some(preview) = text_preview_of_room_membership_change(self, false) else {
             // Don't actually display anything for nonexistent/unimportant membership changes.
             return (
                 list.item(cx, item_id, live_id!(Empty)),
@@ -3884,7 +3885,7 @@ impl SmallStateEventContent for RoomMembershipChange {
         };
 
         item.label(id!(content))
-            .set_text(cx, &preview.format_with(username));
+            .set_text(cx, &preview.format_with(username, false));
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
     }
