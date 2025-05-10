@@ -1,3 +1,12 @@
+//! The RoomsSideBar is the widget that contains the RoomsList and other items.
+//!
+//! It differs in what content it includes based on the adaptive view:
+//! * On a narrow mobile view, it acts as the root_view of StackNavigation
+//!   * It includes a title label, a search bar, and the RoomsList.
+//! * On a wide desktop view, it acts as a permanent tab that is on the left side of the dock.
+//!   * It only includes a title label and the RoomsList, because the SearcBar
+//!     is at the top of the HomeScreen in Desktop view.
+
 use makepad_widgets::*;
 
 use crate::shared::search_bar::{SearchBarAction, SearchBarWidgetExt};
@@ -9,94 +18,61 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
-    use crate::shared::search_bar::SearchBar;
+    use crate::shared::room_filter_input_bar::RoomFilterInputBar;
 
     use crate::home::rooms_list::RoomsList;
 
-    RoomsView = {{RoomsView}} {
-        show_bg: true,
-        draw_bg: {
-            instance bg_color: (COLOR_PRIMARY)
-            instance border_color: #f2f2f2
-            instance border_size: 0.003
-
-            // Draws a right-side border
-            fn pixel(self) -> vec4 {
-                if self.pos.x > 1.0 - self.border_size {
-                    return self.border_color;
-                } else {
-                    return self.bg_color;
-                }
-            }
-        }
-        <Label> {
-            text: "Rooms"
-            draw_text: {
-                color: #x0
-                text_style: <TITLE_TEXT>{}
-            }
-        }
-        search_bar = <SearchBar> {
-            input = {
-                empty_message: "Search rooms..."
-            }
-        }
-        <CachedWidget> {
-            rooms_list = <RoomsList> {}
-        }
-    }
-
     pub RoomsSideBar = <AdaptiveView> {
-        Desktop = <RoomsView> {
-            padding: {top: 20., left: 10., right: 10.}
+        Desktop = <View> {
+            padding: {top: 20, left: 10, right: 10}
             flow: Down, spacing: 10
             width: Fill, height: Fill
+
+            show_bg: true,
+            draw_bg: {
+                instance bg_color: (COLOR_PRIMARY)
+                instance border_color: #f2f2f2
+                instance border_size: 0.003
+
+                // Draws a right-side border
+                fn pixel(self) -> vec4 {
+                    if self.pos.x > 1.0 - self.border_size {
+                        return self.border_color;
+                    } else {
+                        return self.bg_color;
+                    }
+                }
+            }
+
+            sidebar_title = <Label> {
+                text: "All Rooms"
+                draw_text: {
+                    color: #x0
+                    text_style: <TITLE_TEXT>{}
+                }
+            }
+            <CachedWidget> {
+                rooms_list = <RoomsList> {}
+            }
         },
-        Mobile = <RoomsView> {
-            padding: {top: 17., left: 17., right: 17.}
+
+        Mobile = <View> {
+            padding: {top: 17, left: 17, right: 17}
             flow: Down, spacing: 7
             width: Fill, height: Fill
-        }        
-    }
-}
 
-#[derive(Clone, Debug, DefaultNone)]
-pub enum RoomsViewAction {
-    /// Search for rooms
-    Search(String),
-    None,
-}
-
-#[derive(Widget, Live, LiveHook)]
-pub struct RoomsView {
-    #[deref]
-    view: View,
-}
-
-impl Widget for RoomsView {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope);
-        self.widget_match_event(cx, event, scope);
-    }
-    
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk)
-    }
-}
-
-impl WidgetMatchEvent for RoomsView {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-        let widget_uid = self.widget_uid();
-        let search_bar_widget_uid = self.view.search_bar(id!(search_bar)).widget_uid();
-        if let Some(search_widget_action) = actions.find_widget_action(search_bar_widget_uid) {
-            match search_widget_action.cast() {
-                SearchBarAction::Search(keywords) => {
-                    cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Search(keywords.clone()));
+            sidebar_title = <Label> {
+                text: "All Rooms"
+                draw_text: {
+                    color: #x0
+                    text_style: <TITLE_TEXT>{}
                 }
-                SearchBarAction::ResetSearch => {
-                    cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Search("".to_string()));
-                }
-                _ => {}
+            }
+            <CachedWidget> {
+                <RoomFilterInputBar> { }
+            }
+            <CachedWidget> {
+                rooms_list = <RoomsList> {}
             }
         }
     }
