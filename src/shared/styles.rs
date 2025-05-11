@@ -45,7 +45,7 @@ live_design! {
     pub MESSAGE_TEXT_COLOR = #x333
     // notices (automated messages from bots) use a lighter color
     pub MESSAGE_NOTICE_TEXT_COLOR = #x888
-    pub MESSAGE_TEXT_LINE_SPACING = 1.35
+    pub MESSAGE_TEXT_LINE_SPACING = 1.3
     // This font should only be used for plaintext labels. Don't use this for Html content,
     // as the Html widget sets different fonts for different text styles (e.g., bold, italic).
     pub MESSAGE_TEXT_STYLE = <THEME_FONT_REGULAR>{

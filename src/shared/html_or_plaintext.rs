@@ -93,14 +93,15 @@ live_design! {
     pub MessageHtml = <Html> {
         padding: 0.0,
         width: Fill, height: Fit, // see comment in `HtmlOrPlaintext`
+        flow: RightWrap,
         align: { y: 0.5 }
         font_size: (MESSAGE_FONT_SIZE),
         font_color: (MESSAGE_TEXT_COLOR),
-        draw_normal:      { color: (MESSAGE_TEXT_COLOR) } //, text_style: { line_spacing: (1.0) } }
-        draw_italic:      { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (2.0) } }
-        draw_bold:        { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (2.0) } }
-        draw_bold_italic: { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (2.0) } }
-        draw_fixed:       { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (2.0) } }
+        draw_normal:      { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (MESSAGE_TEXT_LINE_SPACING) } }
+        draw_italic:      { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (MESSAGE_TEXT_LINE_SPACING) } }
+        draw_bold:        { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (MESSAGE_TEXT_LINE_SPACING) } }
+        draw_bold_italic: { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (MESSAGE_TEXT_LINE_SPACING) } }
+        draw_fixed:       { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (MESSAGE_TEXT_LINE_SPACING) } }
         draw_block: {
             line_color: (MESSAGE_TEXT_COLOR)
             sep_color: (MESSAGE_TEXT_COLOR)
@@ -108,15 +109,22 @@ live_design! {
             quote_bg_color: (#EDEDED)
             quote_fg_color: (MESSAGE_TEXT_COLOR)
         }
+
+        quote_layout: { spacing: 0, padding: {left: 15, top: 10.0, bottom: 10.0}, }
+        quote_walk: { margin: { top: 5, bottom: 5, left: 0 } }
+
+        sep_walk: { margin: { top: 10, bottom: 10 } }
+        
         list_item_layout: { padding: {left: 5.0, top: 1.0, bottom: 1.0}, }
-        list_item_walk: { margin: { left: 0, right: 0, top: 2, bottom: 4 } }
-        code_layout: { padding: 10.0 }
+        list_item_walk: { margin: { left: 0, right: 0, top: 3, bottom: 3 } }
+        code_layout: { padding: {top: 15.0, bottom: 15.0, left: 15, right: 5 } }
         code_walk: { margin: { top: 10, bottom: 10, left: 0, right: 0 } }
-        quote_layout: { spacing: 0, padding: {top: 0.0, bottom: 0.0}, }
-        quote_walk: { margin: { top: 5, bottom: 5 } }
+
+        heading_margin: { top: 1.0, bottom: 0.1 }
+        paragraph_margin: { top: 0.33, bottom: 0.33 }
+
         inline_code_padding: {top: 3, bottom: 3, left: 4, right: 4 }
         inline_code_margin: { left: 3, right: 3, bottom: 2, top: 2 }
-
 
         font = <MatrixHtmlSpan> { }
         span = <MatrixHtmlSpan> { }

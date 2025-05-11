@@ -317,7 +317,7 @@ live_design! {
                     // }
                 }
                 timestamp = <Timestamp> {
-                    padding: { top: 2.0 }
+                    padding: { top: 2.3 }
                 }
                 datestamp = <Timestamp> {
                     padding: { top: 3.0 }
@@ -336,7 +336,7 @@ live_design! {
                         width: Fill,
                         flow: Right, // do not wrap
                         padding: 0,
-                        margin: {bottom: 9.0, top: 11.0, right: 10.0,}
+                        margin: {bottom: 9.0, top: 20.0, right: 10.0,}
                         draw_text: {
                             text_style: <USERNAME_TEXT_STYLE> {},
                             color: (USERNAME_TEXT_COLOR)
@@ -3626,9 +3626,11 @@ fn populate_location_message_content(
         let short_long = long.find('.').and_then(|dot| long.get(..dot + 7)).unwrap_or(long);
         let html_body = format!(
             "Location: <a href=\"{}\">{short_lat},{short_long}</a><br>\
-            <p><a href=\"https://www.openstreetmap.org/?mlat={lat}&amp;mlon={long}#map=15/{lat}/{long}\">Open in OpenStreetMap</a></p>\
-            <p><a href=\"https://www.google.com/maps/search/?api=1&amp;query={lat},{long}\">Open in Google Maps</a></p>\
-            <p><a href=\"https://maps.apple.com/?ll={lat},{long}&amp;q={lat},{long}\">Open in Apple Maps</a></p>",
+            <ul>\
+            <li><a href=\"https://www.openstreetmap.org/?mlat={lat}&amp;mlon={long}#map=15/{lat}/{long}\">Open in OpenStreetMap</a></li>\
+            <li><a href=\"https://www.google.com/maps/search/?api=1&amp;query={lat},{long}\">Open in Google Maps</a></li>\
+            <li><a href=\"https://maps.apple.com/?ll={lat},{long}&amp;q={lat},{long}\">Open in Apple Maps</a></li>\
+            </ul>",
             location.geo_uri,
         );
         message_content_widget.show_html(cx, html_body);
