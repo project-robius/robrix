@@ -123,18 +123,17 @@ impl Widget for LogoutConfirmModal {
 }
 
 impl WidgetMatchEvent for LogoutConfirmModal {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-        let widget_uid = self.widget_uid();
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let cancel_button = self.button(id!(cancel_button));
         let confirm_button = self.button(id!(confirm_button));
-
-        // Check if cancel button was clicked
         if cancel_button.clicked(actions) {
-            cx.widget_action(widget_uid, &scope.path, LogoutConfirmModalAction::Cancel);
-        }
-        // Check if confirm button was clicked
-        else if confirm_button.clicked(actions) {
-            cx.widget_action(widget_uid, &scope.path, LogoutConfirmModalAction::Confirm);
+            log!("Cancel button clicked in LogoutConfirmModal");
+            cx.action(LogoutConfirmModalAction::Cancel);
+            log!("Sent LogoutConfirmModalAction::Cancel as global action");
+        } else if confirm_button.clicked(actions) {
+            log!("Confirm button clicked in LogoutConfirmModal");
+            cx.action(LogoutConfirmModalAction::Confirm);
+            log!("Sent LogoutConfirmModalAction::Confirm as global action");
         }
     }
 }

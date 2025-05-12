@@ -207,23 +207,21 @@ impl MatchEvent for App {
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
-            if let Some(action_data) = action.as_widget_action() {
-              
-                if let Some(logout_action) = action_data.downcast_ref::<LogoutConfirmModalAction>() {
-                    log!("App received LogoutConfirmModalAction: {:?}", logout_action);
-
-                    match logout_action {
-                        LogoutConfirmModalAction::None => {
-                            self.show_logout_confirm_modal(cx);
-                        },
-                        LogoutConfirmModalAction::Cancel | LogoutConfirmModalAction::Confirm => {
-                            self.hide_logout_confirm_modal(cx);
-
-                            if let LogoutConfirmModalAction::Confirm = logout_action {
-                                submit_async_request(MatrixRequest::Logout);
-                            }
-                        }
-                    }
+            if let Some(logout_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
+                match logout_action {
+                    LogoutConfirmModalAction::None => {
+                        log!("App received LogoutConfirmModalAction::None");
+                        self.show_logout_confirm_modal(cx);
+                    },
+                    LogoutConfirmModalAction::Cancel => {
+                        log!("App received LogoutConfirmModalAction::Cancel");
+                        self.hide_logout_confirm_modal(cx);
+                    },
+                    LogoutConfirmModalAction::Confirm => {
+                        log!("App received LogoutConfirmModalAction::Confirm");
+                        self.hide_logout_confirm_modal(cx);
+                        submit_async_request(MatrixRequest::Logout);
+                    },
                 }
             }
 

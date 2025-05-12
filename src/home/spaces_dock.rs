@@ -226,17 +226,11 @@ impl Widget for LogoutButton{
 }
 
 impl WidgetMatchEvent for LogoutButton {
-    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, scope: &mut Scope) {
-
+    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
         let button = self.button(id!(logout_button));
         if button.clicked(actions) {
-            cx.widget_action(
-                self.widget_uid(), 
-                &scope.path,
-                LogoutConfirmModalAction::None
-            );
+            cx.action(LogoutConfirmModalAction::None);
             log!("Sent LogoutConfirmModalAction::None to root widget");
-
             self.view.redraw(cx);
         } 
     }
