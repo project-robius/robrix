@@ -146,7 +146,9 @@ live_design! {
                         }
                     }
 
-                    test_popup = <RobrixPopupNotification> {}
+                    test_popup = <RobrixPopupNotification> {
+                        text: "Test notification",
+                    }
                 }
             } // end of body
         }

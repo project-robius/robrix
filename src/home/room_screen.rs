@@ -869,7 +869,10 @@ live_design! {
             // to finish loading, e.g., when loading an older replied-to message.
             loading_pane = <LoadingPane> { }
 
-            popup = <RobrixPopupNotification> {}
+            popup = <RobrixPopupNotification> {
+                text: "Click success",
+                duration: 5.0,
+            }
 
 
             /*
