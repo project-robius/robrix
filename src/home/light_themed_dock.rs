@@ -111,8 +111,8 @@ live_design! {
                 sdf.move_to(min.x, max.y);
                 sdf.line_to(max.x, min.y);
                 return sdf.stroke(mix(
-                    #f,
-                    #4,
+                    #0,
+                    #fe8610,
                     self.hover
                 ), 1.0);
             }
@@ -157,7 +157,7 @@ live_design! {
                         #xf, // THEME_COLOR_TEXT_ACTIVE,
                         self.active
                     ),
-                    THEME_COLOR_OUTSET_HOVER,
+                    #fe8610,
                     self.hover
                 )
             }

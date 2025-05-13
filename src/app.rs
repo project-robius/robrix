@@ -134,12 +134,6 @@ live_design! {
                     // but beneath the verification modal.
                     new_message_context_menu = <NewMessageContextMenu> { }
 
-                    // message_source_modal = <Modal> {
-                    //     content: {
-                    //         message_source_modal_inner = <MessageSourceModal> {}
-                    //     }
-                    // }
-
                     // We want the verification modal to always show up on top of
                     // all other elements when an incoming verification request is received.
                     verification_modal = <Modal> {

@@ -2077,7 +2077,6 @@ impl RoomScreen {
         // In `show_editing_pane()` above, we hid the input_bar while the editing pane
         // is being shown, so here we need to make it visible again.
         self.view.room_input_bar(id!(input_bar)).set_visible(cx, true);
-        self.text_input(id!(input_bar.message_input.text_input)).set_key_focus(cx);
         self.redraw(cx);
         // We don't need to do anything with the editing pane itself here,
         // because it has already been hidden by the time this function gets called.
