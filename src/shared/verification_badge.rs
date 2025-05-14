@@ -21,12 +21,13 @@ live_design! {
     VERIFICATION_UNK = dep("crate://self/resources/icons/verification_unk.svg")
 
     VerificationIcon = <Icon> {
-        icon_walk: { width: 23 }
+        icon_walk: { width: 19, margin: 0}
+        margin: {left: 0, right: 3, top: 2, bottom: 0}
     }
 
     pub IconYes = <View> {
         visible: false
-        width: 31, height: 31
+        width: Fit, height: Fit
         <VerificationIcon> {
             draw_icon: {
                 svg_file: (VERIFICATION_YES),
@@ -39,7 +40,7 @@ live_design! {
 
     pub IconNo = <View> {
         visible: false
-        width: 31, height: 31
+        width: Fit, height: Fit
         <VerificationIcon> {
             draw_icon: {
                 svg_file: (VERIFICATION_NO),
@@ -52,7 +53,7 @@ live_design! {
 
     pub IconUnk = <View> {
         visible: false
-        width: 31, height: 31
+        width: Fit, height: Fit
         <VerificationIcon> {
             draw_icon: {
                 svg_file: (VERIFICATION_UNK),
@@ -66,12 +67,12 @@ live_design! {
     pub VerificationBadge = {{VerificationBadge}} {
         width: Fit, height: Fit
         flow: Overlay
-        align: { x: 0.5, y: 0.5 }
+        align: { x: 1.0, y: 0 }
 
         verification_icons = <View> {
             flow: Overlay
-            align: { x: 0.5, y: 0.5 }
-            width: 31, height: 31
+            align: { x: 1.0, y: 0 }
+            width: Fit, height: Fit
 
             icon_yes = <IconYes> {}
             icon_no = <IconNo> {}

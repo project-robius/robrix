@@ -102,9 +102,13 @@ live_design! {
         ui: <Window> {
             window: {inner_size: vec2(1280, 800), title: "Robrix"},
             caption_bar = {caption_label = {label = {text: "Robrix"}}}
-            pass: {clear_color: #2A}
+            // pass: {clear_color: #2A}
+            pass: {clear_color: #FFFFFF00}
+            // pass: { clear_color: (THEME_COLOR_BG_APP) }
 
             body = {
+                padding: 0,
+
                 // A wrapper view for showing top-level app modals/dialogs/popups
                 <View> {
                     width: Fill, height: Fill,
@@ -129,12 +133,6 @@ live_design! {
                     // Context menus should be shown above other UI elements,
                     // but beneath the verification modal.
                     new_message_context_menu = <NewMessageContextMenu> { }
-
-                    // message_source_modal = <Modal> {
-                    //     content: {
-                    //         message_source_modal_inner = <MessageSourceModal> {}
-                    //     }
-                    // }
 
                     // We want the verification modal to always show up on top of
                     // all other elements when an incoming verification request is received.

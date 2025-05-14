@@ -14,7 +14,6 @@ live_design! {
     pub UnreadBadge = {{UnreadBadge}} {
         width: 30, height: 20,
         align: { x: 0.5, y: 0.5 }
-        visible: false,
         flow: Overlay,
 
         rounded_view = <View> {
@@ -44,8 +43,10 @@ live_design! {
         }
         // Label that displays the unread message count
         label_count = <Label> {
+            padding: 0,
             width: Fit,
             height: Fit,
+            flow: Right, // do not wrap
             text: "",
             draw_text: {
                 color: #ffffff,
@@ -126,6 +127,7 @@ impl UnreadBadgeRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.unread_mentions = num_unread_mentions;
             inner.unread_messages = num_unread_messages;
+            inner.visible = num_unread_mentions > 0 || num_unread_messages > 0;
         }
     }
 }
