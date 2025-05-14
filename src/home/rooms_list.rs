@@ -599,15 +599,15 @@ impl RoomsList {
         );
         self.displayed_direct_messages.clear();
         self.displayed_rooms.clear();
-        for room_id in &generated_displayed_rooms {
-            if let Some(info) = self.all_joined_rooms.get(room_id) {
+        generated_displayed_rooms.into_iter().for_each(|room_id|{
+            if let Some(info) = self.all_joined_rooms.get(&room_id) {
                 if info.is_direct {
                     self.displayed_direct_messages.push(room_id.clone());
                 } else {
                     self.displayed_rooms.push(room_id.clone());
                 }
             }
-        }
+        });
         self.displayed_invited_rooms = generate_displayed_rooms(&self.invited_rooms.borrow(), &self.display_filter, sort_fn.as_deref());
 
         self.update_status_matching_rooms();
