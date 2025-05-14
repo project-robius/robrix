@@ -127,6 +127,7 @@ impl UnreadBadgeRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.unread_mentions = num_unread_mentions;
             inner.unread_messages = num_unread_messages;
+            inner.visible = num_unread_mentions > 0 || num_unread_messages > 0;
         }
     }
 }
