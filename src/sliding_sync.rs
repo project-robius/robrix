@@ -1747,6 +1747,8 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     // We must call `display_name()` here to calculate and cache the room's name.
     let room_name = room.display_name().await.map(|n| n.to_string()).ok();
 
+    let is_direct = room.is_direct().await.unwrap_or(false);
+
     match room.state() {
         RoomState::Knocked => {
             // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
@@ -1800,6 +1802,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
                 latest,
                 invite_state: Default::default(),
                 is_selected: false,
+                is_direct,
             }));
             return Ok(());
         }
@@ -1852,11 +1855,6 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     let latest = latest_event.as_ref().map(
         |ev| get_latest_event_details(ev, &room_id)
     );
-
-
-    //Judge whether the given room is direct or not here.
-    let is_direct = room.is_direct().await.unwrap_or(false);
-
 
     let tombstoned_room_replaced_by_this_room = TOMBSTONED_ROOMS.lock()
         .unwrap()

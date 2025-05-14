@@ -239,6 +239,8 @@ pub struct InvitedRoomInfo {
     pub invite_state: InviteState,
     /// Whether this room is currently selected in the UI.
     pub is_selected: bool,
+    /// Whether this room is a direct message.
+    pub is_direct: bool,
 }
 
 /// Info about the user who invited us to a room.
