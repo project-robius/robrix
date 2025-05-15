@@ -566,7 +566,7 @@ impl RoomsList {
         self.display_filter = filter;
 
         /// An inner function that generates a sorted, filtered list of rooms to display.
-        fn generate_displayed_rooms<FR: FilterableRoom>(
+        fn generate_rooms<FR: FilterableRoom>(
             rooms_map: &HashMap<OwnedRoomId, FR>,
             display_filter: &RoomDisplayFilter,
             sort_fn: Option<&SortFn>,
@@ -592,15 +592,15 @@ impl RoomsList {
             }
         }
 
-        // Update the displayed rooms list and redraw it.
-        let generated_displayed_rooms = generate_displayed_rooms(
+        // Update rooms lists and redraw them.
+        self.displayed_direct_messages.clear();
+        self.displayed_rooms.clear();
+        generate_rooms(
             &self.all_joined_rooms,
             &self.display_filter,
             sort_fn.as_deref(),
-        );
-        self.displayed_direct_messages.clear();
-        self.displayed_rooms.clear();
-        generated_displayed_rooms.into_iter().for_each(|room_id|{
+        )
+        .into_iter().for_each(|room_id|{
             if let Some(info) = self.all_joined_rooms.get(&room_id) {
                 if info.is_direct {
                     self.displayed_direct_messages.push(room_id.clone());
@@ -609,8 +609,8 @@ impl RoomsList {
                 }
             }
         });
-        self.displayed_invited_rooms = generate_displayed_rooms(&self.invited_rooms.borrow(), &self.display_filter, sort_fn.as_deref());
 
+        self.displayed_invited_rooms = generate_rooms(&self.invited_rooms.borrow(), &self.display_filter, sort_fn.as_deref());
         self.update_status_matching_rooms();
         portal_list.set_first_id_and_scroll(0, 0.0);
         self.redraw(cx);
