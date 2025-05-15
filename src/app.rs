@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::{login_screen::LoginAction, logout_confirm_modal::LogoutConfirmModalAction}, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::{submit_async_request, MatrixRequest}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -16,6 +16,7 @@ live_design! {
     use crate::home::home_screen::HomeScreen;
     use crate::verification_modal::VerificationModal;
     use crate::login::login_screen::LoginScreen;
+    use crate::login::logout_confirm_modal::LogoutConfirmModal;
     use crate::shared::popup_list::PopupList;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
@@ -141,6 +142,15 @@ live_design! {
                             verification_modal_inner = <VerificationModal> {}
                         }
                     }
+
+                    // Logout confirmation modal 
+                    logout_confirm_modal = <Modal> {
+                        align: {x: 0.5, y: 0.5} 
+                        width: Fill, height: Fill 
+                        content: {
+                            logout_confirm_modal_inner = <LogoutConfirmModal> {}
+                        }
+                    }
                 }
             } // end of body
         }
@@ -190,15 +200,34 @@ impl MatchEvent for App {
         self.update_login_visibility(cx);
 
         log!("App::handle_startup(): starting matrix sdk loop");
-        crate::sliding_sync::start_matrix_tokio().unwrap();
+        crate::sliding_sync::start_matrix_tokio(true).unwrap();
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
+            if let Some(logout_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
+                match logout_action {
+                    LogoutConfirmModalAction::None => {
+                        log!("App received LogoutConfirmModalAction::None");
+                        self.ui.modal(id!(logout_confirm_modal)).open(cx)
+                    },
+                    LogoutConfirmModalAction::Cancel => {
+                        log!("App received LogoutConfirmModalAction::Cancel");
+                        self.ui.modal(id!(logout_confirm_modal)).close(cx);
+                    },
+                    LogoutConfirmModalAction::Confirm => {
+                        log!("App received LogoutConfirmModalAction::Confirm");
+                        self.ui.modal(id!(logout_confirm_modal)).close(cx);
+                        submit_async_request(MatrixRequest::Logout);
+                    },
+                }
+            }
+
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                 log!("Received LoginAction::LoginSuccess, hiding login view.");
                 self.app_state.logged_in = true;
                 self.update_login_visibility(cx);
+                cx.action(MainDesktopUiAction::DockLoad);
                 self.ui.redraw(cx);
             }
 
@@ -225,6 +254,12 @@ impl MatchEvent for App {
                     self.ui.popup_notification(id!(popup)).close(cx);
                 }
                 _ => {}
+            }
+
+            if let Some(LoginAction::LogoutSuccess) = action.downcast_ref() {
+                self.app_state.logged_in = false;
+                self.update_login_visibility(cx);
+                self.ui.redraw(cx);
             }
 
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
@@ -367,6 +402,7 @@ impl AppMain for App {
 }
 
 impl App {
+   
     fn update_login_visibility(&self, cx: &mut Cx) {
         let show_login = !self.app_state.logged_in;
         if !show_login {

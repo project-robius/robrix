@@ -182,3 +182,49 @@ pub async fn save_session(
 
     Ok(())
 }
+
+pub async fn delete_session(user_id: Option<OwnedUserId>) -> anyhow::Result<()> {
+    let Some(user_id) = user_id.or_else(most_recent_user_id) else {
+        log!("Could not find previous latest User ID");
+        bail!("Could not find previous latest User ID");
+    };
+    let session_file = session_file_path(&user_id);
+    if !session_file.exists() {
+        log!("Could not find previous session file for user {user_id}");
+        bail!("Could not find previous session file");
+    }
+    if let Err(err) = fs::remove_file(&session_file).await {
+        log!("Failed to delete session file {}: {}", session_file.display(), err);
+        bail!("Failed to delete session file");
+    } else {
+        log!("Successfully deleted session file: {}", session_file.display());
+    }
+    Ok(())
+}
+
+/// Remove the LATEST_USER_ID_FILE_NAME file if it exists
+/// 
+/// Returns:
+/// - Ok(true) if file was found and deleted
+/// - Ok(false) if file didn't exist
+/// - Err if deletion failed
+pub async fn delete_last_user_id() -> anyhow::Result<bool> {
+    let last_login_path = app_data_dir().join(LATEST_USER_ID_FILE_NAME);
+    
+    if last_login_path.exists() {
+        match fs::remove_file(&last_login_path).await {
+            Ok(_) => {
+                log!("Successfully deleted last_login.txt");
+                Ok(true)
+            }
+            Err(e) => {
+                let err_msg = format!("Failed to remove {LATEST_USER_ID_FILE_NAME}: {e}");
+                log!("{}", err_msg);
+                Err(anyhow::anyhow!(err_msg))
+            }
+        }
+    } else {
+        log!("{LATEST_USER_ID_FILE_NAME} not found, nothing to delete");
+        Ok(false)
+    }
+}
