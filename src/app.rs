@@ -211,15 +211,15 @@ impl MatchEvent for App {
                 match logout_action {
                     LogoutConfirmModalAction::None => {
                         log!("App received LogoutConfirmModalAction::None");
-                        self.show_logout_confirm_modal(cx);
+                        self.ui.modal(id!(logout_confirm_modal)).open(cx)
                     },
                     LogoutConfirmModalAction::Cancel => {
                         log!("App received LogoutConfirmModalAction::Cancel");
-                        self.hide_logout_confirm_modal(cx);
+                        self.ui.modal(id!(logout_confirm_modal)).close(cx);
                     },
                     LogoutConfirmModalAction::Confirm => {
                         log!("App received LogoutConfirmModalAction::Confirm");
-                        self.hide_logout_confirm_modal(cx);
+                        self.ui.modal(id!(logout_confirm_modal)).close(cx);
                         submit_async_request(MatrixRequest::Logout);
                     },
                 }
@@ -405,17 +405,6 @@ impl AppMain for App {
 
 impl App {
    
-    pub fn show_logout_confirm_modal(&self, cx: &mut Cx) {
-        let modal = self.ui.modal(id!(logout_confirm_modal));
-        modal.open(cx);
-    }
-
-    pub fn hide_logout_confirm_modal(&self, cx: &mut Cx) {
-        let modal = self.ui.modal(id!(logout_confirm_modal));
-        log!("Got modal reference for hiding: {:?}", modal);
-        modal.close(cx);
-    }
-
     fn update_login_visibility(&self, cx: &mut Cx) {
         let show_login = !self.app_state.logged_in;
         if !show_login {
