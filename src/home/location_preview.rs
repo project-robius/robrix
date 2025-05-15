@@ -115,6 +115,7 @@ struct LocationPreview {
     #[rust] coords: Option<Result<Coordinates, robius_location::Error>>,
     #[rust] timestamp: Option<SystemTime>,
 }
+
 impl Widget for LocationPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let mut needs_redraw = false;
@@ -157,11 +158,7 @@ impl Widget for LocationPreview {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let text = match self.coords {
             Some(Ok(c)) => {
-                // if let Some(st) = self.timestamp {
-                //     format!("Current location: {:.6},{:.6}\n   Timestamp: {:?}", c.latitude, c.longitude, st)
-                // } else {
-                    format!("Current location: {:.6},{:.6}", c.latitude, c.longitude)
-                // }
+                format!("Current location: {:.6}, {:.6}", c.latitude, c.longitude)
             }
             Some(Err(e)) => format!("Error getting location: {e:?}"),
             None => String::from("Current location is not yet available."),
