@@ -15,9 +15,7 @@ pub mod text_or_image;
 pub mod typing_animation;
 pub mod unread_badge;
 pub mod verification_badge;
-pub mod callout_tooltip;
 pub mod popup_notification;
-pub mod mentionable_text_input;
 
 
 pub fn live_design(cx: &mut Cx) {
