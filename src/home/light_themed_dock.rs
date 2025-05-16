@@ -41,8 +41,8 @@ live_design! {
                 return sdf.fill_keep(mix(
                     THEME_COLOR_D_HIDDEN,
                     mix(
-                        THEME_COLOR_SCROLLBAR_HOVER,
-                        THEME_COLOR_SCROLLBAR_HOVER * 1.2,
+                        THEME_COLOR_OUTSET_HOVER,
+                        THEME_COLOR_OUTSET_HOVER * 1.2,
                         self.down
                     ),
                     self.hover
@@ -111,8 +111,8 @@ live_design! {
                 sdf.move_to(min.x, max.y);
                 sdf.line_to(max.x, min.y);
                 return sdf.stroke(mix(
-                    #f,
-                    #4,
+                    #0,
+                    #fe8610,
                     self.hover
                 ), 1.0);
             }
@@ -157,7 +157,7 @@ live_design! {
                         #xf, // THEME_COLOR_TEXT_ACTIVE,
                         self.active
                     ),
-                    THEME_COLOR_OUTSET_HOVER,
+                    #fe8610,
                     self.hover
                 )
             }

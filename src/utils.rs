@@ -3,7 +3,7 @@ use std::{borrow::Cow, time::SystemTime};
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId}};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
 
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
@@ -95,6 +95,17 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
 pub fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
     let millis: i64 = millis.get().into();
     Local.timestamp_millis_opt(millis).single()
+}
+
+/// Returns a string representation of the room name or ID.
+pub fn room_name_or_id(
+    room_name: Option<impl Into<String>>,
+    room_id: impl AsRef<RoomId>,
+) -> String {
+    room_name.map_or_else(
+        || format!("Room ID {}", room_id.as_ref()),
+        |name| name.into(),
+    )
 }
 
 /// Formats a given Unix timestamp in milliseconds into a relative human-readable date.
