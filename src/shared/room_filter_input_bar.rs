@@ -18,22 +18,19 @@ live_design! {
 
     pub RoomFilterInputBar = {{RoomFilterInputBar}}<RoundedView> {
         width: Fill,
-        height: Fit,
+        height: 35,
 
         show_bg: true,
         draw_bg: {
-            color: (COLOR_PRIMARY)
+            color: (COLOR_PRIMARY),
+            border_radius: 4.0,
+            border_color: (COLOR_SECONDARY),
+            border_size: 0.0,
         }
-
         padding: {top: 3, bottom: 3, left: 10, right: 10}
+        margin: {top: 0, bottom: 3, left: 0, right: 0}
         spacing: 4,
         align: {x: 0.0, y: 0.5},
-
-        draw_bg: {
-            border_radius: 0.0,
-            border_color: #d8d8d8,
-            border_size: 0.6,
-        }
 
         <Icon> {
             draw_icon: {
@@ -48,8 +45,9 @@ live_design! {
         input = <RobrixTextInput> {
             width: Fill,
             height: Fit,
+            flow: Right, // do not wrap
 
-            empty_message: "Filter rooms..."
+            empty_text: "Filter rooms..."
 
             draw_text: {
                 text_style: { font_size: 10 },
@@ -58,13 +56,14 @@ live_design! {
 
         clear_button = <RobrixIconButton> {
             visible: false,
-            padding: 8,
+            padding: {top: 7, bottom: 7, left: 10, right: 10},
+            spacing: 0,
             align: {x: 0.5, y: 0.5}
             draw_icon: {
                 svg_file: (ICON_CLOSE),
                 color: (COLOR_TEXT_INPUT_IDLE)
             }
-            icon_walk: {width: 10, height: Fit}
+            icon_walk: {width: Fit, height: 10, margin: 0}
         }
     }
 }

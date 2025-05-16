@@ -5,6 +5,8 @@
 //! * preview of a message being replied to above the message input box
 //! * previews of each room's latest message in the rooms list
 
+use std::borrow::Cow;
+
 use matrix_sdk::ruma::events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent};
 use matrix_sdk_ui::timeline::{self, AnyOtherFullStateEventContent, EventTimelineItem, MemberProfileChange, MembershipChange, RoomMembershipChange, TimelineItemContent};
 
@@ -35,12 +37,24 @@ impl From<(String, BeforeText)> for TextPreview {
 }
 impl TextPreview {
     /// Formats the text preview with the appropriate preceding username.
-    pub fn format_with(self, username: &str) -> String {
+    pub fn format_with(
+        self,
+        username: &str,
+        as_html: bool,
+    ) -> String {
         let Self { text, before_text } = self;
         match before_text {
             BeforeText::Nothing => text,
-            BeforeText::UsernameWithColon => format!("<b>{username}</b>: {text}"),
-            BeforeText::UsernameWithoutColon => format!("{username} {text}"),
+            BeforeText::UsernameWithColon => format!(
+                "<b>{}</b>: {}",
+                if as_html { htmlize::escape_text(username) } else { username.into() },
+                text,
+            ),
+            BeforeText::UsernameWithoutColon => format!(
+                "{} {}",
+                if as_html { htmlize::escape_text(username) } else { username.into() },
+                text,
+            ),
         }
     }
 }
@@ -57,7 +71,7 @@ pub fn text_preview_of_timeline_item(
             BeforeText::UsernameWithColon,
         )),
         TimelineItemContent::Sticker(sticker) => TextPreview::from((
-            format!("[Sticker]: <i>{}</i>", sticker.content().body),
+            format!("[Sticker]: <i>{}</i>", htmlize::escape_text(&sticker.content().body)),
             BeforeText::UsernameWithColon,
         )),
         TimelineItemContent::UnableToDecrypt(_encrypted_msg) => TextPreview::from((
@@ -65,17 +79,17 @@ pub fn text_preview_of_timeline_item(
             BeforeText::UsernameWithColon,
         )),
         TimelineItemContent::MembershipChange(membership_change) => {
-            text_preview_of_room_membership_change(membership_change)
+            text_preview_of_room_membership_change(membership_change, true)
                 .unwrap_or_else(|| TextPreview::from((
                     String::from("<i>underwent a membership change</i>"),
                     BeforeText::UsernameWithoutColon,
                 )))
         }
         TimelineItemContent::ProfileChange(profile_change) => {
-            text_preview_of_member_profile_change(profile_change, sender_username)
+            text_preview_of_member_profile_change(profile_change, sender_username, true)
         }
         TimelineItemContent::OtherState(other_state) => {
-            text_preview_of_other_state(other_state.content(),other_state.state_key())
+            text_preview_of_other_state(other_state.content(), true, other_state.state_key())
                 .unwrap_or_else(|| TextPreview::from((
                     String::from("<i>initiated another state change</i>"),
                     BeforeText::UsernameWithoutColon,
@@ -90,8 +104,12 @@ pub fn text_preview_of_timeline_item(
             BeforeText::UsernameWithColon,
         )),
         TimelineItemContent::Poll(poll_state) => TextPreview::from((
-            format!("[Poll]: {}", poll_state.fallback_text()
-                .unwrap_or_else(|| poll_state.results().question)
+            format!(
+                "[Poll]: {}",
+                htmlize::escape_text(
+                    poll_state.fallback_text()
+                        .unwrap_or_else(|| poll_state.results().question)
+                ),
             ),
             BeforeText::UsernameWithColon,
         )),
@@ -109,7 +127,7 @@ pub fn text_preview_of_timeline_item(
 
 
 /// Returns the plaintext `body` of the given timeline event.
-pub fn body_of_timeline_item(
+pub fn plaintext_body_of_timeline_item(
     event_tl_item: &EventTimelineItem,
 ) -> String {
     match event_tl_item.content() {
@@ -118,26 +136,27 @@ pub fn body_of_timeline_item(
         TimelineItemContent::Sticker(sticker) => sticker.content().body.clone(),
         TimelineItemContent::UnableToDecrypt(_encrypted_msg) => "[Unable to Decrypt]".into(),
         TimelineItemContent::MembershipChange(membership_change) => {
-            text_preview_of_room_membership_change(membership_change)
+            text_preview_of_room_membership_change(membership_change, false)
                 .unwrap_or_else(|| TextPreview::from((
                     String::from("underwent a membership change."),
                     BeforeText::UsernameWithoutColon,
                 )))
-                .format_with(&utils::get_or_fetch_event_sender(event_tl_item, None))
+                .format_with(&utils::get_or_fetch_event_sender(event_tl_item, None), false)
         }
         TimelineItemContent::ProfileChange(profile_change) => {
             text_preview_of_member_profile_change(
                 profile_change,
                 &utils::get_or_fetch_event_sender(event_tl_item, None),
+                false,
             ).text
         }
         TimelineItemContent::OtherState(other_state) => {
-            text_preview_of_other_state(other_state.content(), other_state.state_key())
+            text_preview_of_other_state(other_state.content(), true, other_state.state_key())
                 .unwrap_or_else(|| TextPreview::from((
                     String::from("initiated another state change."),
                     BeforeText::UsernameWithoutColon,
                 )))
-                .format_with(&utils::get_or_fetch_event_sender(event_tl_item, None))
+                .format_with(&utils::get_or_fetch_event_sender(event_tl_item, None), false)
         }
         TimelineItemContent::FailedToParseMessageLike { event_type, error } => {
             format!("Failed to parse {} message. Error: {}", event_type, error)
@@ -165,45 +184,45 @@ pub fn text_preview_of_message(
         MessageType::Audio(audio) => format!(
             "[Audio]: <i>{}</i>",
             if let Some(formatted_body) = audio.formatted.as_ref() {
-                &formatted_body.body
+                Cow::Borrowed(formatted_body.body.as_str())
             } else {
-                &audio.body
+                htmlize::escape_text(audio.body.as_str())
             }
         ),
         MessageType::Emote(emote) => format!(
             "* {} {}",
             sender_username,
             if let Some(formatted_body) = emote.formatted.as_ref() {
-                &formatted_body.body
+                Cow::Borrowed(formatted_body.body.as_str())
             } else {
-                &emote.body
+                htmlize::escape_text(emote.body.as_str())
             }
         ),
         MessageType::File(file) => format!(
             "[File]: <i>{}</i>",
             if let Some(formatted_body) = file.formatted.as_ref() {
-                &formatted_body.body
+                Cow::Borrowed(formatted_body.body.as_str())
             } else {
-                &file.body
+                htmlize::escape_text(file.body.as_str())
             }
         ),
         MessageType::Image(image) => format!(
             "[Image]: <i>{}</i>",
             if let Some(formatted_body) = image.formatted.as_ref() {
-                &formatted_body.body
+                Cow::Borrowed(formatted_body.body.as_str())
             } else {
-                &image.body
+                htmlize::escape_text(image.body.as_str())
             }
         ),
         MessageType::Location(location) => format!(
             "[Location]: <i>{}</i>",
-            location.body,
+            htmlize::escape_text(&location.body),
         ),
         MessageType::Notice(notice) => format!("<i>{}</i>",
             if let Some(formatted_body) = notice.formatted.as_ref() {
-                utils::trim_start_html_whitespace(&formatted_body.body)
+                utils::trim_start_html_whitespace(&formatted_body.body).into()
             } else {
-                &notice.body
+                htmlize::escape_text(notice.body.as_str())
             }
         ),
         MessageType::ServerNotice(notice) => format!(
@@ -223,7 +242,10 @@ pub fn text_preview_of_message(
                         .to_string()
                     )
                 )
-                .unwrap_or_else(|| utils::linkify(&text.body, false).to_string())
+                .unwrap_or_else(|| match utils::linkify(&text.body, false) {
+                    Cow::Borrowed(plaintext) => htmlize::escape_text(plaintext).to_string(),
+                    Cow::Owned(linkified) => linkified,
+                })
         }
         MessageType::VerificationRequest(verification) => format!(
             "[Verification Request] <i>to user {}</i>",
@@ -232,9 +254,9 @@ pub fn text_preview_of_message(
         MessageType::Video(video) => format!(
             "[Video]: <i>{}</i>",
             if let Some(formatted_body) = video.formatted.as_ref() {
-                &formatted_body.body
+               Cow::Borrowed(formatted_body.body.as_str())
             } else {
-                &video.body
+                htmlize::escape_text(&video.body)
             }
         ),
         MessageType::_Custom(custom) => format!(
@@ -243,8 +265,8 @@ pub fn text_preview_of_message(
         ),
         other => format!(
             "[Unknown message type]: {}",
-            other.body(),
-        )
+            htmlize::escape_text(other.body()),
+        ),
     };
     TextPreview::from((text, BeforeText::UsernameWithColon))
 }
@@ -293,7 +315,8 @@ pub fn text_preview_of_redacted_message(
 /// Returns a text preview of the given other state event as an Html-formatted string.
 pub fn text_preview_of_other_state(
     other_state: &AnyOtherFullStateEventContent,
-    state_key: &str
+    format_as_html: bool,
+    state_key: &str,
 ) -> Option<TextPreview> {
     let text = match other_state {
         AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content, .. }) => {
@@ -355,7 +378,12 @@ pub fn text_preview_of_other_state(
             Some(format!("pinned {} events in this room.", content.pinned.len()))
         }
         AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
-            Some(format!("changed this room's name to {:?}.", content.name))
+            let name = if format_as_html {
+                htmlize::escape_text(&content.name)
+            } else {
+                Cow::Borrowed(content.name.as_str())
+            };
+            Some(format!("changed this room's name to \"{name}\"."))
         }
         AnyOtherFullStateEventContent::RoomPowerLevels(_) => {
             Some(String::from("set the power levels for this room."))
@@ -367,13 +395,28 @@ pub fn text_preview_of_other_state(
             Some(format!("closed this room and upgraded it to {}", content.replacement_room.matrix_to_uri()))
         }
         AnyOtherFullStateEventContent::RoomTopic(FullStateEventContent::Original { content, .. }) => {
-            Some(format!("changed this room's topic to {:?}.", content.topic))
+            let topic = if format_as_html {
+                htmlize::escape_text(&content.topic)
+            } else {
+                Cow::Borrowed(content.topic.as_str())
+            };
+            Some(format!("changed this room's topic to \"{topic}\"."))
         }
         AnyOtherFullStateEventContent::SpaceParent(_) => {
-            Some(format!("set this room's parent space to {}.", state_key))
+            let state_key  = if format_as_html {
+                htmlize::escape_text(state_key)
+            } else {
+                Cow::Borrowed(state_key)
+            };
+            Some(format!("set this room's parent space to \"{state_key}\"."))
         }
         AnyOtherFullStateEventContent::SpaceChild(_) => {
-            Some(format!("added a new child to this space: {}.", state_key))
+            let state_key  = if format_as_html {
+                htmlize::escape_text(state_key)
+            } else {
+                Cow::Borrowed(state_key)
+            };
+            Some(format!("added a new child to this space: \"{state_key}\"."))
         }
         _other => {
             // log!("*** Unhandled: {:?}.", _other);
@@ -382,24 +425,35 @@ pub fn text_preview_of_other_state(
     };
     text.map(|t| TextPreview::from((t, BeforeText::UsernameWithoutColon)))
 }
-/// Returns a text preview of the given member profile change as a plaintext string.
+
+
+/// Returns a text preview of the given member profile change
+/// as a plaintext or HTML-formatted string.
 pub fn text_preview_of_member_profile_change(
     change: &MemberProfileChange,
     username: &str,
+    format_as_html: bool,
 ) -> TextPreview {
     let name_text = if let Some(name_change) = change.displayname_change() {
         let old = name_change.old.as_deref().unwrap_or(username);
+        let old_un = if format_as_html { htmlize::escape_text(old) } else { old.into() };
         if let Some(new) = name_change.new.as_ref() {
-            format!("{old} changed their display name to {new:?}")
+            let new_un = if format_as_html { htmlize::escape_text(new) } else { new.into() };
+            format!("{old_un} changed their display name to \"{new_un}\"")
         } else {
-            format!("{old} removed their display name")
+            format!("{old_un} removed their display name")
         }
     } else {
         String::new()
     };
     let avatar_text = if let Some(_avatar_change) = change.avatar_url_change() {
         if name_text.is_empty() {
-            format!("{} changed their profile picture", username)
+            let un = if format_as_html {
+                htmlize::escape_text(username)
+            } else {
+                username.into()
+            };
+            format!("{un} changed their profile picture")
         } else {
             String::from(" and changed their profile picture")
         }
@@ -414,13 +468,20 @@ pub fn text_preview_of_member_profile_change(
 }
 
 
-/// Returns a text preview of the given room membership change as a plaintext string.
+/// Returns a text preview of the given room membership change
+/// as a plaintext or HTML-formatted string.
 pub fn text_preview_of_room_membership_change(
     change: &RoomMembershipChange,
+    format_as_html: bool,
 ) -> Option<TextPreview> {
     let dn = change.display_name();
     let change_user_id = dn.as_deref()
         .unwrap_or_else(|| change.user_id().as_str());
+    let change_user_id = if format_as_html {
+        htmlize::escape_text(change_user_id)
+    } else {
+        change_user_id.into()
+    };
     let text = match change.change() {
         None
         | Some(MembershipChange::NotImplemented)

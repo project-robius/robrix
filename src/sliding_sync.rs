@@ -2102,7 +2102,7 @@ fn get_latest_event_details(
     (
         latest_event.timestamp(),
         text_preview_of_timeline_item(latest_event.content(), sender_username)
-            .format_with(sender_username),
+            .format_with(sender_username, true),
     )
 }
 

@@ -676,9 +676,9 @@ impl SmallStateEventContent<EventableWrapperAEI<'_>> for AnyStateEventContentWra
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
         let Some(other_state) = self.into() else { return (list.item(cx, item_id, live_id!(Empty)), ItemDrawnStatus::new()) };
-        let item = if let Some(text_preview) = text_preview_of_other_state(&other_state, self.1) {
+        let item = if let Some(text_preview) = text_preview_of_other_state(&other_state, true, self.1) {
             item.label(id!(content))
-                .set_text(cx, &text_preview.format_with(username));
+                .set_text(cx, &text_preview.format_with(username, true));
             new_drawn_status.content_drawn = true;
             item
         } else {
