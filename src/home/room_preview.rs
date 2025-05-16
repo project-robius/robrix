@@ -3,15 +3,13 @@ use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
     shared::{
-        avatar::AvatarWidgetExt, html_or_plaintext::HtmlOrPlaintextWidgetExt,
-        unread_badge::UnreadBadgeWidgetExt as _,
+        avatar::AvatarWidgetExt,
+        html_or_plaintext::HtmlOrPlaintextWidgetExt, unread_badge::UnreadBadgeWidgetExt as _,
     },
     utils::{self, relative_format},
 };
 
-use super::rooms_list::{
-    InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListScopeProps,
-};
+use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListScopeProps};
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -194,10 +192,8 @@ live_design! {
 
 #[derive(Live, Widget)]
 pub struct RoomPreview {
-    #[deref]
-    view: View,
-    #[rust]
-    room_id: Option<OwnedRoomId>,
+    #[deref] view: View,
+    #[rust] room_id: Option<OwnedRoomId>,
 }
 
 #[derive(Clone, DefaultNone, Debug)]
@@ -212,7 +208,7 @@ impl LiveHook for RoomPreview {
         self.view
             .adaptive_view(id!(adaptive_preview))
             .set_variant_selector(|_cx, parent_size| match parent_size.x {
-                width if width <= 70.0 => live_id!(OnlyIcon),
+                width if width <= 70.0  => live_id!(OnlyIcon),
                 width if width <= 200.0 => live_id!(IconAndName),
                 _ => live_id!(FullPreview),
             });
@@ -232,19 +228,11 @@ impl Widget for RoomPreview {
                 cx.set_key_focus(self.view.area());
             }
             Hit::FingerUp(fe) => {
-                if !rooms_list_props.was_scrolling
-                    && fe.is_over
-                    && fe.is_primary_hit()
-                    && fe.was_tap()
-                {
-                    cx.widget_action(
-                        uid,
-                        &scope.path,
-                        RoomPreviewAction::Clicked(self.room_id.clone().unwrap()),
-                    );
+                if !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() {
+                    cx.widget_action(uid, &scope.path, RoomPreviewAction::Clicked(self.room_id.clone().unwrap()));
                 }
             }
-            _ => {}
+            _ => { }
         }
 
         self.view.handle_event(cx, event, scope);
@@ -264,8 +252,7 @@ impl Widget for RoomPreview {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomPreviewContent {
-    #[deref]
-    view: View,
+    #[deref] view: View,
 }
 
 impl Widget for RoomPreviewContent {
@@ -286,7 +273,11 @@ impl Widget for RoomPreviewContent {
 
 impl RoomPreviewContent {
     /// Populates this room preview with info about a joined room.
-    pub fn draw_joined_room(&mut self, cx: &mut Cx, room_info: &JoinedRoomInfo) {
+    pub fn draw_joined_room(
+        &mut self,
+        cx: &mut Cx,
+        room_info: &JoinedRoomInfo,
+    ) {
         if let Some(ref name) = room_info.room_name {
             self.view.label(id!(room_name)).set_text(cx, name);
         }
@@ -309,7 +300,11 @@ impl RoomPreviewContent {
     }
 
     /// Populates this room preview with info about an invited room.
-    pub fn draw_invited_room(&mut self, cx: &mut Cx, room_info: &InvitedRoomInfo) {
+    pub fn draw_invited_room(
+        &mut self,
+        cx: &mut Cx,
+        room_info: &InvitedRoomInfo,
+    ) {
         self.view.label(id!(room_name)).set_text(
             cx,
             room_info.room_name.as_deref()
@@ -318,17 +313,11 @@ impl RoomPreviewContent {
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(id!(timestamp)).set_text(cx, "");
         let inviter_string = match &room_info.inviter_info {
-            Some(InviterInfo {
-                user_id,
-                display_name: Some(dn),
-                ..
-            }) => format!("Invited by <b>{dn}</b> ({user_id})"),
+            Some(InviterInfo { user_id, display_name: Some(dn), .. }) => format!("Invited by <b>{dn}</b> ({user_id})"),
             Some(InviterInfo { user_id, .. }) => format!("Invited by {user_id}"),
             None => String::from("You were invited"),
         };
-        self.view
-            .html_or_plaintext(id!(latest_message))
-            .show_html(cx, &inviter_string);
+        self.view.html_or_plaintext(id!(latest_message)).show_html(cx, &inviter_string);
 
         match room_info.room_avatar {
             RoomPreviewAvatar::Text(ref text) => {
@@ -350,8 +339,13 @@ impl RoomPreviewContent {
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
     }
 
-    /// Populates the widgets common to both invited and joined room previews.
-    pub fn draw_common(&mut self, cx: &mut Cx, room_avatar: &RoomPreviewAvatar, is_selected: bool) {
+    /// Populates the widgets common to both invited and joined room previews. 
+    pub fn draw_common(
+        &mut self,
+        cx: &mut Cx,
+        room_avatar: &RoomPreviewAvatar,
+        is_selected: bool,
+    ) {
         match room_avatar {
             RoomPreviewAvatar::Text(ref text) => {
                 self.view.avatar(id!(avatar)).show_text(cx, None, text);
