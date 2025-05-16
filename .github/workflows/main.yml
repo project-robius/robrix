@@ -44,22 +44,6 @@ env:
     RUSTFLAGS: "-D warnings"
 
 jobs:
-  # Basic compilation check to ensure code builds
-  check:
-    if: github.event.pull_request.draft == false
-    name: cargo check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      # Cache dependencies to speed up builds
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-all-crates: "true"
-          cache-on-failure: "true"
-      # Check if the code compiles with all features
-      - run: cargo check --workspace --all-features --all-targets
-
   clippy:
     if: github.event.pull_request.draft == false
     name: clippy
