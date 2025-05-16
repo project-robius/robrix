@@ -68,7 +68,7 @@ live_design! {
     use crate::room::room_input_bar::*;
     use crate::home::rooms_list::*;
     use crate::home::room_read_receipt::*;
-    use crate::home::room_search_result::*;
+    use crate::home::room_screen::search_result::*;
     use crate::room::room_input_bar::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
@@ -378,7 +378,7 @@ live_design! {
                 width: Fill, height: Fill,
                 show_bg: true,
                 visible: true,
-                draw_bg: {color: (#FFFFFF80),}
+                draw_bg: {color: (#FFFFFF00),}
             }
         }
     }
@@ -3712,7 +3712,7 @@ pub fn populate_message_view<T,P,M>(
         item.label(id!(profile.timestamp))
             .set_text(cx, &format!("{}", ts_millis.get()));
     }
-    if !is_contextual {
+    if is_contextual {
         //item.view(id!(overlay_message)).set_visible(cx, true);
         item.view(id!(overlay_message)).apply_over(cx, live!{
             draw_bg: {color: (vec4(1.0, 1.0, 1.0, 0.5)),}
