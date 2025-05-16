@@ -20,6 +20,7 @@ pub trait FilterableRoom {
     fn canonical_alias(&self) -> Option<Cow<'_, RoomAliasId>>;
     fn alt_aliases(&self) -> Cow<'_, [OwnedRoomAliasId]>;
     fn tags(&self) -> &Tags;
+    fn is_direct(&self) -> bool;
 }
 
 impl FilterableRoom for JoinedRoomInfo {
@@ -50,6 +51,10 @@ impl FilterableRoom for JoinedRoomInfo {
     fn tags(&self) -> &Tags {
         &self.tags
     }
+
+    fn is_direct(&self) -> bool {
+        self.is_direct
+    }
 }
 
 impl FilterableRoom for InvitedRoomInfo {
@@ -79,6 +84,10 @@ impl FilterableRoom for InvitedRoomInfo {
 
     fn tags(&self) -> &Tags {
         &EMPTY_TAGS
+    }
+
+    fn is_direct(&self) -> bool {
+        self.is_direct
     }
 }
 
