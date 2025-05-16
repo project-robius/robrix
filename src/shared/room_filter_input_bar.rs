@@ -6,7 +6,6 @@
 //! and have a single instance be shared across the Mobile and Desktop app views.
 
 use makepad_widgets::*;
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -82,12 +81,24 @@ pub struct RoomFilterInputBar {
 pub enum RoomFilterAction {
     /// The user has changed the text entered into the filter bar.
     Changed(String),
+    /// The user has clicked the input bar.
+    Click(String),
+    Clear,
     None,
 }
 
 impl Widget for RoomFilterInputBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+        let area = self.text_input(id!(input)).area();
+        if let Hit::FingerDown(..) = event.hits(cx, area) {
+            let widget_uid = self.widget_uid();
+            cx.widget_action(
+                widget_uid,
+                &scope.path,
+                RoomFilterAction::Click(self.view.text_input(id!(input)).text())
+            );
+        }
         self.widget_match_event(cx, event, scope);
     }
 
@@ -120,6 +131,15 @@ impl WidgetMatchEvent for RoomFilterInputBar {
                 &scope.path,
                 RoomFilterAction::Changed(String::new())
             );
+        }
+        for action in actions {
+            if let RoomFilterAction::Clear = action.as_widget_action().cast() {
+                self.text_input(id!(input)).set_text(cx, "");
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    RoomFilterAction::Changed(String::new()));
+            }
         }
     }
 }
