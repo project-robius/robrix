@@ -2865,6 +2865,8 @@ fn register_core_task(
 
 async fn abort_core_task(core_task: CoreTask) {
     if let Ok(mut tasks) = CORE_TASKS.lock() {
-        tasks.remove(&core_task);
+        if let Some(handle) = tasks.remove(&core_task) {
+            handle.abort();
+        }
     }
 }
