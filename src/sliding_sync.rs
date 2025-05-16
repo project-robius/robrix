@@ -382,7 +382,7 @@ pub enum MatrixRequest {
         matrix_id: MatrixId,
         via: Vec<OwnedServerName>
     },
-    /// General Matrix Search API with given categorie
+    /// General Matrix Search API with given categories
     SearchMessages {
         /// The room to search for message.
         room_id: OwnedRoomId,
