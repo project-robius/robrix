@@ -377,6 +377,7 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             close_menu = false;
         }
         else if self.button(id!(reply_button)).clicked(actions) {
+            println!("clicked details {:?}", details);
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,

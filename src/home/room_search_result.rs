@@ -524,9 +524,12 @@ pub fn search_result_reply(cx: &mut Cx, room_screen: &RoomScreen, details: &Mess
     for (index, item) in tl.items.iter().enumerate() {
         if item.as_event().and_then(|f| f.event_id()).map(|f|Some(f.to_owned()) == details.event_id).unwrap_or(false) {
             timeline_details.item_id = index;
+            println!("index: {}", index);	
             break;
         }
     }
+    println!("search_result_reply detail{:?}", timeline_details);
+    room_screen.view(id!(search_timeline)).set_visible(cx, false);
     cx.widget_action(room_screen.widget_uid(), &Scope::empty().path, RoomFilterAction::Clear);
     cx.widget_action(
         details.room_screen_widget_uid,
