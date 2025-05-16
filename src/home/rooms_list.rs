@@ -207,6 +207,8 @@ pub struct JoinedRoomInfo {
     pub has_been_paginated: bool,
     /// Whether this room is currently selected in the UI.
     pub is_selected: bool,
+    /// Whether this room is currently encrypted.
+    pub is_room_encrypted: bool,
 }
 
 /// UI-related info about a room that the user has been invited to.
@@ -566,18 +568,29 @@ impl RoomsList {
         portal_list.set_first_id_and_scroll(0, 0.0);
         self.redraw(cx);
     }
-    /// Returns an immutable reference to the single set of all known rooms' names.
-    pub fn get_all_rooms_names(&self) -> HashMap<OwnedRoomId, Option<String>> {
-        self.all_rooms.iter().map(|(room_id, room)| (room_id.clone(), room.room_name.clone())).collect()
+    
+    /// Returns the name of the room associated with the given room_id if it exists.
+    pub fn get_room_name(&self, room_id: &OwnedRoomId) -> Option<String> {
+        self.all_joined_rooms.get(room_id).and_then(|room| room.room_name.clone())
+    }
+    pub fn is_room_encrypted(&self, room_id: &OwnedRoomId) -> bool {
+        self.all_joined_rooms.get(room_id).map(|room| room.is_room_encrypted).unwrap_or(false)
     }
 }
 impl RoomsListRef {
-    /// See [`RoomsList::get_all_rooms_names()`].
-    pub fn get_all_rooms_names(&self) -> HashMap<OwnedRoomId, Option<String>> {
+    // See [`RoomsList::get_room_name`].
+    pub fn get_room_name(&self, room_id: &OwnedRoomId) -> Option<String> {
         if let Some(inner) = self.borrow() {
-            inner.get_all_rooms_names()
+            inner.get_room_name(room_id)
         } else {
-            HashMap::new()
+            None
+        }
+    }
+    pub fn is_room_encrypted(&self, room_id: &OwnedRoomId) -> bool {
+        if let Some(inner) = self.borrow() {
+            inner.is_room_encrypted(room_id)
+        } else {
+            false
         }
     }
 }

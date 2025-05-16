@@ -18,30 +18,27 @@ use matrix_sdk::{room::RoomMember, ruma::{
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, InReplyToDetails, MemberProfileChange, ReactionsByKeyBySender, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
-use robius_location::Coordinates;
-use ruma::{api::client::search::search_events::v3::ResultCategories, events::{AnySyncTimelineEvent, AnyTimelineEvent}, serde::Raw, OwnedUserId, UserId};
+use ruma::{OwnedUserId, UserId};
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppState, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, room_filter_input_bar::RoomFilterAction, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
-
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, location_preview::LocationPreviewWidgetExt, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, location_preview::LocationPreviewWidgetExt, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
-const COLOR_DANGER_RED: Vec3 = Vec3 { x: 0.862, y: 0.0, z: 0.02 };
 //LightGreen
 const SEARCH_HIGHLIGHT: Vec3 = Vec3 { x: 0.89, y: 0.967, z: 0.929 };
 
@@ -59,13 +56,14 @@ live_design! {
     use crate::shared::typing_animation::TypingAnimation;
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
+    use crate::shared::room_filter_input_bar::RoomFilterInputBar;
     use crate::profile::user_profile::UserProfileSlidingPane;
     use crate::home::editing_pane::*;
     use crate::home::event_reaction_list::*;
     use crate::home::loading_pane::*;
     use crate::home::location_preview::*;
     use crate::room::room_input_bar::*;
-    use crate::room::room_input_bar::*;
+    use crate::home::rooms_list::*;
     use crate::home::room_read_receipt::*;
     use crate::home::room_search_result::*;
     use crate::room::room_input_bar::*;
@@ -372,7 +370,7 @@ live_design! {
             overlay_message = <View> {
                 width: Fill, height: Fill,
                 show_bg: true,
-                visible: false,
+                visible: true,
                 draw_bg: {color: (#FFFFFF80),}
             }
         }
@@ -641,92 +639,6 @@ live_design! {
         jump_to_bottom = <JumpToBottomButton> { }
     }
 
-    LocationPreview = {{LocationPreview}} {
-        visible: false
-        width: Fill
-        height: Fit
-        flow: Down
-        padding: {left: 12.0, top: 12.0, bottom: 12.0, right: 10.0}
-        spacing: 15
-
-        show_bg: true,
-        draw_bg: {
-            color: #xF0F5FF,
-        }
-
-        <Label> {
-            width: Fill,
-            height: Fit,
-            draw_text: {
-                wrap: Word,
-                color: (MESSAGE_TEXT_COLOR),
-                text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10.0 },
-            }
-            text: "Send your location to this room?"
-        }
-
-        location_label = <Label> {
-            width: Fill,
-            height: Fit,
-            align: {x: 0.0, y: 0.5},
-            padding: {left: 5.0}
-            draw_text: {
-                wrap: Word,
-                color: (MESSAGE_TEXT_COLOR),
-                text_style: <MESSAGE_TEXT_STYLE>{},
-            }
-            text: "Fetching current location..."
-        }
-
-        <View> {
-            width: Fill, height: Fit
-            flow: Right,
-            align: {x: 0.0, y: 0.5}
-            spacing: 15
-
-            cancel_location_button = <RobrixIconButton> {
-                align: {x: 0.5, y: 0.5}
-                padding: {left: 15, right: 15}
-                draw_icon: {
-                    svg_file: (ICON_BLOCK_USER)
-                    color: (COLOR_DANGER_RED),
-                }
-                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1, top: -1} }
-
-                draw_bg: {
-                    border_color: (COLOR_DANGER_RED),
-                    color: #fff0f0 // light red
-                }
-                text: "Cancel"
-                draw_text:{
-                    color: (COLOR_DANGER_RED),
-                }
-            }
-
-            send_location_button = <RobrixIconButton> {
-                // disabled by default; will be enabled upon receiving valid location update.
-                enabled: false,
-                align: {x: 0.5, y: 0.5}
-                padding: {left: 15, right: 15}
-                draw_icon: {
-                    svg_file: (ICON_SEND)
-                    color: (COLOR_ACCEPT_GREEN),
-                }
-                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
-
-                draw_bg: {
-                    border_color: (COLOR_ACCEPT_GREEN),
-                    color: #f0fff0 // light green
-                }
-                text: "Yes"
-                draw_text:{
-                    color: (COLOR_ACCEPT_GREEN),
-                }
-            }
-        }
-    }
-
-
     pub RoomScreen = {{RoomScreen}} {
         width: Fill, height: Fill,
         cursor: Default,
@@ -756,6 +668,9 @@ live_design! {
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
 
+                search_timeline = <Timeline> {
+                    visible: false
+                }
                 // Below that, display a typing notice when other users in the room are typing.
                 typing_notice = <View> {
                     visible: false
@@ -887,6 +802,9 @@ live_design! {
             // The top space should be displayed as an overlay at the top of the timeline.
             top_space = <TopSpace> { }
 
+            search_result_plane = <SearchResult> {
+                visible: false
+            }
             // The user profile sliding pane should be displayed on top of other "static" subviews
             // (on top of all other views that are always visible).
             user_profile_sliding_pane = <UserProfileSlidingPane> { }
@@ -895,11 +813,6 @@ live_design! {
             // to finish loading, e.g., when loading an older replied-to message.
             loading_pane = <LoadingPane> { }
 
-            search_result_overlay = <View> {
-                visible: false,
-                search_result_inner = <SearchResult> { 
-                } 
-            }
             /*
              * TODO: add the action bar back in as a series of floating buttons.
              *
@@ -960,14 +873,10 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] pub tl_state: Option<TimelineUiState>,
-    /// By typing inside the Search input, search result
-    #[rust] pub other_display: RoomScreenOtherDisplay,
     /// The timer for sending a search request after a delay when user stops typing.
-    #[rust] search_delay_timer: Timer,
-    /// The search query to be sent adter the search delay timer ends.
-    /// This field is reset when the user continues typing before the search delay timer ends.
-    #[rust] search_query: String,
-    #[live] pub no_more_template: Option<LivePtr>
+    #[rust] search_debounce_timer: Timer,
+    #[live] pub no_more_template: Option<LivePtr>,
+    #[rust] pub search_bar_widget_uid: Option<WidgetUid>
 }
 impl Drop for RoomScreen {
 
@@ -986,13 +895,14 @@ impl Widget for RoomScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let room_screen_widget_uid = self.widget_uid();
         let portal_list = self.portal_list(id!(timeline.list));
+        let search_portal_list = self.portal_list(id!(search_timeline.list));
         let user_profile_sliding_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(id!(loading_pane));
 
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
-            self.process_timeline_updates(cx, &portal_list);
+            self.process_timeline_updates(cx, &portal_list, &search_portal_list);
 
             // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
             // but it doesn't hurt to do it here.
@@ -1002,16 +912,22 @@ impl Widget for RoomScreen {
             avatar_cache::process_avatar_updates(cx);
         }
         if let Event::Timer(te) = event {
-            if self.search_delay_timer.is_timer(te).is_some() {
+            if self.search_debounce_timer.is_timer(te).is_some() {
                 if let Some(room_id) = &self.room_id {
-                    if self.search_query.is_empty() {
-                        self.other_display = RoomScreenOtherDisplay::None;
+                    let is_encrypted = self.view.rooms_list(id!(rooms_list)).is_room_encrypted(room_id);
+                    if is_encrypted {
+                        enqueue_popup_notification(String::from("Searching for encrypted messages is not supported yet."));
+                        return;
+                    }
+                    let criteria = self.search_result(id!(search_result_plane)).get_search_criteria();
+                    if criteria.search_term.is_empty() {
+                        self.view(id!(search_timeline)).set_visible(cx, false);
                         return; 
                     }
                     submit_async_request(MatrixRequest::SearchMessages { 
                         room_id: room_id.clone(), 
-                        include_all_rooms: false,
-                        search_term: self.search_query.clone(),
+                        include_all_rooms: criteria.include_all_rooms,
+                        search_term: criteria.search_term.clone(),
                         next_batch: None,
                         abort_previous_search: true
                     });
@@ -1124,7 +1040,7 @@ impl Widget for RoomScreen {
                 message_action_bar_popup.close(cx);
             }
             */
-            if let RoomScreenOtherDisplay::None = self.other_display {
+            if !self.view(id!(search_timeline)).visible() {
                 // Set visibility of loading message banner based of pagination logic
                 self.send_pagination_request_based_on_scroll_pos(cx, actions, &portal_list);
                 // Handle sending any read receipts for the current logged-in user.
@@ -1221,9 +1137,13 @@ impl Widget for RoomScreen {
             }
             if self.view.button(id!(search_all_rooms_button)).clicked(actions) {
                 if let Some(room_id) = self.room_id.clone() {
-                    self.view(id!(search_result_overlay)).set_visible(cx, true);
-                    self.search_result(id!(search_result_inner)).reset_summary(cx);
-                    submit_async_request(MatrixRequest::SearchMessages { room_id, include_all_rooms: true, search_term: self.search_query.clone(), next_batch: None, abort_previous_search: true });
+                    let mut criteria = self.search_result(id!(search_result_plane)).get_search_criteria();
+                    self.search_result(id!(search_result_plane)).reset(cx);
+                    criteria.include_all_rooms = true;
+                    self.search_result(id!(search_result_plane)).set_search_criteria(cx, criteria.clone());
+                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    tl.search_result_state.items.clear();
+                    submit_async_request(MatrixRequest::SearchMessages { room_id, include_all_rooms: true, search_term: criteria.search_term, next_batch: None, abort_previous_search: true });
                 }
             }
             // Handle the jump to bottom button: update its visibility, and handle clicks.
@@ -1345,7 +1265,9 @@ impl Widget for RoomScreen {
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
             return DrawStep::done();
         }
-        if let RoomScreenOtherDisplay::SearchResult = self.other_display {
+        let search_timeline_widget = self.view(id!(search_timeline));
+        let search_timeline_widget_visible = search_timeline_widget.visible();
+        if search_timeline_widget_visible {
             return room_search_result::search_result_draw_walk(self, cx, scope, walk);
         }
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
@@ -1366,7 +1288,7 @@ impl Widget for RoomScreen {
 
             let list = list_ref.deref_mut();
             list.set_item_range(cx, 0, last_item_id);
-
+            
             while let Some(item_id) = list.next_visible_item(cx) {
                 let item = {
                     let tl_idx = item_id;
@@ -1390,7 +1312,7 @@ impl Widget for RoomScreen {
                             match event_tl_item.content() {
                                 TimelineItemContent::Message(message) => {
                                     let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
-                                    let prev_event = prev_event.map(|f| PreviousWrapperTI(f));
+                                    let prev_event = prev_event.map(PreviousWrapperTI);
                                     let message = &MsgTypeWrapperTM(message);
                                     populate_message_view(
                                         cx,
@@ -1409,7 +1331,7 @@ impl Widget for RoomScreen {
                                 }
                                 TimelineItemContent::Sticker(sticker) => {
                                     let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
-                                    let prev_event = prev_event.map(|f| PreviousWrapperTI(f));
+                                    let prev_event = prev_event.map(PreviousWrapperTI);
                                     populate_message_view(
                                         cx,
                                         list,
@@ -1503,9 +1425,10 @@ impl RoomScreen {
     /// Processes all pending background updates to the currently-shown timeline.
     ///
     /// Redraws this RoomScreen view if any updates were applied.
-    fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
+    fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef, search_portal_list: &PortalListRef) {
         let top_space = self.view(id!(top_space));
         let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
+        let search_result_widget = self.search_result(id!(search_result_plane));
         let curr_first_id = portal_list.first_id();
         let ui = self.widget_uid();
         let Some(tl) = self.tl_state.as_mut() else { return };
@@ -1766,108 +1689,21 @@ impl RoomScreen {
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
-
-                TimelineUpdate::SearchResult(result) => {
-                    // tl.content_drawn_since_last_update.clear();
-                    // tl.profile_drawn_since_last_update.clear();
-                    tl.fully_paginated = false;
-                    // Set the portal list to the very bottom of the timeline.
-                    let mut last_room_id = None;
-                    let rooms_names = self.view.rooms_list(id!(rooms_list)).get_all_rooms_names();
-                    
-                    // tl.searched_results.push_back(SearchTimelineItem::with_no_more_messages());
-                    // for item in result.room_events.results.iter().rev() {
-                    //     let Some(event) = item.result.as_ref().and_then(|f|f.deserialize().ok()) else { continue };
-                        
-                    //     if let Some(ref mut last_room_id) = last_room_id {
-                    //         if last_room_id != event.room_id() {
-                    //             *last_room_id = event.room_id().to_owned();
-                    //             if let Some(room_name) = rooms_names.get(last_room_id).and_then(|f|f.clone()) {
-                    //                 tl.searched_results.push_back(SearchTimelineItem::with_room_header(room_name));
-                    //             }
-                    //         }
-                    //     } else {
-                    //         last_room_id = Some(event.room_id().to_owned());
-                    //         if let Some(room_name) = rooms_names.get(event.room_id()).and_then(|f|f.clone()) {
-                    //             tl.searched_results.push_back(SearchTimelineItem::with_room_header(room_name));
-                    //         }
-                    //     }
-                    //     let timestamp = match event {
-                    //         AnyTimelineEvent::MessageLike(ref event) => {
-                    //             if let Some(replace) = event.relations().replace {
-                    //                 replace.origin_server_ts()
-                    //             } else {
-                    //                 event.origin_server_ts()
-                    //             }
-                    //         }
-                    //         _ => {
-                    //             event.origin_server_ts()
-                    //         }
-                    //     };
-                    //     tl.searched_results.push_back(SearchTimelineItem::with_virtual(VirtualTimelineItem::DateDivider(timestamp)));
-                    //     item.context.events_before.iter().for_each(|f| {
-                    //         if let Ok(timeline_event) = f.deserialize() {
-                    //             tl.searched_results.push_back(SearchTimelineItem::with_context_event(timeline_event));
-                    //         }
-                    //     });
-                        
-                    //     tl.searched_results.push_back(SearchTimelineItem::with_event(event));
-                    //     item.context.events_after.iter().for_each(|f| {
-                    //         if let Ok(timeline_event) = f.deserialize() {
-                    //             tl.searched_results.push_back(SearchTimelineItem::with_context_event(timeline_event));
-                    //         }
-                    //     });
-                    // }
-                    for item in result.room_events.results.iter() {
-                        let Some(event) = item.result.as_ref().and_then(|f|f.deserialize().ok()) else { continue };
-                        item.context.events_after.iter().rev().for_each(|f| {
-                            if let Ok(timeline_event) = f.deserialize() {
-                                tl.searched_results.push_front(SearchTimelineItem::with_context_event(timeline_event));
-                            }
-                        });
-                        let timestamp = match event {
-                            AnyTimelineEvent::MessageLike(ref event) => {
-                                if let Some(replace) = event.relations().replace {
-                                    replace.origin_server_ts()
-                                } else {
-                                    event.origin_server_ts()
-                                }
-                            }
-                            _ => {
-                                event.origin_server_ts()
-                            }
-                        };
-                        let room_id = event.room_id().to_owned();
-                        tl.searched_results.push_front(SearchTimelineItem::with_event(event));
-                        
-                        item.context.events_before.iter().rev().for_each(|f| {
-                            if let Ok(timeline_event) = f.deserialize() {
-                                tl.searched_results.push_front(SearchTimelineItem::with_context_event(timeline_event));
-                            }
-                        });
-                        tl.searched_results.push_front(SearchTimelineItem::with_virtual(VirtualTimelineItem::DateDivider(timestamp)));
-
-                        if let Some(ref mut last_room_id) = last_room_id {
-                            if last_room_id != &room_id {
-                                *last_room_id = room_id;
-                                if let Some(room_name) = rooms_names.get(last_room_id).and_then(|f|f.clone()) {
-                                    tl.searched_results.push_front(SearchTimelineItem::with_room_header(room_name));
-                                }
-                            }
-                        } else {
-                            last_room_id = Some(room_id.clone());
-                            if let Some(room_name) = rooms_names.get(&room_id).and_then(|f|f.clone()) {
-                                tl.searched_results.push_front(SearchTimelineItem::with_room_header(room_name));
-                            }
-                        }
+                TimelineUpdate::SearchResultReceived { items, count, highlights, search_term } => {
+                    let mut criteria = self.view.search_result(id!(search_result_plane)).get_search_criteria();
+                    criteria.search_term = search_term;
+                    self.view.search_result(id!(search_result_plane)).set_search_criteria(cx, criteria);
+                    self.view.search_result(id!(search_result_plane)).set_result_count(cx, count);
+                    self.view.view(id!(search_timeline)).set_visible(cx, true);
+                    tl.search_result_state.content_drawn_since_last_update.clear();
+                    tl.search_result_state.profile_drawn_since_last_update.clear();
+                    for item in items {
+                         tl.search_result_state.items.push_front(item.clone());
                     }
-                    portal_list.set_first_id_and_scroll(tl.searched_results.len().saturating_sub(1), 0.0);
-                    portal_list.set_tail_range(true);
+                    search_portal_list.set_first_id_and_scroll(tl.search_result_state.items.len().saturating_sub(1), 0.0);
+                    search_portal_list.set_tail_range(true);
                     jump_to_bottom.update_visibility(cx, true);
-                    if let Some(size) = result.room_events.count.and_then(|f| f.to_string().parse::<usize>().ok()) {
-                        cx.action(SearchResultAction::Success(size, result.room_events.highlights.join(", ")));
-                    }
-                    tl.searched_results_highlighted_strings = result.room_events.highlights;
+                    tl.search_result_state.highlighted_strings = highlights;
                     done_loading = true;
                 }
             }
@@ -1883,6 +1719,7 @@ impl RoomScreen {
 
         if done_loading {
             top_space.set_visible(cx, false);
+            search_result_widget.hide_top_space(cx);
         }
 
         if !typing_users.is_empty() {
@@ -2037,9 +1874,11 @@ impl RoomScreen {
         for action in actions {
             match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
                 MessageAction::React { details, reaction } => {
-                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    let Some(tl) = self.tl_state.as_ref() else { return };
                     let mut success = false;
-                    if let Some(timeline_item) = tl.items.get(details.item_id) {
+                    if self.view(id!(search_timeline)).visible() {
+                        room_search_result::search_result_react(cx, &details, tl, reaction, &mut success);
+                    } else if let Some(timeline_item) = tl.items.get(details.item_id) {
                         if let Some(event_tl_item) = timeline_item.as_event() {
                             if event_tl_item.event_id() == details.event_id.as_deref() {
                                 let timeline_event_id = event_tl_item.identifier();
@@ -2063,7 +1902,10 @@ impl RoomScreen {
                 }
                 MessageAction::Reply(details) => {
                     let mut success = false;
-                    if let Some(event_tl_item) = self.tl_state.as_ref()
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    if self.view(id!(search_timeline)).visible() {
+                        room_search_result::search_result_reply(cx,  self, &details, tl, &mut success);
+                    } else if let Some(event_tl_item) = self.tl_state.as_ref()
                         .and_then(|tl| tl.items.get(details.item_id))
                         .and_then(|tl_item| tl_item.as_event().cloned())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
@@ -2108,8 +1950,10 @@ impl RoomScreen {
                     enqueue_popup_notification("Unpinning messages is not yet implemented.".to_string());
                 }
                 MessageAction::CopyText(details) => {
-                    let Some(tl) = self.tl_state.as_mut() else { return };
-                    if let Some(text) = tl.items
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    if self.view(id!(search_timeline)).visible() {
+                        room_search_result::search_result_copy_to_clipboard(cx, &details, tl);
+                    } else if let Some(text) = tl.items
                         .get(details.item_id)
                         .and_then(|tl_item| tl_item.as_event().map(body_of_timeline_item))
                     {
@@ -2129,7 +1973,9 @@ impl RoomScreen {
                     // The logic for getting the formatted body of a message is the same
                     // as the logic used in `populate_message_view()`.
                     let mut success = false;
-                    if let Some(event_tl_item) = tl.items
+                    if self.view(id!(search_timeline)).visible() {
+                        room_search_result::search_result_copy_html_to_clipboard(cx, &details, tl, &mut success);
+                    } else if let Some(event_tl_item) = tl.items
                         .get(details.item_id)
                         .and_then(|tl_item| tl_item.as_event())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
@@ -2205,12 +2051,22 @@ impl RoomScreen {
                     // );
                 }
                 MessageAction::JumpToRelated(details) => {
+                    let search_timeline_widget = self.view(id!(search_timeline));
                     let Some(tl) = self.tl_state.as_mut() else { continue };
                     let Some(related_event_id) = details.related_event_id.as_ref() else {
                         error!("BUG: MessageAction::JumpToRelated had not related event ID.");
                         continue;
                     };
-                    let tl_idx = details.item_id;
+                    let tl_idx = if search_timeline_widget.visible() {
+                        if let Some(index) = room_search_result::search_result_jump_to_related(cx, &details, tl) {
+                            index
+                        } else {
+                            error!("BUG: MessageAction::JumpToRelated had not related event ID.");
+                            continue;
+                        }
+                    } else {
+                        details.item_id
+                    };
 
                     /// The maximum number of items to search through when looking for the earlier related message.
                     /// This is a safety measure to prevent the main UI thread from getting stuck in a
@@ -2467,8 +2323,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
-                searched_results: Vector::new(),
-                searched_results_highlighted_strings: Vec::new()
+                search_result_state: SearchResultState::default(),
             };
             (new_tl_state, true)
         };
@@ -2511,8 +2366,9 @@ impl RoomScreen {
         // we can proceed to processing pending background updates, and if any were processed,
         // the timeline will also be redrawn.
         if first_time_showing_room {
-            let portal_list = self.portal_list(id!(list));
-            self.process_timeline_updates(cx, &portal_list);
+            let portal_list = self.portal_list(id!(timeline.list));
+            let search_portal_list = self.portal_list(id!(search_timeline.list));
+            self.process_timeline_updates(cx, &portal_list, &search_portal_list);
         }
 
         self.redraw(cx);
@@ -2739,52 +2595,71 @@ impl RoomScreen {
         action: &Action,
         scope: &mut Scope,
     ) {
-        if let Some(SearchResultAction::Close) = action.downcast_ref() {
-            self.search_result(id!(search_result_inner)).reset_summary(cx);
-            self.view(id!(search_result_overlay)).set_visible(cx, false);
-            self.other_display = RoomScreenOtherDisplay::None;
-            if let Some(ref mut tl_state) = self.tl_state {
-                tl_state.searched_results = Vector::new();
-                tl_state.searched_results_highlighted_strings = vec![];
-            }
-        }
         let widget_action = action.as_widget_action();
         match widget_action.cast() {
-            SearchBarAction::Search(keywords) => {
-                if let (Some(selected_room), Some(search_widget_id)) = {
+            RoomFilterAction::Changed(search_term) => {
+                
+                if let Some(selected_room) = {
                     let app_state = scope.data.get::<AppState>().unwrap();
-                    (app_state.rooms_panel.selected_room.clone(), app_state.search_widget)
+                    app_state.selected_room.clone()
                 } {
-                    if let Some(widget_action) = widget_action {
-                        if widget_action.widget_uid == search_widget_id && Some(selected_room.room_id) == self.room_id {
-                            self.search_delay_timer = cx.start_timeout(1.0);
-                            self.search_query = keywords.clone();
-                            self.other_display = RoomScreenOtherDisplay::SearchResult;
-                            self.view(id!(search_result_overlay)).set_visible(cx, true);
+                    if  Some(selected_room.room_id()) == self.room_id.as_ref() {
+                        if search_term.is_empty() {
+                            self.search_result(id!(search_result_plane)).reset(cx);
+                            self.view(id!(timeline)).set_visible(cx, true);
+                            self.view(id!(search_timeline)).set_visible(cx, false);
+                            self.search_result(id!(search_result_plane)).set_visible(cx, false);
+                            return;
                         }
+                        self.search_debounce_timer = cx.start_timeout(1.0);
+                        if let Some(ref mut tl_state) = self.tl_state {
+                            tl_state.search_result_state.items.clear();
+                            tl_state.search_result_state.highlighted_strings.clear();
+                        }
+                        let mut criteria = self.search_result(id!(search_result_plane)).get_search_criteria();
+                        criteria.search_term = search_term.clone();
+                        self.search_result(id!(search_result_plane)).set_search_criteria(cx, criteria);
+                        self.view(id!(timeline)).set_visible(cx, false);
                     }
                 }
             }
-            SearchBarAction::ResetSearch => {
-                if let (Some(selected_room), Some(search_widget_id)) = {
+            RoomFilterAction::Click(search_term) => {
+                if let Some(selected_room) = {
                     let app_state = scope.data.get::<AppState>().unwrap();
-                    (app_state.rooms_panel.selected_room.clone(), app_state.search_widget)
+                    app_state.selected_room.clone()
                 } {
-                    if let Some(widget_action) = widget_action {
-                        if widget_action.widget_uid == search_widget_id && Some(selected_room.room_id) == self.room_id {
-                            cx.stop_timer(self.search_delay_timer);
-                            self.search_query = String::new();
-                            self.other_display = RoomScreenOtherDisplay::None;
-                            self.view(id!(search_result_overlay)).set_visible(cx, false);
+                    if Some(selected_room.room_id()) == self.room_id.as_ref() {      
+                        let mut criteria = self.search_result(id!(search_result_plane)).get_search_criteria();
+                        if search_term == criteria.search_term && !search_term.is_empty() {
+                            return;
                         }
+                        criteria.search_term = search_term.clone();                  
+                        self.search_result(id!(search_result_plane)).set_search_criteria(cx, criteria);
+                        self.view(id!(timeline)).set_visible(cx, false);
+                    }
+                }
+            }
+            RoomFilterAction::Clear => {
+                if let Some(selected_room) = {
+                    let app_state = scope.data.get::<AppState>().unwrap();
+                    app_state.selected_room.clone()
+                } {
+                    if Some(selected_room.room_id()) == self.room_id.as_ref() {
+                        cx.stop_timer(self.search_debounce_timer);
+                        let Some(tl) = self.tl_state.as_mut() else { return };
+                        tl.search_result_state.items.clear();
+                        tl.search_result_state.highlighted_strings.clear();
+                        self.view(id!(search_timeline)).set_visible(cx, false);
+                        self.view(id!(timeline)).set_visible(cx, true);
+                        self.search_result(id!(search_result_plane)).reset(cx);
+                        self.search_result(id!(search_result_plane)).set_visible(cx, false);
                     }
                 }
             }
             _ => {
 
             }
-        }
-        
+        }        
     }
 
 }
@@ -2921,7 +2796,12 @@ pub enum TimelineUpdate {
     /// An update to the currently logged-in user's own read receipt for this room.
     OwnUserReadReceipt(Receipt),
     /// Display Search result in Makepad's widget
-    SearchResult(ResultCategories),
+    SearchResultReceived {
+        items: Vec<SearchTimelineItem>,
+        count: u32,
+        highlights: Vec<String>,
+        search_term: String
+    },
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -2935,7 +2815,7 @@ static TIMELINE_STATES: Mutex<BTreeMap<OwnedRoomId, TimelineUiState>> = Mutex::n
 /// then it should be stored in the RoomScreen widget itself, not in this struct.
 pub struct TimelineUiState {
     /// The ID of the room that this timeline is for.
-    pub room_id: OwnedRoomId,
+    room_id: OwnedRoomId,
 
     /// The power levels of the currently logged-in user in this room.
     pub user_power: UserPowerLevels,
@@ -2948,12 +2828,9 @@ pub struct TimelineUiState {
     fully_paginated: bool,
 
     /// The list of items (events) in this room's timeline that our client currently knows about.
-    items: Vector<Arc<TimelineItem>>,
+    pub items: Vector<Arc<TimelineItem>>,
 
-    /// The list of searched events in this room
-    pub searched_results: Vector<SearchTimelineItem>,
-    /// The list of strings that should be highlighted in the search results
-    pub searched_results_highlighted_strings: Vec<String>,
+    
     /// The range of items (indices in the above `items` list) whose event **contents** have been drawn
     /// since the last update and thus do not need to be re-populated on future draw events.
     ///
@@ -3028,6 +2905,20 @@ pub struct TimelineUiState {
     /// When new message come in, this value is reset to `false`.
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
+    /// State used to display search results.
+    pub search_result_state: SearchResultState,
+}
+#[derive(Default)]
+pub struct SearchResultState {
+    /// The list of events in the search results.
+    pub items: Vector<SearchTimelineItem>,
+    /// The list of strings that should be highlighted in the search results.
+    pub highlighted_strings: Vec<String>,
+    /// Upon a background update, only item indices greater than or equal to the
+    /// `index_of_first_change` are removed from this set.
+    pub content_drawn_since_last_update: RangeSet<usize>,
+    /// Same as `content_drawn_since_last_update`, but for the event **profiles** (avatar, username).
+    pub profile_drawn_since_last_update: RangeSet<usize>,
 }
 
 #[derive(Default, Debug)]
@@ -3202,7 +3093,7 @@ pub trait MsgTypeAble {
 }
 pub struct MsgTypeWrapperTM<'a>(pub &'a timeline::Message);
 
-impl <'a>MsgTypeAble for MsgTypeWrapperTM<'a> {
+impl MsgTypeAble for MsgTypeWrapperTM<'_> {
     fn msgtype(&self) -> &MessageType {
         self.0.msgtype()
     }
@@ -3291,12 +3182,11 @@ pub trait Eventable {
     fn is_own(&self) -> bool;
     fn can_be_replied_to(&self) -> bool;
     fn read_receipts(&self) -> Option<&IndexMap<OwnedUserId, Receipt>>;
-    fn latest_json(&self) -> Option<&Raw<AnySyncTimelineEvent>>;
     fn room_id(&self) -> Option<&ruma::RoomId>;
 }
 
 pub struct EventableWrapperETI<'a>(pub &'a EventTimelineItem);
-impl <'a> Eventable for EventableWrapperETI<'a> {
+impl Eventable for EventableWrapperETI<'_> {
     fn timestamp(&self) -> MilliSecondsSinceUnixEpoch {
         self.0.timestamp()
     }
@@ -3330,9 +3220,6 @@ impl <'a> Eventable for EventableWrapperETI<'a> {
     fn read_receipts(&self) -> Option<&IndexMap<OwnedUserId, Receipt>> {
         Some(self.0.read_receipts())
     }
-    fn latest_json(&self) -> Option<&Raw<AnySyncTimelineEvent>> {
-        self.0.latest_json()
-    }
     fn room_id(&self) -> Option<&ruma::RoomId> {
         None
     }
@@ -3363,6 +3250,7 @@ impl <'a> PreviousEventable<EventableWrapperETI<'a>> for PreviousWrapperTI<'a,> 
     }
     
 }
+
 /// Creates, populates, and adds a Message liveview widget to the given `PortalList`
 /// with the given `item_id`.
 ///
@@ -3390,7 +3278,7 @@ pub fn populate_message_view<T,P,M>(
 
     // Determine whether we can use a more compact UI view that hides the user's profile info
     // if the previous message (including stickers) was sent by the same user within 10 minutes.
-    let use_compact_view = prev_event.map_or(false, |p| p.use_compact(event_tl_item));
+    let use_compact_view = prev_event.is_some_and(|p| p.use_compact(event_tl_item));
     let has_html_body: bool;
 
     // Sometimes we need to call this up-front, so we save the result in this variable
@@ -3417,7 +3305,6 @@ pub fn populate_message_view<T,P,M>(
                                 draw_block: {
                                     code_color: (SEARCH_HIGHLIGHT)
                                 }
-                                font_size: (15.0),
                             }
                         }
                     ));
@@ -3754,7 +3641,7 @@ pub fn populate_message_view<T,P,M>(
             let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
                 item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
                     cx,
-                    event_tl_item.room_id().unwrap_or(&room_id),
+                    event_tl_item.room_id().unwrap_or(room_id),
                     event_tl_item.sender(),
                     event_tl_item.sender_profile(),
                     event_tl_item.event_id(),
@@ -3822,8 +3709,11 @@ pub fn populate_message_view<T,P,M>(
         item.label(id!(profile.timestamp))
             .set_text(cx, &format!("{}", ts_millis.get()));
     }
-    if is_contextual {
-        item.view(id!(overlay_message)).set_visible(cx, true);
+    if !is_contextual {
+        //item.view(id!(overlay_message)).set_visible(cx, true);
+        item.view(id!(overlay_message)).apply_over(cx, live!{
+            draw_bg: {color: (vec4(1.0, 1.0, 1.0, 0.5)),}
+        });
     }
     (item, new_drawn_status)
 }

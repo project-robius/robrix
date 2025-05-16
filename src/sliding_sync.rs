@@ -27,10 +27,10 @@ use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
-use ruma::{api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria, EventContext, OrderBy, Request}}, uint};
+use ruma::{api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria, EventContext, OrderBy, Request}}, events::AnyTimelineEvent, uint};
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
+        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, room_search_result::SearchTimelineItem, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -1117,7 +1117,7 @@ async fn async_worker(
                     abort_core_task(CoreTask::Search).await;
                 }                
                 let client = CLIENT.get().unwrap();
-                let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                 let Some(room_info) = all_room_info.get_mut(&room_id) else {
                     log!("Skipping search message request for not-yet-known room {room_id}");
                     continue;
@@ -1145,12 +1145,59 @@ async fn async_worker(
                     match client.send(req).await {
                         Ok(response) => {
                             let next_batch = response.search_categories.room_events.next_batch.clone();
-                            if let Err(e) = sender.send(TimelineUpdate::SearchResult(response.search_categories)) {
+                            let mut last_room_id = None;
+                            let result = response.search_categories;
+                            let mut items = vec![];
+                            for item in result.room_events.results.iter() {
+                                let Some(event) = item.result.as_ref().and_then(|f|f.deserialize().ok()) else { continue };
+                                item.context.events_after.iter().rev().for_each(|f| {
+                                    if let Ok(timeline_event) = f.deserialize() {
+                                        items.push(SearchTimelineItem::ContextEvent(timeline_event));
+                                    }
+                                });
+                                let timestamp = match event {
+                                    AnyTimelineEvent::MessageLike(ref event) => {
+                                        if let Some(replace) = event.relations().replace {
+                                            replace.origin_server_ts()
+                                        } else {
+                                            event.origin_server_ts()
+                                        }
+                                    }
+                                    _ => {
+                                        event.origin_server_ts()
+                                    }
+                                };
+                                let room_id = event.room_id().to_owned();
+                                items.push(SearchTimelineItem::Event(event));
+                                
+                                item.context.events_before.iter().rev().for_each(|f| {
+                                    if let Ok(timeline_event) = f.deserialize() {
+                                        items.push(SearchTimelineItem::ContextEvent(timeline_event));
+                                    }
+                                });
+                                items.push(SearchTimelineItem::DateDivider(timestamp));
+                                if include_all_rooms {
+                                    if let Some(ref mut last_room_id) = last_room_id {
+                                        if last_room_id != &room_id {
+                                            *last_room_id = room_id.clone();
+                                            items.push(SearchTimelineItem::RoomHeader(room_id));
+                                            
+                                        }
+                                    } else {
+                                        last_room_id = Some(room_id.clone());
+                                        items.push(SearchTimelineItem::RoomHeader(room_id));
+                                    }
+                                }
+                            }
+                            let count = result.room_events.count.and_then(|f| f.to_string().parse().ok()).unwrap_or(0);
+                            let highlights = result.room_events.highlights;
+                            if let Err(e) = sender.send(TimelineUpdate::SearchResultReceived { items, count, highlights, search_term: search_term.clone() }) {
                                 error!("Failed to search message in {room_id}; error: {e:?}");
                                 enqueue_popup_notification(format!("Failed to search message. Error: {e}"));
                             }
+                            // For simplicity, Element also does not handle pagination by scrolling.
                             if next_batch.is_some() {
-                                submit_async_request(MatrixRequest::SearchMessages { room_id: room_id.clone(), include_all_rooms, search_term, abort_previous_search: false, next_batch  });
+                                submit_async_request(MatrixRequest::SearchMessages { room_id: room_id.clone(), include_all_rooms, search_term, abort_previous_search: false, next_batch});
                             }
                             SignalToUI::set_ui_signal();
                         }
@@ -1807,7 +1854,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     let room_id = room.room_id().to_owned();
     // We must call `display_name()` here to calculate and cache the room's name.
     let room_name = room.display_name().await.map(|n| n.to_string()).ok();
-
+    let is_room_encrypted = room.is_encrypted().await.unwrap_or(false);
     match room.state() {
         RoomState::Knocked => {
             // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
@@ -1948,6 +1995,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         alt_aliases: room.alt_aliases(),
         has_been_paginated: false,
         is_selected: false,
+        is_room_encrypted
     }));
 
     spawn_fetch_room_avatar(room.inner_room().clone());

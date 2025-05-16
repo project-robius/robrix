@@ -2,12 +2,12 @@ use std::ops::DerefMut;
 
 use indexmap::IndexMap;
 use makepad_widgets::*;
-use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, VirtualTimelineItem};
-use ruma::{events::{receipt::Receipt, room::message::{FormattedBody, MessageType, Relation, RoomMessageEventContent}, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
+use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId};
+use ruma::{events::{receipt::Receipt, room::message::{AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, MessageType, NoticeMessageEventContent, Relation, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent}, AnyMessageLikeEvent, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
 
-use crate::{event_preview::text_preview_of_other_state, utils::unix_time_millis_to_datetime};
+use crate::{event_preview::text_preview_of_other_state, shared::room_filter_input_bar::RoomFilterAction, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
 
-use super::room_screen::{populate_message_view, populate_small_state_event, Eventable, ItemDrawnStatus, MessageOrSticker, MsgTypeAble, PreviousEventable, RoomScreen, SmallStateEventContent};
+use super::{new_message_context_menu::MessageDetails, room_screen::{populate_message_view, populate_small_state_event, Eventable, ItemDrawnStatus, MessageAction, MessageOrSticker, MsgTypeAble, PreviousEventable, RoomScreen, SmallStateEventContent, TimelineUiState}, rooms_list::RoomsListWidgetExt};
 
 live_design! {
     use link::theme::*;
@@ -20,6 +20,29 @@ live_design! {
 
     COLOR_BUTTON_GREY = #B6BABF
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
+    // The top space is used to display a loading message while the room is being paginated.
+    TopSpace = <View> {
+        visible: false,
+        width: Fill,
+        height: Fit,
+        align: {x: 0.5, y: 0}
+        show_bg: true,
+        draw_bg: {
+            color: #xDAF5E5F0, // mostly opaque light green
+        }
+
+        label = <Label> {
+            width: Fill,
+            height: Fit,
+            align: {x: 0.5, y: 0.5},
+            padding: { top: 10.0, bottom: 7.0, left: 15.0, right: 15.0 }
+            draw_text: {
+                text_style: <MESSAGE_TEXT_STYLE> { font_size: 10 },
+                color: (TIMESTAMP_TEXT_COLOR)
+            }
+            text: "Loading earlier messages..."
+        }
+    }
     SearchIcon = <Icon> {
         align: {x: 0.0} // Align to top-right
         spacing: 10,
@@ -61,9 +84,6 @@ live_design! {
         width: Fill,
         height: Fill,
         show_bg: false,
-        // draw_bg: {
-        //     color: (COLOR_SECONDARY)
-        // }
         flow: Overlay,
         loading_view = <View> {
             width: Fill,
@@ -78,64 +98,90 @@ live_design! {
         }
         <View> {
             width: Fill,
-            height: 60,
-            show_bg: true,
-            align: {y: 0.5}
-            draw_bg: {
-                color: (COLOR_SECONDARY)
-            }
-            <SearchIcon> {}
-            summary_label = <Html> {
-                align: {x: 0.3}  // Align to top-right
+            height: Fit,
+            flow: Down,
+            <View> {
                 width: Fill,
-                height: Fit,
-                padding: 0,
-                font_color: (MESSAGE_TEXT_COLOR),
-                font_size: (MESSAGE_FONT_SIZE),
-                body: ""
-            }
-            search_all_rooms_button = <Button> {
-                align: {x: 0.8},
-                margin: {right:10, top: -2}
-                draw_text:{color:#000}
-                text: "Search All Rooms"
-            }
-            cancel_button = <RobrixIconButton> {
-                align: {x: 1.0}
-                margin: {right: 10, top:0},
-                width: Fit,
-                height: Fit,
-                padding: {left: 15, right: 15}
+                height: 60,
+                show_bg: true,
+                align: {y: 0.5}
                 draw_bg: {
-                    border_color: (COLOR_DANGER_RED),
-                    color: #fff0f0 // light red
+                    color: (COLOR_SECONDARY)
                 }
-                draw_icon: {
-                    svg_file: (ICON_CLOSE),
-                    color: (COLOR_DANGER_RED)
+                <SearchIcon> {}
+                summary_label = <Html> {
+                    margin: {left: 10},
+                    align: {x: 0.3}  // Align to top-right
+                    width: Fill,
+                    height: Fit,
+                    padding: 0,
+                    font_color: (MESSAGE_TEXT_COLOR),
+                    font_size: (MESSAGE_FONT_SIZE),
+                    body: ""
                 }
-                icon_walk: {width: 16, height: 16, margin: 0}
+                search_all_rooms_button = <Button> {
+                    align: {x: 0.8},
+                    margin: {right:10, top: -2}
+                    draw_text:{color: #000 },
+                    draw_bg: {
+                        uniform color: #e0e0e0, // light gray
+                        uniform color_hover: #d0d0d0
+                    },
+                    text: "Search All Rooms"
+                }
+                cancel_button = <RobrixIconButton> {
+                    align: {x: 1.0}
+                    margin: {right: 10, top: 0},
+                    width: Fit,
+                    height: 32,
+                    padding: {left: 15, right: 15}
+                    draw_bg: {
+                        border_color: (COLOR_DANGER_RED),
+                        color: #fff0f0 // light red
+                    }
+                    draw_icon: {
+                        svg_file: (ICON_CLOSE),
+                        color: (COLOR_DANGER_RED)
+                    }
+                    icon_walk: {width: 16, height: 16, margin: 0}
+                }
+            }
+            top_space = <TopSpace> {
+                visible: true
             }
         }
-        
     }
 }
 
-// The main widget that displays a single Matrix room.
+// The widget that displays an overlay of the summary for search results.
 #[derive(Live, LiveHook, Widget)]
 pub struct SearchResult {
     #[deref] pub view: View,
-    /// The room ID of the currently-shown room.
-    #[rust] pub room_id: Option<OwnedRoomId>,
+    #[rust] pub search_criteria: Criteria,
+    #[rust] pub result_count: u32,
+    #[live(true)] visible: bool,
+}
+
+#[derive(Clone, Default)]
+pub struct Criteria {
+    pub search_term: String,
+    pub include_all_rooms: bool,
+    pub is_encrypted: bool
 }
 
 impl Widget for SearchResult {
     // Handle events and actions for the SearchResult widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if !self.visible {
+            return;
+        }
         self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if !self.visible {
+            return DrawStep::done();
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -143,58 +189,88 @@ impl MatchEvent for SearchResult {
     fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions) {
         let cancel_button_clicked = self.view.button(id!(cancel_button)).clicked(actions);
         if cancel_button_clicked {
-            cx.action(SearchResultAction::Close);
-        }
-        for action in actions {
-            match action.downcast_ref() {
-                Some(SearchResultAction::Success(result_length, search_criteria)) => {
-                    self.set_summary(cx, *result_length, search_criteria.clone());
-                }
-                Some(SearchResultAction::Pending) => {
-                    self.view.search_result(id!(search_result_overlay)).set_visible(cx, true);
-                }
-                _ => {}
-            }
+            cx.widget_action(self.widget_uid(), &Scope::empty().path, RoomFilterAction::Clear);
         }
     }
 }
 impl SearchResult {
-    /// Sets the `search_result_count` and `search_criteria` fields of this `SearchResult`.
+    /// Display search summary.
     ///
     /// This is used to display the number of search results and the search criteria
     /// in the top-right of the room screen.
-    fn set_summary(&mut self, cx: &mut Cx, search_result_count: usize, search_criteria: String) {
-        self.view.html(id!(summary_label)).set_text(cx, &format!("{} results for <b>'{}'</b>", search_result_count, search_criteria));
+    fn set_result_count(&mut self, cx: &mut Cx, search_result_count: u32) {
+        self.result_count = search_result_count;
+        self.view.html(id!(summary_label)).set_text(cx, &format!("{} results for <b>'{}'</b>", self.result_count, self.search_criteria.search_term));
         self.view.view(id!(loading_view)).set_visible(cx, false);
     }
-
-    /// Resets the search result summary and displays the loading view.
+    fn set_search_criteria(&mut self, cx: &mut Cx, search_criteria: Criteria) {
+        self.view.html(id!(summary_label)).set_text(cx, &format!("Searching for <b>'{}'</b>", search_criteria.search_term));
+        self.search_criteria = search_criteria;
+        self.visible = true;
+    }
+    /// Resets the search result summary and set the loading view back to visible.
     ///
     /// This function clears the summary text and makes the loading indicator visible.
     /// It is typically used when a new search is initiated or search results are being cleared.
-    fn reset_summary(&mut self, cx: &mut Cx) {
+    fn reset(&mut self, cx: &mut Cx) {
         self.view.html(id!(summary_label)).set_text(cx, "");
         self.view.view(id!(loading_view)).set_visible(cx, true);
+        self.search_criteria = Criteria::default();
+        self.visible = false;
+        self.result_count = 0;
+    }
+    /// Displays the loading view for backwards pagination for search result.
+    fn display_top_space(&mut self, cx: &mut Cx) {
+        self.view.view(id!(top_space)).set_visible(cx, true);
+    }
+    /// Hides the loading view for backwards pagination for search result.
+    fn hide_top_space(&mut self, cx: &mut Cx) {
+        self.view.view(id!(top_space)).set_visible(cx, false);
     }
 }
 impl SearchResultRef {
-    /// See [`SearchResult::set_summary()`].
-    pub fn set_summary(&self, cx: &mut Cx, search_result_count: usize, search_criteria: String) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_summary(cx, search_result_count, search_criteria);
+    /// See [`SearchResult::set_visible()`].
+    pub fn set_visible(&self, cx: &mut Cx, visible: bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.visible = visible;
+            inner.redraw(cx);
+        }
     }
-
-    /// See [`SearchResult::reset_summary()`].
-    pub fn reset_summary(&self, cx: &mut Cx) {
+    /// See [`SearchResult::set_result_count()`].
+    pub fn set_result_count(&mut self, cx: &mut Cx, search_result_count: u32) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.reset_summary(cx);
+        inner.set_result_count(cx, search_result_count);
+    }
+    /// See [`SearchResult::set_search_criteria()`].
+    pub fn set_search_criteria(&self, cx: &mut Cx, search_criteria: Criteria) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_search_criteria(cx, search_criteria);
+    }
+    /// See [`SearchResult::reset()`].
+    pub fn reset(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.reset(cx);
+    }
+    /// See [`SearchResult::display_top_space()`].
+    pub fn display_top_space(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.display_top_space(cx);
+    }
+    /// See [`SearchResult::hide_top_space()`].
+    pub fn hide_top_space(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.hide_top_space(cx);
+    }
+    /// See [`SearchResult::get_search_criteria()`].
+    pub fn get_search_criteria(&self) -> Criteria {
+        let Some(inner) = self.borrow() else { return Criteria::default() };
+        inner.search_criteria.clone()
     }
 }
 
 pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
     let room_screen_widget_uid = room_screen.widget_uid();
-    let search_timeline_widget = room_screen.view(id!(search_timeline));
-    let search_timeline_widget_visible = search_timeline_widget.visible();
+    let Some(room_id) = &room_screen.room_id else { return DrawStep::done(); };
     while let Some(subview) = room_screen.view.draw_walk(cx, scope, walk).step() {
         // We only care about drawing the portal list.
         let portal_list_ref = subview.as_portal_list();
@@ -205,18 +281,18 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
         let Some(tl_state) = room_screen.tl_state.as_mut() else {
             return DrawStep::done();
         };
-        let room_id = &tl_state.room_id;
-        let tl_items = &tl_state.searched_results;
-
+        let tl_items = &tl_state.search_result_state.items;
         // Set the portal list's range based on the number of timeline items.
         let last_item_id = tl_items.len();
         let list = list_ref.deref_mut();
         list.set_item_range(cx, 0, last_item_id);
 
         while let Some(item_id) = list.next_visible_item(cx) {
-            if item_id == 0 && search_timeline_widget_visible {
+            if item_id == 0 {
                 WidgetRef::new_from_ptr(cx, room_screen.no_more_template).as_label().draw_all(cx, &mut Scope::empty());
             }
+            // Add one because the first item for displaying No More at the start of the list.
+            //let item_id = item_id + 1;
             let item = {
                 let tl_idx = item_id;
                 let Some(timeline_item) = tl_items.get(tl_idx) else {
@@ -232,29 +308,21 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                 let (item, item_new_draw_status) = {
                     let current_item = timeline_item;
                     let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i))
-                        .and_then(|f| match f.kind { 
-                            SearchTimelineItemKind::ContextEvent(ref e) | SearchTimelineItemKind::Event(ref e) => Some(e),
+                        .and_then(|f| match f {
+                            SearchTimelineItem::ContextEvent(ref e) | SearchTimelineItem::Event(ref e) => Some(e),
                             _ => None });
                     
-                    match &current_item.kind {
-                        SearchTimelineItemKind::Virtual(virtual_item) => {
-                            match virtual_item {
-                                VirtualTimelineItem::DateDivider(millis) => {
-                                    let item = list.item(cx, item_id, live_id!(DateDivider));
-                                    let text = unix_time_millis_to_datetime(millis)
-                                        // format the time as a shortened date (Sat, Sept 5, 2021)
-                                        .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
-                                        .unwrap_or_else(|| format!("{:?}", millis));
-                                    item.label(id!(date)).set_text(cx, &text);
-                                    (item, ItemDrawnStatus::both_drawn())
-                                }
-                                VirtualTimelineItem::ReadMarker => {
-                                    continue
-                                }
-                            }
-                            
+                    match &current_item {
+                        SearchTimelineItem::DateDivider(millis) => {
+                            let item = list.item(cx, item_id, live_id!(DateDivider));
+                            let text = unix_time_millis_to_datetime(millis)
+                                // format the time as a shortened date (Sat, Sept 5, 2021)
+                                .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
+                                .unwrap_or_else(|| format!("{:?}", millis));
+                            item.label(id!(date)).set_text(cx, &text);
+                            (item, ItemDrawnStatus::both_drawn())
                         }
-                        SearchTimelineItemKind::ContextEvent(event) | SearchTimelineItemKind::Event(event) => match event {
+                        SearchTimelineItem::ContextEvent(event) | SearchTimelineItem::Event(event) => match event {
                             AnyTimelineEvent::MessageLike(msg) => {
                                 let mut content = msg.original_content();
                                 if let Some(replace) = msg.relations().replace {
@@ -262,35 +330,37 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                 }
                                 match content {
                                     Some(AnyMessageLikeEventContent::RoomMessage(mut message)) => {
-                                        if let Some(replace) = &message.relates_to {
-                                            match replace{
+                                        let mut in_reply_to_details = None;
+                                        if let Some(relation) = &message.relates_to {
+                                            match relation {
                                                 Relation::Replacement(replace) => {
                                                     let new_content = &replace.new_content;
                                                     message.msgtype = new_content.msgtype.clone();
+                                                },
+                                                Relation::Reply { in_reply_to } => {
+                                                    in_reply_to_details = Some(InReplyToDetails::new(in_reply_to.event_id.clone(), &tl_state.items));
                                                 }
-                                                _ => {
-
-                                                }
+                                                _=> {}
                                             }
                                         }
-                                        let is_contextual = matches!(&current_item.kind, SearchTimelineItemKind::ContextEvent(_));
+                                        let is_contextual = matches!(&current_item, SearchTimelineItem::ContextEvent(_));
                                         if let MessageType::Text(text) = &mut message.msgtype {
-                                            
                                             if let Some(ref mut formatted) = text.formatted {
-                                                for highlight in tl_state.searched_results_highlighted_strings.iter() {
+                                                for highlight in tl_state.search_result_state.highlighted_strings.iter() {
                                                     formatted.body = formatted.body.replace(highlight, &format!("<code>{}</code>", highlight));
                                                 }
                                             } else {
                                                 let mut formated_string = text.body.clone();
-                                                for highlight in tl_state.searched_results_highlighted_strings.iter() {
+                                                for highlight in tl_state.search_result_state.highlighted_strings.iter() {
                                                     formated_string = formated_string.replace(highlight, &format!("<code>{}</code>", highlight));
                                                 }
                                                 text.formatted = Some(FormattedBody::html(formated_string));
                                             }
                                         }
                                         let event = &EventableWrapperAEI(event);
-                                        let prev_event = prev_event.map(|f| PreviousWrapperAEI(f));
-                                        let message = MsgTypeWrapperRMC(&message);
+                                        // Do not use compact view if previous event is state
+                                        let prev_event = prev_event.and_then(|f| if matches!(f, AnyTimelineEvent::State(_)) { None } else { Some(f) }).map(PreviousWrapperAEI);
+                                        let message = MsgTypeWrapperRMC(&message, in_reply_to_details.as_ref());
                                         populate_message_view(
                                             cx,
                                             list,
@@ -306,7 +376,29 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                             room_screen_widget_uid,
                                         )
                                     }
-                                    _ => continue
+                                    Some(AnyMessageLikeEventContent::Sticker(sticker)) => {
+                                        let event = &EventableWrapperAEI(event);
+                                        let prev_event = prev_event.map(PreviousWrapperAEI);
+                                        let is_contextual = matches!(&current_item, SearchTimelineItem::ContextEvent(_));
+                                        populate_message_view(
+                                            cx,
+                                            list,
+                                            item_id,
+                                            room_id,
+                                            event,
+                                            MessageOrSticker::Sticker::<MsgTypeWrapperRMC>(&sticker),
+                                            prev_event.as_ref(),
+                                            &mut tl_state.media_cache,
+                                            &tl_state.user_power,
+                                            is_contextual,
+                                            item_drawn_status,
+                                            room_screen_widget_uid,
+                                        )
+                                    }
+                                    _ => {
+                                        list.item(cx, item_id, live_id!(Empty)).draw_all(cx, &mut Scope::empty());
+                                        continue
+                                    }
                                 }
                             },
                             AnyTimelineEvent::State(state) => {
@@ -324,11 +416,13 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                         item_drawn_status,
                                     )
                                 } else {
+                                    list.item(cx, item_id, live_id!(Empty)).draw_all(cx, &mut Scope::empty());
                                     continue
                                 }
                             }
                         }
-                        SearchTimelineItemKind::RoomHeader(room_name) => {
+                        SearchTimelineItem::RoomHeader(room_id) => {
+                            let room_name = room_screen.view.rooms_list(id!(rooms_list)).get_room_name(room_id).unwrap_or(room_id.to_string());
                             let item = list.item(cx, item_id, live_id!(RoomHeader));
                             item.set_text(cx, &format!("Room {}", room_name));
                             (item, ItemDrawnStatus::both_drawn())
@@ -349,81 +443,146 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
     DrawStep::done()
 }
 
-#[derive(Clone)]
-pub struct SearchTimelineItem{
-    pub kind: SearchTimelineItemKind
+pub fn search_result_copy_html_to_clipboard(cx: &mut Cx, details: &MessageDetails, tl: &TimelineUiState, success: &mut bool) {
+    let (Some(SearchTimelineItem::Event(event)) | Some(SearchTimelineItem::ContextEvent(event))) = tl.search_result_state.items
+        .get(details.item_id) else { return };
+    if let AnyTimelineEvent::MessageLike(msg) = event {
+        let mut content = msg.original_content();
+        if let Some(replace) = msg.relations().replace {
+            content = replace.original_content();
+        }
+        if let Some(AnyMessageLikeEventContent::RoomMessage(mut message)) = content {
+            if let Some(Relation::Replacement(replace)) = &message.relates_to {
+                let new_content = &replace.new_content;
+                message.msgtype = new_content.msgtype.clone();
+            }
+            match &message.msgtype {
+                MessageType::Text(TextMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
+                | MessageType::Notice(NoticeMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
+                | MessageType::Emote(EmoteMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
+                | MessageType::Image(ImageMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
+                | MessageType::File(FileMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
+                | MessageType::Audio(AudioMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
+                | MessageType::Video(VideoMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
+                | MessageType::VerificationRequest(KeyVerificationRequestEventContent { formatted: Some(FormattedBody { body, .. }), .. }) =>
+                {
+                    cx.copy_to_clipboard(body);
+                    *success = true;
+                }
+                _ => {}
+            }
+        }
+    }
 }
-impl SearchTimelineItem{
-    pub fn with_context_event(event: AnyTimelineEvent) -> Self {
-        SearchTimelineItem {
-            kind: SearchTimelineItemKind::ContextEvent(event)
+pub fn search_result_copy_to_clipboard(cx: &mut Cx, details: &MessageDetails, tl: &TimelineUiState) {
+    let (Some(SearchTimelineItem::Event(event)) | Some(SearchTimelineItem::ContextEvent(event))) = tl.search_result_state.items
+        .get(details.item_id) else { return };
+    if let AnyTimelineEvent::MessageLike(msg) = event {
+        let mut content = msg.original_content();
+        if let Some(replace) = msg.relations().replace {
+            content = replace.original_content();
         }
-    }
-    pub fn with_event(event: AnyTimelineEvent) -> Self {
-        SearchTimelineItem {
-            kind: SearchTimelineItemKind::Event(event)
-        }
-    }
-    pub fn with_virtual(virtual_item: VirtualTimelineItem) -> Self {
-        SearchTimelineItem {
-            kind: SearchTimelineItemKind::Virtual(virtual_item)
-        }
-    }
-    pub fn with_room_header(room_name: String) -> Self {
-        SearchTimelineItem {
-            kind: SearchTimelineItemKind::RoomHeader(room_name)
+        if let Some(AnyMessageLikeEventContent::RoomMessage(mut message)) = content {
+            if let Some(Relation::Replacement(replace)) = &message.relates_to {
+                let new_content = &replace.new_content;
+                message.msgtype = new_content.msgtype.clone();
+            }
+            cx.copy_to_clipboard(message.body());
         }
     }
 }
-#[derive(Clone)]
-pub enum SearchTimelineItemKind {
-    /// The event that matches the search criteria 
-    Event(AnyTimelineEvent),
-    /// The events before or after the event that matches the search criteria
-    ContextEvent(AnyTimelineEvent),
-    /// An item that doesn't correspond to an event, for example the user's
-    /// own read marker, or a date divider.
-    Virtual(VirtualTimelineItem),
-    /// The room header displaying room name for all found messages in a room.
-    RoomHeader(String),
+pub fn search_result_react(_cx: &mut Cx, details: &MessageDetails, tl: &TimelineUiState, reaction: String, success: &mut bool) {
+    let (Some(SearchTimelineItem::Event(event)) | Some(SearchTimelineItem::ContextEvent(event))) = tl.search_result_state.items
+        .get(details.item_id) else { return };
+    if Some(event.event_id().to_owned()) != details.event_id {
+        return;
+    }
+    
+    if let Some(transaction_id) = event.transaction_id() {
+        submit_async_request(MatrixRequest::ToggleReaction {
+            room_id: event.room_id().to_owned(),
+            timeline_event_id: TimelineEventItemId::TransactionId(transaction_id.to_owned()),
+            reaction,
+        });
+    } else {
+        submit_async_request(MatrixRequest::ToggleReaction {
+            room_id: event.room_id().to_owned(),
+            timeline_event_id: TimelineEventItemId::EventId(event.event_id().to_owned()),
+            reaction,
+        });
+    }
+    *success = true;
 }
 
-/// Actions related to a specific message within a room timeline.
-#[derive(Clone, DefaultNone, Debug)]
-pub enum SearchResultAction {
-    /// Search result's length and the search criteria
-    Success(usize, String),
-    Pending,
-    Close,
+pub fn search_result_reply(cx: &mut Cx, room_screen: &RoomScreen, details: &MessageDetails, tl: &TimelineUiState, success: &mut bool) {
+    let (Some(SearchTimelineItem::Event(event)) | Some(SearchTimelineItem::ContextEvent(event))) = tl.search_result_state.items
+        .get(details.item_id) else { return };
+    if Some(event.event_id().to_owned()) != details.event_id {
+        return;
+    }
+    let mut timeline_details = details.clone();
+    for (index, item) in tl.items.iter().enumerate() {
+        if item.as_event().and_then(|f| f.event_id()).map(|f|Some(f.to_owned()) == details.event_id).unwrap_or(false) {
+            timeline_details.item_id = index;
+            break;
+        }
+    }
+    cx.widget_action(room_screen.widget_uid(), &Scope::empty().path, RoomFilterAction::Clear);
+    cx.widget_action(
+        details.room_screen_widget_uid,
+        &Scope::empty().path,
+        MessageAction::Reply(timeline_details),
+    );
+    *success = true;
+}
+pub fn search_result_jump_to_related(_cx: &mut Cx, details: &MessageDetails, tl: &TimelineUiState)-> Option<usize> {
+    let (Some(SearchTimelineItem::Event(event)) | Some(SearchTimelineItem::ContextEvent(event))) = tl.search_result_state.items
+        .get(details.item_id) else { return None};
+    if Some(event.event_id().to_owned()) != details.event_id {
+        return None;
+    }
+    if let Some((pos, _elt)) = tl.items.iter().enumerate().find(|(_i, x)| x.as_event().and_then(|f|f.event_id()).map(|f|Some(f.to_owned()) == details.event_id).unwrap_or(false)) {
+        return Some(pos);
+    }
     None
 }
-
+#[derive(Clone, Debug)]
+pub enum SearchTimelineItem {
+    /// The event that matches the search criteria.
+    Event(AnyTimelineEvent),
+    /// The events before or after the event that matches the search criteria.
+    ContextEvent(AnyTimelineEvent),
+    /// A date divider used to separate each search results.
+    DateDivider(MilliSecondsSinceUnixEpoch),
+    /// The room name for other's room messages.
+    RoomHeader(OwnedRoomId),
+}
 
 pub struct AnyStateEventContentWrapper<'a>(pub &'a AnyStateEventContent, pub &'a str);
 
-impl <'a>Into<Option<AnyOtherFullStateEventContent>> for &AnyStateEventContentWrapper<'a> {
-    fn into(self) -> Option<AnyOtherFullStateEventContent> {
-        match self.0.clone() {
-            AnyStateEventContent::RoomAliases(p) => Some(AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::RoomAvatar(p) => Some(AnyOtherFullStateEventContent::RoomAvatar(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::RoomCanonicalAlias(p) => Some(AnyOtherFullStateEventContent::RoomCanonicalAlias(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::RoomCreate(p) => Some(AnyOtherFullStateEventContent::RoomCreate(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::RoomEncryption(p) => Some(AnyOtherFullStateEventContent::RoomEncryption(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::RoomGuestAccess(p) => Some(AnyOtherFullStateEventContent::RoomGuestAccess(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::RoomHistoryVisibility(p) => Some(AnyOtherFullStateEventContent::RoomHistoryVisibility(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::RoomJoinRules(p) => Some(AnyOtherFullStateEventContent::RoomJoinRules(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::RoomPinnedEvents(p) => Some(AnyOtherFullStateEventContent::RoomPinnedEvents(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::RoomName(p) => Some(AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::RoomPowerLevels(p) => Some(AnyOtherFullStateEventContent::RoomPowerLevels(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::RoomServerAcl(p) => Some(AnyOtherFullStateEventContent::RoomServerAcl(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::RoomTombstone(p) => Some(AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::RoomTopic(p) => Some(AnyOtherFullStateEventContent::RoomTopic(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::SpaceParent(p) => Some(AnyOtherFullStateEventContent::SpaceParent(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::SpaceChild(p) => Some(AnyOtherFullStateEventContent::SpaceChild(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::PolicyRuleRoom(p) => Some(AnyOtherFullStateEventContent::PolicyRuleRoom(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::PolicyRuleServer(p) => Some(AnyOtherFullStateEventContent::PolicyRuleServer(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::PolicyRuleUser(p) => Some(AnyOtherFullStateEventContent::PolicyRuleUser(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::RoomThirdPartyInvite(p) => Some(AnyOtherFullStateEventContent::RoomThirdPartyInvite(FullStateEventContent::Original { content: p, prev_content: None})),
+impl <'a>From<&AnyStateEventContentWrapper<'a>> for Option<AnyOtherFullStateEventContent> {
+    fn from(val: &AnyStateEventContentWrapper<'a>) -> Self {
+        match val.0 {
+            AnyStateEventContent::RoomAliases(p) => Some(AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::RoomAvatar(p) => Some(AnyOtherFullStateEventContent::RoomAvatar(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::RoomCanonicalAlias(p) => Some(AnyOtherFullStateEventContent::RoomCanonicalAlias(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::RoomCreate(p) => Some(AnyOtherFullStateEventContent::RoomCreate(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::RoomEncryption(p) => Some(AnyOtherFullStateEventContent::RoomEncryption(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::RoomGuestAccess(p) => Some(AnyOtherFullStateEventContent::RoomGuestAccess(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::RoomHistoryVisibility(p) => Some(AnyOtherFullStateEventContent::RoomHistoryVisibility(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::RoomJoinRules(p) => Some(AnyOtherFullStateEventContent::RoomJoinRules(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::RoomPinnedEvents(p) => Some(AnyOtherFullStateEventContent::RoomPinnedEvents(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::RoomName(p) => Some(AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::RoomPowerLevels(p) => Some(AnyOtherFullStateEventContent::RoomPowerLevels(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::RoomServerAcl(p) => Some(AnyOtherFullStateEventContent::RoomServerAcl(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::RoomTombstone(p) => Some(AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::RoomTopic(p) => Some(AnyOtherFullStateEventContent::RoomTopic(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::SpaceParent(p) => Some(AnyOtherFullStateEventContent::SpaceParent(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::SpaceChild(p) => Some(AnyOtherFullStateEventContent::SpaceChild(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::PolicyRuleRoom(p) => Some(AnyOtherFullStateEventContent::PolicyRuleRoom(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::PolicyRuleServer(p) => Some(AnyOtherFullStateEventContent::PolicyRuleServer(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::PolicyRuleUser(p) => Some(AnyOtherFullStateEventContent::PolicyRuleUser(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
+            AnyStateEventContent::RoomThirdPartyInvite(p) => Some(AnyOtherFullStateEventContent::RoomThirdPartyInvite(FullStateEventContent::Original { content: p.clone(), prev_content: None})),
             AnyStateEventContent::BeaconInfo(_) => None,
             AnyStateEventContent::CallMember(_) => None,
             AnyStateEventContent::MemberHints(_) => None,
@@ -432,10 +591,9 @@ impl <'a>Into<Option<AnyOtherFullStateEventContent>> for &AnyStateEventContentWr
         }
     }
 }
-
 pub struct EventableWrapperAEI<'a>(pub &'a AnyTimelineEvent);
 
-impl <'a> Eventable for EventableWrapperAEI<'a> {
+impl Eventable for EventableWrapperAEI<'_> {
     fn timestamp(&self) -> MilliSecondsSinceUnixEpoch {
         self.0.origin_server_ts()
     }
@@ -452,33 +610,60 @@ impl <'a> Eventable for EventableWrapperAEI<'a> {
         None
     }
     fn identifier(&self) -> TimelineEventItemId {
+        if let Some(transaction_id) = self.0.transaction_id() {
+            return TimelineEventItemId::TransactionId(transaction_id.to_owned());
+        }
         TimelineEventItemId::EventId(self.0.event_id().to_owned())
     }
     fn is_highlighted(&self) -> bool {
         false
     }
     fn is_editable(&self) -> bool {
+        if !self.is_own() {
+            return false;
+        }
+        if let AnyTimelineEvent::MessageLike(AnyMessageLikeEvent::RoomMessage(msg)) = self.0 {
+            if let Some(is_editable) = msg.as_original().map(|f| {
+                matches!(
+                f.content.msgtype,
+                MessageType::Text(_)
+                    | MessageType::Emote(_)
+                    | MessageType::Audio(_)
+                    | MessageType::File(_)
+                    | MessageType::Image(_)
+                    | MessageType::Video(_)
+                )
+            }) {
+                return is_editable;
+            }
+        }
         false
     }
+
     fn is_own(&self) -> bool {
+        if current_user_id() == Some(self.0.sender().to_owned()) {
+            return true
+        }
         false
     }
     fn can_be_replied_to(&self) -> bool {
-        false
+        if self.event_id().is_none() {
+            false
+        } else {
+            matches!(self.0, AnyTimelineEvent::MessageLike(AnyMessageLikeEvent::RoomMessage(_)))
+        }
     }
     fn read_receipts(&self) -> Option<&IndexMap<OwnedUserId, Receipt>> {
         None
     }
-    fn latest_json(&self) -> Option<&ruma::serde::Raw<ruma::events::AnySyncTimelineEvent>> {
-        None
-    }
+    
     fn room_id(&self) -> Option<&ruma::RoomId> {
         Some(self.0.room_id())
     }
 }
 
 
-impl  <'a> SmallStateEventContent<EventableWrapperAEI<'_>> for AnyStateEventContentWrapper<'a> {
+impl SmallStateEventContent<EventableWrapperAEI<'_>> for AnyStateEventContentWrapper<'_> {
     fn populate_item_content(
         &self,
         cx: &mut Cx,
@@ -491,7 +676,7 @@ impl  <'a> SmallStateEventContent<EventableWrapperAEI<'_>> for AnyStateEventCont
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
         let Some(other_state) = self.into() else { return (list.item(cx, item_id, live_id!(Empty)), ItemDrawnStatus::new()) };
-        let item = if let Some(text_preview) = text_preview_of_other_state(&other_state, &self.1) {
+        let item = if let Some(text_preview) = text_preview_of_other_state(&other_state, self.1) {
             item.label(id!(content))
                 .set_text(cx, &text_preview.format_with(username));
             new_drawn_status.content_drawn = true;
@@ -510,18 +695,15 @@ impl <'a> PreviousEventable<EventableWrapperAEI<'a>> for PreviousWrapperAEI<'a> 
     fn use_compact(&self, current: &EventableWrapperAEI<'a>) -> bool {
         let prev_msg_sender = self.0.sender();
         let current_sender = current.0.sender();
-        let compact_view = {
+        {
             prev_msg_sender == current_sender && current.0.origin_server_ts().0.checked_sub(self.0.origin_server_ts().0)
-                // Use compact_view within a draw
-                .is_some_and(|d| d < uint!(86400000))
-        };
-        //false
-        compact_view
+            .is_some_and(|d| d < uint!(86400000)) //within a day
+        }
     }
 }
 
-pub struct MsgTypeWrapperRMC<'a>(pub &'a RoomMessageEventContent);
-impl <'a>MsgTypeAble for MsgTypeWrapperRMC<'a> {
+pub struct MsgTypeWrapperRMC<'a>(pub &'a RoomMessageEventContent, pub Option<&'a InReplyToDetails>);
+impl MsgTypeAble for MsgTypeWrapperRMC<'_> {
     fn msgtype(&self) -> &MessageType {
         &self.0.msgtype
     }
@@ -529,7 +711,7 @@ impl <'a>MsgTypeAble for MsgTypeWrapperRMC<'a> {
         self.0.body()
     }
     fn in_reply_to(&self) -> Option<&InReplyToDetails> {
-        None
+        self.1
     }
     fn is_searched_result(&self) -> bool {
         true

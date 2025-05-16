@@ -192,7 +192,6 @@ impl MatchEvent for App {
         self.update_login_visibility(cx);
 
         log!("App::handle_startup(): starting matrix sdk loop");
-        self.app_state.search_widget = Some(self.ui.search_bar(id!(home_screen_search_bar)).widget_uid());
         crate::sliding_sync::start_matrix_tokio().unwrap();
     }
 
@@ -310,9 +309,6 @@ impl MatchEvent for App {
                 self.ui.modal(id!(verification_modal)).close(cx);
             }
 
-            if let Some(SearchResultAction::Close) = action.downcast_ref() {
-                self.ui.search_bar(id!(home_screen_search_bar)).text_input(id!(input)).set_text(cx, "");
-            }
             // // message source modal handling.
             // match action.as_widget_action().cast() {
             //     MessageAction::MessageSourceModalOpen { room_id: _, event_id: _, original_json: _ } => {
@@ -401,10 +397,6 @@ pub struct AppState {
     pub logged_in: bool,
     /// The current window geometry.
     pub window_geom: Option<event::WindowGeom>,
-    /// Main Desktop Ui's search widget uid.
-    /// Room screens will get this widget uid to differentiate search action 
-    /// from search bar widget.
-    pub search_widget: Option<WidgetUid>,
 }
 
 /// A saved instance of the state of the main desktop UI's dock.

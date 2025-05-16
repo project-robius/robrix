@@ -9,8 +9,6 @@
 
 use makepad_widgets::*;
 
-use crate::shared::search_bar::{SearchBarAction, SearchBarWidgetExt};
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;

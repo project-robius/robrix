@@ -282,28 +282,6 @@ bitflags! {
     }
 }
 impl MessageAbilities {
-    // pub fn from_user_power_and_event(
-    //     user_power_levels: &UserPowerLevels,
-    //     event_tl_item: &EventTimelineItem,
-    //     _message: &MessageOrSticker,
-    //     has_html: bool,
-    // ) -> Self {
-    //     let mut abilities = Self::empty();
-    //     abilities.set(Self::CanEdit, event_tl_item.is_editable());
-    //     // Currently we only support deleting one's own messages.
-    //     if event_tl_item.is_own() {
-    //         abilities.set(Self::CanDelete, user_power_levels.can_redact_own());
-    //     }
-    //     abilities.set(Self::CanReplyTo, event_tl_item.can_be_replied_to());
-    //     abilities.set(Self::CanPin, user_power_levels.can_pin());
-    //     // TODO: currently we don't differentiate between pin and unpin,
-    //     //       but we should first check whether the given message is already pinned
-    //     //       before deciding which ability to set.
-    //     // abilities.set(Self::CanUnPin, user_power_levels.can_pin_unpin());
-    //     abilities.set(Self::CanReact, user_power_levels.can_send_reaction());
-    //     abilities.set(Self::HasHtml, has_html);
-    //     abilities
-    // }
     pub fn from_user_power_and_event_generic<T: Eventable, M: MsgTypeAble>(
         user_power_levels: &UserPowerLevels,
         event_tl_item: &T,
