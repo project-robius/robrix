@@ -658,7 +658,7 @@ live_design! {
         room_screen_wrapper = <View> {
             width: Fill, height: Fill,
             flow: Overlay,
-            show_bg: true,
+            show_bg: true
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
@@ -884,7 +884,6 @@ pub struct RoomScreen {
     /// The timer for sending a search request after a delay when user stops typing.
     #[rust] search_debounce_timer: Timer,
     #[live] pub no_more_template: Option<LivePtr>,
-    #[rust] pub search_bar_widget_uid: Option<WidgetUid>
 }
 impl Drop for RoomScreen {
 
@@ -2687,15 +2686,6 @@ impl RoomScreenRef {
     }
 }
 
-/// Various display types other than timeline in the room screen  
-#[derive(Clone, Debug, DefaultNone)]
-pub enum RoomScreenOtherDisplay{
-    /// Display Search Result
-    SearchResult,
-    /// Display timeline
-    None
-}
-
 /// Actions for the room screen's tooltip.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum RoomScreenTooltipActions {
@@ -3697,7 +3687,7 @@ pub fn populate_message_view<T,P,M>(
         item_id,
         related_event_id: replied_to_event_id,
         room_screen_widget_uid,
-        abilities: MessageAbilities::from_user_power_and_event_generic(
+        abilities: MessageAbilities::from_user_power_and_event(
             user_power_levels,
             event_tl_item,
             &message,

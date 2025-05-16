@@ -246,7 +246,7 @@ bitflags! {
     }
 }
 impl MessageAbilities {
-    pub fn from_user_power_and_event_generic<T: Eventable, M: MsgTypeAble>(
+    pub fn from_user_power_and_event<T: Eventable, M: MsgTypeAble>(
         user_power_levels: &UserPowerLevels,
         event_tl_item: &T,
         _message: &MessageOrSticker<M>,
