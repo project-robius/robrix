@@ -7,7 +7,7 @@ use ruma::{events::{receipt::Receipt, room::message::{AudioMessageEventContent, 
 
 use crate::{event_preview::text_preview_of_other_state, shared::room_filter_input_bar::RoomFilterAction, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
 
-use super::{new_message_context_menu::MessageDetails, room_screen::{populate_message_view, populate_small_state_event, Eventable, ItemDrawnStatus, MessageAction, MessageOrSticker, MsgTypeAble, PreviousEventable, RoomScreen, SmallStateEventContent, TimelineUiState}, rooms_list::RoomsListWidgetExt};
+use crate::home::{new_message_context_menu::MessageDetails, room_screen::{populate_message_view, populate_small_state_event, Eventable, ItemDrawnStatus, MessageAction, MessageOrSticker, MsgTypeAble, PreviousEventable, RoomScreen, SmallStateEventContent, TimelineUiState}, rooms_list::RoomsListWidgetExt};
 
 live_design! {
     use link::theme::*;
