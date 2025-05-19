@@ -1,13 +1,13 @@
-use std::ops::DerefMut;
+use std::{collections::BTreeMap, ops::DerefMut};
 
 use indexmap::IndexMap;
 use makepad_widgets::*;
-use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId};
+use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, Profile, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId};
 use ruma::{events::{receipt::Receipt, room::message::{AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, MessageType, NoticeMessageEventContent, Relation, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent}, AnyMessageLikeEvent, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
 
-use crate::{event_preview::text_preview_of_other_state, shared::room_filter_input_bar::RoomFilterAction, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
+use crate::{app::AppState, event_preview::text_preview_of_other_state, shared::room_filter_input_bar::RoomFilterAction, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
 
-use super::{new_message_context_menu::MessageDetails, room_screen::{populate_message_view, populate_small_state_event, Eventable, ItemDrawnStatus, MessageAction, MessageOrSticker, MsgTypeAble, PreviousEventable, RoomScreen, SmallStateEventContent, TimelineUiState}, rooms_list::RoomsListWidgetExt};
+use crate::home::{new_message_context_menu::MessageDetails, room_screen::{populate_message_view, populate_small_state_event, MessageViewFromEvent, ItemDrawnStatus, MessageAction, MessageOrSticker, ContextMenuFromEvent, PreviousMessageViewFromEvent, RoomScreen, SmallStateEventContent, TimelineUiState}, rooms_list::RoomsListWidgetExt};
 
 live_design! {
     use link::theme::*;
@@ -40,14 +40,14 @@ live_design! {
                 text_style: <MESSAGE_TEXT_STYLE> { font_size: 10 },
                 color: (TIMESTAMP_TEXT_COLOR)
             }
-            text: "Loading earlier messages..."
+            text: "Loading search results..."
         }
     }
     SearchIcon = <Icon> {
         align: {x: 0.0} // Align to top-right
         spacing: 10,
         margin: {top: 0, left: 10},
-        padding: {top: 10, bottom: 10, left: 8, right: 15}
+        padding: 10,
         width: Fit,
         height: Fit,
         draw_bg: {
@@ -130,14 +130,16 @@ live_design! {
                     text: "Search All Rooms"
                 }
                 cancel_button = <RobrixIconButton> {
-                    align: {x: 1.0}
-                    margin: {right: 10, top: 0},
                     width: Fit,
-                    height: 32,
-                    padding: {left: 15, right: 15}
+                    height: Fit,
+                    padding: 10,
+                    spacing: 0,
+                    margin: {left: 0, right: 15, top: -2},
+
                     draw_bg: {
                         border_color: (COLOR_DANGER_RED),
                         color: #fff0f0 // light red
+                        border_radius: 5
                     }
                     draw_icon: {
                         svg_file: (ICON_CLOSE),
@@ -268,6 +270,13 @@ impl SearchResultRef {
     }
 }
 
+/// This is a specialized version of `RoomScreen::draw_walk()` that is specific to rendering the timeline of a search result.
+///
+/// It takes a `RoomScreen` widget and iterates through the `PortalList` widget inside it. For each item in the list, it checks if the item is a `DateDivider`, `ContextEvent` or `Event` and renders it accordingly.
+///
+/// The rendering of the timeline items is done by calling `populate_message_view()` for messages and `populate_small_state_event()` for state events.
+///
+/// This function is used in the `RoomScreen` widget's `draw_walk()` method when the timeline is being rendered as a search result.
 pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
     let room_screen_widget_uid = room_screen.widget_uid();
     let Some(room_id) = &room_screen.room_id else { return DrawStep::done(); };
@@ -302,8 +311,8 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                     continue;
                 };
                 let item_drawn_status = ItemDrawnStatus {
-                    content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
-                    profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
+                    content_drawn: tl_state.search_result_state.content_drawn_since_last_update.contains(&tl_idx),
+                    profile_drawn: tl_state.search_result_state.profile_drawn_since_last_update.contains(&tl_idx),
                 };
                 let (item, item_new_draw_status) = {
                     let current_item = timeline_item;
@@ -329,8 +338,9 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                     content = replace.original_content();
                                 }
                                 match content {
-                                    Some(AnyMessageLikeEventContent::RoomMessage(mut message)) => {
+                                    Some(AnyMessageLikeEventContent::RoomMessage(message)) => {
                                         let mut in_reply_to_details = None;
+                                        let mut message = message.clone();
                                         if let Some(relation) = &message.relates_to {
                                             match relation {
                                                 Relation::Replacement(replace) => {
@@ -344,6 +354,7 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                             }
                                         }
                                         let is_contextual = matches!(&current_item, SearchTimelineItem::ContextEvent(_));
+                                         
                                         if let MessageType::Text(text) = &mut message.msgtype {
                                             if let Some(ref mut formatted) = text.formatted {
                                                 for highlight in tl_state.search_result_state.highlighted_strings.iter() {
@@ -357,10 +368,10 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                                 text.formatted = Some(FormattedBody::html(formated_string));
                                             }
                                         }
-                                        let event = &EventableWrapperAEI(event);
+                                        let event = &MessageViewFromEventWrapperAEI(event, &tl_state.search_result_state.profiles_info);
                                         // Do not use compact view if previous event is state
                                         let prev_event = prev_event.and_then(|f| if matches!(f, AnyTimelineEvent::State(_)) { None } else { Some(f) }).map(PreviousWrapperAEI);
-                                        let message = MsgTypeWrapperRMC(&message, in_reply_to_details.as_ref());
+                                        let message = MessageWrapperRMC(&message, in_reply_to_details.as_ref());
                                         populate_message_view(
                                             cx,
                                             list,
@@ -377,7 +388,7 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                         )
                                     }
                                     Some(AnyMessageLikeEventContent::Sticker(sticker)) => {
-                                        let event = &EventableWrapperAEI(event);
+                                        let event = &MessageViewFromEventWrapperAEI(event, &tl_state.search_result_state.profiles_info);
                                         let prev_event = prev_event.map(PreviousWrapperAEI);
                                         let is_contextual = matches!(&current_item, SearchTimelineItem::ContextEvent(_));
                                         populate_message_view(
@@ -386,7 +397,7 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                             item_id,
                                             room_id,
                                             event,
-                                            MessageOrSticker::Sticker::<MsgTypeWrapperRMC>(&sticker),
+                                            MessageOrSticker::Sticker::<MessageWrapperRMC>(&sticker),
                                             prev_event.as_ref(),
                                             &mut tl_state.media_cache,
                                             &tl_state.user_power,
@@ -405,7 +416,7 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                 let state_key = state.state_key();
                                 if let Some(content) = state.original_content() {
                                     let wrapper = AnyStateEventContentWrapper(&content, state_key);
-                                    let event = &EventableWrapperAEI(event);
+                                    let event = &MessageViewFromEventWrapperAEI(event, &tl_state.search_result_state.profiles_info);
                                     populate_small_state_event(
                                         cx,
                                         list,
@@ -430,10 +441,10 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                     }
                 };
                 if item_new_draw_status.content_drawn {
-                    tl_state.content_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
+                    tl_state.search_result_state.content_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
                 }
                 if item_new_draw_status.profile_drawn {
-                    tl_state.profile_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
+                    tl_state.search_result_state.profile_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
                 }
                 item
             };
@@ -443,6 +454,13 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
     DrawStep::done()
 }
 
+/// Copies the HTML content of a message to the clipboard if the message is a text message, notice, emote, image, file, audio, video, or verification request, and if it is formatted as HTML.
+///
+/// If the message is an edit of another message, the function will copy the content of the original message instead of the edited message.
+///
+/// Returns `true` if the content was copied successfully, and `false` otherwise.
+///
+/// The function takes as input the current Makepad context, a reference to a `MessageDetails` struct, a reference to a `TimelineUiState` struct, and a mutable reference to a boolean to set to `true` if the content was copied successfully.
 pub fn search_result_copy_html_to_clipboard(cx: &mut Cx, details: &MessageDetails, tl: &TimelineUiState, success: &mut bool) {
     let (Some(SearchTimelineItem::Event(event)) | Some(SearchTimelineItem::ContextEvent(event))) = tl.search_result_state.items
         .get(details.item_id) else { return };
@@ -474,6 +492,11 @@ pub fn search_result_copy_html_to_clipboard(cx: &mut Cx, details: &MessageDetail
         }
     }
 }
+/// Copies the text of the message at the given item id to the clipboard.
+///
+/// The item id must point to a message in the timeline, otherwise this function does nothing.
+///
+/// If the message is a reply-to message, the body of the replied-to message is copied instead.
 pub fn search_result_copy_to_clipboard(cx: &mut Cx, details: &MessageDetails, tl: &TimelineUiState) {
     let (Some(SearchTimelineItem::Event(event)) | Some(SearchTimelineItem::ContextEvent(event))) = tl.search_result_state.items
         .get(details.item_id) else { return };
@@ -491,6 +514,12 @@ pub fn search_result_copy_to_clipboard(cx: &mut Cx, details: &MessageDetails, tl
         }
     }
 }
+/// React to a message in the timeline.
+///
+/// The item id must point to a message in the timeline, otherwise this function does nothing.
+///
+/// If the message is a reply-to message, the reaction is sent to the replied-to message instead.
+///
 pub fn search_result_react(_cx: &mut Cx, details: &MessageDetails, tl: &TimelineUiState, reaction: String, success: &mut bool) {
     let (Some(SearchTimelineItem::Event(event)) | Some(SearchTimelineItem::ContextEvent(event))) = tl.search_result_state.items
         .get(details.item_id) else { return };
@@ -514,6 +543,13 @@ pub fn search_result_react(_cx: &mut Cx, details: &MessageDetails, tl: &Timeline
     *success = true;
 }
 
+/// Reply to a message in the timeline.
+///
+/// The item id must point to a message in the timeline, otherwise this function does nothing.
+///
+/// If the message is a reply-to message, the reply is sent to the replied-to message instead.
+///
+/// This function also hides the search results view and clears the search filter.
 pub fn search_result_reply(cx: &mut Cx, room_screen: &RoomScreen, details: &MessageDetails, tl: &TimelineUiState, success: &mut bool) {
     let (Some(SearchTimelineItem::Event(event)) | Some(SearchTimelineItem::ContextEvent(event))) = tl.search_result_state.items
         .get(details.item_id) else { return };
@@ -527,6 +563,7 @@ pub fn search_result_reply(cx: &mut Cx, room_screen: &RoomScreen, details: &Mess
             break;
         }
     }
+    room_screen.view(id!(search_timeline)).set_visible(cx, false);
     cx.widget_action(room_screen.widget_uid(), &Scope::empty().path, RoomFilterAction::Clear);
     cx.widget_action(
         details.room_screen_widget_uid,
@@ -535,6 +572,11 @@ pub fn search_result_reply(cx: &mut Cx, room_screen: &RoomScreen, details: &Mess
     );
     *success = true;
 }
+/// Finds the index of the timeline item in the main timeline items list
+/// that the given search result item is related to (i.e. is a reply to).
+///
+/// Returns `None` if the search result item is not a reply to a message
+/// in the main timeline items list.
 pub fn search_result_jump_to_related(_cx: &mut Cx, details: &MessageDetails, tl: &TimelineUiState)-> Option<usize> {
     let (Some(SearchTimelineItem::Event(event)) | Some(SearchTimelineItem::ContextEvent(event))) = tl.search_result_state.items
         .get(details.item_id) else { return None};
@@ -546,6 +588,83 @@ pub fn search_result_jump_to_related(_cx: &mut Cx, details: &MessageDetails, tl:
     }
     None
 }
+
+/// Handles any search-related actions received by this RoomScreen.
+///
+/// See `RoomFilterAction` for the possible actions.
+pub fn handle_search_input(
+        room_screen: &mut RoomScreen,
+        cx: &mut Cx,
+        action: &Action,
+        scope: &mut Scope,
+    ){
+    let widget_action = action.as_widget_action();
+    match widget_action.cast() {
+        RoomFilterAction::Changed(search_term) => {
+            
+            if let Some(selected_room) = {
+                let app_state = scope.data.get::<AppState>().unwrap();
+                app_state.selected_room.clone()
+            } {
+                if  Some(selected_room.room_id()) == room_screen.room_id.as_ref() {
+                    if search_term.is_empty() {
+                        room_screen.search_result(id!(search_result_plane)).reset(cx);
+                        room_screen.view(id!(timeline)).set_visible(cx, true);
+                        room_screen.view(id!(search_timeline)).set_visible(cx, false);
+                        room_screen.search_result(id!(search_result_plane)).set_visible(cx, false);
+                        return;
+                    }
+                    room_screen.search_debounce_timer = cx.start_timeout(1.0);
+                    if let Some(ref mut tl_state) = room_screen.tl_state {
+                        tl_state.search_result_state.items.clear();
+                        tl_state.search_result_state.highlighted_strings.clear();
+                    }
+                    let mut criteria = room_screen.search_result(id!(search_result_plane)).get_search_criteria();
+                    criteria.search_term = search_term.clone();
+                    room_screen.search_result(id!(search_result_plane)).set_search_criteria(cx, criteria);
+                    room_screen.view(id!(timeline)).set_visible(cx, false);
+                }
+            }
+        }
+        RoomFilterAction::Click(search_term) => {
+            if let Some(selected_room) = {
+                let app_state = scope.data.get::<AppState>().unwrap();
+                app_state.selected_room.clone()
+            } {
+                if Some(selected_room.room_id()) == room_screen.room_id.as_ref() {      
+                    let mut criteria = room_screen.search_result(id!(search_result_plane)).get_search_criteria();
+                    if search_term == criteria.search_term && !search_term.is_empty() {
+                        return;
+                    }
+                    criteria.search_term = search_term.clone();                  
+                    room_screen.search_result(id!(search_result_plane)).set_search_criteria(cx, criteria);
+                    room_screen.view(id!(timeline)).set_visible(cx, false);
+                }
+            }
+        }
+        RoomFilterAction::Clear => {
+            if let Some(selected_room) = {
+                let app_state = scope.data.get::<AppState>().unwrap();
+                app_state.selected_room.clone()
+            } {
+                if Some(selected_room.room_id()) == room_screen.room_id.as_ref() {
+                    cx.stop_timer(room_screen.search_debounce_timer);
+                    let Some(tl) = room_screen.tl_state.as_mut() else { return };
+                    tl.search_result_state.items.clear();
+                    tl.search_result_state.highlighted_strings.clear();
+                    room_screen.view(id!(search_timeline)).set_visible(cx, false);
+                    room_screen.view(id!(timeline)).set_visible(cx, true);
+                    room_screen.search_result(id!(search_result_plane)).reset(cx);
+                    room_screen.search_result(id!(search_result_plane)).set_visible(cx, false);
+                }
+            }
+        }
+        _ => {
+
+        }
+    }        
+}
+/// Search result as timeline item
 #[derive(Clone, Debug)]
 pub enum SearchTimelineItem {
     /// The event that matches the search criteria.
@@ -554,7 +673,7 @@ pub enum SearchTimelineItem {
     ContextEvent(AnyTimelineEvent),
     /// A date divider used to separate each search results.
     DateDivider(MilliSecondsSinceUnixEpoch),
-    /// The room name for other's room messages.
+    /// The room id used for displaying room header for all searched messages in a screen.
     RoomHeader(OwnedRoomId),
 }
 
@@ -591,9 +710,11 @@ impl <'a>From<&AnyStateEventContentWrapper<'a>> for Option<AnyOtherFullStateEven
         }
     }
 }
-pub struct EventableWrapperAEI<'a>(pub &'a AnyTimelineEvent);
 
-impl Eventable for EventableWrapperAEI<'_> {
+/// Wrapper for AnyTimelineEvent that implements `MessageViewFromEvent` trait.
+pub struct MessageViewFromEventWrapperAEI<'a>(pub &'a AnyTimelineEvent, pub &'a BTreeMap<OwnedUserId, TimelineDetails<Profile>>);
+
+impl MessageViewFromEvent for MessageViewFromEventWrapperAEI<'_> {
     fn timestamp(&self) -> MilliSecondsSinceUnixEpoch {
         self.0.origin_server_ts()
     }
@@ -603,8 +724,8 @@ impl Eventable for EventableWrapperAEI<'_> {
     fn sender(&self) -> &UserId {
         self.0.sender()
     }
-    fn sender_profile(&self) -> Option<&TimelineDetails<matrix_sdk_ui::timeline::Profile>> {
-        None
+    fn sender_profile(&self) -> Option<&TimelineDetails<Profile>> {
+        self.1.get(self.sender())
     }
     fn reactions(&self) -> Option<ReactionsByKeyBySender> {
         None
@@ -663,14 +784,14 @@ impl Eventable for EventableWrapperAEI<'_> {
 }
 
 
-impl SmallStateEventContent<EventableWrapperAEI<'_>> for AnyStateEventContentWrapper<'_> {
+impl SmallStateEventContent<MessageViewFromEventWrapperAEI<'_>> for AnyStateEventContentWrapper<'_> {
     fn populate_item_content(
         &self,
         cx: &mut Cx,
         list: &mut PortalList,
         item_id: usize,
         item: WidgetRef,
-        _event_tl_item: &EventableWrapperAEI,
+        _event_tl_item: &MessageViewFromEventWrapperAEI,
         username: &str,
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
@@ -690,9 +811,10 @@ impl SmallStateEventContent<EventableWrapperAEI<'_>> for AnyStateEventContentWra
     }
 }
 
+/// A wrapper for the `AnyTimelineEvent` that implements `PreviousMessageViewFromEvent` trait for compact view.
 pub struct PreviousWrapperAEI<'a>(pub &'a AnyTimelineEvent);
-impl <'a> PreviousEventable<EventableWrapperAEI<'a>> for PreviousWrapperAEI<'a> {
-    fn use_compact(&self, current: &EventableWrapperAEI<'a>) -> bool {
+impl <'a> PreviousMessageViewFromEvent<MessageViewFromEventWrapperAEI<'a>> for PreviousWrapperAEI<'a> {
+    fn use_compact(&self, current: &MessageViewFromEventWrapperAEI<'a>) -> bool {
         let prev_msg_sender = self.0.sender();
         let current_sender = current.0.sender();
         {
@@ -702,8 +824,9 @@ impl <'a> PreviousEventable<EventableWrapperAEI<'a>> for PreviousWrapperAEI<'a> 
     }
 }
 
-pub struct MsgTypeWrapperRMC<'a>(pub &'a RoomMessageEventContent, pub Option<&'a InReplyToDetails>);
-impl MsgTypeAble for MsgTypeWrapperRMC<'_> {
+/// A wrapper for the `RoomMessageEventContent` and `InReplyToDetails` that implements `ContextMenuFromEvent` trait.
+pub struct MessageWrapperRMC<'a>(pub &'a RoomMessageEventContent, pub Option<&'a InReplyToDetails>);
+impl ContextMenuFromEvent for MessageWrapperRMC<'_> {
     fn msgtype(&self) -> &MessageType {
         &self.0.msgtype
     }

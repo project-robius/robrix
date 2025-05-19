@@ -16,7 +16,7 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState
 };
 use matrix_sdk_ui::{
-    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
@@ -30,7 +30,7 @@ use std::io;
 use ruma::{api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria, EventContext, OrderBy, Request}}, events::AnyTimelineEvent, uint};
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, room_search_result::SearchTimelineItem, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
+        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::{TimelineUpdate, SearchTimelineItem}, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -382,7 +382,7 @@ pub enum MatrixRequest {
         matrix_id: MatrixId,
         via: Vec<OwnedServerName>
     },
-    /// General Matrix Search API with given categorie
+    /// General Matrix Search API with given categories
     SearchMessages {
         /// The room to search for message.
         room_id: OwnedRoomId,
@@ -838,7 +838,7 @@ async fn async_worker(
 
                 let _typing_notices_task = Handle::current().spawn(async move {
                     while let Ok(user_ids) = typing_notice_receiver.recv().await {
-                        log!("Received typing notifications for room {room_id}: {user_ids:?}");
+                        //log!("Received typing notifications for room {room_id}: {user_ids:?}");
                         let mut users = Vec::with_capacity(user_ids.len());
                         for user_id in user_ids {
                             users.push(
@@ -1148,8 +1148,16 @@ async fn async_worker(
                             let mut last_room_id = None;
                             let result = response.search_categories;
                             let mut items = vec![];
+                            let mut profile_infos = BTreeMap::new();
                             for item in result.room_events.results.iter() {
                                 let Some(event) = item.result.as_ref().and_then(|f|f.deserialize().ok()) else { continue };
+                                for (user_id, profile) in item.context.profile_info.iter() {
+                                    profile_infos.entry(user_id.clone()).or_insert_with(|| TimelineDetails::Ready(matrix_sdk_ui::timeline::Profile{
+                                        display_name: profile.displayname.clone(),
+                                        display_name_ambiguous: false,
+                                        avatar_url:profile.avatar_url.clone()
+                                    }));
+                                }
                                 item.context.events_after.iter().rev().for_each(|f| {
                                     if let Ok(timeline_event) = f.deserialize() {
                                         items.push(SearchTimelineItem::ContextEvent(timeline_event));
@@ -1181,7 +1189,6 @@ async fn async_worker(
                                         if last_room_id != &room_id {
                                             *last_room_id = room_id.clone();
                                             items.push(SearchTimelineItem::RoomHeader(room_id));
-                                            
                                         }
                                     } else {
                                         last_room_id = Some(room_id.clone());
@@ -1191,7 +1198,7 @@ async fn async_worker(
                             }
                             let count = result.room_events.count.and_then(|f| f.to_string().parse().ok()).unwrap_or(0);
                             let highlights = result.room_events.highlights;
-                            if let Err(e) = sender.send(TimelineUpdate::SearchResultReceived { items, count, highlights, search_term: search_term.clone() }) {
+                            if let Err(e) = sender.send(TimelineUpdate::SearchResultReceived { items, count, highlights, search_term: search_term.clone(), profile_infos }) {
                                 error!("Failed to search message in {room_id}; error: {e:?}");
                                 enqueue_popup_notification(format!("Failed to search message. Error: {e}"));
                             }
@@ -2865,6 +2872,8 @@ fn register_core_task(
 
 async fn abort_core_task(core_task: CoreTask) {
     if let Ok(mut tasks) = CORE_TASKS.lock() {
-        tasks.remove(&core_task);
+        if let Some(handle) = tasks.remove(&core_task) {
+            handle.abort();
+        }
     }
 }

@@ -7,7 +7,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use std::cmp;
 
-use super::room_screen::Eventable;
+use super::room_screen::MessageViewFromEvent;
 
 
 /// The maximum number of items to display in the read receipts AvatarRow
@@ -226,7 +226,7 @@ impl AvatarRowRef {
 /// room ID, and an EventTimelineItem, this will populate the avatar
 /// row of the item with the read receipts of the event.
 ///
-pub fn populate_read_receipts<T: Eventable>(
+pub fn populate_read_receipts<T: MessageViewFromEvent>(
     item: &WidgetRef,
     cx: &mut Cx,
     room_id: &RoomId,

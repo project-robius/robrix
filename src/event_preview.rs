@@ -151,7 +151,7 @@ pub fn plaintext_body_of_timeline_item(
             ).text
         }
         TimelineItemContent::OtherState(other_state) => {
-            text_preview_of_other_state(other_state.content(), true, other_state.state_key())
+            text_preview_of_other_state(other_state.content(), false, other_state.state_key())
                 .unwrap_or_else(|| TextPreview::from((
                     String::from("initiated another state change."),
                     BeforeText::UsernameWithoutColon,
