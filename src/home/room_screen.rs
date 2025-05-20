@@ -2194,11 +2194,12 @@ impl RoomScreen {
     fn show_timeline(&mut self, cx: &mut Cx) {
         let room_id = self.room_id.clone()
             .expect("BUG: Timeline::show_timeline(): no room_id was set.");
+        // Remove sanity check because set_displayed_room can be called before tl_state is initialized.
         // just an optional sanity check
-        assert!(self.tl_state.is_none(),
-            "BUG: tried to show_timeline() into a timeline with existing state. \
-            Did you forget to save the timeline state back to the global map of states?",
-        );
+        // assert!(self.tl_state.is_none(),
+        //     "BUG: tried to show_timeline() into a timeline with existing state. \
+        //     Did you forget to save the timeline state back to the global map of states?",
+        // );
         // Obtain the current user's power levels for this room.
         submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_id.clone() });
 
