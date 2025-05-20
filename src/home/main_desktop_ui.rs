@@ -97,7 +97,9 @@ impl Widget for MainDesktopUI {
         if !self.drawn_previously {
             let app_state = scope.data.get_mut::<AppState>().unwrap();
             if !app_state.saved_dock_state.open_rooms.is_empty() {
-                cx.action(RoomsPanelRestoreAction::Restore(app_state.saved_dock_state.clone()));
+                cx.action(RoomsPanelRestoreAction::Restore(
+                    app_state.saved_dock_state.clone(),
+                ));
             }
             self.drawn_previously = true;
         }
@@ -368,8 +370,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                                 _ => { }
                             }
                         }
-                    }
-                    else {
+                    } else {
                         error!("BUG: failed to load dock state upon DockLoad action.");
                         continue;
                     }

@@ -1951,7 +1951,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
 }
 
 /// Asynchronously loads and restores the rooms panel state from persistent storage for the given user.
-/// 
+///
 /// If the loaded state contains open rooms and dock state, it logs a message and posts an action
 /// to restore the rooms panel state in the UI. If loading fails, it enqueues a notification
 /// with the error message.
@@ -1974,7 +1974,7 @@ fn handle_load_rooms_panel_state(user_id: OwnedUserId) {
 }
 
 /// Asynchronously loads and restores the window geometry state from persistent storage.
-/// 
+///
 /// If the loaded state is different from the default, it posts an action to restore
 /// the window's geometry in the UI. If loading fails, it enqueues a notification
 /// with the error message.
@@ -2009,7 +2009,6 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
         }
     });
 }
-
 
 fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomListLoadingState>) {
     log!("Initial room list loading state is {:?}", loading_state.get());

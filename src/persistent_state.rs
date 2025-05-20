@@ -2,7 +2,9 @@
 use std::path::PathBuf;
 use anyhow::{anyhow, bail};
 use makepad_widgets::{
-    log, makepad_micro_serde::{DeRon, SerRon}, Cx
+    log,
+    makepad_micro_serde::{DeRon, SerRon},
+    Cx,
 };
 use matrix_sdk::{
     authentication::matrix::MatrixSession,
@@ -13,7 +15,11 @@ use matrix_sdk::{
 use serde::{Deserialize, Serialize};
 use tokio::{fs, io::{self, AsyncReadExt}};
 
-use crate::{app::{SavedDockState, SelectedRoom, WindowGeomState}, app_data_dir, login::login_screen::LoginAction};
+use crate::{
+    app::{SavedDockState, SelectedRoom, WindowGeomState},
+    app_data_dir,
+    login::login_screen::LoginAction,
+};
 
 /// The data needed to re-build a client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,7 +156,6 @@ pub async fn restore_session(
     Ok((client, sync_token))
 }
 
-
 /// Persist a logged-in client session to the filesystem for later use.
 ///
 /// TODO: This is not very secure, for simplicity. We should use robius-keychain
@@ -202,8 +207,13 @@ pub fn save_room_panel(
     )?;
     for (tab_id, room) in &rooms_panel_state.open_rooms {
         match room {
-            SelectedRoom::JoinedRoom { room_id, .. } | SelectedRoom::InvitedRoom { room_id, .. } => { 
-                assert!(rooms_panel_state.dock_items.contains_key(tab_id), "Open room id: {} not found in dock state", room_id);
+            SelectedRoom::JoinedRoom { room_id, .. }
+            | SelectedRoom::InvitedRoom { room_id, .. } => {
+                assert!(
+                    rooms_panel_state.dock_items.contains_key(tab_id),
+                    "Open room id: {} not found in dock state",
+                    room_id
+                );
             }
         }
     }
@@ -233,8 +243,8 @@ pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<SavedDoc
     let mut contents = String::with_capacity(file.metadata().await?.len() as usize);
     file.read_to_string(&mut contents).await?;
     let dock_state: SavedDockState =
-    SavedDockState::deserialize_ron(&contents).map_err(|er| anyhow::Error::msg(er.msg))?;
-  
+        SavedDockState::deserialize_ron(&contents).map_err(|er| anyhow::Error::msg(er.msg))?;
+
     Ok(dock_state)
 }
 

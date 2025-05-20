@@ -621,7 +621,7 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-            // Used to retreive the list of loaded rooms.
+            // Used to retrieve the list of loaded rooms.
             <CachedWidget> {
                 width:0, height:0,
                 rooms_list = <RoomsList> {}
@@ -883,7 +883,6 @@ impl Widget for RoomScreen {
             //       and wrap it in a `if let Event::Signal` conditional.
             user_profile_cache::process_user_profile_updates(cx);
             avatar_cache::process_avatar_updates(cx);
-
         }
 
         if let Event::Actions(actions) = event {
@@ -954,7 +953,7 @@ impl Widget for RoomScreen {
             for action in actions {
                 // Handle actions related to restoring the previously-saved state of rooms.
                 if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
-                    if self.room_id.as_ref().is_some_and(|r| r == room_id) {                            
+                    if self.room_id.as_ref().is_some_and(|r| r == room_id) {
                         // Reset room_id before displaying room.
                         self.room_id = None;
                         self.set_displayed_room(cx, room_id.clone(), self.room_name.clone());
@@ -963,7 +962,9 @@ impl Widget for RoomScreen {
                     }
                 }
                 // Handle the highlight animation.
-                let Some(tl) = self.tl_state.as_mut() else { continue };
+                let Some(tl) = self.tl_state.as_mut() else {
+                    continue;
+                };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {
                         cx.widget_action(
@@ -2193,7 +2194,11 @@ impl RoomScreen {
     fn show_timeline(&mut self, cx: &mut Cx) {
         let room_id = self.room_id.clone()
             .expect("BUG: Timeline::show_timeline(): no room_id was set.");
-
+        // just an optional sanity check
+        assert!(self.tl_state.is_none(),
+            "BUG: tried to show_timeline() into a timeline with existing state. \
+            Did you forget to save the timeline state back to the global map of states?",
+        );
         // Obtain the current user's power levels for this room.
         submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_id.clone() });
 

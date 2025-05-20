@@ -6,7 +6,11 @@ use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
     home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, persistent_state::{save_room_panel, save_window_state}, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::current_user_id, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
-use serde::{de::{self, MapAccess, SeqAccess, Visitor}, ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{
+    de::{self, MapAccess, SeqAccess, Visitor},
+    ser::SerializeStruct,
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 use serde;
 use makepad_micro_serde::*;
 live_design! {
@@ -239,7 +243,7 @@ impl MatchEvent for App {
                     let window = self.ui.window(id!(main_window));
                     window.resize(cx, window_state.inner_size);
                     window.reposition(cx, window_state.position);
-                    if window_state.is_fullscreen {                        
+                    if window_state.is_fullscreen {
                         if let Some(mut window) = window.borrow_mut() {
                             window.set_fullscreen(cx);
                         }
@@ -349,7 +353,7 @@ impl AppMain for App {
             let window = self.ui.window(id!(main_window));
             let inner_size = window.get_inner_size(cx);
             let position = window.get_position(cx);
-            let window_geom = WindowGeomState{
+            let window_geom = WindowGeomState {
                 inner_size,
                 position,
                 is_fullscreen: window.is_fullscreen(cx),
@@ -357,12 +361,7 @@ impl AppMain for App {
             if let Err(e) = save_window_state(window_geom) {
                 error!("Bug! Failed to save window_state: {}", e);
             }
-            // cx.spawn_thread(move || {
-            //     if let Err(e) = save_window_state(window_geom) {
-            //         error!("Bug! Failed to save window_state: {}", e);
-            //     }
-            // });
-            if let Some(user_id) = current_user_id(){
+            if let Some(user_id) = current_user_id() {
                 let rooms_panel = self.app_state.saved_dock_state.clone();
                 let user_id = user_id.clone();
                 if let Err(e) = save_room_panel(rooms_panel, user_id) {
@@ -447,8 +446,6 @@ pub struct SavedDockState {
     pub open_rooms: HashMap<LiveId, SelectedRoom>,
     /// The order in which the rooms were opened, in chronological order
     /// from first opened (at the beginning) to last opened (at the end).
-    /// The order in which the rooms were opened, in chronological order
-    /// from first opened (at the beginning) to last opened (at the end).
     pub room_order: Vec<SelectedRoom>,
 }
 
@@ -475,7 +472,6 @@ impl SerRon for SelectedRoom {
 
                 // Serialize room_id field
                 s.field(d + 1, "room_id"); // `    room_id: `
-                //room_id.ser_ron(d + 1, s); // Serialize the OwnedRoomId value
                 room_id.to_string().ser_ron(d + 1, s);
                 s.conl(); // `,\n`
 
@@ -492,7 +488,6 @@ impl SerRon for SelectedRoom {
 
                 // Serialize room_id field
                 s.field(d + 1, "room_id"); // `    room_id: `
-                //room_id.ser_ron(d + 1, s);
                 room_id.to_string().ser_ron(d + 1, s);
                 s.conl(); // `,\n`
 
@@ -695,7 +690,7 @@ pub struct WindowGeomState {
     /// A tuple containing the window's x and y position.
     pub position: DVec2,
     /// Maximise fullscreen if true.
-    pub is_fullscreen: bool
+    pub is_fullscreen: bool,
 }
 
 impl Serialize for WindowGeomState {

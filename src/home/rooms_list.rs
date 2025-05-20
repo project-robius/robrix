@@ -331,12 +331,15 @@ impl RoomsList {
     /// Returns `true` if the number of rooms in `all_joined_rooms` and `invited_rooms` equals or exceeds
     /// `max_known_rooms`, or `false` if `max_known_rooms` is `None`.
     pub fn all_known_rooms_loaded(&self) -> bool {
-        self.max_known_rooms.is_some_and(|max_rooms| self.all_joined_rooms.len() + self.invited_rooms.borrow().len() >= max_rooms as usize)
+        self.max_known_rooms.is_some_and(|max_rooms| {
+            self.all_joined_rooms.len() + self.invited_rooms.borrow().len() >= max_rooms as usize
+        })
     }
     /// Returns `true` if the given `room_id` is already in the `all_joined_rooms` and `invited_rooms` lists.
     /// and `false` if it is not.
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
-        self.all_joined_rooms.contains_key(room_id) || self.invited_rooms.borrow().contains_key(room_id)
+        self.all_joined_rooms.contains_key(room_id)
+            || self.invited_rooms.borrow().contains_key(room_id)
     }
     /// Handle all pending updates to the list of all rooms.
     fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, scope: &mut Scope) {
@@ -774,15 +777,17 @@ impl Widget for RoomsList {
 
 impl RoomsListRef {
     /// See [`RoomsList::all_known_rooms_loaded()`].
-    pub fn all_known_rooms_loaded(
-        &self,
-    ) -> bool {
-        let Some(inner) = self.borrow() else { return false };
+    pub fn all_known_rooms_loaded(&self) -> bool {
+        let Some(inner) = self.borrow() else {
+            return false;
+        };
         inner.all_known_rooms_loaded()
     }
     /// See [`RoomsList::is_room_loaded()`].
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
-        let Some(inner) = self.borrow() else { return false };
+        let Some(inner) = self.borrow() else {
+            return false;
+        };
         inner.is_room_loaded(room_id)
     }
 }
