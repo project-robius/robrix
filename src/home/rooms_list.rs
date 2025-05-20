@@ -444,10 +444,17 @@ impl RoomsList {
                     }
                 }
                 RoomsListUpdate::RemoveRoom { room_id, new_state: _ } => {
-                    if let Some(_removed) = self.all_joined_rooms.remove(&room_id) {
-                        self.displayed_rooms.iter()
-                            .position(|r| r == &room_id)
-                            .map(|index| self.displayed_rooms.remove(index));
+                    if let Some(to_be_removed_room_info) = self.all_joined_rooms.remove(&room_id) {
+                        if to_be_removed_room_info.is_direct {
+                            self.displayed_direct_messages.iter()
+                                .position(|r| r == &room_id)
+                                .map(|index| self.displayed_direct_messages.remove(index));
+                        }
+                        else {
+                            self.displayed_rooms.iter()
+                                .position(|r| r == &room_id)
+                                .map(|index| self.displayed_rooms.remove(index));
+                        }
                     }
                     else if let Some(_removed) = self.invited_rooms.borrow_mut().remove(&room_id) {
                         self.displayed_invited_rooms.iter()
@@ -470,6 +477,7 @@ impl RoomsList {
                 }
                 RoomsListUpdate::ClearRooms => {
                     self.all_joined_rooms.clear();
+                    self.displayed_direct_messages.clear();
                     self.displayed_rooms.clear();
                     self.invited_rooms.borrow_mut().clear();
                     self.displayed_invited_rooms.clear();
