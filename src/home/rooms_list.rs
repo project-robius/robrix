@@ -824,23 +824,21 @@ impl Widget for RoomsList {
                 }
                 else if let Some(joined_room_id) = get_joined_room_id(portal_list_index) {
                     if let Some(joined_room) = self.all_joined_rooms.get_mut(joined_room_id) {
-                        if !joined_room.is_direct {
-                            let item = list.item(cx, portal_list_index, live_id!(room_preview));
-                            joined_room.is_selected = self.current_active_room.as_ref() == Some(joined_room_id);
+                        let item = list.item(cx, portal_list_index, live_id!(room_preview));
+                        joined_room.is_selected = self.current_active_room.as_ref() == Some(joined_room_id);
 
-                            // Paginate the room if it hasn't been paginated yet.
-                            if PREPAGINATE_VISIBLE_ROOMS && !joined_room.has_been_paginated {
-                                joined_room.has_been_paginated = true;
-                                submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                                    room_id: joined_room.room_id.clone(),
-                                    num_events: 50,
-                                    direction: PaginationDirection::Backwards,
-                                });
-                            }
-                            // Pass the room info down to the RoomPreview widget via Scope.
-                            scope = Scope::with_props(&*joined_room);
-                            item.draw_all(cx, &mut scope);
+                        // Paginate the room if it hasn't been paginated yet.
+                        if PREPAGINATE_VISIBLE_ROOMS && !joined_room.has_been_paginated {
+                            joined_room.has_been_paginated = true;
+                            submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                                room_id: joined_room.room_id.clone(),
+                                num_events: 50,
+                                direction: PaginationDirection::Backwards,
+                            });
                         }
+                        // Pass the room info down to the RoomPreview widget via Scope.
+                        scope = Scope::with_props(&*joined_room);
+                        item.draw_all(cx, &mut scope);
                     } else {
                         list.item(cx, portal_list_index, live_id!(empty)).draw_all(cx, &mut scope);
                     }
