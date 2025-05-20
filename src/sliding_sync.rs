@@ -2680,17 +2680,18 @@ async fn logout_and_refresh() -> Result<RefreshState> {
 
     if let Some(sync_service) = get_sync_service() {
         log!("Stopping sync service...");
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(3),
-            sync_service.stop()
-        ).await {
-            Ok(()) => log!("Sync service stopped successfully."),
-            Err(e) => { // Timeout
-                 let error_msg = format!("Stopping sync service timed out: {}", e);
-                 log!("Warning: {}", error_msg);
-                 errors.push(error_msg);
-            }
-        }
+        // match tokio::time::timeout(
+        //     std::time::Duration::from_secs(3),
+        //     sync_service.stop()
+        // ).await {
+        //     Ok(()) => log!("Sync service stopped successfully."),
+        //     Err(e) => { // Timeout
+        //          let error_msg = format!("Stopping sync service timed out: {}", e);
+        //          log!("Warning: {}", error_msg);
+        //          errors.push(error_msg);
+        //     }
+        // }
+        //sync_service.stop().await;
     } else {
         log!("No sync service found to stop.");
     }
@@ -2709,33 +2710,31 @@ async fn logout_and_refresh() -> Result<RefreshState> {
 
     // Initialize as false
     let mut logout_successful = false; 
-    logout_successful = true;
-    // if client.logged_in() {
-    //     log!("Performing server-side logout...");
-    //     match tokio::time::timeout(
-    //         std::time::Duration::from_secs(10),
-    //         client.matrix_auth().logout()
-    //     ).await {
-    //         Ok(Ok(_)) => {
-    //             log!("Server-side logout successful.");
-    //             logout_successful = true;
-    //         },
-    //         Ok(Err(e)) => {
-    //             let error_msg = format!("Server-side logout failed: {}", e);
-    //             log!("Warning: {}", error_msg);
-    //             errors.push(error_msg.clone());
-    //         },
-    //         Err(e) => {
-    //             let error_msg = format!("Server-side logout request timed out: {}", e);
-    //             log!("Warning: {}", error_msg);
-    //             errors.push(error_msg.clone());
-    //         }
-    //     }
-    // } else {
-    //     log!("Client not logged in, skipping server-side logout.");
-    //     // If not logged in, consider this step successful
-    //     logout_successful = true; 
-    // };
+    //logout_successful = true;
+    if client.logged_in() {
+        log!("Performing server-side logout...");
+        // match tokio::time::timeout(
+        //     std::time::Duration::from_secs(10),
+        //     client.matrix_auth().logout()
+        // ).await {
+         match client.matrix_auth().logout().await {
+            Ok(_) => {
+                log!("Server-side logout successful.");
+            },
+            Err(e) => {
+                let error_msg = format!("Server-side logout failed: {}", e);
+                log!("Warning: {}", error_msg);
+                errors.push(error_msg.clone());
+                //logout_successful = true;
+            },
+        }
+       logout_successful = true;
+
+    } else {
+        log!("Client not logged in, skipping server-side logout.");
+        // If not logged in, consider this step successful
+        logout_successful = true; 
+    };
 
     // --- Local cleanup steps (execute regardless of server logout success) ---
     log!("Performing local cleanup steps...");
@@ -2767,7 +2766,7 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     //    - Actual redraw occurs in the next render frame
     // 4. While not ideal, this sleep ensures state consistency across components
     //    before proceeding with subsequent operations 
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    //tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // Delete the last user ID file
     log!("Deleting last user ID file...");
@@ -2803,17 +2802,18 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     // This is a critical step; failure might prevent future logins
     
     log!("Matrix tokio runtime restarted successfully.");
-    match tokio::time::timeout(
-        std::time::Duration::from_secs(3),
-        abort_core_tasks() // Assuming abort_core_tasks doesn't return Result
-    ).await {
-        Ok(_) => log!("Core async tasks aborted successfully."),
-        Err(e) => {
-            let error_msg = format!("Aborting core tasks timed out: {}", e);
-            log!("Warning: {}", error_msg);
-            errors.push(error_msg);
-        }
-    }
+    // match tokio::time::timeout(
+    //     std::time::Duration::from_secs(3),
+    //     abort_core_tasks() // Assuming abort_core_tasks doesn't return Result
+    // ).await {
+    //     Ok(_) => log!("Core async tasks aborted successfully."),
+    //     Err(e) => {
+    //         let error_msg = format!("Aborting core tasks timed out: {}", e);
+    //         log!("Warning: {}", error_msg);
+    //         errors.push(error_msg);
+    //     }
+    // }
+    abort_core_tasks().await;
     log!("Restarting Matrix tokio runtime...");
     if let Err(e) = start_matrix_tokio(false) {
         let error_msg = format!("Failed to restart Matrix runtime: {}. Manual app restart might be required to log in again.", e);
