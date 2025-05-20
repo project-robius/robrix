@@ -2691,7 +2691,7 @@ async fn logout_and_refresh() -> Result<RefreshState> {
         //          errors.push(error_msg);
         //     }
         // }
-        //sync_service.stop().await;
+        sync_service.stop().await;
     } else {
         log!("No sync service found to stop.");
     }
