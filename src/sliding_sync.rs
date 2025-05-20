@@ -1478,6 +1478,9 @@ async fn async_main_loop(
     // enqueue_popup_notification(status.clone());
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
+    client.event_cache().enable_storage().expect("BUG: CLIENT's event cache unable to enable storage");
+    client.event_cache().subscribe().expect("BUG: CLIENT's event cache unable to subscribe");
+
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
 
     add_verification_event_handlers_and_sync_client(client.clone());
@@ -1486,6 +1489,7 @@ async fn async_main_loop(
     handle_ignore_user_list_subscriber(client.clone());
 
     let sync_service = SyncService::builder(client.clone())
+        .with_offline_mode()
         .build()
         .await?;
     handle_sync_service_state_subscriber(sync_service.state());
@@ -1950,14 +1954,37 @@ fn handle_ignore_user_list_subscriber(client: Client) {
 
 fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service::State>) {
     log!("Initial sync service state is {:?}", subscriber.get());
+    let mut is_offline = false;
     Handle::current().spawn(async move {
         while let Some(state) = subscriber.next().await {
             log!("Received a sync service state update: {state:?}");
-            if state == sync_service::State::Error {
-                log!("Restarting sync service due to error.");
-                if let Some(ss) = SYNC_SERVICE.get() {
-                    ss.start().await;
+            match state {
+                sync_service::State::Error => {
+                    log!("Restarting sync service due to error.");                
+                    if let Some(ss) = SYNC_SERVICE.get() {
+                        ss.start().await;
+                    }
                 }
+                sync_service::State::Offline => {
+                    is_offline = true;
+                }
+                sync_service::State::Running => {
+                    if is_offline {
+                        // Forward pagination for all rooms after reconnection
+                        let room_ids: Vec<OwnedRoomId> = ALL_ROOM_INFO.lock().unwrap().keys().cloned().collect();
+                        for room_id in room_ids {
+                            submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                                room_id: room_id.clone(),
+                                num_events: 50,
+                                direction: PaginationDirection::Forwards,
+                            });
+                        }
+                        
+                    }
+                    SignalToUI::set_ui_signal();
+                    is_offline = false;
+                }
+                _ => {}
             }
         }
     });
