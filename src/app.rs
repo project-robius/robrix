@@ -243,7 +243,7 @@ impl MatchEvent for App {
                     window.reposition(cx, window_state.position);
                     if window_state.is_fullscreen {                        
                         if let Some(mut window) = window.borrow_mut() {
-                            //window.set_fullscreen(cx);
+                            window.set_fullscreen(cx);
                         }
                     }
                 }
@@ -350,12 +350,15 @@ impl AppMain for App {
         if let Event::WindowClosed(_) = event {
             let window = self.ui.window(id!(main_window));
             let inner_size = window.get_inner_size(cx);
-            // let position = window.get_position(cx);
-            // let window_geom = WindowGeomState{
-            //     inner_size,
-            //     position,
-            //     is_fullscreen: window.is_fullscreen(cx),
-            // };
+            let position = window.get_position(cx);
+            let window_geom = WindowGeomState{
+                inner_size,
+                position,
+                is_fullscreen: window.is_fullscreen(cx),
+            };
+            if let Err(e) = save_window_state(window_geom) {
+                error!("Bug! Failed to save window_state: {}", e);
+            }
             // cx.spawn_thread(move || {
             //     if let Err(e) = save_window_state(window_geom) {
             //         error!("Bug! Failed to save window_state: {}", e);
@@ -364,11 +367,9 @@ impl AppMain for App {
             if let Some(user_id) = current_user_id(){
                 let rooms_panel = self.app_state.saved_dock_state.clone();
                 let user_id = user_id.clone();
-                cx.spawn_thread(move || {
-                    if let Err(e) = save_room_panel(rooms_panel, user_id) {
-                        error!("Bug! Failed to save room panel: {}", e);
-                    }
-                });
+                if let Err(e) = save_room_panel(rooms_panel, user_id) {
+                    error!("Bug! Failed to save room panel: {}", e);
+                }
             }
         }
         // Forward events to the MatchEvent trait implementation.
