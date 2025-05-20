@@ -105,45 +105,43 @@ live_design! {
             main_window = <Window> {
                 window: {inner_size: vec2(1280, 800), title: "Robrix"},
                 caption_bar = {caption_label = {label = {text: "Robrix"}}}
-                pass: {clear_color: #2A}
+                // pass: {clear_color: #2A}
+                pass: {clear_color: #FFFFFF00}
+                // pass: { clear_color: (THEME_COLOR_BG_APP) }
 
                 body = {
+                    padding: 0,
+
                     // A wrapper view for showing top-level app modals/dialogs/popups
                     <View> {
                         width: Fill, height: Fill,
                         flow: Overlay,
 
-                        home_screen_view = <View> {
-                            visible: false
-                            home_screen = <HomeScreen> {}
-                        }
-                        login_screen_view = <View> {
-                            visible: true
-                            login_screen = <LoginScreen> {}
-                        }
-                        app_tooltip = <CalloutTooltip> {}
-                        popup = <PopupNotification> {
-                            margin: {top: 45, right: 13},
-                            content: {
-                                <PopupList> {}
+                            home_screen_view = <View> {
+                                visible: false
+                                home_screen = <HomeScreen> {}
                             }
-                        }
+                            login_screen_view = <View> {
+                                visible: true
+                                login_screen = <LoginScreen> {}
+                            }
+                            app_tooltip = <CalloutTooltip> {}
+                            popup = <PopupNotification> {
+                                margin: {top: 45, right: 13},
+                                content: {
+                                    <PopupList> {}
+                                }
+                            }
 
                         // Context menus should be shown above other UI elements,
                         // but beneath the verification modal.
                         new_message_context_menu = <NewMessageContextMenu> { }
 
-                        // message_source_modal = <Modal> {
-                        //     content: {
-                        //         message_source_modal_inner = <MessageSourceModal> {}
-                        //     }
-                        // }
-
-                        // We want the verification modal to always show up on top of
-                        // all other elements when an incoming verification request is received.
-                        verification_modal = <Modal> {
-                            content: {
-                                verification_modal_inner = <VerificationModal> {}
+                            // We want the verification modal to always show up on top of
+                            // all other elements when an incoming verification request is received.
+                            verification_modal = <Modal> {
+                                content: {
+                                    verification_modal_inner = <VerificationModal> {}
                             }
                         }
                     }
@@ -449,6 +447,8 @@ pub struct SavedDockState {
     pub open_rooms: HashMap<LiveId, SelectedRoom>,
     /// The order in which the rooms were opened, in chronological order
     /// from first opened (at the beginning) to last opened (at the end).
+    /// The order in which the rooms were opened, in chronological order
+    /// from first opened (at the beginning) to last opened (at the end).
     pub room_order: Vec<SelectedRoom>,
 }
 
@@ -730,7 +730,7 @@ impl<'de> Deserialize<'de> for WindowGeomState {
             {
                 struct FieldVisitor;
 
-                impl<'de> Visitor<'de> for FieldVisitor {
+                impl Visitor<'_> for FieldVisitor {
                     type Value = Field;
 
                     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

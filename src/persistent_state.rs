@@ -203,7 +203,7 @@ pub fn save_room_panel(
     for (tab_id, room) in &rooms_panel_state.open_rooms {
         match room {
             SelectedRoom::JoinedRoom { room_id, .. } | SelectedRoom::InvitedRoom { room_id, .. } => { 
-                assert!(rooms_panel_state.dock_items.contains_key(&tab_id), "Open room id: {} not found in dock state", room_id);
+                assert!(rooms_panel_state.dock_items.contains_key(tab_id), "Open room id: {} not found in dock state", room_id);
             }
         }
     }
