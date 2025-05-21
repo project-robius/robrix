@@ -92,7 +92,7 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
 }
 
 
-pub fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
+pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
     let millis: i64 = millis.get().into();
     Local.timestamp_millis_opt(millis).single()
 }
@@ -123,7 +123,7 @@ pub fn room_name_or_id(
 ///
 /// # Returns:
 /// - `Option<String>` representing the human-readable time or `None` if formatting fails.
-pub fn relative_format(millis: &MilliSecondsSinceUnixEpoch) -> Option<String> {
+pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
     let datetime = unix_time_millis_to_datetime(millis)?;
 
     // Calculate the time difference between now and the given timestamp
