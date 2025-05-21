@@ -359,13 +359,13 @@ impl AppMain for App {
                 is_fullscreen: window.is_fullscreen(cx),
             };
             if let Err(e) = save_window_state(window_geom) {
-                error!("Bug! Failed to save window_state: {}", e);
+                error!("Failed to save window state. Error details: {}", e);
             }
             if let Some(user_id) = current_user_id() {
                 let rooms_panel = self.app_state.saved_dock_state.clone();
                 let user_id = user_id.clone();
                 if let Err(e) = save_room_panel(rooms_panel, user_id) {
-                    error!("Bug! Failed to save room panel: {}", e);
+                    error!("Failed to save room panel. Error details: {}", e);
                 }
             }
         }
