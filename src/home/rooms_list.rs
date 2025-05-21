@@ -609,8 +609,8 @@ impl RoomsList {
             sort_fn.as_deref(),
         )
         .into_iter().for_each(|room_id|{
-            if let Some(info) = self.all_joined_rooms.get(&room_id) {
-                if info.is_direct {
+            if let Some(jr) = self.all_joined_rooms.get(&room_id) {
+                if jr.is_direct {
                     self.displayed_direct_messages.push(room_id.clone());
                 } else {
                     self.displayed_rooms.push(room_id.clone());
@@ -622,6 +622,53 @@ impl RoomsList {
         self.update_status_matching_rooms();
         portal_list.set_first_id_and_scroll(0, 0.0);
         self.redraw(cx);
+    }
+
+    fn calculate_indexs(&self) -> (RoomsListIndexs, RoomsListIndexs, RoomsListIndexs) {
+        // Based on the various displayed room lists and is_expanded state of each room header,
+        // calculate the indices in the PortalList where the headers and rooms should be drawn.
+        let should_show_invited_rooms_header = !self.displayed_invited_rooms.is_empty();
+        let should_show_direct_messages_header = !self.displayed_direct_messages.is_empty();
+        let should_show_joined_rooms_header = !self.displayed_rooms.is_empty();
+
+        let index_of_invited_rooms_header = should_show_invited_rooms_header.then_some(0);
+        let index_of_first_invited_room = should_show_invited_rooms_header as usize;
+        let index_after_invited_rooms = index_of_first_invited_room
+            + if self.is_invited_rooms_header_expanded { self.displayed_invited_rooms.len() } else { 0 };
+
+        let index_of_direct_messages_header = should_show_direct_messages_header.then_some(index_after_invited_rooms);
+        let index_of_first_direct_message = index_after_invited_rooms + should_show_direct_messages_header as usize;
+        let index_after_direct_messages = index_of_first_direct_message
+            + if self.is_direct_messages_header_expanded { self.displayed_direct_messages.len() } else { 0 };
+
+        let index_of_joined_rooms_header = should_show_joined_rooms_header.then_some(index_after_direct_messages);
+        let index_of_first_joined_room = index_after_direct_messages + should_show_joined_rooms_header as usize;
+        let index_after_joined_rooms = index_of_first_joined_room
+            + if self.is_rooms_header_expanded { self.displayed_rooms.len() } else { 0 };
+
+        let invited_rooms_indexs = RoomsListIndexs {
+            header_index: index_of_invited_rooms_header,
+            first_room_index: index_of_first_invited_room,
+            after_rooms_index: index_after_invited_rooms,
+        };
+
+        let direct_messages_indexs = RoomsListIndexs {
+            header_index: index_of_direct_messages_header,
+            first_room_index: index_of_first_direct_message,
+            after_rooms_index: index_after_direct_messages,
+        };
+
+        let joined_rooms_indexs = RoomsListIndexs {
+            header_index: index_of_joined_rooms_header,
+            first_room_index: index_of_first_joined_room,
+            after_rooms_index: index_after_joined_rooms,
+        };
+
+        (
+            invited_rooms_indexs,
+            direct_messages_indexs,
+            joined_rooms_indexs,
+        )
     }
 }
 
@@ -691,56 +738,35 @@ impl Widget for RoomsList {
         }
     }
 
-
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         // Update the currently-selected room from the AppState data.
         self.current_active_room = app_state.selected_room.as_ref()
             .map(|sel_room| sel_room.room_id().clone())
             .filter(|room_id| self.is_room_displayable(room_id));
+        let (invited_rooms_indexs, direct_messages_indexs, joined_rooms_indexs) = self.calculate_indexs();
 
-        // Based on the various displayed room lists and is_expanded state of each room header,
-        // calculate the indices in the PortalList where the headers and rooms should be drawn.
-        let should_show_invited_rooms_header = !self.displayed_invited_rooms.is_empty();
-        let should_show_direct_messages_header = !self.displayed_direct_messages.is_empty();
-        let should_show_joined_rooms_header = !self.displayed_rooms.is_empty();
-
-        let index_of_invited_rooms_header = should_show_invited_rooms_header.then_some(0);
-        let index_of_first_invited_room = should_show_invited_rooms_header as usize;
-        let index_after_invited_rooms = index_of_first_invited_room
-            + if self.is_invited_rooms_header_expanded { self.displayed_invited_rooms.len() } else { 0 };
-
-        let index_of_direct_messages_header = should_show_direct_messages_header.then_some(index_after_invited_rooms);
-        let index_of_first_direct_message = index_after_invited_rooms + should_show_direct_messages_header as usize;
-        let index_after_direct_messages = index_of_first_direct_message
-            + if self.is_direct_messages_header_expanded { self.displayed_direct_messages.len() } else { 0 };
-
-        let index_of_joined_rooms_header = should_show_joined_rooms_header.then_some(index_after_direct_messages);
-        let index_of_first_joined_room = index_after_direct_messages + should_show_joined_rooms_header as usize;
-        let index_after_joined_rooms = index_of_first_joined_room
-            + if self.is_rooms_header_expanded { self.displayed_rooms.len() } else { 0 };
-
-        let status_label_id = index_after_joined_rooms;
+        let status_label_id = joined_rooms_indexs.after_rooms_index;
 
         // Add one for the status label
         let total_count = status_label_id + 1;
 
         let get_invited_room_id = |portal_list_index: usize| {
-            let index = portal_list_index - index_of_first_invited_room;
+            let index = portal_list_index - invited_rooms_indexs.first_room_index;
             self.is_invited_rooms_header_expanded.then(||
                 self.displayed_invited_rooms.get(index)
             )
             .flatten()
         };
         let get_direct_message_id = |portal_list_index: usize| {
-            let index = portal_list_index - index_of_first_direct_message;
+            let index = portal_list_index - direct_messages_indexs.first_room_index;
             self.is_direct_messages_header_expanded.then(||
                 self.displayed_direct_messages.get(index)
             )
             .flatten()
         };
         let get_joined_room_id = |portal_list_index: usize| {
-            let index = portal_list_index - index_of_first_joined_room;
+            let index = portal_list_index - joined_rooms_indexs.first_room_index;
             self.is_rooms_header_expanded.then(||
                 self.displayed_rooms.get(index)
             )
@@ -758,7 +784,7 @@ impl Widget for RoomsList {
             while let Some(portal_list_index) = list.next_visible_item(cx) {
                 let mut scope = Scope::empty();
 
-                if index_of_invited_rooms_header == Some(portal_list_index) {
+                if invited_rooms_indexs.header_index == Some(portal_list_index) {
                     let item = list.item(cx, portal_list_index, live_id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
@@ -779,7 +805,7 @@ impl Widget for RoomsList {
                         list.item(cx, portal_list_index, live_id!(empty)).draw_all(cx, &mut scope);
                     }
                 }
-                else if index_of_direct_messages_header == Some(portal_list_index) {
+                else if direct_messages_indexs.header_index == Some(portal_list_index) {
                     let item = list.item(cx, portal_list_index, live_id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
@@ -811,7 +837,7 @@ impl Widget for RoomsList {
                         list.item(cx, portal_list_index, live_id!(empty)).draw_all(cx, &mut scope);
                     }
                 }
-                else if index_of_joined_rooms_header == Some(portal_list_index) {
+                else if joined_rooms_indexs.header_index == Some(portal_list_index) {
                     let item = list.item(cx, portal_list_index, live_id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
@@ -862,11 +888,16 @@ impl Widget for RoomsList {
 
         DrawStep::done()
     }
-
 }
 
 pub struct RoomsListScopeProps {
     /// Whether the RoomsList's inner PortalList was scrolling
     /// when the latest finger down event occurred.
     pub was_scrolling: bool,
+}
+
+struct RoomsListIndexs {
+    header_index: Option<usize>,
+    first_room_index: usize,
+    after_rooms_index: usize
 }
