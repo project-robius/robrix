@@ -312,6 +312,7 @@ pub fn text_preview_of_redacted_message(
     TextPreview::from((text, BeforeText::Nothing))
 }
 
+
 /// Returns a text preview of the given other state event as an Html-formatted string.
 pub fn text_preview_of_other_state(
     other_state: &AnyOtherFullStateEventContent,

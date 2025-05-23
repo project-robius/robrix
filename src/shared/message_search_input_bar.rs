@@ -1,4 +1,4 @@
-//! A text input used to filter the rooms list
+//! A text input used to search messages in a room
 //! with a search icon and a button to clear the input.
 //!
 //! This is a dedicated widget instead of a general "SearchBar"
@@ -7,6 +7,7 @@
 
 use makepad_widgets::*;
 
+use super::popup_list::enqueue_popup_notification;
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -17,7 +18,7 @@ live_design! {
 
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
 
-    pub RoomFilterInputBar = {{RoomFilterInputBar}}<RoundedView> {
+    pub MessageSearchInputBar = {{MessageSearchInputBar}}<RoundedView> {
         width: Fill,
         height: 35,
 
@@ -48,7 +49,7 @@ live_design! {
             height: Fit,
             flow: Right, // do not wrap
 
-            empty_text: "Filter rooms..."
+            empty_text: "Search Messages..."
 
             draw_text: {
                 text_style: { font_size: 10 },
@@ -73,21 +74,33 @@ live_design! {
 ///
 /// See the module-level docs for more detail.
 #[derive(Live, LiveHook, Widget)]
-pub struct RoomFilterInputBar {
+pub struct MessageSearchInputBar {
     #[deref] view: View,
 }
 
-/// Actions emitted by the `RoomFilterInputBar` based on user interaction with it.
+/// Actions emitted by the `MessageSearchInputBar` based on user interaction with it.
 #[derive(Clone, Debug, DefaultNone)]
-pub enum RoomFilterAction {
+pub enum MessageSearchAction {
     /// The user has changed the text entered into the filter bar.
     Changed(String),
+    /// The user has clicked the input bar.
+    Click(String),
+    Clear,
     None,
 }
 
-impl Widget for RoomFilterInputBar {
+impl Widget for MessageSearchInputBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+        let area = self.text_input(id!(input)).area();
+        if let Hit::FingerDown(..) = event.hits(cx, area) {
+            let widget_uid = self.widget_uid();
+            cx.widget_action(
+                widget_uid,
+                &scope.path,
+                MessageSearchAction::Click(self.view.text_input(id!(input)).text())
+            );
+        }
         self.widget_match_event(cx, event, scope);
     }
 
@@ -96,18 +109,24 @@ impl Widget for RoomFilterInputBar {
     }
 }
 
-impl WidgetMatchEvent for RoomFilterInputBar {
+impl WidgetMatchEvent for MessageSearchInputBar {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         let input = self.text_input(id!(input));
         let clear_button = self.button(id!(clear_button));
 
         // Handle user changing the input text
         if let Some(keywords) = input.changed(actions) {
+            if keywords.len() > 50 {
+                // Limit search term to up to 50 characters, because the search result widget keeps a clone of the search term.
+                enqueue_popup_notification("Search is limited to 50 characters".to_string());
+                input.set_text(cx, "");
+                return;
+            }
             clear_button.set_visible(cx, !keywords.is_empty());
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
-                RoomFilterAction::Changed(keywords)
+                MessageSearchAction::Changed(keywords)
             );
         }
 
@@ -118,8 +137,17 @@ impl WidgetMatchEvent for RoomFilterInputBar {
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
-                RoomFilterAction::Changed(String::new())
+                MessageSearchAction::Changed(String::new())
             );
+        }
+        for action in actions {
+            if let MessageSearchAction::Clear = action.as_widget_action().cast() {
+                self.text_input(id!(input)).set_text(cx, "");
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    MessageSearchAction::Changed(String::new()));
+            }
         }
     }
 }

@@ -595,6 +595,7 @@ impl RoomsListRef {
         }
     }
 }
+
 impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Process all pending updates to the list of all rooms, and then redraw it. 

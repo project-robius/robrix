@@ -25,12 +25,12 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use ruma::{api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria, EventContext, OrderBy, Request}}, events::AnyTimelineEvent, uint};
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::{TimelineUpdate, SearchTimelineItem}, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
+        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::{TimelineUpdate, SearchResultItem}, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -391,7 +391,9 @@ pub enum MatrixRequest {
         include_all_rooms: bool,
         /// Text in the search bar.
         search_term: String,
+        /// Token for next batch of search results.
         next_batch: Option<String>,
+        /// Abort previous search only when debouncing from typing search term.
         abort_previous_search: bool,
     }
 }
@@ -430,6 +432,7 @@ async fn async_worker(
 ) -> Result<()> {
     log!("Started async_worker task.");
     let mut tasks_list: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
+    let mut search_task_abort_handler: Option<AbortHandle> = None;
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
@@ -452,6 +455,7 @@ async fn async_worker(
                     let sender = room_info.timeline_update_sender.clone();
                     (timeline_ref, sender)
                 };
+
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
                     log!("Starting {direction} pagination request for room {room_id}...");
@@ -839,7 +843,7 @@ async fn async_worker(
 
                 let _typing_notices_task = Handle::current().spawn(async move {
                     while let Ok(user_ids) = typing_notice_receiver.recv().await {
-                        //log!("Received typing notifications for room {room_id}: {user_ids:?}");
+                        // log!("Received typing notifications for room {room_id}: {user_ids:?}");
                         let mut users = Vec::with_capacity(user_ids.len());
                         for user_id in user_ids {
                             users.push(
@@ -1113,10 +1117,18 @@ async fn async_worker(
                     }
                 });
             }
-            MatrixRequest::SearchMessages { room_id, search_term, include_all_rooms, next_batch, abort_previous_search } => {
+            MatrixRequest::SearchMessages {
+                room_id,
+                search_term,
+                include_all_rooms,
+                next_batch,
+                abort_previous_search,
+            } => {
                 if abort_previous_search {
-                    abort_core_task(CoreTask::Search).await;
-                }                
+                    if let Some(abort_handler) = search_task_abort_handler.take() {
+                        abort_handler.abort();
+                    }
+                }
                 let client = CLIENT.get().unwrap();
                 let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                 let Some(room_info) = all_room_info.get_mut(&room_id) else {
@@ -1138,30 +1150,38 @@ async fn async_worker(
                 criteria.event_context.after_limit = uint!(1);
                 criteria.event_context.before_limit = uint!(1);
                 criteria.event_context.include_profile = true;
-                
+
                 search_categories.room_events = Some(criteria);
                 let mut req = Request::new(search_categories);
                 req.next_batch = next_batch.clone();
                 let handle = Handle::current().spawn(async move {
                     match client.send(req).await {
                         Ok(response) => {
-                            let next_batch = response.search_categories.room_events.next_batch.clone();
+                            let next_batch =
+                                response.search_categories.room_events.next_batch.clone();
                             let mut last_room_id = None;
                             let result = response.search_categories;
                             let mut items = vec![];
                             let mut profile_infos = BTreeMap::new();
                             for item in result.room_events.results.iter() {
-                                let Some(event) = item.result.as_ref().and_then(|f|f.deserialize().ok()) else { continue };
+                                let Some(event) =
+                                    item.result.as_ref().and_then(|f| f.deserialize().ok())
+                                else {
+                                    continue;
+                                };
                                 for (user_id, profile) in item.context.profile_info.iter() {
-                                    profile_infos.entry(user_id.clone()).or_insert_with(|| TimelineDetails::Ready(matrix_sdk_ui::timeline::Profile{
-                                        display_name: profile.displayname.clone(),
-                                        display_name_ambiguous: false,
-                                        avatar_url:profile.avatar_url.clone()
-                                    }));
+                                    profile_infos.entry(user_id.clone()).or_insert_with(|| {
+                                        TimelineDetails::Ready(matrix_sdk_ui::timeline::Profile {
+                                            display_name: profile.displayname.clone(),
+                                            display_name_ambiguous: false,
+                                            avatar_url: profile.avatar_url.clone(),
+                                        })
+                                    });
                                 }
                                 item.context.events_after.iter().rev().for_each(|f| {
                                     if let Ok(timeline_event) = f.deserialize() {
-                                        items.push(SearchTimelineItem::ContextEvent(timeline_event));
+                                        items
+                                            .push(SearchResultItem::ContextEvent(timeline_event));
                                     }
                                 });
                                 let timestamp = match event {
@@ -1172,50 +1192,60 @@ async fn async_worker(
                                             event.origin_server_ts()
                                         }
                                     }
-                                    _ => {
-                                        event.origin_server_ts()
-                                    }
+                                    _ => event.origin_server_ts(),
                                 };
                                 let room_id = event.room_id().to_owned();
-                                items.push(SearchTimelineItem::Event(event));
-                                
+                                items.push(SearchResultItem::Event(event));
+
                                 item.context.events_before.iter().rev().for_each(|f| {
                                     if let Ok(timeline_event) = f.deserialize() {
-                                        items.push(SearchTimelineItem::ContextEvent(timeline_event));
+                                        items
+                                            .push(SearchResultItem::ContextEvent(timeline_event));
                                     }
                                 });
-                                items.push(SearchTimelineItem::DateDivider(timestamp));
+                                items.push(SearchResultItem::DateDivider(timestamp));
                                 if include_all_rooms {
                                     if let Some(ref mut last_room_id) = last_room_id {
                                         if last_room_id != &room_id {
                                             *last_room_id = room_id.clone();
-                                            items.push(SearchTimelineItem::RoomHeader(room_id));
+                                            items.push(SearchResultItem::RoomHeader(room_id));
                                         }
                                     } else {
                                         last_room_id = Some(room_id.clone());
-                                        items.push(SearchTimelineItem::RoomHeader(room_id));
+                                        items.push(SearchResultItem::RoomHeader(room_id));
                                     }
                                 }
                             }
-                            let count = result.room_events.count.and_then(|f| f.to_string().parse().ok()).unwrap_or(0);
+                            let count = result
+                                .room_events
+                                .count
+                                .and_then(|f| f.to_string().parse().ok())
+                                .unwrap_or(0);
                             let highlights = result.room_events.highlights;
-                            if let Err(e) = sender.send(TimelineUpdate::SearchResultReceived { items, count, highlights, search_term: search_term.clone(), profile_infos }) {
+                            if let Err(e) = sender.send(TimelineUpdate::SearchResultReceived {
+                                items,
+                                count,
+                                highlights,
+                                search_term: search_term.clone(),
+                                profile_infos,
+                                next_batch,
+                            }) {
                                 error!("Failed to search message in {room_id}; error: {e:?}");
-                                enqueue_popup_notification(format!("Failed to search message. Error: {e}"));
-                            }
-                            // For simplicity, Element also does not handle pagination by scrolling.
-                            if next_batch.is_some() {
-                                submit_async_request(MatrixRequest::SearchMessages { room_id: room_id.clone(), include_all_rooms, search_term, abort_previous_search: false, next_batch});
+                                enqueue_popup_notification(format!(
+                                    "Failed to search message. Error: {e}"
+                                ));
                             }
                             SignalToUI::set_ui_signal();
                         }
                         Err(e) => {
                             error!("Failed to search message in {room_id}; error: {e:?}");
-                            enqueue_popup_notification(format!("Failed to search message. Error: {e}"));
+                            enqueue_popup_notification(format!(
+                                "Failed to search message. Error: {e}"
+                            ));
                         }
                     }
                 });
-                register_core_task(CoreTask::Search, handle.abort_handle());
+                search_task_abort_handler = Some(handle.abort_handle());
             }
         }
     }
@@ -1863,6 +1893,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     // We must call `display_name()` here to calculate and cache the room's name.
     let room_name = room.display_name().await.map(|n| n.to_string()).ok();
     let is_room_encrypted = room.is_encrypted().await.unwrap_or(false);
+
     match room.state() {
         RoomState::Knocked => {
             // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
@@ -2851,29 +2882,5 @@ impl UserPowerLevels {
     #[doc(alias("unpin"))]
     pub fn can_pin(self) -> bool {
         self.contains(UserPowerLevels::RoomPinnedEvents)
-    }
-}
-#[derive(Debug, Eq, PartialEq, Hash)]
-enum CoreTask {
-    Search,            
-}
-static CORE_TASKS: LazyLock<Mutex<HashMap<CoreTask, AbortHandle>>> = LazyLock::new(
-    || Mutex::new(HashMap::new())
-);
-
-fn register_core_task(
-    task_type: CoreTask, 
-    handle: AbortHandle,
-) {
-    if let Ok(mut tasks) = CORE_TASKS.lock() {
-        tasks.insert(task_type, handle);
-    }
-}
-
-async fn abort_core_task(core_task: CoreTask) {
-    if let Ok(mut tasks) = CORE_TASKS.lock() {
-        if let Some(handle) = tasks.remove(&core_task) {
-            handle.abort();
-        }
     }
 }
