@@ -1129,6 +1129,9 @@ async fn async_worker(
                         abort_handler.abort();
                     }
                 }
+                if search_term.is_empty() {
+                    continue;
+                }
                 let client = CLIENT.get().unwrap();
                 let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                 let Some(room_info) = all_room_info.get_mut(&room_id) else {

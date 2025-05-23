@@ -85,7 +85,10 @@ pub enum MessageSearchAction {
     Changed(String),
     /// The user has clicked the input bar.
     Click(String),
+    /// Clear the text entered into the input bar.
     Clear,
+    /// Set the text entered into the input bar.
+    SetText(String),
     None,
 }
 
@@ -147,6 +150,9 @@ impl WidgetMatchEvent for MessageSearchInputBar {
                     self.widget_uid(),
                     &scope.path,
                     MessageSearchAction::Changed(String::new()));
+            }
+            if let Some(MessageSearchAction::SetText(text)) = action.downcast_ref() {
+                self.text_input(id!(input)).set_text(cx, text);
             }
         }
     }
