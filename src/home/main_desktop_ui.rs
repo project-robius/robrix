@@ -2,9 +2,8 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
-use crate::{app::{AppState, AppStateAction, SelectedRoom}, utils::room_name_or_id};
+use crate::{app::{AppState, AppStateAction, SelectedRoom}, shared::message_search_input_bar::MessageSearchAction, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -210,6 +209,7 @@ impl MainDesktopUI {
         dock.close_tab(cx, tab_id);
         self.tab_to_close = None;
         self.open_rooms.remove(&tab_id);
+        cx.widget_action(self.widget_uid(), &Scope::empty().path, MessageSearchAction::Clear);
     }
 
     /// Replaces an invite with a joined room in the dock.

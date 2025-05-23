@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, message_search_input_bar::MessageSearchAction, popup_list::PopupNotificationAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -242,6 +242,7 @@ impl MatchEvent for App {
                     &Scope::default().path,
                     StackNavigationAction::NavigateTo(live_id!(main_content_view))
                 );
+                self.ui.view(id!(message_search_input_view)).set_visible(cx, true);
                 self.ui.redraw(cx);
             }
 
@@ -251,6 +252,7 @@ impl MatchEvent for App {
                 }
                 AppStateAction::FocusNone => {
                     self.app_state.selected_room = None;
+                    self.ui.view(id!(message_search_input_view)).set_visible(cx, false);
                 }
                 AppStateAction::UpgradedInviteToJoinedRoom(room_id) => {
                     if let Some(selected_room) = self.app_state.selected_room.as_mut() {
@@ -318,6 +320,24 @@ impl MatchEvent for App {
             //     }
             //     _ => {}
             // }
+            match action.as_widget_action().cast() {
+                MessageSearchAction::Click(_) => {
+                    self.ui
+                        .view(id!(main_content_view.header.content.message_search_input_mobile_view))
+                        .apply_over(cx, live!{
+                            width: 220
+                        });
+                }
+                MessageSearchAction::Clear => {
+                    self.ui
+                        .view(id!(main_content_view.header.content.message_search_input_mobile_view))
+                        .apply_over(cx, live!{
+                            width: 150
+                        });
+                }
+                _ => {}
+            }
+
         }
     }
 }
