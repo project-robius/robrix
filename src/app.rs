@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::{login_screen::LoginAction, logout_confirm_modal::LogoutConfirmModalAction}, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::{submit_async_request, MatrixRequest}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -200,7 +200,7 @@ impl MatchEvent for App {
         self.update_login_visibility(cx);
 
         log!("App::handle_startup(): starting matrix sdk loop");
-        crate::sliding_sync::start_matrix_tokio(true).unwrap();
+        crate::sliding_sync::start_matrix_tokio().unwrap();
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
@@ -404,14 +404,16 @@ impl AppMain for App {
 
 impl App {
    
+    /// Shows the modal dialog that confirms whether the user wants to log out.
+    ///
     pub fn show_logout_confirm_modal(&self, cx: &mut Cx) {
         let modal = self.ui.modal(id!(logout_confirm_modal));
         modal.open(cx);
     }
 
+    /// Hides the modal dialog that confirms whether the user wants to log out.
     pub fn hide_logout_confirm_modal(&self, cx: &mut Cx) {
         let modal = self.ui.modal(id!(logout_confirm_modal));
-        log!("Got modal reference for hiding: {:?}", modal);
         modal.close(cx);
     }
 

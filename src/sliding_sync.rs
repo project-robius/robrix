@@ -29,11 +29,11 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: P
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
+        invite_screen::{JoinRoomAction, LeaveRoomAction}, main_desktop_ui::MainDesktopUiAction, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
+    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_last_user_id, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, mentionable_text_input::MentionableTextInputAction, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -434,7 +434,7 @@ async fn async_worker(
             }
 
             MatrixRequest::Logout => {
-                let _logout_task = Handle::current().spawn(async move {
+                Handle::current().spawn(async move {
                     match logout_and_refresh().await {
                         Ok(state) => match state {
                             RefreshState::NeedRelogin => {
@@ -580,7 +580,7 @@ async fn async_worker(
             }
 
             MatrixRequest::JoinRoom { room_id } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _join_room_task = Handle::current().spawn(async move {
                     log!("Sending request to join room {room_id}...");
                     let result_action = if let Some(room) = client.get_room(&room_id) {
@@ -608,7 +608,7 @@ async fn async_worker(
             }
 
             MatrixRequest::LeaveRoom { room_id } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _leave_room_task = Handle::current().spawn(async move {
                     log!("Sending request to leave room {room_id}...");
                     let result_action = if let Some(room) = client.get_room(&room_id) {
@@ -1148,18 +1148,10 @@ static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
     || Arc::new(Notify::new())
 );
 
-pub fn start_matrix_tokio(initial_flag: bool) -> Result<()> {
+pub fn start_matrix_tokio() -> Result<()> {
     let rt_handle = { // Scope for mutex guard
     let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
         if let Some(existing_rt) = rt_guard.as_ref() {
-            // Runtime already exists. If this is not the initial start,
-            // it might be a restart attempt where shutdown didn't complete fully.
-            if !initial_flag {
-                log!("Warning: Attempting to start Tokio runtime when one already exists (post-logout scenario). Using existing runtime.");
-            } else {
-                // This case should ideally not happen if logout cleans up properly.
-                log!("Warning: Tokio runtime already initialized on initial start.");
-            }
             existing_rt.handle().clone()
         } else {
             // Create a new Tokio runtime
@@ -1183,7 +1175,7 @@ pub fn start_matrix_tokio(initial_flag: bool) -> Result<()> {
         // register it in core task
 
         // Start the main loop that drives the Matrix client SDK.
-        let mut main_loop_join_handle = rt.spawn(async_main_loop(initial_flag, login_receiver));
+        let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
         // register it in core task
         
         // Build a Matrix Client in the background so that SSO Server starts earlier.
@@ -1457,7 +1449,6 @@ impl From<room_list_service::Room> for RoomListServiceRoomInfo {
 static TRACING_INITIALIZED: Once = Once::new();
 
 async fn async_main_loop(
-    initial_flag: bool,
     mut login_receiver: Receiver<LoginRequest>,
 ) -> Result<()> {
     // only init subscribe once
@@ -1474,17 +1465,10 @@ async fn async_main_loop(
         cli_parse_result.as_ref().is_ok(),
         cli_has_valid_username_password,
     );
-    let mut wait_for_login = !cli_has_valid_username_password && (
+    let wait_for_login = !cli_has_valid_username_password && (
         most_recent_user_id.is_none()
             || std::env::args().any(|arg| arg == "--login-screen" || arg == "--force-login")
     );
-
-    // if not first time run this function, we need to force wait for login
-    if !initial_flag {
-        wait_for_login = true;
-    }
-
-    log!("is initial {} ? Waiting for login? {}", initial_flag , wait_for_login);
 
     let new_login_opt = if !wait_for_login {
         let specified_username = cli_parse_result.as_ref().ok().and_then(|cli|
@@ -2652,6 +2636,7 @@ async fn spawn_sso_server(
             .await
             .inspect(|_| {
                 if let Some(client) = get_client() {
+                    
                     if client.logged_in() {
                         is_logged_in = true;
                         log!("Already logged in, ignore login with sso");
@@ -2894,29 +2879,16 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     take_client(); 
     take_sync_service();
     // Note: unwrap() might panic if the lock is poisoned
-    ALL_ROOM_INFO.lock().unwrap().clear();
+    ALL_JOINED_ROOMS.lock().unwrap().clear();
     TOMBSTONED_ROOMS.lock().unwrap().clear();
     IGNORED_USERS.lock().unwrap().clear();
     DEFAULT_SSO_CLIENT.lock().unwrap().take();
     log!("Client state and caches cleared.");
 
     log!("Requesting to close all tabs...");
-    Cx::post_action(RoomsPanelAction::CloseAllTabs);
-    
-    // FIXME:
-    // Add a short delay to ensure UI fully updates
-    // because:
-    // 1. When sending closeTab actions to main_desktop_ui's MainDesktopUI::handle_action,
-    //    Makepad needs time to complete UI redraw operations
-    // 2. Without this delay, UI refresh issues may occur:
-    //    - When logging in again without fully exiting, previous user's last open tabs
-    //      might still appear instead of the expected empty Home screen
-    // 3. This happens because Makepad's rendering loop and event handling are asynchronous:
-    //    - The closeTab event marks UI for update
-    //    - Actual redraw occurs in the next render frame
-    // 4. While not ideal, this sleep ensures state consistency across components
-    //    before proceeding with subsequent operations 
-    //tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    Cx::post_action(MainDesktopUiAction::CloseAllTabs);
+    Cx::post_action(MentionableTextInputAction::DestroyAllRoomSubscription);
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // Delete the last user ID file
     log!("Deleting last user ID file...");
@@ -2952,9 +2924,9 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     // This is a critical step; failure might prevent future logins
     
     log!("Matrix tokio runtime restarted successfully.");
-    abort_core_tasks().await;
+    shutdown_background_tasks().await;
     log!("Restarting Matrix tokio runtime...");
-    if let Err(e) = start_matrix_tokio(false) {
+    if let Err(e) = start_matrix_tokio() {
         let error_msg = format!("Failed to restart Matrix runtime: {}. Manual app restart might be required to log in again.", e);
         log!("Error: {}", error_msg);
         errors.push(error_msg.clone());
@@ -2983,7 +2955,7 @@ async fn logout_and_refresh() -> Result<RefreshState> {
 
 }
 
-async fn abort_core_tasks() {
+async fn shutdown_background_tasks() {
     let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
     if let Some(existing_rt) = rt_guard.take() {
         existing_rt.shutdown_background();

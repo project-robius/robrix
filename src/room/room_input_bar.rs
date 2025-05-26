@@ -157,20 +157,20 @@ impl Widget for RoomInputBar {
                     }
                 }
 
-                // Check for MentionableTextInputAction::RoomIdChanged action
-                if let Some(room_id) =
-                    action.downcast_ref::<MentionableTextInputAction>().and_then(|a| {
-                        if let MentionableTextInputAction::RoomIdChanged(room_id) = a {
-                            Some(room_id)
-                        } else {
-                            None
-                        }
-                    })
-                {
-                    // Create subscription
-                    self.create_room_subscription(cx, room_id.clone());
-                }
+                if let Some(mentionable_text_input) =
+                    action.downcast_ref::<MentionableTextInputAction>() {
+                        match mentionable_text_input {
+                            MentionableTextInputAction::RoomIdChanged(room_id) => {
+                                self.create_room_subscription(cx, room_id.clone());
+                            }
+                            MentionableTextInputAction::DestroyAllRoomSubscription => {
+                                self.destroy_all_room_subscription();
+                            }
+                            _ => {
 
+                            }
+                        }
+                    }
                 // // Check for text input actions
                 // if let Some(text_action) = action.as_widget_action().cast() {
                 //     match text_action {
@@ -239,6 +239,12 @@ impl RoomInputBar {
         });
     }
 
+    /// Cancels the current room member subscription (if any).
+    /// This is necessary to prevent receiving updates for the current room after
+    /// the user navigates away.
+    fn destroy_all_room_subscription(&mut self) {
+        self.member_subscription = None;
+    }
     /// Handle room members update event
     fn handle_members_updated(&mut self, members: Arc<Vec<RoomMember>>) {
         if let Some(current_room_id) = &self.room_id {
