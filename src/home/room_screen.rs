@@ -26,7 +26,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, message_search_input_bar::MessageSearchAction, popup_list::enqueue_popup_notification, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -1167,7 +1167,7 @@ impl Widget for RoomScreen {
                     criteria.include_all_rooms = true;
                     self.search_result(id!(search_result_plane)).set_search_criteria(cx, criteria.clone());
                     let Some(tl) = self.tl_state.as_mut() else { return };
-                    tl.search_state.items.clear();
+                    tl.search_state = SearchState::default();
                     submit_async_request(MatrixRequest::SearchMessages { room_id, include_all_rooms: true, search_term: criteria.search_term, next_batch: None, abort_previous_search: true });
                 }
             }
@@ -1734,6 +1734,7 @@ impl RoomScreen {
                         tl.search_state.items = Vector::new();
                     }
                     tl.search_state.profile_infos = profile_infos;
+                    cx.action(MessageSearchAction::SetText(search_term.clone()));
                     criteria.search_term = search_term;
                     self.view
                         .search_result(id!(search_result_plane))

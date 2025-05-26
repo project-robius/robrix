@@ -17,8 +17,7 @@ use ruma::{
         },
         AnyMessageLikeEvent, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent,
         FullStateEventContent,
-    },
-    uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId,
+    }, room_id, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId
 };
 
 use crate::{
@@ -238,6 +237,13 @@ impl MatchEvent for SearchResult {
                 &Scope::empty().path,
                 MessageSearchAction::Clear,
             );
+            submit_async_request(MatrixRequest::SearchMessages { 
+                room_id: room_id!("!not_used:matrix.org").to_owned(), 
+                include_all_rooms: false, 
+                search_term: "".to_string(), 
+                next_batch: None, 
+                abort_previous_search: true 
+            });
         }
     }
 }
@@ -264,6 +270,7 @@ impl SearchResult {
         );
         self.search_criteria = search_criteria;
         self.visible = true;
+        self.view.view(id!(loading_view)).set_visible(cx, true);
     }
     /// Resets the search result summary and set the loading view back to visible.
     ///
@@ -286,13 +293,6 @@ impl SearchResult {
     }
 }
 impl SearchResultRef {
-    /// See [`SearchResult::set_visible()`].
-    pub fn set_visible(&self, cx: &mut Cx, visible: bool) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.visible = visible;
-            inner.redraw(cx);
-        }
-    }
     /// See [`SearchResult::set_result_count()`].
     pub fn set_result_count(&mut self, cx: &mut Cx, search_result_count: u32) {
         let Some(mut inner) = self.borrow_mut() else {
@@ -371,7 +371,7 @@ pub fn search_result_draw_walk(
         list.set_item_range(cx, 0, last_item_id);
 
         while let Some(item_id) = list.next_visible_item(cx) {
-            if item_id == 0 && tl_state.search_state.next_batch_token.is_none() {
+            if item_id == 0 && tl_state.search_state.next_batch_token.is_none() && last_item_id > 0 {
                 WidgetRef::new_from_ptr(cx, room_screen.no_more_template)
                     .as_label()
                     .draw_all(cx, &mut Scope::empty());
@@ -862,28 +862,32 @@ pub fn handle_search_input(
     let widget_action = action.as_widget_action();
     match widget_action.cast() {
         MessageSearchAction::Changed(search_term) => {
+            if search_term.is_empty() {
+                room_screen
+                    .search_result(id!(search_result_plane))
+                    .reset(cx);
+                room_screen.view(id!(timeline)).set_visible(cx, true);
+                room_screen
+                    .view(id!(search_timeline))
+                    .set_visible(cx, false);
+                // Abort previous inflight search request.
+                submit_async_request(MatrixRequest::SearchMessages { 
+                    room_id: room_id!("!not_used:matrix.org").to_owned(), 
+                    include_all_rooms: false, 
+                    search_term: "".to_string(), 
+                    next_batch: None, 
+                    abort_previous_search: true 
+                });
+                return;
+            }
             if let Some(selected_room) = {
                 let app_state = scope.data.get::<AppState>().unwrap();
                 app_state.selected_room.clone()
             } {
                 if Some(selected_room.room_id()) == room_screen.room_id.as_ref() {
-                    if search_term.is_empty() {
-                        room_screen
-                            .search_result(id!(search_result_plane))
-                            .reset(cx);
-                        room_screen.view(id!(timeline)).set_visible(cx, true);
-                        room_screen
-                            .view(id!(search_timeline))
-                            .set_visible(cx, false);
-                        room_screen
-                            .search_result(id!(search_result_plane))
-                            .set_visible(cx, false);
-                        return;
-                    }
-                    room_screen.search_debounce_timer = cx.start_timeout(1.0);
+                    room_screen.search_debounce_timer = cx.start_timeout(3.0);
                     if let Some(ref mut tl_state) = room_screen.tl_state {
-                        tl_state.search_state.items.clear();
-                        tl_state.search_state.highlighted_strings.clear();
+                        tl_state.search_state = SearchState::default();
                     }
                     let mut criteria = room_screen
                         .search_result(id!(search_result_plane))
