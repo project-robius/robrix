@@ -928,15 +928,15 @@ impl Widget for RoomScreen {
         if let Event::Timer(te) = event {
             if self.search_debounce_timer.is_timer(te).is_some() {
                 if let Some(room_id) = &self.room_id {
-                    let is_encrypted = self.view.rooms_list(id!(rooms_list)).is_room_encrypted(room_id);
-                    if is_encrypted {
-                        enqueue_popup_notification(String::from("Searching for encrypted messages is not supported yet."));
-                        return;
-                    }
                     let criteria = self.search_result(id!(search_result_plane)).get_search_criteria();
                     if criteria.search_term.is_empty() {
                         self.view(id!(search_timeline)).set_visible(cx, false);
                         return; 
+                    }
+                    let is_encrypted = self.view.rooms_list(id!(rooms_list)).is_room_encrypted(room_id);
+                    if is_encrypted && !criteria.include_all_rooms {
+                        enqueue_popup_notification(String::from("Searching for encrypted messages is not supported yet. You may want to try searching all rooms instead."));
+                        return;
                     }
                     self.search_result(id!(search_result_plane)).display_top_space(cx);
                     submit_async_request(MatrixRequest::SearchMessages { 
