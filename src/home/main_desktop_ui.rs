@@ -374,6 +374,8 @@ impl WidgetMatchEvent for MainDesktopUI {
 
                     if let Some(ref selected_room) = &app_state.selected_room {
                         self.focus_or_create_tab(cx, selected_room.clone());
+                        // Call DockSave action to display the search message input box if there is open room.
+                        cx.action(MainDesktopUiAction::DockSave);
                     }
                     self.view.redraw(cx);
                 }
@@ -398,7 +400,7 @@ impl WidgetMatchEvent for MainDesktopUI {
 
 /// Actions sent to the MainDesktopUI widget for saving/restoring its dock state.
 #[derive(Clone, Debug, DefaultNone)]
-enum MainDesktopUiAction {
+pub enum MainDesktopUiAction {
     /// Save the dock state from the dock to the AppState.
     DockSave,
     /// Load the room panel state from the AppState to the dock.

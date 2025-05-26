@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, message_search_input_bar::MessageSearchAction, popup_list::PopupNotificationAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, message_search_input_bar::MessageSearchAction, popup_list::PopupNotificationAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -337,7 +337,17 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
-
+            // Monitor for DockSave action which will be triggered by selection of the room for setting the visibilty of the message search input.
+            match action.downcast_ref() {
+                Some(MainDesktopUiAction::DockSave) => {
+                    if self.app_state.selected_room.is_some() {
+                        self.ui.view(id!(message_search_input_view)).set_visible(cx, true);
+                    } else {
+                        self.ui.view(id!(message_search_input_view)).set_visible(cx, false);
+                    }
+                }
+                _ => {}
+            }
         }
     }
 }
