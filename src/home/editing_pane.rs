@@ -281,11 +281,8 @@ impl Widget for EditingPane {
                         continue;
                     }
                 }
-                match action.downcast_ref() {
-                    Some(MentionableTextInputAction::DestroyAllRoomSubscription) => {
-                        self.destroy_all_room_subscription();
-                    },
-                    _ => {}
+                if let Some(MentionableTextInputAction::DestroyAllRoomSubscription) = action.downcast_ref() {
+                    self.destroy_all_room_subscription();
                 }
             }
 
