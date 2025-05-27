@@ -1223,7 +1223,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                                 status: e.to_string(),
                             });
                             // when abort async_join_handler it will give a error maybe show user "Stop Rooms list update"  better
-                            // ueue_popup_notification("Stop Rooms list update".to_string());
+                            // queue_popup_notification("Stop Rooms list update".to_string());
                         },
                         Err(e) => {
                             error!("BUG: failed to join async worker task: {e:?}");

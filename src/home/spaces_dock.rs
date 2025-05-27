@@ -228,7 +228,7 @@ impl WidgetMatchEvent for LogoutButton {
         let button = self.button(id!(logout_button));
         if button.clicked(actions) {
             cx.widget_action(
-                WidgetUid(0), 
+                self.widget_uid(),
                 &Scope::empty().path,
                 LogoutConfirmModalAction::None
             );
