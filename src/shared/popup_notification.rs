@@ -46,7 +46,7 @@ live_design! {
                     from: {all: Forward {duration: 0.0}}
                     apply: {
                         progress_bar = {
-                            height: -15,     // height = 100 * 0.5 / self.duration
+                            height: -15,     // height adjustment for animation; derived from progress_bar height
                         }
                     }
                 }
