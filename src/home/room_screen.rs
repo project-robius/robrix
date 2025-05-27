@@ -543,6 +543,18 @@ live_design! {
                 color: #e0
                 border_radius: 5
             }
+
+            list = <PortalList> {
+                height: Fill,
+                width: Fill
+                flow: Down
+
+                auto_tail: true,
+                max_pull_down: 0.0,
+
+                SmallStateEvent = <SmallStateEvent> {}
+                Empty = <Empty> {}
+            }
         }
     }
 
@@ -4230,6 +4242,38 @@ impl Widget for SmallStateEventSummary {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+
+        // if self.grouped_items.is_empty() {
+        //     return DrawStep::done();
+        // }
+
+        // while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
+        //     let portal_list_ref = subview.as_portal_list();
+        //     let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
+        //         error!("SmallStateEventSummary: expected a portal list");
+        //         continue;
+        //     };
+
+        //     let last_item_id = self.grouped_items.len();
+        //     let list = list_ref.deref_mut();
+
+        //     list.set_item_range(cx, 0, last_item_id);
+
+        //     while let Some(item_id) = list.next_visible_item(cx) {
+        //         let Some(item) = self.grouped_items.get(item_id) else {
+        //             continue;
+        //         };
+
+        //         let tl_idx = item_id;
+        //         // let item_drawn_status = ItemDrawnStatus {
+        //         //     content_drawn: 
+        //         // }
+
+        //     }
+        // }
+
+
+
         self.view.draw_walk(cx, scope, walk)
     }
 }
