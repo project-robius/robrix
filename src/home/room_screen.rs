@@ -982,6 +982,10 @@ impl Widget for RoomScreen {
                     if let Some(tl_state) = self.tl_state.as_mut() {
                         tl_state.room_members_map.insert(update_room_id.clone(), members.clone());
                         log!("Updated room_members_map for room {} with {} members", update_room_id, members.len());
+                        
+                        // Notify MentionableTextInput components that room members have been loaded
+                        cx.action(MentionableTextInputAction::RoomMembersLoaded(update_room_id.clone()));
+                        log!("Sent MentionableTextInputAction::RoomMembersLoaded for room {}", update_room_id);
                     }
                 }
             }

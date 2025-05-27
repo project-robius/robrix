@@ -5,6 +5,7 @@
 //!   1. Is it not possible to mention (@) yourself ?
 use crate::avatar_cache::*;
 use crate::shared::avatar::AvatarWidgetRefExt;
+use crate::shared::typing_animation::TypingAnimationWidgetRefExt;
 use crate::utils;
 
 use makepad_widgets::{text::selection::Cursor, *};
@@ -22,6 +23,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::avatar::Avatar;
     use crate::shared::helpers::FillerX;
+    use crate::shared::typing_animation::TypingAnimation;
 
     pub FOCUS_HOVER_COLOR = #eaecf0
     pub KEYBOARD_FOCUS_OR_COLOR_HOVER = #1C274C
@@ -143,6 +145,34 @@ live_design! {
         }
     }
 
+    // Template for loading indicator when members are being fetched
+    LoadingIndicator = <View> {
+        width: Fill,
+        height: Fit,
+        padding: {left: 16, right: 16, top: 16, bottom: 16},
+        flow: Right,
+        spacing: 8.0,
+        align: {x: 0.5, y: 0.5}
+
+        loading_text = <Label> {
+            height: Fit,
+            draw_text: {
+                color: #666,
+                text_style: {font_size: 14.0}
+            }
+            text: "Loading members"
+        }
+
+        loading_animation = <TypingAnimation> {
+            width: 60,
+            height: 24,
+            draw_bg: {
+                color: #000,
+                dot_radius: 2.0,
+            }
+        }
+    }
+
     pub MentionableTextInput = {{MentionableTextInput}}<CommandTextInput> {
         width: Fill,
         height: Fit
@@ -243,6 +273,7 @@ live_design! {
         // Template for user list items in the mention popup
         user_list_item: <UserListItem> {}
         room_mention_list_item: <RoomMentionListItem> {}
+        loading_indicator: <LoadingIndicator> {}
     }
 }
 
@@ -265,6 +296,8 @@ pub struct MentionInfo {
 pub enum MentionableTextInputAction {
     /// Notifies the MentionableTextInput about updated power levels for the room.
     PowerLevelsUpdated(OwnedRoomId, bool),
+    /// Notifies that room members have been loaded/updated
+    RoomMembersLoaded(OwnedRoomId),
     None,
 }
 
@@ -277,6 +310,8 @@ pub struct MentionableTextInput {
     #[live] user_list_item: Option<LivePtr>,
     /// Template for the @room mention list item
     #[live] room_mention_list_item: Option<LivePtr>,
+    /// Template for loading indicator
+    #[live] loading_indicator: Option<LivePtr>,
     /// Position where the @ mention starts
     #[rust] current_mention_start_index: Option<usize>,
     /// The set of users that were mentioned (at one point) in this text input.
@@ -294,6 +329,8 @@ pub struct MentionableTextInput {
     #[rust] room_id: Option<OwnedRoomId>,
     /// Whether the current user can notify everyone in the room (@room mention)
     #[rust] can_notify_room: bool,
+    /// Whether the room members are currently being loaded
+    #[rust] members_loading: bool,
 }
 
 
@@ -479,6 +516,30 @@ impl Widget for MentionableTextInput {
                                     self.update_user_list(cx, &search_text, scope);
                                 } else {
                                     self.redraw(cx);
+                                }
+                            }
+                        },
+                        MentionableTextInputAction::RoomMembersLoaded(room_id) => {
+                            // Get current room context from scope
+                            let scope_room_id = scope.props.get::<RoomScreenProps>().map(|props| &props.room_id);
+
+                            // Only process if this action is for the current room
+                            if let Some(scope_id) = scope_room_id {
+                                if scope_id == room_id {
+                                    log!("MentionableTextInput({:?}) received RoomMembersLoaded for room {}",
+                                         self.widget_uid(), room_id);
+
+                                    // If we were showing loading, hide it and refresh the list
+                                    if self.members_loading {
+                                        log!("MentionableTextInput: Stopping loading state due to members loaded");
+                                        self.members_loading = false;
+
+                                        // If currently searching, refresh the user list
+                                        if self.is_searching && has_focus {
+                                            let search_text = self.cmd_text_input.search_text().to_lowercase();
+                                            self.update_user_list(cx, &search_text, scope);
+                                        }
+                                    }
                                 }
                             }
                         },
@@ -801,6 +862,27 @@ impl MentionableTextInput {
         // Always use room_members provided in current scope
         // These member lists should come from TimelineUiState.room_members_map and are already the correct list for current room
         let room_members = &room_props.room_members;
+
+        // 4. Check if members are loaded or still loading
+        let members_are_empty = room_members.is_empty();
+        log!("MentionableTextInput: members_are_empty={}, members_loading={}, room_members.len()={}",
+             members_are_empty, self.members_loading, room_members.len());
+
+        if members_are_empty && !self.members_loading {
+            // Members list is empty and we're not already showing loading - start loading state
+            log!("MentionableTextInput: Room members list is empty, showing loading indicator");
+            self.members_loading = true;
+            self.show_loading_indicator(cx);
+            return;
+        } else if !members_are_empty && self.members_loading {
+            // Members have been loaded, stop loading state
+            log!("MentionableTextInput: Room members loaded ({} members), hiding loading indicator", room_members.len());
+            self.members_loading = false;
+        } else if members_are_empty && self.members_loading {
+            // Still loading and members are empty - keep showing loading indicator
+            log!("MentionableTextInput: Still waiting for room members to load");
+            return;
+        }
 
         // Clear old list items, prepare to populate new list
         self.cmd_text_input.clear_items();
@@ -1292,10 +1374,72 @@ impl MentionableTextInput {
         !graphemes.iter().any(|g| g.contains('\n'))
     }
 
+    // Shows the loading indicator when members are being fetched
+    fn show_loading_indicator(&mut self, cx: &mut Cx) {
+        log!("MentionableTextInput: show_loading_indicator called");
+
+        // Clear any existing items
+        self.cmd_text_input.clear_items();
+
+        // Create loading indicator widget
+        let loading_item = match self.loading_indicator {
+            Some(ptr) => {
+                log!("MentionableTextInput: Creating loading indicator from pointer");
+                WidgetRef::new_from_ptr(cx, Some(ptr))
+            },
+            None => {
+                log!("Error: loading_indicator pointer is None");
+                return;
+            }
+        };
+
+        // Start the loading animation
+        log!("MentionableTextInput: Starting loading animation");
+        loading_item.typing_animation(id!(loading_animation)).start_animation(cx);
+
+        // Add the loading indicator to the popup
+        log!("MentionableTextInput: Adding loading item to popup");
+        self.cmd_text_input.add_item(loading_item);
+
+        // Setup popup dimensions for loading state
+        let popup = self.cmd_text_input.view(id!(popup));
+        let header_view = self.cmd_text_input.view(id!(popup.header_view));
+
+        // Ensure header is visible
+        header_view.set_visible(cx, true);
+
+        // Set appropriate height for loading indicator
+        let is_desktop = cx.display_context.is_desktop();
+
+        // Calculate header height
+        let header_height = if header_view.area().rect(cx).size.y > 0.0 {
+            header_view.area().rect(cx).size.y
+        } else {
+            // Fallback estimate for header
+            let estimated_padding = 24.0;
+            let text_height = 16.0;
+            estimated_padding + text_height
+        };
+
+        // Loading indicator needs: animation height (24) + padding (16+16) + text height (~16) = ~56px minimum
+        let loading_content_height = if is_desktop { 56.0 } else { 64.0 };
+        let estimated_spacing = 4.0;
+        let loading_height = header_height + loading_content_height + estimated_spacing;
+
+        popup.apply_over(cx, live! { height: (loading_height) });
+        popup.set_visible(cx, true);
+
+        // Maintain text input focus
+        if self.is_searching {
+            self.cmd_text_input.text_input_ref().set_key_focus(cx);
+        }
+    }
+
     // Cleanup helper for closing mention popup
     fn close_mention_popup(&mut self, cx: &mut Cx) {
         self.current_mention_start_index = None;
         self.is_searching = false;
+        self.members_loading = false; // Reset loading state when closing popup
 
         // Clear list items to avoid keeping old content when popup is shown again
         self.cmd_text_input.clear_items();
@@ -1332,6 +1476,7 @@ impl MentionableTextInput {
         // When text is set externally (e.g., for editing), clear mention state
         self.possible_mentions.clear();
         self.possible_room_mention = false;
+        self.members_loading = false; // Reset loading state when text is set
         self.redraw(cx);
     }
 
