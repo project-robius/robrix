@@ -10,7 +10,7 @@ live_design! {
 
     Progress = <View> {
         width: 20,
-        height: Fill,
+        height: Fit,
         flow: Overlay,
 
         <RoundedView> {
@@ -22,14 +22,23 @@ live_design! {
         }
 
         progress_bar = <RoundedView> {
-            height: Fill,
+            height: 60,
             width: Fill,
             draw_bg: {
                 color: #639b0d,
             }
         }
-
-        animator: {  
+        progress_bar_rect = <RoundedView> {
+            height: 60.5,
+            width: 20.5,
+            show_bg: true,
+            draw_bg: {
+                border_size: 2.0,
+                color: #FFFFFF00,
+                border_color:  #639b0d
+            }
+        }
+        animator: {
             mode = {
                 default: close_slider,
                 close_slider = {
@@ -37,16 +46,16 @@ live_design! {
                     from: {all: Forward {duration: 0.0}}
                     apply: {
                         progress_bar = {
-                            height: -25,     // height = 100 * 0.5 / self.duration
+                            height: -15,     // height = 100 * 0.5 / self.duration
                         }
                     }
                 }
                 slide_down = {
                     redraw: true,
-                    from: {all: Forward {duration: 2.5}}   // self.duratin + 0.5
+                    from: {all: Forward {duration: 2.5}}   // self.duration + 0.5
                     apply: {
                         progress_bar = {
-                            height: 100,
+                            height: 60,
                         }
                     }
                 }
@@ -55,31 +64,19 @@ live_design! {
     }
 
     TipContent = <View> {
-        width: Fill,
-        height: Fill,
-        spacing: 10.0,
+        width: Fit,
+        height: Fit,
+        spacing: 5.0,
         flow: Right,
-        align: {
-            x: 0.0,
-            y: 0.5,
-        }
-        margin: { left: 20.0 }
-
-        <Icon> {
-            draw_icon: {
-                svg_file: (ICO_CHECK),
-                color: #42660a,
-            }
-            icon_walk: { width: 16, height: 16 }
-        }
 
         tip_label = <Label> {
-            width: 250,
+            width: 230,
             draw_text: {
                 color: #42660a,
                 text_style: {
-                    font_size: 12
+                    font_size: 10,
                 }
+                wrap: Word
             }
             text: "Successfully updated transaction",
         }
@@ -88,21 +85,20 @@ live_design! {
             width: Fit,
             height: Fit,
             cursor: Hand,
+            margin: {top: 10}
             <Icon> {
                 draw_icon: {
                     svg_file: (ICO_CLOSE),
                     color: #6cc328
                 }
-    
-                icon_walk: { width: 16, height: 16 }
+                icon_walk: { width: 12, height: 12 }
             }
         }
-        
     }
 
     PopupDialog = <RoundedView> {
-        width: 375,
-        height: 100,
+        width: Fill,
+        height: Fit,
         flow: Right,
 
         show_bg: true,
@@ -183,7 +179,6 @@ pub struct RobrixPopupNotification {
 
     #[animator]
     animator: Animator,
-
 }
 
 impl LiveHook for RobrixPopupNotification {
@@ -200,7 +195,6 @@ impl Widget for RobrixPopupNotification {
         if self.animation_timer.is_event(event).is_some() {
             self.close(cx);
         }
-
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
@@ -231,16 +225,7 @@ impl Widget for RobrixPopupNotification {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, _walk: Walk) -> DrawStep {
-        self.draw_list.begin_overlay_reuse(cx);
-
-        cx.begin_pass_sized_turtle(self.layout);
-        self.draw_bg.begin(cx, self.walk, self.layout);
         self.content.draw_all(cx, scope);
-        self.draw_bg.end(cx);
-
-        cx.end_pass_sized_turtle();
-        self.draw_list.end(cx);
-
         DrawStep::done()
     }
 }
@@ -248,7 +233,7 @@ impl Widget for RobrixPopupNotification {
 impl RobrixPopupNotification {
     pub fn open(&mut self, cx: &mut Cx) {
         self.animation_timer = cx.start_timeout(self.duration + 0.5);
-        if self.live_apply{
+        if self.live_apply {
             self.use_live_duration(cx);
             self.live_apply = false;
         }
@@ -260,6 +245,7 @@ impl RobrixPopupNotification {
     pub fn close(&mut self, cx: &mut Cx) {
         self.animator_play(cx, id!(mode.close));
         self.view(id!(progress)).animator_play(cx, id!(mode.close_slider));
+        cx.widget_action(self.widget_uid(), &Scope::empty().path, RobrixPopupNotificationAction::Ended);
         self.redraw(cx);
     }
 
@@ -275,11 +261,12 @@ impl RobrixPopupNotification {
     /// do not exist, because this should not happen in normal usage.
     fn use_live_duration(&mut self, cx: &mut Cx) {
         let duration = self.duration;
+        let height = 60.0;
         let live_ptr = match self.animator.live_ptr {
             Some(ptr) => ptr,
             None => return,
         };
-    
+
         let LiveFileId(fi) = live_ptr.file_id;
         let registry = cx.live_registry.clone();
         let mut live_registry = registry.borrow_mut();
@@ -288,7 +275,7 @@ impl RobrixPopupNotification {
             Some(file) => file,
             None => return,
         };
-    
+
         let nodes = &mut live_file.expanded.nodes;
         
         let (slide_down_index, close_slider_index) = nodes.iter().enumerate()
@@ -301,11 +288,11 @@ impl RobrixPopupNotification {
                 }
                 (prog, close)
             });
-    
+
         if let Some(index) = slide_down_index {
             if let Some(v) = nodes.child_by_path(index, &[
                 live_id!(from).as_field(),
-                live_id!(all).as_field(), 
+                live_id!(all).as_field(),
                 live_id!(duration).as_field()
             ]) {
                 nodes[v].value = LiveValue::Float64(duration + 0.5);
@@ -318,7 +305,7 @@ impl RobrixPopupNotification {
                 live_id!(progress_bar).as_instance(), 
                 live_id!(height).as_field()
             ]) {
-                nodes[v].value = LiveValue::Float64(-100.0 * 0.5 / duration);
+                nodes[v].value = LiveValue::Float64(-1.0 * height * 0.5 / duration);
             }
         }
     }
@@ -336,4 +323,9 @@ impl RobrixPopupNotificationRef {
             inner.close(cx);
         }
     }
+}
+#[derive(DefaultNone, Clone, Debug)]
+pub enum RobrixPopupNotificationAction {
+    Ended,
+    None
 }

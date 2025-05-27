@@ -773,11 +773,6 @@ live_design! {
             // to finish loading, e.g., when loading an older replied-to message.
             loading_pane = <LoadingPane> { }
 
-            popup = <RobrixPopupNotification> {
-                text: "Click success",
-                duration: 5.0,
-            }
-
 
             /*
              * TODO: add the action bar back in as a series of floating buttons.
