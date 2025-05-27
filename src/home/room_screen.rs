@@ -431,12 +431,12 @@ live_design! {
     SmallStateEvent = <View> {
         width: Fill,
         height: Fit,
-        margin: 0.0
-        cursor: Default
         flow: Right,
+        margin: { top: 4.0, bottom: 4.0}
         padding: { top: 1.0, bottom: 1.0, right: 10.0 }
         spacing: 0.0
-        margin: { top: 4.0, bottom: 4.0}
+        cursor: Default
+
         body = <View> {
             width: Fill,
             height: Fit
@@ -449,7 +449,9 @@ live_design! {
                 width: 70.0,
                 height: Fit
 
-                timestamp = <Timestamp> { }
+                timestamp = <Timestamp> {
+                    margin: {top: 0.5}
+                }
             }
 
             avatar = <Avatar> {
