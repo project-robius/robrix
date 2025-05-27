@@ -2,7 +2,6 @@ use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 
 use super::popup_notification::{RobrixPopupNotificationAction, RobrixPopupNotificationWidgetExt};
-
 static POPUP_NOTIFICATION: SegQueue<String> = SegQueue::new();
 
 /// Displays a new popup notification with the given message.
@@ -95,9 +94,9 @@ impl PopupList {
     /// The popup's content is a string given by the `message` parameter.
     /// New popup will be displayed below the previous ones. 
     pub fn push(&mut self, cx: &mut Cx, message: String) {
-        let p = View::new_from_ptr(cx, self.popup_content);
-        p.robrix_popup_notification(id!(robrix_popup)).open(cx);
-        self.popups.push((p, message));
+        let view = View::new_from_ptr(cx, self.popup_content);
+        view.robrix_popup_notification(id!(robrix_popup)).open(cx);
+        self.popups.push((view, message));
         self.redraw(cx);
     }
 }
@@ -121,14 +120,12 @@ impl WidgetMatchEvent for PopupList {
         for &i in removed_indices.iter() {
             self.popups.remove(i);
         }
-        
         for (view, _) in self.popups.iter_mut() {
             view.redraw(cx);
         }
         if self.popups.is_empty() {
             Cx::post_action(PopupNotificationAction::Close);
         }
-        
     }
 }
 

@@ -324,6 +324,7 @@ impl RobrixPopupNotificationRef {
         }
     }
 }
+
 #[derive(DefaultNone, Clone, Debug)]
 pub enum RobrixPopupNotificationAction {
     Ended,
