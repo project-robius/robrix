@@ -337,7 +337,7 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
-            // Monitor for DockSave action which will be triggered by selection of the room for setting the visibilty of the message search input.
+            // Monitor for DockSave action which will be triggered by selection of the room for setting the visibility of the message search input.
             if let Some(MainDesktopUiAction::DockSave) = action.downcast_ref() {
                 if self.app_state.selected_room.is_some() {
                     self.ui.view(id!(message_search_input_view)).set_visible(cx, true);
