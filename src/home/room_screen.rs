@@ -1781,7 +1781,10 @@ impl RoomScreen {
                         .and_then(|tl_item| tl_item.as_event().cloned())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
+                        self.view.editing_pane(id!(editing_pane)).force_hide(cx);
                         if let Ok(replied_to_info) = event_tl_item.replied_to_info() {
+                            let input_bar = self.view.room_input_bar(id!(input_bar));
+                            input_bar.set_visible(cx, true);
                             success = true;
                             self.show_replying_to(cx, (event_tl_item, replied_to_info));
                         }
@@ -1801,6 +1804,9 @@ impl RoomScreen {
                         .and_then(|tl_item| tl_item.as_event().cloned())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
+                        let replying_preview = self.view.view(id!(room_screen_wrapper.keyboard_view.replying_preview));
+                        replying_preview.set_visible(cx, false);
+                        replying_preview.redraw(cx);
                         self.show_editing_pane(cx, event_tl_item, tl.room_id.clone());
                     }
                     else {
@@ -2327,7 +2333,7 @@ impl RoomScreen {
     ) {
         // If the room is already being displayed, then do nothing.
         if self.room_id.as_ref().is_some_and(|id| id == &room_id) { return; }
-        
+
 
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
