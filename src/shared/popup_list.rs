@@ -107,12 +107,11 @@ impl WidgetMatchEvent for PopupList {
             if view.button(id!(close_button)).clicked(actions) {
                 removed_indices.push(i);
             }
-            for action in actions {
-                let widget_uid = view.robrix_popup_notification(id!(robrix_popup)).widget_uid();
-                if let RobrixPopupNotificationAction::Ended = action.as_widget_action().widget_uid_eq(widget_uid).cast() {
-                    removed_indices.push(i);
-                }
-            }
+            let widget_uid = view.robrix_popup_notification(id!(robrix_popup)).widget_uid();
+            actions.iter()
+                .filter_map(|action| action.as_widget_action().widget_uid_eq(widget_uid).cast::<RobrixPopupNotificationAction>())
+                .filter(|action| matches!(action, RobrixPopupNotificationAction::Ended))
+                .for_each(|_| removed_indices.push(i));
         }
         if removed_indices.is_empty() {
             return;
