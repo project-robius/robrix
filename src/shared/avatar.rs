@@ -1,7 +1,7 @@
 //! An avatar holds either an image thumbnail or a single-character text label.
 //!
 //! The Avatar view (either text or image) is masked by a circle.
-//! 
+//!
 //! By default, an avatar displays the one-character text label.
 //! You can use [AvatarRef::set_text] to set the content of that text label,
 //! or [AvatarRef::show_image] to display an image instead of the text.
@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::{EventId, OwnedRoomId, OwnedUserId, RoomId, UserId};
+use matrix_sdk::{room::RoomMember, ruma::{EventId, OwnedRoomId, OwnedUserId, RoomId, UserId}};
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 
 use crate::{
@@ -45,7 +45,7 @@ live_design! {
             show_bg: true,
             draw_bg: {
                 instance background_color: (COLOR_AVATAR_BG)
-                
+
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                     let c = self.rect_size * 0.5;
@@ -54,7 +54,7 @@ live_design! {
                     return sdf.result
                 }
             }
-            
+
             text = <Label> {
                 padding: 0,
                 width: Fit, height: Fit,
@@ -148,6 +148,7 @@ impl Avatar {
     pub fn show_text<T: AsRef<str>>(
         &mut self,
         cx: &mut Cx,
+        bg_color: Option<Vec4>,
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
@@ -162,6 +163,15 @@ impl Avatar {
             }
         );
         self.set_text(cx, username.as_ref());
+
+        // Apply background color if provided
+        if let Some(color) = bg_color {
+            self.view(id!(text_view)).apply_over(cx, live! {
+                draw_bg: {
+                    background_color: (color)
+                }
+            });
+        }
     }
 
     /// Sets the image content of this avatar, making the image visible
@@ -218,7 +228,7 @@ impl Avatar {
     ///
     /// If the user profile is not ready, this function will submit an async request
     /// to fetch the user profile from the server, but only if the event ID is `Some`.
-    /// For Read Receipt cases, there is no user's profile. The Avatar cache is taken from the sender's profile 
+    /// For Read Receipt cases, there is no user's profile. The Avatar cache is taken from the sender's profile
     ///
     /// This function will always choose a nice, displayable username and avatar.
     ///
@@ -246,54 +256,66 @@ impl Avatar {
         avatar_user_id: &UserId,
         avatar_profile_opt: Option<&TimelineDetails<Profile>>,
         event_id: Option<&EventId>,
+        room_members_opt: Option<&Arc<Vec<RoomMember>>>,
     ) -> (String, bool) {
-        // Get the display name and avatar URL from the user's profile, if available,
-        // or if the profile isn't ready, fall back to qeurying our user profile cache.
-        let (username_opt, avatar_state) = match avatar_profile_opt {
-            Some(TimelineDetails::Ready(profile)) => (
-                profile.display_name.clone(),
-                AvatarState::Known(profile.avatar_url.clone()),
-            ),
-            Some(not_ready) => {
-                if matches!(not_ready, TimelineDetails::Unavailable) {
-                    if let Some(event_id) = event_id {
-                        submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                            room_id: room_id.to_owned(),
-                            event_id: event_id.to_owned(),
-                        });
-                    }
-                }
-                // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-                user_profile_cache::with_user_profile(cx, avatar_user_id.to_owned(), true, |profile, room_members| {
-                    room_members
-                        .get(room_id)
-                        .map(|rm| {
-                            (
-                                rm.display_name().map(|n| n.to_owned()),
-                                AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                            )
-                        })
-                        .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
-                })
-                .unwrap_or((None, AvatarState::Unknown))
+        // Priority 1: Check provided room members list (most specific info for this room)
+        let (username_opt, avatar_state) = if let Some(room_members) = room_members_opt {
+            if let Some(room_member) = room_members.iter().find(|m| m.user_id() == avatar_user_id) {
+                let username_opt = room_member.display_name().map(|n| n.to_owned());
+                let avatar_state = AvatarState::Known(room_member.avatar_url().map(|u| u.to_owned()));
+                (username_opt, avatar_state)
+            } else {
+                (None, AvatarState::Unknown)
             }
-            None => {
-                match user_profile_cache::with_user_profile(cx, avatar_user_id.to_owned(), true, |profile, room_members| {
-                    room_members
-                        .get(room_id)
-                        .map(|rm| {
-                            (
-                                rm.display_name().map(|n| n.to_owned()),
-                                AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                            )
-                        })
-                        .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
-                }) {
-                    Some((profile_name, avatar_state)) => {
-                        (profile_name, avatar_state)
+        } else {
+            // Get the display name and avatar URL from the user's profile, if available,
+            // or if the profile isn't ready, fall back to qeurying our user profile cache.
+            match avatar_profile_opt {
+                Some(TimelineDetails::Ready(profile)) => (
+                    profile.display_name.clone(),
+                    AvatarState::Known(profile.avatar_url.clone()),
+                ),
+                Some(not_ready) => {
+                    if matches!(not_ready, TimelineDetails::Unavailable) {
+                        if let Some(event_id) = event_id {
+                            submit_async_request(MatrixRequest::FetchDetailsForEvent {
+                                room_id: room_id.to_owned(),
+                                event_id: event_id.to_owned(),
+                            });
+                        }
                     }
-                    None => {
-                        (None, AvatarState::Unknown)
+                    // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
+                    user_profile_cache::with_user_profile(cx, avatar_user_id.to_owned(), true, |profile, room_members| {
+                        room_members
+                            .get(room_id)
+                            .map(|rm| {
+                                (
+                                    rm.display_name().map(|n| n.to_owned()),
+                                    AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
+                                )
+                            })
+                            .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
+                    })
+                    .unwrap_or((None, AvatarState::Unknown))
+                }
+                None => {
+                    match user_profile_cache::with_user_profile(cx, avatar_user_id.to_owned(), true, |profile, room_members| {
+                        room_members
+                            .get(room_id)
+                            .map(|rm| {
+                                (
+                                    rm.display_name().map(|n| n.to_owned()),
+                                    AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
+                                )
+                            })
+                            .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
+                    }) {
+                        Some((profile_name, avatar_state)) => {
+                            (profile_name, avatar_state)
+                        }
+                        None => {
+                            (None, AvatarState::Unknown)
+                        }
                     }
                 }
             }
@@ -333,6 +355,7 @@ impl Avatar {
             .unwrap_or_else(|| {
                 self.show_text(
                     cx,
+                    None,
                     Some((avatar_user_id.to_owned(), username_opt, room_id.to_owned()).into()),
                     &username,
                 )
@@ -346,11 +369,12 @@ impl AvatarRef {
     pub fn show_text<T: AsRef<str>>(
         &self,
         cx: &mut Cx,
+        bg_color: Option<Vec4>,
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_text(cx, info, username);
+            inner.show_text(cx, bg_color, info, username);
         }
     }
 
@@ -378,7 +402,7 @@ impl AvatarRef {
             AvatarDisplayStatus::Text
         }
     }
-    
+
     /// See [`Avatar::set_avatar_and_get_username()`].
     pub fn set_avatar_and_get_username(
         &self,
@@ -387,9 +411,10 @@ impl AvatarRef {
         avatar_user_id: &UserId,
         avatar_profile_opt: Option<&TimelineDetails<Profile>>,
         event_id: Option<&EventId>,
+        room_members_opt: Option<&Arc<Vec<RoomMember>>>
     ) -> (String, bool) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_avatar_and_get_username(cx, room_id, avatar_user_id, avatar_profile_opt, event_id)
+            inner.set_avatar_and_get_username(cx, room_id, avatar_user_id, avatar_profile_opt, event_id, room_members_opt)
         } else {
             (avatar_user_id.to_string(), false)
         }
@@ -404,7 +429,7 @@ pub enum AvatarDisplayStatus {
     Image,
 }
 
-/// Information about a text-based Avatar. 
+/// Information about a text-based Avatar.
 pub struct AvatarTextInfo {
     pub user_id: OwnedUserId,
     pub username: Option<String>,

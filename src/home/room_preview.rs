@@ -321,7 +321,7 @@ impl RoomPreviewContent {
 
         match room_info.room_avatar {
             RoomPreviewAvatar::Text(ref text) => {
-                self.view.avatar(id!(avatar)).show_text(cx, None, text);
+                self.view.avatar(id!(avatar)).show_text(cx, None, None, text);
             }
             RoomPreviewAvatar::Image(ref img_bytes) => {
                 let _ = self.view.avatar(id!(avatar)).show_image(
@@ -339,7 +339,7 @@ impl RoomPreviewContent {
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
     }
 
-    /// Populates the widgets common to both invited and joined room previews. 
+    /// Populates the widgets common to both invited and joined room previews.
     pub fn draw_common(
         &mut self,
         cx: &mut Cx,
@@ -348,7 +348,7 @@ impl RoomPreviewContent {
     ) {
         match room_avatar {
             RoomPreviewAvatar::Text(ref text) => {
-                self.view.avatar(id!(avatar)).show_text(cx, None, text);
+                self.view.avatar(id!(avatar)).show_text(cx, None, None, text);
             }
             RoomPreviewAvatar::Image(ref img_bytes) => {
                 let _ = self.view.avatar(id!(avatar)).show_image(
