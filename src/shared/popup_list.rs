@@ -109,7 +109,7 @@ impl WidgetMatchEvent for PopupList {
             }
             let widget_uid = view.robrix_popup_notification(id!(robrix_popup)).widget_uid();
             actions.iter()
-                .filter_map(|action| action.as_widget_action().widget_uid_eq(widget_uid).cast::<RobrixPopupNotificationAction>())
+                .filter_map(|action| Some(action.as_widget_action().widget_uid_eq(widget_uid).cast::<RobrixPopupNotificationAction>()))
                 .filter(|action| matches!(action, RobrixPopupNotificationAction::Ended))
                 .for_each(|_| removed_indices.push(i));
         }
