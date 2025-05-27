@@ -33,7 +33,7 @@ live_design! {
             width: 20.5,
             show_bg: true,
             draw_bg: {
-                border_size: 2.0,
+                border_size: 1.0,
                 color: #FFFFFF00,
                 border_color:  #639b0d
             }
@@ -70,7 +70,7 @@ live_design! {
         flow: Right,
 
         tip_label = <Label> {
-            width: 230,
+            width: 240,
             draw_text: {
                 color: #42660a,
                 text_style: {
@@ -163,9 +163,6 @@ pub struct RobrixPopupNotification {
     #[rust]
     live_apply: bool,
 
-    #[rust(DrawList2d::new(cx))]
-    draw_list: DrawList2d,
-
     #[redraw]
     #[live]
     draw_bg: DrawQuad,
@@ -185,7 +182,6 @@ impl LiveHook for RobrixPopupNotification {
     fn after_apply(&mut self, cx: &mut Cx, _apply: &mut Apply, _index: usize, _nodes: &[LiveNode]) {
         self.label(id!(tip_label)).set_text(cx, &self.text);
         self.live_apply = true;
-        self.draw_list.redraw(cx);
     }
 }
 
