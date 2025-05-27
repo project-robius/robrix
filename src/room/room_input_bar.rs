@@ -163,8 +163,8 @@ impl Widget for RoomInputBar {
                             MentionableTextInputAction::RoomIdChanged(room_id) => {
                                 self.create_room_subscription(cx, room_id.clone());
                             }
-                            MentionableTextInputAction::DestroyAllRoomSubscription => {
-                                self.destroy_all_room_subscription();
+                            MentionableTextInputAction::DropMemberSubscription => {
+                                self.drop_member_subscription();
                             }
                             _ => {
 
@@ -242,7 +242,7 @@ impl RoomInputBar {
     /// Cancels the current room member subscription (if any).
     /// This is necessary to prevent receiving updates for the current room after
     /// the user navigates away.
-    fn destroy_all_room_subscription(&mut self) {
+    fn drop_member_subscription(&mut self) {
         self.member_subscription = None;
     }
     /// Handle room members update event

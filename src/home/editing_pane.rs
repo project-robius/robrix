@@ -281,8 +281,8 @@ impl Widget for EditingPane {
                         continue;
                     }
                 }
-                if let Some(MentionableTextInputAction::DestroyAllRoomSubscription) = action.downcast_ref() {
-                    self.destroy_all_room_subscription();
+                if let Some(MentionableTextInputAction::DropMemberSubscription) = action.downcast_ref() {
+                    self.drop_member_subscription();
                 }
             }
 
@@ -564,7 +564,7 @@ impl EditingPane {
             message_input.set_room_members(members);
         }
     }
-    fn destroy_all_room_subscription(&mut self) {
+    fn drop_member_subscription(&mut self) {
         self.member_subscription = None;
     }
 }
@@ -615,10 +615,10 @@ impl EditingPaneRef {
         inner.visible = false;
         inner.redraw(cx);
     }
-    pub fn destroy_all_room_subscription(&mut self) {
+    pub fn drop_member_subscription(&mut self) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.destroy_all_room_subscription();
+        inner.drop_member_subscription();
     }
 }

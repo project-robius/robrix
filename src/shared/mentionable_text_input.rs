@@ -165,8 +165,8 @@ pub enum MentionableTextInputAction {
     RoomMembersUpdated(Arc<Vec<RoomMember>>),
     /// Room ID has been updated (new)
     RoomIdChanged(OwnedRoomId),
-    /// Destroy all room subscription.
-    DestroyAllRoomSubscription,
+    ///Drop Member Subscription.
+    DropMemberSubscription,
     /// Default empty action
     None,
 }

@@ -1162,7 +1162,7 @@ pub fn start_matrix_tokio() -> Result<()> {
             log!("New Tokio runtime created and stored.");
             handle
         }
-    }; // 
+    }; //
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
     *REQUEST_SENDER.lock().unwrap() = Some(sender); // Initialize sender
@@ -1177,7 +1177,7 @@ pub fn start_matrix_tokio() -> Result<()> {
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
         // register it in core task
-        
+
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
@@ -1190,7 +1190,7 @@ pub fn start_matrix_tokio() -> Result<()> {
             DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
             Cx::post_action(LoginAction::SsoPending(false));
         });
- 
+
         #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
         loop {
             tokio::select! {
@@ -1333,7 +1333,7 @@ pub fn take_client() -> Option<Client> {
 }
 
 /// The singleton sync service.
-/// sync_service if build from the client, and is used to sync the client with the server. 
+/// sync_service if build from the client, and is used to sync the client with the server.
 static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
 
 /// Get a clone of the sync service, if available.
@@ -2636,7 +2636,7 @@ async fn spawn_sso_server(
             .await
             .inspect(|_| {
                 if let Some(client) = get_client() {
-                    
+
                     if client.logged_in() {
                         is_logged_in = true;
                         log!("Already logged in, ignore login with sso");
@@ -2826,7 +2826,7 @@ enum RefreshState {
 async fn logout_and_refresh() -> Result<RefreshState> {
     // Collect all errors encountered during the logout process
     let mut errors = Vec::new();
-    
+
     log!("Starting logout process...");
     let client = match get_client() {
         Some(client) => client,
@@ -2852,11 +2852,7 @@ async fn logout_and_refresh() -> Result<RefreshState> {
         log!("Request sender cleared.");
     }
 
-    // Abort core async tasks (with timeout)
-    log!("Aborting core async tasks...");
-    
     // Perform server-side logout (with timeout)
-
     if client.logged_in() {
         log!("Performing server-side logout...");
 
@@ -2871,12 +2867,9 @@ async fn logout_and_refresh() -> Result<RefreshState> {
             },
         }
     }
-    // --- Local cleanup steps (execute regardless of server logout success) ---
-    log!("Performing local cleanup steps...");
 
-    // Clean up client state and caches
     log!("Cleaning up client state and caches...");
-    take_client(); 
+    take_client();
     take_sync_service();
     // Note: unwrap() might panic if the lock is poisoned
     ALL_JOINED_ROOMS.lock().unwrap().clear();
@@ -2887,7 +2880,7 @@ async fn logout_and_refresh() -> Result<RefreshState> {
 
     log!("Requesting to close all tabs...");
     Cx::post_action(MainDesktopUiAction::CloseAllTabs);
-    Cx::post_action(MentionableTextInputAction::DestroyAllRoomSubscription);
+    Cx::post_action(MentionableTextInputAction::DropMemberSubscription);
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // Delete the last user ID file
@@ -2922,7 +2915,7 @@ async fn logout_and_refresh() -> Result<RefreshState> {
 
     // Restart the Matrix tokio runtime
     // This is a critical step; failure might prevent future logins
-    
+
     log!("Matrix tokio runtime restarted successfully.");
     shutdown_background_tasks().await;
     log!("Restarting Matrix tokio runtime...");
@@ -2951,7 +2944,7 @@ async fn logout_and_refresh() -> Result<RefreshState> {
         Cx::post_action(LoginAction::LogoutFailure(final_error_msg.clone()));
         Err(anyhow::anyhow!(final_error_msg))
     }
-    
+
 
 }
 
