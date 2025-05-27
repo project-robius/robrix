@@ -420,7 +420,7 @@ impl EditingPane {
     }
 
     /// Shows the editing pane and sets it up to edit the given `event`'s content.
-    pub fn show(&mut self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId, can_notify_room: bool) {
+    pub fn show(&mut self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
         if !event_tl_item.is_editable() {
             enqueue_popup_notification("That message cannot be edited.".into());
             return;
@@ -483,11 +483,11 @@ impl EditingPaneRef {
     }
 
     /// See [`EditingPane::show()`].
-    pub fn show(&self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId, can_notify_room: bool) {
+    pub fn show(&self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.show(cx, event_tl_item, room_id, can_notify_room);
+        inner.show(cx, event_tl_item, room_id);
     }
 
     /// Returns the event that is currently being edited, if any.

@@ -3,7 +3,6 @@
 
 use makepad_widgets::*;
 use crate::shared::styles::{COLOR_ACCEPT_GREEN, COLOR_DISABLE_GRAY};
-use crate::shared::mentionable_text_input::MentionableTextInputWidgetExt;
 
 live_design! {
     use link::theme::*;

@@ -2162,22 +2162,10 @@ impl RoomScreen {
         // otherwise a very-tall input bar might show up underneath a shorter editing pane.
         self.view(id!(input_bar)).set_visible(cx, false);
 
-        // Extract power levels from the current room state to pass directly to the editing pane.
-        // This is necessary because:
-        // 1. EditingPane uses its own MentionableTextInput instance separate from RoomInputBar
-        // 2. While global actions (via cx.action()) are used to broadcast power level updates,
-        //    the editing pane may be opened before those updates have been processed
-        // 3. Explicitly passing the current value ensures immediate consistency between
-        //    all MentionableTextInput instances in the application
-        let can_notify_room = self.tl_state.as_ref()
-                .map(|tl| tl.user_power.can_notify_room())
-                .unwrap_or(false);
-
         self.editing_pane(id!(editing_pane)).show(
             cx,
             event_tl_item,
             room_id,
-            can_notify_room,
         );
         self.redraw(cx);
     }
