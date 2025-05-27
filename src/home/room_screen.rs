@@ -436,14 +436,13 @@ live_design! {
         flow: Right,
         padding: { top: 1.0, bottom: 1.0, right: 10.0 }
         spacing: 0.0
-        margin: { left: 2.5, top: 4.0, bottom: 4.0}
+        margin: { top: 4.0, bottom: 4.0}
         body = <View> {
             width: Fill,
             height: Fit
             flow: Right,
             padding: { left: 7.0, top: 2.0, bottom: 2.0 }
             spacing: 5.0
-            align: {y: 0.5}
 
             left_container = <View> {
                 align: {x: 0.5, y: 0}
@@ -456,6 +455,7 @@ live_design! {
             avatar = <Avatar> {
                 width: 19.,
                 height: 19.,
+                margin: { top: -2} // center the avatar vertically with the text
 
                 text_view = { text = { draw_text: {
                     text_style: <TITLE_TEXT>{ font_size: 7.0 }
