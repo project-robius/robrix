@@ -274,35 +274,46 @@ impl RobrixPopupNotification {
 
         let nodes = &mut live_file.expanded.nodes;
         
-        let (slide_down_index, close_slider_index) = nodes.iter().enumerate()
-            .fold((None, None), |(mut prog, mut close), (index, node)| {
-                if node.id == live_id!(slide_down) && !matches!(node.value, LiveValue::Close) {
-                    prog = Some(index);
-                }
-                if node.id == live_id!(close_slider) && !matches!(node.value, LiveValue::Close) {
-                    close = Some(index);
-                }
-                (prog, close)
-            });
+        let (slide_down_index, close_slider_index) = Self::find_indices(nodes);
 
         if let Some(index) = slide_down_index {
-            if let Some(v) = nodes.child_by_path(index, &[
-                live_id!(from).as_field(),
-                live_id!(all).as_field(),
-                live_id!(duration).as_field()
-            ]) {
-                nodes[v].value = LiveValue::Float64(duration + 0.5);
-            }
+            Self::update_slide_down_duration(nodes, index, duration);
         }
         
         if let Some(index) = close_slider_index {
-            if let Some(v) = nodes.child_by_path(index, &[
-                live_id!(apply).as_field(),
-                live_id!(progress_bar).as_instance(), 
-                live_id!(height).as_field()
-            ]) {
-                nodes[v].value = LiveValue::Float64(-1.0 * height * 0.5 / duration);
+            Self::update_close_slider_height(nodes, index, height, duration);
+        }
+    }
+
+    fn find_indices(nodes: &mut [LiveNode]) -> (Option<usize>, Option<usize>) {
+        nodes.iter().enumerate().fold((None, None), |(mut prog, mut close), (index, node)| {
+            if node.id == live_id!(slide_down) && !matches!(node.value, LiveValue::Close) {
+                prog = Some(index);
             }
+            if node.id == live_id!(close_slider) && !matches!(node.value, LiveValue::Close) {
+                close = Some(index);
+            }
+            (prog, close)
+        })
+    }
+
+    fn update_slide_down_duration(nodes: &mut [LiveNode], index: usize, duration: f64) {
+        if let Some(v) = nodes.child_by_path(index, &[
+            live_id!(from).as_field(),
+            live_id!(all).as_field(),
+            live_id!(duration).as_field()
+        ]) {
+            nodes[v].value = LiveValue::Float64(duration + 0.5);
+        }
+    }
+
+    fn update_close_slider_height(nodes: &mut [LiveNode], index: usize, height: f64, duration: f64) {
+        if let Some(v) = nodes.child_by_path(index, &[
+            live_id!(apply).as_field(),
+            live_id!(progress_bar).as_instance(), 
+            live_id!(height).as_field()
+        ]) {
+            nodes[v].value = LiveValue::Float64(-1.0 * height * 0.5 / duration);
         }
     }
 }
