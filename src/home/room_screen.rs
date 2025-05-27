@@ -23,7 +23,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -50,6 +50,7 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::avatar::Avatar;
     use crate::shared::text_or_image::TextOrImage;
+    use crate::shared::timestamp::*;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::icon_button::*;
     use crate::shared::typing_animation::TypingAnimation;
@@ -79,17 +80,6 @@ live_design! {
     FillerY = <View> {width: Fill}
 
     FillerX = <View> {height: Fill}
-
-    Timestamp = <Label> {
-        width: Fit, height: Fit
-        flow: Right, // do not wrap
-        padding: 0,
-        draw_text: {
-            text_style: <TIMESTAMP_TEXT_STYLE> {},
-            color: (TIMESTAMP_TEXT_COLOR)
-        }
-        text: " "
-    }
 
     REACTION_TEXT_COLOR = #4c00b0
 
@@ -318,10 +308,7 @@ live_design! {
                     // }
                 }
                 timestamp = <Timestamp> {
-                    padding: { top: 2.3 }
-                }
-                datestamp = <Timestamp> {
-                    padding: { top: 3.0 }
+                    margin: { top: 3.9 }
                 }
             }
             content = <View> {
@@ -380,7 +367,7 @@ live_design! {
                 height: Fit,
                 flow: Down,
                 timestamp = <Timestamp> {
-                    margin: {top: 1.5}
+                    margin: {top: 2.5}
                 }
             }
             content = <View> {
@@ -445,36 +432,33 @@ live_design! {
     SmallStateEvent = <View> {
         width: Fill,
         height: Fit,
-        margin: 0.0
-        cursor: Default
         flow: Right,
+        margin: { top: 4.0, bottom: 4.0}
         padding: { top: 1.0, bottom: 1.0, right: 10.0 }
         spacing: 0.0
-        margin: { left: 2.5, top: 4.0, bottom: 4.0}
+        cursor: Default
+
         body = <View> {
             width: Fill,
             height: Fit
             flow: Right,
             padding: { left: 7.0, top: 2.0, bottom: 2.0 }
             spacing: 5.0
-            align: {y: 0.5}
 
             left_container = <View> {
-                align: {x: 0.5, y: 0.5}
+                align: {x: 0.5, y: 0}
                 width: 70.0,
                 height: Fit
 
                 timestamp = <Timestamp> {
-                    draw_text: {
-                        text_style: <TIMESTAMP_TEXT_STYLE> {},
-                        color: (TIMESTAMP_TEXT_COLOR)
-                    }
+                    margin: {top: 0.5}
                 }
             }
 
             avatar = <Avatar> {
                 width: 19.,
                 height: 19.,
+                margin: { top: -2} // center the avatar vertically with the text
 
                 text_view = { text = { draw_text: {
                     text_style: <TITLE_TEXT>{ font_size: 7.0 }
@@ -1389,7 +1373,7 @@ impl Widget for RoomScreen {
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(millis)) => {
                             let item = list.item(cx, item_id, live_id!(DateDivider));
-                            let text = unix_time_millis_to_datetime(millis)
+                            let text = unix_time_millis_to_datetime(*millis)
                                 // format the time as a shortened date (Sat, Sept 5, 2021)
                                 .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
                                 .unwrap_or_else(|| format!("{:?}", millis));
@@ -2421,7 +2405,6 @@ impl RoomScreen {
             replying_to: tl.replying_to.clone(),
             editing_event,
         };
-        log!("Saving TimelineUiState for room {}: {:?}", tl.room_id, state);
         tl.saved_state = state;
         // Store this Timeline's `TimelineUiState` in the global map of states.
         TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
@@ -3526,17 +3509,8 @@ fn populate_message_view(
     });
 
     // Set the timestamp.
-    if let Some(dt) = unix_time_millis_to_datetime(&ts_millis) {
-        // format as AM/PM 12-hour time
-        item.label(id!(profile.timestamp))
-            .set_text(cx, &format!("{}", dt.time().format("%l:%M %P")));
-        if !use_compact_view {
-            item.label(id!(profile.datestamp))
-                .set_text(cx, &format!("{}", dt.date_naive()));
-        }
-    } else {
-        item.label(id!(profile.timestamp))
-            .set_text(cx, &format!("{}", ts_millis.get()));
+    if let Some(dt) = unix_time_millis_to_datetime(ts_millis) {
+        item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
     }
 
     (item, new_drawn_status)
@@ -4146,12 +4120,9 @@ fn populate_small_state_event(
             Some(room_members),
         );
         // Draw the timestamp as part of the profile.
-        set_timestamp(
-            cx,
-            &item,
-            id!(left_container.timestamp),
-            event_tl_item.timestamp(),
-        );
+        if let Some(dt) = unix_time_millis_to_datetime(event_tl_item.timestamp()) {
+            item.timestamp(id!(left_container.timestamp)).set_date_time(cx, dt);
+        }
         new_drawn_status.profile_drawn = profile_drawn;
         username
     });
@@ -4169,23 +4140,6 @@ fn populate_small_state_event(
     )
 }
 
-/// Sets the text of the `Label` at the given `item`'s live ID path
-/// to a typical 12-hour AM/PM timestamp format.
-fn set_timestamp(
-    cx: &mut Cx,
-    item: &WidgetRef,
-    live_id_path: &[LiveId],
-    timestamp: MilliSecondsSinceUnixEpoch,
-) {
-    if let Some(dt) = unix_time_millis_to_datetime(&timestamp) {
-        // format as AM/PM 12-hour time
-        item.label(live_id_path)
-            .set_text(cx, &format!("{}", dt.time().format("%l:%M %P")));
-    } else {
-        item.label(live_id_path)
-            .set_text(cx, &format!("{}", timestamp.get()));
-    }
-}
 
 /// Returns the display name of the sender of the given `event_tl_item`, if available.
 fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String> {
