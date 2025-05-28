@@ -1,9 +1,6 @@
 [package]
 name = "robrix"
-authors = [
-    "Kevin Boos <kevinaboos@gmail.com>",
-    "Robius Project Maintainers",
-]
+authors = ["Kevin Boos <kevinaboos@gmail.com>", "Robius Project Maintainers"]
 description = "A Matrix chat client written using Makepad + Robius app dev framework in Rust."
 documentation = "https://docs.rs/robrix"
 edition = "2021"
@@ -32,22 +29,32 @@ chrono = "0.4"
 clap = { version = "4.0.16", features = ["derive"] }
 crossbeam-channel = "0.5.10"
 crossbeam-queue = "0.3.8"
-eyeball = { git = "https://github.com/jplatte/eyeball", branch = "main", features = ["tracing"] } # same as matrix-sdk
-eyeball-im = { git = "https://github.com/jplatte/eyeball", branch = "main", features = ["tracing"] } # same as matrix-sdk
+eyeball = { version = "0.8.8", features = ["tracing"] }    # same as matrix-sdk
+eyeball-im = { version = "0.7.0", features = ["tracing"] } # same as matrix-sdk
 futures-util = "0.3"
 htmlize = "1.0.5"
-imbl = { version = "4.0.1", features = ["serde"] }  # same as matrix-sdk-ui
+imbl = { version = "5.0.0", features = ["serde"] }         # same as matrix-sdk-ui
 imghdr = "0.7.0"
 linkify = "0.10.0"
 # matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
 # matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "rustls-tls" ] }
-matrix-sdk = { git = "https://github.com/project-robius/matrix-rust-sdk/", branch = "reduce_log_verbosity_to_trace", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
-matrix-sdk-ui = { git = "https://github.com/project-robius/matrix-rust-sdk/", branch = "reduce_log_verbosity_to_trace", default-features = false, features = [ "rustls-tls" ] }
+matrix-sdk = { git = "https://github.com/project-robius/matrix-rust-sdk/", rev = "e3bcd4d5b2dde00f88813d5866d0c6e1b9c86d83", default-features = false, features = [
+    "e2e-encryption",
+    "automatic-room-key-forwarding",
+    "markdown",
+    "sqlite",
+    "rustls-tls",
+    "bundled-sqlite",
+    "sso-login",
+] }
+matrix-sdk-ui = { git = "https://github.com/project-robius/matrix-rust-sdk/", rev = "e3bcd4d5b2dde00f88813d5866d0c6e1b9c86d83", default-features = false, features = [
+    "rustls-tls",
+] }
 rand = "0.8.5"
 rangemap = "1.5.0"
 serde = "1.0"
 serde_json = "1.0"
-tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.43.1", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = "0.3.17"
 unicode-segmentation = "1.11.0"
 url = "2.5.0"
@@ -65,13 +72,15 @@ all-features = true
 debug = "full"
 
 
-
 ## Configuration for `cargo packager`
 [package.metadata.packager]
 product_name = "Robrix"
 identifier = "org.robius.robrix"
 category = "SocialNetworking"
-authors = ["Project Robius <contact@robius.rs>", "Kevin Boos <kevinaboos@gmail.com>"]
+authors = [
+    "Project Robius <contact@robius.rs>",
+    "Kevin Boos <kevinaboos@gmail.com>",
+]
 publisher = "robius"
 license_file = "LICENSE-MIT"
 copyright = "Copyright 2023-2024, Project Robius"
@@ -128,7 +137,10 @@ robius-packaging-commands before-each-package \
 """
 
 deep_link_protocols = [
-    { schemes = ["robrix", "matrix"], role = "viewer" }, ## `name` is left as default
+    { schemes = [
+        "robrix",
+        "matrix",
+    ], role = "viewer" }, ## `name` is left as default
 ]
 
 [package.metadata.packager.deb]
@@ -138,7 +150,7 @@ section = "utils"
 
 [package.metadata.packager.macos]
 minimum_system_version = "11.0"
-frameworks = [ ]
+frameworks = []
 info_plist_path = "./packaging/Info.plist"
 entitlements = "./packaging/Entitlements.plist"
 signing_identity = "Developer ID Application: AppChef Inc. (SFVQ5V48GD)"

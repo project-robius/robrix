@@ -6,7 +6,7 @@ use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc
 use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
-use matrix_sdk::{room::RoomMember, ruma::{
+use matrix_sdk::{room::{reply::{EnforceThread, Reply}, RoomMember}, ruma::{
     events::{receipt::Receipt, room::{
         message::{
             AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
@@ -15,7 +15,7 @@ use matrix_sdk::{room::RoomMember, ruma::{
     sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, RepliedToEvent, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 
 use crate::{
@@ -998,7 +998,9 @@ impl Widget for RoomScreen {
                         room_id: self.room_id.clone().unwrap(),
                         message,
                         replied_to: self.tl_state.as_mut().and_then(
-                            |tl| tl.replying_to.take().map(|(_, rep)| rep)
+                            |tl| tl.replying_to.take().and_then(|(event_timeline_item, _rep)| {
+                                event_timeline_item.event_id().map(|event_id| Reply { event_id: event_id.to_owned(), enforce_thread: EnforceThread::MaybeThreaded })
+                            })
                         ),
                     });
 
@@ -1043,8 +1045,9 @@ impl Widget for RoomScreen {
                         room_id,
                         message,
                         replied_to: self.tl_state.as_mut().and_then(
-                            |tl| tl.replying_to.take().map(|(_, rep)| rep)
-                        ),
+                            |tl| tl.replying_to.take().and_then(|(event_timeline_item, _rep)| {
+                                event_timeline_item.event_id().map(|event_id| Reply { event_id: event_id.to_owned(), enforce_thread: EnforceThread::MaybeThreaded })
+                            })),
                     });
 
                     self.clear_replying_to(cx);
@@ -1211,47 +1214,56 @@ impl Widget for RoomScreen {
                     };
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
-                            TimelineItemContent::Message(message) => {
-                                let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
-                                populate_message_view(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    room_id,
-                                    event_tl_item,
-                                    MessageOrSticker::Message(message),
-                                    prev_event,
-                                    &mut tl_state.media_cache,
-                                    &tl_state.user_power,
-                                    item_drawn_status,
-                                    room_screen_widget_uid,
-                                )
+                            TimelineItemContent::MsgLike(msg_like_content) => {
+                               
+                                match &msg_like_content.kind {
+                                    MsgLikeKind::Message(message) => {
+                                        let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
+                                        populate_message_view(
+                                            cx,
+                                            list,
+                                            item_id,
+                                            room_id,
+                                            event_tl_item,
+                                            MessageOrSticker::Message(message, msg_like_content),
+                                            prev_event,
+                                            &mut tl_state.media_cache,
+                                            &tl_state.user_power,
+                                            item_drawn_status,
+                                            room_screen_widget_uid,
+                                        )
+                                    }
+                                    MsgLikeKind::Sticker(sticker) => {
+                                       let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
+                                        populate_message_view(
+                                            cx,
+                                            list,
+                                            item_id,
+                                            room_id,
+                                            event_tl_item,
+                                            MessageOrSticker::Sticker(sticker.content()),
+                                            prev_event,
+                                            &mut tl_state.media_cache,
+                                            &tl_state.user_power,
+                                            item_drawn_status,
+                                            room_screen_widget_uid,
+                                        ) 
+                                    }
+                                    MsgLikeKind::Redacted => populate_small_state_event(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        room_id,
+                                        event_tl_item,
+                                        &RedactedMessageEventMarker,
+                                        item_drawn_status,
+                                    ),
+                                    _ => {
+                                        let item = list.item(cx, item_id, live_id!(Empty));
+                                        (item, ItemDrawnStatus::both_drawn())
+                                    }
+                                }
                             }
-                            TimelineItemContent::Sticker(sticker) => {
-                                let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
-                                populate_message_view(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    room_id,
-                                    event_tl_item,
-                                    MessageOrSticker::Sticker(sticker.content()),
-                                    prev_event,
-                                    &mut tl_state.media_cache,
-                                    &tl_state.user_power,
-                                    item_drawn_status,
-                                    room_screen_widget_uid,
-                                )
-                            }
-                            TimelineItemContent::RedactedMessage => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                &RedactedMessageEventMarker,
-                                item_drawn_status,
-                            ),
                             TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
                                 cx,
                                 list,
@@ -1296,6 +1308,10 @@ impl Widget for RoomScreen {
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
                             let item = list.item(cx, item_id, live_id!(ReadMarker));
+                            (item, ItemDrawnStatus::both_drawn())
+                        }
+                        TimelineItemKind::Virtual(VirtualTimelineItem::TimelineStart) => {
+                            let item = list.item(cx, item_id, live_id!(Empty));
                             (item, ItemDrawnStatus::both_drawn())
                         }
                     };
@@ -1781,10 +1797,9 @@ impl RoomScreen {
                         .and_then(|tl_item| tl_item.as_event().cloned())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
-                        if let Ok(replied_to_info) = event_tl_item.replied_to_info() {
-                            success = true;
-                            self.show_replying_to(cx, (event_tl_item, replied_to_info));
-                        }
+                        let replied_to_info = RepliedToEvent::from_timeline_item(&event_tl_item);
+                        success = true;
+                        self.show_replying_to(cx, (event_tl_item, replied_to_info));
                     }
                     if !success {
                         enqueue_popup_notification("Could not find message in timeline to reply to.".to_string());
@@ -1847,8 +1862,8 @@ impl RoomScreen {
                         .and_then(|tl_item| tl_item.as_event())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
-                        if let TimelineItemContent::Message(message) = event_tl_item.content() {
-                            match message.msgtype() {
+                        if let Some(message) = event_tl_item.content().as_message() {
+                             match message.msgtype() {
                                 MessageType::Text(TextMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
                                 | MessageType::Notice(NoticeMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
                                 | MessageType::Emote(EmoteMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
@@ -2087,7 +2102,7 @@ impl RoomScreen {
     fn show_replying_to(
         &mut self,
         cx: &mut Cx,
-        replying_to: (EventTimelineItem, RepliedToInfo),
+        replying_to: (EventTimelineItem, RepliedToEvent),
     ) {
         let replying_preview_view = self.view(id!(replying_preview));
         let (replying_preview_username, _) = replying_preview_view
@@ -2327,7 +2342,6 @@ impl RoomScreen {
     ) {
         // If the room is already being displayed, then do nothing.
         if self.room_id.as_ref().is_some_and(|id| id == &room_id) { return; }
-        
 
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
@@ -2627,7 +2641,7 @@ struct TimelineUiState {
     media_cache: MediaCache,
 
     /// Info about the event currently being replied to, if any.
-    replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
+    replying_to: Option<(EventTimelineItem, RepliedToEvent)>,
 
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
@@ -2689,7 +2703,7 @@ struct SavedState {
     /// The content of the message input box.
     message_input_state: TextInputState,
     /// The event that the user is currently replying to, if any.
-    replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
+    replying_to: Option<(EventTimelineItem, RepliedToEvent)>,
     /// The event that the user is currently editing, if any.
     editing_event: Option<EventTimelineItem>,
 }
@@ -2777,14 +2791,14 @@ impl ItemDrawnStatus {
 
 /// Abstracts over a message or sticker that can be displayed in a timeline.
 pub enum MessageOrSticker<'e> {
-    Message(&'e timeline::Message),
+    Message(&'e timeline::Message, &'e MsgLikeContent),
     Sticker(&'e StickerEventContent),
 }
 impl MessageOrSticker<'_> {
     /// Returns the type of this message or sticker.
     pub fn get_type(&self) -> MessageOrStickerType {
         match self {
-            Self::Message(msg) => match msg.msgtype() {
+            Self::Message(msg, _) => match msg.msgtype() {
                 MessageType::Audio(audio) => MessageOrStickerType::Audio(audio),
                 MessageType::Emote(emote) => MessageOrStickerType::Emote(emote),
                 MessageType::File(file) => MessageOrStickerType::File(file),
@@ -2805,7 +2819,7 @@ impl MessageOrSticker<'_> {
     /// Returns the body of this message or sticker, which is a text representation of its content.
     pub fn body(&self) -> &str {
         match self {
-            Self::Message(msg) => msg.body(),
+            Self::Message(msg, _) => msg.body(),
             Self::Sticker(sticker) => sticker.body.as_str(),
         }
     }
@@ -2814,7 +2828,7 @@ impl MessageOrSticker<'_> {
     /// Returns `None` for stickers.
     pub fn in_reply_to(&self) -> Option<&InReplyToDetails> {
         match self {
-            Self::Message(msg) => msg.in_reply_to(),
+            Self::Message(_msg, msg_like_content) => msg_like_content.in_reply_to.as_ref(),
             _ => None,
         }
     }
@@ -2912,12 +2926,17 @@ fn populate_message_view(
     // if the previous message (including stickers) was sent by the same user within 10 minutes.
     let use_compact_view = match prev_event.map(|p| p.kind()) {
         Some(TimelineItemKind::Event(prev_event_tl_item)) => match prev_event_tl_item.content() {
-            TimelineItemContent::Message(_) | TimelineItemContent::Sticker(_) => {
-                let prev_msg_sender = prev_event_tl_item.sender();
-                prev_msg_sender == event_tl_item.sender()
-                    && ts_millis.0
-                        .checked_sub(prev_event_tl_item.timestamp().0)
-                        .is_some_and(|d| d < uint!(600000)) // 10 mins in millis
+            TimelineItemContent::MsgLike(msg_like_content) => {
+                match &msg_like_content.kind {
+                    MsgLikeKind::Message(_) | MsgLikeKind::Sticker(_) => {
+                        let prev_msg_sender = prev_event_tl_item.sender();
+                        prev_msg_sender == event_tl_item.sender()
+                        && ts_millis.0
+                            .checked_sub(prev_event_tl_item.timestamp().0)
+                            .is_some_and(|d| d < uint!(600000)) // 10 mins in millis
+                    }
+                    _ => false
+                }
             }
             _ => false,
         },
@@ -3241,6 +3260,7 @@ fn populate_message_view(
             event_tl_item.identifier(),
             item_id,
         );
+        
         populate_read_receipts(&item, cx, room_id, event_tl_item);
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
@@ -3747,7 +3767,7 @@ fn populate_preview_of_timeline_item(
     timeline_item_content: &TimelineItemContent,
     sender_username: &str,
 ) {
-    if let TimelineItemContent::Message(m) = timeline_item_content {
+    if let Some(m) = timeline_item_content.as_message() {
         match m.msgtype() {
             MessageType::Text(TextMessageEventContent { body, formatted, .. })
             | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
