@@ -105,7 +105,9 @@ live_design! {
         draw_bg: {
             color: #d3f297,
         }
-
+        align: {
+            y: 0.5
+        }
         progress = <Progress> {}
         <TipContent> {}
     }
