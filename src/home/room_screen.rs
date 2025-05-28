@@ -12,7 +12,7 @@ use matrix_sdk::{room::RoomMember, ruma::{
             AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
         }, ImageInfo, MediaSource
     },
-    sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
+    sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
@@ -961,7 +961,7 @@ impl Widget for RoomScreen {
                         // Pass the current room members to the UserProfilePaneInfo
                         let room_member_opt = self.tl_state.as_ref()
                             .and_then(|tl| tl.room_members_map.get(&profile_and_room_id.room_id)
-                                .and_then(|members| members.iter().find(|m| m.user_id() == &profile_and_room_id.user_id).cloned()));
+                                .and_then(|members| members.iter().find(|m| m.user_id() == profile_and_room_id.user_id).cloned()));
                         self.show_user_profile(
                             cx,
                             &user_profile_sliding_pane,
@@ -982,7 +982,7 @@ impl Widget for RoomScreen {
                     if let Some(tl_state) = self.tl_state.as_mut() {
                         tl_state.room_members_map.insert(update_room_id.clone(), members.clone());
                         log!("Updated room_members_map for room {} with {} members", update_room_id, members.len());
-                        
+
                         // Notify MentionableTextInput components that room members have been loaded
                         cx.action(MentionableTextInputAction::RoomMembersLoaded(update_room_id.clone()));
                         log!("Sent MentionableTextInputAction::RoomMembersLoaded for room {}", update_room_id);
@@ -2595,6 +2595,7 @@ pub enum RoomScreenAction {
 }
 
 /// Subscriber for RoomScreen to receive room member updates
+#[allow(dead_code)]
 struct RoomScreenMemberSubscriber {
     widget_uid: WidgetUid,
     room_id: OwnedRoomId, // Store the room_id for verification

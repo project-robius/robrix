@@ -602,7 +602,7 @@ impl MentionableTextInput {
                 log!("Falling back to alternative @room detection methods");
 
                 // Method 2: Check if user_id label exists - user items have it, @room items don't
-                let has_user_id = selected.label(id!(user_id)).text().len() > 0;
+                let has_user_id = selected.label(id!(user_id)).text().is_empty();
 
                 !has_user_id
             } else {
@@ -906,7 +906,7 @@ impl MentionableTextInput {
 
             // Add @room option if search text matches "@room" or is empty and user has permission
             log!("Checking @room permission. Can notify: {}, search_text: {}", self.can_notify_room, search_text);
-            if self.can_notify_room && ("@room".contains(&search_text) || search_text.is_empty()) {
+            if self.can_notify_room && ("@room".contains(search_text) || search_text.is_empty()) {
                 log!("Adding @room option to mention list");
                 let room_mention_item = match self.room_mention_list_item {
                     Some(ptr) => WidgetRef::new_from_ptr(cx, Some(ptr)),
@@ -1036,7 +1036,7 @@ impl MentionableTextInput {
             let popup = self.cmd_text_input.view(id!(popup));
 
             // Adjust height calculation to include the potential @room item
-            let total_items_in_list = member_count + if "@room".contains(&search_text) { 1 } else { 0 };
+            let total_items_in_list = member_count + if "@room".contains(search_text) { 1 } else { 0 };
 
             if total_items_in_list == 0 {
                 // If there are no matching items, just hide the entire popup and clear search state
@@ -1126,9 +1126,9 @@ impl MentionableTextInput {
                 self.cmd_text_input.add_item(item.clone());
 
                 // Set keyboard focus to the first item (either @room or the first user)
-                if index == 0 && !"@room".contains(&search_text) { // If @room was added, it's the first item
+                if index == 0 && !"@room".contains(search_text) { // If @room was added, it's the first item
                     self.cmd_text_input.set_keyboard_focus_index(1); // Focus the first user if @room is index 0
-                } else if index == 0 && "@room".contains(&search_text) {
+                } else if index == 0 && "@room".contains(search_text) {
                     self.cmd_text_input.set_keyboard_focus_index(0); // Focus @room if it's the first item
                 }
             }
@@ -1336,7 +1336,7 @@ impl MentionableTextInput {
 
         // Then, search forward for the nearest ")" position
         let mut close_paren_grapheme_idx = None;
-        for i in cursor_grapheme_idx..text_graphemes.len() {
+        for (i, _) in text_graphemes.iter().enumerate().skip(cursor_grapheme_idx) {
             if text_graphemes[i] == ")" {
                 close_paren_grapheme_idx = Some(i);
                 break;
