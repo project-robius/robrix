@@ -36,26 +36,26 @@ live_design! {
         show_bg: true
         cursor: Hand
         draw_bg: {
-            color: #f00,
-            // uniform border_radius: 6.0,
-            // instance hover: 0.0,
-            // instance selected: 0.0,
+            color: (COLOR_PRIMARY),
+            uniform border_radius: 6.0,
+            instance hover: 0.0,
+            instance selected: 0.0,
 
-            // fn pixel(self) -> vec4 {
-            //     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-            //     // Draw rounded rectangle with configurable radius
-            //     sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                // Draw rounded rectangle with configurable radius
+                sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
 
-            //     if self.selected > 0.0 {
-            //         sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
-            //     } else if self.hover > 0.0 {
-            //         sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
-            //     } else {
-            //         // Default state
-            //         sdf.fill(self.color)
-            //     }
-            //     return sdf.result
-            // }
+                if self.selected > 0.0 {
+                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
+                } else if self.hover > 0.0 {
+                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
+                } else {
+                    // Default state
+                    sdf.fill(self.color)
+                }
+                return sdf.result
+            }
         }
         flow: Down
         spacing: 8.0
@@ -103,7 +103,7 @@ live_design! {
         show_bg: true
         cursor: Hand
         draw_bg: {
-            color: #fff,
+            color: (COLOR_PRIMARY),
             uniform border_radius: 6.0,
             instance hover: 0.0,
             instance selected: 0.0,
@@ -148,11 +148,11 @@ live_design! {
     // Template for loading indicator when members are being fetched
     LoadingIndicator = <View> {
         width: Fill,
-        height: Fit,
+        height: 56,
         padding: {left: 16, right: 16, top: 16, bottom: 16},
         flow: Right,
         spacing: 8.0,
-        align: {x: 0.5, y: 0.5}
+        align: {x: 0., y: 0.5}
 
         loading_text = <Label> {
             height: Fit,
@@ -185,10 +185,22 @@ live_design! {
         popup = {
             spacing: 0.0
             padding: 0.0
+            draw_bg: {
+                color: (COLOR_PRIMARY)
+                border_size: 1.0
+                border_color: #D0D5DD
+                border_radius: 8.0
+            }
 
             header_view = {
                 header_label = {
                     text: "Users in this Room"
+                    draw_text: {
+                        color: #000
+                    }
+                }
+                draw_bg: {
+                    color: #D0D5DD
                 }
             }
 
