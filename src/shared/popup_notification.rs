@@ -22,20 +22,10 @@ live_design! {
         }
 
         progress_bar = <RoundedView> {
-            height: 60,
+            height: Fill,
             width: Fill,
             draw_bg: {
                 color: #639b0d,
-            }
-        }
-        progress_bar_rect = <RoundedView> {
-            height: 60.5,
-            width: 20.5,
-            show_bg: true,
-            draw_bg: {
-                border_size: 1.0,
-                color: #FFFFFF00,
-                border_color:  #639b0d
             }
         }
         animator: {
@@ -46,16 +36,16 @@ live_design! {
                     from: {all: Forward {duration: 0.0}}
                     apply: {
                         progress_bar = {
-                            height: -15,     // height adjustment for animation; derived from progress_bar height
+                            height: 0,
                         }
                     }
                 }
                 slide_down = {
                     redraw: true,
-                    from: {all: Forward {duration: 2.5}}   // self.duration + 0.5
+                    from: {all: Forward {duration: 2.5}}
                     apply: {
                         progress_bar = {
-                            height: 60,
+                            height: 100, // Derived from popup notification height
                         }
                     }
                 }
@@ -100,13 +90,8 @@ live_design! {
         width: Fill,
         height: Fit,
         flow: Right,
-
-        show_bg: true,
         draw_bg: {
             color: #d3f297,
-        }
-        align: {
-            y: 0.5
         }
         progress = <Progress> {}
         <TipContent> {}
@@ -116,7 +101,6 @@ live_design! {
         width: Fit,
         height: Fit,
         flow: Overlay,
-
         draw_bg: {
             fn pixel(self) -> vec4 {
                 return vec4(0., 0., 0., 0.0)
@@ -178,6 +162,9 @@ pub struct RobrixPopupNotification {
 
     #[animator]
     animator: Animator,
+
+    #[rust]
+    start_slide_down_timer: Timer,
 }
 
 impl LiveHook for RobrixPopupNotification {
@@ -189,9 +176,13 @@ impl LiveHook for RobrixPopupNotification {
 
 impl Widget for RobrixPopupNotification {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-
         if self.animation_timer.is_event(event).is_some() {
             self.close(cx);
+        }
+        if self.start_slide_down_timer.is_event(event).is_some() {
+            let height = self.content.area().rect(cx).size.y;
+            self.update_duration_height_nodes(cx, height);
+            self.view(id!(progress)).animator_play(cx, id!(mode.slide_down));
         }
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
@@ -230,14 +221,13 @@ impl Widget for RobrixPopupNotification {
 
 impl RobrixPopupNotification {
     pub fn open(&mut self, cx: &mut Cx) {
-        self.animation_timer = cx.start_timeout(self.duration + 0.5);
-        if self.live_apply {
-            self.use_live_duration(cx);
-            self.live_apply = false;
-        }
-        self.view(id!(progress)).animator_play(cx, id!(mode.slide_down));
+        // End shortly after 0.5 to ensure the slide_down animation is complete.
+        self.animation_timer = cx.start_timeout(self.duration + 0.8);
+        // Start shortly before 0.5.
+        self.start_slide_down_timer = cx.start_timeout(0.4); 
         self.animator_play(cx, id!(mode.open));
         self.redraw(cx);
+        
     }
 
     pub fn close(&mut self, cx: &mut Cx) {
@@ -247,19 +237,17 @@ impl RobrixPopupNotification {
         self.redraw(cx);
     }
 
-    /// Set the duration of the animation live value to the `duration` field of `self`.
+    /// Update the Live registry nodes for the slide_down animation.
     ///
-    /// This function is called whenever the `duration` field changes, and when the
-    /// widget is first created.
+    /// This function takes the calculated height of the popup notification and set the height of the progress bar.
     ///
     /// This function assumes that the `animator` field has been initialized and
     /// that the live file contains the `slide_down` and `close_slider` nodes.
     ///
     /// The function does not handle the case where the live file or the nodes
     /// do not exist, because this should not happen in normal usage.
-    fn use_live_duration(&mut self, cx: &mut Cx) {
+    fn update_duration_height_nodes(&mut self, cx: &mut Cx, height: f64) {
         let duration = self.duration;
-        let height = 60.0;
         let live_ptr = match self.animator.live_ptr {
             Some(ptr) => ptr,
             None => return,
@@ -276,14 +264,14 @@ impl RobrixPopupNotification {
 
         let nodes = &mut live_file.expanded.nodes;
         
-        let (slide_down_index, close_slider_index) = Self::find_indices(nodes);
+        let (slide_down_index, _close_slider_index) = Self::find_indices(nodes);
 
         if let Some(index) = slide_down_index {
             Self::update_slide_down_duration(nodes, index, duration);
         }
         
-        if let Some(index) = close_slider_index {
-            Self::update_close_slider_height(nodes, index, height, duration);
+        if let Some(index) = slide_down_index {
+            Self::update_slide_down_height(nodes, index, height);
         }
     }
 
@@ -309,13 +297,14 @@ impl RobrixPopupNotification {
         }
     }
 
-    fn update_close_slider_height(nodes: &mut [LiveNode], index: usize, height: f64, duration: f64) {
+    fn update_slide_down_height(nodes: &mut [LiveNode], index: usize, height: f64) {
         if let Some(v) = nodes.child_by_path(index, &[
             live_id!(apply).as_field(),
             live_id!(progress_bar).as_instance(), 
             live_id!(height).as_field()
         ]) {
-            nodes[v].value = LiveValue::Float64(-1.0 * height * 0.5 / duration);
+            //nodes[v].value = LiveValue::Float64(-1.0 * height * 0.5 / duration);
+            nodes[v].value = LiveValue::Float64(height);
         }
     }
 }

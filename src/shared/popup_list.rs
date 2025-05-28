@@ -28,7 +28,7 @@ live_design! {
         spacing: 0,
         popup_content: <View> {
             flow: Right
-            padding: {top: 5, right: 5, bottom: 5, left: 5}
+            padding: {top: 0, right: 5, bottom: 0, left: 5}
             align: {y: 0.0}
             robrix_popup = <RobrixPopupNotification> {
                 // duration: 2.0
