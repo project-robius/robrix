@@ -11,6 +11,7 @@ use crate::avatar_cache::*;
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::utils;
 
+use makepad_widgets::text::selection::Cursor;
 use makepad_widgets::*;
 use matrix_sdk::room::RoomMember;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
@@ -26,19 +27,20 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::helpers::FillerX;
 
-    pub FOCUS_HOVER_COLOR = #eaecf0
+    pub FOCUS_HOVER_COLOR = #C
     pub KEYBOARD_FOCUS_OR_COLOR_HOVER = #1C274C
 
     // Template for user list items in the mention dropdown
     UserListItem = <View> {
         width: Fill,
         height: Fit,
+        margin: {left: 4, right: 4}
         padding: {left: 8, right: 8, top: 4, bottom: 4}
         show_bg: true
         cursor: Hand
         draw_bg: {
             color: #fff,
-            uniform border_radius: 6.0,
+            uniform border_radius: 4.0,
             instance hover: 0.0,
             instance selected: 0.0,
 
@@ -109,8 +111,18 @@ live_design! {
             spacing: 0.0
             padding: 0.0
 
+            draw_bg: {
+                color: (COLOR_SECONDARY),
+            }
             header_view = {
+                margin: {left: 4, right: 4}
+                draw_bg: {
+                    color: (COLOR_ROBRIX_PURPLE),
+                }
                 header_label = {
+                    draw_text: {
+                        color: (COLOR_PRIMARY_DARKER),
+                    }
                     text: "Users in this Room"
                 }
             }
@@ -128,7 +140,7 @@ live_design! {
             bottom = { height: 0 }
             center = {
                 text_input = <RobrixTextInput> {
-                    empty_message: "Start typing..."
+                    empty_text: "Start typing..."
                 }
             }
         }
@@ -203,7 +215,7 @@ impl Widget for MentionableTextInput {
             if let Some(action) =
                 actions.find_widget_action(self.cmd_text_input.text_input_ref().widget_uid())
             {
-                if let TextInputAction::Change(text) = action.cast() {
+                if let TextInputAction::Changed(text) = action.cast() {
                     self.handle_text_change(cx, scope, text);
                 }
             }
@@ -227,7 +239,7 @@ impl MentionableTextInput {
         if let Some(start_idx) = self.current_mention_start_index {
             let text_input_ref = self.cmd_text_input.text_input_ref();
             let current_text = text_input_ref.text();
-            let head = text_input_ref.borrow().map_or(0, |p| p.get_cursor().head.index);
+            let head = text_input_ref.borrow().map_or(0, |p| p.cursor().index);
 
             // For now, we insert the markdown link to the mentioned user directly
             // instead of the user's display name because we don't yet have a way
@@ -251,7 +263,11 @@ impl MentionableTextInput {
             self.cmd_text_input.set_text(cx, &new_text);
             // Calculate new cursor position
             let new_pos = start_idx + mention_to_insert.len();
-            text_input_ref.set_cursor(new_pos, new_pos);
+            text_input_ref.set_cursor(
+                cx,
+                Cursor { index: new_pos, prefer_next_row: false },
+                false,
+            );
         }
 
         self.close_mention_popup(cx);
@@ -266,7 +282,7 @@ impl MentionableTextInput {
             self.possible_mentions.clear();
         }
 
-        let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.get_cursor().head.index);
+        let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.cursor().index);
 
         if let Some(trigger_pos) = self.find_mention_trigger_position(&text, cursor_pos) {
             self.current_mention_start_index = Some(trigger_pos);

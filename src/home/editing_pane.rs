@@ -1,4 +1,4 @@
-use makepad_widgets::*;
+use makepad_widgets::{text::selection::Cursor, *};
 use matrix_sdk::{
     room::edit::EditedContent,
     ruma::{
@@ -65,6 +65,7 @@ live_design! {
                 width: Fit,
                 height: Fit,
                 padding: 13,
+                spacing: 0,
                 margin: {left: 5, right: 5},
 
                 draw_bg: {
@@ -83,6 +84,7 @@ live_design! {
                 width: Fit,
                 height: Fit,
                 padding: 13,
+                spacing: 0,
                 margin: {left: 5, right: 5},
 
                 draw_bg: {
@@ -110,7 +112,7 @@ live_design! {
             persistent = {
                 center = {
                     text_input = {
-                        empty_message: "Enter edited message..."
+                        empty_text: "Enter edited message..."
                     }
                 }
             }
@@ -289,7 +291,7 @@ impl Widget for EditingPane {
             // Hide the editing pane if the cancel button was clicked
             // or if the `Escape` key was pressed within the edit text input.
             if self.button(id!(cancel_button)).clicked(actions)
-                || edit_text_input.escape(actions)
+                || edit_text_input.escaped(actions)
             {
                 self.animator_play(cx, id!(panel.hide));
                 self.redraw(cx);
@@ -522,7 +524,11 @@ impl EditingPane {
 
         // Set the text input's cursor to the end and give it key focus.
         let text_len = edit_text_input.text().len();
-        edit_text_input.text_input(id!(text_input)).set_cursor(text_len, text_len);
+        edit_text_input.text_input(id!(text_input)).set_cursor(
+            cx,
+            Cursor { index: text_len, prefer_next_row: false },
+            false,
+        );
         edit_text_input.text_input(id!(text_input)).set_key_focus(cx);
 
         self.animator_play(cx, id!(panel.show));

@@ -30,11 +30,12 @@ live_design! {
         // Bottom-align everything to ensure that buttons always stick to the bottom
         // even when the message_input box is very tall.
         align: {y: 1.0},
-        padding: 8,
+        padding: 6,
         show_bg: true
         draw_bg: {color: (COLOR_PRIMARY)}
 
         location_button = <RobrixIconButton> {
+            spacing: 0,
             draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
             icon_walk: {width: Fit, height: 23, margin: {bottom: -1}}
             text: "",
@@ -43,12 +44,12 @@ live_design! {
         message_input = <MentionableTextInput> {
             width: Fill,
             height: Fit
-            margin: { bottom: 6 },
+            margin: { bottom: 12 },
 
             persistent = {
                 center = {
                     text_input = {
-                        empty_message: "Write a message (in Markdown) ..."
+                        empty_text: "Write a message (in Markdown) ..."
                     }
                 }
             }
@@ -56,6 +57,7 @@ live_design! {
 
         send_message_button = <RobrixIconButton> {
             enabled: false, // is enabled when text is inputted
+            spacing: 0,
             draw_icon: {
                 svg_file: (ICO_SEND),
                 color: (COLOR_DISABLE_GRAY),
@@ -132,23 +134,9 @@ impl Widget for RoomInputBar {
         self.view.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {
-            // Set the send_message_button to be enabled/green if the message_input is not empty
-            // or disabled & gray if it is empty.
             let message_input = self.text_input(id!(message_input.text_input));
             if let Some(new_text) = message_input.changed(actions) {
-                let send_message_button = self.view.button(id!(send_message_button));
-                let (should_enable, new_color) = if new_text.is_empty() {
-                    (false, COLOR_DISABLE_GRAY)
-                } else {
-                    (true, COLOR_ACCEPT_GREEN)
-                };
-                send_message_button.apply_over(cx, live! {
-                    enabled: (should_enable),
-                    draw_icon: {
-                        color: (new_color),
-                        color_hover: (new_color),
-                    }
-                });
+                self.enable_send_message_button(cx, !new_text.is_empty());
             }
 
             for action in actions {
@@ -267,6 +255,31 @@ impl RoomInputBar {
                 // Pass data to MentionableTextInput
                 message_input.set_room_members(members);
             }
+        }
+    }
+
+    /// Sets the send_message_button to be enabled and green, or disabled and gray.
+    fn enable_send_message_button(&mut self, cx: &mut Cx, enable: bool) {
+        let send_message_button = self.view.button(id!(send_message_button));
+        let new_color = if enable {
+            COLOR_ACCEPT_GREEN
+        } else {
+            COLOR_DISABLE_GRAY
+        };
+        send_message_button.apply_over(cx, live! {
+            enabled: (enable),
+            draw_icon: {
+                color: (new_color),
+                color_hover: (new_color),
+            }
+        });
+    }
+}
+
+impl RoomInputBarRef {
+    pub fn enable_send_message_button(&self, cx: &mut Cx, enable: bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.enable_send_message_button(cx, enable);
         }
     }
 }
