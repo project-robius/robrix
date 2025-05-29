@@ -821,6 +821,9 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+
+    #[rust] latest_edit_unconfirmed: Option<(String, TimelineEventItemId)>,
+    #[rust] latest_reply_unconfirmed: Option<(String, TimelineEventItemId)>,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1781,12 +1784,27 @@ impl RoomScreen {
                         .and_then(|tl_item| tl_item.as_event().cloned())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
-                        self.view.editing_pane(id!(editing_pane)).force_hide(cx);
+                        let event_item_id = event_tl_item.identifier();
+                        let editing_pane = self.view.editing_pane(id!(editing_pane));
+                        if editing_pane.visible() {
+                            let edited_content = editing_pane.mentionable_text_input(id!(edit_text_input)).text();
+                            self.latest_edit_unconfirmed = Some((edited_content, event_item_id.clone()));
+                            editing_pane.hide_with_animator(cx);
+                        }
                         if let Ok(replied_to_info) = event_tl_item.replied_to_info() {
-                            let input_bar = self.view.room_input_bar(id!(input_bar));
-                            input_bar.set_visible(cx, true);
+                            // let input_bar = self.view.room_input_bar(id!(input_bar));
+                            // input_bar.set_visible(cx, true);
                             success = true;
                             self.show_replying_to(cx, (event_tl_item, replied_to_info));
+                            if let Some((content, stored_event_item_id)) = self.latest_reply_unconfirmed.as_ref() {
+                                if stored_event_item_id == &event_item_id {
+                                    log!("66666");
+                                    let room_input_bar = self.view.room_input_bar(id!(input_bar))
+                                        .mentionable_text_input(id!(message_input));
+                                    // If we have an unconfirmed reply, set the text input to that content.
+                                    room_input_bar.set_text(cx, content);
+                                }
+                            }
                         }
                     }
                     if !success {
@@ -1804,10 +1822,25 @@ impl RoomScreen {
                         .and_then(|tl_item| tl_item.as_event().cloned())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
+                        let event_item_id = event_tl_item.identifier();
                         let replying_preview = self.view.view(id!(room_screen_wrapper.keyboard_view.replying_preview));
-                        replying_preview.set_visible(cx, false);
-                        replying_preview.redraw(cx);
+                        if replying_preview.visible() {
+                            log!("111111");
+                            replying_preview.set_visible(cx, false);
+                            let room_input_bar_content = self.view.room_input_bar(id!(input_bar)).mentionable_text_input(id!(message_input)).text();
+                            self.latest_reply_unconfirmed = Some((room_input_bar_content, event_item_id.clone()));
+                        }
                         self.show_editing_pane(cx, event_tl_item, tl.room_id.clone());
+                        if let Some((content, stored_event_item_id)) = self.latest_edit_unconfirmed.as_ref() {
+                            log!("wwwwww");
+                            if stored_event_item_id == &event_item_id {
+                                log!("qqqqqq");
+                                // If we have an unconfirmed edit, set the text input to that content.
+                                self.view.editing_pane(id!(editing_pane))
+                                    .mentionable_text_input(id!(edit_text_input))
+                                    .set_text(cx, content);
+                            }
+                        }
                     }
                     else {
                         enqueue_popup_notification("Could not find message in timeline to edit.".to_string());
