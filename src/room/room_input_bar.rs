@@ -169,18 +169,16 @@ impl Widget for RoomInputBar {
                     }
                 }
 
-                // Check for MentionableTextInputAction::RoomIdChanged action
-                if let Some(room_id) =
-                    action.downcast_ref::<MentionableTextInputAction>().and_then(|a| {
-                        if let MentionableTextInputAction::RoomIdChanged(room_id) = a {
-                            Some(room_id)
-                        } else {
-                            None
-                        }
-                    })
-                {
-                    // Create subscription
-                    self.create_room_subscription(cx, room_id.clone());
+                if let Some(mentionable_text_input) = action.downcast_ref::<MentionableTextInputAction>() {
+                    match mentionable_text_input {
+                        MentionableTextInputAction::RoomIdChanged(room_id) => {
+                            self.create_room_subscription(cx, room_id.clone());
+                        },
+                        MentionableTextInputAction::DropMemberSubscription => {
+                            self.drop_member_subscription();
+                        },
+                        _ => {},
+                    }
                 }
 
                 // // Check for text input actions
@@ -249,6 +247,13 @@ impl RoomInputBar {
             memberships: matrix_sdk::RoomMemberships::JOIN,
             local_only: false,
         });
+    }
+
+    /// Cancels the current room member subscription (if any).
+    /// This is necessary to prevent receiving updates for the current room after
+    /// the user navigates away.
+    fn drop_member_subscription(&mut self) {
+        self.member_subscription = None;
     }
 
     /// Handle room members update event

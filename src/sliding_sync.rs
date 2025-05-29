@@ -21,11 +21,11 @@ use matrix_sdk_ui::{
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::{AbortHandle, JoinHandle},
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, Once, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, Once}};
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -642,8 +642,7 @@ async fn async_worker(
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
 
-                let room_id_clone = room_id.clone();
-                let get_members_task = Handle::current().spawn(async move {
+                let _get_members_task = Handle::current().spawn(async move {
                     let room = timeline.room();
 
                     if local_only {
@@ -664,7 +663,6 @@ async fn async_worker(
 
                     SignalToUI::set_ui_signal();
                 });
-                register_core_task(CoreTask::FetchRoomMembers(room_id_clone), get_members_task.abort_handle());
             }
 
             MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
@@ -851,7 +849,7 @@ async fn async_worker(
                     (room, room_info.timeline_update_sender.clone(), recv)
                 };
 
-                let typing_notices_task = Handle::current().spawn(async move {
+                Handle::current().spawn(async move {
                     while let Ok(user_ids) = typing_notice_receiver.recv().await {
                         // log!("Received typing notifications for room {room_id}: {user_ids:?}");
                         let mut users = Vec::with_capacity(user_ids.len());
@@ -872,7 +870,6 @@ async fn async_worker(
                     }
                     // log!("Note: typing notifications recv loop has ended for room {}", room_id);
                 });
-                register_core_task(CoreTask::TypingNotices(room_id.clone()), typing_notices_task.abort_handle());
             }
             MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
                 if !subscribe {
@@ -910,7 +907,6 @@ async fn async_worker(
                         }
                     }
                 });
-                register_core_task(CoreTask::SubscribeOwnReadReceipt(room_id.clone()), subscribe_own_read_receipt_task.abort_handle());
                 tasks_list.insert(room_id.clone(), subscribe_own_read_receipt_task);
             }
             MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
@@ -927,8 +923,7 @@ async fn async_worker(
             }
             MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
                 let Some(client) = get_client() else { continue };
-                let mxc_uri_str = mxc_uri.as_str().to_string();
-                let fetch_task = Handle::current().spawn(async move {
+                Handle::current().spawn(async move {
                     // log!("Sending fetch avatar request for {mxc_uri:?}...");
                     let media_request = MediaRequestParameters {
                         source: MediaSource::Plain(mxc_uri.clone()),
@@ -938,20 +933,17 @@ async fn async_worker(
                     // log!("Fetched avatar for {mxc_uri:?}, succeeded? {}", res.is_ok());
                     on_fetched(AvatarUpdate { mxc_uri, avatar_data: res.map(|v| v.into()) });
                 });
-                register_core_task(CoreTask::FetchAvatar(mxc_uri_str), fetch_task.abort_handle());
             }
 
             MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
                 let Some(client) = get_client() else { continue };
-                let request_id = media_request.uri().to_string();
                 let media = client.media();
 
-                let fetch_task = Handle::current().spawn(async move {
+                Handle::current().spawn(async move {
                     // log!("Sending fetch media request for {media_request:?}...");
                     let res = media.get_media_content(&media_request, true).await;
                     on_fetched(&destination, media_request, res, update_sender);
                 });
-                register_core_task(CoreTask::FetchMedia(request_id), fetch_task.abort_handle());
             }
 
             MatrixRequest::SendMessage { room_id, message, replied_to } => {
@@ -1143,7 +1135,7 @@ async fn async_worker(
 
 
 /// The single global Tokio runtime that is used by all async tasks.
-static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+static TOKIO_RUNTIME: LazyLock<Mutex<Option<tokio::runtime::Runtime>>> = LazyLock::new(|| Mutex::new(None));
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
@@ -1158,8 +1150,20 @@ static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
 );
 
 pub fn start_matrix_tokio(initial_flag: bool) -> Result<()> {
-    // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
-    let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
+    let rt_handle = { // Scope for mutex guard
+    let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
+        if let Some(existing_rt) = rt_guard.as_ref() {
+            existing_rt.handle().clone()
+        } else {
+            // Create a new Tokio runtime
+            log!("Creating new Tokio runtime...");
+            let new_rt = tokio::runtime::Runtime::new().unwrap();
+            let handle = new_rt.handle().clone();
+            *rt_guard = Some(new_rt); // Store the new runtime
+            log!("New Tokio runtime created and stored.");
+            handle
+        }
+    };
 
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
@@ -1170,19 +1174,16 @@ pub fn start_matrix_tokio(initial_flag: bool) -> Result<()> {
 
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
     // Start a high-level async task that will start and monitor all other tasks.
-    let monitor = rt.spawn(async move {
+    let rt = rt_handle.clone();
+    let _monitor = rt_handle.spawn(async move {
         // Spawn the actual async worker thread.
         let mut worker_join_handle = rt.spawn(async_worker(receiver, login_sender));
-        // register it in core task
-        register_core_task(CoreTask::Worker, worker_join_handle.abort_handle());
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(initial_flag, login_receiver));
-        // register it in core task
-        register_core_task(CoreTask::MainLoop, main_loop_join_handle.abort_handle());
         
         // Build a Matrix Client in the background so that SSO Server starts earlier.
-        let sso_client_handle = rt.spawn(async move {
+        rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
                 Ok(client_and_session) => {
                     DEFAULT_SSO_CLIENT.lock().unwrap()
@@ -1193,8 +1194,6 @@ pub fn start_matrix_tokio(initial_flag: bool) -> Result<()> {
             DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
             Cx::post_action(LoginAction::SsoPending(false));
         });
-        // register sso client in task, because of long timeout
-        register_core_task(CoreTask::SsoClient, sso_client_handle.abort_handle());
 
         #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
         loop {
@@ -1239,7 +1238,6 @@ pub fn start_matrix_tokio(initial_flag: bool) -> Result<()> {
             }
         }
     });
-    register_core_task(CoreTask::Monitor, monitor.abort_handle());
 
     Ok(())
 }
@@ -1940,7 +1938,6 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         timeline_update_sender.clone(),
         request_receiver,
     ));
-    register_core_task(CoreTask::TimelineSubscriberHandler(room_id.clone()), timeline_subscriber_handler_task.abort_handle());
 
     let latest = latest_event.as_ref().map(
         |ev| get_latest_event_details(ev, &room_id)
@@ -2006,7 +2003,7 @@ async fn current_ignore_user_list(client: &Client) -> Option<BTreeSet<OwnedUserI
 fn handle_ignore_user_list_subscriber(client: Client) {
     let mut subscriber = client.subscribe_to_ignore_user_list_changes();
     log!("Initial ignored-user list is: {:?}", subscriber.get());
-    let ignore_user_list_subscriber_task =  Handle::current().spawn(async move {
+    Handle::current().spawn(async move {
         let mut first_update = true;
         while let Some(ignore_list) = subscriber.next().await {
             log!("Received an updated ignored-user list: {ignore_list:?}");
@@ -2037,13 +2034,12 @@ fn handle_ignore_user_list_subscriber(client: Client) {
             first_update = false;
         }
     });
-    register_core_task(CoreTask::IgnoreUserListSubscriber, ignore_user_list_subscriber_task.abort_handle());
 }
 
 
 fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service::State>) {
     log!("Initial sync service state is {:?}", subscriber.get());
-    let handler_sync_service_state = Handle::current().spawn(async move {
+    Handle::current().spawn(async move {
         while let Some(state) = subscriber.next().await {
             log!("Received a sync service state update: {state:?}");
             if state == sync_service::State::Error {
@@ -2054,13 +2050,12 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
             }
         }
     });
-    register_core_task(CoreTask::SyncServiceStateSubscribe, handler_sync_service_state.abort_handle());
 }
 
 
 fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomListLoadingState>) {
     log!("Initial room list loading state is {:?}", loading_state.get());
-    let room_list_service = Handle::current().spawn(async move {
+    Handle::current().spawn(async move {
         while let Some(state) = loading_state.next().await {
             log!("Received a room list loading state update: {state:?}");
             match state {
@@ -2073,7 +2068,6 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
             }
         }
     });
-    register_core_task(CoreTask::RoomListService, room_list_service.abort_handle());
 }
 
 /// Returns the timestamp and text preview of the given `latest_event` timeline item.
@@ -2507,8 +2501,7 @@ fn update_latest_event(
 
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: Room) {
-    let room_id_clone = room.room_id().to_owned().clone();
-    let fetch_room_avater = Handle::current().spawn(async move {
+    Handle::current().spawn(async move {
         let room_id = room.room_id().to_owned();
         let room_name_str = room.cached_display_name().map(|dn| dn.to_string());
         let avatar = room_avatar(&room, room_name_str.as_deref()).await;
@@ -2517,7 +2510,6 @@ fn spawn_fetch_room_avatar(room: Room) {
             avatar,
         });
     });
-    register_core_task(CoreTask::FetchRoomAvatar(room_id_clone), fetch_room_avater.abort_handle());
 }
 
 /// Fetches and returns the avatar image for the given room (if one exists),
@@ -2884,18 +2876,18 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     }
 
     // Abort core async tasks (with timeout)
-    log!("Aborting core async tasks...");
-    match tokio::time::timeout(
-        std::time::Duration::from_secs(3),
-        abort_core_tasks() // Assuming abort_core_tasks doesn't return Result
-    ).await {
-        Ok(_) => log!("Core async tasks aborted successfully."),
-        Err(e) => {
-            let error_msg = format!("Aborting core tasks timed out: {}", e);
-            log!("Warning: {}", error_msg);
-            errors.push(error_msg);
-        }
-    }
+    // log!("Aborting core async tasks...");
+    // match tokio::time::timeout(
+    //     std::time::Duration::from_secs(3),
+    //     abort_core_tasks() // Assuming abort_core_tasks doesn't return Result
+    // ).await {
+    //     Ok(_) => log!("Core async tasks aborted successfully."),
+    //     Err(e) => {
+    //         let error_msg = format!("Aborting core tasks timed out: {}", e);
+    //         log!("Warning: {}", error_msg);
+    //         errors.push(error_msg);
+    //     }
+    // }
 
     // Perform server-side logout (with timeout)
 
@@ -2985,6 +2977,8 @@ async fn logout_and_refresh() -> Result<RefreshState> {
         errors.push(e.to_string());
     }
 
+    log!("Matrix tokio runtime restarted successfully.");
+    shutdown_background_tasks().await;
     // Restart the Matrix tokio runtime
     // This is a critical step; failure might prevent future logins
     log!("Restarting Matrix tokio runtime...");
@@ -3028,49 +3022,9 @@ async fn logout_and_refresh() -> Result<RefreshState> {
 
 }
 
-/// A HashMap of core tasks that are spawned and need to be aborted when the app is closed.
-/// AbortHandle that can be used to remotely abort this task; More detail in docs 
-/// https://docs.rs/tokio/1.44.1/tokio/task/struct.JoinHandle.html#method.abort_handle 
-static CORE_TASKS: LazyLock<Mutex<HashMap<CoreTask, AbortHandle>>> = LazyLock::new(
-    || Mutex::new(HashMap::new())
-);
-
-
-/// name enum of the task
-#[derive(Debug, Eq, PartialEq, Hash)]
-enum CoreTask {
-    Worker,            
-    MainLoop,      
-    SsoClient,       
-    Monitor,       
-    RoomListService, 
-    SyncServiceStateSubscribe, 
-    IgnoreUserListSubscriber,
-    // use request for record media task
-    FetchMedia(String), 
-    // use MxcUrl for record task
-    FetchAvatar(String), 
-    FetchRoomAvatar(OwnedRoomId),
-    TimelineSubscriberHandler(OwnedRoomId),
-    SubscribeOwnReadReceipt(OwnedRoomId),
-    TypingNotices(OwnedRoomId),
-    FetchRoomMembers(OwnedRoomId),
-}
-
-fn register_core_task(
-    task_type: CoreTask, 
-    handle: AbortHandle,
-) {
-    if let Ok(mut tasks) = CORE_TASKS.lock() {
-        tasks.insert(task_type, handle);
-    }
-}
-
-async fn abort_core_tasks() {
-    if let Ok(mut tasks) = CORE_TASKS.lock() {
-        for (task_type, handle) in tasks.drain() {
-            handle.abort();
-            log!("Aborted core task: {:?}", task_type);
-        }
+async fn shutdown_background_tasks() {
+    let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
+    if let Some(existing_rt) = rt_guard.take() {
+        existing_rt.shutdown_background();
     }
 }
