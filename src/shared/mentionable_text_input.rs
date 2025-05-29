@@ -9,6 +9,7 @@ use crate::utils;
 
 use makepad_widgets::{text::selection::Cursor, *};
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
+use matrix_sdk::room::RoomMember;
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_segmentation::UnicodeSegmentation;
 use crate::home::room_screen::RoomScreenProps;
@@ -327,7 +328,6 @@ impl Widget for MentionableTextInput {
                         // Clear all possible user mentions
                         self.possible_mentions.clear();
 
-                        // 只有当文本中不再包含 "@room" 时才重置 possible_room_mention
                         if !text.contains("@room") {
                             self.possible_room_mention = false;
                         }
@@ -353,24 +353,14 @@ impl Widget for MentionableTextInput {
                                     // Clear all possible user mentions
                                     self.possible_mentions.clear();
 
-                                    // 只有当文本中不再包含 "@room" 时才重置 possible_room_mention
                                     if !text.contains("@room") {
                                         self.possible_room_mention = false;
                                     }
                                 }
 
-                                // Simplified detection logic
-                                // Core issue is popup header appearing when backspace deleting text after selecting non-room user
-                                // Simplest solution: always close menu when markdown link features are detected
-                                // This way user won't see menu at any point during link deletion
-
-                                // Modification: only close menu in specific situations
-                                // Don't close all text containing link format, this would prevent consecutive @mentions
-
                                 // Only check character before cursor to determine if deleting a link
                                 let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.cursor().index);
                                 let is_deleting_link = if cursor_pos > 0 && cursor_pos <= text.len() {
-                                    // 使用字形处理而不是直接的字节索引
                                     let cursor_grapheme_idx = utils::byte_index_to_grapheme_index(&text, cursor_pos);
                                     let text_graphemes: Vec<&str> = text.graphemes(true).collect();
 
@@ -626,110 +616,13 @@ impl MentionableTextInput {
 
         let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.cursor().index);
 
-        // Early returns for various conditions where popup shouldn't be shown:
+        // Simple logic: only trigger mention popup for new @ symbols
 
-        // 1. Check if cursor is within a markdown link
-        if self.is_cursor_within_markdown_link(&text, cursor_pos) {
-            if self.is_searching {
-                log!("close_mention_popup 7 - cursor within markdown link");
-                self.close_mention_popup(cx);
-            }
-            return;
-        }
-
-        // 2. Check if user is deleting a link (cursor after ] or ) character)
-        let is_deleting_link = cursor_pos > 0 &&
-                               cursor_pos <= text.len() &&
-                               {
-
-                                   let cursor_grapheme_idx = utils::byte_index_to_grapheme_index(&text, cursor_pos);
-                                   let text_graphemes: Vec<&str> = text.graphemes(true).collect();
-                                   if cursor_grapheme_idx > 0 && cursor_grapheme_idx <= text_graphemes.len() {
-                                       let prev_grapheme = text_graphemes[cursor_grapheme_idx - 1];
-                                       prev_grapheme == ")" || prev_grapheme == "]"
-                                   } else {
-                                       false
-                                   }
-                               };
-
-        if is_deleting_link {
-            if self.is_searching {
-                log!("close_mention_popup 8 - deleting link");
-                self.close_mention_popup(cx);
-            }
-            return;
-        }
-
-        // 3. Check if cursor is inside "@room" text
-        // This allows user to continue @mentioning others after @room
-        if text.contains("@room") {
-            for room_pos in text.match_indices("@room").map(|(i, _)| i) {
-                let end_pos = room_pos + 5; // "@room" length is 5
-
-                // Only close menu when cursor is inside @room
-                // If cursor is after @room, allow continuing to @ other users
-                if cursor_pos > room_pos && cursor_pos <= end_pos {
-                    if self.is_searching {
-                        log!("close_mention_popup 9 - cursor inside @room");
-                        self.close_mention_popup(cx);
-                    }
-                    return;
-                }
-            }
-        }
-
-        // 4. Check if cursor is inside an existing markdown link when typing @ symbol
-        if text.contains('[') && text.contains("](") && text.contains(')') && text.contains('@') {
-            // Find all markdown link ranges
-            let link_ranges = self.find_markdown_link_ranges(&text);
-
-            // Check if cursor is within any link range
-            let in_any_link = link_ranges.iter().any(|(start, end)|
-                cursor_pos >= *start && cursor_pos <= *end
-            );
-
-            if in_any_link {
-                // If cursor is inside a link, close popup
-                if self.is_searching {
-                    log!("close_mention_popup 10 - cursor inside a link");
-                    self.close_mention_popup(cx);
-                }
-                return;
-            }
-        }
 
         // Continue with the remaining parts of text change handling
         self.handle_text_change_continued(cx, scope, &text, cursor_pos);
     }
 
-    // Helper method to find all markdown link ranges in text
-    fn find_markdown_link_ranges(&self, text: &str) -> Vec<(usize, usize)> {
-        let mut link_ranges = Vec::new();
-        let mut open_bracket_pos = None;
-
-        let text_graphemes: Vec<&str> = text.graphemes(true).collect();
-        let byte_positions = utils::build_grapheme_byte_positions(text);
-
-        for (i, g) in text_graphemes.iter().enumerate() {
-            if *g == "[" && i < byte_positions.len() {
-                open_bracket_pos = Some(byte_positions[i]);
-            } else if *g == "]" {
-                if let Some(open) = open_bracket_pos {
-                    if i + 1 < text_graphemes.len() && text_graphemes[i + 1] == "(" {
-                        for j in i + 2..text_graphemes.len() {
-                            if text_graphemes[j] == ")" && j < byte_positions.len() {
-                                link_ranges.push((open, byte_positions[j] + 1));
-                                break;
-                            }
-                        }
-                    }
-                    open_bracket_pos = None;
-                }
-            }
-        }
-
-        link_ranges
-    }
 
     // Continues the handle_text_change method with trigger position detection
     fn handle_text_change_continued(&mut self, cx: &mut Cx, scope: &mut Scope, text: &str, cursor_pos: usize) {
@@ -842,7 +735,6 @@ impl MentionableTextInput {
 
         if self.is_searching {
             let is_desktop = cx.display_context.is_desktop();
-            let mut matched_members = Vec::new();
 
             // Add @room option if search text matches "@room" or is empty and user has permission
             log!("Checking @room permission. Can notify: {}, search_text: {}", self.can_notify_room, search_text);
@@ -884,7 +776,6 @@ impl MentionableTextInput {
                                     },
                                     AvatarCacheEntry::Requested => {
                                         log!("Room avatar was requested for @room but not loaded yet");
-                                        // 临时显示文字"R"
                                         avatar_ref.show_text(cx, Some(COLOR_ROBRIX_RED), None, "R");
                                         room_avatar_shown = true;
                                     },
@@ -914,45 +805,37 @@ impl MentionableTextInput {
                 self.cmd_text_input.add_item(room_mention_item);
             }
 
-            // Limit the number of matched members to avoid performance issues
+            // Improved search: match both display names and Matrix IDs, then sort by priority
             const MAX_MATCHED_MEMBERS: usize = MAX_VISIBLE_ITEMS * 2;  // Buffer for better UX
 
-            // First pass: find exact prefix matches (better UX)
+            // Collect all matching members with their priority scores
+            let mut prioritized_members = Vec::new();
+
             for member in room_members.iter() {
-                if matched_members.len() >= MAX_MATCHED_MEMBERS {
+                if prioritized_members.len() >= MAX_MATCHED_MEMBERS {
                     break;
                 }
 
-                let display_name = member
-                    .display_name()
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|| member.user_id().to_string());
-
-                let display_name_lower = display_name.to_lowercase();
-                if display_name_lower.starts_with(search_text) {
-                    matched_members.push((display_name, member));
-                }
-            }
-
-            // Second pass: find contains matches if we have room for more
-            if matched_members.len() < MAX_MATCHED_MEMBERS {
-                for member in room_members.iter() {
-                    if matched_members.len() >= MAX_MATCHED_MEMBERS {
-                        break;
-                    }
-
+                // Check if this member matches the search text (including Matrix ID)
+                if self.user_matches_search(member, search_text) {
                     let display_name = member
                         .display_name()
                         .map(|n| n.to_string())
                         .unwrap_or_else(|| member.user_id().to_string());
 
-                    let display_name_lower = display_name.to_lowercase();
-                    // Skip if already matched in first pass
-                    if !display_name_lower.starts_with(search_text) && display_name_lower.contains(search_text) {
-                        matched_members.push((display_name, member));
-                    }
+                    let priority = self.get_match_priority(member, search_text);
+                    prioritized_members.push((priority, display_name, member));
                 }
             }
+
+            // Sort by priority (lower number = higher priority)
+            prioritized_members.sort_by_key(|(priority, _, _)| *priority);
+
+            // Convert to the format expected by the rest of the code
+            let matched_members: Vec<(String, &RoomMember)> = prioritized_members
+                .into_iter()
+                .map(|(_, display_name, member)| (display_name, member))
+                .collect();
 
             let member_count = matched_members.len();
 
@@ -1022,11 +905,11 @@ impl MentionableTextInput {
                 let user_id_str = member.user_id().as_str();
                 item.label(id!(user_id)).set_text(cx, user_id_str);
 
-                item.apply_over(cx, live! {
-                    show_bg: true,
-                    cursor: Hand,
-                    padding: {left: 8., right: 8., top: 4., bottom: 4.}
-                });
+                // item.apply_over(cx, live! {
+                //     show_bg: true,
+                //     cursor: Hand,
+                //     padding: {left: 8., right: 8., top: 4., bottom: 4.}
+                // });
 
                 if is_desktop {
                     item.apply_over(
@@ -1093,104 +976,7 @@ impl MentionableTextInput {
         // Build byte position mapping to facilitate conversion back to byte positions
         let byte_positions = utils::build_grapheme_byte_positions(text);
 
-        // First check for markdown link ranges in the text
-        let mut link_ranges = Vec::new();
-        let mut open_bracket_pos = None;
-
-        for (i, g) in text_graphemes.iter().enumerate() {
-            if *g == "[" && i < byte_positions.len() {
-                open_bracket_pos = Some(byte_positions[i]);
-            } else if *g == "]" {
-                if let Some(open) = open_bracket_pos {
-                    if i + 1 < text_graphemes.len() && text_graphemes[i + 1] == "(" {
-                        for j in i + 2..text_graphemes.len() {
-                            if text_graphemes[j] == ")" && j < byte_positions.len() {
-                                link_ranges.push((open, byte_positions[j] + 1));
-                                break;
-                            }
-                        }
-                    }
-                    open_bracket_pos = None;
-                }
-            }
-        }
-
-        // Check if current cursor or @ symbol is within any link range
-        let cursor_in_any_link = link_ranges.iter().any(|(start, end)|
-            cursor_pos >= *start && cursor_pos <= *end
-        );
-
-        // If cursor is inside a link, don't trigger menu
-        if cursor_in_any_link {
-            return None;
-        }
-
-        // Check if @ symbol before cursor is inside a link
-        if cursor_grapheme_idx > 0 && text_graphemes[cursor_grapheme_idx - 1] == "@" {
-            if cursor_grapheme_idx - 1 < byte_positions.len() {
-                let at_byte_pos = byte_positions[cursor_grapheme_idx - 1];
-                let at_in_any_link = link_ranges.iter().any(|(start, end)|
-                    at_byte_pos >= *start && at_byte_pos <= *end
-                );
-
-                if at_in_any_link {
-                    return None;
-                }
-            }
-        }
-
-        // Check if inside a markdown link - using more robust detection function
-        if self.is_cursor_within_markdown_link(text, cursor_pos) {
-            return None;
-        }
-
-        // Check if cursor is near "@room", if so should not trigger mention menu
-        // Also need to handle "@room " case (with space)
-        if cursor_grapheme_idx >= 5 {
-            // Check if exactly "@room"
-            let possible_room_mention = text_graphemes[cursor_grapheme_idx-5..cursor_grapheme_idx].join("");
-            if possible_room_mention == "@room" {
-                return None;
-            }
-
-            // Check if "@room " with space
-            if cursor_grapheme_idx >= 6 {
-                let possible_room_with_space = text_graphemes[cursor_grapheme_idx-6..cursor_grapheme_idx-1].join("");
-                let last_char = text_graphemes[cursor_grapheme_idx-1];
-                if possible_room_with_space == "@room" && last_char.trim().is_empty() {
-                    return None;
-                }
-            }
-        }
-
-        // Special handling: Only prevent menu display when user is deleting @room
-        // Allow user to continue @mentioning others after @room
-        let before_cursor = text_graphemes[..cursor_grapheme_idx].join("");
-        // Check if text contains only "@room" with no other content
-        if before_cursor.trim() == "@room" {
-            return None;
-        }
-
-        // Check if cursor is at space after @room, also indicating possible @room deletion
-        if cursor_grapheme_idx > 5 {
-            let last_five = text_graphemes[cursor_grapheme_idx-5..cursor_grapheme_idx].join("");
-            let is_at_room_space = last_five == "@room" &&
-                                    cursor_grapheme_idx < text_graphemes.len() &&
-                                    text_graphemes[cursor_grapheme_idx].trim().is_empty();
-            if is_at_room_space {
-                return None;
-            }
-        }
-
-        // Check if character before cursor is ] or ), indicating user is deleting a link
-        if cursor_grapheme_idx > 0 && cursor_grapheme_idx <= text_graphemes.len() {
-            let prev_grapheme = text_graphemes[cursor_grapheme_idx - 1];
-            if prev_grapheme == ")" || prev_grapheme == "]" {
-                return None;
-            }
-        }
-
-        // Check if cursor is immediately after @ symbol
+        // Simple logic: trigger when cursor is immediately after @ symbol
         // Only trigger if @ is preceded by whitespace or beginning of text
         if cursor_grapheme_idx > 0 && text_graphemes[cursor_grapheme_idx - 1] == "@" {
             let is_preceded_by_whitespace_or_start = cursor_grapheme_idx == 1 ||
@@ -1200,24 +986,7 @@ impl MentionableTextInput {
             }
         }
 
-        // Special case:
-
-        // if text only one @ symbol, and cursor is after @ symbol
-        if text_graphemes.len() == 1 && text_graphemes[0] == "@" && cursor_grapheme_idx == 1 {
-            return Some(byte_positions[0]);
-        }
-
-        // Detect scenarios where multiple people are mentioned consecutively
-        // If there is a space before the @, this might indicate consecutive mentions
-        if cursor_grapheme_idx > 1 && text_graphemes[cursor_grapheme_idx - 1] == "@" {
-            let prev_char = text_graphemes[cursor_grapheme_idx - 2];
-            if prev_char.trim().is_empty() && cursor_grapheme_idx - 1 < byte_positions.len() {
-                // If there is a space before the @, this might indicate consecutive mentions
-                return Some(byte_positions[cursor_grapheme_idx - 1]);
-            }
-        }
-
-        // Find the last @ symbol before the cursor
+        // Find the last @ symbol before the cursor for search continuation
         let last_at_pos = text_graphemes[..cursor_grapheme_idx]
             .iter()
             .enumerate()
@@ -1229,19 +998,11 @@ impl MentionableTextInput {
             // Extract the text after the @ symbol up to the cursor position
             let mention_text = &text_graphemes[at_idx + 1..cursor_grapheme_idx];
 
-            // Validate the mention format
+            // Only trigger if this looks like an ongoing mention (contains only alphanumeric and basic chars)
             if self.is_valid_mention_text(mention_text) {
-                // Additional check: ensure this @ is not within any link range
                 // Ensure at_idx is within bounds of byte_positions
                 if at_idx < byte_positions.len() {
-                    let at_byte_pos = byte_positions[at_idx];
-                    let at_in_any_link = link_ranges.iter().any(|(start, end)|
-                        at_byte_pos >= *start && at_byte_pos <= *end
-                    );
-
-                    if !at_in_any_link {
-                        return Some(byte_positions[at_idx]);
-                    }
+                    return Some(byte_positions[at_idx]);
                 }
             }
         }
@@ -1250,80 +1011,96 @@ impl MentionableTextInput {
     }
 
     // Check if the cursor is inside a markdown link
-    fn is_cursor_within_markdown_link(&self, text: &str, cursor_pos: usize) -> bool {
-        let cursor_grapheme_idx = utils::byte_index_to_grapheme_index(text, cursor_pos);
-        let text_graphemes: Vec<&str> = text.graphemes(true).collect();
 
-        // First, check the simple case:
-        // if the character before the cursor is ')' or ']', it means a link was just deleted
-        if cursor_grapheme_idx > 0 && cursor_grapheme_idx <= text_graphemes.len() {
-            let prev_grapheme = text_graphemes[cursor_grapheme_idx - 1];
-            if prev_grapheme == ")" || prev_grapheme == "]" {
-                return true;
-            }
+    // Simple validation for mention text
+    fn is_valid_mention_text(&self, graphemes: &[&str]) -> bool {
+        // Allow empty text (for @)
+        if graphemes.is_empty() {
+            return true;
         }
 
-        // Check if the cursor is inside a complete markdown link
-        // Look backward for a possible starting "[", and forward for a possible ending ")"
-        // First, search backward for the nearest "[" position
-        let mut open_bracket_grapheme_idx = None;
-        for i in (0..cursor_grapheme_idx).rev() {
-            if text_graphemes[i] == "[" {
-                open_bracket_grapheme_idx = Some(i);
-                break;
-            }
+        // Check if it contains newline characters
+        !graphemes.iter().any(|g| g.contains('\n'))
+    }
+
+    // Helper function to check if a user matches the search text
+    // Checks both display name and Matrix ID for matching
+    fn user_matches_search(&self, member: &RoomMember, search_text: &str) -> bool {
+        let search_text_lower = search_text.to_lowercase();
+
+        // Check display name
+        let display_name = member
+            .display_name()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| member.user_id().to_string());
+
+        let display_name_lower = display_name.to_lowercase();
+        if display_name_lower.contains(&search_text_lower) {
+            return true;
         }
 
-        // Then, search forward for the nearest ")" position
-        let mut close_paren_grapheme_idx = None;
-        for (i, _) in text_graphemes.iter().enumerate().skip(cursor_grapheme_idx) {
-            if text_graphemes[i] == ")" {
-                close_paren_grapheme_idx = Some(i);
-                break;
-            }
+        // Check Matrix ID (user ID)
+        let user_id_str = member.user_id().to_string();
+        let user_id_lower = user_id_str.to_lowercase();
+
+        // Match against the full user ID (e.g., "@mihran:matrix.org")
+        if user_id_lower.contains(&search_text_lower) {
+            return true;
         }
 
-        // If both a possible "[" and ")" are found, check if there is a "](" in between, indicating a complete link format
-        if let (Some(open_idx), Some(close_idx)) = (open_bracket_grapheme_idx, close_paren_grapheme_idx) {
-            if open_idx < close_idx {
-                let link_text = text_graphemes[open_idx..=close_idx].join("");
-                return link_text.contains("](");
-            }
+        // Also match against just the localpart (e.g., "mihran" from "@mihran:matrix.org")
+        let localpart = member.user_id().localpart();
+        let localpart_lower = localpart.to_lowercase();
+        if localpart_lower.contains(&search_text_lower) {
+            return true;
         }
 
         false
     }
 
-    // Add helper method to extract validation logic
-    fn is_valid_mention_text(&self, graphemes: &[&str]) -> bool {
-        // Empty or first character is whitespace is invalid
-        if graphemes.is_empty() || graphemes[0].trim().is_empty() {
-            return false;
+    // Helper function to determine match priority for sorting
+    // Lower values = higher priority (better matches shown first)
+    fn get_match_priority(&self, member: &RoomMember, search_text: &str) -> u8 {
+        let search_text_lower = search_text.to_lowercase();
+
+        let display_name = member
+            .display_name()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| member.user_id().to_string());
+
+        let display_name_lower = display_name.to_lowercase();
+
+        // Priority 1: Display name starts with search text
+        if display_name_lower.starts_with(&search_text_lower) {
+            return 1;
         }
 
-        // Check for consecutive whitespace
-        for i in 0..graphemes.len().saturating_sub(1) {
-            if graphemes[i].trim().is_empty() && graphemes[i + 1].trim().is_empty() {
-                return false;
-            }
+        // Priority 2: Localpart starts with search text
+        let localpart = member.user_id().localpart();
+        let localpart_lower = localpart.to_lowercase();
+        if localpart_lower.starts_with(&search_text_lower) {
+            return 2;
         }
 
-        // Check if text contains link-characteristic characters
-        // If it contains any of these characters, may be editing/deleting a link, not creating a new mention
-        let text_to_check = graphemes.join("");
-        if text_to_check.contains('(') || text_to_check.contains(')') ||
-           text_to_check.contains('[') || text_to_check.contains(']') {
-            return false;
+        // Priority 3: Display name contains search text
+        if display_name_lower.contains(&search_text_lower) {
+            return 3;
         }
 
-        // Don't completely block text containing "room" from triggering the menu, which would prevent @mentioning others after @room
-        // Only block triggering for exact matches to "room" or "room "
-        if text_to_check == "room" || text_to_check == "room " {
-            return false;
+        // Priority 4: Full user ID contains search text
+        let user_id_str = member.user_id().to_string();
+        let user_id_lower = user_id_str.to_lowercase();
+        if user_id_lower.contains(&search_text_lower) {
+            return 4;
         }
 
-        // Check if it contains newline characters
-        !graphemes.iter().any(|g| g.contains('\n'))
+        // Priority 5: Localpart contains search text
+        if localpart_lower.contains(&search_text_lower) {
+            return 5;
+        }
+
+        // Should not reach here if user_matches_search returned true
+        99
     }
 
     // Shows the loading indicator when members are being fetched

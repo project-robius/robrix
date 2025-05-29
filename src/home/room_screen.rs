@@ -1249,15 +1249,6 @@ impl Widget for RoomScreen {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let room_screen_widget_uid = self.widget_uid();
 
-        // Safely get the mutable reference to tl_state.
-        // If it's None, we cannot draw the timeline content, so return early.
-        // The outer view.draw_walk will still be called below, drawing the background etc.
-        let Some(tl_state) = self.tl_state.as_mut() else {
-            // If tl_state is None, draw the outer view but skip the inner timeline drawing.
-            // This prevents the PortalList drawing loop from accessing a non-existent tl_state.
-            return self.view.draw_walk(cx, scope, walk);
-        };
-
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
