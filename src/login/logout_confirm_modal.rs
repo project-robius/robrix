@@ -50,7 +50,6 @@ live_design! {
                 draw_text: {
                     text_style: <REGULAR_TEXT>{
                         font_size: 14,
-                        height_factor: 1.3
                     },
                     color: #000000,
                     wrap: Word
