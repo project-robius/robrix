@@ -185,7 +185,9 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
 - [ ] Room browser, search for public rooms
-- [ ] Join room, invite to room, knock on room
+- [x] Accept/reject room invites
+- [x] Join room by accepting invite
+- [ ] Knock on room (request to join)
 - [ ] Administrative abilities: ban, kick, etc
 - [ ] Room creation/settings/info screen
 - [ ] Room members pane
