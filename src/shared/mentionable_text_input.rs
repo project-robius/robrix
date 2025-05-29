@@ -1,11 +1,10 @@
 //! MentionableTextInput component provides text input with @mention capabilities
 //! Can be used in any context where user mentions are needed (message input, editing)
 //!
-//! TODO for the future:
-//!   1. Is it not possible to mention (@) yourself ?
 use crate::avatar_cache::*;
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::shared::typing_animation::TypingAnimationWidgetRefExt;
+use crate::shared::styles::COLOR_ROBRIX_RED;
 use crate::utils;
 
 use makepad_widgets::{text::selection::Cursor, *};
@@ -25,19 +24,20 @@ live_design! {
     use crate::shared::helpers::FillerX;
     use crate::shared::typing_animation::TypingAnimation;
 
-    pub FOCUS_HOVER_COLOR = #eaecf0
+    pub FOCUS_HOVER_COLOR = #C
     pub KEYBOARD_FOCUS_OR_COLOR_HOVER = #1C274C
 
     // Template for user list items in the mention dropdown
     UserListItem = <View> {
         width: Fill,
         height: Fit,
+        margin: {left: 4, right: 4}
         padding: {left: 8, right: 8, top: 4, bottom: 4}
         show_bg: true
         cursor: Hand
         draw_bg: {
             color: (COLOR_PRIMARY),
-            uniform border_radius: 6.0,
+            uniform border_radius: 4.0,
             instance hover: 0.0,
             instance selected: 0.0,
 
@@ -99,12 +99,13 @@ live_design! {
     RoomMentionListItem = <View> {
         width: Fill,
         height: Fit,
+        margin: {left: 4, right: 4}
         padding: {left: 8, right: 8, top: 4, bottom: 4}
         show_bg: true
         cursor: Hand
         draw_bg: {
             color: (COLOR_PRIMARY),
-            uniform border_radius: 6.0,
+            uniform border_radius: 4.0,
             instance hover: 0.0,
             instance selected: 0.0,
 
@@ -149,10 +150,14 @@ live_design! {
     LoadingIndicator = <View> {
         width: Fill,
         height: 56,
+        margin: {left: 4, right: 4}
         padding: {left: 16, right: 16, top: 16, bottom: 16},
         flow: Right,
         spacing: 8.0,
         align: {x: 0., y: 0.5}
+        draw_bg: {
+            color: (COLOR_PRIMARY),
+        }
 
         loading_text = <Label> {
             height: Fit,
@@ -167,7 +172,7 @@ live_design! {
             width: 60,
             height: 24,
             draw_bg: {
-                color: #000,
+                color: (COLOR_ROBRIX_PURPLE),
                 dot_radius: 2.0,
             }
         }
@@ -185,22 +190,20 @@ live_design! {
         popup = {
             spacing: 0.0
             padding: 0.0
-            draw_bg: {
-                color: (COLOR_PRIMARY)
-                border_size: 1.0
-                border_color: #D0D5DD
-                border_radius: 8.0
-            }
 
+            draw_bg: {
+                color: (COLOR_SECONDARY),
+            }
             header_view = {
-                header_label = {
-                    text: "Users in this Room"
-                    draw_text: {
-                        color: #000
-                    }
-                }
+                margin: {left: 4, right: 4}
                 draw_bg: {
-                    color: #D0D5DD
+                    color: (COLOR_ROBRIX_PURPLE),
+                }
+                header_label = {
+                    draw_text: {
+                        color: (COLOR_PRIMARY_DARKER),
+                    }
+                    text: "Users in this Room"
                 }
             }
 
@@ -213,71 +216,11 @@ live_design! {
         }
 
         persistent = {
+            top = { height: 0 }
+            bottom = { height: 0 }
             center = {
-                text_input = {
+                text_input = <RobrixTextInput> {
                     empty_text: "Start typing..."
-                    draw_bg: {
-                        color: (COLOR_PRIMARY)
-                        instance border_radius: 2.0
-                        instance border_size: 0.0
-                        instance border_color: #D0D5DD
-                        instance inset: vec4(0.0, 0.0, 0.0, 0.0)
-
-                        fn get_color(self) -> vec4 {
-                            return self.color
-                        }
-
-                        fn get_border_color(self) -> vec4 {
-                            return self.border_color
-                        }
-
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                            sdf.box(
-                                self.inset.x + self.border_size,
-                                self.inset.y + self.border_size,
-                                self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
-                                self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
-                                max(1.0, self.border_radius)
-                            )
-                            sdf.fill_keep(self.get_color())
-                            if self.border_size > 0.0 {
-                                sdf.stroke(self.get_border_color(), self.border_size)
-                            }
-                            return sdf.result
-                        }
-                    }
-
-                    draw_text: {
-                        color: (MESSAGE_TEXT_COLOR)
-                        text_style: <MESSAGE_TEXT_STYLE>{}
-                        fn get_color(self) -> vec4 {
-                            return mix(self.color, #B, 0.0)
-                        }
-                    }
-
-                    draw_cursor: {
-                        instance focus: 0.0
-                        uniform border_radius: 0.5
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius)
-                            sdf.fill(mix(#fff, #bbb, self.focus));
-                            return sdf.result
-                        }
-                    }
-
-                    draw_selection: {
-                        instance hover: 0.0
-                        instance focus: 0.0
-                        uniform border_radius: 2.0
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius)
-                            sdf.fill(mix(#eee, #ddd, self.focus));
-                            return sdf.result
-                        }
-                    }
                 }
             }
         }
@@ -295,14 +238,6 @@ live_design! {
 // /// from normal `@` characters.
 // const MENTION_START_STRING: &str = "\u{8288}@\u{8288}";
 
-/// Information about mentions in the text input.
-#[derive(Clone, Debug, Default)]
-pub struct MentionInfo {
-    /// The set of user IDs that were explicitly mentioned by selecting from the list.
-    pub user_ids: BTreeSet<OwnedUserId>,
-    /// Whether the `@room` option was explicitly selected.
-    pub room: bool,
-}
 
 #[derive(Clone, DefaultNone, Debug)]
 pub enum MentionableTextInputAction {
@@ -591,18 +526,21 @@ impl MentionableTextInput {
             // Directly check the generic text label
             let mut is_room_mention_detected = false;
 
-            // Try checking for label with "@room" text content
-            let inner_label = selected.label(id!(room_mention)); // Default label
-            if inner_label.text() == "@room" {
+            // Primary detection: Check if this widget has room_mention label with "@room" text
+            let room_mention_label = selected.label(id!(room_mention));
+            let room_mention_text = room_mention_label.text();
+            log!("Checking room_mention label text: \"{}\"", room_mention_text);
+            if room_mention_text == "@room" {
                 is_room_mention_detected = true;
+                log!("@room detected via room_mention label");
             }
 
-            // If above method fails, fall back to comparing widget_uid or checking if user_id is empty
+            // Backup detection: Check if user_id label exists - user items have it, @room items don't
             let is_room_mention = if !is_room_mention_detected {
-                log!("Falling back to alternative @room detection methods");
-
-                // Method 2: Check if user_id label exists - user items have it, @room items don't
-                let has_user_id = selected.label(id!(user_id)).text().is_empty();
+                log!("Primary detection failed, trying backup method");
+                let user_id_text = selected.label(id!(user_id)).text();
+                let has_user_id = !user_id_text.is_empty();
+                log!("Backup detection: user_id_text=\"{}\", has_user_id={}, is_room_mention={}", user_id_text, has_user_id, !has_user_id);
 
                 !has_user_id
             } else {
@@ -627,8 +565,6 @@ impl MentionableTextInput {
                 };
                 self.possible_mentions.insert(user_id.clone(), username.clone());
                 log!("User selected mention: {} ({}))", username, user_id);
-                // 不再重置 self.possible_room_mention，保留之前选择的 @room 状态
-                // 允许同时有 @room 和 @user 提及
 
                 // Currently, we directly insert the markdown link for user mentions
                 // instead of the user's display name, because we don't yet have a way
@@ -873,7 +809,12 @@ impl MentionableTextInput {
 
         // Always use room_members provided in current scope
         // These member lists should come from TimelineUiState.room_members_map and are already the correct list for current room
-        let room_members = &room_props.room_members;
+        let Some(room_members) = &room_props.room_members else {
+            log!("MentionableTextInput: room_members is None. Showing loading indicator.");
+            self.members_loading = true;
+            self.show_loading_indicator(cx);
+            return;
+        };
 
         // 4. Check if members are loaded or still loading
         let members_are_empty = room_members.is_empty();
@@ -902,7 +843,6 @@ impl MentionableTextInput {
         if self.is_searching {
             let is_desktop = cx.display_context.is_desktop();
             let mut matched_members = Vec::new();
-            let red_color_vec4 = Some(vec4(1.0, 0.2, 0.2, 1.0));
 
             // Add @room option if search text matches "@room" or is empty and user has permission
             log!("Checking @room permission. Can notify: {}, search_text: {}", self.can_notify_room, search_text);
@@ -945,7 +885,7 @@ impl MentionableTextInput {
                                     AvatarCacheEntry::Requested => {
                                         log!("Room avatar was requested for @room but not loaded yet");
                                         // 临时显示文字"R"
-                                        avatar_ref.show_text(cx, red_color_vec4, None, "R");
+                                        avatar_ref.show_text(cx, Some(COLOR_ROBRIX_RED), None, "R");
                                         room_avatar_shown = true;
                                     },
                                     AvatarCacheEntry::Failed => {
@@ -967,7 +907,7 @@ impl MentionableTextInput {
 
                 // If unable to display room avatar, show letter R with red background
                 if !room_avatar_shown {
-                    avatar_ref.show_text(cx, red_color_vec4, None, "R");
+                    avatar_ref.show_text(cx, Some(COLOR_ROBRIX_RED), None, "R");
                 }
 
 
@@ -1502,13 +1442,6 @@ impl MentionableTextInput {
         self.can_notify_room
     }
 
-    /// Returns information about the mentions that were explicitly selected from the list.
-    pub fn get_mention_info(&self) -> MentionInfo {
-        MentionInfo {
-            user_ids: self.possible_mentions.keys().cloned().collect(),
-            room: self.possible_room_mention,
-        }
-    }
 
 }
 
@@ -1523,10 +1456,6 @@ impl MentionableTextInputRef {
         }
     }
 
-    /// Returns information about the mentions that were explicitly selected from the list.
-    pub fn get_mention_info(&self) -> MentionInfo {
-        self.borrow().map_or_else(Default::default, |inner| inner.get_mention_info())
-    }
 
     /// Sets whether the current user can notify the entire room (@room mention)
     pub fn set_can_notify_room(&self, can_notify: bool) {

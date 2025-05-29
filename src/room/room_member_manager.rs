@@ -279,6 +279,14 @@ pub mod room_members {
     pub fn managed_room_count() -> usize {
         RoomMemberManager::get_managed_room_count()
     }
+
+    /// Get room members for a specific room without subscribing
+    /// This is useful for one-time access to member data
+    pub fn get_room_members(room_id: &OwnedRoomId) -> Option<Arc<Vec<RoomMember>>> {
+        let instance = RoomMemberManager::instance();
+        let manager = instance.lock().unwrap();
+        manager.room_members.get(room_id).cloned()
+    }
 }
 
 #[cfg(test)]
@@ -306,14 +314,6 @@ mod tests {
             );
         }
     }
-
-    // fn create_test_cx() -> Cx {
-    //     let event_handler = Box::new(|_: &mut Cx, _: &Event| {
-    //         log!("Test event handler called");
-    //     });
-
-    //     Cx::new(event_handler)
-    // }
 
     #[test]
     fn test_subscription() {

@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use makepad_widgets::*;
-use matrix_sdk::{room::RoomMember, ruma::{EventId, OwnedRoomId, OwnedUserId, RoomId, UserId}};
+use matrix_sdk::{ruma::{EventId, OwnedRoomId, OwnedUserId, RoomId, UserId}};
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 
 use crate::{
@@ -148,7 +148,7 @@ impl Avatar {
     pub fn show_text<T: AsRef<str>>(
         &mut self,
         cx: &mut Cx,
-        bg_color: Option<Vec4>,
+        bg_color: Option<Vec3>,
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
@@ -256,18 +256,9 @@ impl Avatar {
         avatar_user_id: &UserId,
         avatar_profile_opt: Option<&TimelineDetails<Profile>>,
         event_id: Option<&EventId>,
-        room_members_opt: Option<&Arc<Vec<RoomMember>>>,
     ) -> (String, bool) {
         // Priority 1: Check provided room members list (most specific info for this room)
-        let (username_opt, avatar_state) = if let Some(room_members) = room_members_opt {
-            if let Some(room_member) = room_members.iter().find(|m| m.user_id() == avatar_user_id) {
-                let username_opt = room_member.display_name().map(|n| n.to_owned());
-                let avatar_state = AvatarState::Known(room_member.avatar_url().map(|u| u.to_owned()));
-                (username_opt, avatar_state)
-            } else {
-                (None, AvatarState::Unknown)
-            }
-        } else {
+        let (username_opt, avatar_state) = {
             // Get the display name and avatar URL from the user's profile, if available,
             // or if the profile isn't ready, fall back to qeurying our user profile cache.
             match avatar_profile_opt {
@@ -369,7 +360,7 @@ impl AvatarRef {
     pub fn show_text<T: AsRef<str>>(
         &self,
         cx: &mut Cx,
-        bg_color: Option<Vec4>,
+        bg_color: Option<Vec3>,
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
@@ -411,10 +402,9 @@ impl AvatarRef {
         avatar_user_id: &UserId,
         avatar_profile_opt: Option<&TimelineDetails<Profile>>,
         event_id: Option<&EventId>,
-        room_members_opt: Option<&Arc<Vec<RoomMember>>>
     ) -> (String, bool) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_avatar_and_get_username(cx, room_id, avatar_user_id, avatar_profile_opt, event_id, room_members_opt)
+            inner.set_avatar_and_get_username(cx, room_id, avatar_user_id, avatar_profile_opt, event_id)
         } else {
             (avatar_user_id.to_string(), false)
         }

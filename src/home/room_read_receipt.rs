@@ -6,9 +6,9 @@ use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
-use matrix_sdk::room::RoomMember;
+
 use std::cmp;
-use std::sync::Arc;
+
 
 
 /// The maximum number of items to display in the read receipts AvatarRow
@@ -166,7 +166,6 @@ impl AvatarRow {
         room_id: &RoomId,
         event_id: Option<&EventId>,
         receipts_map: &IndexMap<OwnedUserId, Receipt>,
-        room_members_opt: Option<&Arc<Vec<RoomMember>>>,
     ) {
         if receipts_map.len() != self.buttons.len() {
             self.buttons.clear();
@@ -184,7 +183,7 @@ impl AvatarRow {
         {
             if !*drawn {
                 let (_, drawn_status) =
-                    avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id, room_members_opt);
+                    avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id);
                 *drawn = drawn_status;
             }
         }
@@ -214,10 +213,9 @@ impl AvatarRowRef {
         room_id: &RoomId,
         event_id: Option<&EventId>,
         receipts_map: &IndexMap<OwnedUserId, Receipt>,
-        room_members_opt: Option<&Arc<Vec<RoomMember>>>,
     ) {
         if let Some(ref mut inner) = self.borrow_mut() {
-            inner.set_avatar_row(cx, room_id, event_id, receipts_map, room_members_opt);
+            inner.set_avatar_row(cx, room_id, event_id, receipts_map);
         }
     }
 }
@@ -233,14 +231,12 @@ pub fn populate_read_receipts(
     cx: &mut Cx,
     room_id: &RoomId,
     event_tl_item: &EventTimelineItem,
-    room_members_opt: Option<&Arc<Vec<RoomMember>>>,
 ) {
     item.avatar_row(id!(avatar_row)).set_avatar_row(
         cx,
         room_id,
         event_tl_item.event_id(),
         event_tl_item.read_receipts(),
-        room_members_opt,
     );
 }
 
@@ -256,20 +252,12 @@ pub fn populate_tooltip(
     cx: &mut Cx,
     read_receipts: IndexMap<OwnedUserId, Receipt>,
     room_id: &RoomId,
-    room_members_opt: Option<&Arc<Vec<RoomMember>>>,
 ) -> String {
     let mut display_names: Vec<String> = read_receipts
         .iter()
         .rev()
         .take(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT)
         .map(|(user_id, _)| {
-            // Prioritize room_members_opt, then fallback to global cache
-            if let Some(room_members) = room_members_opt {
-                if let Some(member) = room_members.iter().find(|m| m.user_id() == user_id) {
-                    return member.display_name().map(|n| n.to_string()).unwrap_or_else(|| user_id.to_string());
-                }
-            }
-            // fallback to global cache
             if let (Some(profile), _) =
                 get_user_profile_and_room_member(cx, user_id.clone(), room_id, true)
             {
