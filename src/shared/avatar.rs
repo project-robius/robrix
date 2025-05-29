@@ -257,10 +257,9 @@ impl Avatar {
         avatar_profile_opt: Option<&TimelineDetails<Profile>>,
         event_id: Option<&EventId>,
     ) -> (String, bool) {
-        // Priority 1: Check provided room members list (most specific info for this room)
+        // Get the display name and avatar URL from the user's profile, if available,
+        // or if the profile isn't ready, fall back to qeurying our user profile cache.
         let (username_opt, avatar_state) = {
-            // Get the display name and avatar URL from the user's profile, if available,
-            // or if the profile isn't ready, fall back to qeurying our user profile cache.
             match avatar_profile_opt {
                 Some(TimelineDetails::Ready(profile)) => (
                     profile.display_name.clone(),
