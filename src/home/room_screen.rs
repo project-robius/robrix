@@ -1148,11 +1148,7 @@ impl Widget for RoomScreen {
         // This scope is needed by child widgets like MentionableTextInput during event handling.
         let room_props = if let Some(tl) = self.tl_state.as_ref() {
             let room_id = tl.room_id.clone();
-            let room_members = if let Some(room_members) = room_members::get_room_members(&room_id) {
-                Some(room_members)
-            } else {
-                None
-            };
+            let room_members = room_members::get_room_members(&room_id);
             RoomScreenProps {
                 room_id,
                 room_members
