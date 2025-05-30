@@ -805,6 +805,15 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+
+    #[rust] last_edit_unconfirmed: Option<PendingEdit>,
+}
+
+/// Represents an unconfirmed edit in the timeline.
+#[derive(Debug, Clone)]
+pub struct PendingEdit {
+    pub edit_content: String,
+    pub event_id: TimelineEventItemId,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1765,6 +1774,14 @@ impl RoomScreen {
                         .and_then(|tl_item| tl_item.as_event().cloned())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
+                        let editing_pane = self.view.editing_pane(id!(editing_pane));
+                        if editing_pane.visible() {
+                            if let Some(event_item_id) = editing_pane.get_event_being_edited() {
+                                let edit_content = editing_pane.mentionable_text_input(id!(edit_text_input)).text();
+                                self.last_edit_unconfirmed = Some(PendingEdit { edit_content, event_id: event_item_id.identifier()});
+                            }
+                            editing_pane.hide_with_animator(cx);
+                        }
                         if let Ok(replied_to_info) = event_tl_item.replied_to_info() {
                             success = true;
                             self.show_replying_to(cx, (event_tl_item, replied_to_info));
@@ -1785,7 +1802,21 @@ impl RoomScreen {
                         .and_then(|tl_item| tl_item.as_event().cloned())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
+                        let replying_preview = self.view.view(id!(room_screen_wrapper.keyboard_view.replying_preview));
+                        if replying_preview.visible() {
+                            replying_preview.set_visible(cx, false);
+                        }
+                        let event_id = event_tl_item.identifier();
                         self.show_editing_pane(cx, event_tl_item, tl.room_id.clone());
+                        if let Some(pending_edit) = self.last_edit_unconfirmed.as_ref() {
+                            if pending_edit.event_id == event_id {
+                                // If we have an unconfirmed edit, set the text input to that content.
+                                self.view.editing_pane(id!(editing_pane))
+                                    .mentionable_text_input(id!(edit_text_input))
+                                    .set_text(cx, &pending_edit.edit_content);
+                                self.last_edit_unconfirmed = None;
+                            }
+                        }
                     }
                     else {
                         enqueue_popup_notification("Could not find message in timeline to edit.".to_string());
@@ -2310,7 +2341,7 @@ impl RoomScreen {
     ) {
         // If the room is already being displayed, then do nothing.
         if self.room_id.as_ref().is_some_and(|id| id == &room_id) { return; }
-        
+
 
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
