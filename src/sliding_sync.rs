@@ -7,16 +7,16 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, RoomMember}, ruma::{
+    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
             receipt::ReceiptThread, room::{
-                message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
+                message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
         }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState
 };
 use matrix_sdk_ui::{
-    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
@@ -155,8 +155,8 @@ async fn login(
                 .initial_device_display_name("robrix-un-pw")
                 .send()
                 .await?;
-            if client.logged_in() {
-                log!("Logged in successfully? {:?}", client.logged_in());
+            if client.matrix_auth().logged_in() {
+                log!("Logged in successfully? {:?}", client.matrix_auth().logged_in());
                 let status = format!("Logged in as {}.\n → Loading rooms...", cli.user_id);
                 // enqueue_popup_notification(status.clone());
                 enqueue_rooms_list_update(RoomsListUpdate::Status { status });
@@ -310,7 +310,7 @@ pub enum MatrixRequest {
     SendMessage {
         room_id: OwnedRoomId,
         message: RoomMessageEventContent,
-        replied_to: Option<RepliedToInfo>,
+        replied_to: Option<Reply>,
     },
     /// Sends a notice to the given room that the current user is or is not typing.
     ///
@@ -937,7 +937,7 @@ async fn async_worker(
                 let _send_message_task = Handle::current().spawn(async move {
                     log!("Sending message to room {room_id}: {message:?}...");
                     if let Some(replied_to_info) = replied_to {
-                        match timeline.send_reply(message.into(), replied_to_info, ForwardThread::Yes).await {
+                        match timeline.send_reply(message.into(), replied_to_info).await {
                             Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send reply message to room {room_id}: {_e:?}");
@@ -1834,7 +1834,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     let timeline = if let Some(tl_arc) = room.timeline() {
         tl_arc
     } else {
-        let builder = room.default_room_timeline_builder().await?
+        let builder = room.default_room_timeline_builder()?
             .track_read_marker_and_receipts();
         room.init_timeline_with_builder(builder).await?;
         room.timeline().ok_or_else(|| anyhow::anyhow!("BUG: room timeline not found for room {room_id}"))?
@@ -2557,7 +2557,7 @@ async fn spawn_sso_server(
             .await
             .inspect(|_| {
                 if let Some(client) = get_client() {
-                    if client.logged_in() {
+                    if client.matrix_auth().logged_in() {
                         is_logged_in = true;
                         log!("Already logged in, ignore login with sso");
                     }
