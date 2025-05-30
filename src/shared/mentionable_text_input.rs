@@ -1100,7 +1100,7 @@ impl MentionableTextInput {
         }
 
         // Should not reach here if user_matches_search returned true
-        99
+        u8::MAX
     }
 
     // Shows the loading indicator when members are being fetched
