@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
-use crate::{app::{AppState, AppStateAction, SelectedRoom}, utils::room_name_or_id};
+use crate::{app::{AppState, AppStateAction, RoomsPanelRestoreAction, SelectedRoom}, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 live_design! {
@@ -95,7 +95,12 @@ impl Widget for MainDesktopUI {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // When changing from mobile to Desktop, we need to restore the rooms panel state
         if !self.drawn_previously {
-            cx.action(MainDesktopUiAction::DockLoad);
+            let app_state = scope.data.get_mut::<AppState>().unwrap();
+            if !app_state.saved_dock_state.open_rooms.is_empty() {
+                cx.action(RoomsPanelRestoreAction::Restore(
+                    app_state.saved_dock_state.clone(),
+                ));
+            }
             self.drawn_previously = true;
         }
         self.view.draw_walk(cx, scope, walk)
@@ -365,8 +370,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                                 _ => { }
                             }
                         }
-                    }
-                    else {
+                    } else {
                         error!("BUG: failed to load dock state upon DockLoad action.");
                         continue;
                     }
@@ -398,7 +402,7 @@ impl WidgetMatchEvent for MainDesktopUI {
 
 /// Actions sent to the MainDesktopUI widget for saving/restoring its dock state.
 #[derive(Clone, Debug, DefaultNone)]
-enum MainDesktopUiAction {
+pub enum MainDesktopUiAction {
     /// Save the dock state from the dock to the AppState.
     DockSave,
     /// Load the room panel state from the AppState to the dock.
