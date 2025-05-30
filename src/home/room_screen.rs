@@ -822,7 +822,14 @@ pub struct RoomScreen {
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
 
-    #[rust] latest_edit_unconfirmed: Option<(String, TimelineEventItemId)>,
+    #[rust] latest_edit_unconfirmed: Option<PendingEdit>,
+}
+
+/// Represents an unconfirmed edit in the timeline.
+#[derive(Debug, Clone)]
+pub struct PendingEdit {
+    pub content: String,
+    pub event_id: TimelineEventItemId,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
