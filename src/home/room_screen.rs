@@ -834,7 +834,7 @@ impl Widget for RoomScreen {
         // Detect if the room_id has just been set by set_displayed_room (called from draw_walk)
         // This happens in the event handling phase, which is safe for sending actions.
         if self.room_id != self.prev_event_room_id {
-            if let Some(current_room_id) = self.room_id.clone() {
+            if let Some(current_room_id) = self.room_id.as_ref() {
                 log!("RoomScreen({:?}) detected room_id change to {}", self.widget_uid(), current_room_id);
                 // Send Action to MentionableTextInput instances immediately with the new room_id
                 // Assume false initially for can_notify_room, will be corrected when PowerLevels is fetched
