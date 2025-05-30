@@ -1792,8 +1792,6 @@ impl RoomScreen {
                             editing_pane.hide_with_animator(cx);
                         }
                         if let Ok(replied_to_info) = event_tl_item.replied_to_info() {
-                            // let input_bar = self.view.room_input_bar(id!(input_bar));
-                            // input_bar.set_visible(cx, true);
                             success = true;
                             self.show_replying_to(cx, (event_tl_item, replied_to_info));
                         }
