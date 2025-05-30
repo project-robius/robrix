@@ -1,23 +1,20 @@
 //! MentionableTextInput component provides text input with @mention capabilities
 //! Can be used in any context where user mentions are needed (message input, editing)
 //!
-//! TODO for the future:
-//!   1. Add a header to the user list to display the current number of users in the room.
-//!   2. Implement scrolling functionality for the user list.
-//!   3. Enable sorting for the user list to show currently online users.
-//!   4. Optimize performance and add a loading animation for the user list.
-//!   5. @Room
 use crate::avatar_cache::*;
 use crate::shared::avatar::AvatarWidgetRefExt;
+use crate::shared::typing_animation::TypingAnimationWidgetRefExt;
+use crate::shared::styles::COLOR_ROBRIX_RED;
 use crate::utils;
 
-use makepad_widgets::text::selection::Cursor;
-use makepad_widgets::*;
-use matrix_sdk::room::RoomMember;
+use makepad_widgets::{text::selection::Cursor, *};
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
+use matrix_sdk::room::RoomMember;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 use unicode_segmentation::UnicodeSegmentation;
+use crate::home::room_screen::RoomScreenProps;
+use crate::sliding_sync::get_client;
+
 
 live_design! {
     use link::theme::*;
@@ -26,6 +23,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::avatar::Avatar;
     use crate::shared::helpers::FillerX;
+    use crate::shared::typing_animation::TypingAnimation;
 
     pub FOCUS_HOVER_COLOR = #C
     pub KEYBOARD_FOCUS_OR_COLOR_HOVER = #1C274C
@@ -39,7 +37,7 @@ live_design! {
         show_bg: true
         cursor: Hand
         draw_bg: {
-            color: #fff,
+            color: (COLOR_PRIMARY),
             uniform border_radius: 4.0,
             instance hover: 0.0,
             instance selected: 0.0,
@@ -98,6 +96,89 @@ live_design! {
         }
     }
 
+    // Template for the @room mention list item
+    RoomMentionListItem = <View> {
+        width: Fill,
+        height: Fit,
+        margin: {left: 4, right: 4}
+        padding: {left: 8, right: 8, top: 4, bottom: 4}
+        show_bg: true
+        cursor: Hand
+        draw_bg: {
+            color: (COLOR_PRIMARY),
+            uniform border_radius: 4.0,
+            instance hover: 0.0,
+            instance selected: 0.0,
+
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+
+                if self.selected > 0.0 {
+                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
+                } else if self.hover > 0.0 {
+                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
+                } else {
+                    sdf.fill(self.color)
+                }
+                return sdf.result
+            }
+        }
+        flow: Right
+        spacing: 8.0
+        align: {y: 0.5}
+
+        // Replace Icon with an Avatar to display room avatar
+        room_avatar = <Avatar> {
+            width: 24,
+            height: 24,
+            text_view = { text = { draw_text: {
+                text_style: { font_size: 12.0 }
+            }}}
+        }
+
+        room_mention = <Label> {
+            height: Fit,
+            draw_text: {
+                color: #000,
+                text_style: {font_size: 14.0}
+            }
+            text: "@room"
+        }
+    }
+
+    // Template for loading indicator when members are being fetched
+    LoadingIndicator = <View> {
+        width: Fill,
+        height: 56,
+        margin: {left: 4, right: 4}
+        padding: {left: 16, right: 16, top: 16, bottom: 16},
+        flow: Right,
+        spacing: 8.0,
+        align: {x: 0., y: 0.5}
+        draw_bg: {
+            color: (COLOR_PRIMARY),
+        }
+
+        loading_text = <Label> {
+            height: Fit,
+            draw_text: {
+                color: #666,
+                text_style: {font_size: 14.0}
+            }
+            text: "Loading members"
+        }
+
+        loading_animation = <TypingAnimation> {
+            width: 60,
+            height: 24,
+            draw_bg: {
+                color: (COLOR_ROBRIX_PURPLE),
+                dot_radius: 2.0,
+            }
+        }
+    }
+
     pub MentionableTextInput = {{MentionableTextInput}}<CommandTextInput> {
         width: Fill,
         height: Fit
@@ -147,6 +228,8 @@ live_design! {
 
         // Template for user list items in the mention popup
         user_list_item: <UserListItem> {}
+        room_mention_list_item: <RoomMentionListItem> {}
+        loading_indicator: <LoadingIndicator> {}
     }
 }
 
@@ -157,15 +240,12 @@ live_design! {
 // const MENTION_START_STRING: &str = "\u{8288}@\u{8288}";
 
 
-/// Actions emitted by the MentionableTextInput component
-#[allow(dead_code)]
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, DefaultNone, Debug)]
 pub enum MentionableTextInputAction {
-    /// Room members list has been updated
-    RoomMembersUpdated(Arc<Vec<RoomMember>>),
-    /// Room ID has been updated (new)
-    RoomIdChanged(OwnedRoomId),
-    /// Default empty action
+    /// Notifies the MentionableTextInput about updated power levels for the room.
+    PowerLevelsUpdated(OwnedRoomId, bool),
+    /// Notifies that room members have been loaded/updated
+    RoomMembersLoaded(OwnedRoomId),
     None,
 }
 
@@ -176,46 +256,238 @@ pub struct MentionableTextInput {
     #[deref] cmd_text_input: CommandTextInput,
     /// Template for user list items
     #[live] user_list_item: Option<LivePtr>,
-    /// List of available room members for mentions
-    #[rust] room_members: Arc<Vec<RoomMember>>,
+    /// Template for the @room mention list item
+    #[live] room_mention_list_item: Option<LivePtr>,
+    /// Template for loading indicator
+    #[live] loading_indicator: Option<LivePtr>,
     /// Position where the @ mention starts
     #[rust] current_mention_start_index: Option<usize>,
-    /// The set of users (user ID and display name) that were mentioned
-    /// at one point in this text input.
-    ///
-    /// As characters may have been deleted/removed after the user-to-mention
-    /// was selected, this list is a *superset* of possible users
-    /// who may have been mentioned.
-    /// Thus, all of these mentions may not exist in the final text input content;
+    /// The set of users that were mentioned (at one point) in this text input.
+    /// Due to characters being deleted/removed, this list is a *superset*
+    /// of possible users who may have been mentioned.
+    /// All of these mentions may not exist in the final text input content;
     /// this is just a list of users to search the final sent message for
     /// when adding in new mentions.
     #[rust] possible_mentions: BTreeMap<OwnedUserId, String>,
+    /// Indicates if the `@room` option was explicitly selected.
+    #[rust] possible_room_mention: bool,
     /// Indicates if currently in mention search mode
     #[rust] is_searching: bool,
+    /// Current room ID
     #[rust] room_id: Option<OwnedRoomId>,
+    /// Whether the current user can notify everyone in the room (@room mention)
+    #[rust] can_notify_room: bool,
+    /// Whether the room members are currently being loaded
+    #[rust] members_loading: bool,
 }
+
 
 impl Widget for MentionableTextInput {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.cmd_text_input.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {
+
+            let text_input_ref = self.cmd_text_input.text_input_ref(); // Get reference to the inner TextInput
+            let text_input_uid = text_input_ref.widget_uid();
+            // --- Begin modification ---
+            // Get the Area of the inner TextInput
+            let text_input_area = text_input_ref.area();
+            // Check if this Area has keyboard focus using cx
+            let has_focus = cx.has_key_focus(text_input_area);
+            // --- End modification ---
+
+
             if let Some(selected) = self.cmd_text_input.item_selected(actions) {
                 self.on_user_selected(cx, scope, selected);
-                return;
+                // return;
             }
 
             if self.cmd_text_input.should_build_items(actions) {
-                let search_text = self.cmd_text_input.search_text().to_lowercase();
-                self.update_user_list(cx, &search_text);
+                // Only build the list when this instance's TextInput has focus
+                if has_focus {
+                    let search_text = self.cmd_text_input.search_text().to_lowercase();
+                    // update_user_list already includes a check for Scope room_id
+                    self.update_user_list(cx, &search_text, scope);
+                } else {
+                    // If no focus but received a build request (possibly from a previous state), ensure popup is closed
+                    if self.cmd_text_input.view(id!(popup)).visible() {
+                        log!("close_mention_popup 1");
+                        self.close_mention_popup(cx);
+                    }
+                }
             }
 
             if let Some(action) =
                 actions.find_widget_action(self.cmd_text_input.text_input_ref().widget_uid())
             {
                 if let TextInputAction::Changed(text) = action.cast() {
+                    // First check if there are any mention markers
+                    // If no "[" or "](", the user may have deleted all user mentions
+                    if !text.contains('[') || !text.contains("](") {
+                        // Clear all possible user mentions
+                        self.possible_mentions.clear();
+
+                        if !text.contains("@room") {
+                            self.possible_room_mention = false;
+                        }
+                    }
+
                     self.handle_text_change(cx, scope, text);
                 }
+            }
+
+            for action in actions {
+                // Check if it's a TextInputAction
+                if let Some(widget_action) = action.as_widget_action() {
+                    // Ensure the Action comes from our own TextInput
+                    if widget_action.widget_uid == text_input_uid {
+                        // Removed special backspace key detection, instead detect deletion in text change
+
+                        if let TextInputAction::Changed(text) = widget_action.cast() {
+                            // Only process text changes when this instance's TextInput has focus
+                            if has_focus {
+                                // First check if any mention markers have been deleted
+                                // If no "[" or "](", the user may have deleted all user mentions
+                                if !text.contains('[') || !text.contains("](") {
+                                    // Clear all possible user mentions
+                                    self.possible_mentions.clear();
+
+                                    if !text.contains("@room") {
+                                        self.possible_room_mention = false;
+                                    }
+                                }
+
+                                // Only check character before cursor to determine if deleting a link
+                                let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.cursor().index);
+                                let is_deleting_link = if cursor_pos > 0 && cursor_pos <= text.len() {
+                                    let cursor_grapheme_idx = utils::byte_index_to_grapheme_index(&text, cursor_pos);
+                                    let text_graphemes: Vec<&str> = text.graphemes(true).collect();
+
+                                    if cursor_grapheme_idx > 0 && cursor_grapheme_idx <= text_graphemes.len() {
+                                        let prev_grapheme = text_graphemes[cursor_grapheme_idx - 1];
+                                        // Only close menu when cursor is right after a right parenthesis or right bracket
+                                        prev_grapheme == ")" || prev_grapheme == "]"
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                };
+
+                                if is_deleting_link {
+                                    // Only close menu when cursor is before right parenthesis or right bracket
+                                    if self.is_searching {
+                                        log!("close_mention_popup 2");
+                                        self.close_mention_popup(cx);
+
+                                        // If text still contains @ symbol, keep link features but don't trigger menu
+                                        if text.contains('@') {
+                                            // Update text state but don't show menu
+                                            self.cmd_text_input.text_input_ref().set_text(cx, &text);
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                // handle_text_change internally calls update_user_list,
+                                // update_user_list has internal Scope room_id check
+                                self.handle_text_change(cx, scope, text.to_owned());
+                            }
+                            // Found the corresponding Change Action, can break out of inner loop
+                            break;
+                        }
+                    }
+                }
+
+                // Check for MentionableTextInputAction actions
+                if let Some(action_ref) = action.downcast_ref::<MentionableTextInputAction>() {
+                    match action_ref {
+                        MentionableTextInputAction::PowerLevelsUpdated(room_id, can_notify_room) => {
+                            // Best practice: Always check Scope first to get current context
+                            // Scope represents the current widget context as passed down from parents
+                            let scope_room_id = scope.props.get::<RoomScreenProps>().map(|props| &props.room_id);
+
+                            // If Scope has room_id and doesn't match action's room_id, this action may be for another room
+                            // This is important to avoid applying actions to the wrong room context
+                            if let Some(scope_id) = scope_room_id {
+                                if scope_id != room_id {
+                                    log!("MentionableTextInput({:?}) ignoring PowerLevelsUpdated because scope room_id ({}) doesn't match action room_id ({})",
+                                        self.widget_uid(), scope_id, room_id);
+                                    continue; // Skip this action
+                                }
+                            }
+
+                            // If Scope has no room_id (edge case), fall back to checking internal component state
+                            // This should rarely happen with proper Scope usage
+                            if scope_room_id.is_none() {
+                                if let Some(internal_id) = &self.room_id {
+                                    if internal_id != room_id {
+                                        log!("MentionableTextInput({:?}) ignoring PowerLevelsUpdated because internal room_id ({}) doesn't match action room_id ({})",
+                                            self.widget_uid(), internal_id, room_id);
+                                        continue; // Skip this action
+                                    }
+                                }
+                            }
+
+                            // After validation, we can update component state
+                            log!("MentionableTextInput({:?}) received valid PowerLevelsUpdated for room {}: can_notify={}",
+                                self.widget_uid(), room_id, can_notify_room);
+
+                            // If internal room_id is not set or doesn't match action, update it
+                            // Note: Prioritize room_id from Scope to maintain consistency with parent widgets
+                            if self.room_id.as_ref() != Some(room_id) {
+                                self.room_id = Some(room_id.clone());
+                                log!("MentionableTextInput({:?}) updated internal room_id to {}", self.widget_uid(), room_id);
+                            }
+
+                            // Only update and possibly redraw when can_notify_room state actually changes
+                            if self.can_notify_room != *can_notify_room {
+                                self.can_notify_room = *can_notify_room;
+                                log!("MentionableTextInput({:?}) updated can_notify_room to {}", self.widget_uid(), can_notify_room);
+
+                                // If currently searching, may need to immediately update list to show/hide @room
+                                if self.is_searching && has_focus { // Only update list when has focus
+                                    let search_text = self.cmd_text_input.search_text().to_lowercase();
+                                    // Pass scope to update_user_list to ensure consistent context
+                                    self.update_user_list(cx, &search_text, scope);
+                                } else {
+                                    self.redraw(cx);
+                                }
+                            }
+                        },
+                        MentionableTextInputAction::RoomMembersLoaded(room_id) => {
+                            // Get current room context from scope
+                            let scope_room_id = scope.props.get::<RoomScreenProps>().map(|props| &props.room_id);
+
+                            // Only process if this action is for the current room
+                            if let Some(scope_id) = scope_room_id {
+                                if scope_id == room_id {
+                                    log!("MentionableTextInput({:?}) received RoomMembersLoaded for room {}",
+                                         self.widget_uid(), room_id);
+
+                                    // If we were showing loading, hide it and refresh the list
+                                    if self.members_loading {
+                                        log!("MentionableTextInput: Stopping loading state due to members loaded");
+                                        self.members_loading = false;
+
+                                        // If currently searching, refresh the user list
+                                        if self.is_searching && has_focus {
+                                            let search_text = self.cmd_text_input.search_text().to_lowercase();
+                                            self.update_user_list(cx, &search_text, scope);
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        _ => {},
+                    }
+                }
+            }
+
+            if !has_focus && self.cmd_text_input.view(id!(popup)).visible() {
+                    log!("close_mention_popup 3");
+                    self.close_mention_popup(cx);
             }
         }
     }
@@ -225,30 +497,74 @@ impl Widget for MentionableTextInput {
     }
 }
 
+
 impl MentionableTextInput {
-    // Handles user selection from mention popup
+
+    // Handles item selection from mention popup (either user or @room)
     fn on_user_selected(&mut self, cx: &mut Cx, _scope: &mut Scope, selected: WidgetRef) {
-        let username = selected.label(id!(user_info.username)).text();
-        let user_id_str = selected.label(id!(user_id)).text();
-        let Ok(user_id): Result<OwnedUserId, _> = user_id_str.try_into() else {
-            return;
-        };
+        // Note: We receive scope as parameter but don't use it in this method
+        // This is good practice to maintain signature consistency with other methods
+        // and allow for future scope-based enhancements
+
+        let text_input_ref = self.cmd_text_input.text_input_ref();
+        let current_text = text_input_ref.text();
+        let head = text_input_ref.borrow().map_or(0, |p| p.cursor().index);
 
         if let Some(start_idx) = self.current_mention_start_index {
-            let text_input_ref = self.cmd_text_input.text_input_ref();
-            let current_text = text_input_ref.text();
-            let head = text_input_ref.borrow().map_or(0, |p| p.cursor().index);
+            // Improved logic for detecting @room selection, not relying on whether user_id is empty
+            // Check if current selected item is an @room item
+            // Directly check the generic text label
+            let mut is_room_mention_detected = false;
 
-            // For now, we insert the markdown link to the mentioned user directly
-            // instead of the user's display name because we don't yet have a way
-            // to track the mentioned display name and replace it later.
-            let mention_to_insert = format!(
-                "[{username}]({}) ",
-                user_id.matrix_to_uri(),
-            );
-            // let mention_to_insert = format!("@{username} ");
+            // Primary detection: Check if this widget has room_mention label with "@room" text
+            let room_mention_label = selected.label(id!(room_mention));
+            let room_mention_text = room_mention_label.text();
+            log!("Checking room_mention label text: \"{}\"", room_mention_text);
+            if room_mention_text == "@room" {
+                is_room_mention_detected = true;
+                log!("@room detected via room_mention label");
+            }
 
-            self.possible_mentions.insert(user_id, username);
+            // Backup detection: Check if user_id label exists - user items have it, @room items don't
+            let is_room_mention = if !is_room_mention_detected {
+                log!("Primary detection failed, trying backup method");
+                let user_id_text = selected.label(id!(user_id)).text();
+                let has_user_id = !user_id_text.is_empty();
+                log!("Backup detection: user_id_text=\"{}\", has_user_id={}, is_room_mention={}", user_id_text, has_user_id, !has_user_id);
+
+                !has_user_id
+            } else {
+                true
+            };
+
+            log!("Item selected is_room_mention: {}", is_room_mention);
+
+            let mention_to_insert = if is_room_mention {
+                // User selected @room
+                log!("User selected @room mention");
+                // Always set to true, don't reset previously selected @room mentions
+                self.possible_room_mention = true;
+                "@room ".to_string()
+            } else {
+                // User selected a specific user
+                let username = selected.label(id!(user_info.username)).text();
+                let user_id_str = selected.label(id!(user_id)).text();
+                let Ok(user_id): Result<OwnedUserId, _> = user_id_str.clone().try_into() else {
+                    log!("Failed to parse user_id: {}", user_id_str);
+                    return;
+                };
+                self.possible_mentions.insert(user_id.clone(), username.clone());
+                log!("User selected mention: {} ({}))", username, user_id);
+
+                // Currently, we directly insert the markdown link for user mentions
+                // instead of the user's display name, because we don't yet have a way
+                // to track mentioned display names and replace them later.
+                format!(
+                    "[{username}]({}) ",
+                    user_id.matrix_to_uri(),
+                )
+            };
+
 
             // Use utility function to safely replace text
             let new_text = utils::safe_replace_by_byte_indices(
@@ -261,70 +577,297 @@ impl MentionableTextInput {
             self.cmd_text_input.set_text(cx, &new_text);
             // Calculate new cursor position
             let new_pos = start_idx + mention_to_insert.len();
-            text_input_ref.set_cursor(
-                cx,
-                Cursor { index: new_pos, prefer_next_row: false },
-                false,
-            );
+            text_input_ref.set_cursor(cx, Cursor { index: new_pos, prefer_next_row: false }, false);
         }
 
+        self.is_searching = false;
+        self.current_mention_start_index = None;
+        log!("close_mention_popup 4");
         self.close_mention_popup(cx);
     }
 
     // Core text change handler that manages mention context
-    fn handle_text_change(&mut self, cx: &mut Cx, _scope: &mut Scope, text: String) {
-        // Currently an inserted mention consists of a markdown link,
-        // which is "[USERNAME](matrix_to_uri)", so of course this must be at least 6 characters.
-        // (In reality it has to be a lot more, but whatever...)
-        if text.trim().len() < 6 {
+    fn handle_text_change(&mut self, cx: &mut Cx, scope: &mut Scope, text: String) {
+        // Check if text is empty or contains only whitespace
+        let trimmed_text = text.trim();
+        if trimmed_text.is_empty() {
             self.possible_mentions.clear();
+            self.possible_room_mention = false;
+            if self.is_searching {
+                log!("close_mention_popup 5");
+                self.close_mention_popup(cx);
+            }
+            return;
+        }
+
+        // Check if text is too short - a full mention with markdown link requires at least 6 chars
+        // "[USERNAME](matrix_to_uri)"
+        if trimmed_text.len() < 6 {
+            self.possible_mentions.clear();
+
+            // Special handling: if text is short and currently searching, close menu when:
+            if self.is_searching && !trimmed_text.contains('@') {
+                // No @ symbol means nothing to search for
+                log!("close_mention_popup 6");
+                self.close_mention_popup(cx);
+                return;
+            }
         }
 
         let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.cursor().index);
 
-        if let Some(trigger_pos) = self.find_mention_trigger_position(&text, cursor_pos) {
+        // Simple logic: only trigger mention popup for new @ symbols
+
+
+        // Continue with the remaining parts of text change handling
+        self.handle_text_change_continued(cx, scope, &text, cursor_pos);
+    }
+
+
+    // Continues the handle_text_change method with trigger position detection
+    fn handle_text_change_continued(&mut self, cx: &mut Cx, scope: &mut Scope, text: &str, cursor_pos: usize) {
+        // Look for trigger position for @ menu
+        if let Some(trigger_pos) = self.find_mention_trigger_position(text, cursor_pos) {
+            // Ensure @ is preceded by whitespace or is at text start, so consecutive @mentions work properly
+            let is_valid_mention = if trigger_pos > 0 {
+                let pre_char = &text[trigger_pos-1..trigger_pos];
+                // Valid @ symbol: at text start or preceded by space
+                pre_char == " " || trigger_pos == 0
+            } else {
+                true
+            };
+
+            if !is_valid_mention {
+                if self.is_searching {
+                    log!("close_mention_popup 11");
+                    self.close_mention_popup(cx);
+                }
+                return;
+            }
+
             self.current_mention_start_index = Some(trigger_pos);
             self.is_searching = true;
 
             let search_text = utils::safe_substring_by_byte_indices(
-                &text,
+                text,
                 trigger_pos + 1,
                 cursor_pos
             ).to_lowercase();
 
-            self.update_user_list(cx, &search_text);
-            self.cmd_text_input.view(id!(popup)).set_visible(cx, true);
+            // Ensure header view is visible to prevent header disappearing during consecutive @mentions
+            let popup = self.cmd_text_input.view(id!(popup));
+            let header_view = self.cmd_text_input.view(id!(popup.header_view));
+            header_view.set_visible(cx, true);
+
+            self.update_user_list(cx, &search_text, scope);
+            popup.set_visible(cx, true);
         } else if self.is_searching {
+            log!("close_mention_popup 12");
             self.close_mention_popup(cx);
         }
     }
 
     // Updates the mention suggestion list based on search
-    fn update_user_list(&mut self, cx: &mut Cx, search_text: &str) {
+    fn update_user_list(&mut self, cx: &mut Cx, search_text: &str, scope: &mut Scope) {
+        // 1. Get Props and check Scope validity
+        let Some(room_props) = scope.props.get::<RoomScreenProps>() else {
+            log!("MentionableTextInput::update_user_list: RoomScreenProps not found in scope. Clearing list.");
+            self.cmd_text_input.clear_items(); // Clear list since there's no valid data source
+            self.cmd_text_input.view(id!(popup)).set_visible(cx, false); // Hide popup
+            self.redraw(cx);
+            return;
+        };
+
+        // 2. Check if internal room_id is already set (should be set by PowerLevelsUpdated)
+        if self.room_id.is_none() {
+            // If internal room_id is not set, initialize it from current scope
+            log!("MentionableTextInput: Initializing internal room_id from scope: {}", room_props.room_id);
+            self.room_id = Some(room_props.room_id.clone());
+        }
+
+        // 3. Core check: Does current scope's room_id match component's internal room_id
+        // This is crucial for proper Scope usage - ensure we're using the correct context
+        let internal_room_id = self.room_id.as_ref().unwrap(); // Must exist at this point
+        if internal_room_id != &room_props.room_id {
+            log!("MentionableTextInput Warning: Scope room_id ({}) does not match internal room_id ({}). Updating internal room_id.",
+                    room_props.room_id, internal_room_id);
+
+            // Important fix: When switching rooms, update component's internal room_id to match current scope
+            // This ensures we're working with the current context as passed through Scope, rather than stale state
+            self.room_id = Some(room_props.room_id.clone());
+
+            // Clear current list, prepare to update with new room's members
+            self.cmd_text_input.clear_items();
+        }
+
+        // Always use room_members provided in current scope
+        // These member lists should come from TimelineUiState.room_members_map and are already the correct list for current room
+        let Some(room_members) = &room_props.room_members else {
+            log!("MentionableTextInput: room_members is None. Showing loading indicator.");
+            self.members_loading = true;
+            self.show_loading_indicator(cx);
+            return;
+        };
+
+        // 4. Check if members are loaded or still loading
+        let members_are_empty = room_members.is_empty();
+        log!("MentionableTextInput: members_are_empty={}, members_loading={}, room_members.len()={}",
+             members_are_empty, self.members_loading, room_members.len());
+
+        if members_are_empty && !self.members_loading {
+            // Members list is empty and we're not already showing loading - start loading state
+            log!("MentionableTextInput: Room members list is empty, showing loading indicator");
+            self.members_loading = true;
+            self.show_loading_indicator(cx);
+            return;
+        } else if !members_are_empty && self.members_loading {
+            // Members have been loaded, stop loading state
+            log!("MentionableTextInput: Room members loaded ({} members), hiding loading indicator", room_members.len());
+            self.members_loading = false;
+        } else if members_are_empty && self.members_loading {
+            // Still loading and members are empty - keep showing loading indicator
+            log!("MentionableTextInput: Still waiting for room members to load");
+            return;
+        }
+
+        // Clear old list items, prepare to populate new list
         self.cmd_text_input.clear_items();
 
         if self.is_searching {
             let is_desktop = cx.display_context.is_desktop();
-            let mut matched_members = Vec::new();
 
-            for member in self.room_members.iter() {
-                let display_name = member
-                    .display_name()
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|| member.user_id().to_string());
+            // Add @room option if search text matches "@room" or is empty and user has permission
+            log!("Checking @room permission. Can notify: {}, search_text: {}", self.can_notify_room, search_text);
+            if self.can_notify_room && ("@room".contains(search_text) || search_text.is_empty()) {
+                log!("Adding @room option to mention list");
+                let room_mention_item = match self.room_mention_list_item {
+                    Some(ptr) => WidgetRef::new_from_ptr(cx, Some(ptr)),
+                    None => {
+                        log!("Error: room_mention_list_item pointer is None");
+                        return;
+                    }
+                };
+                let mut room_avatar_shown = false;
 
-                if display_name.to_lowercase().contains(search_text) {
-                    matched_members.push((display_name, member));
+                // Set up room avatar
+                let avatar_ref = room_mention_item.avatar(id!(room_avatar));
+
+                // First try to get room avatar from current room Props
+                // Use self.room_id instead of room_props.room_id to ensure getting correct room avatar
+                // When switching rooms, self.room_id has already been updated to match room_props.room_id in previous code
+                if let Some(room_id) = self.room_id.as_ref() {
+                    if let Some(client) = get_client() {
+                        if let Some(room) = client.get_room(room_id) {
+                            if let Some(avatar_url) = room.avatar_url() {
+                                log!("Found room avatar URL for @room: {}", avatar_url);
+
+                                match get_or_fetch_avatar(cx, avatar_url.to_owned()) {
+                                    AvatarCacheEntry::Loaded(avatar_data) => {
+                                        // Display room avatar
+                                        let result = avatar_ref.show_image(cx, None, |cx, img| {
+                                            utils::load_png_or_jpg(&img, cx, &avatar_data)
+                                        });
+                                        if result.is_ok() {
+                                            room_avatar_shown = true;
+                                            log!("Successfully showed @room avatar with room avatar image");
+                                        } else {
+                                            log!("Failed to show @room avatar with room avatar image");
+                                        }
+                                    },
+                                    AvatarCacheEntry::Requested => {
+                                        log!("Room avatar was requested for @room but not loaded yet");
+                                        avatar_ref.show_text(cx, Some(COLOR_ROBRIX_RED), None, "R");
+                                        room_avatar_shown = true;
+                                    },
+                                    AvatarCacheEntry::Failed => {
+                                        log!("Failed to load room avatar for @room");
+                                    }
+                                }
+                            } else {
+                                log!("Room has no avatar URL for @room");
+                            }
+                        } else {
+                            log!("Could not find room for @room avatar with room_id: {}", room_id);
+                        }
+                    } else {
+                        log!("Could not get client for @room avatar");
+                    }
+                } else {
+                    log!("No room_id available for @room avatar");
+                }
+
+                // If unable to display room avatar, show letter R with red background
+                if !room_avatar_shown {
+                    avatar_ref.show_text(cx, Some(COLOR_ROBRIX_RED), None, "R");
+                }
+
+
+                self.cmd_text_input.add_item(room_mention_item);
+            }
+
+            // Improved search: match both display names and Matrix IDs, then sort by priority
+            const MAX_MATCHED_MEMBERS: usize = MAX_VISIBLE_ITEMS * 2;  // Buffer for better UX
+
+            // Collect all matching members with their priority scores
+            let mut prioritized_members = Vec::new();
+
+            for member in room_members.iter() {
+                if prioritized_members.len() >= MAX_MATCHED_MEMBERS {
+                    break;
+                }
+
+                // Check if this member matches the search text (including Matrix ID)
+                if self.user_matches_search(member, search_text) {
+                    let display_name = member
+                        .display_name()
+                        .map(|n| n.to_string())
+                        .unwrap_or_else(|| member.user_id().to_string());
+
+                    let priority = self.get_match_priority(member, search_text);
+                    prioritized_members.push((priority, display_name, member));
                 }
             }
 
+            // Sort by priority (lower number = higher priority)
+            prioritized_members.sort_by_key(|(priority, _, _)| *priority);
+
+            // Convert to the format expected by the rest of the code
+            let matched_members: Vec<(String, &RoomMember)> = prioritized_members
+                .into_iter()
+                .map(|(_, display_name, member)| (display_name, member))
+                .collect();
+
             let member_count = matched_members.len();
+
+            // Performance issue: When a room has more than 2,000 users, rendering the mention popup causes the app to lag and show a loading spinner.
+            //
+            // Performance Bottlenecks:
+            // 1. Unrestricted iteration over all 2,000+ members
+            // 2. Widget instances are created for all matching members, even those not visible
+            // 3. No virtualization or limiting mechanism
+
+            // Solution:
+            // 1. Early Termination: Limit the number of matching members to MAX_VISIBLE_ITEMS * 2 (30 items)
+            // 2. Smart Search: Two-stage search—first match by prefix, then by substring—to provide a better user experience
+            // 3. Virtualization: Only create Widget instances for actually visible items (‎⁠take(MAX_VISIBLE_ITEMS)⁠)
+
+            // Performance Improvements:
+            // 1. Reduces processing from over 2,000 items to a maximum of 30 items
+            // 2. Reduces Widget creation from over 2,000 to at most 15 visible Widgets
+            // 3. Significantly decreases string operations and Widget creation overhead
             const MAX_VISIBLE_ITEMS: usize = 15;
             let popup = self.cmd_text_input.view(id!(popup));
 
-            if member_count == 0 {
+            // Adjust height calculation to include the potential @room item
+            let total_items_in_list = member_count + if "@room".contains(search_text) { 1 } else { 0 };
+
+            if total_items_in_list == 0 {
+                // If there are no matching items, just hide the entire popup and clear search state
                 popup.apply_over(cx, live! { height: Fit });
                 self.cmd_text_input.view(id!(popup)).set_visible(cx, false);
+                // Clear search state
+                self.is_searching = false;
+                self.current_mention_start_index = None;
                 return;
             }
 
@@ -342,17 +885,18 @@ impl MentionableTextInput {
             // Get spacing between header and list
             let estimated_spacing = 4.0;
 
-            if member_count <= MAX_VISIBLE_ITEMS {
+            if total_items_in_list <= MAX_VISIBLE_ITEMS {
                 let single_item_height = if is_desktop { 32.0 } else { 64.0 };
                 let total_height =
-                    (member_count as f64 * single_item_height) + header_height + estimated_spacing;
+                    (total_items_in_list as f64 * single_item_height) + header_height + estimated_spacing;
                 popup.apply_over(cx, live! { height: (total_height) });
             } else {
                 let max_height = if is_desktop { 400.0 } else { 480.0 };
                 popup.apply_over(cx, live! { height: (max_height) });
             }
 
-            for (index, (display_name, member)) in matched_members.into_iter().enumerate() {
+            // Only create widgets for items that will actually be visible
+            for (index, (display_name, member)) in matched_members.into_iter().take(MAX_VISIBLE_ITEMS).enumerate() {
                 let item = WidgetRef::new_from_ptr(cx, self.user_list_item);
 
                 item.label(id!(user_info.username)).set_text(cx, &display_name);
@@ -361,11 +905,11 @@ impl MentionableTextInput {
                 let user_id_str = member.user_id().as_str();
                 item.label(id!(user_id)).set_text(cx, user_id_str);
 
-                item.apply_over(cx, live! {
-                    show_bg: true,
-                    cursor: Hand,
-                    padding: {left: 8., right: 8., top: 4., bottom: 4.}
-                });
+                // item.apply_over(cx, live! {
+                //     show_bg: true,
+                //     cursor: Hand,
+                //     padding: {left: 8., right: 8., top: 4., bottom: 4.}
+                // });
 
                 if is_desktop {
                     item.apply_over(
@@ -396,16 +940,19 @@ impl MentionableTextInput {
                             utils::load_png_or_jpg(&img, cx, &avatar_data)
                         });
                     } else {
-                        avatar.show_text(cx, None, &display_name);
+                        avatar.show_text(cx, None, None, &display_name);
                     }
                 } else {
-                    avatar.show_text(cx, None, &display_name);
+                    avatar.show_text(cx, None, None, "Room");
                 }
 
                 self.cmd_text_input.add_item(item.clone());
 
-                if index == 0 {
-                    self.cmd_text_input.set_keyboard_focus_index(0);
+                // Set keyboard focus to the first item (either @room or the first user)
+                if index == 0 && !"@room".contains(search_text) { // If @room was added, it's the first item
+                    self.cmd_text_input.set_keyboard_focus_index(1); // Focus the first user if @room is index 0
+                } else if index == 0 && "@room".contains(search_text) {
+                    self.cmd_text_input.set_keyboard_focus_index(0); // Focus @room if it's the first item
                 }
             }
 
@@ -429,12 +976,17 @@ impl MentionableTextInput {
         // Build byte position mapping to facilitate conversion back to byte positions
         let byte_positions = utils::build_grapheme_byte_positions(text);
 
-        // Check if cursor is immediately after @ symbol
+        // Simple logic: trigger when cursor is immediately after @ symbol
+        // Only trigger if @ is preceded by whitespace or beginning of text
         if cursor_grapheme_idx > 0 && text_graphemes[cursor_grapheme_idx - 1] == "@" {
-            return Some(byte_positions[cursor_grapheme_idx - 1]);
+            let is_preceded_by_whitespace_or_start = cursor_grapheme_idx == 1 ||
+                (cursor_grapheme_idx > 1 && text_graphemes[cursor_grapheme_idx - 2].trim().is_empty());
+            if is_preceded_by_whitespace_or_start && cursor_grapheme_idx - 1 < byte_positions.len() {
+                return Some(byte_positions[cursor_grapheme_idx - 1]);
+            }
         }
 
-        // Find the last @ symbol before the cursor
+        // Find the last @ symbol before the cursor for search continuation
         let last_at_pos = text_graphemes[..cursor_grapheme_idx]
             .iter()
             .enumerate()
@@ -446,40 +998,198 @@ impl MentionableTextInput {
             // Extract the text after the @ symbol up to the cursor position
             let mention_text = &text_graphemes[at_idx + 1..cursor_grapheme_idx];
 
-            // Validate the mention format
+            // Only trigger if this looks like an ongoing mention (contains only alphanumeric and basic chars)
             if self.is_valid_mention_text(mention_text) {
-                return Some(byte_positions[at_idx]);
+                // Ensure at_idx is within bounds of byte_positions
+                if at_idx < byte_positions.len() {
+                    return Some(byte_positions[at_idx]);
+                }
             }
         }
 
         None
     }
 
-    // Add helper method to extract validation logic
-    fn is_valid_mention_text(&self, graphemes: &[&str]) -> bool {
-        // Empty or first character is whitespace is invalid
-        if graphemes.is_empty() || graphemes[0].trim().is_empty() {
-            return false;
-        }
+    // Check if the cursor is inside a markdown link
 
-        // Check for consecutive whitespace
-        for i in 0..graphemes.len().saturating_sub(1) {
-            if graphemes[i].trim().is_empty() && graphemes[i + 1].trim().is_empty() {
-                return false;
-            }
+    // Simple validation for mention text
+    fn is_valid_mention_text(&self, graphemes: &[&str]) -> bool {
+        // Allow empty text (for @)
+        if graphemes.is_empty() {
+            return true;
         }
 
         // Check if it contains newline characters
         !graphemes.iter().any(|g| g.contains('\n'))
     }
 
+    // Helper function to check if a user matches the search text
+    // Checks both display name and Matrix ID for matching
+    fn user_matches_search(&self, member: &RoomMember, search_text: &str) -> bool {
+        let search_text_lower = search_text.to_lowercase();
+
+        // Check display name
+        let display_name = member
+            .display_name()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| member.user_id().to_string());
+
+        let display_name_lower = display_name.to_lowercase();
+        if display_name_lower.contains(&search_text_lower) {
+            return true;
+        }
+
+        // Check Matrix ID (user ID)
+        let user_id_str = member.user_id().to_string();
+        let user_id_lower = user_id_str.to_lowercase();
+
+        // Match against the full user ID (e.g., "@mihran:matrix.org")
+        if user_id_lower.contains(&search_text_lower) {
+            return true;
+        }
+
+        // Also match against just the localpart (e.g., "mihran" from "@mihran:matrix.org")
+        let localpart = member.user_id().localpart();
+        let localpart_lower = localpart.to_lowercase();
+        if localpart_lower.contains(&search_text_lower) {
+            return true;
+        }
+
+        false
+    }
+
+    // Helper function to determine match priority for sorting
+    // Lower values = higher priority (better matches shown first)
+    fn get_match_priority(&self, member: &RoomMember, search_text: &str) -> u8 {
+        let search_text_lower = search_text.to_lowercase();
+
+        let display_name = member
+            .display_name()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| member.user_id().to_string());
+
+        let display_name_lower = display_name.to_lowercase();
+
+        // Priority 1: Display name starts with search text
+        if display_name_lower.starts_with(&search_text_lower) {
+            return 1;
+        }
+
+        // Priority 2: Localpart starts with search text
+        let localpart = member.user_id().localpart();
+        let localpart_lower = localpart.to_lowercase();
+        if localpart_lower.starts_with(&search_text_lower) {
+            return 2;
+        }
+
+        // Priority 3: Display name contains search text
+        if display_name_lower.contains(&search_text_lower) {
+            return 3;
+        }
+
+        // Priority 4: Full user ID contains search text
+        let user_id_str = member.user_id().to_string();
+        let user_id_lower = user_id_str.to_lowercase();
+        if user_id_lower.contains(&search_text_lower) {
+            return 4;
+        }
+
+        // Priority 5: Localpart contains search text
+        if localpart_lower.contains(&search_text_lower) {
+            return 5;
+        }
+
+        // Should not reach here if user_matches_search returned true
+        u8::MAX
+    }
+
+    // Shows the loading indicator when members are being fetched
+    fn show_loading_indicator(&mut self, cx: &mut Cx) {
+        log!("MentionableTextInput: show_loading_indicator called");
+
+        // Clear any existing items
+        self.cmd_text_input.clear_items();
+
+        // Create loading indicator widget
+        let loading_item = match self.loading_indicator {
+            Some(ptr) => {
+                log!("MentionableTextInput: Creating loading indicator from pointer");
+                WidgetRef::new_from_ptr(cx, Some(ptr))
+            },
+            None => {
+                log!("Error: loading_indicator pointer is None");
+                return;
+            }
+        };
+
+        // Start the loading animation
+        log!("MentionableTextInput: Starting loading animation");
+        loading_item.typing_animation(id!(loading_animation)).start_animation(cx);
+
+        // Add the loading indicator to the popup
+        log!("MentionableTextInput: Adding loading item to popup");
+        self.cmd_text_input.add_item(loading_item);
+
+        // Setup popup dimensions for loading state
+        let popup = self.cmd_text_input.view(id!(popup));
+        let header_view = self.cmd_text_input.view(id!(popup.header_view));
+
+        // Ensure header is visible
+        header_view.set_visible(cx, true);
+
+        // Set appropriate height for loading indicator
+        let is_desktop = cx.display_context.is_desktop();
+
+        // Calculate header height
+        let header_height = if header_view.area().rect(cx).size.y > 0.0 {
+            header_view.area().rect(cx).size.y
+        } else {
+            // Fallback estimate for header
+            let estimated_padding = 24.0;
+            let text_height = 16.0;
+            estimated_padding + text_height
+        };
+
+        // Loading indicator needs: animation height (24) + padding (16+16) + text height (~16) = ~56px minimum
+        let loading_content_height = if is_desktop { 56.0 } else { 64.0 };
+        let estimated_spacing = 4.0;
+        let loading_height = header_height + loading_content_height + estimated_spacing;
+
+        popup.apply_over(cx, live! { height: (loading_height) });
+        popup.set_visible(cx, true);
+
+        // Maintain text input focus
+        if self.is_searching {
+            self.cmd_text_input.text_input_ref().set_key_focus(cx);
+        }
+    }
+
     // Cleanup helper for closing mention popup
     fn close_mention_popup(&mut self, cx: &mut Cx) {
         self.current_mention_start_index = None;
         self.is_searching = false;
+        self.members_loading = false; // Reset loading state when closing popup
 
+        // Clear list items to avoid keeping old content when popup is shown again
+        self.cmd_text_input.clear_items();
 
-        self.cmd_text_input.view(id!(popup)).set_visible(cx, false);
+        // Get popup and header view references
+        let popup = self.cmd_text_input.view(id!(popup));
+        let header_view = self.cmd_text_input.view(id!(popup.header_view));
+
+        // Force hide header view - necessary when handling deletion operations
+        // When backspace-deleting mentions, we want to completely hide the header
+        header_view.set_visible(cx, false);
+
+        // Hide the entire popup
+        popup.set_visible(cx, false);
+
+        // Reset popup height
+        popup.apply_over(cx, live! { height: Fit });
+
+        // Ensure header view is reset to visible next time it's triggered
+        // This will happen before update_user_list is called in handle_text_change
+
         self.cmd_text_input.request_text_input_focus();
         self.redraw(cx);
     }
@@ -492,24 +1202,24 @@ impl MentionableTextInput {
     /// Sets the text content
     pub fn set_text(&mut self, cx: &mut Cx, text: &str) {
         self.cmd_text_input.text_input_ref().set_text(cx, text);
+        // When text is set externally (e.g., for editing), clear mention state
+        self.possible_mentions.clear();
+        self.possible_room_mention = false;
+        self.members_loading = false; // Reset loading state when text is set
         self.redraw(cx);
     }
 
-    pub fn set_room_id(&mut self, room_id: OwnedRoomId) {
-        self.room_id = Some(room_id.clone());
-
-        // Send the room ID changed event to widget listeners
-        Cx::post_action(MentionableTextInputAction::RoomIdChanged(room_id));
+    /// Sets whether the current user can notify the entire room (@room mention)
+    pub fn set_can_notify_room(&mut self, can_notify: bool) {
+        self.can_notify_room = can_notify;
     }
 
-    pub fn get_room_id(&self) -> Option<OwnedRoomId> {
-        self.room_id.clone()
+    /// Gets whether the current user can notify the entire room (@room mention)
+    pub fn can_notify_room(&self) -> bool {
+        self.can_notify_room
     }
 
-    /// Sets room members for mention suggestions
-    pub fn set_room_members(&mut self, members: Arc<Vec<RoomMember>>) {
-        self.room_members = members;
-    }
+
 }
 
 impl MentionableTextInputRef {
@@ -523,21 +1233,17 @@ impl MentionableTextInputRef {
         }
     }
 
-    /// Sets the room members for this text input
-    pub fn set_room_members(&self, members: Arc<Vec<RoomMember>>) {
+
+    /// Sets whether the current user can notify the entire room (@room mention)
+    pub fn set_can_notify_room(&self, can_notify: bool) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_room_members(members);
+            inner.set_can_notify_room(can_notify);
         }
     }
 
-    pub fn set_room_id(&self, room_id: OwnedRoomId) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.set_room_id(room_id);
-        }
-    }
-
-    pub fn get_room_id(&self) -> Option<OwnedRoomId> {
-        self.borrow().and_then(|inner| inner.get_room_id())
+    /// Gets whether the current user can notify the entire room (@room mention)
+    pub fn can_notify_room(&self) -> bool {
+        self.borrow().is_some_and(|inner| inner.can_notify_room())
     }
 
     /// Returns the list of users mentioned in the given html message content.

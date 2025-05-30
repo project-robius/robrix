@@ -48,7 +48,7 @@ live_design! {
                 inviter_avatar = <Avatar> {
                     width: 30,
                     height: 30,
-        
+
                     text_view = { text = { draw_text: {
                         text_style: <TITLE_TEXT>{ font_size: 10.0 }
                     }}}
@@ -281,7 +281,7 @@ impl Widget for InviteScreen {
             // If we don't have any info, just return.
             return self.view.draw_walk(cx, scope, walk);
         };
-        
+
         // First, populate the inviter info, if we have it.
         let inviter_view = self.view.view(id!(inviter_view));
         let (is_visible, invite_text) = if let Some(inviter) = info.inviter.as_ref() {
@@ -297,6 +297,7 @@ impl Widget for InviteScreen {
             if !drew_avatar {
                 inviter_avatar.show_text(
                     cx,
+                    None,
                     None, // don't make this avatar clickable.
                     inviter.display_name.as_deref().unwrap_or_else(|| inviter.user_id.as_str()),
                 );
@@ -311,7 +312,7 @@ impl Widget for InviteScreen {
             }
             else {
                 // If we only have a user ID, show it in the user_name field,
-                // and hide the user ID field. 
+                // and hide the user ID field.
                 inviter_name.set_text(cx, inviter.user_id.as_str());
                 inviter_user_id.set_visible(cx, false);
             }
@@ -320,7 +321,7 @@ impl Widget for InviteScreen {
         else {
             (false, "You have been invited to join:")
         };
-        inviter_view.set_visible(cx, is_visible);        
+        inviter_view.set_visible(cx, is_visible);
         self.view.label(id!(invite_message)).set_text(cx, invite_text);
 
         // Second, populate the room info, if we have it.
@@ -330,6 +331,7 @@ impl Widget for InviteScreen {
             RoomPreviewAvatar::Text(text) => {
                 room_avatar.show_text(
                     cx,
+                    None,
                     None, // don't make this avatar clickable.
                     text,
                 );

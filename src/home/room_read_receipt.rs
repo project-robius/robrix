@@ -6,7 +6,9 @@ use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
+
 use std::cmp;
+
 
 
 /// The maximum number of items to display in the read receipts AvatarRow

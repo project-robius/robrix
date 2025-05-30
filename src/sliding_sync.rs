@@ -936,6 +936,7 @@ async fn async_worker(
                 // Spawn a new async task that will send the actual message.
                 let _send_message_task = Handle::current().spawn(async move {
                     log!("Sending message to room {room_id}: {message:?}...");
+                    // The message already contains mentions, no need to add them again
                     if let Some(replied_to_info) = replied_to {
                         match timeline.send_reply(message.into(), replied_to_info, ForwardThread::Yes).await {
                             Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
