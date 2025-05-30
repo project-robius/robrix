@@ -776,7 +776,7 @@ impl Widget for RoomsList {
             .flatten()
         };
         let get_joined_room_id = |portal_list_index: usize| {
-            let index = portal_list_index - direct_messages_indexes.first_room_index;
+            let index = portal_list_index - joined_rooms_indexes.first_room_index;
             self.is_rooms_header_expanded.then(||
                 self.displayed_rooms.get(index)
             )
