@@ -52,35 +52,15 @@ impl RoomMemberManager {
 
     /// Update specific room's member list and notify subscribers
     pub fn update_room_members(room_id: OwnedRoomId, members: Vec<RoomMember>) {
-        log!("Updating room members for room {}", room_id.clone());
+        // log!("Updating room members for room {}", room_id.clone());
 
         let instance = Self::instance();
         let mut manager = instance.lock().unwrap();
 
         // Only store data when there are active subscribers
+        // Note: change detection is now performed in the background thread (sliding_sync.rs)
+        // before sending the update, so we can directly proceed with storing and notifying.
         if manager.active_subscribers_count.get(&room_id).copied().unwrap_or(0) > 0 {
-            let members_changed = if let Some(existing_members) = manager.room_members.get(&room_id) {
-                if existing_members.len() != members.len() {
-                    true
-                } else {
-                    let existing_ids: std::collections::HashSet<_> = existing_members.iter()
-                        .map(|m| m.user_id().to_owned())
-                        .collect();
-                    let new_ids: std::collections::HashSet<_> = members.iter()
-                        .map(|m| m.user_id().to_owned())
-                        .collect();
-
-                    existing_ids != new_ids
-                }
-            } else {
-                // first update, always considered as changed
-                true
-            };
-
-            if !members_changed {
-                log!("Skipping room {} member update (no actual changes)", room_id);
-                return;
-            }
 
             // Create a shared reference for the member list
             let shared_members = Arc::new(members);
@@ -92,7 +72,7 @@ impl RoomMemberManager {
             let mut to_notify = Vec::new();
 
             if let Some(subscribers) = manager.subscribers.get(&room_id) {
-                log!("Processing {} subscribers for room {}", subscribers.len(), room_id);
+                // log!("Processing {} subscribers for room {}", subscribers.len(), room_id);
 
                 // Since using Arc instead of Weak, all subscribers should be valid
                 for entry in subscribers {
@@ -101,11 +81,11 @@ impl RoomMemberManager {
             }
 
             // Log the update
-            log!(
-                "Updating room {} member data, notifying {} subscribers",
-                room_id,
-                to_notify.len()
-            );
+            // log!(
+            //     "Updating room {} member data, notifying {} subscribers (change detection done in background)",
+            //     room_id,
+            //     to_notify.len()
+            // );
 
             // Release the lock before notifying subscribers
             drop(manager);
@@ -143,12 +123,12 @@ impl RoomMemberManager {
 
         manager.subscribers.entry(room_id.clone()).or_default().push(entry);
 
-        log!(
-            "Room {} added a new subscriber ID: {}, total subscribers: {}",
-            room_id,
-            subscriber_id,
-            manager.active_subscribers_count.get(&room_id).copied().unwrap_or(0)
-        );
+        // log!(
+        //     "Room {} added a new subscriber ID: {}, total subscribers: {}",
+        //     room_id,
+        //     subscriber_id,
+        //     manager.active_subscribers_count.get(&room_id).copied().unwrap_or(0)
+        // );
 
         // If there is current room member data, immediately provide it to the new subscriber
         let members_clone = manager.room_members.get(&room_id).cloned();
@@ -254,7 +234,7 @@ impl RoomMemberSubscription {
 /// Auto-unsubscribe when the subscribed component is destroyed
 impl Drop for RoomMemberSubscription {
     fn drop(&mut self) {
-        log!("RoomMemberSubscription dropped");
+        // log!("RoomMemberSubscription dropped");
         self.unsubscribe();
     }
 }

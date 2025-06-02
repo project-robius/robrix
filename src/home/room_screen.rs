@@ -12,7 +12,7 @@ use matrix_sdk::{room::RoomMember, ruma::{
             AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
         }, ImageInfo, MediaSource
     },
-    sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId
+    sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
@@ -936,6 +936,7 @@ impl Widget for RoomScreen {
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
             let message_input = self.room_input_bar(id!(input_bar)).mentionable_text_input(id!(message_input));
+            let text_input = message_input.text_input(id!(text_input));
 
             for action in actions {
                 // Handle the highlight animation.
@@ -973,15 +974,11 @@ impl Widget for RoomScreen {
                 }
 
                 // Handle RoomScreen-specific actions posted back from subscribers tasks
-                if let Some(RoomScreenAction::RoomMembersUpdated(update_room_id, members)) = action.downcast_ref() {
-                    log!("RoomScreen({:?}) received RoomMembersUpdated action for room {} with {} members",
-                            self.widget_uid(), update_room_id, members.len());
-
+                if let Some(RoomMembersAction::Updated(update_room_id, _members)) = action.downcast_ref() {
                     // Note: The room members are now managed by the global room member manager
                     // through the subscription system, so we don't need to store them here.
                     // Just notify MentionableTextInput components that room members have been loaded
                     cx.action(MentionableTextInputAction::RoomMembersLoaded(update_room_id.clone()));
-                    log!("Sent MentionableTextInputAction::RoomMembersLoaded for room {}", update_room_id);
                 }
             }
 
@@ -1001,7 +998,7 @@ impl Widget for RoomScreen {
             // Clear the replying-to preview pane if the "cancel reply" button was clicked
             // or if the `Escape` key was pressed within the message input box.
             if self.button(id!(cancel_reply_button)).clicked(actions)
-                || message_input.text_input(id!(text_input)).escaped(actions)
+                || text_input.escaped(actions)
             {
                 self.clear_replying_to(cx);
                 self.redraw(cx);
@@ -1044,7 +1041,7 @@ impl Widget for RoomScreen {
 
             // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
             if self.button(id!(send_message_button)).clicked(actions)
-                || message_input.text_input(id!(text_input)).returned(actions).is_some_and(
+                || text_input.returned(actions).is_some_and(
                     |(_text, modifiers)| modifiers.is_primary()
                 )
             {
@@ -1053,37 +1050,8 @@ impl Widget for RoomScreen {
                     let room_input_bar = self.view.room_input_bar(id!(input_bar));
                     let room_id = self.room_id.clone().unwrap();
 
-                    // Get mentions based on the message content
-                    let (message, mentions) = if let Some(html_text) = entered_text.strip_prefix("/html") {
-                        (
-                            RoomMessageEventContent::text_html(html_text, html_text),
-                            room_input_bar.mentionable_text_input(id!(message_input))
-                                .get_real_mentions_in_html_text(html_text),
-                        )
-                    } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
-                        (
-                            RoomMessageEventContent::text_plain(plain_text),
-                            Default::default(),
-                        )
-                    } else {
-                        (
-                            RoomMessageEventContent::text_markdown(&entered_text),
-                            room_input_bar.mentionable_text_input(id!(message_input))
-                                .get_real_mentions_in_markdown_text(&entered_text),
-                        )
-                    };
-
-                    // Add mentions to the message
-                    let message_with_mentions = if !mentions.is_empty() {
-                        let mut matrix_mentions = Mentions::with_user_ids(mentions);
-                        // Check if @room mention was used
-                        if entered_text.contains("@room") {
-                            matrix_mentions.room = true;
-                        }
-                        message.add_mentions(matrix_mentions)
-                    } else {
-                        message
-                    };
+                    // Create message with mentions using the unified API
+                    let message_with_mentions = message_input.create_message_with_mentions(&entered_text);
 
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
@@ -1108,7 +1076,7 @@ impl Widget for RoomScreen {
             );
 
             // Handle a typing action on the message input box.
-            if let Some(new_text) = message_input.text_input(id!(text_input)).changed(actions) {
+            if let Some(new_text) = text_input.changed(actions) {
                 submit_async_request(MatrixRequest::SendTypingNotice {
                     room_id: self.room_id.clone().unwrap(),
                     typing: !new_text.is_empty(),
@@ -1487,11 +1455,9 @@ impl RoomScreen {
 
                     // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
                     if is_append && !portal_list.is_at_end() {
-                        if let Some(room_id) = &self.room_id {
-                            // Immediately show the unread badge with no count while we fetch the actual count in the background.
-                            jump_to_bottom.show_unread_message_badge(cx, UnreadMessageCount::Unknown);
-                            submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: room_id.clone() });
-                        }
+                        // Immediately show the unread badge with no count while we fetch the actual count in the background.
+                        jump_to_bottom.show_unread_message_badge(cx, UnreadMessageCount::Unknown);
+                        submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: tl.room_id.clone() });
                     }
 
                     if clear_cache {
@@ -1654,14 +1620,11 @@ impl RoomScreen {
                     // Update the @room mention capability based on the user's power level
                     let can_notify_room = user_power_level.can_notify_room();
 
-                    if let Some(room_id) = &self.room_id {
-                        log!("Room screen: Sending PowerLevelsUpdated action for room {}, can_notify_room: {}", room_id, can_notify_room);
+                    cx.action(MentionableTextInputAction::PowerLevelsUpdated(
+                        tl.room_id.clone(),
+                        can_notify_room
+                    ));
 
-                        cx.action(MentionableTextInputAction::PowerLevelsUpdated(
-                            room_id.clone(),
-                            can_notify_room
-                        ));
-                    }
                 }
 
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
@@ -2562,10 +2525,10 @@ pub struct RoomScreenProps {
 }
 
 #[derive(Clone, DefaultNone, Debug)]
-pub enum RoomScreenAction {
+pub enum RoomMembersAction {
     None,
     /// Room members data has been updated for this room.
-    RoomMembersUpdated(OwnedRoomId, Arc<Vec<RoomMember>>),
+    Updated(OwnedRoomId, Arc<Vec<RoomMember>>),
 }
 
 /// Subscriber for RoomScreen to receive room member updates
@@ -2581,12 +2544,7 @@ impl RoomMemberSubscriber for RoomScreenMemberSubscriber {
         &mut self, room_id: &OwnedRoomId, members: Arc<Vec<RoomMember>>,
     ) {
         // Now we always forward updates, even for different rooms, because we use a map to store the member lists for all rooms
-        log!(
-            "RoomScreenMemberSubscriber({:?}) received members update for room {}",
-            self.widget_uid,
-            room_id
-        );
-        Cx::post_action(RoomScreenAction::RoomMembersUpdated(room_id.clone(), members));
+        Cx::post_action(RoomMembersAction::Updated(room_id.clone(), members));
     }
 }
 
