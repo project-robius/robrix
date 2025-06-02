@@ -259,53 +259,51 @@ impl Avatar {
     ) -> (String, bool) {
         // Get the display name and avatar URL from the user's profile, if available,
         // or if the profile isn't ready, fall back to qeurying our user profile cache.
-        let (username_opt, avatar_state) = {
-            match avatar_profile_opt {
-                Some(TimelineDetails::Ready(profile)) => (
-                    profile.display_name.clone(),
-                    AvatarState::Known(profile.avatar_url.clone()),
-                ),
-                Some(not_ready) => {
-                    if matches!(not_ready, TimelineDetails::Unavailable) {
-                        if let Some(event_id) = event_id {
-                            submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                                room_id: room_id.to_owned(),
-                                event_id: event_id.to_owned(),
-                            });
-                        }
+        let (username_opt, avatar_state) = match avatar_profile_opt {
+            Some(TimelineDetails::Ready(profile)) => (
+                profile.display_name.clone(),
+                AvatarState::Known(profile.avatar_url.clone()),
+            ),
+            Some(not_ready) => {
+                if matches!(not_ready, TimelineDetails::Unavailable) {
+                    if let Some(event_id) = event_id {
+                        submit_async_request(MatrixRequest::FetchDetailsForEvent {
+                            room_id: room_id.to_owned(),
+                            event_id: event_id.to_owned(),
+                        });
                     }
-                    // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-                    user_profile_cache::with_user_profile(cx, avatar_user_id.to_owned(), true, |profile, room_members| {
-                        room_members
-                            .get(room_id)
-                            .map(|rm| {
-                                (
-                                    rm.display_name().map(|n| n.to_owned()),
-                                    AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                                )
-                            })
-                            .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
-                    })
-                    .unwrap_or((None, AvatarState::Unknown))
                 }
-                None => {
-                    match user_profile_cache::with_user_profile(cx, avatar_user_id.to_owned(), true, |profile, room_members| {
-                        room_members
-                            .get(room_id)
-                            .map(|rm| {
-                                (
-                                    rm.display_name().map(|n| n.to_owned()),
-                                    AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                                )
-                            })
-                            .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
-                    }) {
-                        Some((profile_name, avatar_state)) => {
-                            (profile_name, avatar_state)
-                        }
-                        None => {
-                            (None, AvatarState::Unknown)
-                        }
+                // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
+                user_profile_cache::with_user_profile(cx, avatar_user_id.to_owned(), true, |profile, room_members| {
+                    room_members
+                        .get(room_id)
+                        .map(|rm| {
+                            (
+                                rm.display_name().map(|n| n.to_owned()),
+                                AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
+                            )
+                        })
+                        .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
+                })
+                .unwrap_or((None, AvatarState::Unknown))
+            }
+            None => {
+                match user_profile_cache::with_user_profile(cx, avatar_user_id.to_owned(), true, |profile, room_members| {
+                    room_members
+                        .get(room_id)
+                        .map(|rm| {
+                            (
+                                rm.display_name().map(|n| n.to_owned()),
+                                AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
+                            )
+                        })
+                        .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
+                }) {
+                    Some((profile_name, avatar_state)) => {
+                        (profile_name, avatar_state)
+                    }
+                    None => {
+                        (None, AvatarState::Unknown)
                     }
                 }
             }

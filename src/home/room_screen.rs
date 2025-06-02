@@ -1213,6 +1213,12 @@ impl Widget for RoomScreen {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let room_screen_widget_uid = self.widget_uid();
 
+        if self.tl_state.is_none() {
+            // Tl_state may not be ready after dock loading.
+            // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
+            return DrawStep::done();
+        }
+
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
