@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
 use crate::{
     app::{AppState, SelectedRoom},
-    room::room_display_filter::{FilterableRoom, RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
+    room::{room_display_filter::{FilterableRoom, RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, RoomPreviewAvatar},
     shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
     jump_to_bottom_button::UnreadMessageCount, room_filter_input_bar::RoomFilterAction},
     sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection},
@@ -247,6 +247,15 @@ pub struct InviterInfo {
     pub display_name: Option<String>,
     pub avatar: Option<Arc<[u8]>>,
 }
+impl std::fmt::Debug for InviterInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InviterInfo")
+            .field("user_id", &self.user_id)
+            .field("display_name", &self.display_name)
+            .field("avatar?", &self.avatar.is_some())
+            .finish()
+    }
+}
 
 /// The state of a pending invite.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -264,18 +273,6 @@ pub enum InviteState {
     /// The invite was declined and the room was successfully left.
     /// This should result in the InviteScreen being closed.
     RoomLeft,
-}
-
-
-#[derive(Clone, Debug)]
-pub enum RoomPreviewAvatar {
-    Text(String),
-    Image(Arc<[u8]>),
-}
-impl Default for RoomPreviewAvatar {
-    fn default() -> Self {
-        RoomPreviewAvatar::Text(String::new())
-    }
 }
 
 
@@ -477,7 +474,7 @@ impl RoomsList {
             }
         }
         if num_updates > 0 {
-            log!("RoomsList: processed {} updates to the list of all rooms", num_updates);
+            // log!("RoomsList: processed {} updates to the list of all rooms", num_updates);
             self.redraw(cx);
         }
     }

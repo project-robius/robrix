@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -15,6 +15,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::home::home_screen::HomeScreen;
     use crate::verification_modal::VerificationModal;
+    use crate::join_leave_room_modal::JoinLeaveRoomModal;
     use crate::login::login_screen::LoginScreen;
     use crate::shared::popup_list::PopupList;
     use crate::home::new_message_context_menu::*;
@@ -118,6 +119,11 @@ live_design! {
                         visible: false
                         home_screen = <HomeScreen> {}
                     }
+                    join_leave_modal = <Modal> {
+                        content: {
+                            join_leave_modal_inner = <JoinLeaveRoomModal> {}
+                        }
+                    }
                     login_screen_view = <View> {
                         visible: true
                         login_screen = <LoginScreen> {}
@@ -167,6 +173,7 @@ impl LiveRegister for App {
         makepad_widgets::live_design(cx);
         crate::shared::live_design(cx);
         crate::room::live_design(cx);
+        crate::join_leave_room_modal::live_design(cx);
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
@@ -200,6 +207,7 @@ impl MatchEvent for App {
                 self.app_state.logged_in = true;
                 self.update_login_visibility(cx);
                 self.ui.redraw(cx);
+                continue;
             }
 
             // Handle an action requesting to open the new message context menu.
@@ -215,14 +223,17 @@ impl MatchEvent for App {
                     main_content = { margin: { left: (pos_x), top: (pos_y) } }
                 });
                 self.ui.redraw(cx);
+                continue;
             }
 
             match action.downcast_ref() {
                 Some(PopupNotificationAction::Open) => {
                     self.ui.popup_notification(id!(popup)).open(cx);
+                    continue;
                 }
                 Some(PopupNotificationAction::Close) => {
                     self.ui.popup_notification(id!(popup)).close(cx);
+                    continue;
                 }
                 _ => {}
             }
@@ -243,14 +254,17 @@ impl MatchEvent for App {
                     StackNavigationAction::NavigateTo(live_id!(main_content_view))
                 );
                 self.ui.redraw(cx);
+                continue;
             }
 
             match action.as_widget_action().cast() {
                 AppStateAction::RoomFocused(selected_room) => {
                     self.app_state.selected_room = Some(selected_room.clone());
+                    continue;
                 }
                 AppStateAction::FocusNone => {
                     self.app_state.selected_room = None;
+                    continue;
                 }
                 AppStateAction::UpgradedInviteToJoinedRoom(room_id) => {
                     if let Some(selected_room) = self.app_state.selected_room.as_mut() {
@@ -261,6 +275,7 @@ impl MatchEvent for App {
                             self.ui.redraw(cx);
                         }
                     }
+                    continue;
                 }
                 _ => {}
             }
@@ -287,9 +302,25 @@ impl MatchEvent for App {
                             },
                         );
                     }
+                    continue;
                 }
                 TooltipAction::HoverOut => {
                     self.ui.callout_tooltip(id!(app_tooltip)).hide(cx);
+                    continue;
+                }
+                _ => {}
+            }
+
+            // Handle actions needed to open/close the join/leave room modal.
+            match action.downcast_ref() {
+                Some(JoinLeaveRoomModalAction::Open(typ)) => {
+                    self.ui.join_leave_room_modal(id!(join_leave_modal_inner)).set_kind(cx, typ.clone());
+                    self.ui.modal(id!(join_leave_modal)).open(cx);
+                    continue;
+                }
+                Some(JoinLeaveRoomModalAction::Close { .. } ) => {
+                    self.ui.modal(id!(join_leave_modal)).close(cx);
+                    continue;
                 }
                 _ => {}
             }
@@ -302,9 +333,11 @@ impl MatchEvent for App {
                 self.ui.verification_modal(id!(verification_modal_inner))
                     .initialize_with_data(cx, state.clone());
                 self.ui.modal(id!(verification_modal)).open(cx);
+                continue;
             }
-            if let VerificationModalAction::Close = action.as_widget_action().cast() {
+            if let Some(VerificationModalAction::Close) = action.downcast_ref() {
                 self.ui.modal(id!(verification_modal)).close(cx);
+                continue;
             }
 
             // // message source modal handling.

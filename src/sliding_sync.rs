@@ -29,11 +29,11 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: P
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
+        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -595,14 +595,16 @@ async fn async_worker(
                             }
                             Err(e) => {
                                 error!("Error leaving room {room_id}: {e:?}");
-                                LeaveRoomAction::Failed { room_id, error: e.to_string() }
+                                LeaveRoomAction::Failed { room_id, error: e }
                             }
                         }
                     } else {
                         error!("BUG: client could not get room with ID {room_id}");
                         LeaveRoomAction::Failed {
                             room_id,
-                            error: String::from("Client couldn't locate room to leave it."),
+                            error: matrix_sdk::Error::UnknownError(
+                                String::from("Client couldn't locate room to join it.").into()
+                            ),
                         }
                     };
                     Cx::post_action(result_action);

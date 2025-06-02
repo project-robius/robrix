@@ -3,7 +3,7 @@ use std::{borrow::Cow, time::SystemTime};
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::{client::media::get_content_thumbnail::v3::Method, error::FromHttpResponseError}, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}, RumaApiError};
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
 
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
@@ -95,6 +95,45 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
 pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
     let millis: i64 = millis.get().into();
     Local.timestamp_millis_opt(millis).single()
+}
+
+/// Handles special error cases related to joining or leaving rooms.
+///
+/// Returns `Some(msg)` if a special message should be shown for the given `error`.
+pub fn join_leave_error_to_string(
+    error: &matrix_sdk::Error,
+    room_name: Option<&str>,
+    was_join: bool,
+    was_invite: bool,
+) -> Option<String> {
+    let room_str = room_name.map_or_else(
+        || String::from("room"),
+        |r| format!("\"{r}\""),
+    );
+    match error {
+        // The below is a stupid hack to workaround `WrongRoomState` being private.
+        // We get the string representation of the error and then search for the "got" state.
+        matrix_sdk::Error::WrongRoomState(wrs) => {
+            if was_join && wrs.to_string().contains(", got: Joined") {
+                Some(format!("Failed to join {room_str}: it has already been joined."))
+            } else if !was_join && wrs.to_string().contains(", got: Left") {
+                Some(format!("Failed to leave {room_str}: it has already been left."))
+            } else {
+                None
+            }
+        }
+        // Special case for 404 errors, which indicate the room no longer exists.
+        // This avoids the weird "no known servers" error, which is misleading and incorrect.
+        // See: <https://github.com/element-hq/element-web/issues/25627>.
+        matrix_sdk::Error::Http(matrix_sdk::HttpError::Api(FromHttpResponseError::Server(RumaApiError::ClientApi(e)))) if e.status_code.as_u16() == 404 => {
+            Some(format!(
+                "Failed to {} {room_str}: the room no longer exists on the server.{}",
+                if was_join { "join" } else { "leave" },
+                if was_join && was_invite { "\n\nYou may safely reject this invite." } else { "" },
+            ))
+        }
+        _ => None,
+    }
 }
 
 /// Returns a string representation of the room name or ID.
