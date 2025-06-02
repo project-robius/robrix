@@ -439,7 +439,7 @@ impl MentionableTextInput {
             let room_mention_text = room_mention_label.text();
             let user_id_text = selected.label(id!(user_id)).text();
 
-            let is_room_mention = if room_mention_text == "@room" && user_id_text.is_empty() { true } else {false};
+            let is_room_mention = { room_mention_text == "@room" && user_id_text.is_empty() };
 
             let mention_to_insert = if is_room_mention {
                 // Always set to true, don't reset previously selected @room mentions
