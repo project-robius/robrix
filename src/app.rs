@@ -313,8 +313,8 @@ impl MatchEvent for App {
 
             // Handle actions needed to open/close the join/leave room modal.
             match action.downcast_ref() {
-                Some(JoinLeaveRoomModalAction::Open(typ)) => {
-                    self.ui.join_leave_room_modal(id!(join_leave_modal_inner)).set_kind(cx, typ.clone());
+                Some(JoinLeaveRoomModalAction::Open(kind)) => {
+                    self.ui.join_leave_room_modal(id!(join_leave_modal_inner)).set_kind(cx, kind.clone());
                     self.ui.modal(id!(join_leave_modal)).open(cx);
                     continue;
                 }

@@ -139,8 +139,10 @@ pub enum JoinLeaveModalKind {
     /// The user wants to reject an invite to a room.
     RejectInvite(InviteDetails),
     /// The user wants to join a room that they have not joined yet.
+    #[allow(unused)]
     JoinRoom(BasicRoomDetails),
     /// The user wants to leave an already-joined room.
+    #[allow(unused)]
     LeaveRoom(BasicRoomDetails),
 }
 impl JoinLeaveModalKind {
@@ -265,7 +267,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     }
                 }
 
-                self.view.label(id!(title)).set_text(cx, &title);
+                self.view.label(id!(title)).set_text(cx, title);
                 self.view.label(id!(description)).set_text(cx, &description);
                 self.view.label(id!(tip)).set_text(cx, "");
                 accept_button.set_text(cx, accept_button_text);
@@ -324,7 +326,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                             popup_msg = "Successfully left room.".into();
                         }
                     }
-                    self.view.label(id!(title)).set_text(cx, &title);
+                    self.view.label(id!(title)).set_text(cx, title);
                     self.view.label(id!(description)).set_text(cx, &description);
                     enqueue_popup_notification(popup_msg);
                     accept_button.set_enabled(cx, true);
@@ -430,7 +432,7 @@ impl JoinLeaveRoomModal {
             }
         }
 
-        self.view.label(id!(title)).set_text(cx, &title);
+        self.view.label(id!(title)).set_text(cx, title);
         self.view.label(id!(description)).set_text(cx, &description);
         self.view.label(id!(tip)).set_text(cx, &format!(
             "Tip: hold Shift when clicking the \"{tip_button}\" button to bypass this prompt.",
