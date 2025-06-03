@@ -1,31 +1,20 @@
-use std::{collections::BTreeMap, ops::DerefMut};
+use std::{borrow::Cow, collections::BTreeMap, ops::DerefMut, sync::Arc};
 
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::{
-    AnyOtherFullStateEventContent, InReplyToDetails, Profile, ReactionsByKeyBySender,
-    TimelineDetails, TimelineEventItemId,
+    self, AnyOtherFullStateEventContent, InReplyToDetails, Profile, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, TimelineItem
 };
 use matrix_sdk::ruma::{
     self, events::{
-        receipt::Receipt,
-        room::message::{
-            AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent,
-            FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent,
-            MessageType, NoticeMessageEventContent, Relation, RoomMessageEventContent,
-            TextMessageEventContent, VideoMessageEventContent,
-        },
-        AnyMessageLikeEvent, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent,
-        FullStateEventContent,
+        receipt::Receipt, room::message::{
+            AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, MessageFormat, MessageType, NoticeMessageEventContent, Relation, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent
+        }, sticker::StickerEventContent, AnyMessageLikeEvent, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent
     }, room_id, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId
 };
 
 use crate::{
-    app::AppState,
-    event_preview::text_preview_of_other_state,
-    shared::message_search_input_bar::MessageSearchAction,
-    sliding_sync::{current_user_id, submit_async_request, MatrixRequest},
-    utils::unix_time_millis_to_datetime,
+    app::AppState, event_preview::text_preview_of_other_state, home::{new_message_context_menu::MessageAbilities, room_screen::{draw_replied_to_message, populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_location_message_content, populate_text_message_content, populate_video_message_content, MessageOrStickerType, MessageWidgetRefExt, MESSAGE_NOTICE_TEXT_COLOR, SEARCH_HIGHLIGHT}}, media_cache::MediaCache, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, styles::COLOR_DANGER_RED, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::{current_user_id, submit_async_request, MatrixRequest, UserPowerLevels}, utils::unix_time_millis_to_datetime
 };
 
 use crate::home::{
@@ -1289,4 +1278,501 @@ fn truncate_to_50(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+pub enum MessageOrStickerSearchView<'e> {
+    Message(&'e timeline::Message),
+    Sticker(&'e StickerEventContent),
+}
+
+impl MessageOrStickerSearchView<'_>{
+    /// Returns the type of this message or sticker.
+    pub fn get_type(&self) -> MessageOrStickerType {
+        match self {
+            Self::Message(msg) => match msg.msgtype() {
+                MessageType::Audio(audio) => MessageOrStickerType::Audio(audio),
+                MessageType::Emote(emote) => MessageOrStickerType::Emote(emote),
+                MessageType::File(file) => MessageOrStickerType::File(file),
+                MessageType::Image(image) => MessageOrStickerType::Image(image),
+                MessageType::Location(location) => MessageOrStickerType::Location(location),
+                MessageType::Notice(notice) => MessageOrStickerType::Notice(notice),
+                MessageType::ServerNotice(server_notice) => MessageOrStickerType::ServerNotice(server_notice),
+                MessageType::Text(text) => MessageOrStickerType::Text(text),
+                MessageType::Video(video) => MessageOrStickerType::Video(video),
+                MessageType::VerificationRequest(verification_request) => MessageOrStickerType::VerificationRequest(verification_request),
+                MessageType::_Custom(custom) => MessageOrStickerType::_Custom(custom),
+                _ => MessageOrStickerType::Unknown,
+            },
+            Self::Sticker(sticker) => MessageOrStickerType::Sticker(sticker),
+        }
+    }
+    pub fn body(&self) -> &str {
+        match self {
+            Self::Message(msg) => msg.body(),
+            Self::Sticker(sticker) => sticker.body.as_str(),
+        }
+    }
+}
+pub fn populate_message_search_view(
+    cx: &mut Cx2d,
+    list: &mut PortalList,
+    item_id: usize,
+    room_id: &OwnedRoomId,
+    event_tl_item: &AnyTimelineEvent,
+    message: MessageOrStickerSearchView,
+    prev_event: Option<& AnyTimelineEvent>,
+    user_profiles: BTreeMap<OwnedUserId, TimelineDetails<Profile>>,
+    in_reply_to_details: Option<&InReplyToDetails>,
+    media_cache: &mut MediaCache,
+    user_power_levels: &UserPowerLevels,
+    is_contextual: bool,
+    item_drawn_status: ItemDrawnStatus,
+    room_screen_widget_uid: WidgetUid,
+) -> (WidgetRef, ItemDrawnStatus) {
+    let mut new_drawn_status = item_drawn_status;
+    let ts_millis = event_tl_item.origin_server_ts();
+
+    let mut is_notice = false; // whether this message is a Notice
+    let mut is_server_notice = false; // whether this message is a Server Notice
+
+    // Determine whether we can use a more compact UI view that hides the user's profile info
+    // if the previous message (including stickers) was sent by the same user within 10 minutes.
+    let use_compact_view = prev_event.is_some_and(|p| {
+        let prev_msg_sender = p.sender();
+        let current_sender = event_tl_item.sender();
+        {
+            prev_msg_sender == current_sender
+                && event_tl_item
+                    .origin_server_ts()
+                    .0
+                    .checked_sub(p.origin_server_ts().0)
+                    .is_some_and(|d| d < uint!(86400000)) //within a day
+        }
+        }
+    );
+    let has_html_body: bool;
+
+    // Sometimes we need to call this up-front, so we save the result in this variable
+    // to avoid having to call it twice.
+    let mut set_username_and_get_avatar_retval = None;
+    let (item, used_cached_item) = match message.get_type() {
+        MessageOrStickerType::Text(TextMessageEventContent { body, formatted, .. }) => {
+            has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+            let template = if use_compact_view {
+                live_id!(CondensedMessage)
+            } else {
+                live_id!(Message)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
+                html_or_plaintext_ref.apply_over(
+                    cx,
+                    live!(
+                        html_view = {
+                            html = {
+                                font_color: (vec3(0.0,0.0,0.0)),
+                                draw_block: {
+                                    code_color: (SEARCH_HIGHLIGHT)
+                                }
+                            }
+                        }
+                    ),
+                );
+                populate_text_message_content(cx, &html_or_plaintext_ref, body, formatted.as_ref());
+                new_drawn_status.content_drawn = true;
+                (item, false)
+            }
+        }
+        // A notice message is just a message sent by an automated bot,
+        // so we treat it just like a message but use a different font color.
+        MessageOrStickerType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
+            is_notice = true;
+            has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+            let template = if use_compact_view {
+                live_id!(CondensedMessage)
+            } else {
+                live_id!(Message)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
+                html_or_plaintext_ref.apply_over(cx, live!(
+                    html_view = {
+                        html = {
+                            font_color: (MESSAGE_NOTICE_TEXT_COLOR),
+                            draw_normal:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                            draw_italic:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                            draw_bold:        { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                            draw_bold_italic: { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                        }
+                    }
+                ));
+                populate_text_message_content(
+                    cx,
+                    &html_or_plaintext_ref,
+                    body,
+                    formatted.as_ref(),
+                );
+                new_drawn_status.content_drawn = true;
+                (item, false)
+            }
+        }
+        MessageOrStickerType::ServerNotice(sn) => {
+            is_server_notice = true;
+            has_html_body = false;
+            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
+                html_or_plaintext_ref.apply_over(cx, live!(
+                    html_view = {
+                        html = {
+                            font_color: (COLOR_DANGER_RED),
+                            draw_normal:      { color: (COLOR_DANGER_RED), }
+                            draw_italic:      { color: (COLOR_DANGER_RED), }
+                            draw_bold:        { color: (COLOR_DANGER_RED), }
+                            draw_bold_italic: { color: (COLOR_DANGER_RED), }
+                        }
+                    }
+                ));
+                let formatted = format!(
+                    "<b>Server notice:</b> {}\n\n<i>Notice type:</i>: {}{}{}",
+                    sn.body,
+                    sn.server_notice_type.as_str(),
+                    sn.limit_type.as_ref()
+                        .map(|l| format!("\n<i>Limit type:</i> {}", l.as_str()))
+                        .unwrap_or_default(),
+                    sn.admin_contact.as_ref()
+                        .map(|c| format!("\n<i>Admin contact:</i> {}", c))
+                        .unwrap_or_default(),
+                );
+                populate_text_message_content(
+                    cx,
+                    &html_or_plaintext_ref,
+                    &sn.body,
+                    Some(&FormattedBody {
+                        format: MessageFormat::Html,
+                        body: formatted,
+                    }),
+                );
+                new_drawn_status.content_drawn = true;
+                (item, false)
+            }
+        }
+        // An emote is just like a message but is prepended with the user's name
+        // to indicate that it's an "action" that the user is performing.
+        MessageOrStickerType::Emote(EmoteMessageEventContent { body, formatted, .. }) => {
+            has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+            let template = if use_compact_view {
+                live_id!(CondensedMessage)
+            } else {
+                live_id!(Message)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                // Draw the profile up front here because we need the username for the emote body.
+                // Prioritize using the room_id encapsulated in the event timeline item.
+                let (username, profile_drawn) = item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
+                    cx,
+                    event_tl_item.room_id(),
+                    event_tl_item.sender(),
+                    user_profiles.get(event_tl_item.sender()),
+                    Some(event_tl_item.event_id()),
+                );
+
+                // Prepend a "* <username> " to the emote body, as suggested by the Matrix spec.
+                let (body, formatted) = if let Some(fb) = formatted.as_ref() {
+                    (
+                        Cow::from(&fb.body),
+                        Some(FormattedBody {
+                            format: fb.format.clone(),
+                            body: format!("* {} {}", &username, &fb.body),
+                        })
+                    )
+                } else {
+                    (Cow::from(format!("* {} {}", &username, body)), None)
+                };
+                populate_text_message_content(
+                    cx,
+                    &item.html_or_plaintext(id!(content.message)),
+                    &body,
+                    formatted.as_ref(),
+                );
+                set_username_and_get_avatar_retval = Some((username, profile_drawn));
+                new_drawn_status.content_drawn = true;
+                (item, false)
+            }
+        }
+        // Handle images and sticker messages that are static images.
+        mtype @ MessageOrStickerType::Image(_) | mtype @ MessageOrStickerType::Sticker(_) => {
+            has_html_body = match mtype {
+                MessageOrStickerType::Image(image) => image.formatted.as_ref()
+                    .is_some_and(|f| f.format == MessageFormat::Html),
+                _ => false,
+            };
+            let template = if use_compact_view {
+                live_id!(CondensedImageMessage)
+            } else {
+                live_id!(ImageMessage)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                let image_info = mtype.get_image_info();
+                let is_image_fully_drawn = populate_image_message_content(
+                    cx,
+                    &item.text_or_image(id!(content.message)),
+                    image_info,
+                    message.body(),
+                    media_cache,
+                );
+                new_drawn_status.content_drawn = is_image_fully_drawn;
+                (item, false)
+            }
+        }
+        MessageOrStickerType::Location(location) => {
+            has_html_body = false;
+            let template = if use_compact_view {
+                live_id!(CondensedMessage)
+            } else {
+                live_id!(Message)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                let is_location_fully_drawn = populate_location_message_content(
+                    cx,
+                    &item.html_or_plaintext(id!(content.message)),
+                    location,
+                );
+                new_drawn_status.content_drawn = is_location_fully_drawn;
+                (item, false)
+            }
+        }
+        MessageOrStickerType::File(file_content) => {
+            has_html_body = file_content.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+            let template = if use_compact_view {
+                live_id!(CondensedMessage)
+            } else {
+                live_id!(Message)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                new_drawn_status.content_drawn = populate_file_message_content(
+                    cx,
+                    &item.html_or_plaintext(id!(content.message)),
+                    file_content,
+                );
+                (item, false)
+            }
+        }
+        MessageOrStickerType::Audio(audio) => {
+            has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+            let template = if use_compact_view {
+                live_id!(CondensedMessage)
+            } else {
+                live_id!(Message)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                new_drawn_status.content_drawn = populate_audio_message_content(
+                    cx,
+                    &item.html_or_plaintext(id!(content.message)),
+                    audio,
+                );
+                (item, false)
+            }
+        }
+        MessageOrStickerType::Video(video) => {
+            has_html_body = video.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+            let template = if use_compact_view {
+                live_id!(CondensedMessage)
+            } else {
+                live_id!(Message)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                new_drawn_status.content_drawn = populate_video_message_content(
+                    cx,
+                    &item.html_or_plaintext(id!(content.message)),
+                    video,
+                );
+                (item, false)
+            }
+        }
+        MessageOrStickerType::VerificationRequest(verification) => {
+            has_html_body = verification.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+            let template = live_id!(Message);
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                // Use `FormattedBody` to hold our custom summary of this verification request.
+                let formatted = FormattedBody {
+                    format: MessageFormat::Html,
+                    body: format!(
+                        "<i>Sent a <b>verification request</b> to {}.<br>(Supported methods: {})</i>",
+                        verification.to,
+                        verification.methods
+                            .iter()
+                            .map(|m| m.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ),
+                };
+
+                populate_text_message_content(
+                    cx,
+                    &item.html_or_plaintext(id!(content.message)),
+                    &verification.body,
+                    Some(&formatted),
+                );
+                new_drawn_status.content_drawn = true;
+                (item, false)
+            }
+        }
+        other => {
+            has_html_body = false;
+            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                let kind = other.as_str();
+                item.label(id!(content.message)).set_text(
+                    cx,
+                    &format!("[Unsupported ({kind})] {}", message.body()),
+                );
+                new_drawn_status.content_drawn = true;
+                (item, false)
+            }
+        }
+    };
+
+    let mut replied_to_event_id = None;
+
+    // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
+    if !used_cached_item {
+        let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
+            cx,
+            &item.view(id!(replied_to_message)),
+            room_id,
+            in_reply_to_details,
+            Some(event_tl_item.event_id()),
+        );
+        replied_to_event_id = replied_to_ev_id;
+        // The content is only considered to be fully drawn if the logic above marked it as such
+        // *and* if the reply preview was also fully drawn.
+        new_drawn_status.content_drawn &= is_reply_fully_drawn;
+    }
+
+    // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
+    let skip_draw_profile =
+        use_compact_view || (used_cached_item && item_drawn_status.profile_drawn);
+    if skip_draw_profile {
+        // log!("\t --> populate_message_view(): SKIPPING profile draw for item_id: {item_id}");
+        new_drawn_status.profile_drawn = true;
+    } else {
+        // log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
+        let username_label = item.label(id!(content.username));
+
+        if !is_server_notice { // the normal case
+            let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
+                item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
+                    cx,
+                    event_tl_item.room_id(),
+                    event_tl_item.sender(),
+                    user_profiles.get(event_tl_item.sender()),
+                    Some(event_tl_item.event_id()),
+                )
+            );
+            if is_notice {
+                username_label.apply_over(cx, live!(
+                    draw_text: {
+                        color: (MESSAGE_NOTICE_TEXT_COLOR),
+                    }
+                ));
+            }
+            username_label.set_text(cx, &username);
+            new_drawn_status.profile_drawn = profile_drawn;
+        }
+        else {
+            // Server notices are drawn with a red color avatar background and username.
+            let avatar = item.avatar(id!(profile.avatar));
+            avatar.show_text(cx, None, "⚠");
+            avatar.apply_over(cx, live!(
+                text_view = {
+                    draw_bg: { background_color: (COLOR_DANGER_RED), }
+                }
+            ));
+            username_label.set_text(cx, "Server notice");
+            username_label.apply_over(cx, live!(
+                draw_text: {
+                    color: (COLOR_DANGER_RED),
+                }
+            ));
+            new_drawn_status.profile_drawn = true;
+        }
+    }
+
+    // If we've previously drawn the item content, skip all other steps.
+    if used_cached_item && item_drawn_status.content_drawn && item_drawn_status.profile_drawn {
+        return (item, new_drawn_status);
+    }
+
+    // Set the Message widget's metadata for reply-handling purposes.
+    item.as_message().set_data(MessageDetails {
+        event_id: Some(event_tl_item.event_id().to_owned()),
+        item_id,
+        related_event_id: replied_to_event_id,
+        room_screen_widget_uid,
+        abilities: MessageAbilities::from_user_power_and_event(
+            user_power_levels,
+            event_tl_item,
+            &message,
+            has_html_body,
+        ),
+        should_be_highlighted: false,
+    });
+
+    // Set the timestamp.
+    if let Some(dt) = unix_time_millis_to_datetime(&ts_millis) {
+        // format as AM/PM 12-hour time
+        item.label(id!(profile.timestamp))
+            .set_text(cx, &format!("{}", dt.time().format("%l:%M %P")));
+        if !use_compact_view {
+            item.label(id!(profile.datestamp))
+                .set_text(cx, &format!("{}", dt.date_naive()));
+        }
+    } else {
+        item.label(id!(profile.timestamp))
+            .set_text(cx, &format!("{}", ts_millis.get()));
+    }
+
+    if is_contextual {
+        item.view(id!(overlay_message)).apply_over(
+            cx,
+            live! {
+                draw_bg: {color: (vec4(1.0, 1.0, 1.0, 0.5)),}
+            },
+        );
+    }
+    (item, new_drawn_status)
 }
