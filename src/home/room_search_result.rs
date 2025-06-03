@@ -6,8 +6,8 @@ use matrix_sdk_ui::timeline::{
     AnyOtherFullStateEventContent, InReplyToDetails, Profile, ReactionsByKeyBySender,
     TimelineDetails, TimelineEventItemId,
 };
-use ruma::{
-    events::{
+use matrix_sdk::ruma::{
+    self, events::{
         receipt::Receipt,
         room::message::{
             AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent,

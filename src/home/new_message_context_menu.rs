@@ -3,9 +3,8 @@
 
 use bitflags::bitflags;
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedEventId;
+use matrix_sdk::ruma::{OwnedEventId, events::room::message::MessageType};
 use matrix_sdk_ui::timeline::InReplyToDetails;
-use ruma::events::room::message::MessageType;
 
 use crate::sliding_sync::UserPowerLevels;
 

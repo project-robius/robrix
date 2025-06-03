@@ -3482,7 +3482,6 @@ dependencies = [
  "robius-location",
  "robius-open",
  "robius-use-makepad",
- "ruma",
  "serde",
  "serde_json",
  "tokio",
