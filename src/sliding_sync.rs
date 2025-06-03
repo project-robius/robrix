@@ -217,6 +217,7 @@ pub type OnMediaFetchedFn = fn(
 
 
 /// The set of requests for async work that can be made to the worker thread.
+#[allow(clippy::large_enum_variant)]
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
     Login(LoginRequest),
@@ -2635,8 +2636,7 @@ async fn spawn_sso_server(
                 }
                 Uri::new(&sso_url).open().map_err(|err| {
                     Error::UnknownError(
-                        Box::new(io::Error::new(
-                            io::ErrorKind::Other,
+                        Box::new(io::Error::other(
                             format!("Unable to open SSO login url. Error: {:?}", err),
                         ))
                         .into(),
