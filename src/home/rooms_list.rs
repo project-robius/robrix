@@ -623,7 +623,7 @@ impl RoomsList {
         (new_displayed_rooms, new_displayed_direct_messages)
     }
 
-    fn calculate_indexes(&self) -> (RoomsListIndexes, RoomsListIndexes, RoomsListIndexes) {
+    fn calculate_indexes(&self) -> (GroupedRoomsListIndexes, GroupedRoomsListIndexes, GroupedRoomsListIndexes) {
         // Based on the various displayed room lists and is_expanded state of each room header,
         // calculate the indices in the PortalList where the headers and rooms should be drawn.
         let should_show_invited_rooms_header = !self.displayed_invited_rooms.is_empty();
@@ -661,19 +661,19 @@ impl RoomsList {
                 0
             };
 
-        let invited_rooms_indexes = RoomsListIndexes {
+        let invited_rooms_indexes = GroupedRoomsListIndexes {
             header_index: index_of_invited_rooms_header,
             first_room_index: index_of_first_invited_room,
             after_rooms_index: index_after_invited_rooms,
         };
 
-        let direct_messages_indexes = RoomsListIndexes {
+        let direct_messages_indexes = GroupedRoomsListIndexes {
             header_index: index_of_direct_messages_header,
             first_room_index: index_of_first_direct_message,
             after_rooms_index: index_after_direct_messages,
         };
 
-        let joined_rooms_indexes = RoomsListIndexes {
+        let joined_rooms_indexes = GroupedRoomsListIndexes {
             header_index: index_of_joined_rooms_header,
             first_room_index: index_of_first_joined_room,
             after_rooms_index: index_after_joined_rooms,
@@ -771,25 +771,26 @@ impl Widget for RoomsList {
         let total_count = status_label_id + 1;
 
         let get_invited_room_id = |portal_list_index: usize| {
-            let index = portal_list_index - invited_rooms_indexes.first_room_index;
-            self.is_invited_rooms_header_expanded.then(||
-                self.displayed_invited_rooms.get(index)
-            )
-            .flatten()
+            portal_list_index.checked_sub(invited_rooms_indexes.first_room_index)
+                .and_then(|index|self.is_invited_rooms_header_expanded
+                    .then(||self.displayed_invited_rooms.get(index))
+                )
+                .flatten()
         };
+
         let get_direct_message_id = |portal_list_index: usize| {
-            let index = portal_list_index - direct_messages_indexes.first_room_index;
-            self.is_direct_messages_header_expanded.then(||
-                self.displayed_direct_messages.get(index)
-            )
-            .flatten()
+            portal_list_index.checked_sub(direct_messages_indexes.first_room_index)
+                .and_then(|index| self.is_direct_messages_header_expanded
+                    .then(|| self.displayed_direct_messages.get(index))
+                )
+                .flatten()
         };
         let get_joined_room_id = |portal_list_index: usize| {
-            let index = portal_list_index - joined_rooms_indexes.first_room_index;
-            self.is_rooms_header_expanded.then(||
-                self.displayed_rooms.get(index)
-            )
-            .flatten()
+            portal_list_index.checked_sub(joined_rooms_indexes.first_room_index)
+                .and_then(|index| self.is_rooms_header_expanded
+                    .then(|| self.displayed_rooms.get(index))
+                )
+                .flatten()
         };
 
         // Start the actual drawing procedure.
@@ -919,7 +920,11 @@ pub struct RoomsListScopeProps {
     pub was_scrolling: bool,
 }
 
-struct RoomsListIndexes {
+/// A group of rooms indexes.
+/// Currently, it is used for invited room, direct message and common room (others invite user but user have not been accepted or declined)
+/// `rooms count = after_rooms_index - first_room_index`(it could be invited rooms, direct messages and common rooms currently).
+/// `first_room_index` & `after_rooms_index` are 0 when `header_index` is `None`
+struct GroupedRoomsListIndexes {
     header_index: Option<usize>,
     first_room_index: usize,
     after_rooms_index: usize,
