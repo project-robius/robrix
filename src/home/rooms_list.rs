@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
 use crate::{
     app::{AppState, SelectedRoom},
-    room::room_display_filter::{FilterableRoom, RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
+    room::room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
     shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
     jump_to_bottom_button::UnreadMessageCount, room_filter_input_bar::RoomFilterAction},
     sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection},
@@ -560,58 +560,67 @@ impl RoomsList {
             .build();
         self.display_filter = filter;
 
-        /// An inner function that generates a sorted, filtered list of rooms to display.
-        fn generate_displayed_rooms<FR: FilterableRoom>(
-            rooms_map: &HashMap<OwnedRoomId, FR>,
-            display_filter: &RoomDisplayFilter,
-            sort_fn: Option<&SortFn>,
-        ) -> Vec<OwnedRoomId> {
-            if let Some(sort_fn) = sort_fn {
-                let mut filtered_rooms: Vec<_> = rooms_map
-                    .iter()
-                    .filter(|(_, room)| display_filter(*room))
-                    .collect();
-                filtered_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(*room_a, *room_b));
-                filtered_rooms
-                    .into_iter()
-                    .map(|(room_id, _)| room_id.clone())
-                    .collect()
-            } else {
-                rooms_map
-                    .iter()
-                    .filter(|(_, room)| display_filter(*room))
-                    .map(|(room_id, _)| room_id.clone())
-                    .collect()
-            }
-        }
+        self.displayed_invited_rooms = self.generate_displayed_invited_rooms(sort_fn.as_deref());
 
-        // Update rooms lists and redraw them.
-        self.displayed_invited_rooms = generate_displayed_rooms(
-            &self.invited_rooms.borrow(),
-            &self.display_filter,
-            sort_fn.as_deref(),
-        );
-        self.displayed_direct_messages.clear();
-        self.displayed_rooms.clear();
-        generate_displayed_rooms(
-            &self.all_joined_rooms,
-            &self.display_filter,
-            sort_fn.as_deref(),
-        )
-        .into_iter()
-        .for_each(|room_id| {
-            if let Some(jr) = self.all_joined_rooms.get(&room_id) {
-                if jr.is_direct {
-                    self.displayed_direct_messages.push(room_id.clone());
-                } else {
-                    self.displayed_rooms.push(room_id.clone());
-                }
-            }
-        });
+        let (new_displayed_rooms, new_displayed_direct_messages) =
+            self.generate_displayed_joined_rooms(sort_fn.as_deref());
+
+        self.displayed_rooms = new_displayed_rooms;
+        self.displayed_direct_messages = new_displayed_direct_messages;
 
         self.update_status_matching_rooms();
         portal_list.set_first_id_and_scroll(0, 0.0);
         self.redraw(cx);
+    }
+
+    fn generate_displayed_invited_rooms(&self, sort_fn: Option<&SortFn>) -> Vec<OwnedRoomId> {
+        let invited_rooms_ref = self.invited_rooms.borrow();
+        let filtered_invited_rooms_iter = invited_rooms_ref
+            .iter()
+            .filter(|(_, room)| self.display_filter.0(*room));
+
+        if let Some(sort_fn) = sort_fn {
+            let mut filtered_invited_rooms = filtered_invited_rooms_iter
+                .collect::<Vec<_>>();
+            filtered_invited_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(*room_a, *room_b));
+            filtered_invited_rooms
+                .into_iter()
+                .map(|(room_id, _)| room_id.clone()).collect()
+        } else {
+            filtered_invited_rooms_iter.map(|(room_id, _)| room_id.clone()).collect()
+        }
+    }
+
+    fn generate_displayed_joined_rooms(&self, sort_fn: Option<&SortFn>) -> (Vec<OwnedRoomId>, Vec<OwnedRoomId>) {
+        let mut new_displayed_rooms = Vec::new();
+        let mut new_displayed_direct_messages = Vec::new();
+        let mut push_room = |room_id: &OwnedRoomId, jr: &JoinedRoomInfo|{
+            let room_id = room_id.clone();
+            if jr.is_direct {
+                new_displayed_direct_messages.push(room_id);
+            } else {
+                new_displayed_rooms.push(room_id);
+            }
+        };
+
+        let filtered_joined_rooms_iter = self.all_joined_rooms.iter()
+            .filter(|(_, room)| self.display_filter.0(*room));
+
+        if let Some(sort_fn) = sort_fn {
+            let mut filtered_rooms = filtered_joined_rooms_iter.collect::<Vec<_>>();
+            filtered_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(*room_a, *room_b));
+            filtered_rooms
+                .into_iter()
+                .for_each(|(room_id, jr)|{
+                    push_room(room_id, jr)
+                });
+        } else {
+            filtered_joined_rooms_iter.for_each(|(room_id, jr)|{
+                push_room(room_id, jr)
+            });
+        };
+
+        (new_displayed_rooms, new_displayed_direct_messages)
     }
 
     fn calculate_indexes(&self) -> (RoomsListIndexes, RoomsListIndexes, RoomsListIndexes) {
