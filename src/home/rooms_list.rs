@@ -422,11 +422,13 @@ impl RoomsList {
                 }
                 RoomsListUpdate::RemoveRoom { room_id, new_state: _ } => {
                     if let Some(_removed) = self.all_joined_rooms.remove(&room_id) {
+                        log!("Removed room {room_id} from the list of all joined rooms");
                         self.displayed_joined_rooms.iter()
                             .position(|r| r == &room_id)
                             .map(|index| self.displayed_joined_rooms.remove(index));
                     }
                     else if let Some(_removed) = self.invited_rooms.borrow_mut().remove(&room_id) {
+                        log!("Removed room {room_id} from the list of all invited rooms");
                         self.displayed_invited_rooms.iter()
                             .position(|r| r == &room_id)
                             .map(|index| self.displayed_invited_rooms.remove(index));
@@ -441,7 +443,7 @@ impl RoomsList {
                     //       if it is currently being displayed,
                     //       and also ensure that the room's TimelineUIState is preserved
                     //       and saved (if the room has not been left),
-                    //       and also that it's MediaCache instance is put into a special state
+                    //       and also that its MediaCache instance is put into a special state
                     //       where its internal update sender gets replaced upon next usage
                     //       (that is, upon the next time that same room is opened by the user).
                 }

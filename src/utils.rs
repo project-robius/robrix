@@ -97,20 +97,18 @@ pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Optio
     Local.timestamp_millis_opt(millis).single()
 }
 
-/// Handles special error cases related to joining or leaving rooms.
-///
-/// Returns `Some(msg)` if a special message should be shown for the given `error`.
-pub fn join_leave_error_to_string(
+/// Returns a string error message, handling special cases related to joining/leaving rooms.
+pub fn stringify_join_leave_error(
     error: &matrix_sdk::Error,
     room_name: Option<&str>,
     was_join: bool,
     was_invite: bool,
-) -> Option<String> {
+) -> String {
     let room_str = room_name.map_or_else(
         || String::from("room"),
         |r| format!("\"{r}\""),
     );
-    match error {
+    let msg_opt = match error {
         // The below is a stupid hack to workaround `WrongRoomState` being private.
         // We get the string representation of the error and then search for the "got" state.
         matrix_sdk::Error::WrongRoomState(wrs) => {
@@ -133,7 +131,18 @@ pub fn join_leave_error_to_string(
             ))
         }
         _ => None,
-    }
+    };
+    msg_opt.unwrap_or_else(|| format!(
+        "Failed to {} {}: {}",
+        match (was_join, was_invite) {
+            (true, true) => "accept invite to",
+            (true, false) => "join",
+            (false, true) => "reject invite to",
+            (false, false) => "leave",
+        },
+        room_str,
+        error
+    ))
 }
 
 /// Returns a string representation of the room name or ID.

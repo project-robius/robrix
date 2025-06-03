@@ -292,8 +292,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                 }
                 Some(JoinRoomAction::Failed { room_id, error }) if room_id == kind.room_id() => {
                     self.view.label(id!(title)).set_text(cx, "Error joining room!");
-                    let msg = utils::join_leave_error_to_string(error, kind.room_name(), true, false)
-                        .unwrap_or_else(|| format!("Failed to join room: {error}"));
+                    let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, false);
                     self.view.label(id!(description)).set_text(cx, &msg);
                     enqueue_popup_notification(msg);
                     accept_button.set_enabled(cx, true);
@@ -341,20 +340,12 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     match kind {
                         JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_) => {
                             title = "Error rejecting invite!";
-                            description = utils::join_leave_error_to_string(error, kind.room_name(), false, true)
-                                .unwrap_or_else(|| format!(
-                                    "Failed to reject invite to \"{}\".",
-                                    room_name_or_id(kind.room_name(), room_id),
-                                ));
+                            description = utils::stringify_join_leave_error(error, kind.room_name(), false, true);
                             popup_msg = "Failed to reject invite.".into();
                         }
                         JoinLeaveModalKind::JoinRoom(_) | JoinLeaveModalKind::LeaveRoom(_) => {
                             title = "Error leaving room!";
-                            description = utils::join_leave_error_to_string(error, kind.room_name(), false, true)
-                                .unwrap_or_else(|| format!(
-                                    "Failed to leave \"{}\": {error}",
-                                    room_name_or_id(kind.room_name(), room_id),
-                                ));
+                            description = utils::stringify_join_leave_error(error, kind.room_name(), false, false);
                             popup_msg = "Failed to leave room.".into();
                         }
                     }
@@ -388,7 +379,7 @@ impl JoinLeaveRoomModal {
         cx: &mut Cx,
         kind: JoinLeaveModalKind,
     ) {
-        log!("Initializing JoinLeaveRoomModal with kind: {kind:?}");
+        log!("Showing JoinLeaveRoomModal for {kind:?}");
         let title: &str;
         let description: String;
         let tip_button: &str;
