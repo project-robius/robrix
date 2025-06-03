@@ -3,7 +3,7 @@ use std::ops::Not;
 use makepad_widgets::*;
 use url::Url;
 
-use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
+use crate::{sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest}};
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
 

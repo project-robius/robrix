@@ -240,7 +240,7 @@ impl Widget for InviteScreen {
                 match action.downcast_ref() {
                     Some(JoinRoomAction::Joined { room_id }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingForJoinedRoom;
-                        enqueue_popup_notification("Successfully joined room.".into());
+                        enqueue_popup_notification("Successfully joined room.".into(), None);
                     }
                     Some(JoinRoomAction::Failed { room_id, error }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingOnUserInput;
@@ -252,18 +252,18 @@ impl Widget for InviteScreen {
                             }
                             _ => format!("Failed to join room: {error}"),
                         };
-                        enqueue_popup_notification(msg);
+                        enqueue_popup_notification(msg, None);
                     }
                     _ => {}
                 }
                 match action.downcast_ref() {
                     Some(LeaveRoomAction::Left { room_id }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::RoomLeft;
-                        enqueue_popup_notification("Successfully rejected invite.".into());
+                        enqueue_popup_notification("Successfully rejected invite.".into(), None);
                     }
                     Some(LeaveRoomAction::Failed { room_id, error }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingOnUserInput;
-                        enqueue_popup_notification(format!("Failed to reject invite: {error}"));
+                        enqueue_popup_notification(format!("Failed to reject invite: {error}"), None);
                     }
                     _ => {}
                 }

@@ -376,6 +376,7 @@ impl Widget for EditingPane {
                             _non_editable => {
                                 enqueue_popup_notification(
                                     "That message type cannot be edited.".into(),
+                                    None
                                 );
                                 self.animator_play(cx, id!(panel.hide));
                                 self.redraw(cx);
@@ -411,6 +412,7 @@ impl Widget for EditingPane {
                         else {
                             enqueue_popup_notification(
                                 "Failed to obtain existing poll answers while editing poll.".into(),
+                                None
                             );
                             return;
                         };
@@ -429,7 +431,7 @@ impl Widget for EditingPane {
                         }
                     },
                     _ => {
-                        enqueue_popup_notification("That event type cannot be edited.".into());
+                        enqueue_popup_notification("That event type cannot be edited.".into(), None);
                         return;
                     },
                 };
@@ -482,7 +484,7 @@ impl EditingPane {
                 self.animator_play(cx, id!(panel.hide));
             },
             Err(e) => {
-                enqueue_popup_notification(format!("Failed to edit message: {}", e));
+                enqueue_popup_notification(format!("Failed to edit message: {}", e), None);
             },
         }
     }
@@ -490,7 +492,7 @@ impl EditingPane {
     /// Shows the editing pane and sets it up to edit the given `event`'s content.
     pub fn show(&mut self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
         if !event_tl_item.is_editable() {
-            enqueue_popup_notification("That message cannot be edited.".into());
+            enqueue_popup_notification("That message cannot be edited.".into(), None);
             return;
         }
 
@@ -503,7 +505,7 @@ impl EditingPane {
                 edit_text_input.set_text(cx, &poll.results().question);
             },
             _ => {
-                enqueue_popup_notification("That message cannot be edited.".into());
+                enqueue_popup_notification("That message cannot be edited.".into(), None);
                 return;
             },
         }

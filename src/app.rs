@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -124,11 +124,11 @@ live_design! {
                         login_screen = <LoginScreen> {}
                     }
                     app_tooltip = <CalloutTooltip> {}
-                    popup = <PopupNotification> {
-                        margin: {top: 45, right: 13},
-                        content: {
-                            <PopupList> {}
-                        }
+                    <View> {
+                        width: Fill,
+                        height: Fill,
+                        align: {x: 1.0}
+                        <PopupList> {}
                     }
 
                     // Context menus should be shown above other UI elements,
@@ -216,16 +216,6 @@ impl MatchEvent for App {
                     main_content = { margin: { left: (pos_x), top: (pos_y) } }
                 });
                 self.ui.redraw(cx);
-            }
-
-            match action.downcast_ref() {
-                Some(PopupNotificationAction::Open) => {
-                    self.ui.popup_notification(id!(popup)).open(cx);
-                }
-                Some(PopupNotificationAction::Close) => {
-                    self.ui.popup_notification(id!(popup)).close(cx);
-                }
-                _ => {}
             }
 
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
