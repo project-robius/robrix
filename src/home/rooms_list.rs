@@ -311,7 +311,8 @@ pub struct RoomsList {
     /// The list of joined rooms currently displayed in the UI, in order from top to bottom.
     /// This is a strict subset of the rooms present in `all_joined_rooms`, and should be determined
     /// by applying the `display_filter` to the set of `all_joined_rooms`.
-    /// **Direct messages are excluded.**
+    ///
+    /// **Direct messages are excluded**, they are in `self.displayed_direct_messages`
     #[rust] displayed_rooms: Vec<OwnedRoomId>,
     #[rust(true)] is_rooms_header_expanded: bool,
 
@@ -921,8 +922,10 @@ pub struct RoomsListScopeProps {
 }
 
 /// A group of rooms indexes.
-/// Currently, it is used for invited room, direct message and common room (others invite user but user have not been accepted or declined)
-/// `rooms count = after_rooms_index - first_room_index`(it could be invited rooms, direct messages and common rooms currently).
+/// Currently, it is used for invited room, direct message and common room.
+///
+/// `rooms count = after_rooms_index - first_room_index`
+///
 /// `first_room_index` & `after_rooms_index` are 0 when `header_index` is `None`
 struct GroupedRoomsListIndexes {
     header_index: Option<usize>,
