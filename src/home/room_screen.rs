@@ -979,8 +979,6 @@ impl Widget for RoomScreen {
             // Handle the add location button being clicked.
             if self.button(id!(location_button)).clicked(actions) {
                 log!("Add location button clicked; requesting current location...");
-                enqueue_popup_notification("Add location button clicked; requesting current location...".into(), None);
-                enqueue_popup_notification("Add location button clicked; requesdasd sdasd ds ting current location...".into(), Some(2.5));
                 if let Err(_e) = init_location_subscriber(cx) {
                     error!("Failed to initialize location subscriber");
                     enqueue_popup_notification(String::from("Failed to initialize location services."), None);

@@ -102,8 +102,6 @@ pub struct RobrixPopupNotification {
     content: View,
     #[live]
     text: String,
-    #[rust]
-    auto_dismiss_duration: Option<f64>,
     #[redraw]
     #[live]
     draw_bg: DrawQuad,
@@ -156,7 +154,6 @@ impl RobrixPopupNotification {
             self.view(id!(popup_content))
                 .animator_play(cx, id!(mode.slide_down));
         }
-        self.auto_dismiss_duration = auto_dismiss_duration;
         self.visible = true;
         self.redraw(cx);
     }
