@@ -304,7 +304,14 @@ pub struct RoomsList {
     /// This is a strict subset of the rooms in `all_invited_rooms`, and should be determined
     /// by applying the `display_filter` to the set of `all_invited_rooms`.
     #[rust] displayed_invited_rooms: Vec<OwnedRoomId>,
-    #[rust(true)] is_invited_rooms_header_expanded: bool,
+    #[rust(false)] is_invited_rooms_header_expanded: bool,
+
+    /// The list of direct rooms currently displayed in the UI, in order from top to bottom.
+    /// This is a strict subset of the rooms present in `all_joined_rooms`,
+    /// and should be determined by applying the `display_filter && is_direct`
+    /// to the set of `all_joined_rooms`.
+    #[rust] displayed_direct_rooms: Vec<OwnedRoomId>,
+    #[rust(false)] is_direct_rooms_header_expanded: bool,
 
     /// The list of regular (non-direct) joined rooms currently displayed in the UI,
     /// in order from top to bottom.
@@ -315,13 +322,6 @@ pub struct RoomsList {
     /// **Direct rooms are excluded** from this; they are in `displayed_direct_rooms`.
     #[rust] displayed_regular_rooms: Vec<OwnedRoomId>,
     #[rust(true)] is_regular_rooms_header_expanded: bool,
-
-    /// The list of direct rooms currently displayed in the UI, in order from top to bottom.
-    /// This is a strict subset of the rooms present in `all_joined_rooms`,
-    /// and should be determined by applying the `display_filter && is_direct`
-    /// to the set of `all_joined_rooms`.
-    #[rust] displayed_direct_rooms: Vec<OwnedRoomId>,
-    #[rust(false)] is_direct_rooms_header_expanded: bool,
 
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
