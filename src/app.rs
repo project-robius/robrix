@@ -318,8 +318,10 @@ impl MatchEvent for App {
                     self.ui.modal(id!(join_leave_modal)).open(cx);
                     continue;
                 }
-                Some(JoinLeaveRoomModalAction::Close { .. } ) => {
-                    self.ui.modal(id!(join_leave_modal)).close(cx);
+                Some(JoinLeaveRoomModalAction::Close { was_internal, .. }) => {
+                    if *was_internal {
+                        self.ui.modal(id!(join_leave_modal)).close(cx);
+                    }
                     continue;
                 }
                 _ => {}

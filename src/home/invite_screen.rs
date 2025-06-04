@@ -301,9 +301,10 @@ impl Widget for InviteScreen {
                     _ => {}
                 }
 
-                if let Some(JoinLeaveRoomModalAction::Close { was_canceled }) = action.downcast_ref() {
-                    // If the modal was canceled, we reset the invite state to waiting for user input.
-                    if *was_canceled {
+                if let Some(JoinLeaveRoomModalAction::Close { successful, .. }) = action.downcast_ref() {
+                    // If the modal didn't result in a successful join/leave,
+                    // then we must reset the invite state to waiting for user input.
+                    if !*successful {
                         self.invite_state = InviteState::WaitingOnUserInput;
                     }
                     continue;

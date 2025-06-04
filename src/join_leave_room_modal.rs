@@ -18,8 +18,7 @@ live_design! {
             flow: Down
             width: 400
             height: Fit
-            padding: {top: 25, right: 40, bottom: 20, left: 40}
-            spacing: 10
+            padding: {top: 30, right: 40, bottom: 20, left: 40}
 
             show_bg: true
             draw_bg: {
@@ -30,7 +29,7 @@ live_design! {
             title_view = <View> {
                 width: Fill,
                 height: Fit,
-                padding: {top: 0, bottom: 20}
+                padding: {top: 0, bottom: 25}
                 align: {x: 0.5, y: 0.0}
 
                 title = <Label> {
@@ -66,6 +65,7 @@ live_design! {
                     spacing: 20
 
                     cancel_button = <RobrixIconButton> {
+                        width: 100,
                         align: {x: 0.5, y: 0.5}
                         padding: 15,
                         draw_icon: {
@@ -85,6 +85,7 @@ live_design! {
                     }
 
                     accept_button = <RobrixIconButton> {
+                        width: 100,
                         align: {x: 0.5, y: 0.5}
                         padding: 15,
                         draw_icon: {
@@ -104,20 +105,27 @@ live_design! {
                     }
                 }
 
-                tip = <Label> {
-                    padding: 0,
+                tip_view = <View> {
                     width: Fill,
                     height: Fit,
-                    flow: RightWrap,
-                    align: {x: 0.5}
-                    draw_text: {
-                        text_style: <REGULAR_TEXT>{
-                            font_size: 9,
-                        },
-                        color: #A,
-                        wrap: Word
+                    align: {x: 0.5, y: 0.0}
+
+                    tip = <Label> {
+                        padding: 0,
+                        margin: 0,
+                        width: Fill,
+                        height: Fit,
+                        flow: RightWrap,
+                        align: {x: 0.5}
+                        draw_text: {
+                            text_style: <REGULAR_TEXT>{
+                                font_size: 9,
+                            },
+                            color: #A,
+                            wrap: Word
+                        }
+                        text: "Tip: hold Shift when clicking a button to bypass this prompt."
                     }
-                    text: "Tip: hold Shift when clicking a button to bypass this prompt."
                 }
             }
         }
@@ -128,7 +136,12 @@ live_design! {
 pub struct JoinLeaveRoomModal {
     #[deref] view: View,
     #[rust] kind: Option<JoinLeaveModalKind>,
-    #[rust] is_final: bool,
+    /// Whether the modal is in a final state, meaning the user can only click "Okay" to close it.
+    ///
+    /// * Set to `Some(true)` after a successful action (e.g., joining or leaving a room).
+    /// * Set to `Some(false)` after a join/leave error occurs.
+    /// * Set to `None` when the user is still able to interact with the modal.
+    #[rust] final_success: Option<bool>,
 }
 
 /// Kinds of content that can be shown and handled by the [`JoinLeaveRoomModal`].
@@ -168,13 +181,15 @@ impl JoinLeaveModalKind {
 /// Actions handled by the parent widget of the [`JoinLeaveRoomModal`].
 #[derive(Clone, Debug, DefaultNone)]
 pub enum JoinLeaveRoomModalAction {
-    /// The modal should be opened by its parent widget
+    /// The modal should be opened by its parent widget.
     Open(JoinLeaveModalKind),
     /// The modal requested its parent widget to close.
     Close {
-        /// Whether the modal was canceled (aborted) by clicking the cancel button,
-        /// or if it was closed after completing a full sequence.
-        was_canceled: bool,
+        /// `True` if the modal was closed after a successful join/leave action.
+        /// `False` if the modal was dismissed or closed after a failure/error.
+        successful: bool,
+        /// Whether the modal was dismissed by the user clicking an internal button.
+        was_internal: bool,
     },
     None,
 }
@@ -196,9 +211,12 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         let accept_button = self.view.button(id!(accept_button));
         let cancel_button = self.view.button(id!(cancel_button));
 
-        if cancel_button.clicked(actions) {
-            // Inform the parent widget to close this modal.
-            cx.action(JoinLeaveRoomModalAction::Close { was_canceled: true });
+        let cancel_clicked = cancel_button.clicked(actions);
+        if cancel_clicked ||
+            actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
+        {
+            // Inform other widgets that this modal has been closed.
+            cx.action(JoinLeaveRoomModalAction::Close { successful: false, was_internal: cancel_clicked });
             self.reset_state();
             return;
         }
@@ -207,8 +225,8 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
 
         let mut needs_redraw = false;
         if accept_button.clicked(actions) {
-            if self.is_final {
-                cx.action(JoinLeaveRoomModalAction::Close { was_canceled: false });
+            if let Some(successful) = self.final_success {
+                cx.action(JoinLeaveRoomModalAction::Close { successful, was_internal: true });
                 self.reset_state();
                 return;
             }
@@ -269,6 +287,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
 
                 self.view.label(id!(title)).set_text(cx, title);
                 self.view.label(id!(description)).set_text(cx, &description);
+                self.view.view(id!(tip_view)).set_visible(cx, false);
                 self.view.label(id!(tip)).set_text(cx, "");
                 accept_button.set_text(cx, accept_button_text);
                 accept_button.set_enabled(cx, false);
@@ -288,17 +307,20 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
                     cancel_button.set_visible(cx, false);
-                    self.is_final = true;
+                    self.final_success = Some(true);
+                    needs_redraw = true;
                 }
                 Some(JoinRoomAction::Failed { room_id, error }) if room_id == kind.room_id() => {
                     self.view.label(id!(title)).set_text(cx, "Error joining room!");
-                    let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, false);
+                    let was_invite = matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_));
+                    let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, was_invite);
                     self.view.label(id!(description)).set_text(cx, &msg);
                     enqueue_popup_notification(msg);
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
                     cancel_button.set_visible(cx, false);
-                    self.is_final = true;
+                    self.final_success = Some(false);
+                    needs_redraw = true;
                 }
                 _ => {}
             }
@@ -331,7 +353,8 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
                     cancel_button.set_visible(cx, false);
-                    self.is_final = true;
+                    self.final_success = Some(true);
+                    needs_redraw = true;
                 }
                 Some(LeaveRoomAction::Failed { room_id, error }) if room_id == kind.room_id() => {
                     let title: &str;
@@ -356,7 +379,8 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
                     cancel_button.set_visible(cx, false);
-                    self.is_final = true;
+                    self.final_success = Some(false);
+                    needs_redraw = true;
                 }
                 _ => {}
             }
@@ -371,7 +395,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
 impl JoinLeaveRoomModal {
     fn reset_state(&mut self) {
         self.kind = None;
-        self.is_final = false;
+        self.final_success = None;
     }
 
     fn set_kind(
@@ -425,6 +449,7 @@ impl JoinLeaveRoomModal {
 
         self.view.label(id!(title)).set_text(cx, title);
         self.view.label(id!(description)).set_text(cx, &description);
+        self.view.view(id!(tip_view)).set_visible(cx, true);
         self.view.label(id!(tip)).set_text(cx, &format!(
             "Tip: hold Shift when clicking the \"{tip_button}\" button to bypass this prompt.",
         ));
@@ -439,7 +464,7 @@ impl JoinLeaveRoomModal {
         cancel_button.set_visible(cx, true);
 
         self.kind = Some(kind);
-        self.is_final = false;
+        self.final_success = None;
     }
 }
 
