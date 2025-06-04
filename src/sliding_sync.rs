@@ -1748,6 +1748,8 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     // We must call `display_name()` here to calculate and cache the room's name.
     let room_name = room.display_name().await.map(|n| n.to_string()).ok();
 
+    let is_direct = room.is_direct().await.unwrap_or(false);
+
     match room.state() {
         RoomState::Knocked => {
             // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
@@ -1801,6 +1803,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
                 latest,
                 invite_state: Default::default(),
                 is_selected: false,
+                is_direct,
             }));
             return Ok(());
         }
@@ -1888,6 +1891,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         alt_aliases: room.alt_aliases(),
         has_been_paginated: false,
         is_selected: false,
+        is_direct,
     }));
 
     spawn_fetch_room_avatar(room.inner_room().clone());
