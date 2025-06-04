@@ -413,19 +413,23 @@ pub struct RoomsList {
     /// The single set of all known rooms and their cached preview info.
     #[rust] all_rooms: HashMap<OwnedRoomId, RoomsListEntry>,
 
-    #[rust] all_rooms_sorted: Vec<OwnedRoomId>,
 
     /// The currently-active filter function for the list of rooms.
     ///
     /// Note: for performance reasons, this does not get automatically applied
     /// when its value changes. Instead, you must manually invoke it on the set of `all_rooms`
     /// in order to update the set of `displayed_rooms` accordingly.
-    #[rust] display_filter: RoomDisplayFilter,
-    
+    #[rust] display_filter: Option<RoomDisplayFilter>,
+
+
+    #[rust] sort_fn: Option<Box<SortFn>>,
+
     /// The list of rooms currently displayed in the UI, in order from top to bottom.
     /// This must be a strict subset of the rooms present in `all_rooms`, and should be determined
     /// by applying the `display_filter` to the set of `all_rooms``.
     #[rust] displayed_rooms: Vec<OwnedRoomId>,
+
+    #[rust] all_rooms_sorted: Vec<OwnedRoomId>,
 
     /// Maps the WidgetUid of a `RoomPreview` to that room's index in the `displayed_rooms` vector.
     ///
@@ -459,6 +463,16 @@ impl RoomsList {
             n => format!("Found {} matching rooms.", n),
         }
     }
+    
+    fn apply_filter(&mut self){
+        if let Some(filter) = &self.display_filter {
+        self.displayed_rooms =
+                            self.all_rooms
+                        .iter()
+                        .filter(|(_, room)| filter(room))
+                        .map(|(room_id, _)| room_id.clone())
+                        .collect();
+    }}
 }
 
 impl Widget for RoomsList {
@@ -471,13 +485,15 @@ impl Widget for RoomsList {
                 match update {
                     RoomsListUpdate::AddRoomBack(room) => {
                         let room_id = room.room_id.clone();
-                        let should_display = (self.display_filter)(&room);
                         let _replaced = self.all_rooms.insert(room_id.clone(), room);
                         self.all_rooms_sorted.push(room_id.clone());
                         if let Some(_old_room) = _replaced {
                             error!("BUG: Added room {room_id} that already existed");
                         } else {
-                            if should_display {
+                            if self.display_filter.is_some(){
+                                self.apply_filter();
+                            }else
+                            {
                                 self.displayed_rooms.push(room_id);
                             }
                         }
@@ -485,13 +501,14 @@ impl Widget for RoomsList {
                     }
                     RoomsListUpdate::AddRoomFront(room) => {
                         let room_id = room.room_id.clone();
-                        let should_display = (self.display_filter)(&room);
                         let _replaced = self.all_rooms.insert(room_id.clone(), room);
                         self.all_rooms_sorted.insert(0, room_id.clone());
                         if let Some(_old_room) = _replaced {
                             error!("BUG: Added room {room_id} that already existed");
                         } else {
-                            if should_display {
+                            if self.display_filter.is_some() {
+                               self.apply_filter();
+                            }else{
                                 self.displayed_rooms.insert(0,room_id);
                             }
                         }
@@ -529,21 +546,25 @@ impl Widget for RoomsList {
                     }
                     RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
-                            let was_displayed = (self.display_filter)(room);
-                            room.room_name = Some(new_room_name);
-                            let should_display = (self.display_filter)(room);
-                            match (was_displayed, should_display) {
-                                (true, true) | (false, false) => {
-                                    // No need to update the displayed rooms list.
+                            if let Some(filter) = &self.display_filter {
+                                let was_displayed = filter(room);
+                                room.room_name = Some(new_room_name);
+                                let should_display = filter(room);
+                                match (was_displayed, should_display) {
+                                    (true, true) | (false, false) => {
+                                        // No need to update the displayed rooms list.
+                                    }
+                                    (true, false) => {
+                                        // Room was displayed but should no longer be displayed.
+                                        self.displayed_rooms.retain(|r| r != &room_id);
+                                    }
+                                    (false, true) => {
+                                        // Room was not displayed but should now be displayed.
+                                        self.displayed_rooms.push(room_id);
+                                    }
                                 }
-                                (true, false) => {
-                                    // Room was displayed but should no longer be displayed.
-                                    self.displayed_rooms.retain(|r| r != &room_id);
-                                }
-                                (false, true) => {
-                                    // Room was not displayed but should now be displayed.
-                                    self.displayed_rooms.push(room_id);
-                                }
+                            }else{
+                                room.room_name = Some(new_room_name);
                             }
                         } else {
                             error!("Error: couldn't find room {room_id} to update room name");
@@ -562,6 +583,7 @@ impl Widget for RoomsList {
                             .unwrap_or_else(|| {
                                 error!("Error: couldn't find room {room_id} to remove room");
                             });
+
                         let pos = self.all_rooms_sorted.iter().position(|r| r == &room_id);
                         if let Some(pos) = pos{
                             self.all_rooms_sorted.remove(pos);
@@ -737,6 +759,8 @@ impl WidgetMatchEvent for RoomsList {
                     self.displayed_rooms = self.all_rooms_sorted.to_vec();
                     self.update_status_rooms_count();
                     portal_list.set_first_id_and_scroll(0, 0.0);
+                    self.display_filter = None;
+                    self.sort_fn = None;
                     self.redraw(cx);
                     return;
                 }
@@ -744,33 +768,31 @@ impl WidgetMatchEvent for RoomsList {
                     .set_keywords(keywords.clone())
                     .set_filter_criteria(RoomFilterCriteria::All)
                     .build();
-                self.display_filter = filter;
 
-                let new_displayed_rooms = if let Some(sort_fn) = sort_fn {
+                if let Some(sort_fn) = sort_fn {
+                    todo!();
                     let mut filtered_rooms: Vec<_> = self.all_rooms
                         .iter()
-                        .filter(|(_, room)| (self.display_filter)(room))
+                        .filter(|(_, room)| filter(room))
                         .collect();
 
                     filtered_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(room_a, room_b));
 
-                    filtered_rooms
+                    self.displayed_rooms = filtered_rooms
                         .into_iter()
                         .map(|(room_id, _)| room_id.clone())
-                        .collect()
+                        .collect();
                 } else {
-                    self.all_rooms
-                        .iter()
-                        .filter(|(_, room)| (self.display_filter)(room))
-                        .map(|(room_id, _)| room_id.clone())
-                        .collect()
+                    self.apply_filter();
                 };
 
+                self.display_filter = Some(filter);
+
                 // Update the displayed rooms list and redraw it.
-                self.displayed_rooms = new_displayed_rooms;
                 self.update_status_matching_rooms();
                 portal_list.set_first_id_and_scroll(0, 0.0);
                 self.redraw(cx);
+
             }
         }
     }
