@@ -19,7 +19,6 @@ live_design! {
     use crate::shared::popup_list::PopupList;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
-    use crate::shared::popup_notification::RobrixPopupNotification;
 
 
     APP_TAB_COLOR = #344054

@@ -60,7 +60,6 @@ live_design! {
     use crate::home::loading_pane::*;
     use crate::home::location_preview::*;
     use crate::room::room_input_bar::*;
-    use crate::shared::popup_notification::RobrixPopupNotification;
     use crate::room::room_input_bar::*;
     use crate::home::room_read_receipt::*;
 
