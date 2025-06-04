@@ -760,10 +760,10 @@ impl Widget for RoomsList {
                     HeaderCategory::Invites => {
                         self.is_invited_rooms_header_expanded = !self.is_invited_rooms_header_expanded;
                     }
-                    HeaderCategory::JoinedRooms => {
+                    HeaderCategory::RegularRooms => {
                         self.is_regular_rooms_header_expanded = !self.is_regular_rooms_header_expanded;
                     }
-                    HeaderCategory::DirectMessages => {
+                    HeaderCategory::DirectRooms => {
                         self.is_direct_rooms_header_expanded =
                             !self.is_direct_rooms_header_expanded;
                     }
@@ -862,7 +862,7 @@ impl Widget for RoomsList {
                     item.as_collapsible_header().set_details(
                         cx,
                         self.is_direct_rooms_header_expanded,
-                        HeaderCategory::DirectMessages,
+                        HeaderCategory::DirectRooms,
                         0,
                         // TODO: sum up all the unread mentions in rooms
                         // NOTE: this might be really slow, so we should maintain a running total of mentions in this struct
@@ -897,7 +897,7 @@ impl Widget for RoomsList {
                     item.as_collapsible_header().set_details(
                         cx,
                         self.is_regular_rooms_header_expanded,
-                        HeaderCategory::JoinedRooms,
+                        HeaderCategory::RegularRooms,
                         0,
                         // TODO: sum up all the unread mentions in rooms.
                         // NOTE: this might be really slow, so we should maintain a running total of mentions in this struct
