@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
 use crate::{
     app::{AppState, SelectedRoom},
-    room::room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
+    room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, RoomPreviewAvatar},
     shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
     jump_to_bottom_button::UnreadMessageCount, room_filter_input_bar::RoomFilterAction},
     sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection},
@@ -251,6 +251,15 @@ pub struct InviterInfo {
     pub display_name: Option<String>,
     pub avatar: Option<Arc<[u8]>>,
 }
+impl std::fmt::Debug for InviterInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InviterInfo")
+            .field("user_id", &self.user_id)
+            .field("display_name", &self.display_name)
+            .field("avatar?", &self.avatar.is_some())
+            .finish()
+    }
+}
 
 /// The state of a pending invite.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -268,18 +277,6 @@ pub enum InviteState {
     /// The invite was declined and the room was successfully left.
     /// This should result in the InviteScreen being closed.
     RoomLeft,
-}
-
-
-#[derive(Clone, Debug)]
-pub enum RoomPreviewAvatar {
-    Text(String),
-    Image(Arc<[u8]>),
-}
-impl Default for RoomPreviewAvatar {
-    fn default() -> Self {
-        RoomPreviewAvatar::Text(String::new())
-    }
 }
 
 
@@ -307,7 +304,14 @@ pub struct RoomsList {
     /// This is a strict subset of the rooms in `all_invited_rooms`, and should be determined
     /// by applying the `display_filter` to the set of `all_invited_rooms`.
     #[rust] displayed_invited_rooms: Vec<OwnedRoomId>,
-    #[rust(true)] is_invited_rooms_header_expanded: bool,
+    #[rust(false)] is_invited_rooms_header_expanded: bool,
+
+    /// The list of direct rooms currently displayed in the UI, in order from top to bottom.
+    /// This is a strict subset of the rooms present in `all_joined_rooms`,
+    /// and should be determined by applying the `display_filter && is_direct`
+    /// to the set of `all_joined_rooms`.
+    #[rust] displayed_direct_rooms: Vec<OwnedRoomId>,
+    #[rust(false)] is_direct_rooms_header_expanded: bool,
 
     /// The list of regular (non-direct) joined rooms currently displayed in the UI,
     /// in order from top to bottom.
@@ -318,13 +322,6 @@ pub struct RoomsList {
     /// **Direct rooms are excluded** from this; they are in `displayed_direct_rooms`.
     #[rust] displayed_regular_rooms: Vec<OwnedRoomId>,
     #[rust(true)] is_regular_rooms_header_expanded: bool,
-
-    /// The list of direct rooms currently displayed in the UI, in order from top to bottom.
-    /// This is a strict subset of the rooms present in `all_joined_rooms`,
-    /// and should be determined by applying the `display_filter && is_direct`
-    /// to the set of `all_joined_rooms`.
-    #[rust] displayed_direct_rooms: Vec<OwnedRoomId>,
-    #[rust(false)] is_direct_rooms_header_expanded: bool,
 
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
@@ -455,6 +452,7 @@ impl RoomsList {
                     }
                 }
                 RoomsListUpdate::RemoveRoom { room_id, new_state: _ } => {
+                    log!("Removed room {room_id} from the list of all joined rooms");
                     if let Some(removed) = self.all_joined_rooms.remove(&room_id) {
                         if removed.is_direct {
                             self.displayed_direct_rooms.iter()
@@ -467,6 +465,7 @@ impl RoomsList {
                         }
                     }
                     else if let Some(_removed) = self.invited_rooms.borrow_mut().remove(&room_id) {
+                        log!("Removed room {room_id} from the list of all invited rooms");
                         self.displayed_invited_rooms.iter()
                             .position(|r| r == &room_id)
                             .map(|index| self.displayed_invited_rooms.remove(index));
@@ -481,7 +480,7 @@ impl RoomsList {
                     //       if it is currently being displayed,
                     //       and also ensure that the room's TimelineUIState is preserved
                     //       and saved (if the room has not been left),
-                    //       and also that it's MediaCache instance is put into a special state
+                    //       and also that its MediaCache instance is put into a special state
                     //       where its internal update sender gets replaced upon next usage
                     //       (that is, upon the next time that same room is opened by the user).
                 }
@@ -515,7 +514,7 @@ impl RoomsList {
             }
         }
         if num_updates > 0 {
-            log!("RoomsList: processed {} updates to the list of all rooms", num_updates);
+            // log!("RoomsList: processed {} updates to the list of all rooms", num_updates);
             self.redraw(cx);
         }
     }
