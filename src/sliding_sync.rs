@@ -1180,12 +1180,6 @@ async fn async_worker(
                                         })
                                     });
                                 }
-                                item.context.events_after.iter().rev().for_each(|f| {
-                                    if let Ok(timeline_event) = f.deserialize() {
-                                        items
-                                            .push(SearchResultItem::ContextEvent(timeline_event));
-                                    }
-                                });
                                 let timestamp = match event {
                                     AnyTimelineEvent::MessageLike(ref event) => {
                                         if let Some(replace) = event.relations().replace {
@@ -1198,13 +1192,6 @@ async fn async_worker(
                                 };
                                 let room_id = event.room_id().to_owned();
                                 items.push(SearchResultItem::Event(event));
-
-                                item.context.events_before.iter().rev().for_each(|f| {
-                                    if let Ok(timeline_event) = f.deserialize() {
-                                        items
-                                            .push(SearchResultItem::ContextEvent(timeline_event));
-                                    }
-                                });
                                 items.push(SearchResultItem::DateDivider(timestamp));
                                 if include_all_rooms {
                                     if let Some(ref mut last_room_id) = last_room_id {
