@@ -113,7 +113,7 @@ pub type SortFn = dyn Fn(&dyn FilterableRoom, &dyn FilterableRoom) -> Ordering;
 ///    .collect();
 /// // Then redraw the rooms_list widget.
 /// ```
-pub struct RoomDisplayFilter(pub Box<RoomFilterFn>);
+pub struct RoomDisplayFilter(Box<RoomFilterFn>);
 impl Default for RoomDisplayFilter {
     fn default() -> Self {
         RoomDisplayFilter(Box::new(|_| true))

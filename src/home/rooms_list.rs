@@ -578,7 +578,7 @@ impl RoomsList {
         let invited_rooms_ref = self.invited_rooms.borrow();
         let filtered_invited_rooms_iter = invited_rooms_ref
             .iter()
-            .filter(|(_, room)| self.display_filter.0(*room));
+            .filter(|(_, room)| (self.display_filter)(*room));
 
         if let Some(sort_fn) = sort_fn {
             let mut filtered_invited_rooms = filtered_invited_rooms_iter
@@ -605,7 +605,7 @@ impl RoomsList {
         };
 
         let filtered_joined_rooms_iter = self.all_joined_rooms.iter()
-            .filter(|(_, room)| self.display_filter.0(*room));
+            .filter(|(_, room)| (self.display_filter)(*room));
 
         if let Some(sort_fn) = sort_fn {
             let mut filtered_rooms = filtered_joined_rooms_iter.collect::<Vec<_>>();
