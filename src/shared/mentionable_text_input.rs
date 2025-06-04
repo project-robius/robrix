@@ -285,6 +285,12 @@ impl Widget for MentionableTextInput {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.cmd_text_input.handle_event(cx, event, scope);
 
+        // Best practice: Always check Scope first to get current context
+        // Scope represents the current widget context as passed down from parents
+        let scope_room_id = scope.props.get::<RoomScreenProps>()
+            .expect("RoomScreenProps should be available in scope for MentionableTextInput")
+            .room_id.clone();
+
         if let Event::Actions(actions) = event {
 
             let text_input_ref = self.cmd_text_input.text_input_ref(); // Get reference to the inner TextInput
@@ -359,15 +365,9 @@ impl Widget for MentionableTextInput {
                 if let Some(action_ref) = action.downcast_ref::<MentionableTextInputAction>() {
                     match action_ref {
                         MentionableTextInputAction::PowerLevelsUpdated(room_id, can_notify_room) => {
-                            // Best practice: Always check Scope first to get current context
-                            // Scope represents the current widget context as passed down from parents
-                            let scope_room_id = &scope.props.get::<RoomScreenProps>()
-                                .expect("RoomScreenProps should be available in scope for MentionableTextInput")
-                                .room_id;
-
                             // If Scope room_id doesn't match action's room_id, this action may be for another room
                             // This is important to avoid applying actions to the wrong room context
-                            if scope_room_id != room_id {
+                            if &scope_room_id != room_id {
                                 continue; // Skip this action
                             }
 
@@ -385,13 +385,8 @@ impl Widget for MentionableTextInput {
                             }
                         },
                         MentionableTextInputAction::RoomMembersLoaded(room_id) => {
-                            // Get current room context from scope
-                            let scope_room_id = &scope.props.get::<RoomScreenProps>()
-                                .expect("RoomScreenProps should be available in scope for MentionableTextInput")
-                                .room_id;
-
                             // Only process if this action is for the current room
-                            if scope_room_id == room_id {
+                            if &scope_room_id == room_id {
 
                                 // If we were showing loading, hide it and refresh the list
                                 if self.members_loading {
@@ -734,12 +729,6 @@ impl MentionableTextInput {
                 let user_id_str = member.user_id().as_str();
                 item.label(id!(user_id)).set_text(cx, user_id_str);
 
-                // item.apply_over(cx, live! {
-                //     show_bg: true,
-                //     cursor: Hand,
-                //     padding: {left: 8., right: 8., top: 4., bottom: 4.}
-                // });
-
                 if is_desktop {
                     item.apply_over(
                         cx,
@@ -1067,50 +1056,55 @@ impl MentionableTextInputRef {
 
     /// Returns the mentions analysis for the given html message content.
     /// Returns (user_mentions, has_room_mention)
-    fn get_real_mentions_in_html_text(&self, html: &str) -> (BTreeSet<OwnedUserId>, bool) {
+    fn get_real_mentions_in_html_text(&self, html: &str) -> Mentions {
+        let mut mentions = Mentions::new();
+
         let Some(inner) = self.borrow() else {
-            return (BTreeSet::new(), false);
+            return mentions;
         };
 
-        let mut user_mentions = BTreeSet::new();
+        let mut user_ids = BTreeSet::new();
+
         for (user_id, username) in &inner.possible_mentions {
             if html.contains(&format!(
                 "<a href=\"{}\">{}</a>",
                 user_id.matrix_to_uri(),
                 username,
             )) {
-                user_mentions.insert(user_id.clone());
+                user_ids.insert(user_id.clone());
             }
         }
 
+        mentions.user_ids = user_ids;
         // Check for @room mention in HTML content
-        let has_room_mention = inner.possible_room_mention && html.contains("@room");
-
-        (user_mentions, has_room_mention)
+        mentions.room = inner.possible_room_mention && html.contains("@room");
+        mentions
     }
 
     /// Returns the mentions analysis for the given markdown message content.
     /// Returns (user_mentions, has_room_mention)
-    fn get_real_mentions_in_markdown_text(&self, markdown: &str) -> (BTreeSet<OwnedUserId>, bool) {
+    fn get_real_mentions_in_markdown_text(&self, markdown: &str) -> Mentions {
+        let mut mentions = Mentions::new();
+
         let Some(inner) = self.borrow() else {
-            return (BTreeSet::new(), false);
+            return mentions;
         };
 
-        let mut user_mentions = BTreeSet::new();
+        let mut user_ids = BTreeSet::new();
         for (user_id, username) in &inner.possible_mentions {
             if markdown.contains(&format!(
                 "[{}]({})",
                 username,
                 user_id.matrix_to_uri(),
             )) {
-                user_mentions.insert(user_id.clone());
+                user_ids.insert(user_id.clone());
             }
         }
 
+        mentions.user_ids = user_ids;
         // Check for @room mention in markdown content
-        let has_room_mention = inner.possible_room_mention && markdown.contains("@room");
-
-        (user_mentions, has_room_mention)
+        mentions.room = inner.possible_room_mention && markdown.contains("@room");
+        mentions
     }
 
     /// Processes entered text and creates a message with mentions based on detected message type.
@@ -1118,29 +1112,13 @@ impl MentionableTextInputRef {
     pub fn create_message_with_mentions(&self, entered_text: &str) -> RoomMessageEventContent {
         if let Some(html_text) = entered_text.strip_prefix("/html") {
             let message = RoomMessageEventContent::text_html(html_text, html_text);
-            let (user_mentions, has_room_mention) = self.get_real_mentions_in_html_text(html_text);
-
-            if !user_mentions.is_empty() || has_room_mention {
-                let mut matrix_mentions = Mentions::with_user_ids(user_mentions);
-                matrix_mentions.room = has_room_mention;
-                message.add_mentions(matrix_mentions)
-            } else {
-                message
-            }
+            message.add_mentions(self.get_real_mentions_in_html_text(html_text))
         } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
             // Plain text messages don't support mentions
             RoomMessageEventContent::text_plain(plain_text)
         } else {
             let message = RoomMessageEventContent::text_markdown(entered_text);
-            let (user_mentions, has_room_mention) = self.get_real_mentions_in_markdown_text(entered_text);
-
-            if !user_mentions.is_empty() || has_room_mention {
-                let mut matrix_mentions = Mentions::with_user_ids(user_mentions);
-                matrix_mentions.room = has_room_mention;
-                message.add_mentions(matrix_mentions)
-            } else {
-                message
-            }
+            message.add_mentions(self.get_real_mentions_in_markdown_text(entered_text))
         }
     }
 
