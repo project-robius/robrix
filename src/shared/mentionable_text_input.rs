@@ -840,7 +840,7 @@ impl MentionableTextInput {
             // Check if this is a completed @room mention followed by a space and other text
             // If so, don't trigger the popup again
             if mention_text.len() >= 5 {  // "room " minimum
-                let mention_str: String = mention_text.iter().map(|s| *s).collect();
+                let mention_str: String = mention_text.iter().copied().collect();
                 if mention_str.starts_with("room ") {
                     return None;
                 }

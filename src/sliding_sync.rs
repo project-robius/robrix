@@ -612,7 +612,6 @@ async fn async_worker(
             }
 
             MatrixRequest::GetRoomMembers { room_id, memberships, local_only } => {
-                log!(" === === === Doing get room members request !!!");
                 let (timeline, sender) = {
                     let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get(&room_id) else {
