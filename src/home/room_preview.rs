@@ -2,14 +2,13 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    shared::{
+    room::RoomPreviewAvatar, shared::{
         avatar::AvatarWidgetExt,
         html_or_plaintext::HtmlOrPlaintextWidgetExt, unread_badge::UnreadBadgeWidgetExt as _,
-    },
-    utils::{self, relative_format},
+    }, utils::{self, relative_format}
 };
 
-use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListScopeProps};
+use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListScopeProps};
 live_design! {
     use link::theme::*;
     use link::shaders::*;

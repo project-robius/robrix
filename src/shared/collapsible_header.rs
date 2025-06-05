@@ -66,14 +66,20 @@ live_design! {
     }
 }
 
-
+/// The categories of collapsible headers in the rooms list.
 #[derive(Copy, Clone, Debug, DefaultNone)]
 pub enum HeaderCategory {
+    /// Rooms the user has been invited to but has not yet joined.
     Invites,
+    /// Joined rooms that the user has marked as favorites.
     Favorites,
-    JoinedRooms,
-    DirectMessages,
+    /// Joined rooms that are direct messages with other users.
+    DirectRooms,
+    /// Joined rooms that are not direct messages or favorites.
+    RegularRooms,
+    /// Joined rooms that the user has marked as low priority.
     LowPriority,
+    /// Rooms that the user has left.
     LeftRooms,
     None,
 }
@@ -82,8 +88,8 @@ impl HeaderCategory {
         match self {
             HeaderCategory::Invites => "Invites",
             HeaderCategory::Favorites => "Favorites",
-            HeaderCategory::JoinedRooms => "Rooms",
-            HeaderCategory::DirectMessages => "Direct Messages", // "People"
+            HeaderCategory::RegularRooms => "Rooms",
+            HeaderCategory::DirectRooms => "People",
             HeaderCategory::LowPriority => "Low Priority",
             HeaderCategory::LeftRooms => "Left Rooms",
             HeaderCategory::None => "",
