@@ -2,6 +2,11 @@ use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 
 static POPUP_NOTIFICATION: SegQueue<PopupItem> = SegQueue::new();
+
+/// Displays a new popup notification with the given message and auto dismissal duration.
+/// 
+/// Popup notifications will be shown in the order they were enqueued,
+/// and can be removed when manually closed by the user or automatically.
 pub fn enqueue_popup_notification(message: String, auto_dismiss_duration: Option<f64>) {
     POPUP_NOTIFICATION.push(PopupItem {
         message,
@@ -176,7 +181,6 @@ live_design! {
     pub RobrixPopupNotification = <PopupNotificationBase> {
         width: 275
         height: Fit
-        // padding: {top: 5, right: 5, bottom: 5, left: 10},
         flow: Down
         draw_bg: {
             fn pixel(self) -> vec4 {
