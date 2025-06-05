@@ -2248,7 +2248,10 @@ impl RoomScreen {
         submit_async_request(MatrixRequest::GetRoomMembers {
             room_id: room_id.clone(),
             memberships: matrix_sdk::RoomMemberships::JOIN,
-            local_only: false, // Fetch from server
+            // Important.
+            // Fetch from local,
+            // Because SyncRoomMemberList has already pre-fetched the members from the server.
+            local_only: true,
         });
 
         // Subscribe to typing notices, but hide the typing notice view initially.

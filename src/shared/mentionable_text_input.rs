@@ -18,13 +18,6 @@ use crate::sliding_sync::get_client;
 // Constants for mention popup height calculations
 const DESKTOP_ITEM_HEIGHT: f64 = 32.0;
 const MOBILE_ITEM_HEIGHT: f64 = 64.0;
-const DESKTOP_BOTTOM_PADDING: f64 = 24.0;
-const MOBILE_BOTTOM_PADDING: f64 = 28.0;
-const HEADER_TEXT_HEIGHT: f64 = 16.0;
-const HEADER_MINIMAL_PADDING: f64 = 8.0;
-const POPUP_SPACING: f64 = 8.0;
-const LOADING_CONTENT_HEIGHT: f64 = 48.0;
-const LOADING_BOTTOM_PADDING: f64 = 16.0;
 const MOBILE_USERNAME_SPACING: f64 = 0.5;
 
 live_design! {
@@ -220,7 +213,7 @@ live_design! {
             }
 
             list = {
-                height: Fill
+                height: Fit
                 clip_y: true
                 spacing: 0.0
                 padding: 0.0
@@ -572,6 +565,9 @@ impl MentionableTextInput {
         } else if !members_are_empty && self.members_loading {
             // Members have been loaded, stop loading state
             self.members_loading = false;
+            // Reset popup height to ensure proper calculation for user list
+            let popup = self.cmd_text_input.view(id!(popup));
+            popup.apply_over(cx, live! { height: Fit });
         } else if members_are_empty && self.members_loading {
             // Still loading and members are empty - keep showing loading indicator
             return;
@@ -741,26 +737,6 @@ impl MentionableTextInput {
                 self.current_mention_start_index = None;
                 return;
             }
-
-            let header_view = self.cmd_text_input.view(id!(popup.header_view));
-
-            let header_height = if header_view.area().rect(cx).size.y > 0.0 {
-                header_view.area().rect(cx).size.y
-            } else {
-                // More accurate fallback estimate: text height + minimal padding
-                // header_view has margin {left: 4, right: 4} but no explicit padding
-                HEADER_TEXT_HEIGHT + HEADER_MINIMAL_PADDING
-            };
-
-            // Get spacing between header and list
-            let estimated_spacing = POPUP_SPACING;
-
-            // Calculate height based on actual items that will be displayed
-            let displayed_items = total_items_in_list.min(max_visible_items);
-            let single_item_height = if is_desktop { DESKTOP_ITEM_HEIGHT } else { MOBILE_ITEM_HEIGHT };
-            let bottom_padding = if is_desktop { DESKTOP_BOTTOM_PADDING } else { MOBILE_BOTTOM_PADDING }; // Maximum bottom padding to ensure full visibility
-            let total_height = (displayed_items as f64 * single_item_height) + header_height + estimated_spacing + bottom_padding;
-            popup.apply_over(cx, live! { height: (total_height) });
 
             // Only create widgets for items that will actually be visible
             // If @room exists, reserve one slot for it
@@ -979,22 +955,8 @@ impl MentionableTextInput {
         // Ensure header is visible
         header_view.set_visible(cx, true);
 
-        // Calculate header height
-        let header_height = if header_view.area().rect(cx).size.y > 0.0 {
-            header_view.area().rect(cx).size.y
-        } else {
-            // More accurate fallback estimate: text height + minimal padding
-            // header_view has margin {left: 4, right: 4} but no explicit padding
-            HEADER_TEXT_HEIGHT + HEADER_MINIMAL_PADDING
-        };
-
-        // Loading indicator fixed height with additional padding
-        let loading_content_height = LOADING_CONTENT_HEIGHT;
-        let estimated_spacing = POPUP_SPACING;
-        let loading_bottom_padding = LOADING_BOTTOM_PADDING; // Add bottom padding for loading indicator
-        let loading_height = header_height + loading_content_height + estimated_spacing + loading_bottom_padding;
-
-        popup.apply_over(cx, live! { height: (loading_height) });
+        // Don't manually set popup height for loading - let it auto-size based on content
+        // This avoids conflicts with list = { height: Fill }
         popup.set_visible(cx, true);
 
         // Maintain text input focus
