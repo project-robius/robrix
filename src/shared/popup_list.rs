@@ -209,9 +209,7 @@ pub struct RobrixPopupNotification {
     #[redraw]
     #[live]
     draw_bg: DrawQuad,
-    #[redraw]
-    #[live]
-    draw_bg2: DrawQuad,
+
     #[layout]
     layout: Layout,
     #[walk]
