@@ -19,7 +19,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{editing_pane::PendingEdit, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -807,12 +807,6 @@ pub struct RoomScreen {
     #[rust] tl_state: Option<TimelineUiState>,
 }
 
-/// Represents an unconfirmed edit in the timeline.
-#[derive(Debug, Clone)]
-pub struct PendingEdit {
-    pub edit_content: String,
-    pub event_id: TimelineEventItemId,
-}
 impl Drop for RoomScreen {
     fn drop(&mut self) {
         // This ensures that the `TimelineUiState` instance owned by this room is *always* returned
@@ -1775,8 +1769,10 @@ impl RoomScreen {
                         let editing_pane = self.view.editing_pane(id!(editing_pane));
                         if editing_pane.visible() {
                             if let Some(event_item_id) = editing_pane.get_event_being_edited() {
-                                let edit_content = editing_pane.mentionable_text_input(id!(edit_text_input)).text();
-                                tl.last_edit_unconfirmed = Some(PendingEdit {edit_content, event_id: event_item_id.identifier()});
+                                log!("editing_pane visible true");
+                                let editing_content = editing_pane.mentionable_text_input(id!(edit_text_input)).text();
+                                log!("editing_content: {}", editing_content);
+                                tl.pending_edit = Some(PendingEdit {editing_content, message_id: event_item_id.identifier()});
                             }
                             editing_pane.hide_with_animator(cx);
                         }
@@ -1798,26 +1794,27 @@ impl RoomScreen {
                 MessageAction::Edit(details) => {
                     let Some(tl) = self.tl_state.as_mut() else { return };
                     let room_id = tl.room_id.clone();
-                    let last_edit_unconfirmed = tl.last_edit_unconfirmed.clone();
+                    let pending_edit = tl.pending_edit.clone();
                     if let Some(event_tl_item) = tl.items.get(details.item_id).and_then(|tl_item|{
                         tl_item.as_event().cloned()
                             .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     }) {
-                        let replying_preview = self.view.view(id!(room_screen_wrapper.keyboard_view.replying_preview));
+                        let replying_preview = self.view
+                            .view(id!(room_screen_wrapper.keyboard_view.replying_preview));
                         if replying_preview.visible() {
                             replying_preview.set_visible(cx, false);
                         }
-                        let event_id = event_tl_item.identifier();
-                        if let Some(pending_edit) = last_edit_unconfirmed.clone() {
-                            if pending_edit.event_id == event_id {
-                            // If we have an unconfirmed edit, set the text input to that content.
-                            self.view.editing_pane(id!(editing_pane))
-                                .mentionable_text_input(id!(edit_text_input))
-                                .set_text(cx, &pending_edit.edit_content);
-                                tl.last_edit_unconfirmed = None;
+                        if let Some(pending_edit) = pending_edit.clone() {
+                            if pending_edit.message_id == event_tl_item.identifier() {
+                                tl.pending_edit = None;
+                                self.show_editing_pane(cx, event_tl_item, room_id.clone());
+                                self.view.editing_pane(id!(editing_pane))
+                                    .mentionable_text_input(id!(edit_text_input))
+                                    .set_text(cx, &pending_edit.editing_content);
                             }
+                        } else {
+                            self.show_editing_pane(cx, event_tl_item, room_id.clone());
                         }
-                        self.show_editing_pane(cx, event_tl_item, room_id.clone());
                     }
                     else {
                         enqueue_popup_notification("Could not find message in timeline to edit.".to_string());
@@ -2196,7 +2193,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
-                last_edit_unconfirmed: None,
+                pending_edit: None,
             };
             (new_tl_state, true)
         };
@@ -2682,7 +2679,16 @@ struct TimelineUiState {
     /// When new message come in, this value is reset to `false`.
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
-    last_edit_unconfirmed: Option<PendingEdit>,
+
+    /// The data we need to store when `EditingPane` is closed **abnormally**.
+    ///
+    /// It is **normal** that user clicks close button to hide edit pane,
+    /// this case we **do not** store any data into this field.
+    ///
+    /// But **abnormal** that user tries to open `replying_preview` (user wants to reply some message) when `EditingPane` is showing,
+    /// this case, we hide `EditingPane`, show `replying_preview`
+    /// and store the message id that user is editing and the string content in the `edit_text_input` widget.
+    pending_edit: Option<PendingEdit>,
 }
 
 #[derive(Default, Debug)]

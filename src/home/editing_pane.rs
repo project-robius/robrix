@@ -622,3 +622,19 @@ impl EditingPaneRef {
         inner.force_hide(cx);
     }
 }
+
+/// The data we need to store when `EditingPane` is closed **abnormally**.
+///
+/// It is **normal** that user clicks close button to hide edit pane,
+/// this case we **do not** store any data into this field.
+///
+/// But **abnormal** that user tries to open `replying_preview` (user wants to reply some message) when `EditingPane` is showing,
+/// this case, we hide `EditingPane`, show `replying_preview`
+/// and store the message id that user is editing and the string content in the `edit_text_input` widget.
+#[derive(Debug, Clone)]
+pub struct PendingEdit {
+    /// Content that user is editing in `edit_text_input` widget.
+    pub editing_content: String,
+    /// Message id that user is editing.
+    pub message_id: TimelineEventItemId,
+}
