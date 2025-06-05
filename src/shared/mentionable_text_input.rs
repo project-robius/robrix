@@ -15,7 +15,17 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::home::room_screen::RoomScreenProps;
 use crate::sliding_sync::get_client;
 
-
+// Constants for mention popup height calculations
+const DESKTOP_ITEM_HEIGHT: f64 = 32.0;
+const MOBILE_ITEM_HEIGHT: f64 = 64.0;
+const DESKTOP_BOTTOM_PADDING: f64 = 24.0;
+const MOBILE_BOTTOM_PADDING: f64 = 28.0;
+const HEADER_TEXT_HEIGHT: f64 = 16.0;
+const HEADER_MINIMAL_PADDING: f64 = 8.0;
+const POPUP_SPACING: f64 = 8.0;
+const LOADING_CONTENT_HEIGHT: f64 = 48.0;
+const LOADING_BOTTOM_PADDING: f64 = 16.0;
+const MOBILE_USERNAME_SPACING: f64 = 0.5;
 
 live_design! {
     use link::theme::*;
@@ -60,7 +70,7 @@ live_design! {
             }
         }
         flow: Down
-        spacing: 8.0
+        spacing: 2.0
 
         user_info = <View> {
             width: Fill,
@@ -151,12 +161,12 @@ live_design! {
     // Template for loading indicator when members are being fetched
     LoadingIndicator = <View> {
         width: Fill,
-        height: 56,
+        height: 48,
         margin: {left: 4, right: 4}
-        padding: {left: 16, right: 16, top: 16, bottom: 16},
+        padding: {left: 8, right: 8, top: 8, bottom: 8},
         flow: Right,
         spacing: 8.0,
-        align: {x: 0., y: 0.5}
+        align: {x: 0.0, y: 0.5}
         draw_bg: {
             color: (COLOR_PRIMARY),
         }
@@ -572,6 +582,7 @@ impl MentionableTextInput {
 
         if self.is_searching {
             let is_desktop = cx.display_context.is_desktop();
+            let max_visible_items = if is_desktop { 10 } else { 5 };
 
             if self.can_notify_room && ("@room".contains(search_text) || search_text.is_empty()) {
                 let room_mention_item = match self.room_mention_list_item {
@@ -582,10 +593,29 @@ impl MentionableTextInput {
                 };
                 let mut room_avatar_shown = false;
 
-                // Set up room avatar
                 let avatar_ref = room_mention_item.avatar(id!(room_avatar));
 
                 // Get room avatar from current room Props
+                let room_name_first_char = if let Some(client) = get_client() {
+                    if let Some(room) = client.get_room(room_id) {
+                        // Get room display name and extract first grapheme
+                        let room_name = room.cached_display_name()
+                            .map(|name| name.to_string())
+                            .unwrap_or_else(|| "Room".to_string());
+                        let first_char = room_name.graphemes(true).next().unwrap_or("R");
+                        // Replace "?" with "R" for private rooms that have no explicit name
+                        if first_char == "@" {
+                            "R".to_string()
+                        } else {
+                            first_char.to_uppercase()
+                        }
+                    } else {
+                        "R".to_string()
+                    }
+                } else {
+                    "R".to_string()
+                };
+
                 if let Some(client) = get_client() {
                     if let Some(room) = client.get_room(room_id) {
                         if let Some(avatar_url) = room.avatar_url() {
@@ -603,7 +633,7 @@ impl MentionableTextInput {
                                     }
                                 },
                                 AvatarCacheEntry::Requested => {
-                                    avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, "R");
+                                    avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &room_name_first_char);
                                     room_avatar_shown = true;
                                 },
                                 AvatarCacheEntry::Failed => {
@@ -620,23 +650,39 @@ impl MentionableTextInput {
                     log!("Could not get client for @room avatar");
                 }
 
-                // If unable to display room avatar, show letter R with red background
+                // If unable to display room avatar, show first character of room name
                 if !room_avatar_shown {
-                    avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, "R");
+                    avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &room_name_first_char);
                 }
 
+                // Apply the same height styling as user items for consistency
+                if is_desktop {
+                    room_mention_item.apply_over(
+                        cx,
+                        live!(
+                            height: (DESKTOP_ITEM_HEIGHT),
+                        ),
+                    );
+                } else {
+                    room_mention_item.apply_over(
+                        cx,
+                        live!(
+                            height: (MOBILE_ITEM_HEIGHT),
+                        ),
+                    );
+                }
 
                 self.cmd_text_input.add_item(room_mention_item);
             }
 
             // Improved search: match both display names and Matrix IDs, then sort by priority
-            const MAX_MATCHED_MEMBERS: usize = MAX_VISIBLE_ITEMS * 2;  // Buffer for better UX
+            let max_matched_members = max_visible_items * 2;  // Buffer for better UX
 
             // Collect all matching members with their priority scores
             let mut prioritized_members = Vec::new();
 
             for member in room_members.iter() {
-                if prioritized_members.len() >= MAX_MATCHED_MEMBERS {
+                if prioritized_members.len() >= max_matched_members {
                     break;
                 }
 
@@ -676,14 +722,15 @@ impl MentionableTextInput {
             // 3. Virtualization: Only create Widget instances for actually visible items (‎⁠take(MAX_VISIBLE_ITEMS)⁠)
 
             // Performance Improvements:
-            // 1. Reduces processing from over 2,000 items to a maximum of 30 items
-            // 2. Reduces Widget creation from over 2,000 to at most 15 visible Widgets
+            // 1. Reduces processing from over 2,000 items to a reasonable amount
+            // 2. Reduces Widget creation to visible items only
             // 3. Significantly decreases string operations and Widget creation overhead
-            const MAX_VISIBLE_ITEMS: usize = 15;
             let popup = self.cmd_text_input.view(id!(popup));
 
             // Adjust height calculation to include the potential @room item
-            let total_items_in_list = member_count + if "@room".contains(search_text) { 1 } else { 0 };
+            // Use the same condition as when actually adding the @room item
+            let has_room_item = self.can_notify_room && ("@room".contains(search_text) || search_text.is_empty());
+            let total_items_in_list = member_count + if has_room_item { 1 } else { 0 };
 
             if total_items_in_list == 0 {
                 // If there are no matching items, just hide the entire popup and clear search state
@@ -700,27 +747,25 @@ impl MentionableTextInput {
             let header_height = if header_view.area().rect(cx).size.y > 0.0 {
                 header_view.area().rect(cx).size.y
             } else {
-                // Fallback
-                let estimated_padding = 24.0;
-                let text_height = 16.0;
-                estimated_padding + text_height
+                // More accurate fallback estimate: text height + minimal padding
+                // header_view has margin {left: 4, right: 4} but no explicit padding
+                HEADER_TEXT_HEIGHT + HEADER_MINIMAL_PADDING
             };
 
             // Get spacing between header and list
-            let estimated_spacing = 4.0;
+            let estimated_spacing = POPUP_SPACING;
 
-            if total_items_in_list <= MAX_VISIBLE_ITEMS {
-                let single_item_height = if is_desktop { 32.0 } else { 64.0 };
-                let total_height =
-                    (total_items_in_list as f64 * single_item_height) + header_height + estimated_spacing;
-                popup.apply_over(cx, live! { height: (total_height) });
-            } else {
-                let max_height = if is_desktop { 400.0 } else { 480.0 };
-                popup.apply_over(cx, live! { height: (max_height) });
-            }
+            // Calculate height based on actual items that will be displayed
+            let displayed_items = total_items_in_list.min(max_visible_items);
+            let single_item_height = if is_desktop { DESKTOP_ITEM_HEIGHT } else { MOBILE_ITEM_HEIGHT };
+            let bottom_padding = if is_desktop { DESKTOP_BOTTOM_PADDING } else { MOBILE_BOTTOM_PADDING }; // Maximum bottom padding to ensure full visibility
+            let total_height = (displayed_items as f64 * single_item_height) + header_height + estimated_spacing + bottom_padding;
+            popup.apply_over(cx, live! { height: (total_height) });
 
             // Only create widgets for items that will actually be visible
-            for (index, (display_name, member)) in matched_members.into_iter().take(MAX_VISIBLE_ITEMS).enumerate() {
+            // If @room exists, reserve one slot for it
+            let user_items_limit = if has_room_item { max_visible_items - 1 } else { max_visible_items };
+            for (index, (display_name, member)) in matched_members.into_iter().take(user_items_limit).enumerate() {
                 let item = WidgetRef::new_from_ptr(cx, self.user_list_item);
 
                 item.label(id!(user_info.username)).set_text(cx, &display_name);
@@ -734,7 +779,7 @@ impl MentionableTextInput {
                         cx,
                         live!(
                             flow: Right,
-                            height: 32.0,
+                            height: (DESKTOP_ITEM_HEIGHT),
                             align: {y: 0.5}
                         ),
                     );
@@ -744,8 +789,8 @@ impl MentionableTextInput {
                         cx,
                         live!(
                             flow: Down,
-                            height: 64.0,
-                            spacing: 4.0
+                            height: (MOBILE_ITEM_HEIGHT),
+                            spacing: (MOBILE_USERNAME_SPACING)
                         ),
                     );
                     item.view(id!(user_info.filler)).set_visible(cx, false);
@@ -766,15 +811,15 @@ impl MentionableTextInput {
 
                 self.cmd_text_input.add_item(item.clone());
 
-                // Set keyboard focus to the first item (either @room or the first user)
-                if index == 0 && !"@room".contains(search_text) { // If @room was added, it's the first item
-                    self.cmd_text_input.set_keyboard_focus_index(1); // Focus the first user if @room is index 0
-                } else if index == 0 && "@room".contains(search_text) {
-                    self.cmd_text_input.set_keyboard_focus_index(0); // Focus @room if it's the first item
+                // Set keyboard focus to the first item
+                if index == 0 {
+                    // If @room exists, it's index 0, otherwise first user is index 0
+                    self.cmd_text_input.set_keyboard_focus_index(0);
                 }
             }
 
-            self.cmd_text_input.view(id!(popup)).set_visible(cx, true);
+            let popup = self.cmd_text_input.view(id!(popup));
+            popup.set_visible(cx, true);
             if self.is_searching {
                 self.cmd_text_input.text_input_ref().set_key_focus(cx);
             }
@@ -857,16 +902,8 @@ impl MentionableTextInput {
             return true;
         }
 
-        // Check Matrix ID (user ID)
-        let user_id_str = member.user_id().to_string();
-        let user_id_lower = user_id_str.to_lowercase();
-
-        // Match against the full user ID (e.g., "@mihran:matrix.org")
-        if user_id_lower.contains(&search_text_lower) {
-            return true;
-        }
-
-        // Also match against just the localpart (e.g., "mihran" from "@mihran:matrix.org")
+        // Only match against the localpart (e.g., "mihran" from "@mihran:matrix.org")
+        // Don't match against the homeserver part to avoid false matches
         let localpart = member.user_id().localpart();
         let localpart_lower = localpart.to_lowercase();
         if localpart_lower.contains(&search_text_lower) {
@@ -905,16 +942,9 @@ impl MentionableTextInput {
             return 3;
         }
 
-        // Priority 4: Full user ID contains search text
-        let user_id_str = member.user_id().to_string();
-        let user_id_lower = user_id_str.to_lowercase();
-        if user_id_lower.contains(&search_text_lower) {
-            return 4;
-        }
-
-        // Priority 5: Localpart contains search text
+        // Priority 4: Localpart contains search text
         if localpart_lower.contains(&search_text_lower) {
-            return 5;
+            return 4;
         }
 
         // Should not reach here if user_matches_search returned true
@@ -949,23 +979,20 @@ impl MentionableTextInput {
         // Ensure header is visible
         header_view.set_visible(cx, true);
 
-        // Set appropriate height for loading indicator
-        let is_desktop = cx.display_context.is_desktop();
-
         // Calculate header height
         let header_height = if header_view.area().rect(cx).size.y > 0.0 {
             header_view.area().rect(cx).size.y
         } else {
-            // Fallback estimate for header
-            let estimated_padding = 24.0;
-            let text_height = 16.0;
-            estimated_padding + text_height
+            // More accurate fallback estimate: text height + minimal padding
+            // header_view has margin {left: 4, right: 4} but no explicit padding
+            HEADER_TEXT_HEIGHT + HEADER_MINIMAL_PADDING
         };
 
-        // Loading indicator needs: animation height (24) + padding (16+16) + text height (~16) = ~56px minimum
-        let loading_content_height = if is_desktop { 56.0 } else { 64.0 };
-        let estimated_spacing = 4.0;
-        let loading_height = header_height + loading_content_height + estimated_spacing;
+        // Loading indicator fixed height with additional padding
+        let loading_content_height = LOADING_CONTENT_HEIGHT;
+        let estimated_spacing = POPUP_SPACING;
+        let loading_bottom_padding = LOADING_BOTTOM_PADDING; // Add bottom padding for loading indicator
+        let loading_height = header_height + loading_content_height + estimated_spacing + loading_bottom_padding;
 
         popup.apply_over(cx, live! { height: (loading_height) });
         popup.set_visible(cx, true);
