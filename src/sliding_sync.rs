@@ -16,7 +16,7 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState
 };
 use matrix_sdk_ui::{
-    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::RoomListLoadingState, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RoomExt, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
@@ -1347,22 +1347,22 @@ fn username_to_full_user_id(
 /// This struct is necessary in order for us to track the previous state
 /// of a room received from the room list service, so that we can
 /// determine if the room has changed state.
-/// We can't just store the `room_list_service::Room` object itself,
+/// We can't just store the `matrix_sdk::Room` object itself,
 /// because that is a shallow reference to an inner room object within
 /// the room list service
 #[derive(Clone)]
 struct RoomListServiceRoomInfo {
-    room: room_list_service::Room,
+    room: matrix_sdk::Room,
     room_id: OwnedRoomId,
     room_state: RoomState,
 }
-impl From<&room_list_service::Room> for RoomListServiceRoomInfo {
-    fn from(room: &room_list_service::Room) -> Self {
+impl From<&matrix_sdk::Room> for RoomListServiceRoomInfo {
+    fn from(room: &matrix_sdk::Room) -> Self {
         room.clone().into()
     }
 }
-impl From<room_list_service::Room> for RoomListServiceRoomInfo {
-    fn from(room: room_list_service::Room) -> Self {
+impl From<matrix_sdk::Room> for RoomListServiceRoomInfo {
+    fn from(room: matrix_sdk::Room) -> Self {
         Self {
             room_id: room.room_id().to_owned(),
             room_state: room.state(),
@@ -1631,7 +1631,7 @@ async fn async_main_loop(
 /// Invoked when the room list service has received an update that changes an existing room.
 async fn update_room(
     old_room: &RoomListServiceRoomInfo,
-    new_room: &room_list_service::Room,
+    new_room: &matrix_sdk::Room,
     room_list_service: &RoomListService,
 ) -> Result<()> {
     let new_room_id = new_room.room_id().to_owned();
@@ -1681,22 +1681,39 @@ async fn update_room(
         }
 
 
-        if let Some(new_latest_event) = new_room.latest_event().await {
-            if let Some(old_latest_event) = old_room.room.latest_event().await {
-                if new_latest_event.timestamp() > old_latest_event.timestamp() {
-                    log!("Updating latest event for room {}", new_room_id);
-                    room_avatar_changed = update_latest_event(new_room_id.clone(), &new_latest_event, None);
+        let Some(client) = get_client() else {
+            return Ok(());
+        };
+        if let (Some(new_latest_event), Some(old_latest_event)) =
+            (new_room.latest_event(), old_room.room.latest_event())
+        {
+            if let Some(new_latest_event) =
+                EventTimelineItem::from_latest_event(client.clone(), &new_room_id, new_latest_event)
+                    .await
+            {
+                if let Some(old_latest_event) = EventTimelineItem::from_latest_event(
+                    client.clone(),
+                    &new_room_id,
+                    old_latest_event,
+                )
+                .await
+                {
+                    if new_latest_event.timestamp() > old_latest_event.timestamp() {
+                        log!("Updating latest event for room {}", new_room_id);
+                        room_avatar_changed =
+                            update_latest_event(new_room_id.clone(), &new_latest_event, None);
+                    }
                 }
             }
         }
 
         if room_avatar_changed || (old_room.room.avatar_url() != new_room.avatar_url()) {
             log!("Updating avatar for room {}", new_room_id);
-            spawn_fetch_room_avatar(new_room.inner_room().clone());
+            spawn_fetch_room_avatar(new_room.clone());
         }
 
         if let Some(new_room_name) = new_room_name {
-            if old_room.room.cached_display_name().as_ref() != Some(&new_room_name) {
+            if old_room.room.cached_display_name().map(|f| f.to_room_alias_name()).as_ref() != Some(&new_room_name) {
                 log!("Updating room name for room {} to {}", new_room_id, new_room_name);
                 enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                     room_id: new_room_id.clone(),
@@ -1743,7 +1760,7 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
 
 
 /// Invoked when the room list service has received an update with a brand new room.
-async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomListService) -> Result<()> {
+async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListService) -> Result<()> {
     let room_id = room.room_id().to_owned();
     // We must call `display_name()` here to calculate and cache the room's name.
     let room_name = room.display_name().await.map(|n| n.to_string()).ok();
@@ -1771,7 +1788,15 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         }
         RoomState::Invited => {
             let invite_details = room.invite_details().await.ok();
-            let latest = room.latest_event().await.as_ref().map(
+            let Some(client) = get_client() else {
+                return Ok(());
+            };
+            let latest_event = if let Some(latest_event) = room.latest_event() {
+                EventTimelineItem::from_latest_event(client, &room_id, latest_event).await
+            } else {
+                None
+            };
+            let latest = latest_event.as_ref().map(
                 |ev| get_latest_event_details(ev, &room_id)
             );
             let room_avatar = room_avatar(room, room_name.as_deref()).await;
@@ -1811,14 +1836,14 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     room_list_service.subscribe_to_rooms(&[&room_id]);
 
     // Do not add tombstoned rooms to the rooms list; they require special handling.
-    if let Some(tombstoned_info) = room.tombstone() {
+    if let Some(tombstoned_info) = room.successor_room() {
         log!("Room {room_id} has been tombstoned: {tombstoned_info:#?}");
         // Since we don't know the order in which we'll learn about new rooms,
         // we need to first check to see if the replacement for this tombstoned room
         // refers to an already-known room as its replacement.
         // If so, we can immediately update the replacement room's room info
         // to indicate that it replaces this tombstoned room.
-        let replacement_room_id = tombstoned_info.replacement_room;
+        let replacement_room_id = tombstoned_info.room_id;
         if let Some(room_info) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&replacement_room_id) {
             room_info.replaces_tombstoned_room = Some(replacement_room_id.clone());
         }
@@ -1831,20 +1856,19 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         return Ok(());
     }
 
-    let timeline = if let Some(tl_arc) = room.timeline() {
-        tl_arc
+    let timeline = if let Ok(tl_arc) = room.timeline().await {
+        Arc::new(tl_arc)
     } else {
-        let builder = room.default_room_timeline_builder()?
+        let builder = room.timeline_builder()
             .track_read_marker_and_receipts();
-        room.init_timeline_with_builder(builder).await?;
-        room.timeline().ok_or_else(|| anyhow::anyhow!("BUG: room timeline not found for room {room_id}"))?
+        Arc::new(builder.build().await.map_err(|_| anyhow::anyhow!("BUG: room timeline not found for room {room_id}"))?)
     };
     let latest_event = timeline.latest_event().await;
     let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
 
     let (request_sender, request_receiver) = watch::channel(Vec::new());
     let timeline_subscriber_handler_task = Handle::current().spawn(timeline_subscriber_handler(
-        room.inner_room().clone(),
+        room.clone(),
         timeline.clone(),
         timeline_update_sender.clone(),
         request_receiver,
@@ -1890,7 +1914,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         is_selected: false,
     }));
 
-    spawn_fetch_room_avatar(room.inner_room().clone());
+    spawn_fetch_room_avatar(room.clone());
 
     Ok(())
 }

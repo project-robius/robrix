@@ -15,7 +15,7 @@ use matrix_sdk::{room::{reply::{EnforceThread, Reply}, RoomMember}, ruma::{
     sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, RepliedToEvent, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, EmbeddedEvent, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 
 use crate::{
@@ -1797,7 +1797,7 @@ impl RoomScreen {
                         .and_then(|tl_item| tl_item.as_event().cloned())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
-                        let replied_to_info = RepliedToEvent::from_timeline_item(&event_tl_item);
+                        let replied_to_info = EmbeddedEvent::from_timeline_item(&event_tl_item);
                         success = true;
                         self.show_replying_to(cx, (event_tl_item, replied_to_info));
                     }
@@ -2102,7 +2102,7 @@ impl RoomScreen {
     fn show_replying_to(
         &mut self,
         cx: &mut Cx,
-        replying_to: (EventTimelineItem, RepliedToEvent),
+        replying_to: (EventTimelineItem, EmbeddedEvent),
     ) {
         let replying_preview_view = self.view(id!(replying_preview));
         let (replying_preview_username, _) = replying_preview_view
@@ -2342,6 +2342,7 @@ impl RoomScreen {
     ) {
         // If the room is already being displayed, then do nothing.
         if self.room_id.as_ref().is_some_and(|id| id == &room_id) { return; }
+
 
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
@@ -2641,7 +2642,7 @@ struct TimelineUiState {
     media_cache: MediaCache,
 
     /// Info about the event currently being replied to, if any.
-    replying_to: Option<(EventTimelineItem, RepliedToEvent)>,
+    replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
 
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
@@ -2703,7 +2704,7 @@ struct SavedState {
     /// The content of the message input box.
     message_input_state: TextInputState,
     /// The event that the user is currently replying to, if any.
-    replying_to: Option<(EventTimelineItem, RepliedToEvent)>,
+    replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
     /// The event that the user is currently editing, if any.
     editing_event: Option<EventTimelineItem>,
 }
@@ -3696,8 +3697,8 @@ fn draw_replied_to_message(
                         .set_avatar_and_get_username(
                             cx,
                             room_id,
-                            replied_to_event.sender(),
-                            Some(replied_to_event.sender_profile()),
+                            &replied_to_event.sender,
+                            Some(&replied_to_event.sender_profile),
                             Some(in_reply_to_details.event_id.as_ref()),
                         );
 
@@ -3710,7 +3711,7 @@ fn draw_replied_to_message(
                 populate_preview_of_timeline_item(
                     cx,
                     &msg_body,
-                    replied_to_event.content(),
+                    &replied_to_event.content,
                     &in_reply_to_username,
                 );
             }
