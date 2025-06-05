@@ -3,7 +3,7 @@ use std::ops::Not;
 use makepad_widgets::*;
 use url::Url;
 
-use crate::{shared::popup_list::enqueue_popup_notification, sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest}};
+use crate::{sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest}};
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
 
@@ -304,7 +304,6 @@ impl Widget for LoginScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        println!("login draw_Walk {:?}", rand::random::<i64>());
         self.view.draw_walk(cx, scope, walk)
     }
 }

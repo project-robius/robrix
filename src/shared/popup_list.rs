@@ -8,7 +8,8 @@ pub fn enqueue_popup_notification(message: String, auto_dismiss_duration: Option
         auto_dismiss_duration,
     });
 }
-/// Popup notification item
+
+/// Popup notification item.
 #[derive(Default)]
 pub struct PopupItem {
     /// Text to be displayed in the popup.
@@ -16,6 +17,7 @@ pub struct PopupItem {
     /// Duration in seconds after which the popup will be automatically closed.
     pub auto_dismiss_duration: Option<f64>,
 }
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -253,7 +255,7 @@ impl Widget for RobrixPopupNotification {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        //self.draw_list.begin_overlay_reuse(cx);
+        self.draw_list.begin_overlay_reuse(cx);
         self.draw_bg.begin(cx, walk, self.layout);
         if !self.popups.is_empty() {
             cx.begin_turtle(walk, self.layout);
@@ -264,7 +266,7 @@ impl Widget for RobrixPopupNotification {
             cx.end_turtle();
         }
         self.draw_bg.end(cx);
-        //self.draw_list.end(cx);
+        self.draw_list.end(cx);
         DrawStep::done()
     }
 }
@@ -272,7 +274,7 @@ impl Widget for RobrixPopupNotification {
 impl RobrixPopupNotification {
     /// Adds a new popup with a close button to the right side of the screen.
     ///
-    /// The popup's content is a string given by the `message` parameter.
+    /// The popup's content is a string given by the `PopupItem` parameter.
     /// New popup will be displayed below the previous ones.
     pub fn push(&mut self, cx: &mut Cx, popup_item: PopupItem) {
         let mut view = View::new_from_ptr(cx, self.content);
