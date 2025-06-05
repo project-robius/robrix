@@ -1283,7 +1283,7 @@ impl Widget for RoomScreen {
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(millis)) => {
                             let item = list.item(cx, item_id, live_id!(DateDivider));
-                            let text = unix_time_millis_to_datetime(*millis)
+                            let text = unix_time_millis_to_datetime(millis)
                                 // format the time as a shortened date (Sat, Sept 5, 2021)
                                 .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
                                 .unwrap_or_else(|| format!("{:?}", millis));
@@ -3329,7 +3329,7 @@ fn populate_message_view(
     });
 
     // Set the timestamp.
-    if let Some(dt) = unix_time_millis_to_datetime(ts_millis) {
+    if let Some(dt) = unix_time_millis_to_datetime(&ts_millis) {
         item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
     }
 
@@ -3929,7 +3929,7 @@ fn populate_small_state_event(
             event_tl_item.event_id(),
         );
         // Draw the timestamp as part of the profile.
-        if let Some(dt) = unix_time_millis_to_datetime(event_tl_item.timestamp()) {
+        if let Some(dt) = unix_time_millis_to_datetime(&event_tl_item.timestamp()) {
             item.timestamp(id!(left_container.timestamp)).set_date_time(cx, dt);
         }
         new_drawn_status.profile_drawn = profile_drawn;
