@@ -298,7 +298,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         for action in actions {
             match action.downcast_ref() {
                 Some(JoinRoomAction::Joined { room_id }) if room_id == kind.room_id() => {
-                    enqueue_popup_notification("Successfully joined room.".into());
+                    enqueue_popup_notification("Successfully joined room.".into(), None);
                     self.view.label(id!(title)).set_text(cx, "Joined room!");
                     self.view.label(id!(description)).set_text(cx, &format!(
                         "Successfully joined \"{}\".",
@@ -315,7 +315,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     let was_invite = matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_));
                     let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, was_invite);
                     self.view.label(id!(description)).set_text(cx, &msg);
-                    enqueue_popup_notification(msg);
+                    enqueue_popup_notification(msg, None);
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
                     cancel_button.set_visible(cx, false);
@@ -349,7 +349,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     }
                     self.view.label(id!(title)).set_text(cx, title);
                     self.view.label(id!(description)).set_text(cx, &description);
-                    enqueue_popup_notification(popup_msg);
+                    enqueue_popup_notification(popup_msg, None);
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
                     cancel_button.set_visible(cx, false);
@@ -375,7 +375,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
 
                     self.view.label(id!(title)).set_text(cx, title);
                     self.view.label(id!(description)).set_text(cx, &description);
-                    enqueue_popup_notification(popup_msg);
+                    enqueue_popup_notification(popup_msg, None);
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
                     cancel_button.set_visible(cx, false);

@@ -268,7 +268,7 @@ impl Widget for InviteScreen {
                     Some(JoinRoomAction::Joined { room_id }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingForJoinedRoom;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification("Successfully joined room.".into());
+                            enqueue_popup_notification("Successfully joined room.".into(), None);
                         }
                         continue;
                     }
@@ -276,7 +276,7 @@ impl Widget for InviteScreen {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
                             let msg = utils::stringify_join_leave_error(error, info.room_name.as_deref(), true, true);
-                            enqueue_popup_notification(msg);
+                            enqueue_popup_notification(msg, None);
                         }
                         continue;
                     }
@@ -287,14 +287,14 @@ impl Widget for InviteScreen {
                     Some(LeaveRoomAction::Left { room_id }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::RoomLeft;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification("Successfully rejected invite.".into());
+                            enqueue_popup_notification("Successfully rejected invite.".into(), None);
                         }
                         continue;
                     }
                     Some(LeaveRoomAction::Failed { room_id, error }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification(format!("Failed to reject invite: {error}"));
+                            enqueue_popup_notification(format!("Failed to reject invite: {error}"), None);
                         }
                         continue;
                     }

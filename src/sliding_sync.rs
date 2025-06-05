@@ -163,12 +163,12 @@ async fn login(
                 if let Err(e) = persistent_state::save_session(&client, client_session).await {
                     let err_msg = format!("Failed to save session state to storage: {e}");
                     error!("{err_msg}");
-                    enqueue_popup_notification(err_msg);
+                    enqueue_popup_notification(err_msg, None);
                 }
                 Ok((client, None))
             } else {
                 let err_msg = format!("Failed to login as {}: {:?}", cli.user_id, login_result);
-                enqueue_popup_notification(err_msg.clone());
+                enqueue_popup_notification(err_msg.clone(), None);
                 enqueue_rooms_list_update(RoomsListUpdate::Status { status: err_msg.clone() });
                 bail!(err_msg);
             }
@@ -943,7 +943,7 @@ async fn async_worker(
                             Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send reply message to room {room_id}: {_e:?}");
-                                enqueue_popup_notification(format!("Failed to send reply: {_e}"));
+                                enqueue_popup_notification(format!("Failed to send reply: {_e}"), None);
                             }
                         }
                     } else {
@@ -951,7 +951,7 @@ async fn async_worker(
                             Ok(_send_handle) => log!("Sent message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send message to room {room_id}: {_e:?}");
-                                enqueue_popup_notification(format!("Failed to send message: {_e}"));
+                                enqueue_popup_notification(format!("Failed to send message: {_e}"), None);
                             }
                         }
                     }
@@ -1073,7 +1073,7 @@ async fn async_worker(
                         Ok(()) => log!("Successfully redacted message in room {room_id}."),
                         Err(e) => {
                             error!("Failed to redact message in {room_id}; error: {e:?}");
-                            enqueue_popup_notification(format!("Failed to redact message. Error: {e}"));
+                            enqueue_popup_notification(format!("Failed to redact message. Error: {e}"), None);
                         }
                     }
                 });
@@ -1170,7 +1170,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
-                            enqueue_popup_notification(format!("Rooms list update error: {e}"));
+                            enqueue_popup_notification(format!("Rooms list update error: {e}"), None);
                         },
                         Err(e) => {
                             error!("BUG: failed to join main async loop task: {e:?}");
@@ -1188,7 +1188,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
-                            enqueue_popup_notification(format!("Rooms list update error: {e}"));
+                            enqueue_popup_notification(format!("Rooms list update error: {e}"), None);
                         },
                         Err(e) => {
                             error!("BUG: failed to join async worker task: {e:?}");
