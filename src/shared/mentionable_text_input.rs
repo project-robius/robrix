@@ -837,6 +837,15 @@ impl MentionableTextInput {
             // Extract the text after the @ symbol up to the cursor position
             let mention_text = &text_graphemes[at_idx + 1..cursor_grapheme_idx];
 
+            // Check if this is a completed @room mention followed by a space and other text
+            // If so, don't trigger the popup again
+            if mention_text.len() >= 5 {  // "room " minimum
+                let mention_str: String = mention_text.iter().map(|s| *s).collect();
+                if mention_str.starts_with("room ") {
+                    return None;
+                }
+            }
+
             // Only trigger if this looks like an ongoing mention (contains only alphanumeric and basic chars)
             if self.is_valid_mention_text(mention_text) {
                 // Ensure at_idx is within bounds of byte_positions

@@ -315,18 +315,18 @@ impl Widget for EditingPane {
                             },
                         };
 
-                        // TODO: extract mentions out of the new edited text and use them here.
-                        if let Some(existing_mentions) = message.mentions() {
-                            if let EditedContent::RoomMessage(new_message_content) =
-                                &mut edited_content
-                            {
-                                new_message_content.mentions = Some(existing_mentions.clone());
-                            }
-                            // TODO: once we update the matrix-sdk dependency, uncomment this.
-                            // EditedContent::MediaCaption { mentions, .. }) => {
-                            //     mentions = Some(existing_mentions);
-                            // }
+                        // Extract mentions from the new edited text using create_message_with_mentions
+                        let edit_text_input_widget = self.mentionable_text_input(id!(editing_content.edit_text_input));
+                        let message_with_mentions = edit_text_input_widget.create_message_with_mentions(&edited_text);
+                        
+                        if let EditedContent::RoomMessage(new_message_content) = &mut edited_content {
+                            // Use the mentions from the newly created message
+                            new_message_content.mentions = message_with_mentions.mentions;
                         }
+                        // TODO: once we update the matrix-sdk dependency, uncomment this.
+                        // EditedContent::MediaCaption { mentions, .. }) => {
+                        //     mentions = message_with_mentions.mentions;
+                        // }
 
                         edited_content
                     },
