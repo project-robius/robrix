@@ -44,16 +44,16 @@ live_design! {
                             width: 300
                         }
                     }
-                    message_search_input_view = <View> {
-                        width: Fill, height: Fit,
-                        visible: false,
-                        align: {x: 1.0},
-                        <CachedWidget> {
-                            message_search_input_bar = <MessageSearchInputBar> {
-                                width: 300,
-                            }
-                        }
-                    }
+                    // message_search_input_view = <View> {
+                    //     width: Fill, height: Fit,
+                    //     visible: false,
+                    //     align: {x: 1.0},
+                    //     <CachedWidget> {
+                    //         message_search_input_bar = <MessageSearchInputBar> {
+                    //             width: 300,
+                    //         }
+                    //     }
+                    // }
                     
                 }
                 

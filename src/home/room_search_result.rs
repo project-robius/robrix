@@ -14,7 +14,7 @@ use matrix_sdk::ruma::{
 };
 
 use crate::{
-    app::AppState, event_preview::text_preview_of_other_state, home::{new_message_context_menu::MessageAbilities, room_screen::{draw_replied_to_message, populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_location_message_content, populate_text_message_content, populate_video_message_content, MessageOrStickerType, MessageWidgetRefExt, MESSAGE_NOTICE_TEXT_COLOR, SEARCH_HIGHLIGHT}}, media_cache::MediaCache, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, styles::COLOR_DANGER_RED, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::{current_user_id, submit_async_request, MatrixRequest, UserPowerLevels}, utils::unix_time_millis_to_datetime
+    app::AppState, event_preview::text_preview_of_other_state, home::{new_message_context_menu::MessageAbilities, room_screen::{draw_replied_to_message, populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_location_message_content, populate_text_message_content, populate_video_message_content, MessageOrStickerType, MessageWidgetRefExt, MESSAGE_NOTICE_TEXT_COLOR, SEARCH_HIGHLIGHT}, search_screen::{SearchScreen, SearchState}}, media_cache::MediaCache, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, popup_list::enqueue_popup_notification, styles::COLOR_DANGER_RED, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::{current_user_id, submit_async_request, MatrixRequest, UserPowerLevels}, utils::unix_time_millis_to_datetime
 };
 
 use crate::home::{
@@ -27,7 +27,6 @@ use crate::home::{
     rooms_list::RoomsListWidgetExt,
 };
 
-use super::SearchState;
 
 live_design! {
     use link::theme::*;
@@ -190,8 +189,6 @@ pub struct SearchResult {
     pub search_criteria: Criteria,
     #[rust]
     pub result_count: u32,
-    #[live(true)]
-    visible: bool,
 }
 
 #[derive(Clone, Default)]
@@ -334,15 +331,12 @@ impl SearchResultRef {
 ///
 /// This function is used in the `RoomScreen` widget's `draw_walk()` method when the timeline is being rendered as a search result.
 pub fn search_result_draw_walk(
-    room_screen: &mut RoomScreen,
+    room_screen: &mut SearchScreen,
     cx: &mut Cx2d,
     scope: &mut Scope,
     walk: Walk,
 ) -> DrawStep {
     let room_screen_widget_uid = room_screen.widget_uid();
-    let Some(room_id) = &room_screen.room_id else {
-        return DrawStep::done();
-    };
     while let Some(subview) = room_screen.view.draw_walk(cx, scope, walk).step() {
         // We only care about drawing the portal list.
         let portal_list_ref = subview.as_portal_list();
@@ -350,17 +344,14 @@ pub fn search_result_draw_walk(
             error!("!!! RoomScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
             continue;
         };
-        let Some(tl_state) = room_screen.tl_state.as_mut() else {
-            return DrawStep::done();
-        };
-        let tl_items = &tl_state.search_state.items;
+        let tl_items = &room_screen.search_state.items;
         // Set the portal list's range based on the number of timeline items.
         let last_item_id = tl_items.len();
         let list = list_ref.deref_mut();
         list.set_item_range(cx, 0, last_item_id);
 
         while let Some(item_id) = list.next_visible_item(cx) {
-            if item_id == 0 && tl_state.search_state.next_batch_token.is_none() && last_item_id > 0 {
+            if item_id == 0 && room_screen.search_state.next_batch_token.is_none() && last_item_id > 0 {
                 WidgetRef::new_from_ptr(cx, room_screen.no_more_template)
                     .as_label()
                     .draw_all(cx, &mut Scope::empty());
@@ -374,11 +365,11 @@ pub fn search_result_draw_walk(
                     continue;
                 };
                 let item_drawn_status = ItemDrawnStatus {
-                    content_drawn: tl_state
+                    content_drawn: room_screen
                         .search_state
                         .content_drawn_since_last_update
                         .contains(&tl_idx),
-                    profile_drawn: tl_state
+                    profile_drawn: room_screen
                         .search_state
                         .profile_drawn_since_last_update
                         .contains(&tl_idx),
@@ -424,7 +415,7 @@ pub fn search_result_draw_walk(
 
                                         if let MessageType::Text(text) = &mut message.msgtype {
                                             if let Some(ref mut formatted) = text.formatted {
-                                                for highlight in tl_state
+                                                for highlight in room_screen
                                                     .search_state
                                                     .highlighted_strings
                                                     .iter()
@@ -436,7 +427,7 @@ pub fn search_result_draw_walk(
                                                 }
                                             } else {
                                                 let mut formatted_string = text.body.clone();
-                                                for highlight in tl_state
+                                                for highlight in room_screen
                                                     .search_state
                                                     .highlighted_strings
                                                     .iter()
@@ -459,18 +450,16 @@ pub fn search_result_draw_walk(
                                                     Some(f)
                                                 }
                                             });
-                                        
+                                        let mut media_cache = MediaCache::new(None);
                                         populate_message_search_view(
                                             cx,
                                             list,
                                             item_id,
-                                            room_id,
                                             event,
                                             &message,
                                             prev_event,
-                                            &tl_state.search_state.profile_infos,
-                                            &mut tl_state.media_cache,
-                                            &tl_state.user_power,
+                                            &room_screen.search_state.profile_infos,
+                                            &mut media_cache,
                                             item_drawn_status,
                                             room_screen_widget_uid,
                                         )
@@ -502,13 +491,13 @@ pub fn search_result_draw_walk(
                     }
                 };
                 if item_new_draw_status.content_drawn {
-                    tl_state
+                    room_screen
                         .search_state
                         .content_drawn_since_last_update
                         .insert(tl_idx..tl_idx + 1);
                 }
                 if item_new_draw_status.profile_drawn {
-                    tl_state
+                    room_screen
                         .search_state
                         .profile_drawn_since_last_update
                         .insert(tl_idx..tl_idx + 1);
@@ -777,7 +766,7 @@ pub fn search_result_jump_to_related(
 ///
 /// See `MessageSearchAction` for the possible actions.
 pub fn handle_search_input(
-    room_screen: &mut RoomScreen,
+    room_screen: &mut SearchScreen,
     cx: &mut Cx,
     action: &Action,
     scope: &mut Scope,
@@ -787,12 +776,15 @@ pub fn handle_search_input(
         MessageSearchAction::Changed(search_term) => {
             if search_term.is_empty() {
                 room_screen
-                    .search_result(id!(search_result_plane))
-                    .reset(cx);
-                room_screen.view(id!(timeline)).set_visible(cx, true);
-                room_screen
                     .view(id!(search_timeline))
                     .set_visible(cx, false);
+                room_screen
+                    .search_result(id!(search_result_plane))
+                    .reset(cx);
+                room_screen
+                    .search_result(id!(search_result_plane))
+                    .set_visible(cx, false);
+                room_screen.search_state = SearchState::default();
                 // Abort previous inflight search request.
                 submit_async_request(MatrixRequest::SearchMessages { 
                     room_id: room_id!("!not_used:matrix.org").to_owned(), 
@@ -803,63 +795,82 @@ pub fn handle_search_input(
                 });
                 return;
             }
+            // if let Some(selected_room) = {
+            //     let app_state = scope.data.get::<AppState>().unwrap();
+            //     app_state.selected_room.clone()
+            // } {
+            //     if Some(selected_room.room_id()) == room_screen.room_id.as_ref() {
+            //         room_screen.search_state = SearchState::default();
+            //         let mut criteria = room_screen
+            //             .search_result(id!(search_result_plane))
+            //             .get_search_criteria();
+            //         criteria.search_term = search_term;
+            //         criteria.include_all_rooms = false;
+            //         room_screen
+            //             .search_result(id!(search_result_plane))
+            //             .set_search_criteria(cx, criteria);
+            //         room_screen.view(id!(timeline)).set_visible(cx, false);
+            //     }
+            // }
             if let Some(selected_room) = {
                 let app_state = scope.data.get::<AppState>().unwrap();
                 app_state.selected_room.clone()
             } {
-                if Some(selected_room.room_id()) == room_screen.room_id.as_ref() {
-                    room_screen.search_debounce_timer = cx.start_timeout(3.0);
-                    if let Some(ref mut tl_state) = room_screen.tl_state {
-                        tl_state.search_state = SearchState::default();
-                    }
-                    let mut criteria = room_screen
-                        .search_result(id!(search_result_plane))
-                        .get_search_criteria();
-                    criteria.search_term = search_term;
-                    criteria.include_all_rooms = false;
-                    room_screen
-                        .search_result(id!(search_result_plane))
-                        .set_search_criteria(cx, criteria);
-                    room_screen.view(id!(timeline)).set_visible(cx, false);
+                let mut criteria = room_screen
+                    .search_result(id!(search_result_plane))
+                    .get_search_criteria();
+                criteria.search_term = search_term;
+                criteria.include_all_rooms = false;
+                room_screen
+                    .search_result(id!(search_result_plane))
+                    .set_search_criteria(cx, criteria.clone());
+                room_screen.view(id!(timeline)).set_visible(cx, false);
+                let room_id = selected_room.room_id();
+                let is_encrypted = room_screen.view.rooms_list(id!(rooms_list)).is_room_encrypted(room_id);
+                if is_encrypted && !criteria.include_all_rooms {
+                    enqueue_popup_notification(String::from("Searching for encrypted messages is not supported yet. You may want to try searching all rooms instead."));
+                    return;
                 }
+                room_screen.search_result(id!(search_result_plane)).display_top_space(cx);
+                submit_async_request(MatrixRequest::SearchMessages {
+                    room_id: room_id.clone(), 
+                    include_all_rooms: criteria.include_all_rooms,
+                    search_term: criteria.search_term.clone(),
+                    next_batch: None,
+                    abort_previous_search: true
+                });
             }
         }
         MessageSearchAction::Click(search_term) => {
-            if let Some(selected_room) = {
+            if let Some(_selected_room) = {
                 let app_state = scope.data.get::<AppState>().unwrap();
                 app_state.selected_room.clone()
             } {
-                if Some(selected_room.room_id()) == room_screen.room_id.as_ref() {
-                    let mut criteria = room_screen
-                        .search_result(id!(search_result_plane))
-                        .get_search_criteria();
-                    if search_term == criteria.search_term && !search_term.is_empty() {
-                        return;
-                    }
-                    criteria.search_term = search_term.clone();
-                    room_screen
-                        .search_result(id!(search_result_plane))
-                        .set_search_criteria(cx, criteria);
-                    room_screen.view(id!(timeline)).set_visible(cx, false);
-                }
+                let mut criteria = room_screen
+                    .search_result(id!(search_result_plane))
+                    .get_search_criteria();
+                // if search_term == criteria.search_term && !search_term.is_empty() {
+                //     return;
+                // }
+                println!("criteria.search_term: {:#?}, search_term: {:#?}", criteria.search_term, search_term);
+                criteria.search_term = search_term.clone();
+                room_screen
+                    .search_result(id!(search_result_plane))
+                    .set_search_criteria(cx, criteria);
+                
             }
         }
         MessageSearchAction::Clear => {
-            cx.stop_timer(room_screen.search_debounce_timer);
             room_screen
                 .view(id!(search_timeline))
                 .set_visible(cx, false);
-            room_screen.view(id!(timeline)).set_visible(cx, true);
             room_screen
                 .search_result(id!(search_result_plane))
                 .reset(cx);
             room_screen
                 .search_result(id!(search_result_plane))
                 .set_visible(cx, false);
-            let Some(tl) = room_screen.tl_state.as_mut() else {
-                return;
-            };
-            tl.search_state = SearchState::default();
+            room_screen.search_state = SearchState::default();
         }
         _ => {}
     }
@@ -1249,13 +1260,11 @@ pub fn populate_message_search_view(
     cx: &mut Cx2d,
     list: &mut PortalList,
     item_id: usize,
-    room_id: &OwnedRoomId,
     event_tl_item: &AnyTimelineEvent,
     message: &RoomMessageEventContent,
     prev_event: Option<&AnyTimelineEvent>,
     user_profiles: &BTreeMap<OwnedUserId, TimelineDetails<Profile>>,
     media_cache: &mut MediaCache,
-    user_power_levels: &UserPowerLevels,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
 ) -> (WidgetRef, ItemDrawnStatus) {

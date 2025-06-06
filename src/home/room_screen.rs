@@ -595,7 +595,7 @@ live_design! {
         }
     }
 
-    Timeline = <View> {
+    pub Timeline = <View> {
         width: Fill,
         height: Fill,
         align: {x: 0.5, y: 0.0} // center horizontally, align to top vertically
@@ -1014,7 +1014,6 @@ impl Widget for RoomScreen {
             let message_input = self.room_input_bar(id!(input_bar)).text_input(id!(text_input));
 
             for action in actions {
-                handle_search_input(self, cx, action, scope);
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { return };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
@@ -1291,9 +1290,9 @@ impl Widget for RoomScreen {
         }
         let search_timeline_widget = self.view(id!(search_timeline));
         let search_timeline_widget_visible = search_timeline_widget.visible();
-        if search_timeline_widget_visible {
-            return search_result::search_result_draw_walk(self, cx, scope, walk);
-        }
+        // if search_timeline_widget_visible {
+        //     return search_result::search_result_draw_walk(self, cx, scope, walk);
+        // }
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
@@ -3007,9 +3006,9 @@ fn find_new_item_matching_current_item(
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ItemDrawnStatus {
     /// Whether the profile info (avatar and displayable username) were drawn for this item.
-    profile_drawn: bool,
+    pub(crate) profile_drawn: bool,
     /// Whether the content of the item was drawn (e.g., the message text, image, video, sticker, etc).
-    content_drawn: bool,
+    pub(crate) content_drawn: bool,
 }
 impl ItemDrawnStatus {
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `false`.
@@ -3020,7 +3019,7 @@ impl ItemDrawnStatus {
         }
     }
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `true`.
-    const fn both_drawn() -> Self {
+    pub const fn both_drawn() -> Self {
         Self {
             profile_drawn: true,
             content_drawn: true,

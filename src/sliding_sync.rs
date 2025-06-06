@@ -29,7 +29,7 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: P
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::{TimelineUpdate, SearchResultItem}, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
+        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::{SearchResultItem, TimelineUpdate}, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}, search_screen::{SearchResultAction, SearchResultReceived}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -1132,13 +1132,6 @@ async fn async_worker(
                     continue;
                 }
                 let client = CLIENT.get().unwrap();
-                let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                    log!("Skipping search message request for not-yet-known room {room_id}");
-                    continue;
-                };
-
-                let sender = room_info.timeline_update_sender.clone();
                 let mut search_categories = Categories::new();
                 let mut room_filter = RoomEventFilter::empty();
                 room_filter.rooms = Some(vec![room_id.clone()]);
@@ -1149,8 +1142,8 @@ async fn async_worker(
                 criteria.filter = room_filter;
                 criteria.order_by = Some(OrderBy::Recent);
                 criteria.event_context = EventContext::new();
-                criteria.event_context.after_limit = uint!(1);
-                criteria.event_context.before_limit = uint!(1);
+                criteria.event_context.after_limit = uint!(0);
+                criteria.event_context.before_limit = uint!(0);
                 criteria.event_context.include_profile = true;
 
                 search_categories.room_events = Some(criteria);
@@ -1211,20 +1204,14 @@ async fn async_worker(
                                 .and_then(|f| f.to_string().parse().ok())
                                 .unwrap_or(0);
                             let highlights = result.room_events.highlights;
-                            if let Err(e) = sender.send(TimelineUpdate::SearchResultReceived {
+                            Cx::post_action(SearchResultAction::Ok(SearchResultReceived {
                                 items,
                                 count,
                                 highlights,
                                 search_term: search_term.clone(),
                                 profile_infos,
                                 next_batch,
-                            }) {
-                                error!("Failed to search message in {room_id}; error: {e:?}");
-                                enqueue_popup_notification(format!(
-                                    "Failed to search message. Error: {e}"
-                                ));
-                            }
-                            SignalToUI::set_ui_signal();
+                            }));
                         }
                         Err(e) => {
                             error!("Failed to search message in {room_id}; error: {e:?}");

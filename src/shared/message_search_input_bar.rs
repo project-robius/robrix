@@ -76,6 +76,8 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct MessageSearchInputBar {
     #[deref] view: View,
+    #[rust] debounce_timer: Timer,
+    #[rust] search_term: String,
 }
 
 /// Actions emitted by the `MessageSearchInputBar` based on user interaction with it.
@@ -94,6 +96,15 @@ pub enum MessageSearchAction {
 
 impl Widget for MessageSearchInputBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if let Event::Timer(te) = event {
+            if self.debounce_timer.is_timer(te).is_some() {
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    MessageSearchAction::Changed(self.search_term.clone()),
+                );
+            }
+        }
         self.view.handle_event(cx, event, scope);
         let area = self.text_input(id!(input)).area();
         if let Hit::FingerDown(..) = event.hits(cx, area) {
@@ -126,11 +137,8 @@ impl WidgetMatchEvent for MessageSearchInputBar {
                 return;
             }
             clear_button.set_visible(cx, !keywords.is_empty());
-            cx.widget_action(
-                self.widget_uid(),
-                &scope.path,
-                MessageSearchAction::Changed(keywords)
-            );
+            self.debounce_timer = cx.start_timeout(1.0);
+            self.search_term = keywords.clone();
         }
 
         if clear_button.clicked(actions) {
@@ -145,6 +153,7 @@ impl WidgetMatchEvent for MessageSearchInputBar {
         }
         for action in actions {
             if let MessageSearchAction::Clear = action.as_widget_action().cast() {
+                cx.stop_timer(self.debounce_timer);
                 self.text_input(id!(input)).set_text(cx, "");
                 cx.widget_action(
                     self.widget_uid(),
