@@ -19,7 +19,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{editing_pane::PendingEdit, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -812,6 +812,7 @@ pub struct RoomScreen {
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
 }
+
 impl Drop for RoomScreen {
     fn drop(&mut self) {
         // This ensures that the `TimelineUiState` instance owned by this room is *always* returned
@@ -1789,16 +1790,27 @@ impl RoomScreen {
                 }
                 MessageAction::Reply(details) => {
                     let mut success = false;
-                    if let Some(event_tl_item) = self.tl_state.as_ref()
-                        .and_then(|tl| tl.items.get(details.item_id))
-                        .and_then(|tl_item| tl_item.as_event().cloned())
-                        .filter(|ev| ev.event_id() == details.event_id.as_deref())
-                    {
+                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    if let Some(event_tl_item) = tl.items.get(details.item_id).and_then(|tl_item|{
+                        tl_item.as_event().cloned()
+                            .filter(|ev| ev.event_id() == details.event_id.as_deref())
+                    }) {
+                        let editing_pane = self.view.editing_pane(id!(editing_pane));
+                        if editing_pane.visible() {
+                            if let Some(event_item_id) = editing_pane.get_event_being_edited() {
+                                log!("editing_pane visible true");
+                                let editing_content = editing_pane.mentionable_text_input(id!(edit_text_input)).text();
+                                log!("editing_content: {}", editing_content);
+                                tl.pending_edit = Some(PendingEdit {editing_content, message_id: event_item_id.identifier()});
+                            }
+                            editing_pane.hide_with_animator(cx);
+                        }
                         if let Ok(replied_to_info) = event_tl_item.replied_to_info() {
                             success = true;
                             self.show_replying_to(cx, (event_tl_item, replied_to_info));
                         }
                     }
+
                     if !success {
                         enqueue_popup_notification("Could not find message in timeline to reply to.".to_string());
                         error!("MessageAction::Reply: couldn't find event [{}] {:?} to reply to in room {:?}",
@@ -1809,12 +1821,29 @@ impl RoomScreen {
                     }
                 }
                 MessageAction::Edit(details) => {
-                    let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(event_tl_item) = tl.items.get(details.item_id)
-                        .and_then(|tl_item| tl_item.as_event().cloned())
-                        .filter(|ev| ev.event_id() == details.event_id.as_deref())
-                    {
-                        self.show_editing_pane(cx, event_tl_item, tl.room_id.clone());
+                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    let room_id = tl.room_id.clone();
+                    let pending_edit = tl.pending_edit.clone();
+                    if let Some(event_tl_item) = tl.items.get(details.item_id).and_then(|tl_item|{
+                        tl_item.as_event().cloned()
+                            .filter(|ev| ev.event_id() == details.event_id.as_deref())
+                    }) {
+                        let replying_preview = self.view
+                            .view(id!(room_screen_wrapper.keyboard_view.replying_preview));
+                        if replying_preview.visible() {
+                            replying_preview.set_visible(cx, false);
+                        }
+                        if let Some(pending_edit) = pending_edit.clone() {
+                            if pending_edit.message_id == event_tl_item.identifier() {
+                                tl.pending_edit = None;
+                                self.show_editing_pane(cx, event_tl_item, room_id.clone());
+                                self.view.editing_pane(id!(editing_pane))
+                                    .mentionable_text_input(id!(edit_text_input))
+                                    .set_text(cx, &pending_edit.editing_content);
+                            }
+                        } else {
+                            self.show_editing_pane(cx, event_tl_item, room_id.clone());
+                        }
                     }
                     else {
                         enqueue_popup_notification("Could not find message in timeline to edit.".to_string());
@@ -2188,6 +2217,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
+                pending_edit: None,
             };
             (new_tl_state, true)
         };
@@ -2334,7 +2364,7 @@ impl RoomScreen {
     ) {
         // If the room is already being displayed, then do nothing.
         if self.room_id.as_ref().is_some_and(|id| id == &room_id) { return; }
-        
+
 
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
@@ -2673,6 +2703,16 @@ struct TimelineUiState {
     /// When new message come in, this value is reset to `false`.
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
+
+    /// The data we need to store when `EditingPane` is closed **abnormally**.
+    ///
+    /// It is **normal** that user clicks close button to hide edit pane,
+    /// this case we **do not** store any data into this field.
+    ///
+    /// But **abnormal** that user tries to open `replying_preview` (user wants to reply some message) when `EditingPane` is showing,
+    /// this case, we hide `EditingPane`, show `replying_preview`
+    /// and store the message id that user is editing and the string content in the `edit_text_input` widget.
+    pending_edit: Option<PendingEdit>,
 }
 
 #[derive(Default, Debug)]

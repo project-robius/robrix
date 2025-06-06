@@ -288,8 +288,7 @@ impl Widget for EditingPane {
             if self.button(id!(cancel_button)).clicked(actions)
                 || edit_text_input.escaped(actions)
             {
-                self.animator_play(cx, id!(panel.hide));
-                self.redraw(cx);
+                self.hide_with_animator(cx);
                 return;
             }
 
@@ -561,6 +560,16 @@ impl EditingPane {
             message_input.set_room_members(members);
         }
     }
+    /// Hides the editing pane with an animation.
+    fn hide_with_animator(&mut self, cx: &mut Cx) {
+        self.animator_play(cx, id!(panel.hide));
+        self.redraw(cx);
+    }
+    /// Hides the editing pane immediately without animating it out.
+    fn force_hide(&mut self, cx: &mut Cx) {
+        self.visible = false;
+        self.redraw(cx);
+    }
 }
 
 impl EditingPaneRef {
@@ -601,12 +610,31 @@ impl EditingPaneRef {
             .map(|info| info.event_tl_item.clone())
     }
 
+    /// Hides the editing pane with an animation.
+    pub fn hide_with_animator(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.hide_with_animator(cx);
+    }
+
     /// Hides the editing pane immediately without animating it out.
     pub fn force_hide(&self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
-        inner.visible = false;
-        inner.redraw(cx);
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.force_hide(cx);
     }
+}
+
+/// The data we need to store when `EditingPane` is closed **abnormally**.
+///
+/// It is **normal** that user clicks close button to hide edit pane,
+/// this case we **do not** store any data into this field.
+///
+/// But **abnormal** that user tries to open `replying_preview` (user wants to reply some message) when `EditingPane` is showing,
+/// this case, we hide `EditingPane`, show `replying_preview`
+/// and store the message id that user is editing and the string content in the `edit_text_input` widget.
+#[derive(Debug, Clone)]
+pub struct PendingEdit {
+    /// Content that user is editing in `edit_text_input` widget.
+    pub editing_content: String,
+    /// Message id that user is editing.
+    pub message_id: TimelineEventItemId,
 }
