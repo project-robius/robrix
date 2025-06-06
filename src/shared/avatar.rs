@@ -1,7 +1,7 @@
 //! An avatar holds either an image thumbnail or a single-character text label.
 //!
 //! The Avatar view (either text or image) is masked by a circle.
-//! 
+//!
 //! By default, an avatar displays the one-character text label.
 //! You can use [AvatarRef::set_text] to set the content of that text label,
 //! or [AvatarRef::show_image] to display an image instead of the text.
@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::{EventId, OwnedRoomId, OwnedUserId, RoomId, UserId};
+use matrix_sdk::{ruma::{EventId, OwnedRoomId, OwnedUserId, RoomId, UserId}};
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 
 use crate::{
@@ -45,7 +45,7 @@ live_design! {
             show_bg: true,
             draw_bg: {
                 instance background_color: (COLOR_AVATAR_BG)
-                
+
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                     let c = self.rect_size * 0.5;
@@ -54,7 +54,7 @@ live_design! {
                     return sdf.result
                 }
             }
-            
+
             text = <Label> {
                 padding: 0,
                 width: Fit, height: Fit,
@@ -148,6 +148,7 @@ impl Avatar {
     pub fn show_text<T: AsRef<str>>(
         &mut self,
         cx: &mut Cx,
+        bg_color: Option<Vec3>,
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
@@ -162,6 +163,15 @@ impl Avatar {
             }
         );
         self.set_text(cx, username.as_ref());
+
+        // Apply background color if provided
+        if let Some(color) = bg_color {
+            self.view(id!(text_view)).apply_over(cx, live! {
+                draw_bg: {
+                    background_color: (color)
+                }
+            });
+        }
     }
 
     /// Sets the image content of this avatar, making the image visible
@@ -218,7 +228,7 @@ impl Avatar {
     ///
     /// If the user profile is not ready, this function will submit an async request
     /// to fetch the user profile from the server, but only if the event ID is `Some`.
-    /// For Read Receipt cases, there is no user's profile. The Avatar cache is taken from the sender's profile 
+    /// For Read Receipt cases, there is no user's profile. The Avatar cache is taken from the sender's profile
     ///
     /// This function will always choose a nice, displayable username and avatar.
     ///
@@ -333,6 +343,7 @@ impl Avatar {
             .unwrap_or_else(|| {
                 self.show_text(
                     cx,
+                    None,
                     Some((avatar_user_id.to_owned(), username_opt, room_id.to_owned()).into()),
                     &username,
                 )
@@ -346,11 +357,12 @@ impl AvatarRef {
     pub fn show_text<T: AsRef<str>>(
         &self,
         cx: &mut Cx,
+        bg_color: Option<Vec3>,
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_text(cx, info, username);
+            inner.show_text(cx, bg_color, info, username);
         }
     }
 
@@ -378,7 +390,7 @@ impl AvatarRef {
             AvatarDisplayStatus::Text
         }
     }
-    
+
     /// See [`Avatar::set_avatar_and_get_username()`].
     pub fn set_avatar_and_get_username(
         &self,
@@ -404,7 +416,7 @@ pub enum AvatarDisplayStatus {
     Image,
 }
 
-/// Information about a text-based Avatar. 
+/// Information about a text-based Avatar.
 pub struct AvatarTextInfo {
     pub user_id: OwnedUserId,
     pub username: Option<String>,
