@@ -255,7 +255,7 @@ impl ReactionListRef {
     pub fn set_list(
         &mut self,
         cx: &mut Cx,
-        event_tl_item_reactions: &ReactionsByKeyBySender,
+        event_tl_item_reactions: &Option<&ReactionsByKeyBySender>,
         room_id: OwnedRoomId,
         timeline_event_item_id: TimelineEventItemId,
         _id: usize,
@@ -266,12 +266,12 @@ impl ReactionListRef {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        if event_tl_item_reactions.is_empty() {
+        if event_tl_item_reactions.is_none() {
             inner.children.clear();
             return;
         }
         inner.children.clear(); //Inefficient but we don't want to compare the event_tl_item_reactions
-        for (reaction_text, reaction_senders) in event_tl_item_reactions.iter() {
+        for (reaction_text, reaction_senders) in event_tl_item_reactions.unwrap().iter() {
             // // Just take the first char of the emoji, which ignores any variant selectors.
             // let reaction_first_char = reaction_text.chars().next().map(|c| c.to_string());
             // let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_text);

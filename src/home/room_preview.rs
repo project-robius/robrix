@@ -281,7 +281,7 @@ impl RoomPreviewContent {
             self.view.label(id!(room_name)).set_text(cx, name);
         }
         if let Some((ts, msg)) = room_info.latest.as_ref() {
-            if let Some(human_readable_date) = relative_format(*ts) {
+            if let Some(human_readable_date) = relative_format(ts) {
                 self.view
                     .label(id!(timestamp))
                     .set_text(cx, &human_readable_date);
