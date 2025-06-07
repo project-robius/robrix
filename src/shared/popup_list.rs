@@ -3,15 +3,13 @@ use makepad_widgets::*;
 
 static POPUP_NOTIFICATION: SegQueue<PopupItem> = SegQueue::new();
 
-/// Displays a new popup notification with the given message and auto dismissal duration.
+/// Displays a new popup notification with a popup item.
 /// 
 /// Popup notifications will be shown in the order they were enqueued,
 /// and can be removed when manually closed by the user or automatically.
-pub fn enqueue_popup_notification(message: String, auto_dismiss_duration: Option<f64>) {
-    POPUP_NOTIFICATION.push(PopupItem {
-        message,
-        auto_dismiss_duration,
-    });
+pub fn enqueue_popup_notification(popup_item: PopupItem) {
+    POPUP_NOTIFICATION.push(popup_item);
+    SignalToUI::set_ui_signal();
 }
 
 /// Popup notification item.
@@ -20,7 +18,7 @@ pub struct PopupItem {
     /// Text to be displayed in the popup.
     pub message: String,
     /// Duration in seconds after which the popup will be automatically closed.
-    pub auto_dismiss_duration: Option<f64>,
+    pub auto_dismissal_duration: Option<f64>,
 }
 
 live_design! {
@@ -42,6 +40,7 @@ live_design! {
         show_bg: true
         draw_bg: {
             color: #fff
+            instance border_radius: 4.,
             fn pixel(self) -> vec4 {
                 let border_color = #d4;
                 let border_size = 1;
@@ -125,7 +124,7 @@ live_design! {
                 margin: {left: 0, top: 4, bottom: 4, right: 4},
                 padding: 8,
                 spacing: 0,
-                align: {x: 0.5, y: 0.0}
+                align: {x: 0.5, y: 0.5}
                 draw_icon: {
                     svg_file: (ICON_CLOSE),
                     fn get_color(self) -> vec4 {
@@ -150,6 +149,7 @@ live_design! {
                 }
                 slide_down = {
                     redraw: true,
+                    // Arbitrary large duration to allow user to set a longer animation duration.
                     from: {all: Forward {duration: 100000.0}}
                     apply: {
                         progress_bar = {
@@ -282,7 +282,7 @@ impl RobrixPopupNotification {
         let mut view = View::new_from_ptr(cx, self.content);
         view.label(id!(popup_label))
             .set_text(cx, &popup_item.message);
-        let close_timer = if let Some(duration) = popup_item.auto_dismiss_duration {
+        let close_timer = if let Some(duration) = popup_item.auto_dismissal_duration {
             view.apply_over(
                 cx,
                 live! {
