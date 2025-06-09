@@ -42,8 +42,9 @@ const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
 //LightGreen
-const SEARCH_HIGHLIGHT: Vec3 = Vec3 { x: 0.89, y: 0.967, z: 0.929 };
-
+//const SEARCH_HIGHLIGHT: Vec3 = Vec3 { x: 0.89, y: 0.967, z: 0.929 };
+//Yellow
+const SEARCH_HIGHLIGHT: Vec3 = Vec3 { x: 1.0, y: 0.87, z: 0.127 };
 live_design! {
     use link::theme::*;
     use link::shaders::*;
