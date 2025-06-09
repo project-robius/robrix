@@ -3,15 +3,18 @@ use makepad_widgets::*;
 
 static POPUP_NOTIFICATION: SegQueue<PopupItem> = SegQueue::new();
 
-/// Displays a new popup notification with the given message and auto dismissal duration.
+/// Displays a new popup notification with a popup item.
 /// 
 /// Popup notifications will be shown in the order they were enqueued,
 /// and can be removed when manually closed by the user or automatically.
-pub fn enqueue_popup_notification(message: String, auto_dismiss_duration: Option<f64>) {
-    POPUP_NOTIFICATION.push(PopupItem {
-        message,
-        auto_dismiss_duration,
-    });
+/// Maximum auto dismissal duration is 3 minutes.
+pub fn enqueue_popup_notification(popup_item: PopupItem) {
+    if popup_item.auto_dismissal_duration.is_some_and(|duration| duration > 3. * 60.) {
+        log!("Popup notification duration is too long. Please choose a duration less than 3 minutes.");
+        return;
+    }
+    POPUP_NOTIFICATION.push(popup_item);
+    SignalToUI::set_ui_signal();
 }
 
 /// Popup notification item.
@@ -20,7 +23,9 @@ pub struct PopupItem {
     /// Text to be displayed in the popup.
     pub message: String,
     /// Duration in seconds after which the popup will be automatically closed.
-    pub auto_dismiss_duration: Option<f64>,
+    /// Maximum duration is 3 minutes.
+    /// If none, the popup will not automatically close.
+    pub auto_dismissal_duration: Option<f64>,
 }
 
 live_design! {
@@ -32,16 +37,15 @@ live_design! {
     use crate::shared::icon_button::RobrixIconButton;
     ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
 
-    pub PopupNotificationBase = {{RobrixPopupNotification}} {}
     PopupDialog = <RoundedView> {
         width: 275
         height: Fit
-        padding: {top: 5, right: 5, bottom: 5, left: 10}
+        padding: {top: 0, right: 5, bottom: 0, left: 10}
         flow: Overlay
-        align: {y: 0.0}
-        show_bg: true
+        show_bg: true,
         draw_bg: {
             color: #fff
+            instance border_radius: 4.0,
             fn pixel(self) -> vec4 {
                 let border_color = #d4;
                 let border_size = 1;
@@ -64,47 +68,12 @@ live_design! {
                 return sdf.result
             }
         }
-        progress_bar = <View> {
+        popup_content = <View> {
             width: Fill,
             height: Fit,
-            show_bg: true
-            draw_bg: {
-                instance right_margin: 25.0,
-                instance top_margin: 35.0,
-                instance border_radius: 2.,
-                instance progress_bar_width: 15.0,
-                instance progress_bar_color: (COLOR_AVATAR_BG_IDLE),
-                instance progress_bar_background_color: (COLOR_DISABLE_GRAY),
-                instance display_progress_bar: 1.0
-                uniform anim_time: 0.5,
-                uniform anim_duration: 2.0,
-                color: #fff
-                fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    let rect_size = self.rect_size;
-                    if self.display_progress_bar > 0.5 {
-                        sdf.box(
-                            rect_size.x - self.right_margin,
-                            self.top_margin,
-                            self.progress_bar_width,
-                            rect_size.y - self.top_margin,
-                            max(1.0, self.border_radius)
-                        )
-                        sdf.fill(self.progress_bar_background_color);
-                        sdf.box(
-                            rect_size.x - self.right_margin,
-                            self.top_margin,
-                            self.progress_bar_width,
-                            min(rect_size.y - self.top_margin, (rect_size.y - self.top_margin) * self.anim_time / self.anim_duration),
-                            max(1.0, self.border_radius)
-                        )
-                        sdf.fill(self.progress_bar_color);
-                    }
-                    return sdf.result
-                }
-            }
+            flow: Right
             <View> {
-                width: Fill,
+                width: 240,
                 height: Fit,
                 align: {x: 0.0, y: 0.5}
                 padding: {left: 5, top: 10, bottom: 10, right: 0}
@@ -118,22 +87,64 @@ live_design! {
                     }
                 }
             }
-            // The "X" close button on the top right
-            close_button = <RobrixIconButton> {
+            right_view = <View> {
                 width: Fit,
-                height: Fit,
-                margin: {left: 0, top: 4, bottom: 4, right: 4},
-                padding: 8,
-                spacing: 0,
-                align: {x: 0.5, y: 0.0}
-                draw_icon: {
-                    svg_file: (ICON_CLOSE),
-                    fn get_color(self) -> vec4 {
-                        return #x888;
+                height: Fill,
+                flow: Down
+                // The "X" close button on the top right
+                close_button = <RobrixIconButton> {
+                    width: Fit,
+                    height: Fit,
+                    padding: 4
+                    spacing: 0,
+                    align: {x: 0.5, y: 0.5}
+                    draw_icon: {
+                        svg_file: (ICON_CLOSE),
+                        fn get_color(self) -> vec4 {
+                            return #x888;
+                        }
+                    }
+                    icon_walk: {width: 12, height: 12}
+                }
+                progress_bar = <View> {
+                    width: Fill,
+                    height: Fill,
+                    show_bg: true,
+                    draw_bg: {
+                        instance border_radius: 2.,
+                        instance border_size: 1.0,
+                        instance progress_bar_color: (COLOR_AVATAR_BG_IDLE),
+                        instance progress_bar_background_color: (COLOR_DISABLE_GRAY),
+                        instance display_progress_bar: 1.0
+                        uniform anim_time: 0.0,
+                        uniform anim_duration: 2.0,
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            let rect_size = self.rect_size;
+                            if self.display_progress_bar > 0.5 {
+                                sdf.box(
+                                    self.border_size,
+                                    self.border_size,
+                                    rect_size.x - self.border_size * 2.0,
+                                    rect_size.y - self.border_size * 2.0,
+                                    max(1.0, self.border_radius)
+                                )
+                                sdf.fill(self.progress_bar_background_color);
+                                sdf.box(
+                                    self.border_size * 1.5,
+                                    self.border_size * 2.0,
+                                    rect_size.x - self.border_size * 3.0,
+                                    rect_size.y * min(1.0,self.anim_time / self.anim_duration) - self.border_size * 2.0,
+                                    max(1.0, self.border_radius)
+                                )
+                                sdf.fill(self.progress_bar_color);
+                            }
+                            return sdf.result
+                        }
                     }
                 }
-                icon_walk: {width: 12, height: 12}
             }
+            
         }
 
         animator: {
@@ -143,17 +154,26 @@ live_design! {
                     redraw: true,
                     from: {all: Forward {duration: 0.0}}
                     apply: {
-                        progress_bar = {
-                            draw_bg: {anim_time: 0.0}
+                        popup_content = {
+                            right_view = {
+                                progress_bar = {
+                                    draw_bg: {anim_time: 0.0}
+                                }
+                            }
                         }
                     }
                 }
                 slide_down = {
                     redraw: true,
-                    from: {all: Forward {duration: 100000.0}}
+                    // Maximum auto dismissal duration is 3 minutes.
+                    from: {all: Forward {duration: 180.0}}
                     apply: {
-                        progress_bar = {
-                            draw_bg: {anim_time: 100000.0}
+                        popup_content = {
+                            right_view = {
+                                progress_bar = {
+                                    draw_bg: {anim_time: 180.0}
+                                }
+                            }
                         }
                     }
                 }
@@ -178,7 +198,7 @@ live_design! {
             }
         }
     }
-    pub RobrixPopupNotification = <PopupNotificationBase> {
+    pub RobrixPopupNotification = {{RobrixPopupNotification}} {
         width: 275
         height: Fit
         flow: Down
@@ -282,12 +302,16 @@ impl RobrixPopupNotification {
         let mut view = View::new_from_ptr(cx, self.content);
         view.label(id!(popup_label))
             .set_text(cx, &popup_item.message);
-        let close_timer = if let Some(duration) = popup_item.auto_dismiss_duration {
+        let close_timer = if let Some(duration) = popup_item.auto_dismissal_duration {
             view.apply_over(
                 cx,
                 live! {
-                    progress_bar = {
-                        draw_bg: {anim_duration: (duration)}
+                    popup_content = {
+                        right_view = {
+                            progress_bar = {
+                                draw_bg: {anim_duration: (duration)}
+                            }
+                        }
                     }
                 },
             );
@@ -297,8 +321,12 @@ impl RobrixPopupNotification {
             view.apply_over(
                 cx,
                 live! {
-                    progress_bar = {
-                        draw_bg: {display_progress_bar: (0.0)}
+                    popup_content = {
+                        right_view = {
+                            progress_bar = {
+                                draw_bg: {display_progress_bar: 0.0}
+                            }
+                        }
                     }
                 },
             );
