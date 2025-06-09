@@ -1065,7 +1065,7 @@ impl Widget for RoomScreen {
                         let room_id = tl.room_id.clone();
                         self.show_editing_pane(cx, latest_sent_msg, room_id);
                     } else {
-                        enqueue_popup_notification("No recent message available to edit.".to_string());
+                        enqueue_popup_notification(PopupItem { message: "No recent message available to edit.".to_string(), auto_dismissal_duration: None });
                     }
                 }
             }

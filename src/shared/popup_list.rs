@@ -45,7 +45,7 @@ live_design! {
         show_bg: true,
         draw_bg: {
             color: #fff
-            instance border_radius: 4.0,
+            instance border_radius: 4.0
             fn pixel(self) -> vec4 {
                 let border_color = #d4;
                 let border_size = 1;
@@ -210,6 +210,7 @@ live_design! {
 
         content: <PopupDialog> {}
     }
+    /// A widget that displays a vertical list of popups at the top right corner of the screen.
     pub PopupList = <View> {
         width: Fill,
         height: Fill,
@@ -218,6 +219,7 @@ live_design! {
     }
 }
 
+/// A widget that displays a vertical list of popups.
 #[derive(Live, Widget)]
 pub struct RobrixPopupNotification {
     #[live]
