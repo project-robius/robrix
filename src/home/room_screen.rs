@@ -39,7 +39,7 @@ const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
 
-/// The maximum number of timeline items to search through 
+/// The maximum number of timeline items to search through
 /// when looking for a particular event.
 ///
 /// This is a safety measure to prevent the main UI thread
@@ -1796,13 +1796,14 @@ impl RoomScreen {
                             .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     }) {
                         let editing_pane = self.view.editing_pane(id!(editing_pane));
-                        if editing_pane.visible() {
-                            if let Some(event_item_id) = editing_pane.get_event_being_edited() {
-                                log!("editing_pane visible true");
-                                let editing_content = editing_pane.mentionable_text_input(id!(edit_text_input)).text();
-                                log!("editing_content: {}", editing_content);
-                                tl.pending_edit = Some(PendingEdit {editing_content, message_id: event_item_id.identifier()});
-                            }
+                        if let (true, Some(event_item_id)) =
+                            (editing_pane.visible(), editing_pane.get_event_being_edited())
+                        {
+                            let editing_content = editing_pane.mentionable_text_input(id!(edit_text_input)).text();
+                            tl.pending_edit = Some(PendingEdit {
+                                editing_content,
+                                message_id: event_item_id.identifier(),
+                            });
                             editing_pane.hide_with_animator(cx);
                         }
                         if let Ok(replied_to_info) = event_tl_item.replied_to_info() {
@@ -1833,14 +1834,17 @@ impl RoomScreen {
                         if replying_preview.visible() {
                             replying_preview.set_visible(cx, false);
                         }
-                        if let Some(pending_edit) = pending_edit.clone() {
-                            if pending_edit.message_id == event_tl_item.identifier() {
-                                tl.pending_edit = None;
-                                self.show_editing_pane(cx, event_tl_item, room_id.clone());
-                                self.view.editing_pane(id!(editing_pane))
-                                    .mentionable_text_input(id!(edit_text_input))
-                                    .set_text(cx, &pending_edit.editing_content);
-                            }
+
+                        if let Some(pending_edit) = pending_edit.filter(
+                            |pending_edit| pending_edit.message_id == event_tl_item.identifier()
+                        )
+                        {
+                            tl.pending_edit = None;
+                            self.show_editing_pane(cx, event_tl_item, room_id.clone());
+                            self.view
+                                .editing_pane(id!(editing_pane))
+                                .mentionable_text_input(id!(edit_text_input))
+                                .set_text(cx, &pending_edit.editing_content);
                         } else {
                             self.show_editing_pane(cx, event_tl_item, room_id.clone());
                         }
