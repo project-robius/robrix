@@ -41,6 +41,12 @@ const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
 
+/// The maximum number of timeline items to search through 
+/// when looking for a particular event.
+///
+/// This is a safety measure to prevent the main UI thread
+/// from getting into a long-running loop if an event cannot be found quickly.
+const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 
 live_design! {
     use link::theme::*;
@@ -1068,6 +1074,29 @@ impl Widget for RoomScreen {
                 }
             }
 
+            // Handle the user pressing the up arrow in an empty message input box
+            // to edit their latest sent message.
+            if message_input.text().is_empty() {
+                if let Some(KeyEvent {
+                    key_code: KeyCode::ArrowUp,
+                    modifiers: KeyModifiers { shift: false, control: false, alt: false, logo: false },
+                    ..
+                }) = message_input.key_down_unhandled(actions) {
+                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    if let Some(latest_sent_msg) = tl.items
+                        .iter()
+                        .rev()
+                        .take(MAX_ITEMS_TO_SEARCH_THROUGH)
+                        .find_map(|item| item.as_event().filter(|ev| ev.is_editable()).cloned())
+                    {
+                        let room_id = tl.room_id.clone();
+                        self.show_editing_pane(cx, latest_sent_msg, room_id);
+                    } else {
+                        enqueue_popup_notification("No recent message available to edit.".to_string());
+                    }
+                }
+            }
+
             // Handle the jump to bottom button: update its visibility, and handle clicks.
             self.jump_to_bottom_button(id!(jump_to_bottom)).update_from_actions(
                 cx,
@@ -1978,11 +2007,6 @@ impl RoomScreen {
                     };
                     let tl_idx = details.item_id;
 
-                    /// The maximum number of items to search through when looking for the earlier related message.
-                    /// This is a safety measure to prevent the main UI thread from getting stuck in a
-                    /// long-running loop if the related message is not found quickly.
-                    const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 50;
-
                     // Attempt to find the index of replied-to message in the timeline.
                     // Start from the current item's index (`tl_idx`)and search backwards,
                     // since we know the related message must come before the current item.
@@ -2335,11 +2359,11 @@ impl RoomScreen {
         };
 
         let portal_list = self.portal_list(id!(list));
-        let message_input_box = self.text_input(id!(input_bar.message_input.text_input));
+        let message_input = self.text_input(id!(input_bar.message_input.text_input));
         let editing_event = self.editing_pane(id!(editing_pane)).get_event_being_edited();
         let state = SavedState {
             first_index_and_scroll: Some((portal_list.first_id(), portal_list.scroll_position())),
-            message_input_state: message_input_box.save_state(),
+            message_input_state: message_input.save_state(),
             replying_to: tl.replying_to.clone(),
             editing_event,
         };
