@@ -560,13 +560,15 @@ impl EditingPane {
             message_input.set_room_members(members);
         }
     }
-    /// Hides the editing pane with an animation.
+
+    /// Hides the editing pane with animation.
     fn hide_with_animator(&mut self, cx: &mut Cx) {
         self.animator_play(cx, id!(panel.hide));
         self.redraw(cx);
     }
-    /// Hides the editing pane immediately without animating it out.
-    fn force_hide(&mut self, cx: &mut Cx) {
+
+    /// Hides the editing pane immediately without animation.
+    fn hide(&mut self, cx: &mut Cx) {
         self.visible = false;
         self.redraw(cx);
     }
@@ -619,7 +621,7 @@ impl EditingPaneRef {
     /// Hides the editing pane immediately without animating it out.
     pub fn force_hide(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.force_hide(cx);
+        inner.hide(cx);
     }
 }
 
