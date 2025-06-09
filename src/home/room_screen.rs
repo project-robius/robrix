@@ -19,7 +19,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -62,6 +62,7 @@ live_design! {
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
     use crate::profile::user_profile::UserProfileSlidingPane;
+    use crate::home::edited_indicator::*;
     use crate::home::editing_pane::*;
     use crate::home::event_reaction_list::*;
     use crate::home::loading_pane::*;
@@ -315,6 +316,19 @@ live_design! {
                 timestamp = <Timestamp> {
                     margin: { top: 3.9 }
                 }
+                // post_tl_label = <Label> {
+                //     width: Fit, height: Fit
+                //     flow: Right, // do not wrap
+                //     padding: 0,
+                //     draw_text: {
+                //         text_style: <TIMESTAMP_TEXT_STYLE> {},
+                //         color: (TIMESTAMP_TEXT_COLOR)
+                //     }
+                //     text = "Label2",
+                // }
+                edited_indicator = <EditedIndicator> {
+                    margin: { top: 5 }
+                }
             }
             content = <View> {
                 width: Fill,
@@ -374,6 +388,7 @@ live_design! {
                 timestamp = <Timestamp> {
                     margin: {top: 2.5}
                 }
+                edited_indicator = <EditedIndicator> { }
             }
             content = <View> {
                 width: Fill,
@@ -2825,6 +2840,16 @@ impl MessageOrSticker<'_> {
             _ => None,
         }
     }
+
+    /// Returns whether this message or sticker has been edited.
+    ///
+    /// Returns `false` for stickers, as they cannot be edited.
+    pub fn is_edited(&self) -> bool {
+        match self {
+            Self::Message(msg) => msg.is_edited(),
+            Self::Sticker(_) => false, // Stickers cannot be edited
+        }
+    }
 }
 
 /// Abstracts over the different types of messages or stickers that can be displayed in a timeline.
@@ -3334,6 +3359,14 @@ fn populate_message_view(
     // Set the timestamp.
     if let Some(dt) = unix_time_millis_to_datetime(ts_millis) {
         item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
+    }
+
+    if message.is_edited() {
+        log!("Message {item_id} is edited, setting latest edit indicator");
+        item.edited_indicator(id!(profile.edited_indicator)).set_latest_edit(
+            cx,
+            event_tl_item,
+        );
     }
 
     (item, new_drawn_status)
