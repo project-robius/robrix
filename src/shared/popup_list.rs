@@ -113,7 +113,7 @@ live_design! {
                         instance border_size: 1.0,
                         instance progress_bar_color: (COLOR_AVATAR_BG_IDLE),
                         instance progress_bar_background_color: (COLOR_DISABLE_GRAY),
-                        instance display_progress_bar: 1.0
+                        instance display_progress_bar: 1.0 // only thing that should be an instance
                         uniform anim_time: 0.0,
                         uniform anim_duration: 2.0,
                         fn pixel(self) -> vec4 {

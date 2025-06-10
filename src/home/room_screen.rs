@@ -281,9 +281,10 @@ live_design! {
         // A preview of the earlier message that this message was in reply to.
         replied_to_message = <RepliedToMessage> {
             flow: Right
-            margin: { bottom: 5.0, top: 10.0 }
+            margin: { bottom: 3, top: 10 }
             replied_to_message_content = {
                 margin: { left: 29 }
+                padding: { bottom: 10 }
             }
         }
 
@@ -291,7 +292,7 @@ live_design! {
             width: Fill,
             height: Fit
             flow: Right,
-            padding: 10.0,
+            padding: {top: 0, bottom: 10, left: 10, right: 10},
 
             profile = <View> {
                 align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
@@ -300,8 +301,8 @@ live_design! {
                 margin: {top: 4.5, right: 10}
                 flow: Down,
                 avatar = <Avatar> {
-                    width: 50.,
-                    height: 50.
+                    width: 48.,
+                    height: 48.
                     // draw_bg: {
                     //     fn pixel(self) -> vec4 {
                     //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -314,21 +315,9 @@ live_design! {
                     // }
                 }
                 timestamp = <Timestamp> {
-                    margin: { top: 3.9 }
+                    margin: { top: 5.9 }
                 }
-                // post_tl_label = <Label> {
-                //     width: Fit, height: Fit
-                //     flow: Right, // do not wrap
-                //     padding: 0,
-                //     draw_text: {
-                //         text_style: <TIMESTAMP_TEXT_STYLE> {},
-                //         color: (TIMESTAMP_TEXT_COLOR)
-                //     }
-                //     text = "Label2",
-                // }
-                edited_indicator = <EditedIndicator> {
-                    margin: { top: 5 }
-                }
+                edited_indicator = <EditedIndicator> {}
             }
             content = <View> {
                 width: Fill,
@@ -1080,7 +1069,7 @@ impl Widget for RoomScreen {
                         let room_id = tl.room_id.clone();
                         self.show_editing_pane(cx, latest_sent_msg, room_id);
                     } else {
-                        enqueue_popup_notification(PopupItem { message: "No recent message available to edit.".to_string(), auto_dismissal_duration: None });
+                        enqueue_popup_notification(PopupItem { message: "No recent message available to edit.".to_string(), auto_dismissal_duration: Some(3.0) });
                     }
                 }
             }
@@ -3374,7 +3363,9 @@ fn populate_message_view(
     // Set the timestamp.
     if let Some(dt) = unix_time_millis_to_datetime(ts_millis) {
         item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
+        item.timestamp(id!(profile.timestamp2)).set_date_time(cx, dt);
     }
+    
 
     if message.is_edited() {
         log!("Message {item_id} is edited, setting latest edit indicator");

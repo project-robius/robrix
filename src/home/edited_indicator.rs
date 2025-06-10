@@ -24,37 +24,25 @@ live_design! {
     pub EDITED_INDICATOR_FONT_COLOR = #666666
 
     pub EditedIndicator = {{EditedIndicator}} {
+        visible: false, // default to hidden
         width: Fit, height: Fit
         flow: Right,
         padding: 0,
-        margin: 0,
+        margin: { top: 5 }
 
-        // visible: false, // default to hidden
-        my_label = <Label> {
+        // TODO: re-enable this once we have implemented the edit history modal
+        // cursor: Hand,
+
+        edit_html = <Html> {
             width: Fit, height: Fit
             flow: Right, // do not wrap
             padding: 0,
             margin: 0,
-            draw_text: {
-                text_style: <TIMESTAMP_TEXT_STYLE> { font_size: 10 },
-                // color: #x0,
-                color: (COLOR_ROBRIX_PURPLE),
-            }
-            text = "(edited)",
-        }
-        // edit_html = <Html> {
-        //     width: Fit, height: Fit
-        //     flow: Right, // do not wrap
-        //     padding: 0,
 
-        //     font_size: (EDITED_INDICATOR_FONT_SIZE),
-        //     font_color: (EDITED_INDICATOR_FONT_COLOR),
-        //     draw_normal: { color: (EDITED_INDICATOR_FONT_COLOR) },
-        //     draw_block: {
-        //         line_color: (MESSAGE_TEXT_COLOR)
-        //     }
-        //     body = "<u>(edited)</u>",
-        // }
+            font_size: (EDITED_INDICATOR_FONT_SIZE),
+            font_color: (COLOR_ROBRIX_PURPLE),
+            body: "(<u>edited</u>)",
+        }
     }
 }
 
@@ -62,8 +50,7 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct EditedIndicator {
     #[deref] view: View,
-
-    #[rust] latest_edit_ts: DateTime<Local>,
+    #[rust] latest_edit_ts: Option<DateTime<Local>>,
 }
 
 impl Widget for EditedIndicator {
@@ -75,10 +62,11 @@ impl Widget for EditedIndicator {
             Hit::FingerLongPress(_)
             | Hit::FingerHoverOver(..) // TODO: remove once CalloutTooltip bug is fixed
             | Hit::FingerHoverIn(..) => true,
-            Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => {
-                log!("todo: show edit history.");
-                false
-            },
+            // TODO: show edit history modal on click
+            // Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => {
+            //     log!("todo: show edit history.");
+            //     false
+            // },
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
                 false
@@ -88,12 +76,17 @@ impl Widget for EditedIndicator {
         if should_hover_in {
             // TODO: use pure_rust_locales crate to format the time based on the chosen Locale.
             let locale_extended_fmt_en_us= "%a %b %-d, %Y, %r";
+            let text = if let Some(ts) = self.latest_edit_ts {
+                format!("Last edited {}", ts.format(locale_extended_fmt_en_us))
+            } else {
+                "Last edit time unknown".to_string()
+            };
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
                 TooltipAction::HoverIn {
                     widget_rect: area.rect(cx),
-                    text: format!("Last edited {}", self.latest_edit_ts.format(locale_extended_fmt_en_us)),
+                    text,
                     bg_color: None,
                     text_color: None,
                 },
@@ -107,25 +100,21 @@ impl Widget for EditedIndicator {
 }
 
 impl EditedIndicator {
+    /// Sets this indicator to show the timestamp of the latest edit of the given `EventTimelineItem`.
     pub fn set_latest_edit(&mut self, cx: &mut Cx, event_tl_item: &EventTimelineItem) {
-        log!("set_latest_edit called for EditedIndicator, event ID: {:?}", event_tl_item.event_id());
         if let Some(aste) = event_tl_item
             .latest_edit_json()
             .and_then(|json| json.deserialize().ok())
         {
-            log!("Latest edit found: {:?}", aste);
-            if let Some(ts) = unix_time_millis_to_datetime(aste.origin_server_ts()) {
-                log!("Setting latest edit timestamp to: {:?}", ts);
-                self.latest_edit_ts = ts;
-            }
+            self.latest_edit_ts = unix_time_millis_to_datetime(aste.origin_server_ts());
         }
-        self.label(id!(my_label)).set_text(cx, "(edited)");
         self.visible = true;
         self.redraw(cx);
     }
 }
 
 impl EditedIndicatorRef {
+    /// See [`EditedIndicator::set_latest_edit()`].
     pub fn set_latest_edit(&self, cx: &mut Cx, event_tl_item: &EventTimelineItem) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_latest_edit(cx, event_tl_item);
@@ -137,6 +126,8 @@ impl EditedIndicatorRef {
 /// Actions emitted by an `EditedIndicator` widget.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum EditedIndicatorAction {
+    /// The indicator was clicked, and thus we should open
+    /// a modal/dialog showing the message's full edit history.
     ShowEditHistory,
     None,
 }

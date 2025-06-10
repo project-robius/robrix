@@ -299,9 +299,9 @@ impl Widget for EditingPane {
 
 
             if self.button(id!(accept_button)).clicked(actions)
-                || edit_text_input.key_down_unhandled(actions).is_some_and(|ke| {
-                    ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary()
-                })
+                || edit_text_input.returned(actions).is_some_and(
+                    |(_text, modifiers)| modifiers.is_primary()
+                )
             {
                 let edited_text = edit_text_input.text().trim().to_string();
                 let edited_content = match info.event_tl_item.content() {
@@ -517,15 +517,15 @@ impl EditingPane {
         self.button(id!(cancel_button)).reset_hover(cx);
 
         // Set the text input's cursor to the end and give it key focus.
+        let inner_text_input = edit_text_input.text_input_ref();
         let text_len = edit_text_input.text().len();
-        edit_text_input.text_input(id!(text_input)).set_cursor(
+        inner_text_input.set_cursor(
             cx,
             Cursor { index: text_len, prefer_next_row: false },
             false,
         );
-        edit_text_input.text_input(id!(text_input)).set_key_focus(cx);
-
         self.animator_play(cx, id!(panel.show));
+        inner_text_input.set_key_focus(cx);
         self.redraw(cx);
     }
 
