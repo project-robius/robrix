@@ -8,11 +8,9 @@ static POPUP_NOTIFICATION: SegQueue<PopupItem> = SegQueue::new();
 /// Popup notifications will be shown in the order they were enqueued,
 /// and can be removed when manually closed by the user or automatically.
 /// Maximum auto dismissal duration is 3 minutes.
-pub fn enqueue_popup_notification(popup_item: PopupItem) {
-    if popup_item.auto_dismissal_duration.is_some_and(|duration| duration > 3. * 60.) {
-        log!("Popup notification duration is too long. Please choose a duration less than 3 minutes.");
-        return;
-    }
+pub fn enqueue_popup_notification(mut popup_item: PopupItem) {
+    // Limit auto dismiss duration to 180 seconds
+    popup_item.auto_dismissal_duration = popup_item.auto_dismissal_duration.map(|duration| duration.min(3. * 60.));
     POPUP_NOTIFICATION.push(popup_item);
     SignalToUI::set_ui_signal();
 }
@@ -210,7 +208,7 @@ live_design! {
 
         content: <PopupDialog> {}
     }
-    /// A widget that displays a vertical list of popups at the top right corner of the screen.
+    // A widget that displays a vertical list of popups at the top right corner of the screen.
     pub PopupList = <View> {
         width: Fill,
         height: Fill,
@@ -254,8 +252,10 @@ impl LiveHook for RobrixPopupNotification {
 
 impl Widget for RobrixPopupNotification {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        while let Some(popup_item) = POPUP_NOTIFICATION.pop() {
-            self.push(cx, popup_item);
+        if matches!(event, Event::Signal) {
+            while let Some(popup_item) = POPUP_NOTIFICATION.pop() {
+                self.push(cx, popup_item);
+            }
         }
         if self.popups.is_empty() {
             return;
