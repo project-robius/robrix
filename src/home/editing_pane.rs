@@ -637,6 +637,6 @@ impl EditingPaneRef {
 pub struct PendingEdit {
     /// Content that user is editing in `edit_text_input` widget.
     pub editing_content: String,
-    /// Message id that user is editing
+    /// Message id that user is editing.
     pub message_id: TimelineEventItemId,
 }
