@@ -612,13 +612,13 @@ impl EditingPaneRef {
             .map(|info| info.event_tl_item.clone())
     }
 
-    /// Hides the editing pane with an animation.
+    /// Hides the editing pane with animation.
     pub fn hide_with_animator(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.hide_with_animator(cx);
     }
 
-    /// Hides the editing pane immediately without animating it out.
+    /// Hides the editing pane immediately without animation.
     pub fn force_hide(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.hide(cx);
