@@ -29,7 +29,7 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: P
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::{SearchResultItem, TimelineUpdate}, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}, search_screen::{SearchResultAction, SearchResultReceived}
+        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, room_search_result::SearchResultItem, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}, search_screen::{SearchResultAction, SearchResultReceived}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -385,7 +385,7 @@ pub enum MatrixRequest {
     /// General Matrix Search API with given categories
     SearchMessages {
         /// The room to search for message.
-        room_id: OwnedRoomId,
+        room_id: Option<OwnedRoomId>,
         /// Filter criteria for searching message.
         include_all_rooms: bool,
         /// Text in the search bar.
@@ -1134,10 +1134,7 @@ async fn async_worker(
                 let client = CLIENT.get().unwrap();
                 let mut search_categories = Categories::new();
                 let mut room_filter = RoomEventFilter::empty();
-                room_filter.rooms = Some(vec![room_id.clone()]);
-                if include_all_rooms {
-                    room_filter.rooms = None;
-                }
+                room_filter.rooms = room_id.clone().map(|room_id| vec![room_id.to_owned()]);
                 let mut criteria = Criteria::new(search_term.clone());
                 criteria.filter = room_filter;
                 criteria.order_by = Some(OrderBy::Recent);
@@ -1214,7 +1211,11 @@ async fn async_worker(
                             }));
                         }
                         Err(e) => {
-                            error!("Failed to search message in {room_id}; error: {e:?}");
+                            if let Some(room_id) = room_id {
+                                error!("Failed to search message in {room_id}; error: {e:?}");
+                            } else {
+                                error!("Failed to search message in all rooms; error: {e:?}");
+                            }
                             enqueue_popup_notification(format!(
                                 "Failed to search message. Error: {e}"
                             ));

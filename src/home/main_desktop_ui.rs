@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
-use crate::{app::{AppState, AppStateAction, SelectedRoom}, shared::message_search_input_bar::MessageSearchAction, utils::room_name_or_id};
+use crate::{app::{AppState, AppStateAction, SelectedRoom}, home::rooms_list::RoomsListWidgetExt, shared::message_search_input_bar::MessageSearchAction, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 live_design! {
     use link::theme::*;
@@ -110,6 +110,11 @@ impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {            
         self.widget_match_event(cx, event, scope); // invokes `WidgetMatchEvent` impl
         self.view.handle_event(cx, event, scope);
+        if !self.drawn_previously {
+            if let Some(app_state) = scope.data.get_mut::<AppState>() {
+                app_state.rooms_list_ref = self.view.rooms_list(id!(rooms_list));
+            }
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {

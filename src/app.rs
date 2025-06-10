@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, media_cache::MediaCache, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, message_search_input_bar::MessageSearchAction, popup_list::PopupNotificationAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::{RoomsListAction, RoomsListRef}}, login::login_screen::LoginAction, media_cache::MediaCache, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, message_search_input_bar::MessageSearchAction, popup_list::PopupNotificationAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 use std::sync::{Arc, Mutex};
@@ -324,6 +324,7 @@ impl MatchEvent for App {
             // }
             match action.as_widget_action().cast() {
                 MessageSearchAction::Click(_) => {
+                    // there is apply error in desktop view
                     self.ui
                         .view(id!(main_content_view.header.content.message_search_input_mobile_view))
                         .apply_over(cx, live!{
@@ -425,7 +426,8 @@ pub struct AppState {
     /// The current window geometry.
     pub window_geom: Option<event::WindowGeom>,
     /// The media cache for each room
-    pub media_cache: HashMap<OwnedRoomId, Arc<Mutex<MediaCache>>>
+    pub media_cache: HashMap<OwnedRoomId, Arc<Mutex<MediaCache>>>,
+    pub rooms_list_ref: RoomsListRef
 }
 
 /// A saved instance of the state of the main desktop UI's dock.

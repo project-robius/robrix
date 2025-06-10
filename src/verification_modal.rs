@@ -139,8 +139,7 @@ impl Widget for VerificationModal {
 }
 
 impl WidgetMatchEvent for VerificationModal {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-        let widget_uid = self.widget_uid();
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let accept_button = self.button(id!(accept_button));
         let cancel_button = self.button(id!(cancel_button));
 
@@ -159,13 +158,13 @@ impl WidgetMatchEvent for VerificationModal {
             // a `VerificationModalAction::Close` action, as that would cause
             // an infinite action feedback loop.
             if !modal_dismissed {
-                cx.widget_action(widget_uid, &scope.path, VerificationModalAction::Close);
+                cx.action(VerificationModalAction::Close);
             }
         }
 
         if accept_button.clicked(actions) {
             if self.is_final {
-                cx.widget_action(widget_uid, &scope.path, VerificationModalAction::Close);
+                cx.action(VerificationModalAction::Close);
                 self.reset_state();
             } else {
                 if let Some(state) = self.state.as_ref() {

@@ -5,9 +5,8 @@ use crate::utils::human_readable_list;
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
+use matrix_sdk_ui::timeline::EventTimelineItem;
 use std::cmp;
-
-use super::room_screen::MessageDisplay;
 
 
 /// The maximum number of items to display in the read receipts AvatarRow
@@ -40,12 +39,11 @@ live_design! {
         width: Fit,
         height: 15.0,
         plus_template: <Label> {
-            // a big of negative padding to center the label text wrt the avatar
-            padding: {top: -0.5, bottom: 0, left: 0, right: 0},
+            padding: 0,
             flow: Right, // do not wrap
             draw_text: {
                 color: #x0,
-                text_style: <TITLE_TEXT>{ font_size: 11}
+                text_style: <TITLE_TEXT>{ font_size: 10}
             }
             text: ""
         }
@@ -226,20 +224,18 @@ impl AvatarRowRef {
 /// room ID, and an EventTimelineItem, this will populate the avatar
 /// row of the item with the read receipts of the event.
 ///
-pub fn populate_read_receipts<T: MessageDisplay>(
+pub fn populate_read_receipts(
     item: &WidgetRef,
     cx: &mut Cx,
     room_id: &RoomId,
-    event_tl_item: &T,
+    event_tl_item: &EventTimelineItem,
 ) {
-    if let Some(read_receipts) = event_tl_item.read_receipts() {
-        item.avatar_row(id!(avatar_row)).set_avatar_row(
-            cx,
-            room_id,
-            event_tl_item.event_id(),
-            read_receipts,
-        );
-    }
+    item.avatar_row(id!(avatar_row)).set_avatar_row(
+        cx,
+        room_id,
+        event_tl_item.event_id(),
+        event_tl_item.read_receipts(),
+    );
 }
 
 /// Populate the tooltip text for a read receipts avatar row.

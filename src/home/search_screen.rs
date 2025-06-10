@@ -6,7 +6,7 @@ use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use rangemap::RangeSet;
 
-use crate::{home::room_screen::{search_result::{self, handle_search_input, SearchResultWidgetExt}, SearchResultItem}, shared::message_search_input_bar::MessageSearchAction};
+use crate::{app::AppState, home::{room_screen, room_search_result::{self, handle_search_input, SearchResultItem, SearchResultWidgetExt}, rooms_list::RoomsListRef}, shared::message_search_input_bar::MessageSearchAction, sliding_sync::{submit_async_request, MatrixRequest}};
 /// States that are necessary to display search results.
 #[derive(Default)]
 pub struct SearchState {
@@ -35,7 +35,7 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::icon_button::*;
     use crate::shared::message_search_input_bar::*;
-    use crate::home::room_screen::search_result::*;
+    use crate::home::room_search_result::*;
     use crate::home::room_screen::*;
     pub MessageCard = <Message> {
         draw_bg: {
@@ -162,7 +162,7 @@ impl Widget for SearchScreen {
         self.widget_match_event(cx, event, scope);
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        search_result::search_result_draw_walk(self, cx, scope, walk)
+        room_search_result::search_result_draw_walk(self, cx, scope, walk)
     }
 }
 
@@ -238,15 +238,27 @@ impl WidgetMatchEvent for SearchScreen {
                     }
                     let search_portal_list = self.portal_list(id!(search_timeline.list));
                     search_portal_list.set_first_id_and_scroll(
-                        self.search_state.items.len().saturating_sub(1),
+                        0,
                         0.0,
                     );
-                    search_portal_list.set_tail_range(true);
+                    // search_portal_list.set_first_id_and_scroll(
+                    //     self.search_state.items.len().saturating_sub(1),
+                    //     0.0,
+                    // );
+                    // search_portal_list.set_tail_range(true);
                     self.search_state.highlighted_strings = highlights;
                     self.search_state.next_batch_token = next_batch;
                     self.redraw(cx);
                 }
                 _ => {}
+            }
+            if self.view.button(id!(search_all_rooms_button)).clicked(actions) {
+                let mut criteria = self.search_result(id!(search_result_plane)).get_search_criteria();
+                self.search_result(id!(search_result_plane)).reset(cx);
+                criteria.include_all_rooms = true;
+                self.search_result(id!(search_result_plane)).set_search_criteria(cx, criteria.clone());
+                self.search_state = SearchState::default();
+                submit_async_request(MatrixRequest::SearchMessages { room_id: None, include_all_rooms: true, search_term: criteria.search_term, next_batch: None, abort_previous_search: true });
             }
         }
         

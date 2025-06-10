@@ -12,6 +12,7 @@ pub mod popup_list;
 pub mod room_filter_input_bar;
 pub mod styles;
 pub mod text_or_image;
+pub mod timestamp;
 pub mod typing_animation;
 pub mod unread_badge;
 pub mod verification_badge;
@@ -24,6 +25,7 @@ pub fn live_design(cx: &mut Cx) {
     icon_button::live_design(cx);
     unread_badge::live_design(cx);
     collapsible_header::live_design(cx);
+    timestamp::live_design(cx);
     room_filter_input_bar::live_design(cx);
     avatar::live_design(cx);
     text_or_image::live_design(cx);

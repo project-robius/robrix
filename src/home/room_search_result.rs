@@ -10,20 +10,15 @@ use matrix_sdk::ruma::{
         receipt::Receipt, room::message::{
             AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, MessageFormat, MessageType, NoticeMessageEventContent, Relation, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent
         }, sticker::StickerEventContent, AnyMessageLikeEvent, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent
-    }, room_id, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId
+    }, room_id, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, RoomId, UserId
 };
 
 use crate::{
-    app::AppState, event_preview::text_preview_of_other_state, home::{new_message_context_menu::MessageAbilities, room_screen::{draw_replied_to_message, populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_location_message_content, populate_text_message_content, populate_video_message_content, MessageOrStickerType, MessageWidgetRefExt, MESSAGE_NOTICE_TEXT_COLOR, SEARCH_HIGHLIGHT}, search_screen::{SearchScreen, SearchState}}, media_cache::MediaCache, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, popup_list::enqueue_popup_notification, styles::COLOR_DANGER_RED, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::{current_user_id, submit_async_request, MatrixRequest, UserPowerLevels}, utils::unix_time_millis_to_datetime
+    app::AppState, event_preview::text_preview_of_other_state, home::{new_message_context_menu::MessageAbilities, room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_text_message_content, ItemDrawnStatus}, search_screen::{SearchScreen, SearchState}}, media_cache::MediaCache, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, popup_list::enqueue_popup_notification, styles::COLOR_DANGER_RED, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::{current_user_id, submit_async_request, MatrixRequest, UserPowerLevels}, utils::unix_time_millis_to_datetime
 };
 
 use crate::home::{
     new_message_context_menu::MessageDetails,
-    room_screen::{
-        populate_message_view, populate_small_state_event, MessageDisplay, ItemDrawnStatus,
-        MessageOrSticker, ContextMenuFromEvent, PreviousMessageDisplay,
-        RoomScreen, SmallStateEventContent, TimelineUiState,
-    },
     rooms_list::RoomsListWidgetExt,
 };
 
@@ -180,6 +175,9 @@ live_design! {
     }
 }
 
+//Yellow
+const SEARCH_HIGHLIGHT: Vec3 = Vec3 { x: 1.0, y: 0.87, z: 0.127 };
+
 // The widget that displays an overlay of the summary for search results.
 #[derive(Live, LiveHook, Widget)]
 pub struct SearchResult {
@@ -224,7 +222,7 @@ impl MatchEvent for SearchResult {
                 MessageSearchAction::Clear,
             );
             submit_async_request(MatrixRequest::SearchMessages {
-                room_id: room_id!("!not_used:matrix.org").to_owned(),
+                room_id: None,
                 include_all_rooms: false,
                 search_term: "".to_string(),
                 next_batch: None,
@@ -337,6 +335,8 @@ pub fn search_result_draw_walk(
     walk: Walk,
 ) -> DrawStep {
     let room_screen_widget_uid = room_screen.widget_uid();
+    
+
     while let Some(subview) = room_screen.view.draw_walk(cx, scope, walk).step() {
         // We only care about drawing the portal list.
         let portal_list_ref = subview.as_portal_list();
@@ -458,9 +458,12 @@ pub fn search_result_draw_walk(
                         },
 
                         SearchResultItem::RoomHeader(room_id) => {
-                            let room_name = room_screen
-                                .view
-                                .rooms_list(id!(rooms_list))
+                            let rooms_list_ref = if let Some(app_state) = scope.data.get::<AppState>() {
+                                app_state.rooms_list_ref.clone()
+                            } else {
+                                return DrawStep::done();
+                            };
+                            let room_name = rooms_list_ref
                                 .get_room_name(room_id)
                                 .unwrap_or(room_id.to_string());
                             let item = list.item(cx, item_id, live_id!(RoomHeader));
@@ -489,258 +492,6 @@ pub fn search_result_draw_walk(
     DrawStep::done()
 }
 
-/// Copies the HTML content of a message to the clipboard if the message is a text message, notice, emote, image, file, audio, video, or verification request, and if it is formatted as HTML.
-///
-/// If the message is an edit of another message, the function will copy the content of the original message instead of the edited message.
-///
-/// Returns `true` if the content was copied successfully, and `false` otherwise.
-///
-/// The function takes as input the current Makepad context, a reference to a `MessageDetails` struct, a reference to a `TimelineUiState` struct, and a mutable reference to a boolean to set to `true` if the content was copied successfully.
-pub fn search_copy_html(
-    cx: &mut Cx,
-    details: &MessageDetails,
-    tl: &TimelineUiState,
-    success: &mut bool,
-) {
-    let Some(SearchResultItem::Event(event)) =
-        tl.search_state.items.get(details.item_id)
-    else {
-        return;
-    };
-    if let AnyTimelineEvent::MessageLike(msg) = event {
-        let mut content = msg.original_content();
-        if let Some(replace) = msg.relations().replace {
-            content = replace.original_content();
-        }
-        if let Some(AnyMessageLikeEventContent::RoomMessage(mut message)) = content {
-            if let Some(Relation::Replacement(replace)) = &message.relates_to {
-                let new_content = &replace.new_content;
-                message.msgtype = new_content.msgtype.clone();
-            }
-            match &message.msgtype {
-                MessageType::Text(TextMessageEventContent {
-                    formatted: Some(FormattedBody { body, .. }),
-                    ..
-                })
-                | MessageType::Notice(NoticeMessageEventContent {
-                    formatted: Some(FormattedBody { body, .. }),
-                    ..
-                })
-                | MessageType::Emote(EmoteMessageEventContent {
-                    formatted: Some(FormattedBody { body, .. }),
-                    ..
-                })
-                | MessageType::Image(ImageMessageEventContent {
-                    formatted: Some(FormattedBody { body, .. }),
-                    ..
-                })
-                | MessageType::File(FileMessageEventContent {
-                    formatted: Some(FormattedBody { body, .. }),
-                    ..
-                })
-                | MessageType::Audio(AudioMessageEventContent {
-                    formatted: Some(FormattedBody { body, .. }),
-                    ..
-                })
-                | MessageType::Video(VideoMessageEventContent {
-                    formatted: Some(FormattedBody { body, .. }),
-                    ..
-                })
-                | MessageType::VerificationRequest(KeyVerificationRequestEventContent {
-                    formatted: Some(FormattedBody { body, .. }),
-                    ..
-                }) => {
-                    cx.copy_to_clipboard(body);
-                    *success = true;
-                }
-                _ => {}
-            }
-        }
-    }
-}
-/// Copies the text of the message at the given item id to the clipboard.
-///
-/// The item id must point to a message in the timeline, otherwise this function does nothing.
-///
-/// If the message is a reply-to message, the body of the replied-to message is copied instead.
-pub fn search_result_copy_to_clipboard(
-    cx: &mut Cx,
-    details: &MessageDetails,
-    tl: &TimelineUiState,
-) {
-    let Some(SearchResultItem::Event(event)) =
-        tl.search_state.items.get(details.item_id)
-    else {
-        return;
-    };
-    if let AnyTimelineEvent::MessageLike(msg) = event {
-        let mut content = msg.original_content();
-        if let Some(replace) = msg.relations().replace {
-            content = replace.original_content();
-        }
-        if let Some(AnyMessageLikeEventContent::RoomMessage(mut message)) = content {
-            if let Some(Relation::Replacement(replace)) = &message.relates_to {
-                let new_content = &replace.new_content;
-                message.msgtype = new_content.msgtype.clone();
-            }
-            cx.copy_to_clipboard(message.body());
-        }
-    }
-}
-/// React to a message in the timeline.
-///
-/// The item id must point to a message in the timeline, otherwise this function does nothing.
-///
-/// If the message is a reply-to message, the reaction is sent to the replied-to message instead.
-///
-pub fn search_result_react(
-    cx: &mut Cx,
-    room_screen_view: &View,
-    details: &MessageDetails,
-    tl: &TimelineUiState,
-    reaction: String,
-    success: &mut bool,
-) {
-    let Some(SearchResultItem::Event(event)) =
-        tl.search_state.items.get(details.item_id)
-    else {
-        return;
-    };
-    if Some(event.event_id().to_owned()) != details.event_id {
-        return;
-    }
-    room_screen_view
-        .view(id!(search_timeline))
-        .set_visible(cx, false);
-    if let Some(transaction_id) = event.transaction_id() {
-        submit_async_request(MatrixRequest::ToggleReaction {
-            room_id: event.room_id().to_owned(),
-            timeline_event_id: TimelineEventItemId::TransactionId(transaction_id.to_owned()),
-            reaction,
-        });
-    } else {
-        submit_async_request(MatrixRequest::ToggleReaction {
-            room_id: event.room_id().to_owned(),
-            timeline_event_id: TimelineEventItemId::EventId(event.event_id().to_owned()),
-            reaction,
-        });
-    }
-    *success = true;
-}
-
-/// Reply to a message in the timeline.
-///
-/// The item id must point to a message in the timeline, otherwise this function does nothing.
-///
-/// If the message is a reply-to message, the reply is sent to the replied-to message instead.
-///
-/// This function also hides the search results view and clears the search filter.
-pub fn search_result_reply(
-    cx: &mut Cx,
-    room_screen_view: &View,
-    room_screen_widget_uid: WidgetUid,
-    details: &MessageDetails,
-    tl: &TimelineUiState,
-    success: &mut bool,
-) -> Option<MessageDetails> {
-    let Some(SearchResultItem::Event(event)) =
-        tl.search_state.items.get(details.item_id)
-    else {
-        return None;
-    };
-    if Some(event.event_id().to_owned()) != details.event_id {
-        return None;
-    }
-    let mut timeline_details = details.clone();
-    for (index, item) in tl.items.iter().enumerate() {
-        if item
-            .as_event()
-            .and_then(|f| f.event_id())
-            .map(|f| Some(f.to_owned()) == details.event_id)
-            .unwrap_or(false)
-        {
-            timeline_details.item_id = index;
-            break;
-        }
-    }
-    room_screen_view.view(id!(search_timeline))
-        .set_visible(cx, false);
-    cx.widget_action(
-        room_screen_widget_uid,
-        &Scope::empty().path,
-        MessageSearchAction::Clear,
-    );
-    *success = true;
-    Some(timeline_details)
-}
-
-pub fn search_result_redact(
-    cx: &mut Cx,
-    room_screen_view: &View,
-    room_screen_widget_uid: WidgetUid,
-    details: &MessageDetails,
-    tl: &TimelineUiState,
-    success: &mut bool,
-) -> Option<MessageDetails> {
-    let Some(SearchResultItem::Event(event)) =
-        tl.search_state.items.get(details.item_id)
-    else {
-        return None;
-    };
-    if Some(event.event_id().to_owned()) != details.event_id {
-        return None;
-    }
-    let mut timeline_details = details.clone();
-    for (index, item) in tl.items.iter().enumerate() {
-        if item
-            .as_event()
-            .and_then(|f| f.event_id())
-            .map(|f| Some(f.to_owned()) == details.event_id)
-            .unwrap_or(false)
-        {
-            timeline_details.item_id = index;
-            break;
-        }
-    }
-    room_screen_view.view(id!(search_timeline))
-        .set_visible(cx, false);
-    cx.widget_action(
-        room_screen_widget_uid,
-        &Scope::empty().path,
-        MessageSearchAction::Clear,
-    );
-    *success = true;
-    Some(timeline_details)
-}
-/// Finds the index of the timeline item in the main timeline items list
-/// that the given search result item is related to (i.e. is a reply to).
-///
-/// Returns `None` if the search result item is not a reply to a message
-/// in the main timeline items list.
-pub fn search_result_jump_to_related(
-    _cx: &mut Cx,
-    details: &MessageDetails,
-    tl: &TimelineUiState,
-) -> Option<usize> {
-    let Some(SearchResultItem::Event(event)) =
-        tl.search_state.items.get(details.item_id)
-    else {
-        return None;
-    };
-    if Some(event.event_id().to_owned()) != details.event_id {
-        return None;
-    }
-    if let Some((pos, _elt)) = tl.items.iter().enumerate().find(|(_i, x)| {
-        x.as_event()
-            .and_then(|f| f.event_id())
-            .map(|f| Some(f.to_owned()) == details.event_id)
-            .unwrap_or(false)
-    }) {
-        return Some(pos);
-    }
-    None
-}
-
 /// Handles any search-related actions received by this RoomScreen.
 ///
 /// See `MessageSearchAction` for the possible actions.
@@ -766,7 +517,7 @@ pub fn handle_search_input(
                 room_screen.search_state = SearchState::default();
                 // Abort previous inflight search request.
                 submit_async_request(MatrixRequest::SearchMessages {
-                    room_id: room_id!("!not_used:matrix.org").to_owned(),
+                    room_id: None,
                     include_all_rooms: false,
                     search_term: "".to_string(),
                     next_batch: None,
@@ -774,23 +525,6 @@ pub fn handle_search_input(
                 });
                 return;
             }
-            // if let Some(selected_room) = {
-            //     let app_state = scope.data.get::<AppState>().unwrap();
-            //     app_state.selected_room.clone()
-            // } {
-            //     if Some(selected_room.room_id()) == room_screen.room_id.as_ref() {
-            //         room_screen.search_state = SearchState::default();
-            //         let mut criteria = room_screen
-            //             .search_result(id!(search_result_plane))
-            //             .get_search_criteria();
-            //         criteria.search_term = search_term;
-            //         criteria.include_all_rooms = false;
-            //         room_screen
-            //             .search_result(id!(search_result_plane))
-            //             .set_search_criteria(cx, criteria);
-            //         room_screen.view(id!(timeline)).set_visible(cx, false);
-            //     }
-            // }
             if let Some(selected_room) = {
                 let app_state = scope.data.get::<AppState>().unwrap();
                 app_state.selected_room.clone()
@@ -812,7 +546,7 @@ pub fn handle_search_input(
                 }
                 room_screen.search_result(id!(search_result_plane)).display_top_space(cx);
                 submit_async_request(MatrixRequest::SearchMessages {
-                    room_id: room_id.clone(),
+                    room_id: Some(room_id.to_owned()),
                     include_all_rooms: criteria.include_all_rooms,
                     search_term: criteria.search_term.clone(),
                     next_batch: None,
@@ -856,14 +590,14 @@ pub fn handle_search_input(
 }
 
 pub fn send_pagination_request_based_on_scroll_pos_for_search_result(
-    room_screen: &mut RoomScreen,
+    room_screen: &mut SearchScreen,
     cx: &mut Cx,
+    room_id: &RoomId,
     actions: &ActionsBuf,
     portal_list: &PortalListRef,
     search_result_plane: &SearchResultRef
 ) {
-    let Some(tl) = room_screen.tl_state.as_mut() else { return };
-    let search_state = &mut tl.search_state;
+    let search_state = &mut room_screen.search_state;
     if search_state.fully_paginated { return };
 
     if !portal_list.scrolled(actions) { return };
@@ -872,12 +606,12 @@ pub fn send_pagination_request_based_on_scroll_pos_for_search_result(
     if first_index == 0 && search_state.last_scrolled_index > 0 {
         if let Some(next_batch_token) = &search_state.next_batch_token.take() {
             log!("Scrolled up from item {} --> 0, sending search request for room {} with backward_pagination_batch {:?}",
-                search_state.last_scrolled_index, tl.room_id, next_batch_token
+                search_state.last_scrolled_index, room_id, next_batch_token
             );
             search_result_plane.display_top_space(cx);
             let criteria = search_result_plane.get_search_criteria();
             submit_async_request(MatrixRequest::SearchMessages {
-                room_id: tl.room_id.clone(),
+                room_id: Some(room_id.into()),
                 include_all_rooms: criteria.include_all_rooms,
                 search_term: criteria.search_term.clone(),
                 next_batch: Some(next_batch_token.clone()),
@@ -885,7 +619,7 @@ pub fn send_pagination_request_based_on_scroll_pos_for_search_result(
             });
         }
     }
-    tl.search_state.last_scrolled_index = first_index;
+    room_screen.search_state.last_scrolled_index = first_index;
 }
 
 /// Search result as timeline item
@@ -899,342 +633,6 @@ pub enum SearchResultItem {
     RoomHeader(OwnedRoomId),
 }
 
-pub struct AnyStateEventContentWrapper<'a>(pub &'a AnyStateEventContent, pub &'a str);
-
-impl<'a> From<&AnyStateEventContentWrapper<'a>> for Option<AnyOtherFullStateEventContent> {
-    fn from(val: &AnyStateEventContentWrapper<'a>) -> Self {
-        match val.0 {
-            AnyStateEventContent::RoomAliases(p) => Some(
-                AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                }),
-            ),
-            AnyStateEventContent::RoomAvatar(p) => Some(AnyOtherFullStateEventContent::RoomAvatar(
-                FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                },
-            )),
-            AnyStateEventContent::RoomCanonicalAlias(p) => {
-                Some(AnyOtherFullStateEventContent::RoomCanonicalAlias(
-                    FullStateEventContent::Original {
-                        content: p.clone(),
-                        prev_content: None,
-                    },
-                ))
-            }
-            AnyStateEventContent::RoomCreate(p) => Some(AnyOtherFullStateEventContent::RoomCreate(
-                FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                },
-            )),
-            AnyStateEventContent::RoomEncryption(p) => Some(
-                AnyOtherFullStateEventContent::RoomEncryption(FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                }),
-            ),
-            AnyStateEventContent::RoomGuestAccess(p) => Some(
-                AnyOtherFullStateEventContent::RoomGuestAccess(FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                }),
-            ),
-            AnyStateEventContent::RoomHistoryVisibility(p) => {
-                Some(AnyOtherFullStateEventContent::RoomHistoryVisibility(
-                    FullStateEventContent::Original {
-                        content: p.clone(),
-                        prev_content: None,
-                    },
-                ))
-            }
-            AnyStateEventContent::RoomJoinRules(p) => Some(
-                AnyOtherFullStateEventContent::RoomJoinRules(FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                }),
-            ),
-            AnyStateEventContent::RoomPinnedEvents(p) => Some(
-                AnyOtherFullStateEventContent::RoomPinnedEvents(FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                }),
-            ),
-            AnyStateEventContent::RoomName(p) => Some(AnyOtherFullStateEventContent::RoomName(
-                FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                },
-            )),
-            AnyStateEventContent::RoomPowerLevels(p) => Some(
-                AnyOtherFullStateEventContent::RoomPowerLevels(FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                }),
-            ),
-            AnyStateEventContent::RoomServerAcl(p) => Some(
-                AnyOtherFullStateEventContent::RoomServerAcl(FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                }),
-            ),
-            AnyStateEventContent::RoomTombstone(p) => Some(
-                AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                }),
-            ),
-            AnyStateEventContent::RoomTopic(p) => Some(AnyOtherFullStateEventContent::RoomTopic(
-                FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                },
-            )),
-            AnyStateEventContent::SpaceParent(p) => Some(
-                AnyOtherFullStateEventContent::SpaceParent(FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                }),
-            ),
-            AnyStateEventContent::SpaceChild(p) => Some(AnyOtherFullStateEventContent::SpaceChild(
-                FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                },
-            )),
-            AnyStateEventContent::PolicyRuleRoom(p) => Some(
-                AnyOtherFullStateEventContent::PolicyRuleRoom(FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                }),
-            ),
-            AnyStateEventContent::PolicyRuleServer(p) => Some(
-                AnyOtherFullStateEventContent::PolicyRuleServer(FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                }),
-            ),
-            AnyStateEventContent::PolicyRuleUser(p) => Some(
-                AnyOtherFullStateEventContent::PolicyRuleUser(FullStateEventContent::Original {
-                    content: p.clone(),
-                    prev_content: None,
-                }),
-            ),
-            AnyStateEventContent::RoomThirdPartyInvite(p) => {
-                Some(AnyOtherFullStateEventContent::RoomThirdPartyInvite(
-                    FullStateEventContent::Original {
-                        content: p.clone(),
-                        prev_content: None,
-                    },
-                ))
-            }
-            AnyStateEventContent::BeaconInfo(_) => None,
-            AnyStateEventContent::CallMember(_) => None,
-            AnyStateEventContent::MemberHints(_) => None,
-            AnyStateEventContent::RoomMember(_) => None,
-            _ => None,
-        }
-    }
-}
-
-/// Wrapper for AnyTimelineEvent that implements `MessageDisplay` trait.
-pub struct MessageDisplayWrapperAEI<'a>(
-    pub &'a AnyTimelineEvent,
-    pub &'a BTreeMap<OwnedUserId, TimelineDetails<Profile>>,
-);
-
-impl MessageDisplay for MessageDisplayWrapperAEI<'_> {
-    fn timestamp(&self) -> MilliSecondsSinceUnixEpoch {
-        self.0.origin_server_ts()
-    }
-    fn event_id(&self) -> Option<&EventId> {
-        Some(self.0.event_id())
-    }
-    fn sender(&self) -> &UserId {
-        self.0.sender()
-    }
-    fn sender_profile(&self) -> Option<&TimelineDetails<Profile>> {
-        self.1.get(self.sender())
-    }
-    fn reactions(&self) -> Option<ReactionsByKeyBySender> {
-        None
-    }
-    fn identifier(&self) -> TimelineEventItemId {
-        if let Some(transaction_id) = self.0.transaction_id() {
-            return TimelineEventItemId::TransactionId(transaction_id.to_owned());
-        }
-        TimelineEventItemId::EventId(self.0.event_id().to_owned())
-    }
-    fn is_highlighted(&self) -> bool {
-        false
-    }
-    fn is_editable(&self) -> bool {
-        if !self.is_own() {
-            return false;
-        }
-        if let AnyTimelineEvent::MessageLike(AnyMessageLikeEvent::RoomMessage(msg)) = self.0 {
-            if let Some(is_editable) = msg.as_original().map(|f| {
-                matches!(
-                    f.content.msgtype,
-                    MessageType::Text(_)
-                        | MessageType::Emote(_)
-                        | MessageType::Audio(_)
-                        | MessageType::File(_)
-                        | MessageType::Image(_)
-                        | MessageType::Video(_)
-                )
-            }) {
-                return is_editable;
-            }
-        }
-        false
-    }
-
-    fn is_own(&self) -> bool {
-        if current_user_id() == Some(self.0.sender().to_owned()) {
-            return true;
-        }
-        false
-    }
-    fn can_be_replied_to(&self) -> bool {
-        if self.event_id().is_none() {
-            false
-        } else {
-            matches!(
-                self.0,
-                AnyTimelineEvent::MessageLike(AnyMessageLikeEvent::RoomMessage(_))
-            )
-        }
-    }
-    fn read_receipts(&self) -> Option<&IndexMap<OwnedUserId, Receipt>> {
-        None
-    }
-
-    fn room_id(&self) -> Option<&ruma::RoomId> {
-        Some(self.0.room_id())
-    }
-}
-
-impl SmallStateEventContent<MessageDisplayWrapperAEI<'_>>
-    for AnyStateEventContentWrapper<'_>
-{
-    fn populate_item_content(
-        &self,
-        cx: &mut Cx,
-        list: &mut PortalList,
-        item_id: usize,
-        item: WidgetRef,
-        _event_tl_item: &MessageDisplayWrapperAEI,
-        username: &str,
-        _item_drawn_status: ItemDrawnStatus,
-        mut new_drawn_status: ItemDrawnStatus,
-    ) -> (WidgetRef, ItemDrawnStatus) {
-        let Some(other_state) = self.into() else {
-            return (
-                list.item(cx, item_id, live_id!(Empty)),
-                ItemDrawnStatus::new(),
-            );
-        };
-        let item =
-            if let Some(text_preview) = text_preview_of_other_state(&other_state, true, self.1) {
-                item.label(id!(content))
-                    .set_text(cx, &text_preview.format_with(username, true));
-                new_drawn_status.content_drawn = true;
-                item
-            } else {
-                let item = list.item(cx, item_id, live_id!(Empty));
-                new_drawn_status = ItemDrawnStatus::new();
-                item
-            };
-        (item, new_drawn_status)
-    }
-}
-
-/// A wrapper for the `AnyTimelineEvent` that implements `PreviousMessageDisplay` trait for compact view.
-pub struct PreviousWrapperAEI<'a>(pub &'a AnyTimelineEvent);
-impl<'a> PreviousMessageDisplay<MessageDisplayWrapperAEI<'a>>
-    for PreviousWrapperAEI<'a>
-{
-    fn use_compact(&self, current: &MessageDisplayWrapperAEI<'a>) -> bool {
-        let prev_msg_sender = self.0.sender();
-        let current_sender = current.0.sender();
-        {
-            prev_msg_sender == current_sender
-                && current
-                    .0
-                    .origin_server_ts()
-                    .0
-                    .checked_sub(self.0.origin_server_ts().0)
-                    .is_some_and(|d| d < uint!(86400000)) //within a day
-        }
-    }
-}
-
-/// A wrapper for the `RoomMessageEventContent` and `InReplyToDetails` that implements `ContextMenuFromEvent` trait.
-pub struct MessageWrapperRMC<'a>(
-    pub &'a RoomMessageEventContent,
-    pub Option<&'a InReplyToDetails>,
-);
-impl ContextMenuFromEvent for MessageWrapperRMC<'_> {
-    fn msgtype(&self) -> &MessageType {
-        &self.0.msgtype
-    }
-    fn body(&self) -> &str {
-        self.0.body()
-    }
-    fn in_reply_to(&self) -> Option<&InReplyToDetails> {
-        self.1
-    }
-    fn is_searched_result(&self) -> bool {
-        true
-    }
-}
-fn truncate_to_50(s: &str) -> String {
-    let n = 10;
-    if s.chars().count() > n {
-        let mut string: String = s.chars().take(n).collect();
-        string.push_str("..");
-        string
-    } else {
-        s.to_string()
-    }
-}
-
-pub enum MessageOrStickerSearchView<'e> {
-    Message(&'e RoomMessageEventContent),
-    Sticker(&'e StickerEventContent),
-}
-
-impl MessageOrStickerSearchView<'_>{
-    /// Returns the type of this message or sticker.
-    pub fn get_type(&self) -> MessageOrStickerType {
-        match self {
-            Self::Message(msg) => match &msg.msgtype {
-                MessageType::Audio(audio) => MessageOrStickerType::Audio(&audio),
-                MessageType::Emote(emote) => MessageOrStickerType::Emote(&emote),
-                MessageType::File(file) => MessageOrStickerType::File(&file),
-                MessageType::Image(image) => MessageOrStickerType::Image(&image),
-                MessageType::Location(location) => MessageOrStickerType::Location(&location),
-                MessageType::Notice(notice) => MessageOrStickerType::Notice(&notice),
-                MessageType::ServerNotice(server_notice) => MessageOrStickerType::ServerNotice(&server_notice),
-                MessageType::Text(text) => MessageOrStickerType::Text(&text),
-                MessageType::Video(video) => MessageOrStickerType::Video(&video),
-                MessageType::VerificationRequest(verification_request) => MessageOrStickerType::VerificationRequest(&verification_request),
-                MessageType::_Custom(custom) => MessageOrStickerType::_Custom(&custom),
-                _ => MessageOrStickerType::Unknown,
-            },
-            Self::Sticker(sticker) => MessageOrStickerType::Sticker(sticker),
-        }
-    }
-    pub fn body(&self) -> &str {
-        match self {
-            Self::Message(msg) => msg.body(),
-            Self::Sticker(sticker) => sticker.body.as_str(),
-        }
-    }
-}
 pub fn populate_message_search_view(
     cx: &mut Cx2d,
     list: &mut PortalList,
@@ -1392,4 +790,14 @@ pub fn populate_message_search_view(
             .set_text(cx, &format!("{}", ts_millis.get()));
     }
     (item, new_drawn_status)
+}
+fn truncate_to_50(s: &str) -> String {
+    let n = 10;
+    if s.chars().count() > n {
+        let mut string: String = s.chars().take(n).collect();
+        string.push_str("..");
+        string
+    } else {
+        s.to_string()
+    }
 }

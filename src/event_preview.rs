@@ -89,7 +89,7 @@ pub fn text_preview_of_timeline_item(
             text_preview_of_member_profile_change(profile_change, sender_username, true)
         }
         TimelineItemContent::OtherState(other_state) => {
-            text_preview_of_other_state(other_state.content(), true, other_state.state_key())
+            text_preview_of_other_state(other_state, true)
                 .unwrap_or_else(|| TextPreview::from((
                     String::from("<i>initiated another state change</i>"),
                     BeforeText::UsernameWithoutColon,
@@ -151,7 +151,7 @@ pub fn plaintext_body_of_timeline_item(
             ).text
         }
         TimelineItemContent::OtherState(other_state) => {
-            text_preview_of_other_state(other_state.content(), false, other_state.state_key())
+            text_preview_of_other_state(other_state, false)
                 .unwrap_or_else(|| TextPreview::from((
                     String::from("initiated another state change."),
                     BeforeText::UsernameWithoutColon,
@@ -315,11 +315,10 @@ pub fn text_preview_of_redacted_message(
 
 /// Returns a text preview of the given other state event as an Html-formatted string.
 pub fn text_preview_of_other_state(
-    other_state: &AnyOtherFullStateEventContent,
+    other_state: &timeline::OtherState,
     format_as_html: bool,
-    state_key: &str,
 ) -> Option<TextPreview> {
-    let text = match other_state {
+    let text = match other_state.content() {
         AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content, .. }) => {
             let mut s = String::from("set this room's aliases to ");
             let last_alias = content.aliases.len() - 1;
@@ -405,17 +404,17 @@ pub fn text_preview_of_other_state(
         }
         AnyOtherFullStateEventContent::SpaceParent(_) => {
             let state_key  = if format_as_html {
-                htmlize::escape_text(state_key)
+                htmlize::escape_text(other_state.state_key())
             } else {
-                Cow::Borrowed(state_key)
+                Cow::Borrowed(other_state.state_key())
             };
             Some(format!("set this room's parent space to \"{state_key}\"."))
         }
         AnyOtherFullStateEventContent::SpaceChild(_) => {
             let state_key  = if format_as_html {
-                htmlize::escape_text(state_key)
+                htmlize::escape_text(other_state.state_key())
             } else {
-                Cow::Borrowed(state_key)
+                Cow::Borrowed(other_state.state_key())
             };
             Some(format!("added a new child to this space: \"{state_key}\"."))
         }

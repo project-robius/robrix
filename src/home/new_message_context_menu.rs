@@ -3,12 +3,12 @@
 
 use bitflags::bitflags;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{OwnedEventId, events::room::message::MessageType};
-use matrix_sdk_ui::timeline::InReplyToDetails;
+use matrix_sdk::ruma::OwnedEventId;
+use matrix_sdk_ui::timeline::EventTimelineItem;
 
 use crate::sliding_sync::UserPowerLevels;
 
-use super::room_screen::{MessageDisplay, MessageAction, MessageOrSticker};
+use super::room_screen::{MessageAction, MessageOrSticker};
 
 const BUTTON_HEIGHT: f64 = 35.0; // KEEP IN SYNC WITH BUTTON_HEIGHT BELOW
 const MENU_WIDTH: f64 = 215.0;   // KEEP IN SYNC WITH MENU_WIDTH BELOW
@@ -247,10 +247,10 @@ bitflags! {
     }
 }
 impl MessageAbilities {
-    pub fn from_user_power_and_event<T: MessageDisplay, M: ContextMenuFromEvent>(
+    pub fn from_user_power_and_event(
         user_power_levels: &UserPowerLevels,
-        event_tl_item: &T,
-        _message: &MessageOrSticker<M>,
+        event_tl_item: &EventTimelineItem,
+        _message: &MessageOrSticker,
         has_html: bool,
     ) -> Self {
         let mut abilities = Self::empty();
@@ -269,6 +269,7 @@ impl MessageAbilities {
         abilities.set(Self::HasHtml, has_html);
         abilities
     }
+
 }
 
 /// Details about the message that define its context menu content.
@@ -618,10 +619,4 @@ impl NewMessageContextMenuRef {
         let Some(mut inner) = self.borrow_mut() else { return DVec2::default()};
         inner.show(cx, details)
     }
-}
-pub trait ContextMenuFromEvent {
-    fn msgtype(&self) -> &MessageType;
-    fn body(&self) -> &str;
-    fn in_reply_to(&self) -> Option<&InReplyToDetails>;
-    fn is_searched_result(&self) -> bool;
 }
