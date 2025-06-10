@@ -2354,7 +2354,7 @@ impl RoomScreen {
         if let Some(editing_event) = editing_event.take() {
             self.show_editing_pane(cx, editing_event, tl_state.room_id.clone());
         } else {
-            self.editing_pane(id!(editing_pane)).force_hide(cx);
+            self.editing_pane(id!(editing_pane)).hide(cx);
             self.on_hide_editing_pane(cx);
         }
     }

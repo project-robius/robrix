@@ -564,7 +564,6 @@ impl EditingPane {
     /// Hides the editing pane with animation.
     fn hide_with_animator(&mut self, cx: &mut Cx) {
         self.animator_play(cx, id!(panel.hide));
-        self.redraw(cx);
     }
 
     /// Hides the editing pane immediately without animation.
@@ -619,7 +618,7 @@ impl EditingPaneRef {
     }
 
     /// Hides the editing pane immediately without animation.
-    pub fn force_hide(&self, cx: &mut Cx) {
+    pub fn hide(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.hide(cx);
     }
