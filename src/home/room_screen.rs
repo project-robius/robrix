@@ -12,7 +12,7 @@ use matrix_sdk::{room::RoomMember, ruma::{
             AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
         }, ImageInfo, MediaSource
     },
-    sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId
+    sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
@@ -28,8 +28,10 @@ use crate::{
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
+use crate::room::room_member_manager::room_members;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
-use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
+use crate::shared::mentionable_text_input::{MentionableTextInputWidgetRefExt, MentionableTextInputAction};
+use crate::room::room_member_manager::{RoomMemberSubscriber, RoomMemberSubscription};
 
 use rangemap::RangeSet;
 
@@ -811,6 +813,10 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+    /// The subscription to room member updates for the current room.
+    #[rust] member_subscription: Option<RoomMemberSubscription>,
+    /// The room ID from the previous event handling cycle, used to detect changes.
+    #[rust] prev_event_room_id: Option<OwnedRoomId>,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -830,6 +836,25 @@ impl Widget for RoomScreen {
         let portal_list = self.portal_list(id!(timeline.list));
         let user_profile_sliding_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(id!(loading_pane));
+
+        // Detect if the room_id has just been set by set_displayed_room (called from draw_walk)
+        // This happens in the event handling phase, which is safe for sending actions.
+        if self.room_id != self.prev_event_room_id {
+            if let Some(current_room_id) = self.room_id.as_ref() {
+                log!("RoomScreen({:?}) detected room_id change to {}", self.widget_uid(), current_room_id);
+                // Send Action to MentionableTextInput instances immediately with the new room_id
+                // Assume false initially for can_notify_room, will be corrected when PowerLevels is fetched
+                let initial_can_notify_room = false;
+
+                cx.action(MentionableTextInputAction::PowerLevelsUpdated(
+                    current_room_id.clone(),
+                    initial_can_notify_room
+                ));
+
+            }
+            // Update prev_event_room_id *after* sending actions in this event cycle
+            self.prev_event_room_id = self.room_id.clone();
+        }
 
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
@@ -852,10 +877,19 @@ impl Widget for RoomScreen {
                     bg_color,
                     reaction_data,
                 } = reaction_list.hover_in(actions) {
+                    let Some(_tl_state) = self.tl_state.as_ref() else { continue };
                     let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
-                        user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
-                            .map(|user_profile| user_profile.displayable_name().to_string())
-                            .unwrap_or_else(|| sender.to_string())
+                        // Use the room_members from global manager first, then fallback to global cache
+                        let current_room_members = room_members::get_room_members(&reaction_data.room_id)
+                            .unwrap_or_else(|| Arc::new(Vec::new()));
+                        let current_room_members = current_room_members.as_ref();
+                        if let Some(member) = current_room_members.iter().find(|m| m.user_id() == sender) {
+                            member.display_name().map(|n| n.to_string()).unwrap_or_else(|| sender.to_string())
+                        } else {
+                            user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
+                                .map(|user_profile| user_profile.displayable_name().to_string())
+                                .unwrap_or_else(|| sender.to_string())
+                        }
                     }).collect();
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.reaction));
@@ -907,7 +941,8 @@ impl Widget for RoomScreen {
 
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
-            let message_input = self.room_input_bar(id!(input_bar)).text_input(id!(text_input));
+            let message_input = self.room_input_bar(id!(input_bar)).mentionable_text_input(id!(message_input));
+            let text_input = message_input.text_input(id!(text_input));
 
             for action in actions {
                 // Handle the highlight animation.
@@ -929,16 +964,27 @@ impl Widget for RoomScreen {
                 if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
                     // Only show the user profile in room that this avatar belongs to
                     if self.room_id.as_ref().is_some_and(|r| r == &profile_and_room_id.room_id) {
+                        // Pass the current room members to the UserProfilePaneInfo
+                        let room_member_opt = room_members::get_room_members(&profile_and_room_id.room_id)
+                            .and_then(|members| members.iter().find(|m| m.user_id() == profile_and_room_id.user_id).cloned());
                         self.show_user_profile(
                             cx,
                             &user_profile_sliding_pane,
                             UserProfilePaneInfo {
                                 profile_and_room_id,
                                 room_name: self.room_name.clone(),
-                                room_member: None,
+                                room_member: room_member_opt,
                             },
                         );
                     }
+                }
+
+                // Handle RoomScreen-specific actions posted back from subscribers tasks
+                if let Some(RoomMembersAction::Updated(update_room_id, _members)) = action.downcast_ref() {
+                    // Note: The room members are now managed by the global room member manager
+                    // through the subscription system, so we don't need to store them here.
+                    // Just notify MentionableTextInput components that room members have been loaded
+                    cx.action(MentionableTextInputAction::RoomMembersLoaded(update_room_id.clone()));
                 }
             }
 
@@ -958,7 +1004,7 @@ impl Widget for RoomScreen {
             // Clear the replying-to preview pane if the "cancel reply" button was clicked
             // or if the `Escape` key was pressed within the message input box.
             if self.button(id!(cancel_reply_button)).clicked(actions)
-                || message_input.escaped(actions)
+                || text_input.escaped(actions)
             {
                 self.clear_replying_to(cx);
                 self.redraw(cx);
@@ -1004,37 +1050,21 @@ impl Widget for RoomScreen {
 
             // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
             if self.button(id!(send_message_button)).clicked(actions)
-                || message_input.returned(actions).is_some_and(
+                || text_input.returned(actions).is_some_and(
                     |(_text, modifiers)| modifiers.is_primary()
                 )
             {
                 let entered_text = message_input.text().trim().to_string();
                 if !entered_text.is_empty() {
-                    let room_input_bar = self.room_input_bar(id!(input_bar));
+                    let room_input_bar = self.view.room_input_bar(id!(input_bar));
                     let room_id = self.room_id.clone().unwrap();
-                    let (message, mentions) = if let Some(html_text) = entered_text.strip_prefix("/html") {
-                        (
-                            RoomMessageEventContent::text_html(html_text, html_text),
-                            room_input_bar.mentionable_text_input(id!(message_input))
-                                .get_real_mentions_in_html_text(html_text),
-                        )
-                    } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
-                        (
-                            RoomMessageEventContent::text_plain(plain_text),
-                            Default::default(),
-                        )
-                    } else {
-                        (
-                            RoomMessageEventContent::text_markdown(&entered_text),
-                            room_input_bar.mentionable_text_input(id!(message_input))
-                                .get_real_mentions_in_markdown_text(&entered_text),
-                        )
-                    };
-                    log!("Sending message to room {}: {:?}, mentions: {:?}", room_id, entered_text, mentions);
-                    let message = message.add_mentions(Mentions::with_user_ids(mentions));
+
+                    // Create message with mentions using the unified API
+                    let message_with_mentions = message_input.create_message_with_mentions(&entered_text);
+
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
-                        message,
+                        message: message_with_mentions,
                         replied_to: self.tl_state.as_mut().and_then(
                             |tl| tl.replying_to.take().map(|(_, rep)| rep)
                         ),
@@ -1078,7 +1108,7 @@ impl Widget for RoomScreen {
             );
 
             // Handle a typing action on the message input box.
-            if let Some(new_text) = message_input.changed(actions) {
+            if let Some(new_text) = text_input.changed(actions) {
                 submit_async_request(MatrixRequest::SendTypingNotice {
                     room_id: self.room_id.clone().unwrap(),
                     typing: !new_text.is_empty(),
@@ -1114,12 +1144,42 @@ impl Widget for RoomScreen {
         //       Makepad already delivers most events to all views regardless of visibility,
         //       so the only thing we'd need here is the conditional below.
 
+        // Create a Scope with RoomScreenProps containing the room members.
+        // This scope is needed by child widgets like MentionableTextInput during event handling.
+        let room_props = if let Some(tl) = self.tl_state.as_ref() {
+            let room_id = tl.room_id.clone();
+            let room_members = room_members::get_room_members(&room_id);
+            RoomScreenProps {
+                room_id,
+                room_members
+            }
+        } else if let Some(room_id) = self.room_id.clone() {
+            // Fallback case: we have a room_id but no tl_state yet
+            log!("RoomScreen handling event with room_id {} but no tl_state, using empty member list", room_id);
+            RoomScreenProps {
+                room_id,
+                room_members: None
+            }
+        } else {
+            // No room selected yet, skip event handling that requires room context
+            log!("RoomScreen handling event with no room_id and no tl_state, skipping room-dependent event handling");
+            if !is_pane_shown || !is_interactive_hit {
+                return;
+            }
+            // Use a dummy room props for non-room-specific events
+            RoomScreenProps {
+                room_id: matrix_sdk::ruma::OwnedRoomId::try_from("!dummy:matrix.org").unwrap(),
+                room_members: None
+            }
+        };
+        let mut room_scope = Scope::with_props(&room_props);
+
         if !is_pane_shown || !is_interactive_hit {
             // Forward the event to the inner timeline view, but capture any actions it produces
             // such that we can handle the ones relevant to only THIS RoomScreen widget right here and now,
             // ensuring they are not mistakenly handled by other RoomScreen widget instances.
             let mut actions_generated_within_this_room_screen = cx.capture_actions(|cx|
-                self.view.handle_event(cx, event, scope)
+                self.view.handle_event(cx, event, &mut room_scope)
             );
             // Here, we handle and remove any general actions that are relevant to only this RoomScreen.
             // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
@@ -1184,11 +1244,13 @@ impl Widget for RoomScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let room_screen_widget_uid = self.widget_uid();
+
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
             return DrawStep::done();
         }
+
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
@@ -1325,7 +1387,7 @@ impl Widget for RoomScreen {
                     }
                     item
                 };
-                item.draw_all(cx, &mut Scope::empty());
+                item.draw_all(cx, scope);
             }
         }
         DrawStep::done()
@@ -1431,11 +1493,9 @@ impl RoomScreen {
 
                     // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
                     if is_append && !portal_list.is_at_end() {
-                        if let Some(room_id) = &self.room_id {
-                            // Immediately show the unread badge with no count while we fetch the actual count in the background.
-                            jump_to_bottom.show_unread_message_badge(cx, UnreadMessageCount::Unknown);
-                            submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: room_id.clone() });
-                        }
+                        // Immediately show the unread badge with no count while we fetch the actual count in the background.
+                        jump_to_bottom.show_unread_message_badge(cx, UnreadMessageCount::Unknown);
+                        submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: tl.room_id.clone() });
                     }
 
                     if clear_cache {
@@ -1565,7 +1625,7 @@ impl RoomScreen {
                 TimelineUpdate::RoomMembersListFetched { members } => {
                     // Use `pub/sub` pattern here to let multiple components share room members data
                     use crate::room::room_member_manager::room_members;
-                    room_members::update(cx, tl.room_id.clone(), members);
+                    room_members::update(tl.room_id.clone(), members);
                 },
                 TimelineUpdate::MediaFetched => {
                     log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
@@ -1594,6 +1654,15 @@ impl RoomScreen {
                         .set_visible(cx, can_send_message);
                     self.view.view(id!(can_not_send_message_notice))
                         .set_visible(cx, !can_send_message);
+
+                    // Update the @room mention capability based on the user's power level
+                    let can_notify_room = user_power_level.can_notify_room();
+
+                    cx.action(MentionableTextInputAction::PowerLevelsUpdated(
+                        tl.room_id.clone(),
+                        can_notify_room
+                    ));
+
                 }
 
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
@@ -2085,7 +2154,7 @@ impl RoomScreen {
     ) {
         // We must hide the input_bar while the editing pane is shown,
         // otherwise a very-tall input bar might show up underneath a shorter editing pane.
-        self.view.room_input_bar(id!(input_bar)).set_visible(cx, false);
+        self.view(id!(input_bar)).set_visible(cx, false);
 
         self.editing_pane(id!(editing_pane)).show(
             cx,
@@ -2113,6 +2182,7 @@ impl RoomScreen {
         replying_to: (EventTimelineItem, RepliedToInfo),
     ) {
         let replying_preview_view = self.view(id!(replying_preview));
+
         let (replying_preview_username, _) = replying_preview_view
             .avatar(id!(reply_preview_content.reply_preview_avatar))
             .set_avatar_and_get_username(
@@ -2207,6 +2277,22 @@ impl RoomScreen {
             (new_tl_state, true)
         };
 
+        // Create room member subscriber
+        let subscriber = Arc::new(Mutex::new(RoomScreenMemberSubscriber {
+            widget_uid: self.widget_uid(),
+            room_id: room_id.clone(),
+        }));
+        self.member_subscription = Some(RoomMemberSubscription::new(room_id.clone(), subscriber));
+        // Request room members data immediately upon showing the room
+        submit_async_request(MatrixRequest::GetRoomMembers {
+            room_id: room_id.clone(),
+            memberships: matrix_sdk::RoomMemberships::JOIN,
+            // Important.
+            // Fetch from local,
+            // Because SyncRoomMemberList has already pre-fetched the members from the server.
+            local_only: true,
+        });
+
         // Subscribe to typing notices, but hide the typing notice view initially.
         self.view(id!(typing_notice)).set_visible(cx, false);
         submit_async_request(
@@ -2257,6 +2343,9 @@ impl RoomScreen {
         let Some(room_id) = self.room_id.clone() else { return };
 
         self.save_state();
+
+        // Clear the member subscription
+        self.member_subscription = None;
 
         // When closing a room view, we do the following with non-persistent states:
         // * Unsubscribe from typing notices, since we don't care about them
@@ -2349,7 +2438,7 @@ impl RoomScreen {
     ) {
         // If the room is already being displayed, then do nothing.
         if self.room_id.as_ref().is_some_and(|id| id == &room_id) { return; }
-        
+
 
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
@@ -2357,10 +2446,7 @@ impl RoomScreen {
         self.room_name = room_name_or_id(room_name.into(), &room_id);
         self.room_id = Some(room_id.clone());
 
-        // Clear any mention input state
-        let input_bar = self.view.room_input_bar(id!(input_bar));
-        let message_input = input_bar.mentionable_text_input(id!(message_input));
-        message_input.set_room_id(room_id);
+        self.prev_event_room_id = None;
 
         self.show_timeline(cx);
     }
@@ -2477,6 +2563,39 @@ impl RoomScreenRef {
     }
 }
 
+/// RoomScreenProps serves as an interface between RoomScreen and its child components.
+/// Child components only need to know the structure of RoomScreenProps,
+/// without understanding the internal details of TimelineUiState.
+pub struct RoomScreenProps {
+    pub room_id: OwnedRoomId,
+    pub room_members: Option<Arc<Vec<RoomMember>>>,
+    // Add other room-related state here if needed
+}
+
+#[derive(Clone, DefaultNone, Debug)]
+pub enum RoomMembersAction {
+    None,
+    /// Room members data has been updated for this room.
+    Updated(OwnedRoomId, Arc<Vec<RoomMember>>),
+}
+
+/// Subscriber for RoomScreen to receive room member updates
+#[allow(dead_code)]
+struct RoomScreenMemberSubscriber {
+    widget_uid: WidgetUid,
+    room_id: OwnedRoomId, // Store the room_id for verification
+}
+
+/// Implement `RoomMemberSubscriber` trait, receive member update notifications
+impl RoomMemberSubscriber for RoomScreenMemberSubscriber {
+    fn on_room_members_updated(
+        &mut self, room_id: &OwnedRoomId, members: Arc<Vec<RoomMember>>,
+    ) {
+        // Now we always forward updates, even for different rooms, because we use a map to store the member lists for all rooms
+        Cx::post_action(RoomMembersAction::Updated(room_id.clone(), members));
+    }
+}
+
 /// Actions for the room screen's tooltip.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum RoomScreenTooltipActions {
@@ -2586,6 +2705,7 @@ pub enum TimelineUpdate {
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
     OwnUserReadReceipt(Receipt),
+
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -3288,6 +3408,7 @@ fn populate_message_view(
         let username_label = item.label(id!(content.username));
 
         if !is_server_notice { // the normal case
+
             let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
                 item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
                     cx,
@@ -3310,12 +3431,7 @@ fn populate_message_view(
         else {
             // Server notices are drawn with a red color avatar background and username.
             let avatar = item.avatar(id!(profile.avatar));
-            avatar.show_text(cx, None, "⚠");
-            avatar.apply_over(cx, live!(
-                text_view = {
-                    draw_bg: { background_color: (COLOR_DANGER_RED), }
-                }
-            ));
+            avatar.show_text(cx, Some(COLOR_DANGER_RED), None, "⚠");
             username_label.set_text(cx, "Server notice");
             username_label.apply_over(cx, live!(
                 draw_text: {
@@ -3714,7 +3830,7 @@ fn draw_replied_to_message(
                     .set_text(cx, "[Error fetching username]");
                 replied_to_message_view
                     .avatar(id!(replied_to_message_content.reply_preview_avatar))
-                    .show_text(cx, None, "?");
+                    .show_text(cx, None, None, "?");
                 replied_to_message_view
                     .html_or_plaintext(id!(replied_to_message_content.reply_preview_body))
                     .show_plaintext(cx, "[Error fetching replied-to event]");
@@ -3727,7 +3843,7 @@ fn draw_replied_to_message(
                     .set_text(cx, "[Loading username...]");
                 replied_to_message_view
                     .avatar(id!(replied_to_message_content.reply_preview_avatar))
-                    .show_text(cx, None, "?");
+                    .show_text(cx, None, None, "?");
                 replied_to_message_view
                     .html_or_plaintext(id!(replied_to_message_content.reply_preview_body))
                     .show_plaintext(cx, "[Loading replied-to message...]");
@@ -3939,6 +4055,7 @@ fn populate_small_state_event(
     let username = username_opt.unwrap_or_else(|| {
         // As a fallback, call `set_avatar_and_get_username` to get the user's display name.
         let avatar_ref = item.avatar(id!(avatar));
+
         let (username, profile_drawn) = avatar_ref.set_avatar_and_get_username(
             cx,
             room_id,
