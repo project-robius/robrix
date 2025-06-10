@@ -2716,7 +2716,7 @@ struct SavedState {
     message_input_state: TextInputState,
     /// The event that the user is currently replying to, if any.
     replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
-    /// The state of the `EditingPane`, if any.
+    /// The state of the `EditingPane`, if any message was being edited.
     editing_pane_state: Option<EditingPaneState>,
 }
 
