@@ -300,7 +300,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                 Some(JoinRoomAction::Joined { room_id }) if room_id == kind.room_id() => {
                     enqueue_popup_notification(PopupItem{
                         message: "Successfully joined room.".into(), 
-                        auto_dismissal_duration:None
+                        auto_dismissal_duration: Some(3.0),
                     });
                     self.view.label(id!(title)).set_text(cx, "Joined room!");
                     self.view.label(id!(description)).set_text(cx, &format!(
@@ -355,7 +355,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     }
                     self.view.label(id!(title)).set_text(cx, title);
                     self.view.label(id!(description)).set_text(cx, &description);
-                    enqueue_popup_notification(PopupItem { message: popup_msg, auto_dismissal_duration: None });
+                    enqueue_popup_notification(PopupItem { message: popup_msg, auto_dismissal_duration: Some(3.0) });
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
                     cancel_button.set_visible(cx, false);

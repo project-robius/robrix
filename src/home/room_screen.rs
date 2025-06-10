@@ -19,7 +19,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -62,6 +62,7 @@ live_design! {
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
     use crate::profile::user_profile::UserProfileSlidingPane;
+    use crate::home::edited_indicator::*;
     use crate::home::editing_pane::*;
     use crate::home::event_reaction_list::*;
     use crate::home::loading_pane::*;
@@ -280,9 +281,10 @@ live_design! {
         // A preview of the earlier message that this message was in reply to.
         replied_to_message = <RepliedToMessage> {
             flow: Right
-            margin: { bottom: 5.0, top: 10.0 }
+            margin: { bottom: 3, top: 10 }
             replied_to_message_content = {
                 margin: { left: 29 }
+                padding: { bottom: 10 }
             }
         }
 
@@ -290,7 +292,7 @@ live_design! {
             width: Fill,
             height: Fit
             flow: Right,
-            padding: 10.0,
+            padding: {top: 0, bottom: 10, left: 10, right: 10},
 
             profile = <View> {
                 align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
@@ -299,8 +301,8 @@ live_design! {
                 margin: {top: 4.5, right: 10}
                 flow: Down,
                 avatar = <Avatar> {
-                    width: 50.,
-                    height: 50.
+                    width: 48.,
+                    height: 48.
                     // draw_bg: {
                     //     fn pixel(self) -> vec4 {
                     //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -313,8 +315,9 @@ live_design! {
                     // }
                 }
                 timestamp = <Timestamp> {
-                    margin: { top: 3.9 }
+                    margin: { top: 5.9 }
                 }
+                edited_indicator = <EditedIndicator> {}
             }
             content = <View> {
                 width: Fill,
@@ -374,6 +377,7 @@ live_design! {
                 timestamp = <Timestamp> {
                     margin: {top: 2.5}
                 }
+                edited_indicator = <EditedIndicator> { }
             }
             content = <View> {
                 width: Fill,
@@ -1065,7 +1069,7 @@ impl Widget for RoomScreen {
                         let room_id = tl.room_id.clone();
                         self.show_editing_pane(cx, latest_sent_msg, room_id);
                     } else {
-                        enqueue_popup_notification(PopupItem { message: "No recent message available to edit.".to_string(), auto_dismissal_duration: None });
+                        enqueue_popup_notification(PopupItem { message: "No recent message available to edit.".to_string(), auto_dismissal_duration: Some(3.0) });
                     }
                 }
             }
@@ -2840,6 +2844,16 @@ impl MessageOrSticker<'_> {
             _ => None,
         }
     }
+
+    /// Returns whether this message or sticker has been edited.
+    ///
+    /// Returns `false` for stickers, as they cannot be edited.
+    pub fn is_edited(&self) -> bool {
+        match self {
+            Self::Message(msg) => msg.is_edited(),
+            Self::Sticker(_) => false, // Stickers cannot be edited
+        }
+    }
 }
 
 /// Abstracts over the different types of messages or stickers that can be displayed in a timeline.
@@ -3349,6 +3363,15 @@ fn populate_message_view(
     // Set the timestamp.
     if let Some(dt) = unix_time_millis_to_datetime(ts_millis) {
         item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
+        item.timestamp(id!(profile.timestamp2)).set_date_time(cx, dt);
+    }
+
+    if message.is_edited() {
+        log!("Message {item_id} is edited, setting latest edit indicator");
+        item.edited_indicator(id!(profile.edited_indicator)).set_latest_edit(
+            cx,
+            event_tl_item,
+        );
     }
 
     (item, new_drawn_status)
