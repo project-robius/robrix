@@ -19,7 +19,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -2290,12 +2290,12 @@ impl RoomScreen {
 
         let portal_list = self.portal_list(id!(list));
         let message_input = self.text_input(id!(input_bar.message_input.text_input));
-        let editing_event = self.editing_pane(id!(editing_pane)).get_event_being_edited();
+        let editing_pane_state = self.editing_pane(id!(editing_pane)).save_state();
         let state = SavedState {
             first_index_and_scroll: Some((portal_list.first_id(), portal_list.scroll_position())),
             message_input_state: message_input.save_state(),
             replying_to: tl.replying_to.clone(),
-            editing_event,
+            editing_pane_state,
         };
         tl.saved_state = state;
         // Store this Timeline's `TimelineUiState` in the global map of states.
@@ -2311,7 +2311,7 @@ impl RoomScreen {
             first_index_and_scroll,
             message_input_state,
             replying_to,
-            editing_event,
+            editing_pane_state,
         } = &mut tl_state.saved_state;
         // 1. Restore the position of the timeline.
         if let Some((first_index, scroll_from_first_id)) = first_index_and_scroll {
@@ -2336,10 +2336,11 @@ impl RoomScreen {
         }
 
         // 4. Restore the state of the editing pane.
-        if let Some(editing_event) = editing_event.take() {
-            self.show_editing_pane(cx, editing_event, tl_state.room_id.clone());
+        let editing_pane = self.editing_pane(id!(editing_pane));
+        if let Some(state) = editing_pane_state.take() {
+            editing_pane.restore_state(cx, state, tl_state.room_id.clone());
         } else {
-            self.editing_pane(id!(editing_pane)).force_hide(cx);
+            editing_pane.force_reset_hide(cx);
             self.on_hide_editing_pane(cx);
         }
     }
@@ -2353,7 +2354,6 @@ impl RoomScreen {
     ) {
         // If the room is already being displayed, then do nothing.
         if self.room_id.as_ref().is_some_and(|id| id == &room_id) { return; }
-        
 
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
@@ -2705,7 +2705,7 @@ enum MessageHighlightAnimationState {
 ///
 /// These are saved when navigating away from a timeline (upon `Hide`)
 /// and restored when navigating back to a timeline (upon `Show`).
-#[derive(Default, Debug)]
+#[derive(Default)]
 struct SavedState {
     /// The index of the first item in the timeline's PortalList that is currently visible,
     /// and the scroll offset from the top of the list's viewport to the beginning of that item.
@@ -2716,8 +2716,8 @@ struct SavedState {
     message_input_state: TextInputState,
     /// The event that the user is currently replying to, if any.
     replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
-    /// The event that the user is currently editing, if any.
-    editing_event: Option<EventTimelineItem>,
+    /// The state of the `EditingPane`, if any.
+    editing_pane_state: Option<EditingPaneState>,
 }
 
 /// Returns info about the item in the list of `new_items` that matches the event ID
@@ -3363,11 +3363,9 @@ fn populate_message_view(
     // Set the timestamp.
     if let Some(dt) = unix_time_millis_to_datetime(ts_millis) {
         item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
-        item.timestamp(id!(profile.timestamp2)).set_date_time(cx, dt);
     }
 
     if message.is_edited() {
-        log!("Message {item_id} is edited, setting latest edit indicator");
         item.edited_indicator(id!(profile.edited_indicator)).set_latest_edit(
             cx,
             event_tl_item,
