@@ -223,12 +223,12 @@ impl MatchEvent for SearchResult {
                 &Scope::empty().path,
                 MessageSearchAction::Clear,
             );
-            submit_async_request(MatrixRequest::SearchMessages { 
-                room_id: room_id!("!not_used:matrix.org").to_owned(), 
-                include_all_rooms: false, 
-                search_term: "".to_string(), 
-                next_batch: None, 
-                abort_previous_search: true 
+            submit_async_request(MatrixRequest::SearchMessages {
+                room_id: room_id!("!not_used:matrix.org").to_owned(),
+                include_all_rooms: false,
+                search_term: "".to_string(),
+                next_batch: None,
+                abort_previous_search: true
             });
         }
     }
@@ -376,23 +376,12 @@ pub fn search_result_draw_walk(
                 };
                 let (item, item_new_draw_status) = {
                     let current_item = timeline_item;
-                    let prev_event = tl_idx
-                        .checked_sub(1)
-                        .and_then(|i| tl_items.get(i))
-                        .and_then(|f| match f {
-                            SearchResultItem::Event(ref e) => Some(e),
-                            _ => None,
-                        });
 
                     match &current_item {
                         SearchResultItem::DateDivider(millis) => {
-                            let item = list.item(cx, item_id, live_id!(DateDivider));
-                            let text = unix_time_millis_to_datetime(millis)
-                                // format the time as a shortened date (Sat, Sept 5, 2021)
-                                .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
-                                .unwrap_or_else(|| format!("{:?}", millis));
-                            item.label(id!(date)).set_text(cx, &text);
-                            (item, ItemDrawnStatus::both_drawn())
+                            list.item(cx, item_id, live_id!(Empty))
+                                .draw_all(cx, &mut Scope::empty());
+                            continue;
                         }
                         SearchResultItem::Event(event) => match event {
                             AnyTimelineEvent::MessageLike(msg) => {
@@ -441,15 +430,6 @@ pub fn search_result_draw_walk(
                                                     Some(FormattedBody::html(formatted_string));
                                             }
                                         }
-                                        // Do not use compact view if previous event is state
-                                        let prev_event = prev_event
-                                            .and_then(|f| {
-                                                if matches!(f, AnyTimelineEvent::State(_)) {
-                                                    None
-                                                } else {
-                                                    Some(f)
-                                                }
-                                            });
                                         let mut media_cache = MediaCache::new(None);
                                         populate_message_search_view(
                                             cx,
@@ -457,7 +437,6 @@ pub fn search_result_draw_walk(
                                             item_id,
                                             event,
                                             &message,
-                                            prev_event,
                                             &room_screen.search_state.profile_infos,
                                             &mut media_cache,
                                             item_drawn_status,
@@ -786,12 +765,12 @@ pub fn handle_search_input(
                     .set_visible(cx, false);
                 room_screen.search_state = SearchState::default();
                 // Abort previous inflight search request.
-                submit_async_request(MatrixRequest::SearchMessages { 
-                    room_id: room_id!("!not_used:matrix.org").to_owned(), 
-                    include_all_rooms: false, 
-                    search_term: "".to_string(), 
-                    next_batch: None, 
-                    abort_previous_search: true 
+                submit_async_request(MatrixRequest::SearchMessages {
+                    room_id: room_id!("!not_used:matrix.org").to_owned(),
+                    include_all_rooms: false,
+                    search_term: "".to_string(),
+                    next_batch: None,
+                    abort_previous_search: true
                 });
                 return;
             }
@@ -833,7 +812,7 @@ pub fn handle_search_input(
                 }
                 room_screen.search_result(id!(search_result_plane)).display_top_space(cx);
                 submit_async_request(MatrixRequest::SearchMessages {
-                    room_id: room_id.clone(), 
+                    room_id: room_id.clone(),
                     include_all_rooms: criteria.include_all_rooms,
                     search_term: criteria.search_term.clone(),
                     next_batch: None,
@@ -857,7 +836,7 @@ pub fn handle_search_input(
                 room_screen
                     .search_result(id!(search_result_plane))
                     .set_search_criteria(cx, criteria);
-                
+
             }
         }
         MessageSearchAction::Clear => {
@@ -886,7 +865,7 @@ pub fn send_pagination_request_based_on_scroll_pos_for_search_result(
     let Some(tl) = room_screen.tl_state.as_mut() else { return };
     let search_state = &mut tl.search_state;
     if search_state.fully_paginated { return };
-    
+
     if !portal_list.scrolled(actions) { return };
 
     let first_index = portal_list.first_id();
@@ -1262,7 +1241,6 @@ pub fn populate_message_search_view(
     item_id: usize,
     event_tl_item: &AnyTimelineEvent,
     message: &RoomMessageEventContent,
-    prev_event: Option<&AnyTimelineEvent>,
     user_profiles: &BTreeMap<OwnedUserId, TimelineDetails<Profile>>,
     media_cache: &mut MediaCache,
     item_drawn_status: ItemDrawnStatus,
@@ -1278,7 +1256,7 @@ pub fn populate_message_search_view(
     let (item, used_cached_item) = match &message.msgtype {
         MessageType::Text(TextMessageEventContent { body, formatted, .. }) => {
             has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-            let template = live_id!(Message);
+            let template = live_id!(MessageCard);
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
@@ -1329,7 +1307,7 @@ pub fn populate_message_search_view(
         }
         MessageType::File(file_content) => {
             has_html_body = file_content.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-            let template = live_id!(Message);
+            let template = live_id!(MessageCard);
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
@@ -1344,7 +1322,7 @@ pub fn populate_message_search_view(
         }
         MessageType::Audio(audio) => {
             has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-            let template = live_id!(Message);
+            let template = live_id!(MessageCard);
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
@@ -1359,7 +1337,7 @@ pub fn populate_message_search_view(
         }
         other => {
             has_html_body = false;
-            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(MessageCard));
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -1408,7 +1386,7 @@ pub fn populate_message_search_view(
             .set_text(cx, &format!("{}", dt.time().format("%l:%M %P")));
         item.label(id!(profile.datestamp))
             .set_text(cx, &format!("{}", dt.date_naive()));
-        
+
     } else {
         item.label(id!(profile.timestamp))
             .set_text(cx, &format!("{}", ts_millis.get()));

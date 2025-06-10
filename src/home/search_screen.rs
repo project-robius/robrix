@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, ops::DerefMut};
 
 use imbl::Vector;
 use makepad_widgets::*;
@@ -37,13 +37,80 @@ live_design! {
     use crate::shared::message_search_input_bar::*;
     use crate::home::room_screen::search_result::*;
     use crate::home::room_screen::*;
+    pub MessageCard = <Message> {
+        draw_bg: {
+            instance highlight: 0.0
+            instance hover: 0.0
+            color: #ffffff  // default color
+            instance border_radius: 4.0,
+            instance border_size: 1.0,
+            instance border_color: #000000,
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                // draw bg
+                sdf.box(
+                    self.border_size,
+                    self.border_size,
+                    self.rect_size.x - self.border_size * 2.0,
+                    self.rect_size.y - self.border_size * 2.0,
+                    max(1.0, self.border_radius)
+                )
+                sdf.fill(self.color);
+                sdf.stroke(
+                    self.border_color,
+                    self.border_size
+                )
+                return sdf.result;
+            }
+        }
+    }
+    pub TimelineSearch = <View> {
+        width: Fill,
+        height: Fill,
+        align: {x: 0.5, y: 0.0} // center horizontally, align to top vertically
+        flow: Overlay,
+        list = <PortalList> {
+            height: Fill,
+            width: Fill
+            flow: Down
 
+            auto_tail: true, // set to `true` to lock the view to the last item.
+            max_pull_down: 0.0, // set to `0.0` to disable the pulldown bounce animation.
+
+            // Below, we must place all of the possible templates (views) that can be used in the portal list.
+            Message = <Message> {}
+            MessageCard = <MessageCard> {}
+            ImageMessage = <ImageMessage> {}
+            Empty = <Empty> {}
+            RoomHeader = <Label> {
+                margin: {left: 10},
+                draw_text: {
+                    text_style: <REGULAR_TEXT> {
+                        font_size: 12.5,
+                    },
+                    color: #000,
+                }
+                text: "??"
+            }
+            NoMoreMessages = <Label> {
+                margin: {left: 10, top: 30},
+                draw_text: {
+                    text_style: <REGULAR_TEXT> {
+                        font_size: 16.5,
+                    },
+                    color: #000,
+                }
+                text: "??"
+            }
+            
+        }
+    }
+    
     pub SearchScreen = {{SearchScreen}} {
         <View> {
             width: Fill,
             height: Fill,
             flow: Down,
-            debug: true
             message_search_input_view = <View> {
                 width: Fill, height: Fit,
                 visible: true,
@@ -57,7 +124,7 @@ live_design! {
                 width: Fill,
                 height: Fill,
                 flow: Overlay,
-                search_timeline = <Timeline> {
+                search_timeline = <TimelineSearch> {
                     width: Fill,
                     height: Fill,
                 }
@@ -99,6 +166,36 @@ impl Widget for SearchScreen {
     }
 }
 
+pub fn search_result_draw_walk(
+    room_screen: &mut SearchScreen,
+    cx: &mut Cx2d,
+    scope: &mut Scope,
+    walk: Walk,
+) -> DrawStep {
+    let room_screen_widget_uid = room_screen.widget_uid();
+    while let Some(subview) = room_screen.view.draw_walk(cx, scope, walk).step() {
+        // We only care about drawing the portal list.
+        let portal_list_ref = subview.as_portal_list();
+        let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
+            error!("!!! RoomScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
+            continue;
+        };
+        let tl_items = &room_screen.search_state.items;
+        // Set the portal list's range based on the number of timeline items.
+        let last_item_id = tl_items.len();
+        let list = list_ref.deref_mut();
+        list.set_item_range(cx, 0, last_item_id);
+
+        while let Some(item_id) = list.next_visible_item(cx) {
+            if item_id == 0 && room_screen.search_state.next_batch_token.is_none() && last_item_id > 0 {
+                WidgetRef::new_from_ptr(cx, room_screen.no_more_template)
+                    .as_label()
+                    .draw_all(cx, &mut Scope::empty());
+            }
+        }
+    }
+    DrawStep::done()
+}
 impl WidgetMatchEvent for SearchScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, scope: &mut Scope) {
         for action in actions.iter() {

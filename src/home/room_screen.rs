@@ -209,10 +209,10 @@ live_design! {
 
 
     // An empty view that takes up no space in the portal list.
-    Empty = <View> { }
+    pub Empty = <View> { }
 
     // The view used for each text-based message event in a room's timeline.
-    Message = {{Message}} {
+    pub Message = {{Message}} {
         width: Fill,
         height: Fit,
         margin: 0.0
@@ -423,7 +423,7 @@ live_design! {
 
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
-    ImageMessage = <Message> {
+    pub ImageMessage = <Message> {
         body = {
             body_inner = {
                 content = {

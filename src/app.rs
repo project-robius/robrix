@@ -4,8 +4,10 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, message_search_input_bar::MessageSearchAction, popup_list::PopupNotificationAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, media_cache::MediaCache, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, message_search_input_bar::MessageSearchAction, popup_list::PopupNotificationAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
+
+use std::sync::{Arc, Mutex};
 
 live_design! {
     use link::theme::*;
@@ -407,7 +409,7 @@ impl App {
 }
 
 /// State that is shared across different parts of the Robrix app.
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct AppState {
     /// The currently-selected room, which is highlighted (selected) in the RoomsList
     /// and considered "active" in the main rooms screen.
@@ -422,6 +424,8 @@ pub struct AppState {
     pub logged_in: bool,
     /// The current window geometry.
     pub window_geom: Option<event::WindowGeom>,
+    /// The media cache for each room
+    pub media_cache: HashMap<OwnedRoomId, Arc<Mutex<MediaCache>>>
 }
 
 /// A saved instance of the state of the main desktop UI's dock.
