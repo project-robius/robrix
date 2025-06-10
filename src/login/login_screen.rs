@@ -433,11 +433,6 @@ impl MatchEvent for LoginScreen {
                     self.sso_redirect_url = Some(url.to_string());
                 }
                 Some(LoginAction::LogoutSuccess) => {
-                    login_status_modal_inner.set_text(cx, "");
-                    login_status_modal_inner.set_title(cx, "");
-                    login_status_modal_inner.set_status(cx, "");
-                    login_status_modal_inner.button_ref().set_text(cx, "Okay");
-                    login_status_modal_inner.button_ref().set_enabled(cx, true);
                     login_status_modal.close(cx);
                     
                     user_id_input.set_text(cx, "");

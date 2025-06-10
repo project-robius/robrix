@@ -214,8 +214,6 @@ impl MainDesktopUI {
 
     /// Closes all tabs
     pub fn close_all_tabs(&mut self, cx: &mut Cx) {
-        log!("Closing all tabs");
-        // TODO: If room types are differentiated in future, ensure all types are closed here
         let tab_ids: Vec<LiveId> = self.open_rooms.keys().cloned().collect();
         
         for tab_id in tab_ids {
@@ -279,13 +277,9 @@ impl WidgetMatchEvent for MainDesktopUI {
         for action in actions {
             let widget_action = action.as_widget_action();
 
-            // handle close all tabs action directly
-            if let Some(close_tabs) = action.downcast_ref::<MainDesktopUiAction>() {
-                if matches!(close_tabs, MainDesktopUiAction::CloseAllTabs) {
-                    log!("Directly handling CloseAllTabs action");
-                    self.close_all_tabs(cx);
-                    return; 
-                }
+            if let Some(MainDesktopUiAction::CloseAllTabs) = action.downcast_ref() {
+                self.close_all_tabs(cx); 
+                continue;
             }
 
             // Handle actions emitted by the dock within the MainDesktopUI
@@ -427,7 +421,7 @@ pub enum MainDesktopUiAction {
     DockSave,
     /// Load the room panel state from the AppState to the dock.
     DockLoad,
-    /// Close all tabs (used during logout)
+    /// Close all tabs in the dock; see [`MainDesktopUI::close_all_tabs()`]
     CloseAllTabs,
     None,
 }

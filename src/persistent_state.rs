@@ -183,25 +183,6 @@ pub async fn save_session(
     Ok(())
 }
 
-pub async fn delete_session(user_id: Option<OwnedUserId>) -> anyhow::Result<()> {
-    let Some(user_id) = user_id.or_else(most_recent_user_id) else {
-        log!("Could not find previous latest User ID");
-        bail!("Could not find previous latest User ID");
-    };
-    let session_file = session_file_path(&user_id);
-    if !session_file.exists() {
-        log!("Could not find previous session file for user {user_id}");
-        bail!("Could not find previous session file");
-    }
-    if let Err(err) = fs::remove_file(&session_file).await {
-        log!("Failed to delete session file {}: {}", session_file.display(), err);
-        bail!("Failed to delete session file");
-    } else {
-        log!("Successfully deleted session file: {}", session_file.display());
-    }
-    Ok(())
-}
-
 /// Remove the LATEST_USER_ID_FILE_NAME file if it exists
 /// 
 /// Returns:

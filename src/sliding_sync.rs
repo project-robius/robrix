@@ -388,11 +388,9 @@ pub enum MatrixRequest {
 
 /// Submits a request to the worker thread to be executed asynchronously.
 pub fn submit_async_request(req: MatrixRequest) {
-    if let Ok(sender_guard) = REQUEST_SENDER.lock() {
-        if let Some(sender) = sender_guard.as_ref() {
-            sender.send(req)
-                .expect("BUG: async worker task receiver has died!");
-        }
+    if let Some(sender) = REQUEST_SENDER.lock().unwrap().as_ref() {
+        sender.send(req)
+            .expect("BUG: async worker task receiver has died!");
     }
 }
 
@@ -556,7 +554,6 @@ async fn async_worker(
                     SignalToUI::set_ui_signal();
                 });
             }
-
 
             MatrixRequest::SyncRoomMemberList { room_id } => {
                 let (timeline, sender) = {
@@ -1136,7 +1133,7 @@ async fn async_worker(
 
 
 /// The single global Tokio runtime that is used by all async tasks.
-static TOKIO_RUNTIME: LazyLock<Mutex<Option<tokio::runtime::Runtime>>> = LazyLock::new(|| Mutex::new(None));
+static TOKIO_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
@@ -1150,28 +1147,20 @@ static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
     || Arc::new(Notify::new())
 );
 
-pub fn start_matrix_tokio(initial_flag: bool) -> Result<()> {
-    let rt_handle = { // Scope for mutex guard
-    let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
-        if let Some(existing_rt) = rt_guard.as_ref() {
-            existing_rt.handle().clone()
-        } else {
-            // Create a new Tokio runtime
+pub fn start_matrix_tokio() -> Result<()> {
+    let rt_handle = {
+        let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
+        let runtime = rt_guard.get_or_insert_with(|| {
             log!("Creating new Tokio runtime...");
             let new_rt = tokio::runtime::Runtime::new().unwrap();
-            let handle = new_rt.handle().clone();
-            *rt_guard = Some(new_rt); // Store the new runtime
-            log!("New Tokio runtime created and stored.");
-            handle
-        }
+            new_rt
+        });
+        runtime.handle().clone()
     };
 
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
-    {
-        let mut sender_guard = REQUEST_SENDER.lock().unwrap();
-        *sender_guard = Some(sender);
-    }
+    *REQUEST_SENDER.lock().unwrap() = Some(sender);
 
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
     // Start a high-level async task that will start and monitor all other tasks.
@@ -1181,7 +1170,7 @@ pub fn start_matrix_tokio(initial_flag: bool) -> Result<()> {
         let mut worker_join_handle = rt.spawn(async_worker(receiver, login_sender));
 
         // Start the main loop that drives the Matrix client SDK.
-        let mut main_loop_join_handle = rt.spawn(async_main_loop(initial_flag, login_receiver));
+        let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
         
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
@@ -1227,8 +1216,6 @@ pub fn start_matrix_tokio(initial_flag: bool) -> Result<()> {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
-                            // when abort async_join_handler it will give a error maybe show user "Stop Rooms list update"  better
-                            // ueue_popup_notification("Stop Rooms list update".to_string());
                         },
                         Err(e) => {
                             error!("BUG: failed to join async worker task: {e:?}");
@@ -1306,18 +1293,12 @@ static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
 
 pub fn get_client() -> Option<Client> {
-    match CLIENT.lock() {
-        Ok(guard) => guard.clone(),
-        Err(e) => {
-            error!("Failed to acquire CLIENT lock: {}", e);
-            None
-        }
-    }
+    CLIENT.lock().unwrap().clone()
 }
 
 /// Sets the global Matrix client instance.
 /// This replaces any existing client with the new one.
-pub fn set_client(client: Client) {
+fn set_client(client: Client) {
     if let Ok(mut client_guard) = CLIENT.lock() {
         *client_guard = Some(client);
     } else {
@@ -1453,7 +1434,6 @@ impl From<room_list_service::Room> for RoomListServiceRoomInfo {
 }
 
 async fn async_main_loop(
-    initial_flag: bool,
     mut login_receiver: Receiver<LoginRequest>,
 ) -> Result<()> {
     // only init subscribe once
@@ -1470,17 +1450,11 @@ async fn async_main_loop(
         cli_parse_result.as_ref().is_ok(),
         cli_has_valid_username_password,
     );
-    let mut wait_for_login = !cli_has_valid_username_password && (
+    let wait_for_login = !cli_has_valid_username_password && (
         most_recent_user_id.is_none()
             || std::env::args().any(|arg| arg == "--login-screen" || arg == "--force-login")
     );
 
-    // if not first time run this function, we need to force wait for login
-    if !initial_flag {
-        wait_for_login = true;
-    }
-
-    log!("is initial {} ? Waiting for login? {}", initial_flag , wait_for_login);
 
     let new_login_opt = if !wait_for_login {
         let specified_username = cli_parse_result.as_ref().ok().and_then(|cli|
@@ -2835,61 +2809,22 @@ enum RefreshState {
 }
 
 async fn logout_and_refresh() -> Result<RefreshState> {
-
-
     // Collect all errors encountered during the logout process
     let mut errors = Vec::new();
     
     log!("Starting logout process...");
-    let client = match get_client() {
-        Some(client) => client,
-        None => {
-            let error_msg = "Logout failed: No active client found".to_string();
-            log!("Error: {}", error_msg);
-            Cx::post_action(LoginAction::LogoutFailure(error_msg.clone()));
-            return Err(anyhow::anyhow!(error_msg));
-        }
+    let Some(client) = get_client() else {
+        let error_msg = "Logout failed: No active client found";
+        log!("Error: {}", error_msg);
+        Cx::post_action(LoginAction::LogoutFailure(error_msg.to_string()));
+        return Err(anyhow::anyhow!(error_msg));
     };
 
-    if let Some(sync_service) = get_sync_service() {
-        log!("Stopping sync service...");
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(3),
-            sync_service.stop()
-        ).await {
-            Ok(()) => log!("Sync service stopped successfully."),
-            Err(e) => { // Timeout
-                 let error_msg = format!("Stopping sync service timed out: {}", e);
-                 log!("Warning: {}", error_msg);
-                 errors.push(error_msg);
-            }
-        }
-    } else {
-        log!("No sync service found to stop.");
-    }
+    let sync_service = get_sync_service().unwrap();
+    sync_service.stop().await;
 
-    log!("Clearing request sender...");
-    {
-        let mut sender_guard = REQUEST_SENDER.lock().unwrap();
-        *sender_guard = None;
-        log!("Request sender cleared.");
-    }
-
-    // Abort core async tasks (with timeout)
-    // log!("Aborting core async tasks...");
-    // match tokio::time::timeout(
-    //     std::time::Duration::from_secs(3),
-    //     abort_core_tasks() // Assuming abort_core_tasks doesn't return Result
-    // ).await {
-    //     Ok(_) => log!("Core async tasks aborted successfully."),
-    //     Err(e) => {
-    //         let error_msg = format!("Aborting core tasks timed out: {}", e);
-    //         log!("Warning: {}", error_msg);
-    //         errors.push(error_msg);
-    //     }
-    // }
-
-    // Perform server-side logout (with timeout)
+    REQUEST_SENDER.lock().unwrap().take();
+    log!("Request sender cleared.");
 
     // Initialize as false
     let mut logout_successful = false; 
@@ -2982,7 +2917,7 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     // Restart the Matrix tokio runtime
     // This is a critical step; failure might prevent future logins
     log!("Restarting Matrix tokio runtime...");
-    if let Err(e) = start_matrix_tokio(false) {
+    if let Err(e) = start_matrix_tokio() {
         let error_msg = format!("Failed to restart Matrix runtime: {}. Manual app restart might be required to log in again.", e);
         log!("Error: {}", error_msg);
         errors.push(error_msg.clone());

@@ -83,7 +83,7 @@ live_design! {
                 confirm_button = <RobrixIconButton> {
                     width: Fit, height: Fit,
                     padding: 10,
-                    draw_bg: { color: (COLOR_DANGER_RED) },
+                    draw_bg: { color: (COLOR_ACTIVE_PRIMARY) },
                     text: "Confirm"
                     draw_text: {
                         color: #FFFFFF
@@ -101,19 +101,17 @@ pub struct LogoutConfirmModal {
     #[deref] view: View,
 }
 
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug)]
 pub enum LogoutConfirmModalAction {
-    None,
+    Open,
     Cancel,
     Confirm,
 }
 
 impl Widget for LogoutConfirmModal {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Need to call widget_match_event BEFORE view.handle_event
-        // if we want to intercept actions like ButtonAction::Clicked
-        self.widget_match_event(cx, event, scope);
         self.view.handle_event(cx, event, scope);
+        self.widget_match_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -122,17 +120,24 @@ impl Widget for LogoutConfirmModal {
 }
 
 impl WidgetMatchEvent for LogoutConfirmModal {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+       let widget_uid = self.widget_uid();
         let cancel_button = self.button(id!(cancel_button));
         let confirm_button = self.button(id!(confirm_button));
-        if cancel_button.clicked(actions) {
-            log!("Cancel button clicked in LogoutConfirmModal");
-            cx.action(LogoutConfirmModalAction::Cancel);
-            log!("Sent LogoutConfirmModalAction::Cancel as global action");
-        } else if confirm_button.clicked(actions) {
-            log!("Confirm button clicked in LogoutConfirmModal");
-            cx.action(LogoutConfirmModalAction::Confirm);
-            log!("Sent LogoutConfirmModalAction::Confirm as global action");
+        
+        let cancel_button_clicked = cancel_button.clicked(actions);
+        let modal_dismissed = actions
+            .iter()
+            .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
+            
+        if cancel_button_clicked || modal_dismissed {
+            if !modal_dismissed {
+                cx.widget_action(widget_uid, &scope.path, LogoutConfirmModalAction::Cancel);
+            }
+        }
+        
+        if confirm_button.clicked(actions) {
+            cx.widget_action(widget_uid, &scope.path, LogoutConfirmModalAction::Confirm);
         }
     }
 }
@@ -177,20 +182,4 @@ impl LogoutConfirmModalRef {
             .unwrap_or_default()
     }
 
-    /// Shows the modal dialog.
-    pub fn open(&self, cx: &mut Cx) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.view.redraw(cx);
-            let widget_uid = inner.widget_uid();
-            cx.widget_action(widget_uid, &Scope::empty().path, ModalAction::None);
-        }
-    }
-
-    /// Hides the modal dialog.
-    pub fn close(&self, cx: &mut Cx) {
-        if let Some(inner) = self.borrow_mut() {
-            let widget_uid = inner.widget_uid();
-            cx.widget_action(widget_uid, &Scope::empty().path, ModalAction::Dismissed);
-        }
-    }
 }

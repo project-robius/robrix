@@ -200,23 +200,20 @@ impl MatchEvent for App {
         self.update_login_visibility(cx);
 
         log!("App::handle_startup(): starting matrix sdk loop");
-        crate::sliding_sync::start_matrix_tokio(true).unwrap();
+        crate::sliding_sync::start_matrix_tokio().unwrap();
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
             if let Some(logout_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
                 match logout_action {
-                    LogoutConfirmModalAction::None => {
-                        log!("App received LogoutConfirmModalAction::None");
+                    LogoutConfirmModalAction::Open=> {
                         self.ui.modal(id!(logout_confirm_modal)).open(cx)
                     },
                     LogoutConfirmModalAction::Cancel => {
-                        log!("App received LogoutConfirmModalAction::Cancel");
                         self.ui.modal(id!(logout_confirm_modal)).close(cx);
                     },
                     LogoutConfirmModalAction::Confirm => {
-                        log!("App received LogoutConfirmModalAction::Confirm");
                         self.ui.modal(id!(logout_confirm_modal)).close(cx);
                         submit_async_request(MatrixRequest::Logout);
                     },

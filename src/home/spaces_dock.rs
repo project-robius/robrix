@@ -105,7 +105,10 @@ live_design! {
             draw_icon: {
                 svg_file: (ICON_LOGOUT),
                 fn get_color(self) -> vec4 {
-                    return (COLOR_DANGER_RED);
+                    if self.hover {
+                        return (COLOR_DANGER_RED);
+                    }
+                    return #666666
                 }
             }
 
@@ -213,8 +216,8 @@ pub struct LogoutButton{
 
 impl Widget for LogoutButton{
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
-        self.view.handle_event(cx, event, scope)
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -226,8 +229,7 @@ impl WidgetMatchEvent for LogoutButton {
     fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
         let button = self.button(id!(logout_button));
         if button.clicked(actions) {
-            cx.action(LogoutConfirmModalAction::None);
-            log!("Sent LogoutConfirmModalAction::None to root widget");
+            cx.action(LogoutConfirmModalAction::Open);
             self.view.redraw(cx);
         } 
     }
