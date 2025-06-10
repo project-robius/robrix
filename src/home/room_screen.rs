@@ -3365,7 +3365,6 @@ fn populate_message_view(
         item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
         item.timestamp(id!(profile.timestamp2)).set_date_time(cx, dt);
     }
-    
 
     if message.is_edited() {
         log!("Message {item_id} is edited, setting latest edit indicator");
