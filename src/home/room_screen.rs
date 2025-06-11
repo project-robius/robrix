@@ -394,7 +394,7 @@ live_design! {
 
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
-    ImageMessage = <Message> {
+    pub ImageMessage = <Message> {
         body = {
             content = {
                 width: Fill,
@@ -3333,7 +3333,7 @@ fn populate_message_view(
 
     // Set the timestamp.
     if let Some(dt) = unix_time_millis_to_datetime(&ts_millis) {
-        item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
+        item.timestamp(id!(profile.timestamp)).set_time(cx, dt);
     }
 
     (item, new_drawn_status)
@@ -3933,7 +3933,7 @@ fn populate_small_state_event(
         );
         // Draw the timestamp as part of the profile.
         if let Some(dt) = unix_time_millis_to_datetime(&event_tl_item.timestamp()) {
-            item.timestamp(id!(left_container.timestamp)).set_date_time(cx, dt);
+            item.timestamp(id!(left_container.timestamp)).set_time(cx, dt);
         }
         new_drawn_status.profile_drawn = profile_drawn;
         username
