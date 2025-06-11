@@ -1,26 +1,24 @@
-use std::{borrow::Cow, collections::BTreeMap, ops::DerefMut, sync::Arc};
+use std::{collections::BTreeMap, ops::DerefMut};
 
-use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::{
-    self, AnyOtherFullStateEventContent, InReplyToDetails, Profile, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, TimelineItem
+    Profile, TimelineDetails
 };
 use matrix_sdk::ruma::{
-    self, events::{
-        receipt::Receipt, room::message::{
-            AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, MessageFormat, MessageType, NoticeMessageEventContent, Relation, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent
-        }, sticker::StickerEventContent, AnyMessageLikeEvent, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent
-    }, room_id, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, RoomId, UserId
+    events::{
+        room::message::{
+            FormattedBody, MessageType, Relation, RoomMessageEventContent, TextMessageEventContent
+        }, AnyMessageLikeEventContent, AnyTimelineEvent
+    }, OwnedRoomId, OwnedUserId, RoomId
 };
 
 use crate::{
-    app::AppState, event_preview::text_preview_of_other_state, home::{new_message_context_menu::MessageAbilities, room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_text_message_content, ItemDrawnStatus}, search_screen::{SearchScreen, SearchState}}, media_cache::MediaCache, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, popup_list::enqueue_popup_notification, styles::COLOR_DANGER_RED, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::{current_user_id, submit_async_request, MatrixRequest, UserPowerLevels}, utils::unix_time_millis_to_datetime
+    app::AppState, home::{room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_text_message_content, ItemDrawnStatus}, search_screen::{SearchScreen, SearchState}}, media_cache::MediaCache, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, popup_list::enqueue_popup_notification, text_or_image::TextOrImageWidgetRefExt, timestamp::TimestampWidgetRefExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime
 };
 
-use crate::home::{
-    new_message_context_menu::MessageDetails,
-    rooms_list::RoomsListWidgetExt,
-};
+use crate::home::
+    rooms_list::RoomsListWidgetExt
+;
 
 
 live_design! {
@@ -334,9 +332,6 @@ pub fn search_result_draw_walk(
     scope: &mut Scope,
     walk: Walk,
 ) -> DrawStep {
-    let room_screen_widget_uid = room_screen.widget_uid();
-    
-
     while let Some(subview) = room_screen.view.draw_walk(cx, scope, walk).step() {
         // We only care about drawing the portal list.
         let portal_list_ref = subview.as_portal_list();
@@ -378,12 +373,7 @@ pub fn search_result_draw_walk(
                     let current_item = timeline_item;
 
                     match &current_item {
-                        SearchResultItem::DateDivider(millis) => {
-                            list.item(cx, item_id, live_id!(Empty))
-                                .draw_all(cx, &mut Scope::empty());
-                            continue;
-                        }
-                        SearchResultItem::Event(event) => match event {
+                        SearchResultItem::Event(event) => match &**event {
                             AnyTimelineEvent::MessageLike(msg) => {
                                 let mut content = msg.original_content();
                                 if let Some(replace) = msg.relations().replace {
@@ -392,14 +382,9 @@ pub fn search_result_draw_walk(
                                 match content {
                                     Some(AnyMessageLikeEventContent::RoomMessage(message)) => {
                                         let mut message = message.clone();
-                                        if let Some(relation) = &message.relates_to {
-                                            match relation {
-                                                Relation::Replacement(replace) => {
-                                                    let new_content = &replace.new_content;
-                                                    message.msgtype = new_content.msgtype.clone();
-                                                }
-                                                _ => {}
-                                            }
+                                        if let Some(Relation::Replacement(replace)) = &message.relates_to {
+                                            let new_content = &replace.new_content;
+                                            message.msgtype = new_content.msgtype.clone();
                                         }
 
                                         if let MessageType::Text(text) = &mut message.msgtype {
@@ -440,7 +425,6 @@ pub fn search_result_draw_walk(
                                             &room_screen.search_state.profile_infos,
                                             &mut media_cache,
                                             item_drawn_status,
-                                            room_screen_widget_uid,
                                         )
                                     }
                                     _ => {
@@ -537,7 +521,7 @@ pub fn handle_search_input(
                 room_screen
                     .search_result(id!(search_result_plane))
                     .set_search_criteria(cx, criteria.clone());
-                room_screen.view(id!(timeline)).set_visible(cx, false);
+                room_screen.view(id!(search_timeline)).set_visible(cx, false);
                 let room_id = selected_room.room_id();
                 let is_encrypted = room_screen.view.rooms_list(id!(rooms_list)).is_room_encrypted(room_id);
                 if is_encrypted && !criteria.include_all_rooms {
@@ -626,9 +610,7 @@ pub fn send_pagination_request_based_on_scroll_pos_for_search_result(
 #[derive(Clone, Debug)]
 pub enum SearchResultItem {
     /// The event that matches the search criteria.
-    Event(AnyTimelineEvent),
-    /// A date divider used to separate each search results.
-    DateDivider(MilliSecondsSinceUnixEpoch),
+    Event(Box<AnyTimelineEvent>),
     /// The room id used for displaying room header for all searched messages in a screen.
     RoomHeader(OwnedRoomId),
 }
@@ -642,18 +624,14 @@ pub fn populate_message_search_view(
     user_profiles: &BTreeMap<OwnedUserId, TimelineDetails<Profile>>,
     media_cache: &mut MediaCache,
     item_drawn_status: ItemDrawnStatus,
-    room_screen_widget_uid: WidgetUid,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let ts_millis = event_tl_item.origin_server_ts();
-    let has_html_body: bool;
 
     // Sometimes we need to call this up-front, so we save the result in this variable
     // to avoid having to call it twice.
-    let mut set_username_and_get_avatar_retval = None;
     let (item, used_cached_item) = match &message.msgtype {
         MessageType::Text(TextMessageEventContent { body, formatted, .. }) => {
-            has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
             let template = live_id!(MessageCard);
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
@@ -673,17 +651,12 @@ pub fn populate_message_search_view(
                         }
                     ),
                 );
-                populate_text_message_content(cx, &html_or_plaintext_ref, &body, formatted.as_ref());
+                populate_text_message_content(cx, &html_or_plaintext_ref, body, formatted.as_ref());
                 new_drawn_status.content_drawn = true;
                 (item, false)
             }
         }
-        mtype @ MessageType::Image(image) => {
-            has_html_body = match mtype {
-                MessageType::Image(image) => image.formatted.as_ref()
-                    .is_some_and(|f| f.format == MessageFormat::Html),
-                _ => false,
-            };
+        _mtype @ MessageType::Image(image) => {
             let template = live_id!(ImageMessage);
             let (item, existed) = list.item_with_existed(cx, item_id, template);
 
@@ -704,7 +677,6 @@ pub fn populate_message_search_view(
             }
         }
         MessageType::File(file_content) => {
-            has_html_body = file_content.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
             let template = live_id!(MessageCard);
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
@@ -713,13 +685,12 @@ pub fn populate_message_search_view(
                 new_drawn_status.content_drawn = populate_file_message_content(
                     cx,
                     &item.html_or_plaintext(id!(content.message)),
-                    &file_content,
+                    file_content,
                 );
                 (item, false)
             }
         }
         MessageType::Audio(audio) => {
-            has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
             let template = live_id!(MessageCard);
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
@@ -728,13 +699,12 @@ pub fn populate_message_search_view(
                 new_drawn_status.content_drawn = populate_audio_message_content(
                     cx,
                     &item.html_or_plaintext(id!(content.message)),
-                    &audio,
+                    audio,
                 );
                 (item, false)
             }
         }
         other => {
-            has_html_body = false;
             let (item, existed) = list.item_with_existed(cx, item_id, live_id!(MessageCard));
             if existed && item_drawn_status.content_drawn {
                 (item, true)
@@ -759,14 +729,12 @@ pub fn populate_message_search_view(
     } else {
         // log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
         let username_label = item.label(id!(content.username));
-        let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
-                item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
-                    cx,
-                    event_tl_item.room_id(),
-                    event_tl_item.sender(),
-                    user_profiles.get(event_tl_item.sender()),
-                    Some(event_tl_item.event_id()),
-                )
+        let (username, profile_drawn) = item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
+                cx,
+                event_tl_item.room_id(),
+                event_tl_item.sender(),
+                user_profiles.get(event_tl_item.sender()),
+                Some(event_tl_item.event_id()),
             );
             username_label.set_text(cx, &username);
             new_drawn_status.profile_drawn = profile_drawn;
@@ -779,12 +747,7 @@ pub fn populate_message_search_view(
 
     // Set the timestamp.
     if let Some(dt) = unix_time_millis_to_datetime(&ts_millis) {
-        // format as AM/PM 12-hour time
-        item.label(id!(profile.timestamp))
-            .set_text(cx, &format!("{}", dt.time().format("%l:%M %P")));
-        item.label(id!(profile.datestamp))
-            .set_text(cx, &format!("{}", dt.date_naive()));
-
+        item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
     } else {
         item.label(id!(profile.timestamp))
             .set_text(cx, &format!("{}", ts_millis.get()));

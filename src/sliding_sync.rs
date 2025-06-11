@@ -11,7 +11,7 @@ use matrix_sdk::{
         api::client::{filter::RoomEventFilter, receipt::create_receipt::v3::ReceiptType, search::search_events::v3::{Categories, Criteria, EventContext, OrderBy, Request}}, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
-            }, AnyTimelineEvent, FullStateEventContent, MessageLikeEventType, StateEventType
+            }, FullStateEventContent, MessageLikeEventType, StateEventType
         }, matrix_uri::MatrixId, uint, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState
 };
@@ -1170,19 +1170,8 @@ async fn async_worker(
                                         })
                                     });
                                 }
-                                let timestamp = match event {
-                                    AnyTimelineEvent::MessageLike(ref event) => {
-                                        if let Some(replace) = event.relations().replace {
-                                            replace.origin_server_ts()
-                                        } else {
-                                            event.origin_server_ts()
-                                        }
-                                    }
-                                    _ => event.origin_server_ts(),
-                                };
                                 let room_id = event.room_id().to_owned();
-                                items.push(SearchResultItem::Event(event));
-                                items.push(SearchResultItem::DateDivider(timestamp));
+                                items.push(SearchResultItem::Event(Box::new(event)));
                                 if include_all_rooms {
                                     if let Some(ref mut last_room_id) = last_room_id {
                                         if last_room_id != &room_id {

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ops::DerefMut};
+use std::collections::BTreeMap;
 
 use imbl::Vector;
 use makepad_widgets::*;
@@ -6,7 +6,7 @@ use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use rangemap::RangeSet;
 
-use crate::{app::AppState, home::{room_screen, room_search_result::{self, handle_search_input, SearchResultItem, SearchResultWidgetExt}, rooms_list::RoomsListRef}, shared::message_search_input_bar::MessageSearchAction, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::{home::room_search_result::{self, handle_search_input, SearchResultItem, SearchResultWidgetExt}, shared::message_search_input_bar::MessageSearchAction, sliding_sync::{submit_async_request, MatrixRequest}};
 /// States that are necessary to display search results.
 #[derive(Default)]
 pub struct SearchState {
@@ -165,92 +165,57 @@ impl Widget for SearchScreen {
         room_search_result::search_result_draw_walk(self, cx, scope, walk)
     }
 }
-
-pub fn search_result_draw_walk(
-    room_screen: &mut SearchScreen,
-    cx: &mut Cx2d,
-    scope: &mut Scope,
-    walk: Walk,
-) -> DrawStep {
-    let room_screen_widget_uid = room_screen.widget_uid();
-    while let Some(subview) = room_screen.view.draw_walk(cx, scope, walk).step() {
-        // We only care about drawing the portal list.
-        let portal_list_ref = subview.as_portal_list();
-        let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
-            error!("!!! RoomScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
-            continue;
-        };
-        let tl_items = &room_screen.search_state.items;
-        // Set the portal list's range based on the number of timeline items.
-        let last_item_id = tl_items.len();
-        let list = list_ref.deref_mut();
-        list.set_item_range(cx, 0, last_item_id);
-
-        while let Some(item_id) = list.next_visible_item(cx) {
-            if item_id == 0 && room_screen.search_state.next_batch_token.is_none() && last_item_id > 0 {
-                WidgetRef::new_from_ptr(cx, room_screen.no_more_template)
-                    .as_label()
-                    .draw_all(cx, &mut Scope::empty());
-            }
-        }
-    }
-    DrawStep::done()
-}
 impl WidgetMatchEvent for SearchScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, scope: &mut Scope) {
         for action in actions.iter() {
             handle_search_input(self, cx, action, scope);
-            match action.downcast_ref().cloned() {
-                Some(SearchResultAction::Ok(SearchResultReceived{
-                    items,
-                    profile_infos,
-                    search_term,
-                    count,
-                    highlights,
-                    next_batch
-                })) => {
-                    self.view
-                        .search_result(id!(search_result_plane)).hide_top_space(cx);
-                    let mut criteria = self.view
-                        .search_result(id!(search_result_plane))
-                        .get_search_criteria();
-                    if criteria.search_term != *search_term {
-                        self.search_state.items = Vector::new();
-                    }
-                    self.search_state.profile_infos = profile_infos.clone();
-                    cx.action(MessageSearchAction::SetText(search_term.clone()));
-                    criteria.search_term = search_term.clone();
-                    self.view
-                        .search_result(id!(search_result_plane))
-                        .set_search_criteria(cx, criteria);
-                    self.view
-                        .search_result(id!(search_result_plane))
-                        .set_result_count(cx, count);
-                    self.view.view(id!(search_timeline)).set_visible(cx, true);
-                    self.search_state
-                        .content_drawn_since_last_update
-                        .clear();
-                    self.search_state
-                        .profile_drawn_since_last_update
-                        .clear();
-                    for item in items {
-                        self.search_state.items.push_front(item.clone());
-                    }
-                    let search_portal_list = self.portal_list(id!(search_timeline.list));
-                    search_portal_list.set_first_id_and_scroll(
-                        0,
-                        0.0,
-                    );
-                    // search_portal_list.set_first_id_and_scroll(
-                    //     self.search_state.items.len().saturating_sub(1),
-                    //     0.0,
-                    // );
-                    // search_portal_list.set_tail_range(true);
-                    self.search_state.highlighted_strings = highlights;
-                    self.search_state.next_batch_token = next_batch;
-                    self.redraw(cx);
+            if let Some(SearchResultAction::Ok(SearchResultReceived {
+                items,
+                profile_infos,
+                search_term,
+                count,
+                highlights,
+                next_batch
+            })) = action.downcast_ref() {
+                self.view
+                    .search_result(id!(search_result_plane)).hide_top_space(cx);
+                let mut criteria = self.view
+                    .search_result(id!(search_result_plane))
+                    .get_search_criteria();
+                if criteria.search_term != *search_term {
+                    self.search_state.items = Vector::new();
                 }
-                _ => {}
+                self.search_state.profile_infos = profile_infos.clone();
+                cx.action(MessageSearchAction::SetText(search_term.clone()));
+                criteria.search_term = search_term.clone();
+                self.view
+                    .search_result(id!(search_result_plane))
+                    .set_search_criteria(cx, criteria);
+                self.view
+                    .search_result(id!(search_result_plane))
+                    .set_result_count(cx, *count);
+                self.view.view(id!(search_timeline)).set_visible(cx, true);
+                self.search_state
+                    .content_drawn_since_last_update
+                    .clear();
+                self.search_state
+                    .profile_drawn_since_last_update
+                    .clear();
+                for item in items {
+                    self.search_state.items.push_front(item.clone());
+                }
+                let search_portal_list = self.portal_list(id!(search_timeline.list));
+                if let Some(mut search_portal_list) = search_portal_list.borrow_mut() {
+                    search_portal_list.set_item_range(cx, 0, self.search_state.items.len());
+                }
+                search_portal_list.set_first_id_and_scroll(
+                    self.search_state.items.len().saturating_sub(1),
+                    0.0,
+                );
+                search_portal_list.set_tail_range(true);
+                self.search_state.highlighted_strings = highlights.to_vec();
+                self.search_state.next_batch_token = next_batch.to_owned();
+                self.redraw(cx);
             }
             if self.view.button(id!(search_all_rooms_button)).clicked(actions) {
                 let mut criteria = self.search_result(id!(search_result_plane)).get_search_criteria();
