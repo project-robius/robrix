@@ -110,17 +110,13 @@ impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {            
         self.widget_match_event(cx, event, scope); // invokes `WidgetMatchEvent` impl
         self.view.handle_event(cx, event, scope);
-        if !self.drawn_previously {
-            if let Some(app_state) = scope.data.get_mut::<AppState>() {
-                app_state.rooms_list_ref = self.view.rooms_list(id!(rooms_list));
-            }
-        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // When changing from mobile to Desktop, we need to restore the rooms panel state
         if !self.drawn_previously {
             cx.action(MainDesktopUiAction::DockLoad);
+            cx.set_global(self.view.rooms_list(id!(rooms_list)));
             self.drawn_previously = true;
         }
         self.view.draw_walk(cx, scope, walk)

@@ -17,8 +17,6 @@ pub mod spaces_dock;
 pub mod welcome_screen;
 pub mod event_reaction_list;
 pub mod new_message_context_menu;
-pub mod search_screen;
-pub mod room_search_result;
 
 pub fn live_design(cx: &mut Cx) {
     home_screen::live_design(cx);
@@ -30,7 +28,6 @@ pub fn live_design(cx: &mut Cx) {
     new_message_context_menu::live_design(cx);
     invite_screen::live_design(cx);
     room_screen::live_design(cx);
-    room_search_result::live_design(cx);
     room_read_receipt::live_design(cx);
     rooms_sidebar::live_design(cx);
     main_mobile_ui::live_design(cx);
@@ -39,5 +36,4 @@ pub fn live_design(cx: &mut Cx) {
     welcome_screen::live_design(cx);
     light_themed_dock::live_design(cx);
     event_reaction_list::live_design(cx);
-    search_screen::live_design(cx);
 }

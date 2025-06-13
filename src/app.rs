@@ -169,6 +169,7 @@ impl LiveRegister for App {
         makepad_widgets::live_design(cx);
         crate::shared::live_design(cx);
         crate::room::live_design(cx);
+        crate::right_panel::live_design(cx);
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
@@ -427,7 +428,8 @@ pub struct AppState {
     pub window_geom: Option<event::WindowGeom>,
     /// The media cache for each room
     pub media_cache: HashMap<OwnedRoomId, Arc<Mutex<MediaCache>>>,
-    pub rooms_list_ref: RoomsListRef
+    /// Whether the right panel is currently open.
+    pub right_panel_open: bool,
 }
 
 /// A saved instance of the state of the main desktop UI's dock.
