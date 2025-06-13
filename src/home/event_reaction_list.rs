@@ -255,7 +255,7 @@ impl ReactionListRef {
     pub fn set_list(
         &mut self,
         cx: &mut Cx,
-        event_tl_item_reactions: &Option<&ReactionsByKeyBySender>,
+        event_tl_item_reactions: Option<&ReactionsByKeyBySender>,
         room_id: OwnedRoomId,
         timeline_event_item_id: TimelineEventItemId,
         _id: usize,

@@ -3292,7 +3292,7 @@ fn populate_message_view(
     if !used_cached_item {
         item.reaction_list(id!(content.reaction_list)).set_list(
             cx,
-            &event_tl_item.content().reactions(),
+            event_tl_item.content().reactions(),
             room_id.to_owned(),
             event_tl_item.identifier(),
             item_id,
