@@ -120,8 +120,7 @@ impl Widget for LogoutConfirmModal {
 }
 
 impl WidgetMatchEvent for LogoutConfirmModal {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-       let widget_uid = self.widget_uid();
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let cancel_button = self.button(id!(cancel_button));
         let confirm_button = self.button(id!(confirm_button));
         
@@ -132,12 +131,12 @@ impl WidgetMatchEvent for LogoutConfirmModal {
             
         if cancel_button_clicked || modal_dismissed {
             if !modal_dismissed {
-                cx.widget_action(widget_uid, &scope.path, LogoutConfirmModalAction::Cancel);
+                cx.action(LogoutConfirmModalAction::Cancel);
             }
         }
         
         if confirm_button.clicked(actions) {
-            cx.widget_action(widget_uid, &scope.path, LogoutConfirmModalAction::Confirm);
+            cx.action(LogoutConfirmModalAction::Confirm);
         }
     }
 }

@@ -105,10 +105,7 @@ live_design! {
             draw_icon: {
                 svg_file: (ICON_LOGOUT),
                 fn get_color(self) -> vec4 {
-                    if self.hover {
-                        return (COLOR_DANGER_RED);
-                    }
-                    return #666666
+                    return (COLOR_DANGER_RED);
                 }
             }
 
