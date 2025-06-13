@@ -156,7 +156,7 @@ async fn login(
                 .send()
                 .await?;
             if client.matrix_auth().logged_in() {
-                log!("Logged in successfully? {:?}", client.matrix_auth().logged_in());
+                log!("Logged in successfully.");
                 let status = format!("Logged in as {}.\n → Loading rooms...", cli.user_id);
                 // enqueue_popup_notification(status.clone());
                 enqueue_rooms_list_update(RoomsListUpdate::Status { status });
@@ -1713,7 +1713,7 @@ async fn update_room(
         }
 
         if let Some(new_room_name) = new_room_name {
-            if old_room.room.cached_display_name().map(|f| f.to_room_alias_name()).as_ref() != Some(&new_room_name) {
+            if old_room.room.cached_display_name().map(|room_name| room_name.to_room_alias_name()).as_ref() != Some(&new_room_name) {
                 log!("Updating room name for room {} to {}", new_room_id, new_room_name);
                 enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                     room_id: new_room_id.clone(),
@@ -1866,8 +1866,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
     let timeline = if let Ok(tl_arc) = room.timeline().await {
         Arc::new(tl_arc)
     } else {
-        let builder = room.timeline_builder()
-            .track_read_marker_and_receipts();
+        let builder = room.timeline_builder().track_read_marker_and_receipts();
         Arc::new(builder.build().await.map_err(|_| anyhow::anyhow!("BUG: room timeline not found for room {room_id}"))?)
     };
     let latest_event = timeline.latest_event().await;

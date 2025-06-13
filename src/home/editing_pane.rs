@@ -315,10 +315,10 @@ impl Widget for EditingPane {
                                     //       But this is a problem, since the body of the text/emote message might not be markdown.
 
                                     // TODO: also handle "/html" or "/plain" prefixes, just like when sending new messages.
-                                    MessageType::Text(_) => EditedContent::RoomMessage(
+                                    MessageType::Text(_text) => EditedContent::RoomMessage(
                                         RoomMessageEventContentWithoutRelation::text_markdown(&edited_text),
                                     ),
-                                    MessageType::Emote(_) => EditedContent::RoomMessage(
+                                    MessageType::Emote(_emote) => EditedContent::RoomMessage(
                                         RoomMessageEventContentWithoutRelation::emote_markdown(
                                             &edited_text,
                                         ),
