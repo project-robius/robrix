@@ -19,11 +19,11 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::RoomsPanelRestoreAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, main_desktop_ui::GlobalRoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::RoomsPanelRestoreAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, main_desktop_ui::GlobalRoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem}, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -39,6 +39,12 @@ const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
 
+/// The maximum number of timeline items to search through 
+/// when looking for a particular event.
+///
+/// This is a safety measure to prevent the main UI thread
+/// from getting into a long-running loop if an event cannot be found quickly.
+const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 
 live_design! {
     use link::theme::*;
@@ -56,6 +62,7 @@ live_design! {
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
     use crate::profile::user_profile::UserProfileSlidingPane;
+    use crate::home::edited_indicator::*;
     use crate::home::editing_pane::*;
     use crate::home::event_reaction_list::*;
     use crate::home::loading_pane::*;
@@ -274,9 +281,10 @@ live_design! {
         // A preview of the earlier message that this message was in reply to.
         replied_to_message = <RepliedToMessage> {
             flow: Right
-            margin: { bottom: 5.0, top: 10.0 }
+            margin: { bottom: 3, top: 10 }
             replied_to_message_content = {
                 margin: { left: 29 }
+                padding: { bottom: 10 }
             }
         }
 
@@ -284,7 +292,7 @@ live_design! {
             width: Fill,
             height: Fit
             flow: Right,
-            padding: 10.0,
+            padding: {top: 0, bottom: 10, left: 10, right: 10},
 
             profile = <View> {
                 align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
@@ -293,8 +301,8 @@ live_design! {
                 margin: {top: 4.5, right: 10}
                 flow: Down,
                 avatar = <Avatar> {
-                    width: 50.,
-                    height: 50.
+                    width: 48.,
+                    height: 48.
                     // draw_bg: {
                     //     fn pixel(self) -> vec4 {
                     //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -307,8 +315,9 @@ live_design! {
                     // }
                 }
                 timestamp = <Timestamp> {
-                    margin: { top: 3.9 }
+                    margin: { top: 5.9 }
                 }
+                edited_indicator = <EditedIndicator> {}
             }
             content = <View> {
                 width: Fill,
@@ -368,6 +377,7 @@ live_design! {
                 timestamp = <Timestamp> {
                     margin: {top: 2.5}
                 }
+                edited_indicator = <EditedIndicator> { }
             }
             content = <View> {
                 width: Fill,
@@ -1009,7 +1019,10 @@ impl Widget for RoomScreen {
                 log!("Add location button clicked; requesting current location...");
                 if let Err(_e) = init_location_subscriber(cx) {
                     error!("Failed to initialize location subscriber");
-                    enqueue_popup_notification(String::from("Failed to initialize location services."));
+                    enqueue_popup_notification(PopupItem {
+                        message: String::from("Failed to initialize location services."), 
+                        auto_dismissal_duration: None
+                    });
                 }
                 self.show_location_preview(cx);
             }
@@ -1081,6 +1094,29 @@ impl Widget for RoomScreen {
                     message_input.set_text(cx, "");
                     room_input_bar.enable_send_message_button(cx, false);
 
+                }
+            }
+
+            // Handle the user pressing the up arrow in an empty message input box
+            // to edit their latest sent message.
+            if message_input.text().is_empty() {
+                if let Some(KeyEvent {
+                    key_code: KeyCode::ArrowUp,
+                    modifiers: KeyModifiers { shift: false, control: false, alt: false, logo: false },
+                    ..
+                }) = message_input.key_down_unhandled(actions) {
+                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    if let Some(latest_sent_msg) = tl.items
+                        .iter()
+                        .rev()
+                        .take(MAX_ITEMS_TO_SEARCH_THROUGH)
+                        .find_map(|item| item.as_event().filter(|ev| ev.is_editable()).cloned())
+                    {
+                        let room_id = tl.room_id.clone();
+                        self.show_editing_pane(cx, latest_sent_msg, room_id);
+                    } else {
+                        enqueue_popup_notification(PopupItem { message: "No recent message available to edit.".to_string(), auto_dismissal_duration: Some(3.0) });
+                    }
                 }
             }
 
@@ -1709,7 +1745,10 @@ impl RoomScreen {
                 }
                 MatrixId::Room(room_id) => {
                     if self.room_id.as_ref() == Some(room_id) {
-                        enqueue_popup_notification("You are already viewing that room.".into());
+                        enqueue_popup_notification(PopupItem { 
+                            message: "You are already viewing that room.".into(), 
+                            auto_dismissal_duration: None 
+                        });
                         return true;
                     }
                     if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
@@ -1751,7 +1790,10 @@ impl RoomScreen {
                 log!("Opening URL \"{}\"", url);
                 if let Err(e) = robius_open::Uri::new(&url).open() {
                     error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                    enqueue_popup_notification(format!("Could not open URL: {url}"));
+                    enqueue_popup_notification(PopupItem {
+                        message: format!("Could not open URL: {url}"), 
+                        auto_dismissal_duration: None
+                    });
                 }
             }
             true
@@ -1762,7 +1804,10 @@ impl RoomScreen {
                 log!("Opening URL \"{}\"", url);
                 if let Err(e) = robius_open::Uri::new(&url).open() {
                     error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                    enqueue_popup_notification(format!("Could not open URL: {url}"));
+                    enqueue_popup_notification(PopupItem {
+                        message: format!("Could not open URL: {url}"), 
+                        auto_dismissal_duration: None
+                    });
                 }
             }
             true
@@ -1800,7 +1845,10 @@ impl RoomScreen {
                         }
                     }
                     if !success {
-                        enqueue_popup_notification("Couldn't find message in timeline to react to.".to_string());
+                        enqueue_popup_notification(PopupItem { 
+                            message: "Couldn't find message in timeline to react to.".to_string(), 
+                            auto_dismissal_duration: None 
+                        });
                         error!("MessageAction::React: couldn't find event [{}] {:?} to react to in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -1821,7 +1869,7 @@ impl RoomScreen {
                         }
                     }
                     if !success {
-                        enqueue_popup_notification("Could not find message in timeline to reply to.".to_string());
+                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to reply to.".to_string(), auto_dismissal_duration: None });
                         error!("MessageAction::Reply: couldn't find event [{}] {:?} to reply to in room {:?}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -1838,7 +1886,7 @@ impl RoomScreen {
                         self.show_editing_pane(cx, event_tl_item, tl.room_id.clone());
                     }
                     else {
-                        enqueue_popup_notification("Could not find message in timeline to edit.".to_string());
+                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to edit.".to_string(), auto_dismissal_duration: None });
                         error!("MessageAction::Edit: couldn't find event [{}] {:?} to edit in room {:?}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -1848,11 +1896,11 @@ impl RoomScreen {
                 }
                 MessageAction::Pin(_details) => {
                     // TODO
-                    enqueue_popup_notification("Pinning messages is not yet implemented.".to_string());
+                    enqueue_popup_notification(PopupItem { message: "Pinning messages is not yet implemented.".to_string(), auto_dismissal_duration: None });
                 }
                 MessageAction::Unpin(_details) => {
                     // TODO
-                    enqueue_popup_notification("Unpinning messages is not yet implemented.".to_string());
+                    enqueue_popup_notification(PopupItem { message: "Unpinning messages is not yet implemented.".to_string(), auto_dismissal_duration: None });
                 }
                 MessageAction::CopyText(details) => {
                     let Some(tl) = self.tl_state.as_mut() else { return };
@@ -1863,7 +1911,7 @@ impl RoomScreen {
                         cx.copy_to_clipboard(&text);
                     }
                     else {
-                        enqueue_popup_notification("Could not find message in timeline to copy text from.".to_string());
+                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to copy text from.".to_string(), auto_dismissal_duration: None});
                         error!("MessageAction::CopyText: couldn't find event [{}] {:?} to copy text from in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -1900,7 +1948,7 @@ impl RoomScreen {
                         }
                     }
                     if !success {
-                        enqueue_popup_notification("Could not find message in timeline to copy HTML from.".to_string());
+                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to copy HTML from.".to_string(), auto_dismissal_duration: None });
                         error!("MessageAction::CopyHtml: couldn't find event [{}] {:?} to copy HTML from in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -1914,7 +1962,7 @@ impl RoomScreen {
                         let matrix_to_uri = tl.room_id.matrix_to_event_uri(event_id);
                         cx.copy_to_clipboard(&matrix_to_uri.to_string());
                     } else {
-                        enqueue_popup_notification("Couldn't create permalink to message.".to_string());
+                        enqueue_popup_notification(PopupItem { message: "Couldn't create permalink to message.".to_string(), auto_dismissal_duration: None });
                         error!("MessageAction::CopyLink: no `event_id`: [{}] {:?} in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -1923,7 +1971,7 @@ impl RoomScreen {
                     }
                 }
                 MessageAction::ViewSource(_details) => {
-                    enqueue_popup_notification("Viewing an event's source is not yet implemented.".to_string());
+                    enqueue_popup_notification(PopupItem { message: "Viewing an event's source is not yet implemented.".to_string(), auto_dismissal_duration: None });
                     // TODO: re-use Franco's implementation below:
 
                     // let Some(tl) = self.tl_state.as_mut() else { continue };
@@ -1958,11 +2006,6 @@ impl RoomScreen {
                         continue;
                     };
                     let tl_idx = details.item_id;
-
-                    /// The maximum number of items to search through when looking for the earlier related message.
-                    /// This is a safety measure to prevent the main UI thread from getting stuck in a
-                    /// long-running loop if the related message is not found quickly.
-                    const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 50;
 
                     // Attempt to find the index of replied-to message in the timeline.
                     // Start from the current item's index (`tl_idx`)and search backwards,
@@ -2049,7 +2092,7 @@ impl RoomScreen {
                         }
                     }
                     if !success {
-                        enqueue_popup_notification("Couldn't find message in timeline to delete.".to_string());
+                        enqueue_popup_notification(PopupItem { message: "Couldn't find message in timeline to delete.".to_string(), auto_dismissal_duration: None });
                         error!("MessageAction::Redact: couldn't find event [{}] {:?} to react to in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -2059,7 +2102,7 @@ impl RoomScreen {
                 }
                 // MessageAction::Report(details) => {
                 //     // TODO
-                //     enqueue_popup_notification("Reporting messages is not yet implemented.".to_string());
+                //     enqueue_popup_notification(PopupItem { message: "Reporting messages is not yet implemented.".to_string(), auto_dismissal_duration: None });
                 // }
 
                 // This is handled within the Message widget itself.
@@ -2301,13 +2344,13 @@ impl RoomScreen {
         };
 
         let portal_list = self.portal_list(id!(list));
-        let message_input_box = self.text_input(id!(input_bar.message_input.text_input));
-        let editing_event = self.editing_pane(id!(editing_pane)).get_event_being_edited();
+        let message_input = self.text_input(id!(input_bar.message_input.text_input));
+        let editing_pane_state = self.editing_pane(id!(editing_pane)).save_state();
         let state = SavedState {
             first_index_and_scroll: Some((portal_list.first_id(), portal_list.scroll_position())),
-            message_input_state: message_input_box.save_state(),
+            message_input_state: message_input.save_state(),
             replying_to: tl.replying_to.clone(),
-            editing_event,
+            editing_pane_state,
         };
         tl.saved_state = state;
         // Store this Timeline's `TimelineUiState` in the global map of states.
@@ -2323,7 +2366,7 @@ impl RoomScreen {
             first_index_and_scroll,
             message_input_state,
             replying_to,
-            editing_event,
+            editing_pane_state,
         } = &mut tl_state.saved_state;
         // 1. Restore the position of the timeline.
         if let Some((first_index, scroll_from_first_id)) = first_index_and_scroll {
@@ -2348,10 +2391,11 @@ impl RoomScreen {
         }
 
         // 4. Restore the state of the editing pane.
-        if let Some(editing_event) = editing_event.take() {
-            self.show_editing_pane(cx, editing_event, tl_state.room_id.clone());
+        let editing_pane = self.editing_pane(id!(editing_pane));
+        if let Some(state) = editing_pane_state.take() {
+            editing_pane.restore_state(cx, state, tl_state.room_id.clone());
         } else {
-            self.editing_pane(id!(editing_pane)).force_hide(cx);
+            editing_pane.force_reset_hide(cx);
             self.on_hide_editing_pane(cx);
         }
     }
@@ -2365,7 +2409,6 @@ impl RoomScreen {
     ) {
         // If the room is already being displayed, then do nothing.
         if self.room_id.as_ref().is_some_and(|id| id == &room_id) { return; }
-        
 
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
@@ -2717,7 +2760,7 @@ enum MessageHighlightAnimationState {
 ///
 /// These are saved when navigating away from a timeline (upon `Hide`)
 /// and restored when navigating back to a timeline (upon `Show`).
-#[derive(Default, Debug)]
+#[derive(Default)]
 struct SavedState {
     /// The index of the first item in the timeline's PortalList that is currently visible,
     /// and the scroll offset from the top of the list's viewport to the beginning of that item.
@@ -2728,8 +2771,8 @@ struct SavedState {
     message_input_state: TextInputState,
     /// The event that the user is currently replying to, if any.
     replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
-    /// The event that the user is currently editing, if any.
-    editing_event: Option<EventTimelineItem>,
+    /// The state of the `EditingPane`, if any message was being edited.
+    editing_pane_state: Option<EditingPaneState>,
 }
 
 /// Returns info about the item in the list of `new_items` that matches the event ID
@@ -2854,6 +2897,16 @@ impl MessageOrSticker<'_> {
         match self {
             Self::Message(msg) => msg.in_reply_to(),
             _ => None,
+        }
+    }
+
+    /// Returns whether this message or sticker has been edited.
+    ///
+    /// Returns `false` for stickers, as they cannot be edited.
+    pub fn is_edited(&self) -> bool {
+        match self {
+            Self::Message(msg) => msg.is_edited(),
+            Self::Sticker(_) => false, // Stickers cannot be edited
         }
     }
 }
@@ -3365,6 +3418,13 @@ fn populate_message_view(
     // Set the timestamp.
     if let Some(dt) = unix_time_millis_to_datetime(ts_millis) {
         item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
+    }
+
+    if message.is_edited() {
+        item.edited_indicator(id!(profile.edited_indicator)).set_latest_edit(
+            cx,
+            event_tl_item,
+        );
     }
 
     (item, new_drawn_status)
