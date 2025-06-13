@@ -8,7 +8,7 @@
 use std::borrow::Cow;
 
 use matrix_sdk::ruma::events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent};
-use matrix_sdk_ui::timeline::{self, AnyOtherFullStateEventContent, EventTimelineItem, MemberProfileChange, MembershipChange, RoomMembershipChange, TimelineItemContent};
+use matrix_sdk_ui::timeline::{self, AnyOtherFullStateEventContent, EventTimelineItem, MemberProfileChange, MembershipChange, MsgLikeKind, RoomMembershipChange, TimelineItemContent};
 
 use crate::utils;
 
@@ -65,19 +65,33 @@ pub fn text_preview_of_timeline_item(
     sender_username: &str,
 ) -> TextPreview {
     match content {
-        TimelineItemContent::Message(m) => text_preview_of_message(m, sender_username),
-        TimelineItemContent::RedactedMessage => TextPreview::from((
-            String::from("[Message was deleted]"),
-            BeforeText::UsernameWithColon,
-        )),
-        TimelineItemContent::Sticker(sticker) => TextPreview::from((
-            format!("[Sticker]: <i>{}</i>", htmlize::escape_text(&sticker.content().body)),
-            BeforeText::UsernameWithColon,
-        )),
-        TimelineItemContent::UnableToDecrypt(_encrypted_msg) => TextPreview::from((
-            String::from("[Unable to decrypt message]"),
-            BeforeText::UsernameWithColon,
-        )),
+        TimelineItemContent::MsgLike(msg_like_content) => {
+            match &msg_like_content.kind {
+                MsgLikeKind::Message(msg) => text_preview_of_message(msg, sender_username),
+                MsgLikeKind::Redacted => TextPreview::from((
+                    String::from("[Message was deleted]"),
+                    BeforeText::UsernameWithColon,
+                )),
+                MsgLikeKind::Sticker(sticker) => TextPreview::from((
+                    format!("[Sticker]: <i>{}</i>", htmlize::escape_text(&sticker.content().body)),
+                    BeforeText::UsernameWithColon,
+                )),
+                MsgLikeKind::UnableToDecrypt(_encrypted_msg) => TextPreview::from((
+                    String::from("[Unable to decrypt message]"),
+                    BeforeText::UsernameWithColon,
+                )),
+                MsgLikeKind::Poll(poll_state) => TextPreview::from((
+                    format!(
+                        "[Poll]: {}",
+                        htmlize::escape_text(
+                            poll_state.fallback_text()
+                                .unwrap_or_else(|| poll_state.results().question)
+                        ),
+                    ),
+                    BeforeText::UsernameWithColon,
+                )),
+            }
+        }
         TimelineItemContent::MembershipChange(membership_change) => {
             text_preview_of_room_membership_change(membership_change, true)
                 .unwrap_or_else(|| TextPreview::from((
@@ -103,16 +117,6 @@ pub fn text_preview_of_timeline_item(
             format!("[Failed to parse <i>{}</i> state]", event_type),
             BeforeText::UsernameWithColon,
         )),
-        TimelineItemContent::Poll(poll_state) => TextPreview::from((
-            format!(
-                "[Poll]: {}",
-                htmlize::escape_text(
-                    poll_state.fallback_text()
-                        .unwrap_or_else(|| poll_state.results().question)
-                ),
-            ),
-            BeforeText::UsernameWithColon,
-        )),
         TimelineItemContent::CallInvite => TextPreview::from((
             String::from("[Call Invitation]"),
             BeforeText::UsernameWithColon,
@@ -131,10 +135,19 @@ pub fn plaintext_body_of_timeline_item(
     event_tl_item: &EventTimelineItem,
 ) -> String {
     match event_tl_item.content() {
-        TimelineItemContent::Message(m) => m.body().into(),
-        TimelineItemContent::RedactedMessage => "[Message was deleted]".into(),
-        TimelineItemContent::Sticker(sticker) => sticker.content().body.clone(),
-        TimelineItemContent::UnableToDecrypt(_encrypted_msg) => "[Unable to Decrypt]".into(),
+        TimelineItemContent::MsgLike(msg_likecontent) => {
+            match &msg_likecontent.kind {
+                MsgLikeKind::Message(msg) => msg.body().into(),
+                MsgLikeKind::Redacted => "[Message was deleted]".into(),
+                MsgLikeKind::Sticker(sticker) => sticker.content().body.clone(),
+                MsgLikeKind::UnableToDecrypt(_encrypted_msg) => "[Unable to Decrypt]".into(),
+                MsgLikeKind::Poll(poll_state) => {
+                    format!("[Poll]: {}", 
+                        poll_state.fallback_text().unwrap_or_else(|| poll_state.results().question)
+                    )
+                }
+            }
+        }
         TimelineItemContent::MembershipChange(membership_change) => {
             text_preview_of_room_membership_change(membership_change, false)
                 .unwrap_or_else(|| TextPreview::from((
@@ -163,11 +176,6 @@ pub fn plaintext_body_of_timeline_item(
         }
         TimelineItemContent::FailedToParseState { event_type, error, state_key } => {
             format!("Failed to parse {} state; key: {}. Error: {}", event_type, state_key, error)
-        }
-        TimelineItemContent::Poll(poll_state) => {
-            format!("[Poll]: {}", 
-                poll_state.fallback_text().unwrap_or_else(|| poll_state.results().question)
-            )
         }
         TimelineItemContent::CallInvite => String::from("[Call Invitation]"),
         TimelineItemContent::CallNotify => String::from("[Call Notification]"),
