@@ -606,12 +606,12 @@ impl Widget for RoomsList {
             if let RoomPreviewAction::Clicked(clicked_room_id) = list_action.as_widget_action().cast() {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
                     SelectedRoom::JoinedRoom {
-                        room_id: jr.room_id.clone(),
+                        room_id: jr.room_id.clone().into(),
                         room_name: jr.room_name.clone(),
                     }
                 } else if let Some(ir) = self.invited_rooms.borrow().get(&clicked_room_id) {
                     SelectedRoom::InvitedRoom {
-                        room_id: ir.room_id.to_owned(),
+                        room_id: ir.room_id.to_owned().into(),
                         room_name: ir.room_name.clone(),
                     }
                 } else {

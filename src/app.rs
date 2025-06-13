@@ -1,15 +1,15 @@
-use std::{collections::HashMap, fmt, str::{Chars, FromStr}};
+// Allow question_mark for implementing DeRon for SelectedRoom where room_name is optional.
+#![allow(clippy::question_mark)]
+use std::collections::HashMap;
 
 use makepad_widgets::{makepad_micro_serde::{DeRon, SerRon}, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, persistent_state::{save_room_panel, save_window_state}, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::current_user_id, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::current_user_id, utils::{room_name_or_id, DVec2Json, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 use serde::{
-    de::{self, MapAccess, SeqAccess, Visitor},
-    ser::SerializeStruct,
-    Deserialize, Deserializer, Serialize, Serializer,
+    Deserialize, Serialize,
 };
 use serde;
 use makepad_micro_serde::*;
@@ -120,32 +120,30 @@ live_design! {
                     <View> {
                         width: Fill, height: Fill,
                         flow: Overlay,
-
-                            home_screen_view = <View> {
-                                visible: false
-                                home_screen = <HomeScreen> {}
+                        home_screen_view = <View> {
+                            visible: false
+                            home_screen = <HomeScreen> {}
+                        }
+                        login_screen_view = <View> {
+                            visible: true
+                            login_screen = <LoginScreen> {}
+                        }
+                        app_tooltip = <CalloutTooltip> {}
+                        popup = <PopupNotification> {
+                            margin: {top: 45, right: 13},
+                            content: {
+                                <PopupList> {}
                             }
-                            login_screen_view = <View> {
-                                visible: true
-                                login_screen = <LoginScreen> {}
-                            }
-                            app_tooltip = <CalloutTooltip> {}
-                            popup = <PopupNotification> {
-                                margin: {top: 45, right: 13},
-                                content: {
-                                    <PopupList> {}
-                                }
-                            }
-
+                        }
                         // Context menus should be shown above other UI elements,
                         // but beneath the verification modal.
                         new_message_context_menu = <NewMessageContextMenu> { }
 
-                            // We want the verification modal to always show up on top of
-                            // all other elements when an incoming verification request is received.
-                            verification_modal = <Modal> {
-                                content: {
-                                    verification_modal_inner = <VerificationModal> {}
+                        // We want the verification modal to always show up on top of
+                        // all other elements when an incoming verification request is received.
+                        verification_modal = <Modal> {
+                            content: {
+                                verification_modal_inner = <VerificationModal> {}
                             }
                         }
                     }
@@ -199,6 +197,9 @@ impl MatchEvent for App {
 
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
+        if let Err(e) = load_window_state(self.ui.window(id!(main_window)), cx) {
+            error!("Failed to load window state: {}", e);
+        }
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
@@ -234,22 +235,9 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
-            match action.downcast_ref() {
-                Some(RoomsPanelRestoreAction::Restore(rooms_panel_state)) => {
-                    self.app_state.saved_dock_state = rooms_panel_state.clone();
-                    cx.action(MainDesktopUiAction::DockLoad);
-                }
-                Some(RoomsPanelRestoreAction::RestoreWindow(window_state)) => {
-                    let window = self.ui.window(id!(main_window));
-                    window.resize(cx, window_state.inner_size);
-                    window.reposition(cx, window_state.position);
-                    if window_state.is_fullscreen {
-                        if let Some(mut window) = window.borrow_mut() {
-                            window.set_fullscreen(cx);
-                        }
-                    }
-                }
-                _ => {}
+            if let Some(RoomsPanelRestoreAction::RestoreDockFromPersistentState(rooms_panel_state)) = action.downcast_ref() {
+                self.app_state.saved_dock_state = rooms_panel_state.clone();
+                cx.action(MainDesktopUiAction::DockLoadToAppState);
             }
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
@@ -348,17 +336,9 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        // Handling Event::Shutdown is not required as Window Closed event is guaranteed when closing.
-        if let Event::WindowClosed(_) = event {
-            let window = self.ui.window(id!(main_window));
-            let inner_size = window.get_inner_size(cx);
-            let position = window.get_position(cx);
-            let window_geom = WindowGeomState {
-                inner_size,
-                position,
-                is_fullscreen: window.is_fullscreen(cx),
-            };
-            if let Err(e) = save_window_state(window_geom) {
+        if let Event::Shutdown = event {
+            let window_ref = self.ui.window(id!(main_window));
+            if let Err(e) = save_window_state(window_ref, cx) {
                 error!("Failed to save window state. Error details: {}", e);
             }
             if let Some(user_id) = current_user_id() {
@@ -452,170 +432,23 @@ pub struct SavedDockState {
 /// Represents a room currently or previously selected by the user.
 ///
 /// One `SelectedRoom` is considered equal to another if their `room_id`s are equal.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, SerRon, DeRon)]
 pub enum SelectedRoom {
     JoinedRoom {
-        room_id: OwnedRoomId,
+        room_id: OwnedRoomIdRon,
         room_name: Option<String>,
     },
     InvitedRoom {
-        room_id: OwnedRoomId,
+        room_id: OwnedRoomIdRon,
         room_name: Option<String>,
     },
 }
-impl SerRon for SelectedRoom {
-    fn ser_ron(&self, d: usize, s: &mut SerRonState) {
-        match self {
-            SelectedRoom::JoinedRoom { room_id, room_name } => {
-                s.out.push_str("JoinedRoom"); // Variant name
-                s.st_pre(); // `(\n`
 
-                // Serialize room_id field
-                s.field(d + 1, "room_id"); // `    room_id: `
-                room_id.to_string().ser_ron(d + 1, s);
-                s.conl(); // `,\n`
-
-                // Serialize room_name field
-                s.field(d + 1, "room_name"); // `    room_name: `
-                room_name.ser_ron(d + 1, s); // Serialize the Option<String> value
-                s.out.push('\n'); // Newline before closing parenthesis
-
-                s.st_post(d); // `)` with indentation
-            }
-            SelectedRoom::InvitedRoom { room_id, room_name } => {
-                s.out.push_str("InvitedRoom"); // Variant name
-                s.st_pre(); // `(\n`
-
-                // Serialize room_id field
-                s.field(d + 1, "room_id"); // `    room_id: `
-                room_id.to_string().ser_ron(d + 1, s);
-                s.conl(); // `,\n`
-
-                // Serialize room_name field
-                s.field(d + 1, "room_name"); // `    room_name: `
-                room_name.ser_ron(d + 1, s);
-                s.out.push('\n'); // Newline before closing parenthesis
-
-                s.st_post(d); // `)` with indentation
-            }
-        }
-    }
-}
-impl DeRon for SelectedRoom {
-    fn de_ron(s: &mut DeRonState, i: &mut Chars) -> Result<Self, DeRonErr> {
-        // Expect an identifier for the enum variant name
-        if s.tok != DeRonTok::Ident {
-            return Err(s.err_token("Enum identifier (JoinedRoom or InvitedRoom)"));
-        }
-
-        // Match on the variant name identifier
-        let variant_name = s.identbuf.clone(); // Clone before consuming the token
-        s.next_tok(i)?; // Consume the variant identifier token
-
-        match variant_name.as_str() {
-            "JoinedRoom" => {
-                s.paren_open(i)?; // Expect '('
-
-                // Placeholders for fields, using Option to detect missing ones
-                let mut parsed_room_id: Option<OwnedRoomId> = None;
-                let mut parsed_room_name: Option<Option<String>> = None;
-
-                // Loop through fields within the parentheses
-                while s.tok != DeRonTok::ParenClose {
-                    // Expect a field name identifier
-                    if s.tok != DeRonTok::Ident {
-                        return Err(s.err_token("field identifier in JoinedRoom"));
-                    }
-                    let field_name = s.identbuf.clone();
-                    s.next_tok(i)?; // Consume field identifier
-
-                    s.colon(i)?; // Expect ':'
-
-                    // Deserialize the field value based on the name
-                    match field_name.as_str() {
-                        "room_id" => {
-                            if parsed_room_id.is_some() { return Err(s.err_exp(&format!("duplicate field 'room_id' in {}", variant_name))); }
-                            //parsed_room_id = Some(OwnedRoomId::de_ron(s, i)?);
-                            parsed_room_id = OwnedRoomId::from_str(&String::de_ron(s, i)?).ok();
-                        }
-                        "room_name" => {
-                            if parsed_room_name.is_some() { return Err(s.err_exp(&format!("duplicate field 'room_name' in {}", variant_name))); }
-                            parsed_room_name = Some(Option::<String>::de_ron(s, i)?);
-                        }
-                        _ => return Err(s.err_exp(&format!("unknown field '{}' in {}", field_name, variant_name))),
-                    }
-
-                    // Check for comma or closing parenthesis
-                    match s.tok {
-                        DeRonTok::Comma => {
-                            s.next_tok(i)?; // Consume comma
-                            // Allow trailing comma
-                            if s.tok == DeRonTok::ParenClose { break; }
-                        }
-                        DeRonTok::ParenClose => break, // End of fields
-                        _ => return Err(s.err_token("',' or ')' in JoinedRoom")),
-                    }
-                }
-
-                s.paren_close(i)?; // Consume ')'
-
-                // Check that all required fields were found
-                let room_id = parsed_room_id.ok_or_else(|| s.err_nf(&format!("'room_id' in {}", variant_name)))?;
-                let room_name = parsed_room_name.ok_or_else(|| s.err_nf(&format!("'room_name' in {}", variant_name)))?;
-
-                Ok(SelectedRoom::JoinedRoom { room_id, room_name })
-            }
-            "InvitedRoom" => {
-                s.paren_open(i)?; // Expect '('
-
-                let mut parsed_room_id: Option<OwnedRoomId> = None;
-                let mut parsed_room_name: Option<Option<String>> = None;
-
-                while s.tok != DeRonTok::ParenClose {
-                    if s.tok != DeRonTok::Ident { return Err(s.err_token("field identifier in InvitedRoom")); }
-                    let field_name = s.identbuf.clone();
-                    s.next_tok(i)?;
-                    s.colon(i)?;
-
-                    match field_name.as_str() {
-                         "room_id" => {
-                            if parsed_room_id.is_some() { return Err(s.err_exp(&format!("duplicate field 'room_id' in {}", variant_name))); }
-                            parsed_room_id = OwnedRoomId::from_str(&String::de_ron(s, i)?).ok();
-                        }
-                        "room_name" => {
-                            if parsed_room_name.is_some() { return Err(s.err_exp(&format!("duplicate field 'room_name' in {}", variant_name))); }
-                            parsed_room_name = Some(Option::<String>::de_ron(s, i)?);
-                        }
-                        _ => return Err(s.err_exp(&format!("unknown field '{}' in {}", field_name, variant_name))),
-                    }
-
-                    match s.tok {
-                        DeRonTok::Comma => {
-                            s.next_tok(i)?;
-                            if s.tok == DeRonTok::ParenClose { break; }
-                        }
-                        DeRonTok::ParenClose => break,
-                        _ => return Err(s.err_token("',' or ')' in InvitedRoom")),
-                    }
-                }
-
-                s.paren_close(i)?;
-
-                let room_id = parsed_room_id.ok_or_else(|| s.err_nf(&format!("'room_id' in {}", variant_name)))?;
-                let room_name = parsed_room_name.ok_or_else(|| s.err_nf(&format!("'room_name' in {}", variant_name)))?;
-
-                Ok(SelectedRoom::InvitedRoom { room_id, room_name })
-            }
-            // Unknown variant name
-            _ => Err(s.err_enum(&variant_name)),
-        }
-    }
-}
 impl SelectedRoom {
     pub fn room_id(&self) -> &OwnedRoomId {
         match self {
-            SelectedRoom::JoinedRoom { room_id, .. } => room_id,
-            SelectedRoom::InvitedRoom { room_id, .. } => room_id,
+            SelectedRoom::JoinedRoom { room_id, .. } => room_id.into(),
+            SelectedRoom::InvitedRoom { room_id, .. } => room_id.into(),
         }
     }
 
@@ -634,7 +467,7 @@ impl SelectedRoom {
     /// otherwise, returns `false`.
     pub fn upgrade_invite_to_joined(&mut self, room_id: &RoomId) -> bool {
         match self {
-            SelectedRoom::InvitedRoom { room_id: id, room_name } if id == room_id => {
+            SelectedRoom::InvitedRoom { room_id: id, room_name } if id.0 == room_id => {
                 let name = room_name.take();
                 *self = SelectedRoom::JoinedRoom {
                     room_id: id.clone(),
@@ -672,142 +505,23 @@ pub enum RoomsPanelRestoreAction {
     /// The previously-saved state of the rooms panel & dock was loaded from storage
     /// and is now ready to be restored to the dock UI widget.
     /// This will be handled by the top-level App and by each RoomScreen in the dock.
-    Restore(SavedDockState),
+    /// There is not SaveDockToPersistentState variant, as the dock will be save into persistent
+    /// storage during Event::Shutdown directly.
+    RestoreDockFromPersistentState(SavedDockState),
     /// The given room was successfully loaded from the homeserver
     /// and is known to our client.
     /// The RoomScreen for this room can now fully display the room's timeline.
     Success(OwnedRoomId),
-    /// The previously-saved of the window geometry state.
-    /// This will be handled by the top-level App to restore window's size and position.
-    RestoreWindow(WindowGeomState),
     None,
 }
-#[derive(Default, Debug, Clone, PartialEq)]
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// The state of the window geometry
 pub struct WindowGeomState {
     /// A tuple containing the window's width and height.
-    pub inner_size: DVec2,
+    pub inner_size: DVec2Json,
     /// A tuple containing the window's x and y position.
-    pub position: DVec2,
+    pub position: DVec2Json,
     /// Maximise fullscreen if true.
     pub is_fullscreen: bool,
-}
-
-impl Serialize for WindowGeomState {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // 3 is the number of fields in the struct.
-        let mut state = serializer.serialize_struct("WindowGeomState", 3)?;
-        state.serialize_field("inner_size", &(self.inner_size.x, self.inner_size.y))?;
-        state.serialize_field("position", &(self.position.x, self.position.y))?;
-        state.serialize_field("is_fullscreen", &self.is_fullscreen)?;
-        state.end()
-    }
-}
-impl<'de> Deserialize<'de> for WindowGeomState {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        enum Field { InnerSize, Position, IsFullscreen }
-
-        // This part could also be generated independently by:
-        //
-        //    #[derive(Deserialize)]
-        //    #[serde(field_identifier, rename_all = "lowercase")]
-        //    enum Field { Secs, Nanos }
-        impl<'de> Deserialize<'de> for Field {
-            fn deserialize<D>(deserializer: D) -> Result<Field, D::Error>
-            where
-                D: Deserializer<'de>,
-            {
-                struct FieldVisitor;
-
-                impl Visitor<'_> for FieldVisitor {
-                    type Value = Field;
-
-                    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                        formatter.write_str("Dev")
-                    }
-
-                    fn visit_str<E>(self, value: &str) -> Result<Field, E>
-                    where
-                        E: de::Error,
-                    {
-                        match value {
-                            "inner_size" => Ok(Field::InnerSize),
-                            "position" => Ok(Field::Position),
-                            "is_fullscreen" => Ok(Field::IsFullscreen),
-                            _ => Err(de::Error::unknown_field(value, FIELDS)),
-                        }
-                    }
-                }
-
-                deserializer.deserialize_identifier(FieldVisitor)
-            }
-        }
-
-        struct WindowGeomStateVisitor;
-
-        impl<'de> Visitor<'de> for WindowGeomStateVisitor {
-            type Value = WindowGeomState;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("struct WindowGeomState")
-            }
-
-            fn visit_seq<V>(self, mut seq: V) -> Result<WindowGeomState, V::Error>
-            where
-                V: SeqAccess<'de>,
-            {
-                let inner_size: (f64, f64) = seq.next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
-                let position: (f64, f64) = seq.next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
-                let is_fullscreen = seq.next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
-                Ok(WindowGeomState { inner_size: DVec2{x: inner_size.0, y: inner_size.1}, position: DVec2 { x: position.0, y: position.1 }, is_fullscreen })
-            }
-
-            fn visit_map<V>(self, mut map: V) -> Result<WindowGeomState, V::Error>
-            where
-                V: MapAccess<'de>,
-            {
-                let mut inner_size = None;
-                let mut position = None;
-                let mut is_fullscreen = None;
-                while let Some(key) = map.next_key()? {
-                    match key {
-                        Field::InnerSize => {
-                            if inner_size.is_some() {
-                                return Err(de::Error::duplicate_field("inner_size"));
-                            }
-                            inner_size = Some(map.next_value().map(|f:(f64, f64)| DVec2 { x: f.0, y: f.1 })?);
-                        }
-                        Field::Position => {
-                            if position.is_some() {
-                                return Err(de::Error::duplicate_field("position"));
-                            }
-                            position = Some(map.next_value().map(|f:(f64, f64)| DVec2 { x: f.0, y: f.1 })?);
-                        }
-                        Field::IsFullscreen => {
-                            if is_fullscreen.is_some() {
-                                return Err(de::Error::duplicate_field("is_fullscreen"));
-                            }
-                            is_fullscreen = Some(map.next_value()?);
-                        }
-                    }
-                }
-                let inner_size = inner_size.ok_or_else(|| de::Error::missing_field("inner_size"))?;
-                let position = position.ok_or_else(|| de::Error::missing_field("position"))?;
-                let is_fullscreen = is_fullscreen.ok_or_else(|| de::Error::missing_field("is_fullscreen"))?;
-                Ok(WindowGeomState { inner_size, position, is_fullscreen })
-            }
-    }
-
-        const FIELDS: &[&str] = &["inner_size", "position", "is_fullscreen"];
-        deserializer.deserialize_struct("WindowGeomState", FIELDS, WindowGeomStateVisitor)
-    }
 }

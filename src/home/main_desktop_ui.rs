@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
-use crate::{app::{AppState, AppStateAction, RoomsPanelRestoreAction, SelectedRoom}, utils::room_name_or_id};
+use crate::{app::{AppState, AppStateAction, RoomsPanelRestoreAction, SelectedRoom}, home::rooms_list::{RoomsListRef, RoomsListWidgetExt}, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 live_design! {
@@ -85,7 +85,7 @@ pub struct MainDesktopUI {
     #[rust]
     drawn_previously: bool,
 }
-
+pub struct GlobalRoomsListRef(pub RoomsListRef);
 impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {            
         self.widget_match_event(cx, event, scope); // invokes `WidgetMatchEvent` impl
@@ -93,14 +93,15 @@ impl Widget for MainDesktopUI {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // When changing from mobile to Desktop, we need to restore the rooms panel state
+        // When changing from mobile to Desktop, we need to restore the rooms panel state.
         if !self.drawn_previously {
             let app_state = scope.data.get_mut::<AppState>().unwrap();
             if !app_state.saved_dock_state.open_rooms.is_empty() {
-                cx.action(RoomsPanelRestoreAction::Restore(
+                cx.action(RoomsPanelRestoreAction::RestoreDockFromPersistentState(
                     app_state.saved_dock_state.clone(),
                 ));
             }
+            cx.set_global(GlobalRoomsListRef(self.view.rooms_list(id!(rooms_list))));
             self.drawn_previously = true;
         }
         self.view.draw_walk(cx, scope, walk)
@@ -155,18 +156,18 @@ impl MainDesktopUI {
                 SelectedRoom::JoinedRoom { room_id, .. }  => {
                     new_widget.as_room_screen().set_displayed_room(
                         cx,
-                        room_id.clone(),
+                        room_id.clone().into(),
                         room.room_name().cloned(),
                     );
                 }
                 SelectedRoom::InvitedRoom { room_id, room_name: _ } => {
                     new_widget.as_invite_screen().set_displayed_invite(
                         cx,
-                        room_id.clone(),
+                        room_id.clone().into(),
                     );
                 }
             }
-            cx.action(MainDesktopUiAction::DockSave);
+            cx.action(MainDesktopUiAction::DockSaveToAppState);
         } else {
             error!("BUG: failed to create tab for {room:?}");
         }
@@ -344,7 +345,7 @@ impl WidgetMatchEvent for MainDesktopUI {
 
             // Handle our own actions related to dock updates that we have previously emitted.
             match action.downcast_ref() {
-                Some(MainDesktopUiAction::DockLoad) => {
+                Some(MainDesktopUiAction::DockLoadToAppState) => {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
                     let dock = self.view.dock(id!(dock));
                     self.room_order = app_state.saved_dock_state.room_order.clone();
@@ -360,18 +361,18 @@ impl WidgetMatchEvent for MainDesktopUI {
                                 Some(SelectedRoom::JoinedRoom { room_id, room_name }) => {
                                     widget.as_room_screen().set_displayed_room(
                                         cx,
-                                        room_id.clone(),
+                                        room_id.clone().into(),
                                         room_name.clone(),
                                     );
                                 }
                                 Some(SelectedRoom::InvitedRoom { room_id, room_name: _ }) => {
-                                    widget.as_invite_screen().set_displayed_invite(cx, room_id.clone());
+                                    widget.as_invite_screen().set_displayed_invite(cx, room_id.clone().into());
                                 }
                                 _ => { }
                             }
                         }
                     } else {
-                        error!("BUG: failed to load dock state upon DockLoad action.");
+                        error!("BUG: failed to load dock state upon DockLoadToAppState action.");
                         continue;
                     }
                     // Note: the borrow of `dock` must end here *before* we call `self.focus_or_create_tab()`.
@@ -381,7 +382,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                     }
                     self.view.redraw(cx);
                 }
-                Some(MainDesktopUiAction::DockSave) => {
+                Some(MainDesktopUiAction::DockSaveToAppState) => {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
                     let dock = self.view.dock(id!(dock));
                     if let Some(dock_items) = dock.clone_state() {
@@ -395,7 +396,7 @@ impl WidgetMatchEvent for MainDesktopUI {
         }
 
         if should_save_dock_action {
-            cx.action(MainDesktopUiAction::DockSave);
+            cx.action(MainDesktopUiAction::DockSaveToAppState);
         }
     }
 }
@@ -404,8 +405,8 @@ impl WidgetMatchEvent for MainDesktopUI {
 #[derive(Clone, Debug, DefaultNone)]
 pub enum MainDesktopUiAction {
     /// Save the dock state from the dock to the AppState.
-    DockSave,
+    DockSaveToAppState,
     /// Load the room panel state from the AppState to the dock.
-    DockLoad,
+    DockLoadToAppState,
     None,
 }

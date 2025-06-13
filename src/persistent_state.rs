@@ -1,10 +1,10 @@
 //! Handles app persistence by saving and restoring client session data to/from the filesystem.
-use std::path::PathBuf;
+use std::{io::Read, path::PathBuf};
 use anyhow::{anyhow, bail};
 use makepad_widgets::{
     log,
     makepad_micro_serde::{DeRon, SerRon},
-    Cx,
+    Cx, WindowRef,
 };
 use matrix_sdk::{
     authentication::matrix::MatrixSession,
@@ -220,11 +220,18 @@ pub fn save_room_panel(
     Ok(())
 }
 
-/// Save the current state of window geometry state to persistent storage.
-pub fn save_window_state(window_geom_state: WindowGeomState) -> anyhow::Result<()> {
+/// Save the current state of window geometry state to persistent storage using windowRef.
+pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
+    let inner_size = window_ref.get_inner_size(cx).into();
+    let position = window_ref.get_position(cx).into();
+    let window_geom = WindowGeomState {
+        inner_size,
+        position,
+        is_fullscreen: window_ref.is_fullscreen(cx),
+    };
     std::fs::write(
         app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME),
-        serde_json::to_string(&window_geom_state)?,
+        serde_json::to_string(&window_geom)?,
     )?;
     Ok(())
 }
@@ -249,14 +256,25 @@ pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<SavedDoc
 }
 
 /// Loads the window geometry's state from persistent storage.
-pub async fn load_window_state() -> anyhow::Result<WindowGeomState> {
-    let mut file =
-        match tokio::fs::File::open(app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME)).await {
-            Ok(file) => file,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(WindowGeomState::default()),
-            Err(e) => return Err(e.into()),
-        };
-    let mut contents = Vec::with_capacity(file.metadata().await?.len() as usize);
-    file.read_to_end(&mut contents).await?;
-    serde_json::from_slice(&contents).map_err(|e| anyhow!(e))
+pub fn load_window_state(window_ref: WindowRef, cx: &mut Cx) -> anyhow::Result<()> {
+    let mut file = match std::fs::File::open(app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME)) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
+    let mut contents = Vec::with_capacity(file.metadata()?.len() as usize);
+    file.read_to_end(&mut contents)?;
+    let WindowGeomState {
+        inner_size,
+        position,
+        is_fullscreen,
+    } = serde_json::from_slice(&contents).map_err(|e| anyhow!(e))?;
+    window_ref.create_window(
+        cx,
+        inner_size.into(),
+        position.into(),
+        is_fullscreen,
+        "Robrix".to_string(),
+    );
+    Ok(())
 }

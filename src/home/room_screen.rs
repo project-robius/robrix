@@ -19,7 +19,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::RoomsPanelRestoreAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::RoomsPanelRestoreAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, main_desktop_ui::GlobalRoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -33,7 +33,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, location_preview::LocationPreviewWidgetExt, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, rooms_list::RoomsListWidgetExt};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, location_preview::LocationPreviewWidgetExt, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -605,11 +605,6 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-            // Used to retrieve the list of loaded rooms.
-            <CachedWidget> {
-                width:0, height:0,
-                rooms_list = <RoomsList> {}
-            }
             restore_status_label = <Label> {
                 align: {x: 0.0, y: 0.5},
                 padding: {left: 5.0, right: 0.0}
@@ -819,6 +814,10 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+    /// Whether or not the room has been loaded yet.
+    #[rust] is_loaded: bool,
+    /// Whether or not all rooms have been loaded.
+    #[rust] all_room_loaded: bool,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -842,10 +841,11 @@ impl Widget for RoomScreen {
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
-            if let Some(room_id) = &self.room_id {
-                let rooms_list = self.rooms_list(id!(rooms_list));
-                if !rooms_list.is_room_loaded(room_id) {
-                    let status_text = if rooms_list.all_known_rooms_loaded() {
+            if let (Some(room_id), true, false) = (&self.room_id, cx.has_global::<GlobalRoomsListRef>(), self.is_loaded) {
+                let GlobalRoomsListRef(rooms_list_ref) = cx.get_global::<GlobalRoomsListRef>();
+                if !rooms_list_ref.is_room_loaded(room_id) {
+                    let status_text = if rooms_list_ref.all_known_rooms_loaded() {
+                        self.all_room_loaded = true;
                         format!(
                             "Room {} was not found in the homeserver's list of all rooms.",
                             self.room_name
@@ -857,6 +857,9 @@ impl Widget for RoomScreen {
                         .label(id!(restore_status_label))
                         .set_text(cx, &status_text);
                     return;
+                } else {
+                    self.is_loaded = true;
+                    self.all_room_loaded = true;
                 }
             }
             self.process_timeline_updates(cx, &portal_list);
@@ -1194,12 +1197,9 @@ impl Widget for RoomScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if let Some(room_id) = &self.room_id {
-            if !self.rooms_list(id!(rooms_list)).is_room_loaded(room_id) {
-                return self.view.draw_walk(cx, scope, walk);
-            }
+        if !self.is_loaded {
+            return self.view.draw_walk(cx, scope, walk);
         }
-
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
@@ -2192,6 +2192,10 @@ impl RoomScreen {
             (existing, false)
         } else {
             let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
+                // RoomScreen is not waiting for the room to be loaded.
+                if !self.is_loaded && self.all_room_loaded {
+                    error!("This is a logical error. The timeline is not loaded. Room_id {:?} is not waiting for its timeline to be loaded.", room_id);
+                }
                 return;
             };
             let new_tl_state = TimelineUiState {
