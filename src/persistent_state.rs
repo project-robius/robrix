@@ -235,6 +235,7 @@ pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
     )?;
     Ok(())
 }
+
 /// Loads the rooms panel's state from persistent storage.
 pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<SavedDockState> {
     let mut file = match tokio::fs::File::open(

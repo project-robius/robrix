@@ -348,12 +348,14 @@ impl RoomsList {
             self.all_joined_rooms.len() + self.invited_rooms.borrow().len() >= max_rooms as usize
         })
     }
+
     /// Returns `true` if the given `room_id` is already in the `all_joined_rooms` and `invited_rooms` lists.
     /// and `false` if it is not.
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
         self.all_joined_rooms.contains_key(room_id)
             || self.invited_rooms.borrow().contains_key(room_id)
     }
+
     /// Handle all pending updates to the list of all rooms.
     fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, scope: &mut Scope) {
         let mut num_updates: usize = 0;
@@ -972,6 +974,7 @@ impl RoomsListRef {
         };
         inner.all_known_rooms_loaded()
     }
+
     /// See [`RoomsList::is_room_loaded()`].
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
         let Some(inner) = self.borrow() else {

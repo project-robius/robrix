@@ -2,14 +2,14 @@
 #![allow(clippy::question_mark)]
 use std::collections::HashMap;
 
-use makepad_widgets::{makepad_micro_serde::{DeRon, SerRon}, *};
+use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
     home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, DVec2Json, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 use serde::{self, Deserialize, Serialize};
-use makepad_micro_serde::*;
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -132,12 +132,8 @@ live_design! {
                             login_screen = <LoginScreen> {}
                         }
                         app_tooltip = <CalloutTooltip> {}
-                        popup = <PopupNotification> {
-                            margin: {top: 45, right: 13},
-                            content: {
-                                <PopupList> {}
-                            }
-                        }
+                        <PopupList> {}
+
                         // Context menus should be shown above other UI elements,
                         // but beneath the verification modal.
                         new_message_context_menu = <NewMessageContextMenu> { }

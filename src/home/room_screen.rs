@@ -19,7 +19,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::RoomsPanelRestoreAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, main_desktop_ui::GlobalRoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::RoomsPanelRestoreAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -851,8 +851,8 @@ impl Widget for RoomScreen {
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
-            if let (Some(room_id), true, false) = (&self.room_id, cx.has_global::<GlobalRoomsListRef>(), self.is_loaded) {
-                let GlobalRoomsListRef(rooms_list_ref) = cx.get_global::<GlobalRoomsListRef>();
+            if let (Some(room_id), true, false) = (&self.room_id, cx.has_global::<RoomsListRef>(), self.is_loaded) {
+                let rooms_list_ref = cx.get_global::<RoomsListRef>();
                 if !rooms_list_ref.is_room_loaded(room_id) {
                     let status_text = if rooms_list_ref.all_known_rooms_loaded() {
                         self.all_room_loaded = true;
@@ -2221,12 +2221,6 @@ impl RoomScreen {
     fn show_timeline(&mut self, cx: &mut Cx) {
         let room_id = self.room_id.clone()
             .expect("BUG: Timeline::show_timeline(): no room_id was set.");
-        // Remove sanity check because set_displayed_room can be called before tl_state is initialized.
-        // just an optional sanity check
-        // assert!(self.tl_state.is_none(),
-        //     "BUG: tried to show_timeline() into a timeline with existing state. \
-        //     Did you forget to save the timeline state back to the global map of states?",
-        // );
         // Obtain the current user's power levels for this room.
         submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_id.clone() });
 
@@ -2237,7 +2231,7 @@ impl RoomScreen {
             let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
                 // RoomScreen is not waiting for the room to be loaded.
                 if !self.is_loaded && self.all_room_loaded {
-                    error!("This is a logical error. The timeline is not loaded. Room_id {:?} is not waiting for its timeline to be loaded.", room_id);
+                    panic!("The timeline is not loaded and room_id {:?} is not waiting for its timeline to be loaded.", room_id);
                 }
                 return;
             };
