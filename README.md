@@ -214,11 +214,12 @@ cargo install --locked --git https://github.com/project-robius/robius-packaging-
 
 3. Then run the packaging command, which must build in release mode:
 ```sh
-## Show console window default on Windows
 cargo packager --release ## --verbose is optional
-## Hide console window on Windows
-RUSTFLAGS="--cfg hide_windows_console" cargo packager --release
 ```
+  * If you want to hide the default cmd prompt console on Windows, use the following config:
+    ```sh
+    RUSTFLAGS="--cfg hide_windows_console" cargo packager --release
+    ```
 
 
 ### Platform-specific considerations
