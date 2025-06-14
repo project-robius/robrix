@@ -1518,7 +1518,7 @@ async fn async_main_loop(
                     let _num_new_rooms = new_rooms.len();
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append {_num_new_rooms}"); }
                     for new_room in &new_rooms {
-                        add_new_room(new_room, &room_list_service, true).await?;
+                        add_new_room(new_room, &room_list_service).await?;
                         all_known_rooms.push_back(new_room.into());
                     }
                 }
@@ -1530,12 +1530,12 @@ async fn async_main_loop(
                 }
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
-                    add_new_room(&new_room, &room_list_service, false).await?;
+                    add_new_room(&new_room, &room_list_service).await?;
                     all_known_rooms.push_front(new_room.into());
                 }
                 VectorDiff::PushBack { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
-                    add_new_room(&new_room, &room_list_service,true).await?;
+                    add_new_room(&new_room, &room_list_service).await?;
                     all_known_rooms.push_back(new_room.into());
                 }
                 VectorDiff::PopFront => {
@@ -1555,7 +1555,7 @@ async fn async_main_loop(
                 VectorDiff::Insert { index, value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
                     // TODO: handle correctly insert
-                    add_new_room(&new_room, &room_list_service, true).await?;
+                    add_new_room(&new_room, &room_list_service).await?;
                     all_known_rooms.insert(index, new_room.into());
 
                 }
@@ -1620,7 +1620,7 @@ async fn async_main_loop(
                     // so this is just a sanity check.
                     ALL_JOINED_ROOMS.lock().unwrap().clear();
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
-                    for room in new_rooms {
+                    for room in &new_rooms {
                         add_new_room(&room, &room_list_service).await?;
                     }
                     all_known_rooms = new_rooms.into_iter().map(|r| r.into()).collect();
@@ -1732,7 +1732,7 @@ async fn update_room(
             old_room.room_id, new_room_id,
         );
         remove_room(old_room);
-        add_new_room(new_room, room_list_servic).await
+        add_new_room(new_room, room_list_service).await
     }
 }
 
