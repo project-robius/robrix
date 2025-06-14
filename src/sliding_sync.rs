@@ -1620,8 +1620,8 @@ async fn async_main_loop(
                     // so this is just a sanity check.
                     ALL_JOINED_ROOMS.lock().unwrap().clear();
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
-                    for room in &new_rooms {
-                        add_new_room(room, &room_list_service, true).await?;
+                    for room in new_rooms {
+                        add_new_room(&room, &room_list_service).await?;
                     }
                     all_known_rooms = new_rooms.into_iter().map(|r| r.into()).collect();
                 }
@@ -1670,11 +1670,11 @@ async fn update_room(
                 }
                 RoomState::Joined => {
                     log!("update_room(): adding new Joined room: {new_room_name:?} ({new_room_id})");
-                    return add_new_room(new_room, room_list_service, false).await;
+                    return add_new_room(new_room, room_list_service).await;
                 }
                 RoomState::Invited => {
                     log!("update_room(): adding new Invited room: {new_room_name:?} ({new_room_id})");
-                    return add_new_room(new_room, room_list_service, false).await;
+                    return add_new_room(new_room, room_list_service).await;
                 }
                 RoomState::Knocked => {
                     // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
@@ -1732,7 +1732,7 @@ async fn update_room(
             old_room.room_id, new_room_id,
         );
         remove_room(old_room);
-        add_new_room(new_room, room_list_service, false).await
+        add_new_room(new_room, room_list_servic).await
     }
 }
 
@@ -1750,7 +1750,7 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
 
 
 /// Invoked when the room list service has received an update with a brand new room.
-async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomListService, back: bool) -> Result<()> {
+async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomListService) -> Result<()> {
 
     let room_id = room.room_id().to_owned();
     // We must call `display_name()` here to calculate and cache the room's name.
@@ -1911,9 +1911,8 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     // issue a `MatrixRequest` that relies on that room being in `ALL_JOINED_ROOMS`.
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
         room_id,
-        latest: latest.clone(),
-        latest_display: latest, // TODO: fix me
-        tags: room.tags().await.ok().flatten().unwrap_or_default(),
+        latest,
+        latest_display,        tags: room.tags().await.ok().flatten().unwrap_or_default(),
         num_unread_messages: room.num_unread_messages(),
         num_unread_mentions: room.num_unread_mentions(),
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
