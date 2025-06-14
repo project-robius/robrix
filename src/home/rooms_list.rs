@@ -104,10 +104,6 @@ pub enum RoomsListUpdate {
     /// Some rooms were loaded, and the server optionally told us
     /// the max number of rooms that will ever be loaded.
     LoadedRooms{ max_rooms: Option<u32> },
-    /// Add a new room to the list of all rooms.
-    AddRoomFront(RoomsListEntry),
-    /// Add a new room to the list of all rooms.
-    AddRoomBack(RoomsListEntry),
     /// Add a new room to the list of rooms the user has been invited to.
     /// This will be maintained and displayed separately from joined rooms.
     AddInvitedRoom(InvitedRoomInfo),
@@ -308,7 +304,7 @@ pub struct RoomsList {
     /// Note: for performance reasons, this does not get automatically applied
     /// when its value changes. Instead, you must manually invoke it on the set of `all_joined_rooms`
     /// in order to update the set of `displayed_rooms` accordingly.
-    #[rust] display_filter: Option<RoomDisplayFilter>,
+    #[rust] display_filter: RoomDisplayFilter,
 
 
     #[rust] sort_fn: Option<Box<SortFn>>,
@@ -366,7 +362,7 @@ impl RoomsList {
             match update {
                 RoomsListUpdate::AddInvitedRoom(invited_room) => {
                     let room_id = invited_room.room_id.clone();
-                    let should_display = (self.display_filter.unwrap())(&invited_room);
+                    let should_display = (self.display_filter)(&invited_room);
                     let _replaced = self.invited_rooms.borrow_mut().insert(room_id.clone(), invited_room);
                     if let Some(_old_room) = _replaced {
                         error!("BUG: Added invited room {room_id} that already existed");
@@ -381,7 +377,7 @@ impl RoomsList {
                     let room_id = joined_room.room_id.clone();
                     let is_direct = joined_room.is_direct;
                     let room_name = joined_room.room_name.clone();
-                    let should_display = (self.display_filter.unwrap())(&joined_room);
+                    let should_display = (self.display_filter)(&joined_room);
                     let replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
                     if replaced.is_none() {
                         if should_display {
@@ -421,7 +417,7 @@ impl RoomsList {
                         error!("Error: couldn't find room {room_id} to update avatar");
                     }
                 }
-                RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, latest_message_text } => {
+                RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, latest_message_text, content } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.latest = Some((timestamp, latest_message_text));
                     } else {
@@ -440,9 +436,9 @@ impl RoomsList {
                 }
                 RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
-                        let was_displayed = (self.display_filter.unwrap())(room);
+                        let was_displayed = (self.display_filter)(room);
                         room.room_name = Some(new_room_name);
-                        let should_display = (self.display_filter.unwrap())(room);
+                        let should_display = (self.display_filter)(room);
                         match (was_displayed, should_display) {
                             // No need to update the displayed rooms list.
                             (true, true) | (false, false) => { }
@@ -561,16 +557,6 @@ impl RoomsList {
             n => format!("Found {} matching rooms.", n),
         }
     }
-    
-    fn apply_filter(&mut self){
-        if let Some(filter) = &self.display_filter {
-        self.displayed_rooms =
-                            self.all_rooms
-                        .iter()
-                        .filter(|(_, room)| filter(room))
-                        .map(|(room_id, _)| room_id.clone())
-                        .collect();
-    }}
 
     /// Returns true if the given room is contained in any of the displayed room sets,
     /// i.e., either the invited rooms or the joined rooms.
@@ -748,155 +734,6 @@ impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Process all pending updates to the list of all rooms, and then redraw it.
         if matches!(event, Event::Signal) {
-            let mut num_updates: usize = 0;
-            while let Some(update) = PENDING_ROOM_UPDATES.pop() {
-                num_updates += 1;
-                match update {
-                    RoomsListUpdate::AddRoomBack(room) => {
-                        let room_id = room.room_id.clone();
-                        let _replaced = self.all_rooms.insert(room_id.clone(), room);
-                        self.all_rooms_sorted.push(room_id.clone());
-                        if let Some(_old_room) = _replaced {
-                            error!("BUG: Added room {room_id} that already existed");
-                        } else {
-                            if self.display_filter.is_some(){
-                                self.apply_filter();
-                            }else
-                            {
-                                self.displayed_rooms.push(room_id);
-                            }
-                        }
-                        self.update_status_rooms_count();
-                    }
-                    RoomsListUpdate::AddRoomFront(room) => {
-                        let room_id = room.room_id.clone();
-                        let _replaced = self.all_rooms.insert(room_id.clone(), room);
-                        self.all_rooms_sorted.insert(0, room_id.clone());
-                        if let Some(_old_room) = _replaced {
-                            error!("BUG: Added room {room_id} that already existed");
-                        } else {
-                            if self.display_filter.is_some() {
-                               self.apply_filter();
-                            }else{
-                                self.displayed_rooms.insert(0,room_id);
-                            }
-                        }
-                        self.update_status_rooms_count();
-                    }
-                    RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
-                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
-                            room.avatar = avatar;
-                        } else {
-                            error!("Error: couldn't find room {room_id} to update avatar");
-                        }
-                    }
-                    RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, content, latest_message_text } => {
-                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
-                            // Update the latest display message if this event should be displayed
-                            if let TimelineItemContent::Message(_) = content {
-                                room.latest_display =
-                                    Some((timestamp, latest_message_text.clone()));
-                            }
-
-                            room.latest = Some((timestamp, latest_message_text));
-                        } else {
-                            error!("Error: couldn't find room {room_id} to update latest event");
-                        }
-                    }
-                    RoomsListUpdate::UpdateNumUnreadMessages { room_id, count , unread_mentions} => {
-                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
-                            (room.num_unread_messages, room.num_unread_mentions) = match count {
-                                UnreadMessageCount::Unknown => (0, 0),
-                                UnreadMessageCount::Known(count) => (count, unread_mentions),
-                            };
-                        } else {
-                            error!("Error: couldn't find room {} to update unread messages count", room_id);
-                        }
-                    }
-                    RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
-                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
-                            if let Some(filter) = &self.display_filter {
-                                let was_displayed = filter(room);
-                                room.room_name = Some(new_room_name);
-                                let should_display = filter(room);
-                                match (was_displayed, should_display) {
-                                    (true, true) | (false, false) => {
-                                        // No need to update the displayed rooms list.
-                                    }
-                                    (true, false) => {
-                                        // Room was displayed but should no longer be displayed.
-                                        self.displayed_rooms.retain(|r| r != &room_id);
-                                    }
-                                    (false, true) => {
-                                        // Room was not displayed but should now be displayed.
-                                        self.displayed_rooms.push(room_id);
-                                    }
-                                }
-                            }else{
-                                room.room_name = Some(new_room_name);
-                            }
-                        } else {
-                            error!("Error: couldn't find room {room_id} to update room name");
-                        }
-                    }
-                    RoomsListUpdate::RemoveRoom(room_id) => {
-                        self.all_rooms
-                            .remove(&room_id)
-                            .and_then(|_removed|
-                                self.displayed_rooms.iter().position(|r| r == &room_id)
-                            )
-                            .map(|index_to_remove| {
-                                // Remove the room from the list of displayed rooms.
-                                self.displayed_rooms.remove(index_to_remove);
-                            })
-                            .unwrap_or_else(|| {
-                                error!("Error: couldn't find room {room_id} to remove room");
-                            });
-
-                        let pos = self.all_rooms_sorted.iter().position(|r| r == &room_id);
-                        if let Some(pos) = pos{
-                            self.all_rooms_sorted.remove(pos);
-                        }
-
-                        self.update_status_rooms_count();
-
-                        // TODO: send an action to the RoomScreen to hide this room
-                        //       if it is currently being displayed,
-                        //       and also ensure that the room's TimelineUIState is preserved
-                        //       and saved (if the room has not been left),
-                        //       and also that it's MediaCache instance is put into a special state
-                        //       where its internal update sender gets replaced upon next usage
-                        //       (that is, upon the next time that same room is opened by the user).
-                    }
-                    RoomsListUpdate::ClearRooms => {
-                        self.all_rooms.clear();
-                        self.all_rooms_sorted.clear();
-                        self.displayed_rooms.clear();
-                        self.update_status_rooms_count();
-                    }
-                    RoomsListUpdate::NotLoaded => {
-                        self.status = "Loading rooms (waiting for homeserver)...".to_string();
-                    }
-                    RoomsListUpdate::LoadedRooms { max_rooms } => {
-                        self.max_known_rooms = max_rooms;
-                        self.update_status_rooms_count();
-                    },
-                    RoomsListUpdate::Tags { room_id, new_tags } => {
-                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
-                            room.tags = new_tags;
-                        } else {
-                            error!("Error: couldn't find room {room_id} to update tags");
-                        }
-                    }
-                    RoomsListUpdate::Status { status } => {
-                        self.status = status;
-                    }
-                }
-            }
-            if num_updates > 0 {
-                log!("RoomsList: processed {} updates to the list of all rooms", num_updates);
-                self.redraw(cx);
-            }
             self.handle_rooms_list_updates(cx, event, scope);
         }
 
@@ -1122,56 +959,6 @@ impl Widget for RoomsList {
         }
 
         DrawStep::done()
-    }
-}
-
-impl WidgetMatchEvent for RoomsList {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        for action in actions {
-            if let RoomsViewAction::Search(keywords) = action.as_widget_action().cast() {
-                let portal_list = self.view.portal_list(id!(list));
-               
-                if keywords.is_empty() {
-                    // Reset the displayed rooms list to show all rooms.
-                    self.displayed_rooms = self.all_rooms_sorted.to_vec();
-                    self.update_status_rooms_count();
-                    portal_list.set_first_id_and_scroll(0, 0.0);
-                    self.display_filter = None;
-                    self.sort_fn = None;
-                    self.redraw(cx);
-                    return;
-                }
-                let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
-                    .set_keywords(keywords.clone())
-                    .set_filter_criteria(RoomFilterCriteria::All)
-                    .build();
-
-                if let Some(sort_fn) = sort_fn {
-                    todo!();
-                    let mut filtered_rooms: Vec<_> = self.all_rooms
-                        .iter()
-                        .filter(|(_, room)| filter(room))
-                        .collect();
-
-                    filtered_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(room_a, room_b));
-
-                    self.displayed_rooms = filtered_rooms
-                        .into_iter()
-                        .map(|(room_id, _)| room_id.clone())
-                        .collect();
-                } else {
-                    self.apply_filter();
-                };
-
-                self.display_filter = Some(filter);
-
-                // Update the displayed rooms list and redraw it.
-                self.update_status_matching_rooms();
-                portal_list.set_first_id_and_scroll(0, 0.0);
-                self.redraw(cx);
-
-            }
-        }
     }
 }
 

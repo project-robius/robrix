@@ -1531,12 +1531,12 @@ async fn async_main_loop(
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
                     add_new_room(&new_room, &room_list_service, false).await?;
-                    all_known_rooms.push_front(new_room);
+                    all_known_rooms.push_front(new_room.into());
                 }
                 VectorDiff::PushBack { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
                     add_new_room(&new_room, &room_list_service,true).await?;
-                    all_known_rooms.push_back(new_room);
+                    all_known_rooms.push_back(new_room.into());
                 }
                 VectorDiff::PopFront => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopFront"); }
@@ -1670,11 +1670,11 @@ async fn update_room(
                 }
                 RoomState::Joined => {
                     log!("update_room(): adding new Joined room: {new_room_name:?} ({new_room_id})");
-                    return add_new_room(new_room, room_list_service).await;
+                    return add_new_room(new_room, room_list_service, false).await;
                 }
                 RoomState::Invited => {
                     log!("update_room(): adding new Invited room: {new_room_name:?} ({new_room_id})");
-                    return add_new_room(new_room, room_list_service).await;
+                    return add_new_room(new_room, room_list_service, false).await;
                 }
                 RoomState::Knocked => {
                     // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
@@ -1884,29 +1884,9 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         request_receiver,
     ));
 
-    let latest = latest_event
-        .as_ref()
-        .map(|ev| get_latest_event_details(ev, &room_id));
-
-    let room_list_entry = RoomsListEntry {
-        room_id: room_id.clone(),
-        latest_display,
-        latest,
-        tags: room.tags().await.ok().flatten(),
-        num_unread_messages: room.num_unread_messages(),
-        num_unread_mentions: room.num_unread_mentions(),
-        // start with a basic text avatar; the avatar image will be fetched asynchronously below.
-        avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
-        room_name,
-        canonical_alias: room.canonical_alias(),
-        alt_aliases: room.alt_aliases(),
-        has_been_paginated: false,
-        is_selected: false,
-    };
-
-    rooms_list::enqueue_rooms_list_update(match back {true => RoomsListUpdate::AddRoomBack(room_list_entry), false =>RoomsListUpdate::AddRoomFront(room_list_entry)});
-
-    spawn_fetch_room_avatar(room.inner_room().clone());
+    let latest = latest_event.as_ref().map(
+        |ev| get_latest_event_details(ev, &room_id)
+    );
 
     let tombstoned_room_replaced_by_this_room = TOMBSTONED_ROOMS.lock()
         .unwrap()
@@ -1931,7 +1911,8 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     // issue a `MatrixRequest` that relies on that room being in `ALL_JOINED_ROOMS`.
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
         room_id,
-        latest,
+        latest: latest.clone(),
+        latest_display: latest, // TODO: fix me
         tags: room.tags().await.ok().flatten().unwrap_or_default(),
         num_unread_messages: room.num_unread_messages(),
         num_unread_mentions: room.num_unread_mentions(),
