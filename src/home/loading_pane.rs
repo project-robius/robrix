@@ -69,7 +69,6 @@ live_design! {
                     draw_text: {
                         text_style: <REGULAR_TEXT>{
                             font_size: 11.5,
-                            height_factor: 1.3
                         },
                         color: #000
                         wrap: Word
@@ -84,7 +83,7 @@ live_design! {
 
                     cancel_button = <RobrixIconButton> {
                         align: {x: 0.5, y: 0.5}
-                        padding: {left: 15, right: 15}
+                        padding: 15
                         // draw_icon: {
                         //     svg_file: (ICON_BLOCK_USER)
                         //     color: (COLOR_DANGER_RED),

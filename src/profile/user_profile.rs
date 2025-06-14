@@ -120,7 +120,7 @@ live_design! {
             width: Fill, height: Fit
             align: {x: 0.5, y: 0.0}
             padding: {left: 10, right: 10}
-            spacing: 10
+            spacing: 3
             flow: Down
             avatar = <Avatar> {
                 width: 150,
@@ -158,7 +158,7 @@ live_design! {
             width: Fill,
             height: Fit,
             flow: Down,
-            spacing: 10,
+            spacing: 3,
             align: {x: 0.0, y: 0.0}
             padding: {left: 10, right: 10}
 
@@ -200,7 +200,7 @@ live_design! {
         actions = <View> {
             width: Fill, height: Fit
             flow: Down,
-            spacing: 7
+            spacing: 5,
             padding: {left: 10., right: 10, bottom: 50}
             <Label> {
                 width: Fill, height: Fit
@@ -215,6 +215,8 @@ live_design! {
             direct_message_button = <RobrixIconButton> {
                 // TODO: support this button. Once this is implemented, uncomment the line in draw_walk()
                 enabled: false,
+                margin: 0,
+                padding: {top: 10, bottom: 10, left: 8, right: 15}
                 draw_icon: {
                     svg_file: (ICON_DOUBLE_CHAT)
                 }
@@ -223,6 +225,8 @@ live_design! {
             }
 
             copy_link_to_user_button = <RobrixIconButton> {
+                padding: {top: 10, bottom: 10, left: 8, right: 15}
+                margin: 0,
                 draw_icon: {
                     svg_file: (ICON_COPY)
                 }
@@ -232,19 +236,23 @@ live_design! {
 
             jump_to_read_receipt_button = <RobrixIconButton> {
                 enabled: false, // TODO: support this button
+                padding: {top: 10, bottom: 10, left: 8, right: 15}
+                margin: 0,
                 draw_icon: {
                     svg_file: (ICON_JUMP)
                 }
-                icon_walk: {width: 14, height: 16, margin: {left: -1, right: 2}}
+                icon_walk: {width: 14, height: 16, margin: {left: -1, right: 1.5}}
                 text: "Jump to Read Receipt"
             }
 
             ignore_user_button = <RobrixIconButton> {
+                padding: {top: 10, bottom: 10, left: 8, right: 15}
+                margin: 0,
                 draw_icon: {
                     svg_file: (ICON_BLOCK_USER)
                     color: (COLOR_DANGER_RED),
                 }
-                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -0.5} }
 
                 draw_bg: {
                     border_color: (COLOR_DANGER_RED),
@@ -290,6 +298,7 @@ live_design! {
                 width: Fit,
                 height: Fit,
                 align: {x: 0.0, y: 0.0},
+                spacing: 0,
                 margin: 7,
                 padding: 15,
 

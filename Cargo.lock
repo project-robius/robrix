@@ -5,8 +5,7 @@ version = 4
 [[package]]
 name = "ab_glyph_rasterizer"
 version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c71b1793ee61086797f5c80b6efa2b8ffa6d5dd703f118545808a7f2e27f7046"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 
 [[package]]
 name = "accessory"
@@ -2024,8 +2023,8 @@ dependencies = [
 
 [[package]]
 name = "makepad-derive-live"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -2033,16 +2032,16 @@ dependencies = [
 
 [[package]]
 name = "makepad-derive-wasm-bridge"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
 
 [[package]]
 name = "makepad-derive-widget"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -2050,8 +2049,8 @@ dependencies = [
 
 [[package]]
 name = "makepad-draw"
-version = "0.6.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "ab_glyph_rasterizer",
  "fxhash",
@@ -2061,34 +2060,74 @@ dependencies = [
  "makepad-vector",
  "png",
  "sdfer",
- "ttf-parser 0.25.1",
+ "ttf-parser",
  "unicode-bidi",
  "unicode-linebreak",
  "unicode-segmentation",
 ]
 
 [[package]]
+name = "makepad-fonts-chinese-bold"
+version = "1.0.1"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+dependencies = [
+ "makepad-platform",
+]
+
+[[package]]
+name = "makepad-fonts-chinese-bold-2"
+version = "1.0.1"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+dependencies = [
+ "makepad-platform",
+]
+
+[[package]]
+name = "makepad-fonts-chinese-regular"
+version = "1.0.1"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+dependencies = [
+ "makepad-platform",
+]
+
+[[package]]
+name = "makepad-fonts-chinese-regular-2"
+version = "1.0.1"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+dependencies = [
+ "makepad-platform",
+]
+
+[[package]]
+name = "makepad-fonts-emoji"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+dependencies = [
+ "makepad-platform",
+]
+
+[[package]]
 name = "makepad-futures"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 
 [[package]]
 name = "makepad-futures-legacy"
-version = "0.7.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 
 [[package]]
 name = "makepad-html"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "makepad-live-id",
 ]
 
 [[package]]
 name = "makepad-http"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 
 [[package]]
 name = "makepad-jni-sys"
@@ -2098,8 +2137,8 @@ checksum = "9775cbec5fa0647500c3e5de7c850280a88335d1d2d770e5aa2332b801ba7064"
 
 [[package]]
 name = "makepad-live-compiler"
-version = "0.5.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "makepad-derive-live",
  "makepad-live-tokenizer",
@@ -2108,24 +2147,24 @@ dependencies = [
 
 [[package]]
 name = "makepad-live-id"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "makepad-live-id-macros",
 ]
 
 [[package]]
 name = "makepad-live-id-macros"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
 
 [[package]]
 name = "makepad-live-tokenizer"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "makepad-live-id",
  "makepad-math",
@@ -2134,18 +2173,21 @@ dependencies = [
 
 [[package]]
 name = "makepad-math"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+dependencies = [
+ "makepad-micro-serde",
+]
 
 [[package]]
 name = "makepad-micro-proc-macro"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 
 [[package]]
 name = "makepad-micro-serde"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-serde-derive",
@@ -2153,21 +2195,21 @@ dependencies = [
 
 [[package]]
 name = "makepad-micro-serde-derive"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
 
 [[package]]
 name = "makepad-objc-sys"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 
 [[package]]
 name = "makepad-platform"
-version = "0.6.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "bitflags 2.9.0",
  "hilog-sys",
@@ -2191,12 +2233,12 @@ dependencies = [
 [[package]]
 name = "makepad-rustybuzz"
 version = "0.8.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "bitflags 1.3.2",
  "bytemuck",
+ "makepad-ttf-parser",
  "smallvec",
- "ttf-parser 0.21.1",
  "unicode-bidi-mirroring",
  "unicode-ccc",
  "unicode-properties",
@@ -2205,25 +2247,30 @@ dependencies = [
 
 [[package]]
 name = "makepad-shader-compiler"
-version = "0.5.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "makepad-live-compiler",
 ]
 
 [[package]]
+name = "makepad-ttf-parser"
+version = "0.21.1"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+
+[[package]]
 name = "makepad-vector"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
+ "makepad-ttf-parser",
  "resvg",
- "ttf-parser 0.21.1",
 ]
 
 [[package]]
 name = "makepad-wasm-bridge"
-version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "makepad-derive-wasm-bridge",
  "makepad-live-id",
@@ -2231,22 +2278,43 @@ dependencies = [
 
 [[package]]
 name = "makepad-widgets"
-version = "0.6.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+version = "1.0.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "makepad-derive-widget",
  "makepad-draw",
+ "makepad-fonts-chinese-bold",
+ "makepad-fonts-chinese-bold-2",
+ "makepad-fonts-chinese-regular",
+ "makepad-fonts-chinese-regular-2",
+ "makepad-fonts-emoji",
  "makepad-html",
+ "makepad-zune-jpeg",
  "makepad-zune-png",
  "pulldown-cmark",
  "unicode-segmentation",
- "zune-jpeg",
+]
+
+[[package]]
+name = "makepad-zune-core"
+version = "0.2.14"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+dependencies = [
+ "bitflags 2.9.0",
+]
+
+[[package]]
+name = "makepad-zune-jpeg"
+version = "0.3.17"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+dependencies = [
+ "makepad-zune-core",
 ]
 
 [[package]]
 name = "makepad-zune-png"
 version = "0.4.10"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 dependencies = [
  "zune-core",
  "zune-inflate",
@@ -3431,7 +3499,7 @@ dependencies = [
 
 [[package]]
 name = "robrix"
-version = "0.0.1-pre-alpha-2"
+version = "0.0.1-pre-alpha-3"
 dependencies = [
  "anyhow",
  "bitflags 2.9.0",
@@ -3441,7 +3509,6 @@ dependencies = [
  "clap",
  "crossbeam-channel",
  "crossbeam-queue",
- "emojis",
  "eyeball",
  "eyeball-im",
  "futures-util",
@@ -3737,8 +3804,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "sdfer"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27fd75ebc7c721a70d202c7cdd2beb108bbe5dfaaea68e06aff4de2f4cc240ed"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
 
 [[package]]
 name = "semver"
@@ -4384,11 +4450,6 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
-
-[[package]]
-name = "ttf-parser"
-version = "0.21.1"
-source = "git+https://github.com/makepad/makepad?branch=rik#b7c899ad53bfe6e418438bc7bb69dc3b2463d7a2"
 
 [[package]]
 name = "ttf-parser"
@@ -5379,13 +5440,4 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73ab332fe2f6680068f3582b16a24f90ad7096d5d39b974d1c0aff0125116f02"
 dependencies = [
  "simd-adler32",
-]
-
-[[package]]
-name = "zune-jpeg"
-version = "0.4.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99a5bab8d7dedf81405c4bb1f2b83ea057643d9cb28778cea9eecddeedd2e028"
-dependencies = [
- "zune-core",
 ]

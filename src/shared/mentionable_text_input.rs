@@ -11,6 +11,7 @@ use crate::avatar_cache::*;
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::utils;
 
+use makepad_widgets::text::selection::Cursor;
 use makepad_widgets::*;
 use matrix_sdk::room::RoomMember;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
@@ -26,19 +27,20 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::helpers::FillerX;
 
-    pub FOCUS_HOVER_COLOR = #eaecf0
+    pub FOCUS_HOVER_COLOR = #C
     pub KEYBOARD_FOCUS_OR_COLOR_HOVER = #1C274C
 
     // Template for user list items in the mention dropdown
     UserListItem = <View> {
         width: Fill,
         height: Fit,
+        margin: {left: 4, right: 4}
         padding: {left: 8, right: 8, top: 4, bottom: 4}
         show_bg: true
         cursor: Hand
         draw_bg: {
             color: #fff,
-            uniform border_radius: 6.0,
+            uniform border_radius: 4.0,
             instance hover: 0.0,
             instance selected: 0.0,
 
@@ -109,8 +111,18 @@ live_design! {
             spacing: 0.0
             padding: 0.0
 
+            draw_bg: {
+                color: (COLOR_SECONDARY),
+            }
             header_view = {
+                margin: {left: 4, right: 4}
+                draw_bg: {
+                    color: (COLOR_ROBRIX_PURPLE),
+                }
                 header_label = {
+                    draw_text: {
+                        color: (COLOR_PRIMARY_DARKER),
+                    }
                     text: "Users in this Room"
                 }
             }
@@ -124,71 +136,11 @@ live_design! {
         }
 
         persistent = {
+            top = { height: 0 }
+            bottom = { height: 0 }
             center = {
-                text_input = {
-                    empty_message: "Start typing..."
-                    draw_bg: {
-                        color: (COLOR_PRIMARY)
-                        instance border_radius: 2.0
-                        instance border_size: 0.0
-                        instance border_color: #D0D5DD
-                        instance inset: vec4(0.0, 0.0, 0.0, 0.0)
-
-                        fn get_color(self) -> vec4 {
-                            return self.color
-                        }
-
-                        fn get_border_color(self) -> vec4 {
-                            return self.border_color
-                        }
-
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                            sdf.box(
-                                self.inset.x + self.border_size,
-                                self.inset.y + self.border_size,
-                                self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
-                                self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
-                                max(1.0, self.border_radius)
-                            )
-                            sdf.fill_keep(self.get_color())
-                            if self.border_size > 0.0 {
-                                sdf.stroke(self.get_border_color(), self.border_size)
-                            }
-                            return sdf.result
-                        }
-                    }
-
-                    draw_text: {
-                        color: (MESSAGE_TEXT_COLOR)
-                        text_style: <MESSAGE_TEXT_STYLE>{}
-                        fn get_color(self) -> vec4 {
-                            return mix(self.color, #B, self.is_empty)
-                        }
-                    }
-
-                    draw_cursor: {
-                        instance focus: 0.0
-                        uniform border_radius: 0.5
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius)
-                            sdf.fill(mix(#fff, #bbb, self.focus));
-                            return sdf.result
-                        }
-                    }
-
-                    draw_highlight: {
-                        instance hover: 0.0
-                        instance focus: 0.0
-                        uniform border_radius: 2.0
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius)
-                            sdf.fill(mix(#eee, #ddd, self.focus));
-                            return sdf.result
-                        }
-                    }
+                text_input = <RobrixTextInput> {
+                    empty_text: "Start typing..."
                 }
             }
         }
@@ -228,10 +180,13 @@ pub struct MentionableTextInput {
     #[rust] room_members: Arc<Vec<RoomMember>>,
     /// Position where the @ mention starts
     #[rust] current_mention_start_index: Option<usize>,
-    /// The set of users that were mentioned (at one point) in this text input.
-    /// Due to characters being deleted/removed, this list is a *superset*
-    /// of possible users who may have been mentioned.
-    /// All of these mentions may not exist in the final text input content;
+    /// The set of users (user ID and display name) that were mentioned
+    /// at one point in this text input.
+    ///
+    /// As characters may have been deleted/removed after the user-to-mention
+    /// was selected, this list is a *superset* of possible users
+    /// who may have been mentioned.
+    /// Thus, all of these mentions may not exist in the final text input content;
     /// this is just a list of users to search the final sent message for
     /// when adding in new mentions.
     #[rust] possible_mentions: BTreeMap<OwnedUserId, String>,
@@ -258,7 +213,7 @@ impl Widget for MentionableTextInput {
             if let Some(action) =
                 actions.find_widget_action(self.cmd_text_input.text_input_ref().widget_uid())
             {
-                if let TextInputAction::Change(text) = action.cast() {
+                if let TextInputAction::Changed(text) = action.cast() {
                     self.handle_text_change(cx, scope, text);
                 }
             }
@@ -282,7 +237,7 @@ impl MentionableTextInput {
         if let Some(start_idx) = self.current_mention_start_index {
             let text_input_ref = self.cmd_text_input.text_input_ref();
             let current_text = text_input_ref.text();
-            let head = text_input_ref.borrow().map_or(0, |p| p.get_cursor().head.index);
+            let head = text_input_ref.borrow().map_or(0, |p| p.cursor().index);
 
             // For now, we insert the markdown link to the mentioned user directly
             // instead of the user's display name because we don't yet have a way
@@ -306,7 +261,11 @@ impl MentionableTextInput {
             self.cmd_text_input.set_text(cx, &new_text);
             // Calculate new cursor position
             let new_pos = start_idx + mention_to_insert.len();
-            text_input_ref.set_cursor(new_pos, new_pos);
+            text_input_ref.set_cursor(
+                cx,
+                Cursor { index: new_pos, prefer_next_row: false },
+                false,
+            );
         }
 
         self.close_mention_popup(cx);
@@ -321,7 +280,7 @@ impl MentionableTextInput {
             self.possible_mentions.clear();
         }
 
-        let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.get_cursor().head.index);
+        let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.cursor().index);
 
         if let Some(trigger_pos) = self.find_mention_trigger_position(&text, cursor_pos) {
             self.current_mention_start_index = Some(trigger_pos);
@@ -562,6 +521,13 @@ impl MentionableTextInputRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_text(cx, text);
         }
+    }
+
+    /// Returns a reference to the inner `TextInput` widget.
+    pub fn text_input_ref(&self) -> TextInputRef {
+        self.borrow()
+            .map(|inner| inner.cmd_text_input.text_input_ref())
+            .unwrap_or_default()
     }
 
     /// Sets the room members for this text input

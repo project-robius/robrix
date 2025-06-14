@@ -1,3 +1,10 @@
+//! A text input used to filter the rooms list
+//! with a search icon and a button to clear the input.
+//!
+//! This is a dedicated widget instead of a general "SearchBar"
+//! in order for us to be able to place it inside of a `CachedWidget`
+//! and have a single instance be shared across the Mobile and Desktop app views.
+
 use makepad_widgets::*;
 
 live_design! {
@@ -10,24 +17,21 @@ live_design! {
 
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
 
-    pub SearchBar = {{SearchBar}}<RoundedView> {
+    pub RoomFilterInputBar = {{RoomFilterInputBar}}<RoundedView> {
         width: Fill,
-        height: Fit,
+        height: 35,
 
         show_bg: true,
         draw_bg: {
-            color: (COLOR_PRIMARY)
+            color: (COLOR_PRIMARY),
+            border_radius: 4.0,
+            border_color: (COLOR_SECONDARY),
+            border_size: 0.0,
         }
-
         padding: {top: 3, bottom: 3, left: 10, right: 10}
+        margin: {top: 0, bottom: 3, left: 0, right: 0}
         spacing: 4,
         align: {x: 0.0, y: 0.5},
-
-        draw_bg: {
-            border_radius: 0.0,
-            border_color: #d8d8d8,
-            border_size: 0.6,
-        }
 
         <Icon> {
             draw_icon: {
@@ -42,8 +46,9 @@ live_design! {
         input = <RobrixTextInput> {
             width: Fill,
             height: Fit,
+            flow: Right, // do not wrap
 
-            empty_message: "Search..."
+            empty_text: "Filter rooms..."
 
             draw_text: {
                 text_style: { font_size: 10 },
@@ -52,34 +57,35 @@ live_design! {
 
         clear_button = <RobrixIconButton> {
             visible: false,
-            padding: {left: 10, right: 10}
+            padding: {top: 7, bottom: 7, left: 10, right: 10},
+            spacing: 0,
             align: {x: 0.5, y: 0.5}
             draw_icon: {
                 svg_file: (ICON_CLOSE),
                 color: (COLOR_TEXT_INPUT_IDLE)
             }
-            icon_walk: {width: 10, height: Fit}
+            icon_walk: {width: Fit, height: 10, margin: 0}
         }
     }
 }
 
+/// A text input (with a search icon and cancel button) used to filter the rooms list.
+///
+/// See the module-level docs for more detail.
 #[derive(Live, LiveHook, Widget)]
-pub struct SearchBar {
-    #[deref]
-    view: View,
+pub struct RoomFilterInputBar {
+    #[deref] view: View,
 }
 
-/// Actions emitted by the search bar based on user interaction with it.
+/// Actions emitted by the `RoomFilterInputBar` based on user interaction with it.
 #[derive(Clone, Debug, DefaultNone)]
-pub enum SearchBarAction {
-    /// The user has entered a search query.
-    Search(String),
-    /// The user has cleared the search query.
-    ResetSearch,
-    None
+pub enum RoomFilterAction {
+    /// The user has changed the text entered into the filter bar.
+    Changed(String),
+    None,
 }
 
-impl Widget for SearchBar {
+impl Widget for RoomFilterInputBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
@@ -90,7 +96,7 @@ impl Widget for SearchBar {
     }
 }
 
-impl WidgetMatchEvent for SearchBar {
+impl WidgetMatchEvent for RoomFilterInputBar {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         let input = self.text_input(id!(input));
         let clear_button = self.button(id!(clear_button));
@@ -98,32 +104,21 @@ impl WidgetMatchEvent for SearchBar {
         // Handle user changing the input text
         if let Some(keywords) = input.changed(actions) {
             clear_button.set_visible(cx, !keywords.is_empty());
-            let widget_uid = self.widget_uid(); 
-            if keywords.is_empty() {
-                cx.widget_action(
-                    widget_uid,
-                    &scope.path,
-                    SearchBarAction::ResetSearch
-                );
-            } else {
-                cx.widget_action(
-                    widget_uid,
-                    &scope.path,
-                    SearchBarAction::Search(keywords)
-                );
-            }
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                RoomFilterAction::Changed(keywords)
+            );
         }
 
-        // Handle user clicked the clear button
         if clear_button.clicked(actions) {
             input.set_text(cx, "");
             clear_button.set_visible(cx, false);
             input.set_key_focus(cx);
-
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
-                SearchBarAction::ResetSearch,
+                RoomFilterAction::Changed(String::new())
             );
         }
     }

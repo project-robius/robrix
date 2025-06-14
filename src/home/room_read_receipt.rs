@@ -22,7 +22,9 @@ live_design! {
     use crate::shared::styles::*;
 
     pub AvatarRow = {{AvatarRow}} {
+        align: {y: 0.5},
         avatar_template: <Avatar> {
+            // margin: {top: 2}
             width: 15.0,
             height: 15.0,
             text_view = {
@@ -37,9 +39,11 @@ live_design! {
         width: Fit,
         height: 15.0,
         plus_template: <Label> {
+            padding: 0,
+            flow: Right, // do not wrap
             draw_text: {
                 color: #x0,
-                text_style: <TITLE_TEXT>{ font_size: 11}
+                text_style: <TITLE_TEXT>{ font_size: 10}
             }
             text: ""
         }
