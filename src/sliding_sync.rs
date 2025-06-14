@@ -1506,7 +1506,6 @@ async fn async_main_loop(
         Box::new(|_room| true),
     );
 
-    const LOG_ROOM_LIST_DIFFS: bool = true;
     let mut all_known_rooms: Vector<RoomListServiceRoomInfo> = Vector::new();
 
     pin_mut!(room_diff_stream);
@@ -1554,10 +1553,8 @@ async fn async_main_loop(
                 }
                 VectorDiff::Insert { index, value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
-                    // TODO: handle correctly insert
                     add_new_room(&new_room, &room_list_service).await?;
                     all_known_rooms.insert(index, new_room.into());
-
                 }
                 VectorDiff::Set { index, value: changed_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Set at {index}"); }
@@ -1621,7 +1618,7 @@ async fn async_main_loop(
                     ALL_JOINED_ROOMS.lock().unwrap().clear();
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
                     for room in &new_rooms {
-                        add_new_room(&room, &room_list_service).await?;
+                        add_new_room(room, &room_list_service).await?;
                     }
                     all_known_rooms = new_rooms.into_iter().map(|r| r.into()).collect();
                 }
@@ -1751,7 +1748,6 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
 
 /// Invoked when the room list service has received an update with a brand new room.
 async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomListService) -> Result<()> {
-
     let room_id = room.room_id().to_owned();
     // We must call `display_name()` here to calculate and cache the room's name.
     let room_name = room.display_name().await.map(|n| n.to_string()).ok();
