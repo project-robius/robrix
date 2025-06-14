@@ -1,7 +1,9 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
+
 use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
+use matrix_sdk_ui::timeline::TimelineItemContent;
 use crate::{
     app::{AppState, SelectedRoom},
     room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, RoomPreviewAvatar},
@@ -112,6 +114,7 @@ pub enum RoomsListUpdate {
     /// Update the latest event content and timestamp for the given room.
     UpdateLatestEvent {
         room_id: OwnedRoomId,
+        content: TimelineItemContent,
         timestamp: MilliSecondsSinceUnixEpoch,
         /// The Html-formatted text preview of the latest message.
         latest_message_text: String,
@@ -198,6 +201,8 @@ pub struct JoinedRoomInfo {
     pub tags: Tags,
     /// The timestamp and Html text content of the latest message in this room.
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
+    /// The timestamp and Html text content of the latest display message in this room.
+    pub latest_display: Option<(MilliSecondsSinceUnixEpoch, String)>,
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
     pub avatar: RoomPreviewAvatar,
@@ -293,12 +298,23 @@ pub struct RoomsList {
     /// This includes both direct rooms and regular rooms.
     #[rust] all_joined_rooms: HashMap<OwnedRoomId, JoinedRoomInfo>,
 
+
     /// The currently-active filter function for the list of rooms.
     ///
     /// Note: for performance reasons, this does not get automatically applied
     /// when its value changes. Instead, you must manually invoke it on the set of `all_joined_rooms`
     /// in order to update the set of `displayed_rooms` accordingly.
     #[rust] display_filter: RoomDisplayFilter,
+
+
+    #[rust] sort_fn: Option<Box<SortFn>>,
+
+    /// The list of rooms currently displayed in the UI, in order from top to bottom.
+    /// This must be a strict subset of the rooms present in `all_rooms`, and should be determined
+    /// by applying the `display_filter` to the set of `all_rooms``.
+    #[rust] displayed_rooms: Vec<OwnedRoomId>,
+
+    #[rust] all_rooms_sorted: Vec<OwnedRoomId>,
 
     /// The list of invited rooms currently displayed in the UI, in order from top to bottom.
     /// This is a strict subset of the rooms in `all_invited_rooms`, and should be determined
@@ -401,7 +417,7 @@ impl RoomsList {
                         error!("Error: couldn't find room {room_id} to update avatar");
                     }
                 }
-                RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, latest_message_text } => {
+                RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, latest_message_text, content } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.latest = Some((timestamp, latest_message_text));
                     } else {

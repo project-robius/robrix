@@ -16,7 +16,7 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState
 };
 use matrix_sdk_ui::{
-    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
@@ -1516,8 +1516,8 @@ async fn async_main_loop(
                 VectorDiff::Append { values: new_rooms } => {
                     let _num_new_rooms = new_rooms.len();
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append {_num_new_rooms}"); }
-                    for new_room in new_rooms {
-                        add_new_room(&new_room, &room_list_service).await?;
+                    for new_room in &new_rooms {
+                        add_new_room(new_room, &room_list_service).await?;
                         all_known_rooms.push_back(new_room.into());
                     }
                 }
@@ -1847,7 +1847,30 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         room.timeline().ok_or_else(|| anyhow::anyhow!("BUG: room timeline not found for room {room_id}"))?
     };
     let latest_event = timeline.latest_event().await;
+
+    let items = timeline.items().await;
+
+    let latest_display = items
+        .iter()
+        .rev()
+        .find(|&item| match item.kind() {
+            TimelineItemKind::Event(e) => {
+                matches!(e.content(), TimelineItemContent::Message(_))
+            }
+            _ => false,
+        })
+        .map(|element| match element.kind() {
+            TimelineItemKind::Event(ev) => Some(get_latest_event_details(ev, &room_id)),
+            _ => None,
+        })
+        .unwrap_or_default();
+
     let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
+
+    let room_name = room.display_name().await
+
+        .map(|n| n.to_string())
+        .ok();
 
     let (request_sender, request_receiver) = watch::channel(Vec::new());
     let timeline_subscriber_handler_task = Handle::current().spawn(timeline_subscriber_handler(
@@ -1885,7 +1908,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
         room_id,
         latest,
-        tags: room.tags().await.ok().flatten().unwrap_or_default(),
+        latest_display,        tags: room.tags().await.ok().flatten().unwrap_or_default(),
         num_unread_messages: room.num_unread_messages(),
         num_unread_mentions: room.num_unread_mentions(),
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
@@ -2364,6 +2387,7 @@ fn update_latest_event(
     let mut room_avatar_changed = false;
 
     let (timestamp, latest_message_text) = get_latest_event_details(event_tl_item, &room_id);
+    let content = event_tl_item.content().clone();
     match event_tl_item.content() {
         // Check for relevant state events.
         TimelineItemContent::OtherState(other) => {
@@ -2412,6 +2436,7 @@ fn update_latest_event(
 
     enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
         room_id,
+        content,
         timestamp,
         latest_message_text,
     });
