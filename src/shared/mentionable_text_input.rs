@@ -1081,7 +1081,7 @@ impl MentionableTextInput {
             // Valid: "@room", " @room", "\n@room"
             // Invalid: "fake@room", "test@room"
             let is_valid_room_mention = absolute_pos == 0 ||
-                text.chars().nth(absolute_pos - 1).map_or(false, |c| c.is_whitespace());
+                text.chars().nth(absolute_pos - 1).is_some_and(|c| c.is_whitespace());
 
             if is_valid_room_mention {
                 // Enable room mentions for this text input
@@ -1115,7 +1115,7 @@ impl MentionableTextInput {
                 // Validate: mention must be at text start OR preceded by whitespace
                 // This prevents matching partial mentions like "fake[user](matrix:u/...)"
                 let is_valid_user_mention = bracket_start == 0 ||
-                    text.chars().nth(bracket_start - 1).map_or(false, |c| c.is_whitespace());
+                    text.chars().nth(bracket_start - 1).is_some_and(|c| c.is_whitespace());
 
                 if is_valid_user_mention {
                     // Extract user ID from the URL part: matrix:u/@userid:server.com)
