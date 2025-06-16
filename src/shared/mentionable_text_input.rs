@@ -726,7 +726,7 @@ impl MentionableTextInput {
             // Adjust height calculation to include the potential @room item
             // Use the same condition as when actually adding the @room item
             let has_room_item = self.can_notify_room && ("@room".contains(search_text) || search_text.is_empty());
-            let total_items_in_list = member_count + if has_room_item { 1 } else { 0 };
+            let total_items_in_list = member_count + has_room_item as usize;
 
             if total_items_in_list == 0 {
                 // If there are no matching items, just hide the entire popup and clear search state
