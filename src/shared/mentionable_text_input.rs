@@ -1039,7 +1039,6 @@ impl MentionableTextInputRef {
         }
     }
 
-
     /// Sets whether the current user can notify the entire room (@room mention)
     pub fn set_can_notify_room(&self, can_notify: bool) {
         if let Some(mut inner) = self.borrow_mut() {

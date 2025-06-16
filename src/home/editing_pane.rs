@@ -13,8 +13,7 @@ use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineEventItemId, TimelineIt
 
 use crate::shared::mentionable_text_input::MentionableTextInputWidgetExt;
 use crate::{
-    shared::popup_list::enqueue_popup_notification,
-    sliding_sync::{MatrixRequest, submit_async_request},
+    shared::popup_list::{enqueue_popup_notification, PopupItem}, sliding_sync::{submit_async_request, MatrixRequest}
 };
 
 live_design! {
@@ -213,7 +212,26 @@ impl Widget for EditingPane {
         }
 
         if let Event::Actions(actions) = event {
+<<<<<<< mentionable-refact
             let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input)).text_input(id!(text_input));
+=======
+            let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input)).text_input_ref();
+            // Check for room member update actions
+            for action in actions {
+                if let Some(widget_action) = action.as_widget_action().widget_uid_eq(self.widget_uid())  {
+                    log!("Found widget action for my widget_uid: {:?}", self.widget_uid());
+                    log!("Widget action type: {}", std::any::type_name_of_val(&widget_action));
+
+                    if let Some(update_action) = widget_action.downcast_ref::<EditingPaneInternalAction>() {
+                        if let EditingPaneInternalAction::RoomMembersUpdated(members) = update_action {
+                            log!("EditingPane received EditingPaneInternalAction RoomMembersUpdated action with {} members", members.len());
+                            self.handle_members_updated(members.clone());
+                        }
+                        continue;
+                    }
+                }
+            }
+>>>>>>> main
 
             // Hide the editing pane if the cancel button was clicked
             // or if the `Escape` key was pressed within the edit text input.
@@ -225,15 +243,16 @@ impl Widget for EditingPane {
                 return;
             }
 
-            let Some(info) = self.info.as_ref() else {
-                return;
-            };
-
+            let Some(info) = self.info.as_ref() else { return };
 
             if self.button(id!(accept_button)).clicked(actions)
+<<<<<<< mentionable-refact
                 || edit_text_input.returned(actions).is_some_and(
                     |(_text, modifiers)| modifiers.is_primary()
                 )
+=======
+                || edit_text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
+>>>>>>> main
             {
                 let edited_text = edit_text_input.text().trim().to_string();
                 let edited_content = match info.event_tl_item.content() {
@@ -306,9 +325,10 @@ impl Widget for EditingPane {
                                 )
                             },
                             _non_editable => {
-                                enqueue_popup_notification(
-                                    "That message type cannot be edited.".into(),
-                                );
+                                enqueue_popup_notification(PopupItem { 
+                                    message: "That message type cannot be edited.".into(), 
+                                    auto_dismissal_duration: None
+                                });
                                 self.animator_play(cx, id!(panel.hide));
                                 self.redraw(cx);
                                 return;
@@ -341,9 +361,7 @@ impl Widget for EditingPane {
                             .collect::<Vec<_>>()
                             .try_into()
                         else {
-                            enqueue_popup_notification(
-                                "Failed to obtain existing poll answers while editing poll.".into(),
-                            );
+                            enqueue_popup_notification(PopupItem { message: "Failed to obtain existing poll answers while editing poll.".into(), auto_dismissal_duration: None });
                             return;
                         };
                         let mut new_content_block = UnstablePollStartContentBlock::new(
@@ -361,7 +379,7 @@ impl Widget for EditingPane {
                         }
                     },
                     _ => {
-                        enqueue_popup_notification("That event type cannot be edited.".into());
+                        enqueue_popup_notification(PopupItem { message: "That event type cannot be edited.".into(), auto_dismissal_duration: None });
                         return;
                     },
                 };
@@ -414,7 +432,7 @@ impl EditingPane {
                 self.animator_play(cx, id!(panel.hide));
             },
             Err(e) => {
-                enqueue_popup_notification(format!("Failed to edit message: {}", e));
+                enqueue_popup_notification(PopupItem { message: format!("Failed to edit message: {}", e), auto_dismissal_duration: None});
             },
         }
     }
@@ -422,7 +440,7 @@ impl EditingPane {
     /// Shows the editing pane and sets it up to edit the given `event`'s content.
     pub fn show(&mut self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
         if !event_tl_item.is_editable() {
-            enqueue_popup_notification("That message cannot be edited.".into());
+            enqueue_popup_notification(PopupItem { message: "That message cannot be edited.".into(), auto_dismissal_duration: None });
             return;
         }
 
@@ -435,28 +453,73 @@ impl EditingPane {
                 edit_text_input.set_text(cx, &poll.results().question);
             },
             _ => {
-                enqueue_popup_notification("That message cannot be edited.".into());
+                enqueue_popup_notification(PopupItem { message: "That message cannot be edited.".into(), auto_dismissal_duration: None });
                 return;
             },
         }
 
         self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
 
+<<<<<<< mentionable-refact
+=======
+        // Create room member subscription
+        self.create_room_subscription(cx, room_id);
+
+>>>>>>> main
         self.visible = true;
         self.button(id!(accept_button)).reset_hover(cx);
         self.button(id!(cancel_button)).reset_hover(cx);
+        self.animator_play(cx, id!(panel.show));
 
         // Set the text input's cursor to the end and give it key focus.
+        let inner_text_input = edit_text_input.text_input_ref();
         let text_len = edit_text_input.text().len();
-        edit_text_input.text_input(id!(text_input)).set_cursor(
+        inner_text_input.set_cursor(
             cx,
             Cursor { index: text_len, prefer_next_row: false },
             false,
         );
-        edit_text_input.text_input(id!(text_input)).set_key_focus(cx);
+        inner_text_input.set_key_focus(cx);
+        self.redraw(cx);
+    }
 
+    /// Returns the state of this `EditingPane`, if any.
+    pub fn save_state(&self) -> Option<EditingPaneState> {
+        self.info.as_ref().map(|info| EditingPaneState {
+            event_tl_item: info.event_tl_item.clone(),
+            text_input_state: self
+                .mentionable_text_input(id!(editing_content.edit_text_input))
+                .text_input_ref()
+                .save_state(),
+        })
+    }
+
+    /// Restores the state of this `EditingPane` from the given `editing_pane_state`.
+    pub fn restore_state(
+        &mut self,
+        cx: &mut Cx,
+        editing_pane_state: EditingPaneState,
+        room_id: OwnedRoomId,
+    ) {
+        let EditingPaneState { event_tl_item, text_input_state } = editing_pane_state;
+        self.mentionable_text_input(id!(editing_content.edit_text_input))
+            .text_input_ref()
+            .restore_state(cx, text_input_state);
+        self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
+
+        // Create room member subscription
+        self.create_room_subscription(cx, room_id);
+
+        self.visible = true;
+        self.button(id!(accept_button)).reset_hover(cx);
+        self.button(id!(cancel_button)).reset_hover(cx);
         self.animator_play(cx, id!(panel.show));
         self.redraw(cx);
+
+        // In this function, we do not give key focus to the text input,
+        // because we don't want the IME/soft keyboard to pop up immediately
+        // when the user navigates back to a room they were previously editing a message in.
+        // That soft-keyboard pop-up effect is jarring and unpleasant.
     }
 }
 
@@ -490,20 +553,39 @@ impl EditingPaneRef {
         inner.show(cx, event_tl_item, room_id);
     }
 
-    /// Returns the event that is currently being edited, if any.
-    pub fn get_event_being_edited(&self) -> Option<EventTimelineItem> {
-        self.borrow()?
-            .info
-            .as_ref()
-            .map(|info| info.event_tl_item.clone())
+    /// See [`EditingPane::save_state()`].
+    pub fn save_state(&self) -> Option<EditingPaneState> {
+        self.borrow()?.save_state()
     }
 
-    /// Hides the editing pane immediately without animating it out.
-    pub fn force_hide(&self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
+    /// Restores the state of this `EditingPane` from the given `event_tl_item` and `text_input_state`.
+    ///
+    /// The arguments should be the result of a previous call to [`Self::save_state()`].
+    pub fn restore_state(
+        &self,
+        cx: &mut Cx,
+        editing_pane_state: EditingPaneState,
+        room_id: OwnedRoomId,
+    ) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.restore_state(cx, editing_pane_state, room_id);
+        }
+    }
+
+    /// Hides the editing pane immediately and clears its state without animating it out.
+    pub fn force_reset_hide(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
         inner.visible = false;
+        inner.animator_cut(cx, id!(panel.hide));
+        inner.is_animating_out = false;
+        inner.info = None;
+        inner.member_subscription = None;
         inner.redraw(cx);
     }
+}
+
+/// The state of the EditingPane, used for saving/restoring its state.
+pub struct EditingPaneState {
+    event_tl_item: EventTimelineItem,
+    text_input_state: TextInputState,
 }
