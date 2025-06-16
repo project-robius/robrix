@@ -461,7 +461,7 @@ impl EditingPane {
         self.animator_play(cx, id!(panel.show));
 
         // Set the text input's cursor to the end and give it key focus.
-        let inner_text_input = edit_text_input.text_input_ref();
+        let inner_text_input = edit_text_input.text_input(id!(text_input));
         let text_len = edit_text_input.text().len();
         inner_text_input.set_cursor(
             cx,
@@ -478,7 +478,7 @@ impl EditingPane {
             event_tl_item: info.event_tl_item.clone(),
             text_input_state: self
                 .mentionable_text_input(id!(editing_content.edit_text_input))
-                .text_input_ref()
+                .text_input(id!(text_input))
                 .save_state(),
         })
     }
@@ -492,13 +492,9 @@ impl EditingPane {
     ) {
         let EditingPaneState { event_tl_item, text_input_state } = editing_pane_state;
         self.mentionable_text_input(id!(editing_content.edit_text_input))
-            .text_input_ref()
+            .text_input(id!(text_input))
             .restore_state(cx, text_input_state);
         self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
-
-        // Create room member subscription
-        self.create_room_subscription(cx, room_id);
-
         self.visible = true;
         self.button(id!(accept_button)).reset_hover(cx);
         self.button(id!(cancel_button)).reset_hover(cx);
@@ -568,7 +564,6 @@ impl EditingPaneRef {
         inner.animator_cut(cx, id!(panel.hide));
         inner.is_animating_out = false;
         inner.info = None;
-        inner.member_subscription = None;
         inner.redraw(cx);
     }
 }

@@ -1088,7 +1088,7 @@ impl Widget for RoomScreen {
                     key_code: KeyCode::ArrowUp,
                     modifiers: KeyModifiers { shift: false, control: false, alt: false, logo: false },
                     ..
-                }) = message_input.key_down_unhandled(actions) {
+                }) = text_input.key_down_unhandled(actions) {
                     let Some(tl) = self.tl_state.as_mut() else { return };
                     if let Some(latest_sent_msg) = tl.items
                         .iter()
