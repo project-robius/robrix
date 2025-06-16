@@ -740,7 +740,7 @@ impl MentionableTextInput {
 
             // Only create widgets for items that will actually be visible
             // If @room exists, reserve one slot for it
-            let user_items_limit = if has_room_item { max_visible_items - 1 } else { max_visible_items };
+            let user_items_limit = max_visible_items.saturating_sub(has_room_item as usize);
             for (index, (display_name, member)) in matched_members.into_iter().take(user_items_limit).enumerate() {
                 let item = WidgetRef::new_from_ptr(cx, self.user_list_item);
 
