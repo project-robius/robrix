@@ -20,7 +20,7 @@ live_design! {
 
     use crate::home::rooms_list::RoomsList;
 
-    pub RoomsSideBar = <AdaptiveView> {
+    pub RoomsSideBar = {{RoomsSideBar}} {
         Desktop = <View> {
             padding: {top: 20, left: 10, right: 10}
             flow: Down, spacing: 10
@@ -42,12 +42,34 @@ live_design! {
                 }
             }
 
-            sidebar_title = <Label> {
-                flow: Right, // do not wrap
-                text: "All Rooms"
-                draw_text: {
-                    color: #x0
-                    text_style: <TITLE_TEXT>{}
+            loading_spinner = <View> {
+                width: Fill,
+                height: Fit,
+                flow: Right,
+                visible: true,
+                align: {
+                    x: 0.5,
+                    y: 0.5
+                }
+                sidebar_title = <Label> {
+                    flow: Right, // do not wrap
+                    text: "All Rooms"
+                    draw_text: {
+                        color: #x0
+                        text_style: <TITLE_TEXT>{}
+                    }
+                },
+                <View> {
+                    width: Fill,
+                    height: Fit,
+                }
+                <View> {
+                    width:10,
+                    height: 10,
+                    show_bg: true,
+                    draw_bg: {
+                        color: #x0
+                    }
                 }
             }
             <CachedWidget> {
@@ -60,12 +82,42 @@ live_design! {
             flow: Down, spacing: 7
             width: Fill, height: Fill
 
-            sidebar_title = <Label> {
-                text: "All Rooms"
-                flow: Right, // do not wrap
-                draw_text: {
-                    color: #x0
-                    text_style: <TITLE_TEXT>{}
+            // sidebar_title = <Label> {
+            //     text: "All Rooms"
+            //     flow: Right, // do not wrap
+            //     draw_text: {
+            //         color: #x0
+            //         text_style: <TITLE_TEXT>{}
+            //     }
+            // }
+            loading_spinner = <View> {
+                width: Fill,
+                height: Fit,
+                flow: Right, 
+                visible: true,
+                align: {
+                    x: 0.5,
+                    y: 0.5
+                }
+                sidebar_title = <Label> {
+                    flow: Right, // do not wrap
+                    text: "All Rooms"
+                    draw_text: {
+                        color: #x0
+                        text_style: <TITLE_TEXT>{}
+                    }
+                },
+                <View> {
+                    width: Fill,
+                    height: Fit,
+                }
+                <View> {
+                    width:10,
+                    height: 10,
+                    show_bg: true,
+                    draw_bg: {
+                        color: #x0
+                    }
                 }
             }
             <CachedWidget> {
@@ -80,4 +132,36 @@ live_design! {
             }
         }
     }
+}
+
+#[derive(Live, LiveHook, Widget)]
+struct RoomsSideBar {
+    #[deref] view: AdaptiveView,
+    #[rust] is_syncing: bool,
+}
+
+impl Widget for RoomsSideBar {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                if let RoomsSideBarAction::SetSyncStatus(is_syncing) = action.as_widget_action().cast() {
+                    self.is_syncing = is_syncing;
+                    self.view(id!(loading_spinner)).set_visible(cx, is_syncing);
+                    self.redraw(cx);
+                }
+            }
+        }
+        
+        self.view.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+#[derive(Clone, Debug, DefaultNone)]
+pub enum RoomsSideBarAction {
+    SetSyncStatus(bool),
+    None,
 }
