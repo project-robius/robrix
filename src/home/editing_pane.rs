@@ -9,6 +9,7 @@ use matrix_sdk::{
         },
     },
 };
+use std::collections::BTreeMap;
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineEventItemId, TimelineItemContent};
 
 use crate::shared::mentionable_text_input::MentionableTextInputWidgetExt;
@@ -212,26 +213,8 @@ impl Widget for EditingPane {
         }
 
         if let Event::Actions(actions) = event {
-<<<<<<< mentionable-refact
-            let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input)).text_input(id!(text_input));
-=======
-            let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input)).text_input_ref();
-            // Check for room member update actions
-            for action in actions {
-                if let Some(widget_action) = action.as_widget_action().widget_uid_eq(self.widget_uid())  {
-                    log!("Found widget action for my widget_uid: {:?}", self.widget_uid());
-                    log!("Widget action type: {}", std::any::type_name_of_val(&widget_action));
 
-                    if let Some(update_action) = widget_action.downcast_ref::<EditingPaneInternalAction>() {
-                        if let EditingPaneInternalAction::RoomMembersUpdated(members) = update_action {
-                            log!("EditingPane received EditingPaneInternalAction RoomMembersUpdated action with {} members", members.len());
-                            self.handle_members_updated(members.clone());
-                        }
-                        continue;
-                    }
-                }
-            }
->>>>>>> main
+            let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input)).text_input(id!(text_input));
 
             // Hide the editing pane if the cancel button was clicked
             // or if the `Escape` key was pressed within the edit text input.
@@ -246,13 +229,9 @@ impl Widget for EditingPane {
             let Some(info) = self.info.as_ref() else { return };
 
             if self.button(id!(accept_button)).clicked(actions)
-<<<<<<< mentionable-refact
                 || edit_text_input.returned(actions).is_some_and(
                     |(_text, modifiers)| modifiers.is_primary()
                 )
-=======
-                || edit_text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
->>>>>>> main
             {
                 let edited_text = edit_text_input.text().trim().to_string();
                 let edited_content = match info.event_tl_item.content() {
@@ -325,8 +304,8 @@ impl Widget for EditingPane {
                                 )
                             },
                             _non_editable => {
-                                enqueue_popup_notification(PopupItem { 
-                                    message: "That message type cannot be edited.".into(), 
+                                enqueue_popup_notification(PopupItem {
+                                    message: "That message type cannot be edited.".into(),
                                     auto_dismissal_duration: None
                                 });
                                 self.animator_play(cx, id!(panel.hide));
@@ -335,10 +314,18 @@ impl Widget for EditingPane {
                             },
                         };
 
-                        // Extract mentions from the new edited text using create_message_with_mentions
+                        // TODO: extract mentions out of the new edited text and use them here.
+
                         let edit_text_input_widget = self.mentionable_text_input(id!(editing_content.edit_text_input));
+
+                        // Handle @room mentions that may have been added during editing
+                        // This ensures that newly added @room mentions are properly detected
+                        if edited_text.contains("@room") {
+                            edit_text_input_widget.set_possible_room_mention(true);
+                        }
+
                         let message_with_mentions = edit_text_input_widget.create_message_with_mentions(&edited_text);
-                        
+
                         if let EditedContent::RoomMessage(new_message_content) = &mut edited_content {
                             // Use the mentions from the newly created message
                             new_message_content.mentions = message_with_mentions.mentions;
@@ -445,6 +432,11 @@ impl EditingPane {
         }
 
         let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
+
+        // Clear any previous mentions to avoid accumulation
+        edit_text_input.set_possible_mentions(&BTreeMap::new());
+        edit_text_input.set_possible_room_mention(false);
+
         match event_tl_item.content() {
             TimelineItemContent::Message(message) => {
                 edit_text_input.set_text(cx, message.body());
@@ -458,14 +450,11 @@ impl EditingPane {
             },
         }
 
+        // Mark existing @room and mention positions as completed to prevent popup re-triggering
+        edit_text_input.mark_existing_mentions_as_completed();
+
         self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
 
-<<<<<<< mentionable-refact
-=======
-        // Create room member subscription
-        self.create_room_subscription(cx, room_id);
-
->>>>>>> main
         self.visible = true;
         self.button(id!(accept_button)).reset_hover(cx);
         self.button(id!(cancel_button)).reset_hover(cx);

@@ -41,7 +41,7 @@ const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
 
-/// The maximum number of timeline items to search through 
+/// The maximum number of timeline items to search through
 /// when looking for a particular event.
 ///
 /// This is a safety measure to prevent the main UI thread
@@ -1020,7 +1020,7 @@ impl Widget for RoomScreen {
                 if let Err(_e) = init_location_subscriber(cx) {
                     error!("Failed to initialize location subscriber");
                     enqueue_popup_notification(PopupItem {
-                        message: String::from("Failed to initialize location services."), 
+                        message: String::from("Failed to initialize location services."),
                         auto_dismissal_duration: None
                     });
                 }
@@ -1764,9 +1764,9 @@ impl RoomScreen {
                 }
                 MatrixId::Room(room_id) => {
                     if self.room_id.as_ref() == Some(room_id) {
-                        enqueue_popup_notification(PopupItem { 
-                            message: "You are already viewing that room.".into(), 
-                            auto_dismissal_duration: None 
+                        enqueue_popup_notification(PopupItem {
+                            message: "You are already viewing that room.".into(),
+                            auto_dismissal_duration: None
                         });
                         return true;
                     }
@@ -1810,7 +1810,7 @@ impl RoomScreen {
                 if let Err(e) = robius_open::Uri::new(&url).open() {
                     error!("Failed to open URL {:?}. Error: {:?}", url, e);
                     enqueue_popup_notification(PopupItem {
-                        message: format!("Could not open URL: {url}"), 
+                        message: format!("Could not open URL: {url}"),
                         auto_dismissal_duration: None
                     });
                 }
@@ -1824,7 +1824,7 @@ impl RoomScreen {
                 if let Err(e) = robius_open::Uri::new(&url).open() {
                     error!("Failed to open URL {:?}. Error: {:?}", url, e);
                     enqueue_popup_notification(PopupItem {
-                        message: format!("Could not open URL: {url}"), 
+                        message: format!("Could not open URL: {url}"),
                         auto_dismissal_duration: None
                     });
                 }
@@ -1864,9 +1864,9 @@ impl RoomScreen {
                         }
                     }
                     if !success {
-                        enqueue_popup_notification(PopupItem { 
-                            message: "Couldn't find message in timeline to react to.".to_string(), 
-                            auto_dismissal_duration: None 
+                        enqueue_popup_notification(PopupItem {
+                            message: "Couldn't find message in timeline to react to.".to_string(),
+                            auto_dismissal_duration: None
                         });
                         error!("MessageAction::React: couldn't find event [{}] {:?} to react to in room {}",
                             details.item_id,
@@ -2443,10 +2443,6 @@ impl RoomScreen {
     ) {
         // If the room is already being displayed, then do nothing.
         if self.room_id.as_ref().is_some_and(|id| id == &room_id) { return; }
-<<<<<<< mentionable-refact
-
-=======
->>>>>>> main
 
         self.hide_timeline();
         // Reset the the state of the inner loading pane.

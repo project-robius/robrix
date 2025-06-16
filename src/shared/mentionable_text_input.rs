@@ -128,24 +128,43 @@ live_design! {
                 return sdf.result
             }
         }
-        flow: Right
-        spacing: 8.0
+        flow: Down
+        spacing: 2.0
         align: {y: 0.5}
 
-        // Replace Icon with an Avatar to display room avatar
-        room_avatar = <Avatar> {
-            width: 24,
-            height: 24,
-            text_view = { text = { draw_text: {
-                text_style: { font_size: 12.0 }
-            }}}
+        user_info = <View> {
+            width: Fill,
+            height: Fit,
+            flow: Right,
+            spacing: 8.0
+            align: {y: 0.5}
+
+            room_avatar = <Avatar> {
+                width: 24,
+                height: 24,
+                text_view = { text = { draw_text: {
+                    text_style: { font_size: 12.0 }
+                }}}
+            }
+
+            room_mention = <Label> {
+                height: Fit,
+                draw_text: {
+                    color: #000,
+                    text_style: {font_size: 14.0}
+                }
+                text: "Notify the entire room"
+            }
+
+            filler = <FillerX> {}
         }
 
-        room_mention = <Label> {
+        room_user_id = <Label> {
             height: Fit,
+            align: {y: 0.5},
             draw_text: {
-                color: #000,
-                text_style: {font_size: 14.0}
+                color: #666,
+                text_style: {font_size: 12.0}
             }
             text: "@room"
         }
@@ -281,6 +300,9 @@ pub struct MentionableTextInput {
     #[rust] can_notify_room: bool,
     /// Whether the room members are currently being loaded
     #[rust] members_loading: bool,
+    /// Tracks byte positions where mentions have been completed (to avoid re-triggering popup)
+    /// Using SmallVec since most messages have 0-3 mentions
+    #[rust] completed_mention_positions: SmallVec<[usize; 4]>,
 }
 
 
@@ -433,11 +455,11 @@ impl MentionableTextInput {
         let head = text_input_ref.borrow().map_or(0, |p| p.cursor().index);
 
         if let Some(start_idx) = self.current_mention_start_index {
-            let room_mention_label = selected.label(id!(room_mention));
+            let room_mention_label = selected.label(id!(user_info.room_mention));
             let room_mention_text = room_mention_label.text();
-            let user_id_text = selected.label(id!(user_id)).text();
+            let room_user_id_text = selected.label(id!(room_user_id)).text();
 
-            let is_room_mention = { room_mention_text == "@room" && user_id_text.is_empty() };
+            let is_room_mention = { room_mention_text == "Notify the entire room" && room_user_id_text == "@room" };
 
             let mention_to_insert = if is_room_mention {
                 // Always set to true, don't reset previously selected @room mentions
@@ -475,6 +497,11 @@ impl MentionableTextInput {
             // Calculate new cursor position
             let new_pos = start_idx + mention_to_insert.len();
             text_input_ref.set_cursor(cx, Cursor { index: new_pos, prefer_next_row: false }, false);
+
+            // Mark this position as having a completed mention to prevent re-triggering popup
+            if !self.completed_mention_positions.contains(&start_idx) {
+                self.completed_mention_positions.push(start_idx);
+            }
         }
 
         self.is_searching = false;
@@ -489,11 +516,15 @@ impl MentionableTextInput {
         if trimmed_text.is_empty() {
             self.possible_mentions.clear();
             self.possible_room_mention = false;
+            self.completed_mention_positions.clear();
             if self.is_searching {
                 self.close_mention_popup(cx);
             }
             return;
         }
+
+        // Clean up completed mention positions that are now beyond text length
+        self.completed_mention_positions.retain(|pos| *pos < text.len());
 
         let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.cursor().index);
 
@@ -589,28 +620,14 @@ impl MentionableTextInput {
                 };
                 let mut room_avatar_shown = false;
 
-                let avatar_ref = room_mention_item.avatar(id!(room_avatar));
+                let avatar_ref = room_mention_item.avatar(id!(user_info.room_avatar));
 
-                // Get room avatar from current room Props
-                let room_name_first_char = if let Some(client) = get_client() {
-                    if let Some(room) = client.get_room(room_id) {
-                        // Get room display name and extract first grapheme
-                        let room_name = room.cached_display_name()
-                            .map(|name| name.to_string())
-                            .unwrap_or_else(|| "Room".to_string());
-                        let first_char = room_name.graphemes(true).next().unwrap_or("R");
-                        // Replace "?" with "R" for private rooms that have no explicit name
-                        if first_char == "@" {
-                            "R".to_string()
-                        } else {
-                            first_char.to_uppercase()
-                        }
-                    } else {
-                        "R".to_string()
-                    }
-                } else {
-                    "R".to_string()
-                };
+                // Get room avatar fallback text from room display name
+                let room_name_first_char = get_client()
+                    .and_then(|client| client.get_room(room_id))
+                    .and_then(|room| room.cached_display_name().map(|name| name.to_string()))
+                    .and_then(|name| name.graphemes(true).next().map(|s| s.to_uppercase()))
+                    .unwrap_or_else(|| "R".to_string());
 
                 if let Some(client) = get_client() {
                     if let Some(room) = client.get_room(room_id) {
@@ -651,21 +668,21 @@ impl MentionableTextInput {
                     avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &room_name_first_char);
                 }
 
-                // Apply the same height styling as user items for consistency
+                // The room_user_id already has "@room" text set in the template
+                // No need to set it again
+
+                // Apply layout and height styling based on device type
+                let new_height = if is_desktop { DESKTOP_ITEM_HEIGHT } else { MOBILE_ITEM_HEIGHT };
                 if is_desktop {
-                    room_mention_item.apply_over(
-                        cx,
-                        live!(
-                            height: (DESKTOP_ITEM_HEIGHT),
-                        ),
-                    );
+                    room_mention_item.apply_over(cx, live! {
+                        height: (new_height),
+                        flow: Right,
+                    });
                 } else {
-                    room_mention_item.apply_over(
-                        cx,
-                        live!(
-                            height: (MOBILE_ITEM_HEIGHT),
-                        ),
-                    );
+                    room_mention_item.apply_over(cx, live! {
+                        height: (new_height),
+                        flow: Down,
+                    });
                 }
 
                 self.cmd_text_input.add_item(room_mention_item);
@@ -834,24 +851,24 @@ impl MentionableTextInput {
             .next_back();
 
         if let Some(at_idx) = last_at_pos {
+            // Get the byte position of this @ symbol
+            let at_byte_pos = if at_idx < byte_positions.len() {
+                byte_positions[at_idx]
+            } else {
+                return None;
+            };
+
+            // Check if this @ position already has a completed mention
+            if self.completed_mention_positions.contains(&at_byte_pos) {
+                return None;
+            }
+
             // Extract the text after the @ symbol up to the cursor position
             let mention_text = &text_graphemes[at_idx + 1..cursor_grapheme_idx];
 
-            // Check if this is a completed @room mention followed by a space and other text
-            // If so, don't trigger the popup again
-            if mention_text.len() >= 5 {  // "room " minimum
-                let mention_str: String = mention_text.iter().copied().collect();
-                if mention_str.starts_with("room ") {
-                    return None;
-                }
-            }
-
             // Only trigger if this looks like an ongoing mention (contains only alphanumeric and basic chars)
             if self.is_valid_mention_text(mention_text) {
-                // Ensure at_idx is within bounds of byte_positions
-                if at_idx < byte_positions.len() {
-                    return Some(byte_positions[at_idx]);
-                }
+                return Some(at_byte_pos);
             }
         }
 
@@ -909,27 +926,48 @@ impl MentionableTextInput {
             .unwrap_or_else(|| member.user_id().to_string());
 
         let display_name_lower = display_name.to_lowercase();
+        let localpart = member.user_id().localpart();
+        let localpart_lower = localpart.to_lowercase();
 
-        // Priority 1: Display name starts with search text
-        if display_name_lower.starts_with(&search_text_lower) {
+        // Priority 1: Exact match (case-insensitive)
+        if display_name_lower == search_text_lower || localpart_lower == search_text_lower {
             return 1;
         }
 
-        // Priority 2: Localpart starts with search text
-        let localpart = member.user_id().localpart();
-        let localpart_lower = localpart.to_lowercase();
-        if localpart_lower.starts_with(&search_text_lower) {
+        // Priority 2: Display name starts with search text
+        if display_name_lower.starts_with(&search_text_lower) {
             return 2;
         }
 
-        // Priority 3: Display name contains search text
-        if display_name_lower.contains(&search_text_lower) {
+        // Priority 3: Localpart starts with search text
+        if localpart_lower.starts_with(&search_text_lower) {
             return 3;
         }
 
-        // Priority 4: Localpart contains search text
+        // Priority 4: Display name contains search text at word boundary
+        if let Some(pos) = display_name_lower.find(&search_text_lower) {
+            // Check if it's at the start of a word (preceded by space or at start)
+            if pos == 0 || display_name_lower.chars().nth(pos - 1) == Some(' ') {
+                return 4;
+            }
+        }
+
+        // Priority 5: Localpart contains search text at word boundary
+        if let Some(pos) = localpart_lower.find(&search_text_lower) {
+            // Check if it's at the start of a word (preceded by non-alphanumeric or at start)
+            if pos == 0 || !localpart_lower.chars().nth(pos - 1).unwrap_or('a').is_alphanumeric() {
+                return 5;
+            }
+        }
+
+        // Priority 6: Display name contains search text (anywhere)
+        if display_name_lower.contains(&search_text_lower) {
+            return 6;
+        }
+
+        // Priority 7: Localpart contains search text (anywhere)
         if localpart_lower.contains(&search_text_lower) {
-            return 4;
+            return 7;
         }
 
         // Should not reach here if user_matches_search returned true
@@ -1015,6 +1053,99 @@ impl MentionableTextInput {
         self.redraw(cx);
     }
 
+    /// Marks existing @room and user mentions in the current text as completed positions
+    /// and extracts them as possible mentions for editing.
+    ///
+    /// This method serves two purposes:
+    /// 1. Extract existing mentions from text to populate possible_mentions and possible_room_mention
+    /// 2. Mark mention positions as completed to prevent popup re-triggering during editing
+    ///
+    /// The method searches for two types of mentions:
+    /// - @room mentions: literal "@room" text
+    /// - User mentions: markdown links in format [displayname](matrix:u/@userid:server.com)
+    ///
+    /// For each found mention, it validates the position (must be at start or after whitespace)
+    /// and records the starting position to prevent the mention popup from appearing when
+    /// the user places their cursor near existing mentions during editing.
+    pub fn mark_existing_mentions_as_completed(&mut self) {
+        let text = self.text();
+
+        // === Part 1: Find and mark all @room positions ===
+        // Search pattern: "@room"
+        // Example: "Hello @room everyone" -> finds @room at position 6
+        let mut pos = 0;
+        while let Some(found_pos) = text[pos..].find("@room") {
+            let absolute_pos = pos + found_pos;
+
+            // Validate: @room must be at text start OR preceded by whitespace
+            // Valid: "@room", " @room", "\n@room"
+            // Invalid: "fake@room", "test@room"
+            let is_valid_room_mention = absolute_pos == 0 ||
+                text.chars().nth(absolute_pos - 1).map_or(false, |c| c.is_whitespace());
+
+            if is_valid_room_mention {
+                // Enable room mentions for this text input
+                self.possible_room_mention = true;
+
+                // Mark the '@' position as completed to prevent popup when cursor is placed here
+                if !self.completed_mention_positions.contains(&absolute_pos) {
+                    self.completed_mention_positions.push(absolute_pos);
+                }
+            }
+
+            // Continue searching from next character to find multiple @room mentions
+            pos = absolute_pos + 1;
+        }
+
+        // === Part 2: Find and mark all user mention patterns ===
+        // Search pattern: "](matrix:u/" which is part of [displayname](matrix:u/@userid:server.com)
+        // Example: "Hello [Alice](matrix:u/@alice:example.com) there"
+        //          Structure: [Alice](matrix:u/@alice:example.com)
+        //                     ^     ^              ^               ^
+        //                     |     |              |               |
+        //               bracket_start  link_pattern_start    user_id_end
+        pos = 0;
+        while let Some(found_pos) = text[pos..].find("](matrix:u/") {
+            let link_end = pos + found_pos; // Position right before "]"
+
+            // Find the corresponding opening bracket by searching backwards
+            // This handles cases where there might be multiple '[' characters
+            if let Some(bracket_start) = text[..link_end].rfind('[') {
+
+                // Validate: mention must be at text start OR preceded by whitespace
+                // This prevents matching partial mentions like "fake[user](matrix:u/...)"
+                let is_valid_user_mention = bracket_start == 0 ||
+                    text.chars().nth(bracket_start - 1).map_or(false, |c| c.is_whitespace());
+
+                if is_valid_user_mention {
+                    // Extract user ID from the URL part: matrix:u/@userid:server.com)
+                    // Search for '@' after "](matrix:u/" and extract until ')'
+                    if let Some(user_id_start) = text[link_end..].find("@") {
+                        if let Some(user_id_end) = text[link_end + user_id_start..].find(")") {
+                            // Extract the full user ID string (e.g., "@alice:example.com")
+                            let user_id_str = &text[link_end + user_id_start..link_end + user_id_start + user_id_end];
+
+                            // Try to parse as a valid Matrix user ID
+                            if let Ok(user_id) = user_id_str.try_into() {
+                                // Store the user ID for mention detection during final message creation
+                                // Key: OwnedUserId, Value: display string (currently just the user ID)
+                                self.possible_mentions.insert(user_id, user_id_str.to_string());
+                            }
+                        }
+                    }
+
+                    // Mark the '[' position as completed to prevent popup when cursor is placed here
+                    if !self.completed_mention_positions.contains(&bracket_start) {
+                        self.completed_mention_positions.push(bracket_start);
+                    }
+                }
+            }
+
+            // Continue searching from after the current pattern
+            pos = link_end + 1;
+        }
+    }
+
     /// Sets whether the current user can notify the entire room (@room mention)
     pub fn set_can_notify_room(&mut self, can_notify: bool) {
         self.can_notify_room = can_notify;
@@ -1039,6 +1170,13 @@ impl MentionableTextInputRef {
         }
     }
 
+    /// Marks existing @room and user mentions in the current text as completed positions
+    pub fn mark_existing_mentions_as_completed(&self) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.mark_existing_mentions_as_completed();
+        }
+    }
+
     /// Sets whether the current user can notify the entire room (@room mention)
     pub fn set_can_notify_room(&self, can_notify: bool) {
         if let Some(mut inner) = self.borrow_mut() {
@@ -1049,6 +1187,20 @@ impl MentionableTextInputRef {
     /// Gets whether the current user can notify the entire room (@room mention)
     pub fn can_notify_room(&self) -> bool {
         self.borrow().is_some_and(|inner| inner.can_notify_room())
+    }
+
+    /// Sets possible mentions for the text input (for editing existing messages)
+    pub fn set_possible_mentions(&self, mentions: &BTreeMap<OwnedUserId, String>) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.possible_mentions = mentions.clone();
+        }
+    }
+
+    /// Sets possible room mention flag (for editing existing messages)
+    pub fn set_possible_room_mention(&self, has_room_mention: bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.possible_room_mention = has_room_mention;
+        }
     }
 
     /// Returns the mentions analysis for the given html message content.
@@ -1089,11 +1241,11 @@ impl MentionableTextInputRef {
 
         let mut user_ids = BTreeSet::new();
         for (user_id, username) in &inner.possible_mentions {
-            if markdown.contains(&format!(
-                "[{}]({})",
-                username,
-                user_id.matrix_to_uri(),
-            )) {
+            // Check both username format and user_id format for flexibility
+            let username_pattern = format!("[{}]({})", username, user_id.matrix_to_uri());
+            let userid_pattern = format!("[{}]({})", user_id, user_id.matrix_to_uri());
+
+            if markdown.contains(&username_pattern) || markdown.contains(&userid_pattern) {
                 user_ids.insert(user_id.clone());
             }
         }
