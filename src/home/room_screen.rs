@@ -503,7 +503,8 @@ live_design! {
             flow: Right,
             summary = <Label> {
                 width: Fill,
-                margin: { top: 4.5, right: 10.0 }
+                height: Fit,
+                align: { y: 0.5 },
                 draw_text: {
                     wrap: Word,
                     text_style: <SMALL_STATE_TEXT_STYLE> {},
@@ -514,9 +515,44 @@ live_design! {
 
             collapse_button = <Button> {
                 width: Fit,
+                height: Fit,
+                margin: 0,
+
+                draw_bg: {
+                    instance color: (COLOR_PRIMARY)
+                    instance color_hover: #A
+                    instance border_size: 0.0
+                    instance border_color: #D0D5DD
+                    instance border_radius: 3.0
+
+                    fn get_color(self) -> vec4 {
+                        return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
+                    }
+
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                        sdf.box(
+                            self.border_size,
+                            self.border_size,
+                            self.rect_size.x - (self.border_size * 2.0),
+                            self.rect_size.y - (self.border_size * 2.0),
+                            max(1.0, self.border_radius)
+                        )
+                        sdf.fill_keep(self.get_color())
+                        if self.border_size > 0.0 {
+                            sdf.stroke(self.border_color, self.border_size)
+                        }
+                        return sdf.result;
+                    }
+                }
+
                 text: "expand",
                 draw_text: {
+                    text_style: <REGULAR_TEXT>{font_size: 10},
                     color: #000
+                    fn get_color(self) -> vec4 {
+                        return self.color;
+                    }
                 }
             }
         }
@@ -4610,11 +4646,11 @@ impl SmallStateEventsSummaryHeader {
     fn set_collapse_button_open(&mut self, cx: &mut Cx, open: bool) {
         if open {
             self.label(id!(summary)).set_text(cx, "");
-            self.button(id!(collapse_button)).set_text(cx, "Collapse");
+            self.button(id!(collapse_button)).set_text(cx, "collapse");
         } else {
             // When collapsed, show full summary text and "Expand" button
             self.label(id!(summary)).set_text(cx, &self.summary_text);
-            self.button(id!(collapse_button)).set_text(cx, "Expand");
+            self.button(id!(collapse_button)).set_text(cx, "expand");
         }
     }
 
