@@ -2964,16 +2964,11 @@ fn populate_message_view(
     let use_compact_view = match prev_event.map(|p| p.kind()) {
         Some(TimelineItemKind::Event(prev_event_tl_item)) => match prev_event_tl_item.content() {
             TimelineItemContent::MsgLike(msg_like_content) => {
-                match &msg_like_content.kind {
-                    MsgLikeKind::Message(_) | MsgLikeKind::Sticker(_) => {
-                        let prev_msg_sender = prev_event_tl_item.sender();
-                        prev_msg_sender == event_tl_item.sender()
-                        && ts_millis.0
-                            .checked_sub(prev_event_tl_item.timestamp().0)
-                            .is_some_and(|d| d < uint!(600000)) // 10 mins in millis
-                    }
-                    _ => false
-                }
+                let prev_msg_sender = prev_event_tl_item.sender();
+                prev_msg_sender == event_tl_item.sender()
+                && ts_millis.0
+                    .checked_sub(prev_event_tl_item.timestamp().0)
+                    .is_some_and(|d| d < uint!(600000))
             }
             _ => false,
         },
