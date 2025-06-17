@@ -12,7 +12,7 @@ use matrix_sdk::{room::RoomMember, ruma::{
             AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
         }, ImageInfo, MediaSource
     },
-    sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId
+    sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId,
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, InReplyToDetails, MemberProfileChange, MembershipChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
@@ -4550,8 +4550,11 @@ pub enum SmallStateEventsSummaryToggleAction {
 struct SmallStateEventsSummaryHeader {
     #[deref] view: View,
 
+    /// The group ID of the events this header summarizes.
     #[rust] event_group_id: String,
+    /// The text summarizing the events in this group.
     #[rust] summary_text: String,
+    /// Whether this header is currently expanded to show the full list of events.
     #[rust] is_expanded: bool,
     #[rust] last_click_time: f64,
 }
@@ -4623,7 +4626,6 @@ impl SmallStateEventsSummaryHeader {
             self.summary_text = summary_text;
             self.set_collapse_button_open(cx, is_expanded);
         }
-        
     }
 
     fn toggle_collapse(&mut self, cx: &mut Cx, scope: &mut Scope) {
@@ -4655,114 +4657,102 @@ impl SmallStateEventsSummaryHeader {
     }
 
     fn summarize(
-        &self,
-        small_event_tl_items: &Vector<Arc<TimelineItem>>,
-    ) ->  String {
-        let mut joined = HashSet::new();
-        let mut left = HashSet::new();
-        let mut joined_and_left = HashSet::new();
+    &self,
+    small_event_tl_items: &Vector<Arc<TimelineItem>>,
+) -> String {
+    let mut user_membership: HashMap<String, Vec<bool>> = HashMap::new(); // true=joined, false=left
+    let mut displayname_updated = HashSet::new();
+    let mut avatar_updated = HashSet::new();
+    let mut redacted = 0;
 
-        let mut displayname_updated = HashSet::new();
-        let mut avatar_updated = HashSet::new();
-
-        let mut redacted = 0;
-
-        for item in small_event_tl_items.iter() {
-            if let TimelineItemKind::Event(e) = item.kind() {
-                match e.content() {
-                    TimelineItemContent::MembershipChange(change) => {
-                        let username = change.display_name().unwrap_or_else(|| "someone".to_owned());
-                        let joined_flag = matches!(change.change(), Some(MembershipChange::Joined));
-                        let left_flag = matches!(change.change(), Some(MembershipChange::Left));
-
-                        match (joined_flag, left_flag) {
-                            (true, true) => {
-                                joined.remove(&username);
-                                left.remove(&username);
-                                joined_and_left.insert(username);
-                            }
-                            (true, false) => {
-                                if left.remove(&username) {
-                                    joined_and_left.insert(username);
-                                } else {
-                                    joined.insert(username);
-                                }
-                            }
-                            (false, true) => {
-                                if joined.remove(&username) {
-                                    joined_and_left.insert(username);
-                                } else {
-                                    left.insert(username);
-                                }
-                            }
-                            _ => {}
+    for item in small_event_tl_items.iter() {
+        if let TimelineItemKind::Event(e) = item.kind() {
+            match e.content() {
+                TimelineItemContent::MembershipChange(change) => {
+                    let username = change.display_name().unwrap_or_else(|| "someone".to_owned());
+                    match change.change() {
+                        Some(MembershipChange::Joined) => {
+                            user_membership.entry(username).or_insert_with(Vec::new).push(true);
                         }
-                    }
-                    TimelineItemContent::ProfileChange(change) => {
-                        let username = change.user_id().localpart().to_owned();
-                        if change.displayname_change().is_some() {
-                            displayname_updated.insert(username.clone());
+                        Some(MembershipChange::Left) => {
+                            user_membership.entry(username).or_insert_with(Vec::new).push(false);
                         }
-                        if change.avatar_url_change().is_some() {
-                            avatar_updated.insert(username);
-                        }
+                        _ => {}
                     }
-                    TimelineItemContent::RedactedMessage => {
-                        redacted += 1;
-                    }
-                    _ => {}
                 }
-            }
-        }
-
-        let mut only_displayname = HashSet::new();
-        let mut only_avatar = HashSet::new();
-        let mut both = HashSet::new();
-
-        for user in displayname_updated.union(&avatar_updated) {
-            match (
-                displayname_updated.contains(user),
-                avatar_updated.contains(user),
-            ) {
-                (true, true) => { both.insert(user.clone()); }
-                (true, false) => { only_displayname.insert(user.clone()); }
-                (false, true) => { only_avatar.insert(user.clone()); }
+                TimelineItemContent::ProfileChange(change) => {
+                    let username = change.user_id().localpart().to_owned();
+                    if change.displayname_change().is_some() {
+                        displayname_updated.insert(username.clone());
+                    }
+                    if change.avatar_url_change().is_some() {
+                        avatar_updated.insert(username);
+                    }
+                }
+                TimelineItemContent::RedactedMessage => redacted += 1,
                 _ => {}
             }
         }
+    }
 
-        fn summarize_users(action: &str, users: &HashSet<String>) -> Option<String> {
-            match users.len() {
-                0 => None,
-                1 => Some(format!("{} {}", users.iter().next().unwrap(), action)),
-                2 => {
-                    let mut names: Vec<_> = users.iter().collect();
-                    names.sort();
-                    Some(format!("{} and {} {}", names[0], names[1], action))
-                }
-                n => {
-                    let mut names: Vec<_> = users.iter().collect();
-                    names.sort();
-                    Some(format!("{} and {} others {}", names[0], n - 1, action))
+    let mut joined = HashSet::new();
+    let mut left = HashSet::new();
+    let mut joined_and_left = HashSet::new();
+    let mut left_and_joined = HashSet::new();
+
+    for (username, actions) in user_membership {
+        match actions.as_slice() {
+            [true] => { joined.insert(username); }
+            [false] => { left.insert(username); }
+            [true, false] => { joined_and_left.insert(username); }
+            [false, true] => { left_and_joined.insert(username); }
+            _ => {
+                if actions.len() >= 2 {
+                    match (actions[actions.len()-2], actions[actions.len()-1]) {
+                        (true, false) => { joined_and_left.insert(username); }
+                        (false, true) => { left_and_joined.insert(username); }
+                        _ => { joined.insert(username); }
+                    }
                 }
             }
         }
+    }
 
-        let mut parts = vec![];
+    let only_displayname: HashSet<_> = displayname_updated.difference(&avatar_updated).cloned().collect();
+    let only_avatar: HashSet<_> = avatar_updated.difference(&displayname_updated).cloned().collect();
+    let both: HashSet<_> = displayname_updated.intersection(&avatar_updated).cloned().collect();
 
-        parts.extend([
-            summarize_users("left", &left),
-            summarize_users("joined", &joined),
-            summarize_users("joined and left", &joined_and_left),
-            summarize_users("updated display name", &only_displayname),
-            summarize_users("updated avatar", &only_avatar),
-            summarize_users("updated display name and avatar", &both),
-        ].into_iter().flatten());
-
-        if redacted > 0 {
-            parts.push(format!("{} message(s) were redacted", redacted));
+    fn format_users(action: &str, users: &HashSet<String>) -> Option<String> {
+        match users.len() {
+            0 => None,
+            1 => Some(format!("{} {}", users.iter().next().unwrap(), action)),
+            2 => {
+                let mut names: Vec<_> = users.iter().collect();
+                names.sort();
+                Some(format!("{} and {} {}", names[0], names[1], action))
+            }
+            n => {
+                let mut names: Vec<_> = users.iter().collect();
+                names.sort();
+                Some(format!("{} and {} others {}", names[0], n - 1, action))
+            }
         }
+    }
 
-        parts.join(", ")
-    } 
+    let mut parts = Vec::new();
+
+    if let Some(s) = format_users("left", &left) { parts.push(s); }
+    if let Some(s) = format_users("joined", &joined) { parts.push(s); }
+    if let Some(s) = format_users("left and rejoined", &left_and_joined) { parts.push(s); }
+    if let Some(s) = format_users("joined and left", &joined_and_left) { parts.push(s); }
+    if let Some(s) = format_users("updated display name", &only_displayname) { parts.push(s); }
+    if let Some(s) = format_users("updated avatar", &only_avatar) { parts.push(s); }
+    if let Some(s) = format_users("updated display name and avatar", &both) { parts.push(s); }
+
+    if redacted > 0 {
+        parts.push(format!("{} message(s) were redacted", redacted));
+    }
+
+    if parts.is_empty() { "No events".to_string() } else { parts.join(", ") }
+}
 }
