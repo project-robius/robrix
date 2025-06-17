@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
-use crate::{app::{AppState, AppStateAction, RoomsPanelRestoreAction, SelectedRoom}, home::rooms_list::{RoomsListRef, RoomsListWidgetExt}, utils::room_name_or_id};
+use crate::{app::{AppState, AppStateAction, RoomsPanelRestoreAction, SelectedRoom}, home::rooms_list::RoomsListWidgetExt, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 live_design! {
@@ -85,7 +85,7 @@ pub struct MainDesktopUI {
     #[rust]
     drawn_previously: bool,
 }
-pub struct GlobalRoomsListRef(pub RoomsListRef);
+
 impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {            
         self.widget_match_event(cx, event, scope); // invokes `WidgetMatchEvent` impl
@@ -101,7 +101,7 @@ impl Widget for MainDesktopUI {
                     app_state.saved_dock_state.clone(),
                 ));
             }
-            cx.set_global(GlobalRoomsListRef(self.view.rooms_list(id!(rooms_list))));
+            cx.set_global(self.view.rooms_list(id!(rooms_list)));
             self.drawn_previously = true;
         }
         self.view.draw_walk(cx, scope, walk)

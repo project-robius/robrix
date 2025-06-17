@@ -235,6 +235,7 @@ pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
     )?;
     Ok(())
 }
+
 /// Loads the rooms panel's state from persistent storage.
 pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<SavedDockState> {
     let mut file = match tokio::fs::File::open(
@@ -269,7 +270,7 @@ pub fn load_window_state(window_ref: WindowRef, cx: &mut Cx) -> anyhow::Result<(
         position,
         is_fullscreen,
     } = serde_json::from_slice(&contents).map_err(|e| anyhow!(e))?;
-    window_ref.create_window(
+    window_ref.configure_window(
         cx,
         inner_size.into(),
         position.into(),

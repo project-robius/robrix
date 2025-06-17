@@ -1378,6 +1378,7 @@ async fn async_main_loop(
     mut login_receiver: Receiver<LoginRequest>,
 ) -> Result<()> {
     tracing_subscriber::fmt::init();
+
     let most_recent_user_id = persistent_state::most_recent_user_id();
     log!("Most recent user ID: {most_recent_user_id:?}");
     let cli_parse_result = Cli::try_parse();
@@ -1476,6 +1477,7 @@ async fn async_main_loop(
     let logged_in_user_id = client.user_id()
         .expect("BUG: client.user_id() returned None after successful login!");
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
+    // enqueue_popup_notification(status.clone());
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
@@ -1975,7 +1977,7 @@ fn handle_load_rooms_panel_state(user_id: OwnedUserId) {
             }
             Err(e) => {
                 enqueue_popup_notification(PopupItem {
-                    message: format!("Failed to restore previous dock state: {e}").into(),
+                    message: format!("Failed to restore previous dock state: {e}"),
                     auto_dismissal_duration: None
                 });
             }
@@ -1997,6 +1999,7 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
         }
     });
 }
+
 
 fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomListLoadingState>) {
     log!("Initial room list loading state is {:?}", loading_state.get());
