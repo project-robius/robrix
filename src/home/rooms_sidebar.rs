@@ -42,7 +42,7 @@ live_design! {
                 }
             }
 
-            loading_spinner = <View> {
+            <View> {
                 width: Fill,
                 height: Fit,
                 flow: Right,
@@ -63,7 +63,7 @@ live_design! {
                     width: Fill,
                     height: Fit,
                 }
-                <View> {
+                loading_spinner = <View> {
                     width:10,
                     height: 10,
                     show_bg: true,
@@ -82,15 +82,7 @@ live_design! {
             flow: Down, spacing: 7
             width: Fill, height: Fill
 
-            // sidebar_title = <Label> {
-            //     text: "All Rooms"
-            //     flow: Right, // do not wrap
-            //     draw_text: {
-            //         color: #x0
-            //         text_style: <TITLE_TEXT>{}
-            //     }
-            // }
-            loading_spinner = <View> {
+            <View> {
                 width: Fill,
                 height: Fit,
                 flow: Right, 
@@ -111,7 +103,7 @@ live_design! {
                     width: Fill,
                     height: Fit,
                 }
-                <View> {
+                loading_spinner = <View> {
                     width:10,
                     height: 10,
                     show_bg: true,
@@ -137,16 +129,14 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 struct RoomsSideBar {
     #[deref] view: AdaptiveView,
-    #[rust] is_syncing: bool,
 }
 
 impl Widget for RoomsSideBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
             for action in actions {
-                if let RoomsSideBarAction::SetSyncStatus(is_syncing) = action.as_widget_action().cast() {
-                    self.is_syncing = is_syncing;
-                    self.view(id!(loading_spinner)).set_visible(cx, is_syncing);
+                if let Some(RoomsSideBarAction::SetSyncStatus(is_syncing)) = action.downcast_ref() {
+                    self.view(id!(loading_spinner)).set_visible(cx, is_syncing.clone());
                     self.redraw(cx);
                 }
             }
