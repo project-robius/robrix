@@ -2849,91 +2849,6 @@ fn populate_message_view(
     let (item, used_cached_item) = match &msg_like_content.kind {
         MsgLikeKind::Message(msg) => {
             match msg.msgtype() {
-                MessageType::Audio(audio) => {
-                    has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-                    let template = if use_compact_view {
-                        live_id!(CondensedMessage)
-                    } else {
-                        live_id!(Message)
-                    };
-                    let (item, existed) = list.item_with_existed(cx, item_id, template);
-                    if existed && item_drawn_status.content_drawn {
-                        (item, true)
-                    } else {
-                        new_drawn_status.content_drawn = populate_audio_message_content(
-                            cx,
-                            &item.html_or_plaintext(id!(content.message)),
-                            audio,
-                        );
-                        (item, false)
-                    }
-                }
-                MessageType::File(file_content) => {
-                    has_html_body = file_content.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-                    let template = if use_compact_view {
-                        live_id!(CondensedMessage)
-                    } else {
-                        live_id!(Message)
-                    };
-                    let (item, existed) = list.item_with_existed(cx, item_id, template);
-                    if existed && item_drawn_status.content_drawn {
-                        (item, true)
-                    } else {
-                        new_drawn_status.content_drawn = populate_file_message_content(
-                            cx,
-                            &item.html_or_plaintext(id!(content.message)),
-                            file_content,
-                        );
-                        (item, false)
-                    }
-                }
-                MessageType::Image(image) => {
-                    has_html_body = image.formatted.as_ref()
-                        .is_some_and(|f| f.format == MessageFormat::Html);
-                    let template = if use_compact_view {
-                        live_id!(CondensedImageMessage)
-                    } else {
-                        live_id!(ImageMessage)
-                    };
-                    let (item, existed) = list.item_with_existed(cx, item_id, template);
-
-                    if existed && item_drawn_status.content_drawn {
-                        (item, true)
-                    } else {
-                        let image_info = image.info.clone();
-                        let is_image_fully_drawn = populate_image_message_content(
-                            cx,
-                            &item.text_or_image(id!(content.message)),
-                            image_info,
-                            image.source.clone(),
-                            msg.body(),
-                            media_cache,
-                        );
-                        new_drawn_status.content_drawn = is_image_fully_drawn;
-                        (item, false)
-                    }
-
-                }
-                MessageType::Location(location) => {
-                    has_html_body = false;
-                    let template = if use_compact_view {
-                        live_id!(CondensedMessage)
-                    } else {
-                        live_id!(Message)
-                    };
-                    let (item, existed) = list.item_with_existed(cx, item_id, template);
-                    if existed && item_drawn_status.content_drawn {
-                        (item, true)
-                    } else {
-                        let is_location_fully_drawn = populate_location_message_content(
-                            cx,
-                            &item.html_or_plaintext(id!(content.message)),
-                            location,
-                        );
-                        new_drawn_status.content_drawn = is_location_fully_drawn;
-                        (item, false)
-                    }
-                }
                 MessageType::Text(TextMessageEventContent { body, formatted, .. }) => {
                      has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
@@ -3077,6 +2992,93 @@ fn populate_message_view(
                         );
                         set_username_and_get_avatar_retval = Some((username, profile_drawn));
                         new_drawn_status.content_drawn = true;
+                        (item, false)
+                    }
+                }
+                
+                
+                MessageType::Image(image) => {
+                    has_html_body = image.formatted.as_ref()
+                        .is_some_and(|f| f.format == MessageFormat::Html);
+                    let template = if use_compact_view {
+                        live_id!(CondensedImageMessage)
+                    } else {
+                        live_id!(ImageMessage)
+                    };
+                    let (item, existed) = list.item_with_existed(cx, item_id, template);
+
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        let image_info = image.info.clone();
+                        let is_image_fully_drawn = populate_image_message_content(
+                            cx,
+                            &item.text_or_image(id!(content.message)),
+                            image_info,
+                            image.source.clone(),
+                            msg.body(),
+                            media_cache,
+                        );
+                        new_drawn_status.content_drawn = is_image_fully_drawn;
+                        (item, false)
+                    }
+
+                }
+                MessageType::Location(location) => {
+                    has_html_body = false;
+                    let template = if use_compact_view {
+                        live_id!(CondensedMessage)
+                    } else {
+                        live_id!(Message)
+                    };
+                    let (item, existed) = list.item_with_existed(cx, item_id, template);
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        let is_location_fully_drawn = populate_location_message_content(
+                            cx,
+                            &item.html_or_plaintext(id!(content.message)),
+                            location,
+                        );
+                        new_drawn_status.content_drawn = is_location_fully_drawn;
+                        (item, false)
+                    }
+                }
+                MessageType::File(file_content) => {
+                    has_html_body = file_content.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+                    let template = if use_compact_view {
+                        live_id!(CondensedMessage)
+                    } else {
+                        live_id!(Message)
+                    };
+                    let (item, existed) = list.item_with_existed(cx, item_id, template);
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        new_drawn_status.content_drawn = populate_file_message_content(
+                            cx,
+                            &item.html_or_plaintext(id!(content.message)),
+                            file_content,
+                        );
+                        (item, false)
+                    }
+                }
+                MessageType::Audio(audio) => {
+                    has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+                    let template = if use_compact_view {
+                        live_id!(CondensedMessage)
+                    } else {
+                        live_id!(Message)
+                    };
+                    let (item, existed) = list.item_with_existed(cx, item_id, template);
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        new_drawn_status.content_drawn = populate_audio_message_content(
+                            cx,
+                            &item.html_or_plaintext(id!(content.message)),
+                            audio,
+                        );
                         (item, false)
                     }
                 }
