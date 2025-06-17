@@ -1278,6 +1278,7 @@ impl Widget for RoomScreen {
                                         &RedactedMessageEventMarker,
                                         item_drawn_status,
                                     ),
+                                    // TODO: implement `Redacted`, `Poll`, and `UnableToDecrypt` types as regular Messages, not small state events.
                                     _ => {
                                         let item = list.item(cx, item_id, live_id!(Empty));
                                         (item, ItemDrawnStatus::both_drawn())
