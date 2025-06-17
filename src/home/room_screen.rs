@@ -1305,8 +1305,8 @@ impl Widget for RoomScreen {
                         // Pass this state to each of the `populate_*` functions so they can attempt to re-use
                         // an item in the timeline's portallist that was previously populated, if one exists.
                         let item_drawn_status = ItemDrawnStatus {
-                            content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
-                            profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
+                            content_drawn: tl_state.content_drawn_since_last_update.contains(tl_idx),
+                            profile_drawn: tl_state.profile_drawn_since_last_update.contains(tl_idx),
                         };
 
                         let item = {
