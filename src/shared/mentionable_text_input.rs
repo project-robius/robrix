@@ -929,45 +929,55 @@ impl MentionableTextInput {
         let localpart = member.user_id().localpart();
         let localpart_lower = localpart.to_lowercase();
 
+        // Priority 0: Exact case-sensitive match (highest priority)
+        if display_name == search_text || localpart == search_text {
+            return 0;
+        }
+
         // Priority 1: Exact match (case-insensitive)
         if display_name_lower == search_text_lower || localpart_lower == search_text_lower {
             return 1;
         }
 
-        // Priority 2: Display name starts with search text
-        if display_name_lower.starts_with(&search_text_lower) {
+        // Priority 2: Case-sensitive prefix match
+        if display_name.starts_with(search_text) || localpart.starts_with(search_text) {
             return 2;
         }
 
-        // Priority 3: Localpart starts with search text
-        if localpart_lower.starts_with(&search_text_lower) {
+        // Priority 3: Display name starts with search text (case-insensitive)
+        if display_name_lower.starts_with(&search_text_lower) {
             return 3;
         }
 
-        // Priority 4: Display name contains search text at word boundary
+        // Priority 4: Localpart starts with search text (case-insensitive)
+        if localpart_lower.starts_with(&search_text_lower) {
+            return 4;
+        }
+
+        // Priority 5: Display name contains search text at word boundary
         if let Some(pos) = display_name_lower.find(&search_text_lower) {
             // Check if it's at the start of a word (preceded by space or at start)
             if pos == 0 || display_name_lower.chars().nth(pos - 1) == Some(' ') {
-                return 4;
-            }
-        }
-
-        // Priority 5: Localpart contains search text at word boundary
-        if let Some(pos) = localpart_lower.find(&search_text_lower) {
-            // Check if it's at the start of a word (preceded by non-alphanumeric or at start)
-            if pos == 0 || !localpart_lower.chars().nth(pos - 1).unwrap_or('a').is_alphanumeric() {
                 return 5;
             }
         }
 
-        // Priority 6: Display name contains search text (anywhere)
-        if display_name_lower.contains(&search_text_lower) {
-            return 6;
+        // Priority 6: Localpart contains search text at word boundary
+        if let Some(pos) = localpart_lower.find(&search_text_lower) {
+            // Check if it's at the start of a word (preceded by non-alphanumeric or at start)
+            if pos == 0 || !localpart_lower.chars().nth(pos - 1).unwrap_or('a').is_alphanumeric() {
+                return 6;
+            }
         }
 
-        // Priority 7: Localpart contains search text (anywhere)
-        if localpart_lower.contains(&search_text_lower) {
+        // Priority 7: Display name contains search text (anywhere)
+        if display_name_lower.contains(&search_text_lower) {
             return 7;
+        }
+
+        // Priority 8: Localpart contains search text (anywhere)
+        if localpart_lower.contains(&search_text_lower) {
+            return 8;
         }
 
         // Should not reach here if user_matches_search returned true
