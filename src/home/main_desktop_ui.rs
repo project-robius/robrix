@@ -1,4 +1,4 @@
-use makepad_widgets::*;
+use makepad_widgets::{makepad_futures::channel::oneshot::Sender, *};
 use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
@@ -213,16 +213,15 @@ impl MainDesktopUI {
     }
 
     /// Closes all tabs
-    pub fn close_all_tabs(&mut self, cx: &mut Cx) {
+    pub fn close_all_tabs(&mut self, cx: &mut Cx, sender: Sender::<String>) {
         let tab_ids: Vec<LiveId> = self.open_rooms.keys().cloned().collect();
-        
         for tab_id in tab_ids {
             self.tab_to_close = Some(tab_id);
             self.close_tab(cx, tab_id);
         }
-        
         self.redraw(cx);
         cx.action(MainDesktopUiAction::DockSave);
+        sender.send("All tab closed".to_string()).unwrap();
     }
 
     /// Replaces an invite with a joined room in the dock.
@@ -277,8 +276,8 @@ impl WidgetMatchEvent for MainDesktopUI {
         for action in actions {
             let widget_action = action.as_widget_action();
 
-            if let Some(MainDesktopUiAction::CloseAllTabs) = action.downcast_ref() {
-                self.close_all_tabs(cx); 
+            if let Some(MainDesktopUiAction::CloseAllTabs { sender }) = action.downcast_ref() {
+                self.close_all_tabs(cx, sender.clone()); 
                 continue;
             }
 
@@ -421,7 +420,9 @@ pub enum MainDesktopUiAction {
     DockSave,
     /// Load the room panel state from the AppState to the dock.
     DockLoad,
-    /// Close all tabs in the dock; see [`MainDesktopUI::close_all_tabs()`]
-    CloseAllTabs,
+    /// Close all tabs; see [`MainDesktopUI::close_all_tabs()`]
+    CloseAllTabs {
+        sender: Sender<String>,
+    },
     None,
 }

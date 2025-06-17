@@ -5,7 +5,7 @@ use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
-use makepad_widgets::{error, log, warning, Cx, SignalToUI};
+use makepad_widgets::{error, log, makepad_futures::channel::oneshot, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
@@ -1150,8 +1150,7 @@ pub fn start_matrix_tokio() -> Result<()> {
         let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
         let runtime = rt_guard.get_or_insert_with(|| {
             log!("Creating new Tokio runtime...");
-            let new_rt = tokio::runtime::Runtime::new().unwrap();
-            new_rt
+            tokio::runtime::Runtime::new().unwrap()
         });
         runtime.handle().clone()
     };
@@ -2830,25 +2829,16 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     log!("Request sender cleared.");
 
     log!("Performing server-side logout...");
-    match tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        client.matrix_auth().logout()
-    ).await {
-        Ok(Ok(_)) => {
+    match client.matrix_auth().logout().await {
+        Ok(_) => {
             log!("Server-side logout successful.");
         },
-        Ok(Err(e)) => {
+        Err(e) => {
             let error_msg = format!("Server-side logout failed: {}", e);
-            log!("Error : {}", error_msg);
+            log!("Error :{}", error_msg);
             Cx::post_action(LoginAction::LogoutFailure(error_msg.to_string()));
             return Err(anyhow::anyhow!(error_msg));
         },
-        Err(e) => {
-            let error_msg = format!("Logout request timed out: {}", e);
-            log!("Error: {}", error_msg);
-            Cx::post_action(LoginAction::LogoutFailure(error_msg.to_string()));
-            return Err(anyhow::anyhow!(error_msg));
-        }
     }
 
     // Clean up client state and caches
@@ -2862,22 +2852,19 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     log!("Client state and caches cleared.");
 
     log!("Requesting to close all tabs...");
-    Cx::post_action(MainDesktopUiAction::CloseAllTabs);
-    
-    // FIXME:
-    // Add a short delay to ensure UI fully updates
-    // because:
-    // 1. When sending closeTab actions to main_desktop_ui's MainDesktopUI::handle_action,
-    //    Makepad needs time to complete UI redraw operations
-    // 2. Without this delay, UI refresh issues may occur:
-    //    - When logging in again without fully exiting, previous user's last open tabs
-    //      might still appear instead of the expected empty Home screen
-    // 3. This happens because Makepad's rendering loop and event handling are asynchronous:
-    //    - The closeTab event marks UI for update
-    //    - Actual redraw occurs in the next render frame
-    // 4. While not ideal, this sleep ensures state consistency across components
-    //    before proceeding with subsequent operations 
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let (tx, rx)  = oneshot::channel::<String>();
+    Cx::post_action(MainDesktopUiAction::CloseAllTabs { sender: tx });
+    match rx.await {
+        Ok(_) => {
+            log!("Succes close all tabs...");
+        },
+        Err(e)=> {
+            let error_msg = format!("Close all tab failed {e}");
+            log!("Error :{}", error_msg);
+            Cx::post_action(LoginAction::LogoutFailure(error_msg.to_string()));
+            return Err(anyhow::anyhow!(error_msg));
+        },
+    }
 
     // Delete the last user ID file
     log!("Deleting last user ID file...");
@@ -2888,7 +2875,6 @@ async fn logout_and_refresh() -> Result<RefreshState> {
         errors.push(e.to_string());
     }
 
-    log!("Matrix tokio runtime restarted successfully.");
     shutdown_background_tasks().await;
     // Restart the Matrix tokio runtime
     // This is a critical step; failure might prevent future logins
