@@ -1863,12 +1863,13 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         return Ok(());
     }
 
-    let timeline = if let Ok(tl_arc) = room.timeline().await {
-        Arc::new(tl_arc)
-    } else {
-        let builder = room.timeline_builder().track_read_marker_and_receipts();
-        Arc::new(builder.build().await.map_err(|_| anyhow::anyhow!("BUG: room timeline not found for room {room_id}"))?)
-    };
+    let timeline = Arc::new(
+        room.timeline_builder()
+            .track_read_marker_and_receipts()
+            .build()
+            .await
+            .map_err(|e| anyhow::anyhow!("BUG: Failed to build timeline for room {room_id}: {e}"))?,
+    );
     let latest_event = timeline.latest_event().await;
     let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
 
