@@ -1713,7 +1713,7 @@ async fn update_room(
         }
 
         if let Some(new_room_name) = new_room_name {
-            if old_room.room.cached_display_name().map(|room_name| room_name.to_room_alias_name()).as_ref() != Some(&new_room_name) {
+            if old_room.room.cached_display_name().map(|room_name| room_name.to_string()).as_ref() != Some(&new_room_name) {
                 log!("Updating room name for room {} to {}", new_room_id, new_room_name);
                 enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                     room_id: new_room_id.clone(),
