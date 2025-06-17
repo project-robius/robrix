@@ -9,13 +9,13 @@ use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{room::{reply::{EnforceThread, Reply}, RoomMember}, ruma::{
     events::{receipt::Receipt, room::{
         message::{
-            AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
+            AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent
         }, ImageInfo, MediaSource
     },
-    sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId
+    sticker::{StickerEventContent, StickerMediaSource}, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, EmbeddedEvent, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EmbeddedEvent, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 
 use crate::{
@@ -1237,7 +1237,7 @@ impl Widget for RoomScreen {
                             TimelineItemContent::MsgLike(msg_like_content) => {
                                
                                 match &msg_like_content.kind {
-                                    MsgLikeKind::Message(message) => {
+                                    MsgLikeKind::Message(_message) => {
                                         let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
                                         populate_message_view(
                                             cx,
@@ -1245,7 +1245,7 @@ impl Widget for RoomScreen {
                                             item_id,
                                             room_id,
                                             event_tl_item,
-                                            MessageOrSticker::Message(message, msg_like_content),
+                                            msg_like_content,
                                             prev_event,
                                             &mut tl_state.media_cache,
                                             &tl_state.user_power,
@@ -1253,7 +1253,7 @@ impl Widget for RoomScreen {
                                             room_screen_widget_uid,
                                         )
                                     }
-                                    MsgLikeKind::Sticker(sticker) => {
+                                    MsgLikeKind::Sticker(_sticker) => {
                                        let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
                                         populate_message_view(
                                             cx,
@@ -1261,7 +1261,7 @@ impl Widget for RoomScreen {
                                             item_id,
                                             room_id,
                                             event_tl_item,
-                                            MessageOrSticker::Sticker(sticker.content()),
+                                            msg_like_content,
                                             prev_event,
                                             &mut tl_state.media_cache,
                                             &tl_state.user_power,
@@ -2816,125 +2816,6 @@ impl ItemDrawnStatus {
     }
 }
 
-/// Abstracts over a message or sticker that can be displayed in a timeline.
-pub enum MessageOrSticker<'e> {
-    Message(&'e timeline::Message, &'e MsgLikeContent),
-    Sticker(&'e StickerEventContent),
-}
-impl MessageOrSticker<'_> {
-    /// Returns the type of this message or sticker.
-    pub fn get_type(&self) -> MessageOrStickerType {
-        match self {
-            Self::Message(msg, _) => match msg.msgtype() {
-                MessageType::Audio(audio) => MessageOrStickerType::Audio(audio),
-                MessageType::Emote(emote) => MessageOrStickerType::Emote(emote),
-                MessageType::File(file) => MessageOrStickerType::File(file),
-                MessageType::Image(image) => MessageOrStickerType::Image(image),
-                MessageType::Location(location) => MessageOrStickerType::Location(location),
-                MessageType::Notice(notice) => MessageOrStickerType::Notice(notice),
-                MessageType::ServerNotice(server_notice) => MessageOrStickerType::ServerNotice(server_notice),
-                MessageType::Text(text) => MessageOrStickerType::Text(text),
-                MessageType::Video(video) => MessageOrStickerType::Video(video),
-                MessageType::VerificationRequest(verification_request) => MessageOrStickerType::VerificationRequest(verification_request),
-                MessageType::_Custom(custom) => MessageOrStickerType::_Custom(custom),
-                _ => MessageOrStickerType::Unknown,
-            },
-            Self::Sticker(sticker) => MessageOrStickerType::Sticker(sticker),
-        }
-    }
-
-    /// Returns the body of this message or sticker, which is a text representation of its content.
-    pub fn body(&self) -> &str {
-        match self {
-            Self::Message(msg, _) => msg.body(),
-            Self::Sticker(sticker) => sticker.body.as_str(),
-        }
-    }
-    /// Returns the event that this message is replying to, if any.
-    ///
-    /// Returns `None` for stickers.
-    pub fn in_reply_to(&self) -> Option<&InReplyToDetails> {
-        match self {
-            Self::Message(_msg, msg_like_content) => msg_like_content.in_reply_to.as_ref(),
-            _ => None,
-        }
-    }
-
-    /// Returns whether this message or sticker has been edited.
-    ///
-    /// Returns `false` for stickers, as they cannot be edited.
-    pub fn is_edited(&self) -> bool {
-        match self {
-            Self::Message(msg, _) => msg.is_edited(),
-            Self::Sticker(_) => false, // Stickers cannot be edited
-        }
-    }
-}
-
-/// Abstracts over the different types of messages or stickers that can be displayed in a timeline.
-pub enum MessageOrStickerType<'e> {
-    /// An audio message.
-    Audio(&'e AudioMessageEventContent),
-    /// An emote message.
-    Emote(&'e EmoteMessageEventContent),
-    /// A file message.
-    File(&'e FileMessageEventContent),
-    /// An image message.
-    Image(&'e ImageMessageEventContent),
-    /// A location message.
-    Location(&'e LocationMessageEventContent),
-    /// A notice message.
-    Notice(&'e NoticeMessageEventContent),
-    /// A server notice message.
-    ServerNotice(&'e ServerNoticeMessageEventContent),
-    /// A text message.
-    Text(&'e TextMessageEventContent),
-    /// A video message.
-    Video(&'e VideoMessageEventContent),
-    /// A request to initiate a key verification.
-    VerificationRequest(&'e KeyVerificationRequestEventContent),
-    /// A custom message.
-    _Custom(&'e CustomEventContent),
-    /// A sticker message.
-    Sticker(&'e StickerEventContent),
-    Unknown,
-}
-impl MessageOrStickerType<'_> {
-    /// Returns details of the image for this message or sticker, if it contains one.
-    pub fn get_image_info(&self) -> Option<(Option<ImageInfo>, MediaSource)> {
-        match self {
-            Self::Image(image) => Some((
-                image.info.clone().map(|info| *info),
-                image.source.clone(),
-            )),
-            Self::Sticker(sticker) => Some((
-                Some(sticker.info.clone()),
-                sticker.source.clone().into(),
-            )),
-            _ => None,
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Audio(_) => "Audio",
-            Self::Emote(_) => "Emote",
-            Self::File(_) => "File",
-            Self::Image(_) => "Image",
-            Self::Location(_) => "Location",
-            Self::Notice(_) => "Notice",
-            Self::ServerNotice(_) => "ServerNotice",
-            Self::Text(_) => "Text",
-            Self::Video(_) => "Video",
-            Self::VerificationRequest(_) => "VerificationRequest",
-            Self::_Custom(_) => "Custom",
-            Self::Sticker(_) => "Sticker",
-            Self::Unknown => "Unknown",
-        }
-    }
-}
-
-
 /// Creates, populates, and adds a Message liveview widget to the given `PortalList`
 /// with the given `item_id`.
 ///
@@ -2946,7 +2827,7 @@ fn populate_message_view(
     item_id: usize,
     room_id: &OwnedRoomId,
     event_tl_item: &EventTimelineItem,
-    message: MessageOrSticker,
+    msg_like_content: &MsgLikeContent,
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
     user_power_levels: &UserPowerLevels,
@@ -2963,7 +2844,7 @@ fn populate_message_view(
     // if the previous message (including stickers) was sent by the same user within 10 minutes.
     let use_compact_view = match prev_event.map(|p| p.kind()) {
         Some(TimelineItemKind::Event(prev_event_tl_item)) => match prev_event_tl_item.content() {
-            TimelineItemContent::MsgLike(msg_like_content) => {
+            TimelineItemContent::MsgLike(_msg_like_content) => {
                 let prev_msg_sender = prev_event_tl_item.sender();
                 prev_msg_sender == event_tl_item.sender()
                 && ts_millis.0
@@ -2980,160 +2861,298 @@ fn populate_message_view(
     // Sometimes we need to call this up-front, so we save the result in this variable
     // to avoid having to call it twice.
     let mut set_username_and_get_avatar_retval = None;
-    let (item, used_cached_item) = match message.get_type() {
-        MessageOrStickerType::Text(TextMessageEventContent { body, formatted, .. }) => {
-            has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-            let template = if use_compact_view {
-                live_id!(CondensedMessage)
-            } else {
-                live_id!(Message)
-            };
-            let (item, existed) = list.item_with_existed(cx, item_id, template);
-            if existed && item_drawn_status.content_drawn {
-                (item, true)
-            } else {
-                populate_text_message_content(
-                    cx,
-                    &item.html_or_plaintext(id!(content.message)),
-                    body,
-                    formatted.as_ref(),
-                );
-                new_drawn_status.content_drawn = true;
-                (item, false)
-            }
-        }
-        // A notice message is just a message sent by an automated bot,
-        // so we treat it just like a message but use a different font color.
-        MessageOrStickerType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
-            is_notice = true;
-            has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-            let template = if use_compact_view {
-                live_id!(CondensedMessage)
-            } else {
-                live_id!(Message)
-            };
-            let (item, existed) = list.item_with_existed(cx, item_id, template);
-            if existed && item_drawn_status.content_drawn {
-                (item, true)
-            } else {
-                let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
-                html_or_plaintext_ref.apply_over(cx, live!(
-                    html_view = {
-                        html = {
-                            font_color: (MESSAGE_NOTICE_TEXT_COLOR),
-                            draw_normal:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-                            draw_italic:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-                            draw_bold:        { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-                            draw_bold_italic: { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-                        }
+    let (item, used_cached_item) = match &msg_like_content.kind {
+        MsgLikeKind::Message(msg) => {
+            match msg.msgtype() {
+                MessageType::Audio(audio) => {
+                    has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+                    let template = if use_compact_view {
+                        live_id!(CondensedMessage)
+                    } else {
+                        live_id!(Message)
+                    };
+                    let (item, existed) = list.item_with_existed(cx, item_id, template);
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        new_drawn_status.content_drawn = populate_audio_message_content(
+                            cx,
+                            &item.html_or_plaintext(id!(content.message)),
+                            audio,
+                        );
+                        (item, false)
                     }
-                ));
-                populate_text_message_content(
-                    cx,
-                    &html_or_plaintext_ref,
-                    body,
-                    formatted.as_ref(),
-                );
-                new_drawn_status.content_drawn = true;
-                (item, false)
+                }
+                MessageType::File(file_content) => {
+                    has_html_body = file_content.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+                    let template = if use_compact_view {
+                        live_id!(CondensedMessage)
+                    } else {
+                        live_id!(Message)
+                    };
+                    let (item, existed) = list.item_with_existed(cx, item_id, template);
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        new_drawn_status.content_drawn = populate_file_message_content(
+                            cx,
+                            &item.html_or_plaintext(id!(content.message)),
+                            file_content,
+                        );
+                        (item, false)
+                    }
+                }
+                MessageType::Image(image) => {
+                    has_html_body = image.formatted.as_ref()
+                        .is_some_and(|f| f.format == MessageFormat::Html);
+                    let template = if use_compact_view {
+                        live_id!(CondensedImageMessage)
+                    } else {
+                        live_id!(ImageMessage)
+                    };
+                    let (item, existed) = list.item_with_existed(cx, item_id, template);
+
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        let image_info = image.info.clone();
+                        let is_image_fully_drawn = populate_image_message_content(
+                            cx,
+                            &item.text_or_image(id!(content.message)),
+                            image_info,
+                            image.source.clone(),
+                            msg.body(),
+                            media_cache,
+                        );
+                        new_drawn_status.content_drawn = is_image_fully_drawn;
+                        (item, false)
+                    }
+
+                }
+                MessageType::Location(location) => {
+                    has_html_body = false;
+                    let template = if use_compact_view {
+                        live_id!(CondensedMessage)
+                    } else {
+                        live_id!(Message)
+                    };
+                    let (item, existed) = list.item_with_existed(cx, item_id, template);
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        let is_location_fully_drawn = populate_location_message_content(
+                            cx,
+                            &item.html_or_plaintext(id!(content.message)),
+                            location,
+                        );
+                        new_drawn_status.content_drawn = is_location_fully_drawn;
+                        (item, false)
+                    }
+                }
+                MessageType::Text(TextMessageEventContent { body, formatted, .. }) => {
+                     has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+                    let template = if use_compact_view {
+                        live_id!(CondensedMessage)
+                    } else {
+                        live_id!(Message)
+                    };
+                    let (item, existed) = list.item_with_existed(cx, item_id, template);
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        populate_text_message_content(
+                            cx,
+                            &item.html_or_plaintext(id!(content.message)),
+                            body,
+                            formatted.as_ref(),
+                        );
+                        new_drawn_status.content_drawn = true;
+                        (item, false)
+                    }
+                }
+                // A notice message is just a message sent by an automated bot,
+                // so we treat it just like a message but use a different font color.
+                MessageType::Notice(NoticeMessageEventContent{body, formatted, ..}) => {
+                    is_notice = true;
+                    has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+                    let template = if use_compact_view {
+                        live_id!(CondensedMessage)
+                    } else {
+                        live_id!(Message)
+                    };
+                    let (item, existed) = list.item_with_existed(cx, item_id, template);
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
+                        html_or_plaintext_ref.apply_over(cx, live!(
+                            html_view = {
+                                html = {
+                                    font_color: (MESSAGE_NOTICE_TEXT_COLOR),
+                                    draw_normal:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                                    draw_italic:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                                    draw_bold:        { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                                    draw_bold_italic: { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                                }
+                            }
+                        ));
+                        populate_text_message_content(
+                            cx,
+                            &html_or_plaintext_ref,
+                            body,
+                            formatted.as_ref(),
+                        );
+                        new_drawn_status.content_drawn = true;
+                        (item, false)
+                    }
+                }
+                MessageType::ServerNotice(sn) => {
+                    is_server_notice = true;
+                    has_html_body = false;
+                    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
+                        html_or_plaintext_ref.apply_over(cx, live!(
+                            html_view = {
+                                html = {
+                                    font_color: (COLOR_DANGER_RED),
+                                    draw_normal:      { color: (COLOR_DANGER_RED), }
+                                    draw_italic:      { color: (COLOR_DANGER_RED), }
+                                    draw_bold:        { color: (COLOR_DANGER_RED), }
+                                    draw_bold_italic: { color: (COLOR_DANGER_RED), }
+                                }
+                            }
+                        ));
+                        let formatted = format!(
+                            "<b>Server notice:</b> {}\n\n<i>Notice type:</i>: {}{}{}",
+                            sn.body,
+                            sn.server_notice_type.as_str(),
+                            sn.limit_type.as_ref()
+                                .map(|l| format!("\n<i>Limit type:</i> {}", l.as_str()))
+                                .unwrap_or_default(),
+                            sn.admin_contact.as_ref()
+                                .map(|c| format!("\n<i>Admin contact:</i> {}", c))
+                                .unwrap_or_default(),
+                        );
+                        populate_text_message_content(
+                            cx,
+                            &html_or_plaintext_ref,
+                            &sn.body,
+                            Some(&FormattedBody {
+                                format: MessageFormat::Html,
+                                body: formatted,
+                            }),
+                        );
+                        new_drawn_status.content_drawn = true;
+                        (item, false)
+                    }
+                }
+                // An emote is just like a message but is prepended with the user's name
+                // to indicate that it's an "action" that the user is performing.
+                MessageType::Emote(EmoteMessageEventContent { body, formatted, .. }) => {
+                    has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+                    let template = if use_compact_view {
+                        live_id!(CondensedMessage)
+                    } else {
+                        live_id!(Message)
+                    };
+                    let (item, existed) = list.item_with_existed(cx, item_id, template);
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        // Draw the profile up front here because we need the username for the emote body.
+                        let (username, profile_drawn) = item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
+                            cx,
+                            room_id,
+                            event_tl_item.sender(),
+                            Some(event_tl_item.sender_profile()),
+                            event_tl_item.event_id(),
+                        );
+
+                        // Prepend a "* <username> " to the emote body, as suggested by the Matrix spec.
+                        let (body, formatted) = if let Some(fb) = formatted.as_ref() {
+                            (
+                                Cow::from(&fb.body),
+                                Some(FormattedBody {
+                                    format: fb.format.clone(),
+                                    body: format!("* {} {}", &username, &fb.body),
+                                })
+                            )
+                        } else {
+                            (Cow::from(format!("* {} {}", &username, body)), None)
+                        };
+                        populate_text_message_content(
+                            cx,
+                            &item.html_or_plaintext(id!(content.message)),
+                            &body,
+                            formatted.as_ref(),
+                        );
+                        set_username_and_get_avatar_retval = Some((username, profile_drawn));
+                        new_drawn_status.content_drawn = true;
+                        (item, false)
+                    }
+                }
+                MessageType::Video(video) => {
+                    has_html_body = video.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+                    let template = if use_compact_view {
+                        live_id!(CondensedMessage)
+                    } else {
+                        live_id!(Message)
+                    };
+                    let (item, existed) = list.item_with_existed(cx, item_id, template);
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        new_drawn_status.content_drawn = populate_video_message_content(
+                            cx,
+                            &item.html_or_plaintext(id!(content.message)),
+                            video,
+                        );
+                        (item, false)
+                    }
+                }
+                MessageType::VerificationRequest(verification) => {
+                    has_html_body = verification.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+                    let template = live_id!(Message);
+                    let (item, existed) = list.item_with_existed(cx, item_id, template);
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        // Use `FormattedBody` to hold our custom summary of this verification request.
+                        let formatted = FormattedBody {
+                            format: MessageFormat::Html,
+                            body: format!(
+                                "<i>Sent a <b>verification request</b> to {}.<br>(Supported methods: {})</i>",
+                                verification.to,
+                                verification.methods
+                                    .iter()
+                                    .map(|m| m.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", "),
+                            ),
+                        };
+
+                        populate_text_message_content(
+                            cx,
+                            &item.html_or_plaintext(id!(content.message)),
+                            &verification.body,
+                            Some(&formatted),
+                        );
+                        new_drawn_status.content_drawn = true;
+                        (item, false)
+                    }
+                }
+                _ => todo!(),
             }
         }
-        MessageOrStickerType::ServerNotice(sn) => {
-            is_server_notice = true;
+        // Handle sticker messages that are static images.
+        MsgLikeKind::Sticker(sticker) => {
             has_html_body = false;
-            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+            let StickerEventContent{body,info, source, .. } = sticker.content();
 
-            if existed && item_drawn_status.content_drawn {
-                (item, true)
-            } else {
-                let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
-                html_or_plaintext_ref.apply_over(cx, live!(
-                    html_view = {
-                        html = {
-                            font_color: (COLOR_DANGER_RED),
-                            draw_normal:      { color: (COLOR_DANGER_RED), }
-                            draw_italic:      { color: (COLOR_DANGER_RED), }
-                            draw_bold:        { color: (COLOR_DANGER_RED), }
-                            draw_bold_italic: { color: (COLOR_DANGER_RED), }
-                        }
-                    }
-                ));
-                let formatted = format!(
-                    "<b>Server notice:</b> {}\n\n<i>Notice type:</i>: {}{}{}",
-                    sn.body,
-                    sn.server_notice_type.as_str(),
-                    sn.limit_type.as_ref()
-                        .map(|l| format!("\n<i>Limit type:</i> {}", l.as_str()))
-                        .unwrap_or_default(),
-                    sn.admin_contact.as_ref()
-                        .map(|c| format!("\n<i>Admin contact:</i> {}", c))
-                        .unwrap_or_default(),
-                );
-                populate_text_message_content(
-                    cx,
-                    &html_or_plaintext_ref,
-                    &sn.body,
-                    Some(&FormattedBody {
-                        format: MessageFormat::Html,
-                        body: formatted,
-                    }),
-                );
-                new_drawn_status.content_drawn = true;
-                (item, false)
-            }
-        }
-        // An emote is just like a message but is prepended with the user's name
-        // to indicate that it's an "action" that the user is performing.
-        MessageOrStickerType::Emote(EmoteMessageEventContent { body, formatted, .. }) => {
-            has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-            let template = if use_compact_view {
-                live_id!(CondensedMessage)
-            } else {
-                live_id!(Message)
-            };
-            let (item, existed) = list.item_with_existed(cx, item_id, template);
-            if existed && item_drawn_status.content_drawn {
-                (item, true)
-            } else {
-                // Draw the profile up front here because we need the username for the emote body.
-                let (username, profile_drawn) = item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
-                    cx,
-                    room_id,
-                    event_tl_item.sender(),
-                    Some(event_tl_item.sender_profile()),
-                    event_tl_item.event_id(),
-                );
-
-                // Prepend a "* <username> " to the emote body, as suggested by the Matrix spec.
-                let (body, formatted) = if let Some(fb) = formatted.as_ref() {
-                    (
-                        Cow::from(&fb.body),
-                        Some(FormattedBody {
-                            format: fb.format.clone(),
-                            body: format!("* {} {}", &username, &fb.body),
-                        })
-                    )
-                } else {
-                    (Cow::from(format!("* {} {}", &username, body)), None)
-                };
-                populate_text_message_content(
-                    cx,
-                    &item.html_or_plaintext(id!(content.message)),
-                    &body,
-                    formatted.as_ref(),
-                );
-                set_username_and_get_avatar_retval = Some((username, profile_drawn));
-                new_drawn_status.content_drawn = true;
-                (item, false)
-            }
-        }
-        // Handle images and sticker messages that are static images.
-        mtype @ MessageOrStickerType::Image(_) | mtype @ MessageOrStickerType::Sticker(_) => {
-            has_html_body = match mtype {
-                MessageOrStickerType::Image(image) => image.formatted.as_ref()
-                    .is_some_and(|f| f.format == MessageFormat::Html),
-                _ => false,
-            };
             let template = if use_compact_view {
                 live_id!(CondensedImageMessage)
             } else {
@@ -3144,136 +3163,38 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                let image_info = mtype.get_image_info();
-                let is_image_fully_drawn = populate_image_message_content(
-                    cx,
-                    &item.text_or_image(id!(content.message)),
-                    image_info,
-                    message.body(),
-                    media_cache,
-                );
-                new_drawn_status.content_drawn = is_image_fully_drawn;
-                (item, false)
-            }
-        }
-        MessageOrStickerType::Location(location) => {
-            has_html_body = false;
-            let template = if use_compact_view {
-                live_id!(CondensedMessage)
-            } else {
-                live_id!(Message)
-            };
-            let (item, existed) = list.item_with_existed(cx, item_id, template);
-            if existed && item_drawn_status.content_drawn {
-                (item, true)
-            } else {
-                let is_location_fully_drawn = populate_location_message_content(
-                    cx,
-                    &item.html_or_plaintext(id!(content.message)),
-                    location,
-                );
-                new_drawn_status.content_drawn = is_location_fully_drawn;
-                (item, false)
-            }
-        }
-        MessageOrStickerType::File(file_content) => {
-            has_html_body = file_content.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-            let template = if use_compact_view {
-                live_id!(CondensedMessage)
-            } else {
-                live_id!(Message)
-            };
-            let (item, existed) = list.item_with_existed(cx, item_id, template);
-            if existed && item_drawn_status.content_drawn {
-                (item, true)
-            } else {
-                new_drawn_status.content_drawn = populate_file_message_content(
-                    cx,
-                    &item.html_or_plaintext(id!(content.message)),
-                    file_content,
-                );
-                (item, false)
-            }
-        }
-        MessageOrStickerType::Audio(audio) => {
-            has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-            let template = if use_compact_view {
-                live_id!(CondensedMessage)
-            } else {
-                live_id!(Message)
-            };
-            let (item, existed) = list.item_with_existed(cx, item_id, template);
-            if existed && item_drawn_status.content_drawn {
-                (item, true)
-            } else {
-                new_drawn_status.content_drawn = populate_audio_message_content(
-                    cx,
-                    &item.html_or_plaintext(id!(content.message)),
-                    audio,
-                );
-                (item, false)
-            }
-        }
-        MessageOrStickerType::Video(video) => {
-            has_html_body = video.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-            let template = if use_compact_view {
-                live_id!(CondensedMessage)
-            } else {
-                live_id!(Message)
-            };
-            let (item, existed) = list.item_with_existed(cx, item_id, template);
-            if existed && item_drawn_status.content_drawn {
-                (item, true)
-            } else {
-                new_drawn_status.content_drawn = populate_video_message_content(
-                    cx,
-                    &item.html_or_plaintext(id!(content.message)),
-                    video,
-                );
-                (item, false)
-            }
-        }
-        MessageOrStickerType::VerificationRequest(verification) => {
-            has_html_body = verification.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-            let template = live_id!(Message);
-            let (item, existed) = list.item_with_existed(cx, item_id, template);
-            if existed && item_drawn_status.content_drawn {
-                (item, true)
-            } else {
-                // Use `FormattedBody` to hold our custom summary of this verification request.
-                let formatted = FormattedBody {
-                    format: MessageFormat::Html,
-                    body: format!(
-                        "<i>Sent a <b>verification request</b> to {}.<br>(Supported methods: {})</i>",
-                        verification.to,
-                        verification.methods
-                            .iter()
-                            .map(|m| m.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                    ),
-                };
-
-                populate_text_message_content(
-                    cx,
-                    &item.html_or_plaintext(id!(content.message)),
-                    &verification.body,
-                    Some(&formatted),
-                );
-                new_drawn_status.content_drawn = true;
-                (item, false)
+                if let StickerMediaSource::Plain(owned_mxc_url) = source {
+                    let image_info = info;
+                    let is_image_fully_drawn = populate_image_message_content(
+                        cx,
+                        &item.text_or_image(id!(content.message)),
+                        Some(Box::new(image_info.clone())),
+                        MediaSource::Plain(owned_mxc_url.clone()),
+                        body,
+                        media_cache,
+                    );
+                    new_drawn_status.content_drawn = is_image_fully_drawn;
+                    (item, false)
+                } else {
+                    (item, true)
+                }
             }
         }
         other => {
             has_html_body = false;
+            let kind = match other {
+                MsgLikeKind::Poll(_) => "poll",
+                MsgLikeKind::Redacted => "redacted",
+                MsgLikeKind::UnableToDecrypt(_) => "UnableToDecryptypted",
+                _ => ""
+            };
             let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                let kind = other.as_str();
                 item.label(id!(content.message)).set_text(
                     cx,
-                    &format!("[Unsupported ({kind})] {}", message.body()),
+                    &format!("[Unsupported ({kind}) {:?}", other),
                 );
                 new_drawn_status.content_drawn = true;
                 (item, false)
@@ -3298,7 +3219,7 @@ fn populate_message_view(
             cx,
             &item.view(id!(replied_to_message)),
             room_id,
-            message.in_reply_to(),
+            msg_like_content.in_reply_to.as_ref(),
             event_tl_item.event_id(),
         );
         replied_to_event_id = replied_to_ev_id;
@@ -3370,7 +3291,7 @@ fn populate_message_view(
         abilities: MessageAbilities::from_user_power_and_event(
             user_power_levels,
             event_tl_item,
-            &message,
+            msg_like_content,
             has_html_body,
         ),
         should_be_highlighted: event_tl_item.is_highlighted()
@@ -3381,7 +3302,7 @@ fn populate_message_view(
         item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
     }
 
-    if message.is_edited() {
+    if msg_like_content.as_message().is_some_and(|m|m.is_edited()) {
         item.edited_indicator(id!(profile.edited_indicator)).set_latest_edit(
             cx,
             event_tl_item,
@@ -3425,16 +3346,15 @@ fn populate_text_message_content(
 fn populate_image_message_content(
     cx: &mut Cx2d,
     text_or_image_ref: &TextOrImageRef,
-    image_info_source: Option<(Option<ImageInfo>, MediaSource)>,
+    image_info_source: Option<Box<ImageInfo>>,
+    original_source: MediaSource,
     body: &str,
     media_cache: &mut MediaCache,
 ) -> bool {
     // We don't use thumbnails, as their resolution is too low to be visually useful.
     // We also don't trust the provided mimetype, as it can be incorrect.
     let (mimetype, _width, _height) = image_info_source.as_ref()
-        .and_then(|(info, _)| info.as_ref()
-            .map(|info| (info.mimetype.as_deref(), info.width, info.height))
-        )
+        .map(|info| (info.mimetype.as_deref(), info.width, info.height))
         .unwrap_or_default();
 
     // If we have a known mimetype and it's not a static image,
@@ -3453,7 +3373,7 @@ fn populate_image_message_content(
 
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
+    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
@@ -3470,25 +3390,23 @@ fn populate_image_message_content(
                 fully_drawn = true;
             }
             (MediaCacheEntry::Requested, _media_format) => {
-                if let Some(image_info) = image_info {
-                    if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
-                        let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
-                            let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else { return Err(image_cache::ImageError::EmptyData)};
-                            if let Ok(data) = blurhash::decode(blurhash, width, height, 1.0) {
-                                ImageBuffer::new(&data, width as usize, height as usize).map(|img_buff| {
-                                    let texture = Some(img_buff.into_new_texture(cx));
-                                    img.set_texture(cx, texture);
-                                    img.size_in_pixels(cx).unwrap_or_default()
-                                })
-                            } else {
-                                Err(image_cache::ImageError::EmptyData)
-                            }
-                        });
-                        if let Err(e) = show_image_result {
-                            let err_str = format!("{body}\n\nFailed to display image: {e:?}");
-                            error!("{err_str}");
-                            text_or_image_ref.show_text(cx, &err_str);
+                if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
+                    let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                        let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else { return Err(image_cache::ImageError::EmptyData)};
+                        if let Ok(data) = blurhash::decode(blurhash, width, height, 1.0) {
+                            ImageBuffer::new(&data, width as usize, height as usize).map(|img_buff| {
+                                let texture = Some(img_buff.into_new_texture(cx));
+                                img.set_texture(cx, texture);
+                                img.size_in_pixels(cx).unwrap_or_default()
+                            })
+                        } else {
+                            Err(image_cache::ImageError::EmptyData)
                         }
+                    });
+                    if let Err(e) = show_image_result {
+                        let err_str = format!("{body}\n\nFailed to display image: {e:?}");
+                        error!("{err_str}");
+                        text_or_image_ref.show_text(cx, &err_str);
                     }
                 }
                 fully_drawn = false;
@@ -3503,7 +3421,7 @@ fn populate_image_message_content(
         }
     };
 
-    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource, image_info: Option<&ImageInfo>| {
+    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource, image_info: Box<ImageInfo>| {
         match media_source {
             MediaSource::Encrypted(encrypted) => {
                 // We consider this as "fully drawn" since we don't yet support encryption.
@@ -3519,12 +3437,11 @@ fn populate_image_message_content(
     };
 
     match image_info_source {
-        Some((image_info, original_source)) => {
+        Some(image_info) => {
             // Use the provided thumbnail URI if it exists; otherwise use the original URI.
-            let media_source = image_info.clone()
-                .and_then(|image_info| image_info.thumbnail_source)
+            let media_source = image_info.thumbnail_source.clone()
                 .unwrap_or(original_source);
-            fetch_and_show_media_source(cx, media_source, image_info.as_ref());
+            fetch_and_show_media_source(cx, media_source, image_info);
         }
         None => {
             text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");
