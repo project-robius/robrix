@@ -4572,7 +4572,7 @@ impl Widget for SmallStateEventsSummaryHeader {
 
 impl WidgetMatchEvent for SmallStateEventsSummaryHeader {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-        if self.button(id!(collapse_button)).clicked(&actions) {
+        if self.button(id!(collapse_button)).clicked(actions) {
             let current_time = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
@@ -4672,10 +4672,10 @@ impl SmallStateEventsSummaryHeader {
                     let username = change.display_name().unwrap_or_else(|| "someone".to_owned());
                     match change.change() {
                         Some(MembershipChange::Joined) => {
-                            user_membership.entry(username).or_insert_with(Vec::new).push(true);
+                            user_membership.entry(username).or_default().push(true);
                         }
                         Some(MembershipChange::Left) => {
-                            user_membership.entry(username).or_insert_with(Vec::new).push(false);
+                            user_membership.entry(username).or_default().push(false);
                         }
                         _ => {}
                     }
