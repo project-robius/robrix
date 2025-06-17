@@ -1237,7 +1237,7 @@ impl Widget for RoomScreen {
                             TimelineItemContent::MsgLike(msg_like_content) => {
                                
                                 match &msg_like_content.kind {
-                                    MsgLikeKind::Message(_message) => {
+                                    MsgLikeKind::Message(_) | MsgLikeKind::Sticker(_) => {
                                         let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
                                         populate_message_view(
                                             cx,
@@ -1252,22 +1252,6 @@ impl Widget for RoomScreen {
                                             item_drawn_status,
                                             room_screen_widget_uid,
                                         )
-                                    }
-                                    MsgLikeKind::Sticker(_sticker) => {
-                                       let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
-                                        populate_message_view(
-                                            cx,
-                                            list,
-                                            item_id,
-                                            room_id,
-                                            event_tl_item,
-                                            msg_like_content,
-                                            prev_event,
-                                            &mut tl_state.media_cache,
-                                            &tl_state.user_power,
-                                            item_drawn_status,
-                                            room_screen_widget_uid,
-                                        ) 
                                     }
                                     MsgLikeKind::Redacted => populate_small_state_event(
                                         cx,
@@ -2848,9 +2832,9 @@ fn populate_message_view(
             TimelineItemContent::MsgLike(_msg_like_content) => {
                 let prev_msg_sender = prev_event_tl_item.sender();
                 prev_msg_sender == event_tl_item.sender()
-                && ts_millis.0
-                    .checked_sub(prev_event_tl_item.timestamp().0)
-                    .is_some_and(|d| d < uint!(600000))
+                    && ts_millis.0
+                        .checked_sub(prev_event_tl_item.timestamp().0)
+                        .is_some_and(|d| d < uint!(600000))
             }
             _ => false,
         },
@@ -3146,7 +3130,20 @@ fn populate_message_view(
                         (item, false)
                     }
                 }
-                _ => todo!(),
+                _ => {
+                    has_html_body = false;
+                    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+                    if existed && item_drawn_status.content_drawn {
+                        (item, true)
+                    } else {
+                        item.label(id!(content.message)).set_text(
+                            cx,
+                            &format!("[Unsupported {:?}]", msg_like_content.kind),
+                        );
+                        new_drawn_status.content_drawn = true;
+                        (item, false)
+                    }
+                }
             }
         }
         // Handle sticker messages that are static images.
@@ -3183,19 +3180,13 @@ fn populate_message_view(
         }
         other => {
             has_html_body = false;
-            let kind = match other {
-                MsgLikeKind::Poll(_) => "poll",
-                MsgLikeKind::Redacted => "redacted",
-                MsgLikeKind::UnableToDecrypt(_) => "UnableToDecryptypted",
-                _ => ""
-            };
             let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
                 item.label(id!(content.message)).set_text(
                     cx,
-                    &format!("[Unsupported ({kind}) {:?}", other),
+                    &format!("[Unsupported {:?}] ", other),
                 );
                 new_drawn_status.content_drawn = true;
                 (item, false)
