@@ -1880,7 +1880,7 @@ impl RoomScreen {
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
                         if let Some(message) = event_tl_item.content().as_message() {
-                             match message.msgtype() {
+                            match message.msgtype() {
                                 MessageType::Text(TextMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
                                 | MessageType::Notice(NoticeMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
                                 | MessageType::Emote(EmoteMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
@@ -2834,7 +2834,7 @@ fn populate_message_view(
                 prev_msg_sender == event_tl_item.sender()
                     && ts_millis.0
                         .checked_sub(prev_event_tl_item.timestamp().0)
-                        .is_some_and(|d| d < uint!(600000))
+                        .is_some_and(|d| d < uint!(600000)) // 10 mins in millis
             }
             _ => false,
         },
@@ -2995,8 +2995,6 @@ fn populate_message_view(
                         (item, false)
                     }
                 }
-                
-                
                 MessageType::Image(image) => {
                     has_html_body = image.formatted.as_ref()
                         .is_some_and(|f| f.format == MessageFormat::Html);
