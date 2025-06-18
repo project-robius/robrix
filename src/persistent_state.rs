@@ -1,5 +1,5 @@
 //! Handles app persistence by saving and restoring client session data to/from the filesystem.
-use std::{io::Read, path::PathBuf};
+use std::path::PathBuf;
 use anyhow::{anyhow, bail};
 use makepad_widgets::{
     log,
@@ -13,7 +13,7 @@ use matrix_sdk::{
     Client,
 };
 use serde::{Deserialize, Serialize};
-use tokio::{fs, io::{self, AsyncReadExt}};
+use tokio::{fs, io};
 
 use crate::{
     app::{SavedDockState, SelectedRoom, WindowGeomState},
@@ -238,38 +238,28 @@ pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
 
 /// Loads the rooms panel's state from persistent storage.
 pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<SavedDockState> {
-    let mut file = match tokio::fs::File::open(
-        persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME),
-    )
-    .await
-    {
+    let content = match tokio::fs::read_to_string(persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME)).await {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(SavedDockState::default()),
-        Err(e) => return Err(e.into()),
+        Err(e) => return Err(e.into())
     };
-    // Read the file contents into a String
-    let mut contents = String::with_capacity(file.metadata().await?.len() as usize);
-    file.read_to_string(&mut contents).await?;
     let dock_state: SavedDockState =
-        SavedDockState::deserialize_ron(&contents).map_err(|er| anyhow::Error::msg(er.msg))?;
-
+        SavedDockState::deserialize_ron(&content).map_err(|er| anyhow::Error::msg(er.msg))?;
     Ok(dock_state)
 }
 
 /// Loads the window geometry's state from persistent storage.
 pub fn load_window_state(window_ref: WindowRef, cx: &mut Cx) -> anyhow::Result<()> {
-    let mut file = match std::fs::File::open(app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME)) {
+    let file = match std::fs::File::open(app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME)) {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(e.into()),
     };
-    let mut contents = Vec::with_capacity(file.metadata()?.len() as usize);
-    file.read_to_end(&mut contents)?;
     let WindowGeomState {
         inner_size,
         position,
         is_fullscreen,
-    } = serde_json::from_slice(&contents).map_err(|e| anyhow!(e))?;
+    } = serde_json::from_reader(file).map_err(|e| anyhow!(e))?;
     window_ref.configure_window(
         cx,
         inner_size.into(),
