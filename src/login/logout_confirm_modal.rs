@@ -1,4 +1,5 @@
 use makepad_widgets::*;
+use crate::shared::styles::{COLOR_ACTIVE_PRIMARY, COLOR_DISABLE_GRAY, COLOR_PRIMARY, COLOR_SECONDARY, COLOR_TEXT};
 
 live_design! {
     use link::theme::*;
@@ -26,7 +27,6 @@ live_design! {
                 color: #FFFFFF
             }
             margin: 0
-
 
             <View> {
                 width: Fill,
@@ -57,36 +57,33 @@ live_design! {
                 text: "Are you sure you want to logout?"
             }
 
-
             <View> {
                 width: Fill,
                 height: Fit,
-                flow: Right, // Buttons side-by-side
-                align: {x: 0.5, y: 0.5}, // Center buttons horizontally if needed, or use 1.0 to right-align
-                spacing: 10.0, // Space between buttons
+                flow: Right,
+                align: {x: 0.5, y: 0.5},
+                spacing: 10.0,
 
-                // Cancel Button
                 cancel_button = <RobrixIconButton> {
                     width: Fit, height: Fit,
                     padding: 10,
                     draw_bg: {
-                        color: #CCCCCC
+                        color: (COLOR_SECONDARY)
                     },
                     text: "Cancel"
                     draw_text: {
-                        color: #000000,
+                        color: (COLOR_TEXT)
                         text_style: <REGULAR_TEXT> {font_size: 14}
-                    }, 
+                    },
                 }
 
-                // Confirm Button
                 confirm_button = <RobrixIconButton> {
                     width: Fit, height: Fit,
                     padding: 10,
                     draw_bg: { color: (COLOR_ACTIVE_PRIMARY) },
                     text: "Confirm"
                     draw_text: {
-                        color: #FFFFFF
+                        color: (COLOR_PRIMARY)
                         text_style: <REGULAR_TEXT> {font_size: 14}
                     },
                 }
@@ -99,6 +96,7 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct LogoutConfirmModal {
     #[deref] view: View,
+    #[rust(false)] is_loading: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -106,10 +104,15 @@ pub enum LogoutConfirmModalAction {
     Open,
     Cancel,
     Confirm,
+    LogoutSuccess,
+    LogoutFailed(String),
 }
 
 impl Widget for LogoutConfirmModal {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.is_loading {
+            return;
+        }
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
     }
@@ -124,18 +127,22 @@ impl WidgetMatchEvent for LogoutConfirmModal {
         let cancel_button = self.button(id!(cancel_button));
         let confirm_button = self.button(id!(confirm_button));
         
-        let cancel_button_clicked = cancel_button.clicked(actions);
         let modal_dismissed = actions
             .iter()
             .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
-            
-        if cancel_button_clicked || modal_dismissed {
-            if !modal_dismissed {
-                cx.action(LogoutConfirmModalAction::Cancel);
-            }
+
+        if modal_dismissed && self.is_loading {
+            return
         }
-        
-        if confirm_button.clicked(actions) {
+
+        let cancel_button_clicked = cancel_button.clicked(actions) ;
+        if cancel_button_clicked { 
+            cx.action(LogoutConfirmModalAction::Cancel);
+        }
+        if confirm_button.clicked(actions) && !self.is_loading {
+            self.is_loading = true;
+            self.set_message(cx, "Waiting for logout...");
+            self.update_button_states(cx);
             cx.action(LogoutConfirmModalAction::Confirm);
         }
     }
@@ -155,6 +162,43 @@ impl LogoutConfirmModal {
     /// Returns a reference to the confirm button
     fn confirm_button_ref(&self) -> ButtonRef {
         self.button(id!(confirm_button))
+    }
+
+    fn update_button_states(&mut self, cx: &mut Cx) {
+        let cancel_button = self.button(id!(cancel_button));
+        let confirm_button = self.button(id!(confirm_button));
+        
+        if self.is_loading {
+            cancel_button.apply_over(cx, live! {
+                draw_bg: { color: (COLOR_SECONDARY) },
+                draw_text: { color: (COLOR_DISABLE_GRAY) },
+                enabled: false
+            });
+            confirm_button.apply_over(cx, live! {
+                draw_bg: { color: (COLOR_DISABLE_GRAY) },
+                draw_text: { color: (COLOR_SECONDARY) },
+                enabled: false
+            });
+        } else {
+            cancel_button.apply_over(cx, live! {
+                draw_bg: { color: (COLOR_SECONDARY) },
+                draw_text: { color: (COLOR_TEXT) },
+                enabled: true
+            });
+            confirm_button.apply_over(cx, live! {
+                draw_bg: { color: (COLOR_ACTIVE_PRIMARY) },
+                draw_text: { color: (COLOR_PRIMARY) },
+                enabled: true
+            });
+        }
+    }
+
+    pub fn set_loading(&mut self, cx: &mut Cx, is_loading: bool) {
+        self.is_loading = is_loading;
+        self.update_button_states(cx);
+        if !is_loading {
+            self.set_message(cx, "Are you sure you want to logout?");
+        }
     }
 }
 
@@ -179,6 +223,13 @@ impl LogoutConfirmModalRef {
         self.borrow()
             .map(|inner| inner.confirm_button_ref())
             .unwrap_or_default()
+    }
+
+    /// See [`LogoutConfirmModal::set_loading()`].
+    pub fn set_loading(&self, cx: &mut Cx, is_loading: bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_loading(cx, is_loading);
+        }
     }
 
 }

@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::{login_screen::LoginAction, logout_confirm_modal::LogoutConfirmModalAction}, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::{submit_async_request, MatrixRequest}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::{login_screen::LoginAction, logout_confirm_modal::{LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}}, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::{submit_async_request, MatrixRequest}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -206,26 +206,52 @@ impl MatchEvent for App {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
             if let Some(logout_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
+                let modal = self.ui.modal(id!(logout_confirm_modal));
+                let logout_modal = self.ui.logout_confirm_modal(id!(logout_confirm_modal_inner));
+                
                 match logout_action {
                     LogoutConfirmModalAction::Open=> {
-                        self.ui.modal(id!(logout_confirm_modal)).open(cx)
+                        modal.open(cx)
                     },
                     LogoutConfirmModalAction::Cancel => {
-                        self.ui.modal(id!(logout_confirm_modal)).close(cx);
+                        modal.close(cx);
                     },
                     LogoutConfirmModalAction::Confirm => {
-                        self.ui.modal(id!(logout_confirm_modal)).close(cx);
+                        logout_modal.set_loading(cx, true);
                         submit_async_request(MatrixRequest::Logout);
+                    },
+                    LogoutConfirmModalAction::LogoutSuccess => {
+                        logout_modal.set_loading(cx, false); 
+                        modal.close(cx);
+                    },
+                    LogoutConfirmModalAction::LogoutFailed(error) => {
+                        logout_modal.set_loading(cx, false);
+                        logout_modal.set_message(cx, &format!("Logout failed: {}", error));
                     },
                 }
             }
 
-            if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
-                log!("Received LoginAction::LoginSuccess, hiding login view.");
-                self.app_state.logged_in = true;
-                self.update_login_visibility(cx);
-                cx.action(MainDesktopUiAction::DockLoad);
-                self.ui.redraw(cx);
+            if let Some(login_action) = action.downcast_ref::<LoginAction>() {
+                match login_action {
+                    LoginAction::LoginSuccess => {
+                        log!("Received LoginAction::LoginSuccess, hiding login view.");
+                        self.app_state.logged_in = true;
+                        self.update_login_visibility(cx);
+                        cx.action(MainDesktopUiAction::DockLoad);
+                        self.ui.redraw(cx);
+                    },
+                    LoginAction::LogoutSuccess => {
+                        cx.action(LogoutConfirmModalAction::LogoutSuccess);
+                        log!("Received LoginAction::LogoutSuccess, showing login view.");
+                        self.app_state.logged_in = false;
+                        self.update_login_visibility(cx);
+                        self.ui.redraw(cx);
+                    },
+                    LoginAction::LogoutFailure(error) => {
+                        cx.action(LogoutConfirmModalAction::LogoutFailed(error.clone()));
+                    },
+                    _ => {}
+                }
             }
 
             // Handle an action requesting to open the new message context menu.

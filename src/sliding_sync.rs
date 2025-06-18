@@ -2822,16 +2822,13 @@ async fn logout_and_refresh() -> Result<RefreshState> {
         return Err(anyhow::anyhow!(error_msg));
     }
 
-    let sync_service = get_sync_service().unwrap();
+    let sync_service: Arc<SyncService> = get_sync_service().unwrap();
     sync_service.stop().await;
-
-    REQUEST_SENDER.lock().unwrap().take();
-    log!("Request sender cleared.");
 
     log!("Performing server-side logout...");
     match client.matrix_auth().logout().await {
         Ok(_) => {
-            log!("Server-side logout successful.");
+            log!("Server-side logout successful.")
         },
         Err(e) => {
             let error_msg = format!("Server-side logout failed: {}", e);
@@ -2845,10 +2842,10 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     log!("Cleaning up client state and caches...");
     take_client();
     take_sync_service();
-    // Note: unwrap() might panic if the lock is poisoned
     TOMBSTONED_ROOMS.lock().unwrap().clear();
     IGNORED_USERS.lock().unwrap().clear();
     DEFAULT_SSO_CLIENT.lock().unwrap().take();
+    REQUEST_SENDER.lock().unwrap().take();
     log!("Client state and caches cleared.");
 
     log!("Requesting to close all tabs...");
