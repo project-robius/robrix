@@ -1,7 +1,7 @@
 //! A room screen is the UI view that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}};
+use std::{borrow::Cow, collections::{BTreeMap, HashMap}, hash::{DefaultHasher, Hash, Hasher}, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::{SystemTime, UNIX_EPOCH}};
 
 use bytesize::ByteSize;
 use imbl::Vector;
@@ -12,10 +12,10 @@ use matrix_sdk::{room::RoomMember, ruma::{
             AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
         }, ImageInfo, MediaSource
     },
-    sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId
+    sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId,
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, MembershipChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 
 use crate::{
@@ -490,6 +490,73 @@ live_design! {
         }
     }
 
+    SmallStateEventsSummaryHeader = {{SmallStateEventsSummaryHeader}} {
+        width: Fill,
+        height: Fit,
+        flow: Down,
+        padding: { left: 7.0, right: 7.0 }
+        margin: { left: 9.5 }
+
+        summary_content = <View> {
+            width: Fill,
+            height: Fit,
+            flow: Right,
+            summary = <Label> {
+                width: Fill,
+                height: Fit,
+                align: { y: 0.5 },
+                draw_text: {
+                    wrap: Word,
+                    text_style: <SMALL_STATE_TEXT_STYLE> {},
+                    color: (SMALL_STATE_TEXT_COLOR)
+                }
+                text: ""
+            }
+
+            collapse_button = <Button> {
+                width: Fit,
+                height: Fit,
+                margin: 0,
+
+                draw_bg: {
+                    instance color: (COLOR_PRIMARY)
+                    instance color_hover: #A
+                    instance border_size: 0.0
+                    instance border_color: #D0D5DD
+                    instance border_radius: 3.0
+
+                    fn get_color(self) -> vec4 {
+                        return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
+                    }
+
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                        sdf.box(
+                            self.border_size,
+                            self.border_size,
+                            self.rect_size.x - (self.border_size * 2.0),
+                            self.rect_size.y - (self.border_size * 2.0),
+                            max(1.0, self.border_radius)
+                        )
+                        sdf.fill_keep(self.get_color())
+                        if self.border_size > 0.0 {
+                            sdf.stroke(self.border_color, self.border_size)
+                        }
+                        return sdf.result;
+                    }
+                }
+
+                text: "expand",
+                draw_text: {
+                    text_style: <REGULAR_TEXT>{font_size: 10},
+                    color: #000
+                    fn get_color(self) -> vec4 {
+                        return self.color;
+                    }
+                }
+            }
+        }
+    }
 
     // The view used for each day divider in a room's timeline.
     // The date text is centered between two horizontal lines.
@@ -585,6 +652,7 @@ live_design! {
             CondensedMessage = <CondensedMessage> {}
             ImageMessage = <ImageMessage> {}
             CondensedImageMessage = <CondensedImageMessage> {}
+            SmallStateEventsSummaryHeader = <SmallStateEventsSummaryHeader> {}
             SmallStateEvent = <SmallStateEvent> {}
             Empty = <Empty> {}
             DateDivider = <DateDivider> {}
@@ -944,6 +1012,12 @@ impl Widget for RoomScreen {
                         );
                     }
                 }
+
+                // Handle the small state events summary toggle action.
+                if let SmallStateEventsSummaryToggleAction::Toggle { event_group_id } = action.as_widget_action().cast() {
+                    let current_state = self.get_small_state_events_expanded(&event_group_id);
+                    self.set_small_state_events_expanded(event_group_id, !current_state);
+                }
             }
 
             /*
@@ -1206,130 +1280,219 @@ impl Widget for RoomScreen {
             let room_id = &tl_state.room_id;
             let tl_items = &tl_state.items;
 
+            let grouped_tl_items = group_and_merge_timeline_items(&tl_state.items);
+            let tl_items_indexes = Self::calculate_timeline_items_indexes(&grouped_tl_items, tl_state);
+
             // Set the portal list's range based on the number of timeline items.
-            let last_item_id = tl_items.len();
+            let last_item_id = tl_items_indexes.len();
 
             let list = list_ref.deref_mut();
             list.set_item_range(cx, 0, last_item_id);
 
             while let Some(item_id) = list.next_visible_item(cx) {
-                let item = {
-                    let tl_idx = item_id;
-                    let Some(timeline_item) = tl_items.get(tl_idx) else {
-                        // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
-                        // but we can always safely fill the item with an empty widget that takes up no space.
-                        list.item(cx, item_id, live_id!(Empty));
-                        continue;
-                    };
-
-                    // Determine whether this item's content and profile have been drawn since the last update.
-                    // Pass this state to each of the `populate_*` functions so they can attempt to re-use
-                    // an item in the timeline's portallist that was previously populated, if one exists.
-                    let item_drawn_status = ItemDrawnStatus {
-                        content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
-                        profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
-                    };
-                    let (item, item_new_draw_status) = match timeline_item.kind() {
-                        TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
-                            TimelineItemContent::Message(message) => {
-                                let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
-                                populate_message_view(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    room_id,
-                                    event_tl_item,
-                                    MessageOrSticker::Message(message),
-                                    prev_event,
-                                    &mut tl_state.media_cache,
-                                    &tl_state.user_power,
-                                    item_drawn_status,
-                                    room_screen_widget_uid,
-                                )
-                            }
-                            TimelineItemContent::Sticker(sticker) => {
-                                let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
-                                populate_message_view(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    room_id,
-                                    event_tl_item,
-                                    MessageOrSticker::Sticker(sticker.content()),
-                                    prev_event,
-                                    &mut tl_state.media_cache,
-                                    &tl_state.user_power,
-                                    item_drawn_status,
-                                    room_screen_widget_uid,
-                                )
-                            }
-                            TimelineItemContent::RedactedMessage => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                &RedactedMessageEventMarker,
-                                item_drawn_status,
-                            ),
-                            TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                membership_change,
-                                item_drawn_status,
-                            ),
-                            TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                profile_change,
-                                item_drawn_status,
-                            ),
-                            TimelineItemContent::OtherState(other) => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                other,
-                                item_drawn_status,
-                            ),
-                            unhandled => {
-                                let item = list.item(cx, item_id, live_id!(SmallStateEvent));
-                                item.label(id!(content)).set_text(cx, &format!("[Unsupported] {:?}", unhandled));
-                                (item, ItemDrawnStatus::both_drawn())
-                            }
-                        }
-                        TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(millis)) => {
-                            let item = list.item(cx, item_id, live_id!(DateDivider));
-                            let text = unix_time_millis_to_datetime(*millis)
-                                // format the time as a shortened date (Sat, Sept 5, 2021)
-                                .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
-                                .unwrap_or_else(|| format!("{:?}", millis));
-                            item.label(id!(date)).set_text(cx, &text);
-                            (item, ItemDrawnStatus::both_drawn())
-                        }
-                        TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
-                            let item = list.item(cx, item_id, live_id!(ReadMarker));
-                            (item, ItemDrawnStatus::both_drawn())
-                        }
-                    };
-
-                    // Now that we've drawn the item, add its index to the set of drawn items.
-                    if item_new_draw_status.content_drawn {
-                        tl_state.content_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
-                    }
-                    if item_new_draw_status.profile_drawn {
-                        tl_state.profile_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
-                    }
-                    item
+                let Some(tl_item_index_kind) = tl_items_indexes.get(item_id) else {
+                    // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
+                    // but we can always safely fill the item with an empty widget that takes up no space.
+                    list.item(cx, item_id, live_id!(Empty));
+                    continue;
                 };
-                item.draw_all(cx, &mut Scope::empty());
+
+                match tl_item_index_kind {
+                    TimelineItemIndexKind::SingleEvent { tl_idx, item } => {
+                        let timeline_item = item;
+
+                        // Determine whether this item's content and profile have been drawn since the last update.
+                        // Pass this state to each of the `populate_*` functions so they can attempt to re-use
+                        // an item in the timeline's portallist that was previously populated, if one exists.
+                        let item_drawn_status = ItemDrawnStatus {
+                            content_drawn: tl_state.content_drawn_since_last_update.contains(tl_idx),
+                            profile_drawn: tl_state.profile_drawn_since_last_update.contains(tl_idx),
+                        };
+
+                        let item = {
+                            let (item, item_new_draw_status) = match timeline_item.kind() {
+                                TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
+                                    TimelineItemContent::Message(message) => {
+                                        let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
+                                        populate_message_view(
+                                            cx,
+                                            list,
+                                            item_id,
+                                            room_id,
+                                            event_tl_item,
+                                            MessageOrSticker::Message(message),
+                                            prev_event,
+                                            &mut tl_state.media_cache,
+                                            &tl_state.user_power,
+                                            item_drawn_status,
+                                            room_screen_widget_uid,
+                                        )
+                                    }
+                                    TimelineItemContent::Sticker(sticker) => {
+                                        let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
+                                        populate_message_view(
+                                            cx,
+                                            list,
+                                            item_id,
+                                            room_id,
+                                            event_tl_item,
+                                            MessageOrSticker::Sticker(sticker.content()),
+                                            prev_event,
+                                            &mut tl_state.media_cache,
+                                            &tl_state.user_power,
+                                            item_drawn_status,
+                                            room_screen_widget_uid,
+                                        )
+                                    }
+                                    TimelineItemContent::RedactedMessage => populate_small_state_event(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        room_id,
+                                        event_tl_item,
+                                        &RedactedMessageEventMarker,
+                                        item_drawn_status,
+                                    ),
+                                    TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        room_id,
+                                        event_tl_item,
+                                        membership_change,
+                                        item_drawn_status,
+                                    ),
+                                    TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        room_id,
+                                        event_tl_item,
+                                        profile_change,
+                                        item_drawn_status,
+                                    ),
+                                    TimelineItemContent::OtherState(other) => populate_small_state_event(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        room_id,
+                                        event_tl_item,
+                                        other,
+                                        item_drawn_status,
+                                    ),
+                                    unhandled => {
+                                        let item = list.item(cx, item_id, live_id!(SmallStateEvent));
+                                        item.label(id!(content)).set_text(cx, &format!("[Unsupported] {:?}", unhandled));
+                                        (item, ItemDrawnStatus::both_drawn())
+                                    }
+                                }
+                                TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(millis)) => {
+                                    let item = list.item(cx, item_id, live_id!(DateDivider));
+                                    let text = unix_time_millis_to_datetime(*millis)
+                                        // format the time as a shortened date (Sat, Sept 5, 2021)
+                                        .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
+                                        .unwrap_or_else(|| format!("{:?}", millis));
+                                    item.label(id!(date)).set_text(cx, &text);
+                                    (item, ItemDrawnStatus::both_drawn())
+                                }
+                                TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
+                                    let item = list.item(cx, item_id, live_id!(ReadMarker));
+                                    (item, ItemDrawnStatus::both_drawn())
+                                }
+                            };
+
+                            // Now that we've drawn the item, add its index to the set of drawn items.
+                            if item_new_draw_status.content_drawn {
+                                tl_state.content_drawn_since_last_update.insert(*tl_idx .. *tl_idx + 1);
+                            }
+                            if item_new_draw_status.profile_drawn {
+                                tl_state.profile_drawn_since_last_update.insert(*tl_idx .. *tl_idx + 1);
+                            }
+                            item
+                        };
+                        item.draw_all(cx, &mut Scope::empty());
+                    }
+                    TimelineItemIndexKind::SmallStateEventHeader { group_id, events, tl_idx } => {
+                        let is_expanded = tl_state
+                            .small_state_events_expansion_states
+                            .as_ref()
+                            .and_then(|states| states.get(group_id).copied())
+                            .unwrap_or(false);
+
+                        let item = populate_small_state_events_summary_header(
+                            cx,
+                            list,
+                            item_id,
+                            group_id.clone(),
+                            events,
+                            is_expanded,
+                        );
+
+                        tl_state.content_drawn_since_last_update.insert(*tl_idx .. *tl_idx + 1);
+                        tl_state.profile_drawn_since_last_update.insert(*tl_idx .. *tl_idx + 1);
+
+                        item.draw_all(cx, &mut Scope::empty());
+                    }
+                    TimelineItemIndexKind::SmallStateEventItem { group_id: _group_id, event, item_index: _item_index, tl_idx, .. } => {
+                        let item_drawn_status = ItemDrawnStatus {
+                            content_drawn: tl_state.content_drawn_since_last_update.contains(tl_idx),
+                            profile_drawn: tl_state.profile_drawn_since_last_update.contains(tl_idx),
+                        };
+
+                        let item = {
+                            let (item, _item_new_draw_status) = if let TimelineItemKind::Event(event_tl_item) = event.kind() {
+                                match event_tl_item.content() {
+                                    TimelineItemContent::RedactedMessage => populate_small_state_event(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        room_id,
+                                        event_tl_item,
+                                        &RedactedMessageEventMarker,
+                                        item_drawn_status,
+                                    ),
+                                    TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        room_id,
+                                        event_tl_item,
+                                        membership_change,
+                                        item_drawn_status,
+                                    ),
+                                    TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        room_id,
+                                        event_tl_item,
+                                        profile_change,
+                                        item_drawn_status,
+                                    ),
+                                    TimelineItemContent::OtherState(other) => populate_small_state_event(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        room_id,
+                                        event_tl_item,
+                                        other,
+                                        item_drawn_status,
+                                    ),
+                                    unhandled => {
+                                        let item = list.item(cx, item_id, live_id!(SmallStateEvent));
+                                        item.label(id!(content)).set_text(cx, &format!("[Unsupported] {:?}", unhandled));
+                                        (item, ItemDrawnStatus::both_drawn())
+                                    }
+                                }
+                            } else {
+                                let item = list.item(cx, item_id, live_id!(Empty));
+                                (item, ItemDrawnStatus::both_drawn())
+                            };
+                            item
+                        };
+                        item.draw_all(cx, &mut Scope::empty());
+                    }
+                }
             }
         }
         DrawStep::done()
@@ -2207,6 +2370,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
+                small_state_events_expansion_states: None,
             };
             (new_tl_state, true)
         };
@@ -2466,6 +2630,71 @@ impl RoomScreen {
         }
         tl.last_scrolled_index = first_index;
     }
+
+    fn calculate_timeline_items_indexes(
+        grouped_tl_items: &Vector<GroupedTimelineItem>,
+        tl_state: &TimelineUiState
+    ) -> Vec<TimelineItemIndexKind> {
+        let mut indexes = Vec::new();
+        for (tl_idx, grouped_item) in grouped_tl_items.iter().enumerate() {
+            match grouped_item {
+                GroupedTimelineItem::SingleEvent(item) => {
+                    indexes.push(TimelineItemIndexKind::SingleEvent {
+                        tl_idx,
+                        item: item.clone(),
+                    });
+                }
+                GroupedTimelineItem::GroupedSmallStateEvent(events) => {
+                    let event_group_id = generate_event_group_id(events);
+                    let is_expanded = tl_state
+                        .small_state_events_expansion_states
+                        .as_ref()
+                        .and_then(|states| states.get(&event_group_id))
+                        .copied()
+                        .unwrap_or(false);
+
+                    indexes.push(TimelineItemIndexKind::SmallStateEventHeader {
+                        group_id: event_group_id.clone(),
+                        events: events.clone(),
+                        tl_idx,
+                    });
+
+                    if is_expanded {
+                        for (item_index, event) in events.iter().enumerate() {
+                            indexes.push(TimelineItemIndexKind::SmallStateEventItem {
+                                group_id: event_group_id.clone(),
+                                event: event.clone(),
+                                item_index,
+                                tl_idx,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        indexes
+    }
+
+    /// Gets the expansion state for a small state events summary.
+    pub fn get_small_state_events_expanded(&self, event_group_id: &str) -> bool {
+        self.tl_state
+            .as_ref()
+            .and_then(|tl| tl.small_state_events_expansion_states.as_ref())
+            .and_then(|states| states.get(event_group_id))
+            .copied()
+            .unwrap_or(false)
+    }
+
+    /// Sets the expansion state for a small state events summary.
+    pub fn set_small_state_events_expanded(&mut self, event_group_id: String, expanded: bool) {
+        if let Some(tl) = self.tl_state.as_mut() {
+            tl.small_state_events_expansion_states
+                .get_or_insert_with(HashMap::new)
+                .insert(event_group_id, expanded);
+        } else {
+            error!("BUG: tried to set small state events expansion state, but no timeline state was available.");
+        }
+    }
 }
 
 impl RoomScreenRef {
@@ -2692,6 +2921,102 @@ struct TimelineUiState {
     /// When new message come in, this value is reset to `false`.
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
+    /// Records the expansion states of small state events summaries.
+    /// The key is the event group ID, and the value is whether the summary is expanded.
+    /// Key is generated by `generate_event_group_id()`.
+    small_state_events_expansion_states: Option<HashMap<String, bool>>,
+}
+
+static GROUPED_TIMELINE_ITEMS_NUMS: usize = 2;
+
+#[derive(Debug, Clone)]
+enum GroupedTimelineItem {
+    /// A single event that is not grouped with any other events.
+    SingleEvent(Arc<TimelineItem>),
+    /// A group of small state events, such as membership changes or profile changes.
+    GroupedSmallStateEvent(Vector<Arc<TimelineItem>>)
+}
+
+enum TimelineItemIndexKind {
+    SingleEvent {
+        tl_idx: usize,
+        item: Arc<TimelineItem>,
+    },
+    SmallStateEventHeader {
+        group_id: String,
+        events: Vector<Arc<TimelineItem>>,
+        tl_idx: usize,
+    },
+    SmallStateEventItem {
+        group_id: String,
+        event: Arc<TimelineItem>,
+        item_index: usize,
+        tl_idx: usize,
+    },
+}
+
+fn group_and_merge_timeline_items(
+    tl_items: &Vector<Arc<TimelineItem>>,
+) -> Vector<GroupedTimelineItem> {
+    // If there are no items, return an empty vector.
+    if tl_items.is_empty() {
+        return Vector::new();
+    }
+
+    let mut grouped_items = Vec::with_capacity(tl_items.len()); // preallocate capacity
+    let mut buffer: Vec<Arc<TimelineItem>> = Vec::new();
+
+    // Currently we only group small events where OtherState is not merged.
+    fn is_groupable_tl_item(item: &TimelineItem) -> bool {
+        match item.kind() {
+            TimelineItemKind::Event(event) => matches!(
+                event.content(),
+                TimelineItemContent::MembershipChange(_)
+                | TimelineItemContent::ProfileChange(_)
+                | TimelineItemContent::RedactedMessage
+                | TimelineItemContent::OtherState(_)
+            ),
+            _ => false,
+        }
+    }
+
+    fn flush_buffer(
+        buffer: &mut Vec<Arc<TimelineItem>>,
+        output: &mut Vec<GroupedTimelineItem>,
+    ) {
+        if buffer.len() >= GROUPED_TIMELINE_ITEMS_NUMS {
+            output.push(GroupedTimelineItem::GroupedSmallStateEvent(
+                buffer.drain(..).collect()
+            ));
+        } else {
+            output.extend(buffer.drain(..).map(GroupedTimelineItem::SingleEvent));
+        }
+    }
+
+    for item in tl_items.iter() {
+        if is_groupable_tl_item(item) {
+            buffer.push(item.clone());
+        } else {
+            flush_buffer(&mut buffer, &mut grouped_items);
+            grouped_items.push(GroupedTimelineItem::SingleEvent(item.clone()));
+        }
+    }
+    flush_buffer(&mut buffer, &mut grouped_items);
+
+    Vector::from(grouped_items)
+}
+
+fn generate_event_group_id(events: &Vector<Arc<TimelineItem>>) -> String {
+    let mut hasher = DefaultHasher::new();
+
+    for event in events {
+        if let TimelineItemKind::Event(event_tl_item) = event.kind() {
+            event_tl_item.event_id().hash(&mut hasher);
+            event_tl_item.timestamp().hash(&mut hasher);
+        }
+    }
+
+    format!("event_group_{:x}", hasher.finish())
 }
 
 #[derive(Default, Debug)]
@@ -3989,6 +4314,29 @@ fn populate_small_state_event(
 }
 
 
+fn populate_small_state_events_summary_header(
+    cx: &mut Cx,
+    list: &mut PortalList,
+    item_id: usize,
+    event_group_id: String,
+    events: &Vector<Arc<TimelineItem>>,
+    is_expanded: bool,
+) -> WidgetRef {
+    let item = list.item(cx, item_id, live_id!(SmallStateEventsSummaryHeader));
+    let header_ref = item.as_small_state_events_summary_header();
+
+    if let Some(mut header) = header_ref.borrow_mut() {
+        header.populate_item_content(
+            cx,
+            event_group_id,
+            events,
+            is_expanded,
+        )
+    }
+
+    item
+}
+
 /// Returns the display name of the sender of the given `event_tl_item`, if available.
 fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String> {
     if let TimelineDetails::Ready(profile) = event_tl_item.sender_profile() {
@@ -4208,5 +4556,352 @@ impl MessageRef {
     fn set_data(&self, details: MessageDetails) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_data(details);
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct EventsSummary {
+    pub joined_count: usize,
+    pub left_count: usize,
+    pub joined_and_left_count: usize,
+    pub left_and_joined_count: usize,
+    pub displayname_updated_count: usize,
+    pub avatar_updated_count: usize,
+    pub both_updated_count: usize,
+    pub redacted_count: usize,
+
+    // Save only the first username as an example to reduce memory usage
+    pub first_joined_user: Option<String>,
+    pub first_left_user: Option<String>,
+    pub first_displayname_user: Option<String>,
+    pub first_avatar_user: Option<String>,
+    pub first_both_user: Option<String>,
+}
+
+impl EventsSummary {
+    pub fn format_text(&self) -> String {
+        let mut parts = Vec::with_capacity(8); // 预分配容量
+        if self.left_count > 0 {
+            parts.push(self.format_user_action("left", self.left_count, &self.first_left_user));
+        }
+        if self.joined_count > 0 {
+            parts.push(self.format_user_action("joined", self.joined_count, &self.first_joined_user));
+        }
+        if self.left_and_joined_count > 0 {
+            parts.push(self.format_user_action("left and rejoined", self.left_and_joined_count, &None));
+        }
+        if self.joined_and_left_count > 0 {
+            parts.push(self.format_user_action("joined and left", self.joined_and_left_count, &None));
+        }
+        if self.displayname_updated_count > 0 {
+            parts.push(self.format_user_action("updated display name", self.displayname_updated_count, &self.first_displayname_user));
+        }
+        if self.avatar_updated_count > 0 {
+            parts.push(self.format_user_action("updated avatar", self.avatar_updated_count, &self.first_avatar_user));
+        }
+        if self.both_updated_count > 0 {
+            parts.push(self.format_user_action("updated display name and avatar", self.both_updated_count, &self.first_both_user));
+        }
+        if self.redacted_count > 0 {
+            parts.push(format!("{} message(s) were redacted", self.redacted_count));
+        }
+        if parts.is_empty() {
+            "No events".to_string()
+        } else {
+            parts.join(", ")
+        }
+    }
+
+    fn format_user_action(&self, action: &str, count: usize, first_user: &Option<String>) -> String {
+        match count {
+            1 => {
+                if let Some(user) = first_user {
+                    format!("{} {}", user, action)
+                } else {
+                    format!("someone {}", action)
+                }
+            }
+            2 => format!("2 users {}", action),
+            n => format!("{} users {}", n, action),
+        }
+    }
+
+    pub fn has_significant_changes(&self, other: &EventsSummary) -> bool {
+        self.joined_count != other.joined_count ||
+        self.left_count != other.left_count ||
+        self.joined_and_left_count != other.joined_and_left_count ||
+        self.left_and_joined_count != other.left_and_joined_count ||
+        self.displayname_updated_count != other.displayname_updated_count ||
+        self.avatar_updated_count != other.avatar_updated_count ||
+        self.both_updated_count != other.both_updated_count ||
+        self.redacted_count != other.redacted_count
+    }
+}
+
+/// Action to toggle the expansion state of a small state events summary.
+#[derive(Clone, Debug, DefaultNone)]
+pub enum SmallStateEventsSummaryToggleAction {
+    Toggle { event_group_id: String },
+    None,
+}
+
+#[derive(Live, LiveHook, Widget)]
+struct SmallStateEventsSummaryHeader {
+    #[deref] view: View,
+
+    /// The group ID of the events this header summarizes.
+    #[rust] event_group_id: String,
+    /// The text summarizing the events in this group.
+    #[rust] summary_data: EventsSummary,
+    /// Whether this header is currently expanded to show the full list of events.
+    #[rust] is_expanded: bool,
+    #[rust] last_click_time: f64,
+
+    #[rust] cached_summary_text: Option<String>,
+}
+
+impl Widget for SmallStateEventsSummaryHeader {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+        self.widget_match_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl WidgetMatchEvent for SmallStateEventsSummaryHeader {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+        if self.button(id!(collapse_button)).clicked(actions) {
+            let current_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f64();
+
+            if current_time - self.last_click_time < 0.3 {
+                return;
+            }
+
+            self.last_click_time = current_time;
+            self.toggle_collapse(cx, scope);
+        }
+    }
+}
+
+impl SmallStateEventsSummaryHeader {
+
+    fn ensure_initialized(&mut self) {
+        // Set default state if not initialized
+        if self.event_group_id.is_empty() {
+            self.event_group_id = String::new();
+            self.summary_data = EventsSummary::default();
+            self.is_expanded = false;
+            self.last_click_time = 0.0;
+            self.cached_summary_text = None;
+        }
+    }
+
+    pub fn populate_item_content(
+        &mut self,
+        cx: &mut Cx,
+        event_group_id: String,
+        events: &Vector<Arc<TimelineItem>>,
+        is_expanded: bool,
+    ) {
+        self.ensure_initialized();
+        let is_different_group = self.event_group_id != event_group_id;
+        let state_changed = self.is_expanded != is_expanded;
+
+        let new_summary_data = self.summarize_optimized(events);
+        let content_changed = self.summary_data.has_significant_changes(&new_summary_data);
+
+        // ALWAYS update when group changes to ensure proper component reuse handling
+        if is_different_group {
+            // Force complete reset for component reuse
+            self.event_group_id = event_group_id.clone();
+            self.is_expanded = is_expanded;
+            self.summary_data = new_summary_data;
+            self.cached_summary_text = None;
+            self.set_collapse_button_open(cx, is_expanded);
+        } else if state_changed || content_changed {
+            self.is_expanded = is_expanded;
+            if content_changed {
+                self.summary_data = new_summary_data;
+                self.cached_summary_text = None;
+            }
+            self.set_collapse_button_open(cx, is_expanded);
+        }
+    }
+
+    fn toggle_collapse(&mut self, cx: &mut Cx, scope: &mut Scope) {
+        self.is_expanded = !self.is_expanded;
+
+        // Send an action to notify the RoomScreen about the toggle
+        cx.widget_action(
+            self.widget_uid(),
+            &scope.path,
+            SmallStateEventsSummaryToggleAction::Toggle {
+                event_group_id: self.event_group_id.clone(),
+            },
+        );
+
+        // Update button visual state immediately for responsive UI
+        self.set_collapse_button_open(cx, self.is_expanded);
+        self.redraw(cx);
+    }
+
+    fn set_collapse_button_open(&mut self, cx: &mut Cx, open: bool) {
+        if open {
+            self.label(id!(summary)).set_text(cx, "");
+            self.button(id!(collapse_button)).set_text(cx, "collapse");
+        } else {
+            // When collapsed, show full summary text and "Expand" button
+            let summary_text = self.get_cached_summary_text();
+            self.label(id!(summary)).set_text(cx, &summary_text);
+            self.button(id!(collapse_button)).set_text(cx, "expand");
+        }
+    }
+
+    fn get_cached_summary_text(&mut self) -> String {
+        if let Some(ref cached) = self.cached_summary_text {
+            cached.clone()
+        } else {
+            let text = self.summary_data.format_text();
+            self.cached_summary_text = Some(text.clone());
+            text
+        }
+    }
+
+    fn summarize_optimized(&self, small_event_tl_items: &Vector<Arc<TimelineItem>>) -> EventsSummary {
+        let mut summary = EventsSummary::default();
+
+        // Use smaller HashMap capacity to avoid over-allocation
+        let mut user_membership: HashMap<String, Vec<bool>> = HashMap::with_capacity(16);
+        let mut displayname_users: Vec<String> = Vec::new();
+        let mut avatar_users: Vec<String> = Vec::new();
+
+        for item in small_event_tl_items.iter() {
+            if let TimelineItemKind::Event(e) = item.kind() {
+                match e.content() {
+                    TimelineItemContent::MembershipChange(change) => {
+                        let username = change.display_name()
+                            .map(|s| s.to_owned())
+                            .unwrap_or_else(|| "someone".to_owned());
+                        match change.change() {
+                            Some(MembershipChange::Joined) => {
+                                user_membership.entry(username).or_default().push(true);
+                            }
+                            Some(MembershipChange::Left) => {
+                                user_membership.entry(username).or_default().push(false);
+                            }
+                            _ => {}
+                        }
+                    }
+                    TimelineItemContent::ProfileChange(change) => {
+                        let username = change.user_id().localpart().to_owned();
+                        if change.displayname_change().is_some() {
+                            displayname_users.push(username.clone());
+                        }
+                        if change.avatar_url_change().is_some() {
+                            avatar_users.push(username);
+                        }
+                    }
+                    TimelineItemContent::RedactedMessage => {
+                        summary.redacted_count += 1;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Handling user member status changes
+        for (username, actions) in user_membership {
+            match actions.as_slice() {
+                [true] => {
+                    summary.joined_count += 1;
+                    if summary.first_joined_user.is_none() {
+                        summary.first_joined_user = Some(username);
+                    }
+                }
+                [false] => {
+                    summary.left_count += 1;
+                    if summary.first_left_user.is_none() {
+                        summary.first_left_user = Some(username);
+                    }
+                }
+                [true, false] => {
+                    summary.joined_and_left_count += 1;
+                }
+                [false, true] => {
+                    summary.left_and_joined_count += 1;
+                }
+                _ => {
+                    if actions.len() >= 2 {
+                        match (actions[actions.len()-2], actions[actions.len()-1]) {
+                            (true, false) => summary.joined_and_left_count += 1,
+                            (false, true) => summary.left_and_joined_count += 1,
+                            _ => {
+                                summary.joined_count += 1;
+                                if summary.first_joined_user.is_none() {
+                                    summary.first_joined_user = Some(username);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        displayname_users.sort_unstable();
+        avatar_users.sort_unstable();
+
+        let mut i = 0;
+        let mut j = 0;
+
+        while i < displayname_users.len() && j < avatar_users.len() {
+            match displayname_users[i].cmp(&avatar_users[j]) {
+                std::cmp::Ordering::Equal => {
+                    summary.both_updated_count += 1;
+                    if summary.first_both_user.is_none() {
+                        summary.first_both_user = Some(displayname_users[i].clone());
+                    }
+                    i += 1;
+                    j += 1;
+                }
+                std::cmp::Ordering::Less => {
+                    summary.displayname_updated_count += 1;
+                    if summary.first_displayname_user.is_none() {
+                        summary.first_displayname_user = Some(displayname_users[i].clone());
+                    }
+                    i += 1;
+                }
+                std::cmp::Ordering::Greater => {
+                    summary.avatar_updated_count += 1;
+                    if summary.first_avatar_user.is_none() {
+                        summary.first_avatar_user = Some(avatar_users[j].clone());
+                    }
+                    j += 1;
+                }
+            }
+        }
+
+        while i < displayname_users.len() {
+            summary.displayname_updated_count += 1;
+            if summary.first_displayname_user.is_none() {
+                summary.first_displayname_user = Some(displayname_users[i].clone());
+            }
+            i += 1;
+        }
+
+        while j < avatar_users.len() {
+            summary.avatar_updated_count += 1;
+            if summary.first_avatar_user.is_none() {
+                summary.first_avatar_user = Some(avatar_users[j].clone());
+            }
+            j += 1;
+        }
+
+        summary
     }
 }
