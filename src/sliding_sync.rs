@@ -2801,6 +2801,14 @@ enum RefreshState {
     NeedRelogin,
 }
 
+/// Logs out the current user and prepares the application for a new login session.
+///
+/// Performs server-side logout, cleans up client state, closes all tabs, 
+/// and restarts the Matrix runtime. Reports success or failure via LoginAction.
+///
+/// # Returns
+/// - `Ok(RefreshState::NeedRelogin)` - Logout succeeded (possibly with cleanup warnings)
+/// - `Err(...)` - Logout failed with detailed error
 async fn logout_and_refresh() -> Result<RefreshState> {
     // Collect all errors encountered during the logout process
     let mut errors = Vec::new();
