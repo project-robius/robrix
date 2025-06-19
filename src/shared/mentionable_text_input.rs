@@ -523,6 +523,13 @@ impl MentionableTextInputRef {
         }
     }
 
+    /// Returns a reference to the inner `TextInput` widget.
+    pub fn text_input_ref(&self) -> TextInputRef {
+        self.borrow()
+            .map(|inner| inner.cmd_text_input.text_input_ref())
+            .unwrap_or_default()
+    }
+
     /// Sets the room members for this text input
     pub fn set_room_members(&self, members: Arc<Vec<RoomMember>>) {
         if let Some(mut inner) = self.borrow_mut() {

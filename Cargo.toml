@@ -16,7 +16,8 @@ version = "0.0.1-pre-alpha-3"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev" }
+# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "emit_key_down_unhandled_on_unused_hit" }
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
 robius-use-makepad = "0.1.1"
@@ -163,8 +164,8 @@ keyword_idents_2024 = "forbid"
 non_ascii_idents = "forbid"
 non_local_definitions = "forbid"
 unsafe_op_in_unsafe_fn = "forbid"
-
-unexpected_cfgs = "warn"
+## The list of `cfg` options that are explicitly allowed when building Robrix.
+unexpected_cfgs = { level = "warn", check-cfg = [ 'cfg(log_room_list_diffs)', 'cfg(log_timeline_diffs)', 'cfg(hide_windows_console)' ] }
 unnameable_types = "warn"
 unused_import_braces = "warn"
 
