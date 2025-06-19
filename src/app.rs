@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::{login_screen::LoginAction, logout_confirm_modal::{LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::{submit_async_request, MatrixRequest}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -239,8 +239,8 @@ impl MatchEvent for App {
                         log!("Received LoginAction::LoginSuccess, hiding login view.");
                         self.app_state.logged_in = true;
                         self.update_login_visibility(cx);
-                        cx.action(MainDesktopUiAction::DockLoad);
                         self.ui.redraw(cx);
+                        continue;
                     },
                     LoginAction::LogoutSuccess => {
                         cx.action(LogoutConfirmModalAction::LogoutSuccess);
@@ -248,6 +248,7 @@ impl MatchEvent for App {
                         self.app_state.logged_in = false;
                         self.update_login_visibility(cx);
                         self.ui.redraw(cx);
+                        continue;
                     },
                     LoginAction::LogoutFailure(error) => {
                         cx.action(LogoutConfirmModalAction::LogoutFailed(error.clone()));
@@ -269,22 +270,7 @@ impl MatchEvent for App {
                     main_content = { margin: { left: (pos_x), top: (pos_y) } }
                 });
                 self.ui.redraw(cx);
-            }
-
-            match action.downcast_ref() {
-                Some(PopupNotificationAction::Open) => {
-                    self.ui.popup_notification(id!(popup)).open(cx);
-                }
-                Some(PopupNotificationAction::Close) => {
-                    self.ui.popup_notification(id!(popup)).close(cx);
-                }
-                _ => {}
-            }
-
-            if let Some(LoginAction::LogoutSuccess) = action.downcast_ref() {
-                self.app_state.logged_in = false;
-                self.update_login_visibility(cx);
-                self.ui.redraw(cx);
+                continue;
             }
 
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
