@@ -166,8 +166,6 @@ pub enum MentionableTextInputAction {
     /// Room ID has been updated (new)
     RoomIdChanged(OwnedRoomId),
     ///Drop Member Subscription.
-    DropMemberSubscription,
-    /// Default empty action
     None,
 }
 

@@ -12,7 +12,7 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineEventItemId, TimelineItemContent};
 
 use crate::{
-    shared::{mentionable_text_input::MentionableTextInputAction, popup_list::enqueue_popup_notification},
+    shared::popup_list::enqueue_popup_notification,
     sliding_sync::{submit_async_request, MatrixRequest},
 };
 
@@ -281,11 +281,6 @@ impl Widget for EditingPane {
                         continue;
                     }
                 }
-
-                if let Some(MentionableTextInputAction::DropMemberSubscription) = action.downcast_ref() {
-                    self.drop_member_subscription();
-                }
-
             }
 
             // Hide the editing pane if the cancel button was clicked
@@ -566,10 +561,6 @@ impl EditingPane {
             message_input.set_room_members(members);
         }
     }
-
-    fn drop_member_subscription(&mut self) {
-        self.member_subscription = None;
-    }
 }
 
 impl EditingPaneRef {
@@ -617,12 +608,5 @@ impl EditingPaneRef {
         };
         inner.visible = false;
         inner.redraw(cx);
-    }
-
-    pub fn drop_member_subscription(&mut self) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
-        inner.drop_member_subscription();
     }
 }
