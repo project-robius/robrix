@@ -165,7 +165,7 @@ non_ascii_idents = "forbid"
 non_local_definitions = "forbid"
 unsafe_op_in_unsafe_fn = "forbid"
 ## The list of `cfg` options that are explicitly allowed when building Robrix.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(log_room_list_diffs)', 'cfg(log_timeline_diffs)'] }
+unexpected_cfgs = { level = "warn", check-cfg = [ 'cfg(log_room_list_diffs)', 'cfg(log_timeline_diffs)', 'cfg(hide_windows_console)' ] }
 unnameable_types = "warn"
 unused_import_braces = "warn"
 
