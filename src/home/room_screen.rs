@@ -19,7 +19,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::RoomsPanelRestoreAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -68,8 +68,8 @@ live_design! {
     use crate::home::loading_pane::*;
     use crate::home::location_preview::*;
     use crate::room::room_input_bar::*;
-    use crate::room::room_input_bar::*;
     use crate::home::room_read_receipt::*;
+    use crate::rooms_list::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -615,6 +615,15 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
+            restore_status_label = <Label> {
+                align: {x: 0.0, y: 0.5},
+                padding: {left: 5.0, right: 0.0}
+                draw_text: {
+                    color: (TYPING_NOTICE_TEXT_COLOR),
+                    text_style: <REGULAR_TEXT>{font_size: 9}
+                }
+                text: ""
+            }
 
             keyboard_view = <KeyboardView> {
                 width: Fill, height: Fill,
@@ -815,6 +824,10 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+    /// Whether or not the room has been loaded yet.
+    #[rust] is_loaded: bool,
+    /// Whether or not all rooms have been loaded.
+    #[rust] all_room_loaded: bool,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -838,6 +851,27 @@ impl Widget for RoomScreen {
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
+            if let (Some(room_id), true, false) = (&self.room_id, cx.has_global::<RoomsListRef>(), self.is_loaded) {
+                let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                if !rooms_list_ref.is_room_loaded(room_id) {
+                    let status_text = if rooms_list_ref.all_known_rooms_loaded() {
+                        self.all_room_loaded = true;
+                        format!(
+                            "Room {} was not found in the homeserver's list of all rooms.",
+                            self.room_name
+                        )
+                    } else {
+                        "[Placeholder for Spinner]".to_string()
+                    };
+                    self.view
+                        .label(id!(restore_status_label))
+                        .set_text(cx, &status_text);
+                    return;
+                } else {
+                    self.is_loaded = true;
+                    self.all_room_loaded = true;
+                }
+            }
             self.process_timeline_updates(cx, &portal_list);
 
             // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
@@ -914,8 +948,20 @@ impl Widget for RoomScreen {
             let message_input = self.room_input_bar(id!(input_bar)).text_input(id!(text_input));
 
             for action in actions {
+                // Handle actions related to restoring the previously-saved state of rooms.
+                if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
+                    if self.room_id.as_ref().is_some_and(|r| r == room_id) {
+                        // Reset room_id before displaying room.
+                        self.room_id = None;
+                        self.set_displayed_room(cx, room_id.clone(), self.room_name.clone());
+                        self.view.label(id!(restore_status_label)).set_text(cx, "");
+                        return;
+                    }
+                }
                 // Handle the highlight animation.
-                let Some(tl) = self.tl_state.as_mut() else { return };
+                let Some(tl) = self.tl_state.as_mut() else {
+                    continue;
+                };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {
                         cx.widget_action(
@@ -1187,12 +1233,16 @@ impl Widget for RoomScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let room_screen_widget_uid = self.widget_uid();
+        if !self.is_loaded {
+            return self.view.draw_walk(cx, scope, walk);
+        }
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
             return DrawStep::done();
         }
+
+        let room_screen_widget_uid = self.widget_uid();
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
@@ -2171,12 +2221,6 @@ impl RoomScreen {
     fn show_timeline(&mut self, cx: &mut Cx) {
         let room_id = self.room_id.clone()
             .expect("BUG: Timeline::show_timeline(): no room_id was set.");
-        // just an optional sanity check
-        assert!(self.tl_state.is_none(),
-            "BUG: tried to show_timeline() into a timeline with existing state. \
-            Did you forget to save the timeline state back to the global map of states?",
-        );
-
         // Obtain the current user's power levels for this room.
         submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_id.clone() });
 
@@ -2184,8 +2228,13 @@ impl RoomScreen {
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = state_opt {
             (existing, false)
         } else {
-            let (update_sender, update_receiver, request_sender) = take_timeline_endpoints(&room_id)
-                .expect("BUG: couldn't get timeline state for first-viewed room.");
+            let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
+                // RoomScreen is not waiting for the room to be loaded.
+                if !self.is_loaded && self.all_room_loaded {
+                    panic!("The timeline is not loaded and room_id {:?} is not waiting for its timeline to be loaded.", room_id);
+                }
+                return;
+            };
             let new_tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // We assume the user has all power levels by default, just to avoid

@@ -1,11 +1,14 @@
+// Allow question_mark for implementing DeRon for SelectedRoom where room_name is optional.
+#![allow(clippy::question_mark)]
 use std::collections::HashMap;
 
-use makepad_widgets::*;
+use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, DVec2Json, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
+use serde::{self, Deserialize, Serialize};
 
 live_design! {
     use link::theme::*;
@@ -100,50 +103,51 @@ live_design! {
     }
 
     App = {{App}} {
-        ui: <Window> {
-            window: {inner_size: vec2(1280, 800), title: "Robrix"},
-            caption_bar = {caption_label = {label = {text: "Robrix"}}}
-            // pass: {clear_color: #2A}
-            pass: {clear_color: #FFFFFF00}
-            // pass: { clear_color: (THEME_COLOR_BG_APP) }
+        ui: <Root>{
+            main_window = <Window> {
+                window: {inner_size: vec2(1280, 800), title: "Robrix"},
+                caption_bar = {caption_label = {label = {text: "Robrix"}}}
+                // pass: {clear_color: #2A}
+                pass: {clear_color: #FFFFFF00}
+                // pass: { clear_color: (THEME_COLOR_BG_APP) }
 
-            body = {
-                padding: 0,
+                body = {
+                    padding: 0,
 
-                // A wrapper view for showing top-level app modals/dialogs/popups
-                <View> {
-                    width: Fill, height: Fill,
-                    flow: Overlay,
+                    // A wrapper view for showing top-level app modals/dialogs/popups
+                    <View> {
+                        width: Fill, height: Fill,
+                        flow: Overlay,
+                        home_screen_view = <View> {
+                            visible: false
+                            home_screen = <HomeScreen> {}
+                        }
+                        join_leave_modal = <Modal> {
+                            content: {
+                                join_leave_modal_inner = <JoinLeaveRoomModal> {}
+                            }
+                        }
+                        login_screen_view = <View> {
+                            visible: true
+                            login_screen = <LoginScreen> {}
+                        }
+                        app_tooltip = <CalloutTooltip> {}
+                        <PopupList> {}
 
-                    home_screen_view = <View> {
-                        visible: false
-                        home_screen = <HomeScreen> {}
-                    }
-                    join_leave_modal = <Modal> {
-                        content: {
-                            join_leave_modal_inner = <JoinLeaveRoomModal> {}
+                        // Context menus should be shown above other UI elements,
+                        // but beneath the verification modal.
+                        new_message_context_menu = <NewMessageContextMenu> { }
+
+                        // We want the verification modal to always show up on top of
+                        // all other elements when an incoming verification request is received.
+                        verification_modal = <Modal> {
+                            content: {
+                                verification_modal_inner = <VerificationModal> {}
+                            }
                         }
                     }
-                    login_screen_view = <View> {
-                        visible: true
-                        login_screen = <LoginScreen> {}
-                    }
-                    app_tooltip = <CalloutTooltip> {}
-                    <PopupList> {}
-
-                    // Context menus should be shown above other UI elements,
-                    // but beneath the verification modal.
-                    new_message_context_menu = <NewMessageContextMenu> { }
-
-                    // We want the verification modal to always show up on top of
-                    // all other elements when an incoming verification request is received.
-                    verification_modal = <Modal> {
-                        content: {
-                            verification_modal_inner = <VerificationModal> {}
-                        }
-                    }
-                }
-            } // end of body
+                } // end of body
+            }
         }
     }
 }
@@ -193,6 +197,9 @@ impl MatchEvent for App {
 
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
+        if let Err(e) = load_window_state(self.ui.window(id!(main_window)), cx) {
+            error!("Failed to load window state: {}", e);
+        }
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
@@ -211,7 +218,7 @@ impl MatchEvent for App {
                 let new_message_context_menu = self.ui.new_message_context_menu(id!(new_message_context_menu));
                 let expected_dimensions = new_message_context_menu.show(cx, details);
                 // Ensure the context menu does not spill over the window's bounds.
-                let rect = self.ui.area().rect(cx);
+                let rect = self.ui.window(id!(main_window)).area().rect(cx);
                 let pos_x = min(abs_pos.x, rect.size.x - expected_dimensions.x);
                 let pos_y = min(abs_pos.y, rect.size.y - expected_dimensions.y);
                 new_message_context_menu.apply_over(cx, live! {
@@ -221,6 +228,10 @@ impl MatchEvent for App {
                 continue;
             }
 
+            if let Some(RoomsPanelRestoreAction::RestoreDockFromPersistentState(rooms_panel_state)) = action.downcast_ref() {
+                self.app_state.saved_dock_state = rooms_panel_state.clone();
+                cx.action(MainDesktopUiAction::DockLoadToAppState);
+            }
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 let display_name = room_name_or_id(selected_room.room_name(), selected_room.room_id());
@@ -342,8 +353,18 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        if let Event::WindowGeomChange(window_geom_change_event) = event {
-            self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
+        if let Event::Shutdown = event {
+            let window_ref = self.ui.window(id!(main_window));
+            if let Err(e) = save_window_state(window_ref, cx) {
+                error!("Failed to save window state. Error details: {}", e);
+            }
+            if let Some(user_id) = current_user_id() {
+                let rooms_panel = self.app_state.saved_dock_state.clone();
+                let user_id = user_id.clone();
+                if let Err(e) = save_room_panel(rooms_panel, user_id) {
+                    error!("Failed to save room panel. Error details: {}", e);
+                }
+            }
         }
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
@@ -411,12 +432,10 @@ pub struct AppState {
     pub saved_dock_state: SavedDockState,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
-    /// The current window geometry.
-    pub window_geom: Option<event::WindowGeom>,
 }
 
 /// A saved instance of the state of the main desktop UI's dock.
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug, DeRon, SerRon)]
 pub struct SavedDockState {
     /// All items contained in the dock, keyed by their LiveId.
     pub dock_items: HashMap<LiveId, DockItem>,
@@ -430,22 +449,23 @@ pub struct SavedDockState {
 /// Represents a room currently or previously selected by the user.
 ///
 /// One `SelectedRoom` is considered equal to another if their `room_id`s are equal.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, SerRon, DeRon)]
 pub enum SelectedRoom {
     JoinedRoom {
-        room_id: OwnedRoomId,
+        room_id: OwnedRoomIdRon,
         room_name: Option<String>,
     },
     InvitedRoom {
-        room_id: OwnedRoomId,
+        room_id: OwnedRoomIdRon,
         room_name: Option<String>,
     },
 }
+
 impl SelectedRoom {
     pub fn room_id(&self) -> &OwnedRoomId {
         match self {
-            SelectedRoom::JoinedRoom { room_id, .. } => room_id,
-            SelectedRoom::InvitedRoom { room_id, .. } => room_id,
+            SelectedRoom::JoinedRoom { room_id, .. } => room_id.into(),
+            SelectedRoom::InvitedRoom { room_id, .. } => room_id.into(),
         }
     }
 
@@ -464,7 +484,7 @@ impl SelectedRoom {
     /// otherwise, returns `false`.
     pub fn upgrade_invite_to_joined(&mut self, room_id: &RoomId) -> bool {
         match self {
-            SelectedRoom::InvitedRoom { room_id: id, room_name } if id == room_id => {
+            SelectedRoom::InvitedRoom { room_id: id, room_name } if id.0 == room_id => {
                 let name = room_name.take();
                 *self = SelectedRoom::JoinedRoom {
                     room_id: id.clone(),
@@ -494,4 +514,31 @@ pub enum AppStateAction {
     /// as an InviteScreen to a RoomScreen.
     UpgradedInviteToJoinedRoom(OwnedRoomId),
     None,
+}
+
+/// Action related to restoring the main dock and RoomScreen widgets from storage.
+#[derive(Debug, DefaultNone)]
+pub enum RoomsPanelRestoreAction {
+    /// The previously-saved state of the rooms panel & dock was loaded from storage
+    /// and is now ready to be restored to the dock UI widget.
+    /// This will be handled by the top-level App and by each RoomScreen in the dock.
+    /// There is not SaveDockToPersistentState variant, as the dock will be save into persistent
+    /// storage during Event::Shutdown directly.
+    RestoreDockFromPersistentState(SavedDockState),
+    /// The given room was successfully loaded from the homeserver
+    /// and is known to our client.
+    /// The RoomScreen for this room can now fully display the room's timeline.
+    Success(OwnedRoomId),
+    None,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// The state of the window geometry
+pub struct WindowGeomState {
+    /// A tuple containing the window's width and height.
+    pub inner_size: DVec2Json,
+    /// A tuple containing the window's x and y position.
+    pub position: DVec2Json,
+    /// Maximise fullscreen if true.
+    pub is_fullscreen: bool,
 }
