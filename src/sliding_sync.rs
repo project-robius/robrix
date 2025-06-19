@@ -847,7 +847,7 @@ async fn async_worker(
                     (room, room_info.timeline_update_sender.clone(), recv)
                 };
 
-                Handle::current().spawn(async move {
+                let _typing_notices_task = Handle::current().spawn(async move {
                     while let Ok(user_ids) = typing_notice_receiver.recv().await {
                         // log!("Received typing notifications for room {room_id}: {user_ids:?}");
                         let mut users = Vec::with_capacity(user_ids.len());
@@ -937,7 +937,7 @@ async fn async_worker(
                 let Some(client) = get_client() else { continue };
                 let media = client.media();
 
-                Handle::current().spawn(async move {
+                let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending fetch media request for {media_request:?}...");
                     let res = media.get_media_content(&media_request, true).await;
                     on_fetched(&destination, media_request, res, update_sender);
