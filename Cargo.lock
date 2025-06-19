@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "ab_glyph_rasterizer"
 version = "0.1.8"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 
 [[package]]
 name = "accessory"
@@ -442,31 +442,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "block-sys"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae85a0696e7ea3b835a453750bf002770776609115e6d25c6d2ff28a8200f7e7"
-dependencies = [
- "objc-sys",
-]
-
-[[package]]
-name = "block2"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e58aa60e59d8dbfcc36138f5f18be5f24394d33b38b24f7fd0b1caa33095f22f"
-dependencies = [
- "block-sys",
- "objc2",
-]
-
-[[package]]
 name = "block2"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c132eebf10f5cad5289222520a4a058514204aed6d791f1cf4fe8088b82d15f"
 dependencies = [
- "objc2",
+ "objc2 0.5.2",
+]
+
+[[package]]
+name = "block2"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "340d2f0bdb2a43c1d3cd40513185b2bd7def0aa1052f956455114bc98f82dcf2"
+dependencies = [
+ "objc2 0.6.1",
 ]
 
 [[package]]
@@ -915,6 +905,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "dispatch2"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89a09f22a6c6069a18470eb92d2298acf25463f14256d24778e1230d789a2aec"
+dependencies = [
+ "bitflags 2.9.0",
+ "objc2 0.6.1",
+]
+
+[[package]]
 name = "displaydoc"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -979,7 +979,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33d852cb9b869c2a9b3df2f71a3074817f01e1844f839a144f5fcef059a4eb5d"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1515,16 +1515,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "icrate"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fb69199826926eb864697bddd27f73d9fddcffc004f5733131e15b465e30642"
-dependencies = [
- "block2 0.4.0",
- "objc2",
-]
-
-[[package]]
 name = "icu_collections"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1898,7 +1888,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -2024,7 +2014,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-live"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -2033,7 +2023,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-wasm-bridge"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -2041,7 +2031,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-widget"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -2050,7 +2040,7 @@ dependencies = [
 [[package]]
 name = "makepad-draw"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "ab_glyph_rasterizer",
  "fxhash",
@@ -2069,7 +2059,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-chinese-bold"
 version = "1.0.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-platform",
 ]
@@ -2077,7 +2067,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-chinese-bold-2"
 version = "1.0.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-platform",
 ]
@@ -2085,7 +2075,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-chinese-regular"
 version = "1.0.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-platform",
 ]
@@ -2093,7 +2083,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-chinese-regular-2"
 version = "1.0.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-platform",
 ]
@@ -2101,7 +2091,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-emoji"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-platform",
 ]
@@ -2109,17 +2099,17 @@ dependencies = [
 [[package]]
 name = "makepad-futures"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 
 [[package]]
 name = "makepad-futures-legacy"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 
 [[package]]
 name = "makepad-html"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-live-id",
 ]
@@ -2127,7 +2117,7 @@ dependencies = [
 [[package]]
 name = "makepad-http"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 
 [[package]]
 name = "makepad-jni-sys"
@@ -2138,7 +2128,7 @@ checksum = "9775cbec5fa0647500c3e5de7c850280a88335d1d2d770e5aa2332b801ba7064"
 [[package]]
 name = "makepad-live-compiler"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-derive-live",
  "makepad-live-tokenizer",
@@ -2148,7 +2138,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-live-id-macros",
 ]
@@ -2156,7 +2146,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id-macros"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -2164,7 +2154,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-tokenizer"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-live-id",
  "makepad-math",
@@ -2174,7 +2164,7 @@ dependencies = [
 [[package]]
 name = "makepad-math"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-micro-serde",
 ]
@@ -2182,12 +2172,12 @@ dependencies = [
 [[package]]
 name = "makepad-micro-proc-macro"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 
 [[package]]
 name = "makepad-micro-serde"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-serde-derive",
@@ -2196,7 +2186,7 @@ dependencies = [
 [[package]]
 name = "makepad-micro-serde-derive"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -2204,12 +2194,12 @@ dependencies = [
 [[package]]
 name = "makepad-objc-sys"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 
 [[package]]
 name = "makepad-platform"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "bitflags 2.9.0",
  "hilog-sys",
@@ -2233,7 +2223,7 @@ dependencies = [
 [[package]]
 name = "makepad-rustybuzz"
 version = "0.8.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "bitflags 1.3.2",
  "bytemuck",
@@ -2248,7 +2238,7 @@ dependencies = [
 [[package]]
 name = "makepad-shader-compiler"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-live-compiler",
 ]
@@ -2256,12 +2246,12 @@ dependencies = [
 [[package]]
 name = "makepad-ttf-parser"
 version = "0.21.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 
 [[package]]
 name = "makepad-vector"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-ttf-parser",
  "resvg",
@@ -2270,7 +2260,7 @@ dependencies = [
 [[package]]
 name = "makepad-wasm-bridge"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-derive-wasm-bridge",
  "makepad-live-id",
@@ -2279,7 +2269,7 @@ dependencies = [
 [[package]]
 name = "makepad-widgets"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-derive-widget",
  "makepad-draw",
@@ -2298,7 +2288,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-core"
 version = "0.2.14"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "bitflags 2.9.0",
 ]
@@ -2306,7 +2296,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-jpeg"
 version = "0.3.17"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "makepad-zune-core",
 ]
@@ -2314,7 +2304,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-png"
 version = "0.4.10"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 dependencies = [
  "zune-core",
  "zune-inflate",
@@ -2773,14 +2763,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88c6597e14493ab2e44ce58f2fdecf095a51f12ca57bec060a11c57332520551"
+dependencies = [
+ "objc2-encode",
+]
+
+[[package]]
+name = "objc2-app-kit"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6f29f568bec459b0ddff777cec4fe3fd8666d82d5a40ebd0ff7e66134f89bcc"
+dependencies = [
+ "bitflags 2.9.0",
+ "objc2 0.6.1",
+ "objc2-foundation 0.3.1",
+]
+
+[[package]]
 name = "objc2-contacts"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a5ff520e9c33812fd374d8deecef01d4a840e7b41862d849513de77e44aa4889"
 dependencies = [
  "block2 0.5.1",
- "objc2",
- "objc2-foundation",
+ "objc2 0.5.2",
+ "objc2-foundation 0.2.2",
+]
+
+[[package]]
+name = "objc2-core-foundation"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c10c2894a6fed806ade6027bcd50662746363a9589d3ec9d9bef30a4e4bc166"
+dependencies = [
+ "bitflags 2.9.0",
+ "dispatch2",
+ "objc2 0.6.1",
 ]
 
 [[package]]
@@ -2790,16 +2811,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "000cfee34e683244f284252ee206a27953279d370e309649dc3ee317b37e5781"
 dependencies = [
  "block2 0.5.1",
- "objc2",
+ "objc2 0.5.2",
  "objc2-contacts",
- "objc2-foundation",
+ "objc2-foundation 0.2.2",
 ]
 
 [[package]]
 name = "objc2-encode"
-version = "4.0.3"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7891e71393cd1f227313c9379a26a584ff3d7e6e7159e988851f0934c993f0f8"
+checksum = "ef25abbcd74fb2609453eb695bd2f860d389e457f67dc17cafc8b8cbc89d0c33"
 
 [[package]]
 name = "objc2-foundation"
@@ -2810,7 +2831,30 @@ dependencies = [
  "bitflags 2.9.0",
  "block2 0.5.1",
  "libc",
- "objc2",
+ "objc2 0.5.2",
+]
+
+[[package]]
+name = "objc2-foundation"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "900831247d2fe1a09a683278e5384cfb8c80c79fe6b166f9d14bfdde0ea1b03c"
+dependencies = [
+ "bitflags 2.9.0",
+ "objc2 0.6.1",
+ "objc2-core-foundation",
+]
+
+[[package]]
+name = "objc2-ui-kit"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25b1312ad7bc8a0e92adae17aa10f90aae1fb618832f9b993b022b591027daed"
+dependencies = [
+ "bitflags 2.9.0",
+ "block2 0.6.1",
+ "objc2 0.6.1",
+ "objc2-foundation 0.3.1",
 ]
 
 [[package]]
@@ -3179,7 +3223,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3467,23 +3511,25 @@ dependencies = [
  "android-build",
  "cfg-if",
  "jni",
- "objc2",
+ "objc2 0.5.2",
  "objc2-core-location",
- "objc2-foundation",
+ "objc2-foundation 0.2.2",
  "robius-android-env",
  "windows 0.57.0",
 ]
 
 [[package]]
 name = "robius-open"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "243e2abbc8c1ca8ddc283056d4675b67e452fd527c3741c5318642da37840ff3"
+version = "0.2.0"
+source = "git+https://github.com/project-robius/robius-open#d9dddbce32bb7501781ecbdf7b76c6fc031e4d51"
 dependencies = [
+ "block2 0.6.1",
  "cfg-if",
- "icrate",
  "jni",
- "objc2",
+ "objc2 0.6.1",
+ "objc2-app-kit",
+ "objc2-foundation 0.3.1",
+ "objc2-ui-kit",
  "robius-android-env",
  "windows 0.54.0",
 ]
@@ -3731,7 +3777,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3804,7 +3850,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "sdfer"
 version = "0.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#12158ca862c3204ff8c06d173eb22739b3255aec"
 
 [[package]]
 name = "semver"
@@ -4116,7 +4162,7 @@ dependencies = [
  "getrandom 0.3.1",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
