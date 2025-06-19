@@ -30,7 +30,7 @@ use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         invite_screen::{JoinRoomAction, LeaveRoomAction}, main_desktop_ui::MainDesktopUiAction, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_last_user_id, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_latest_user_id, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -1309,13 +1309,8 @@ pub fn current_user_id() -> Option<OwnedUserId> {
     )
 }
 
-/// Take the client out, leaving None in its place.
-pub fn take_client() -> Option<Client> {
-    CLIENT.lock().ok()?.take()
-}
-
 /// The singleton sync service.
-/// sync_service if build from the client, and is used to sync the client with the server. 
+/// sync_service if build from the client, and is used to sync the client with the server.
 static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
 
 /// Get a clone of the sync service, if available.
@@ -1331,12 +1326,6 @@ fn set_sync_service(service: SyncService) {
         error!("Failed to acquire SYNC_SERVICE lock when setting sync service");
     }
 }
-
-/// Take the sync service out, leaving None in its place.
-fn take_sync_service() -> Option<Arc<SyncService>> {
-    SYNC_SERVICE.lock().ok()?.take()
-}
-
 
 /// The list of users that the current user has chosen to ignore.
 /// Ideally we shouldn't have to maintain this list ourselves,
@@ -2840,8 +2829,8 @@ async fn logout_and_refresh() -> Result<RefreshState> {
 
     // Clean up client state and caches
     log!("Cleaning up client state and caches...");
-    take_client();
-    take_sync_service();
+    CLIENT.lock().ok().unwrap().take();
+    SYNC_SERVICE.lock().unwrap().take();
     TOMBSTONED_ROOMS.lock().unwrap().clear();
     IGNORED_USERS.lock().unwrap().clear();
     DEFAULT_SSO_CLIENT.lock().unwrap().take();
@@ -2863,12 +2852,11 @@ async fn logout_and_refresh() -> Result<RefreshState> {
         },
     }
 
-    // Delete the last user ID file
-    log!("Deleting last user ID file...");
+    log!("Deleting latest user ID file...");
     // We delete last_login.txt here for the following reasons:
     // 1. we delete the latest user ID such that Robrix won't auto-login the next time it starts,
     // 2. we don't delete the session file, such that the user could re-login using that session in the future.
-    if let Err(e) = delete_last_user_id().await {
+    if let Err(e) = delete_latest_user_id().await {
         errors.push(e.to_string());
     }
 

@@ -92,7 +92,7 @@ live_design! {
 
     LogoutButton= {{LogoutButton}} {
         width: Fit, height: Fit
-        padding: {top: 8, left: 8, right: 12, bottom: 8}
+        padding: {top: 8, left: 12, right: 12, bottom: 8}
         align: {x: 0.5, y: 0.5}
         logout_button = <Button> {
             draw_bg: {
@@ -104,8 +104,14 @@ live_design! {
 
             draw_icon: {
                 svg_file: (ICON_LOGOUT),
+                color: #444444
+                color_hover: (COLOR_DANGER_RED)
                 fn get_color(self) -> vec4 {
-                    return (COLOR_DANGER_RED);
+                    return mix(
+                        self.color,
+                        self.color_hover,
+                        self.hover
+                    );
                 }
             }
 
