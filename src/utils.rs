@@ -123,17 +123,15 @@ pub fn stringify_join_leave_error(
         // Special case for 404 errors, which indicate the room no longer exists.
         // This avoids the weird "no known servers" error, which is misleading and incorrect.
         // See: <https://github.com/element-hq/element-web/issues/25627>.
-        matrix_sdk::Error::Http(error) => if error
-            .as_client_api_error()
-            .is_some_and(|e| e.status_code.as_u16() == 404) {
-                Some(format!(
-                    "Failed to {} {room_str}: the room no longer exists on the server.{}",
-                    if was_join { "join" } else { "leave" },
-                    if was_join && was_invite { "\n\nYou may safely reject this invite." } else { "" },
-                ))
-            } else {
-                None
-            },
+        matrix_sdk::Error::Http(error)
+            if error.as_client_api_error().is_some_and(|e| e.status_code.as_u16() == 404) =>
+        {
+            Some(format!(
+                "Failed to {} {room_str}: the room no longer exists on the server.{}",
+                if was_join { "join" } else { "leave" },
+                if was_join && was_invite { "\n\nYou may safely reject this invite." } else { "" },
+            ))
+        }
         _ => None,
     };
     msg_opt.unwrap_or_else(|| format!(

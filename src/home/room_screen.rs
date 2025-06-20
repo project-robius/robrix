@@ -2910,7 +2910,6 @@ fn populate_message_view(
                     is_server_notice = true;
                     has_html_body = false;
                     let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
-
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
@@ -3004,7 +3003,6 @@ fn populate_message_view(
                         live_id!(ImageMessage)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
-
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
@@ -3020,7 +3018,6 @@ fn populate_message_view(
                         new_drawn_status.content_drawn = is_image_fully_drawn;
                         (item, false)
                     }
-
                 }
                 MessageType::Location(location) => {
                     has_html_body = false;
@@ -3149,7 +3146,7 @@ fn populate_message_view(
         // Handle sticker messages that are static images.
         MsgLikeKind::Sticker(sticker) => {
             has_html_body = false;
-            let StickerEventContent{body,info, source, .. } = sticker.content();
+            let StickerEventContent { body, info, source, .. } = sticker.content();
 
             let template = if use_compact_view {
                 live_id!(CondensedImageMessage)
@@ -3294,7 +3291,7 @@ fn populate_message_view(
         item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
     }
 
-    if msg_like_content.as_message().is_some_and(|m|m.is_edited()) {
+    if msg_like_content.as_message().is_some_and(|m| m.is_edited()) {
         item.edited_indicator(id!(profile.edited_indicator)).set_latest_edit(
             cx,
             event_tl_item,
