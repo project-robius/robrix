@@ -222,7 +222,9 @@ pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
     Login(LoginRequest),
     /// Request to logout.
-    Logout,
+    Logout{
+        is_desktop: bool,
+    },
     /// Request to paginate the older (or newer) events of a room's timeline.
     PaginateRoomTimeline {
         room_id: OwnedRoomId,
@@ -431,9 +433,9 @@ async fn async_worker(
                 }
             }
 
-            MatrixRequest::Logout => {
+            MatrixRequest::Logout { is_desktop } => {
                 let _logout_task = Handle::current().spawn(async move {
-                    match logout_and_refresh().await {
+                    match logout_and_refresh(is_desktop).await {
                         Ok(state) => match state {
                             RefreshState::NeedRelogin => {
                                 log!("need to relogin");
@@ -2830,10 +2832,13 @@ enum RefreshState {
 /// Performs server-side logout, cleans up client state, closes all tabs, 
 /// and restarts the Matrix runtime. Reports success or failure via LoginAction.
 ///
+/// # Parameters
+/// - `is_desktop` - Boolean indicating if the current UI mode is desktop (true) or mobile (false).
+/// 
 /// # Returns
 /// - `Ok(RefreshState::NeedRelogin)` - Logout succeeded (possibly with cleanup warnings)
 /// - `Err(...)` - Logout failed with detailed error
-async fn logout_and_refresh() -> Result<RefreshState> {
+async fn logout_and_refresh(is_desktop :bool) -> Result<RefreshState> {
     // Collect all errors encountered during the logout process
     let mut errors = Vec::new();
     log!("Starting logout process...");
@@ -2877,19 +2882,22 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     REQUEST_SENDER.lock().unwrap().take();
     log!("Client state and caches cleared.");
 
-    log!("Requesting to close all tabs...");
-    let (tx, rx)  = oneshot::channel::<String>();
-    Cx::post_action(MainDesktopUiAction::CloseAllTabs { sender: tx });
-    match rx.await {
-        Ok(_) => {
-            log!("Succes close all tabs...");
-        },
-        Err(e)=> {
-            let error_msg = format!("Close all tab failed {e}");
-            log!("Error :{}", error_msg);
-            Cx::post_action(LoginAction::LogoutFailure(error_msg.to_string()));
-            return Err(anyhow::anyhow!(error_msg));
-        },
+    // Desktop UI has tabs that must be properly closed, while mobile UI has no tabs concept.
+    if is_desktop {
+        log!("Requesting to close all tabs in desktop...");
+        let (tx, rx)  = oneshot::channel::<String>();
+        Cx::post_action(MainDesktopUiAction::CloseAllTabs { sender: tx });
+        match rx.await {
+            Ok(_) => {
+                log!("Succes close all tabs...");
+            },
+            Err(e)=> {
+                let error_msg = format!("Close all tab failed {e}");
+                log!("Error :{}", error_msg);
+                Cx::post_action(LoginAction::LogoutFailure(error_msg.to_string()));
+                return Err(anyhow::anyhow!(error_msg));
+            },
+        }
     }
 
     log!("Deleting latest user ID file...");
@@ -2928,7 +2936,6 @@ async fn logout_and_refresh() -> Result<RefreshState> {
             errors.join("; ")
         );
         log!("Warning: {}", warning_msg);
-        // Still notify UI of success, as the user session has ended
         Cx::post_action(LoginAction::LogoutSuccess); 
         Ok(RefreshState::NeedRelogin)
     }

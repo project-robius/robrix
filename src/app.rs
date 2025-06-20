@@ -242,7 +242,8 @@ impl MatchEvent for App {
                     },
                     LogoutConfirmModalAction::Confirm => {
                         logout_modal.set_loading(cx, true);
-                        submit_async_request(MatrixRequest::Logout);
+                        let is_desktop = cx.display_context.is_desktop();
+                        submit_async_request(MatrixRequest::Logout { is_desktop });
                     },
                     LogoutConfirmModalAction::LogoutSuccess => {
                         logout_modal.set_loading(cx, false); 
