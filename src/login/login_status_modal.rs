@@ -26,7 +26,7 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: #CCC
-                radius: 3.0
+                border_radius: 3.0
             }
 
             <View> {
@@ -51,7 +51,6 @@ live_design! {
                 draw_text: {
                     text_style: <REGULAR_TEXT>{
                         font_size: 11.5,
-                        height_factor: 1.3
                     },
                     color: #000
                     wrap: Word
@@ -68,9 +67,9 @@ live_design! {
                 button = <RobrixIconButton> {
                     align: {x: 0.5, y: 0.5}
                     width: Fit, height: Fit
-                    padding: 10
+                    padding: 12
                     draw_bg: {
-                        color: (COLOR_SELECTED_PRIMARY)
+                        color: (COLOR_ACTIVE_PRIMARY)
                     }
                     draw_text: {
                         color: (COLOR_PRIMARY)

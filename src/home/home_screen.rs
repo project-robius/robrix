@@ -9,7 +9,7 @@ live_design! {
     use crate::home::rooms_sidebar::RoomsSideBar;
     use crate::home::spaces_dock::SpacesDock;
     use crate::shared::styles::*;
-    use crate::shared::search_bar::SearchBar;
+    use crate::shared::room_filter_input_bar::RoomFilterInputBar;
     use crate::home::main_desktop_ui::MainDesktopUI;
 
     NavigationWrapper = {{NavigationWrapper}} {
@@ -20,18 +20,23 @@ live_design! {
         Desktop = {
             show_bg: true
             draw_bg: {
-                color: (COLOR_PRIMARY)
+                color: (COLOR_SECONDARY),
             }
             width: Fill, height: Fill
-            padding: 0, margin: 0, align: {x: 0.0, y: 0.0}
             flow: Right
+            align: {x: 0.0, y: 0.0}
+            padding: 0,
+            margin: 0,
 
             spaces = <SpacesDock> {}
 
             <View> {
                 flow: Down
                 width: Fill, height: Fill
-                <SearchBar> {}
+
+                <CachedWidget> {
+                    <RoomFilterInputBar> {}
+                }
                 <MainDesktopUI> {}
             }
         }
@@ -46,10 +51,12 @@ live_design! {
 
             <NavigationWrapper> {
                 view_stack = <StackNavigation> {
+
                     root_view = {
                         padding: {top: 40.}
                         flow: Down
                         width: Fill, height: Fill
+
                         sidebar = <RoomsSideBar> {}
                         spaces = <SpacesDock> {}
                     }

@@ -28,7 +28,7 @@ live_design! {
         padding: 10,
         margin: { left: 16.6, right: 16.6, top: 10, bottom: 10}
         draw_bg: {
-            border_width: 0.5,
+            border_size: 0.5,
             border_color: (#6c6c6c),
             color: (COLOR_PRIMARY)
         }
@@ -73,7 +73,7 @@ live_design! {
                 show_bg: true,
                 draw_bg: {
                     color: (COLOR_SECONDARY)
-                    radius: 6.0
+                    border_radius: 6.0
                 }
 
                 <View> {
@@ -92,7 +92,8 @@ live_design! {
 
                     title = <Label> {
                         width: Fit, height: Fit
-                        margin: { bottom: 10 }
+                        margin: { bottom: 5 }
+                        padding: 0,
                         draw_text: {
                             color: (COLOR_TEXT)
                             text_style: <TITLE_TEXT>{font_size: 16.0}
@@ -101,14 +102,18 @@ live_design! {
                     }
 
                     user_id_input = <RobrixTextInput> {
-                        width: 250, height: 40
-                        empty_message: "User ID"
+                        width: 250, height: Fit
+                        flow: Right, // do not wrap
+                        padding: 10,
+                        empty_text: "User ID"
                     }
 
                     password_input = <RobrixTextInput> {
-                        width: 250, height: 40
-                        empty_message: "Password"
-                        draw_text: { text_style: { is_secret: true } }
+                        width: 250, height: Fit
+                        flow: Right, // do not wrap
+                        padding: 10,
+                        empty_text: "Password"
+                        is_password: true,
                     }
 
                     <View> {
@@ -116,8 +121,10 @@ live_design! {
                         flow: Down,
 
                         homeserver_input = <RobrixTextInput> {
-                            width: Fill, height: 30,
-                            empty_message: "matrix.org"
+                            width: Fill, height: Fit,
+                            flow: Right, // do not wrap
+                            padding: {top: 3, bottom: 3}
+                            empty_text: "matrix.org"
                             draw_text: {
                                 text_style: <TITLE_TEXT>{font_size: 10.0}
                             }
@@ -137,6 +144,7 @@ live_design! {
 
                             <Label> {
                                 width: Fit, height: Fit
+                                padding: 0
                                 draw_text: {
                                     color: #8C8C8C
                                     text_style: <REGULAR_TEXT>{font_size: 9}
@@ -158,7 +166,7 @@ live_design! {
                         margin: {top: 5, bottom: 10}
                         align: {x: 0.5, y: 0.5}
                         draw_bg: {
-                            color: (COLOR_SELECTED_PRIMARY)
+                            color: (COLOR_ACTIVE_PRIMARY)
                         }
                         draw_text: {
                             color: (COLOR_PRIMARY)
@@ -173,6 +181,7 @@ live_design! {
                     }
                     <Label> {
                         width: Fit, height: Fit
+                        padding: 0,
                         draw_text: {
                             color: (COLOR_TEXT)
                             text_style: <TITLE_TEXT>{font_size: 11.0}
@@ -231,7 +240,7 @@ live_design! {
 
                         <Label> {
                             width: Fit, height: Fit
-                            padding: {left: 1, right: 1}
+                            padding: {left: 1, right: 1, top: 0, bottom: 0}
                             draw_text: {
                                 color: #x6c6c6c
                                 text_style: <REGULAR_TEXT>{}
@@ -250,7 +259,7 @@ live_design! {
                         margin: {bottom: 5}
                         align: {x: 0.5, y: 0.5}
                         draw_bg: {
-                            color: (COLOR_SELECTED_PRIMARY)
+                            color: (COLOR_ACTIVE_PRIMARY)
                         }
                         draw_text: {
                             color: (COLOR_PRIMARY)

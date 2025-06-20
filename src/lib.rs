@@ -14,10 +14,13 @@ pub mod home;
 mod profile;
 /// A modal/dialog popup for interactive verification of users/devices.
 mod verification_modal;
+/// A modal/dialog popup for joining/leaving rooms, including confirming invite accept/reject.
+mod join_leave_room_modal;
 /// Shared UI components.
 pub mod shared;
 /// Generating text previews of timeline events/messages.
 mod event_preview;
+pub mod room;
 
 
 // Matrix stuff

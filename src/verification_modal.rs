@@ -26,7 +26,7 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: #fff
-                radius: 3.0
+                border_radius: 3.0
             }
 
             title = <View> {
@@ -56,7 +56,6 @@ live_design! {
                     draw_text: {
                         text_style: <REGULAR_TEXT>{
                             font_size: 11.5,
-                            height_factor: 1.3
                         },
                         color: #000
                         wrap: Word
@@ -71,7 +70,7 @@ live_design! {
 
                     cancel_button = <RobrixIconButton> {
                         align: {x: 0.5, y: 0.5}
-                        padding: {left: 15, right: 15}
+                        padding: 15,
                         draw_icon: {
                             svg_file: (ICON_BLOCK_USER)
                             color: (COLOR_DANGER_RED),
@@ -90,7 +89,7 @@ live_design! {
 
                     accept_button = <RobrixIconButton> {
                         align: {x: 0.5, y: 0.5}
-                        padding: {left: 15, right: 15}
+                        padding: 15,
                         draw_icon: {
                             svg_file: (ICON_CHECKMARK)
                             color: (COLOR_ACCEPT_GREEN),
@@ -140,8 +139,7 @@ impl Widget for VerificationModal {
 }
 
 impl WidgetMatchEvent for VerificationModal {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-        let widget_uid = self.widget_uid();
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let accept_button = self.button(id!(accept_button));
         let cancel_button = self.button(id!(cancel_button));
 
@@ -160,13 +158,13 @@ impl WidgetMatchEvent for VerificationModal {
             // a `VerificationModalAction::Close` action, as that would cause
             // an infinite action feedback loop.
             if !modal_dismissed {
-                cx.widget_action(widget_uid, &scope.path, VerificationModalAction::Close);
+                cx.action(VerificationModalAction::Close);
             }
         }
 
         if accept_button.clicked(actions) {
             if self.is_final {
-                cx.widget_action(widget_uid, &scope.path, VerificationModalAction::Close);
+                cx.action(VerificationModalAction::Close);
                 self.reset_state();
             } else {
                 if let Some(state) = self.state.as_ref() {
@@ -267,7 +265,11 @@ impl WidgetMatchEvent for VerificationModal {
                                 "Keys have been exchanged. Please verify the following emoji:\
                                 \n   {}\n\n\
                                 Do these emoji keys match?",
-                                emoji_list.emojis.iter().map(|em| em.description).collect::<Vec<_>>().join("\n   ")
+                                emoji_list.emojis
+                                    .iter()
+                                    .map(|em| format!("{}  ({})", em.symbol, em.description))
+                                    .collect::<Vec<_>>()
+                                    .join("\n   ")
                             )
                         } else {
                             format!(

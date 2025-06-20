@@ -12,15 +12,16 @@ keywords = ["matrix", "chat", "client", "robrix", "robius"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/project-robius/robrix"
-version = "0.0.1-pre-alpha-2"
+version = "0.0.1-pre-alpha-3"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
+# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "emit_key_down_unhandled_on_unused_hit" }
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
 robius-use-makepad = "0.1.1"
-robius-open = "0.1.2"
+robius-open = { git = "https://github.com/project-robius/robius-open" }
 ## A fork of the `directories` crate that adds support for Android by using our `robius-android-env` crate.
 robius-directories = "5.0.1"
 robius-location = { git = "https://github.com/project-robius/robius-location" }
@@ -30,30 +31,30 @@ chrono = "0.4"
 clap = { version = "4.0.16", features = ["derive"] }
 crossbeam-channel = "0.5.10"
 crossbeam-queue = "0.3.8"
-eyeball = { git = "https://github.com/jplatte/eyeball", branch = "main", features = ["tracing"] } # same as matrix-sdk
-eyeball-im = { git = "https://github.com/jplatte/eyeball", branch = "main", features = ["tracing"] } # same as matrix-sdk
+eyeball = { version = "0.8.8", features = ["tracing"] }    # same as matrix-sdk
+eyeball-im = { version = "0.7.0", features = ["tracing"] } # same as matrix-sdk
 futures-util = "0.3"
 htmlize = "1.0.5"
-imbl = { version = "4.0.1", features = ["serde"] }  # same as matrix-sdk-ui
+imbl = { version = "5.0.0", features = ["serde"] }         # same as matrix-sdk-ui
 imghdr = "0.7.0"
 linkify = "0.10.0"
-# matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
-# matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "rustls-tls" ] }
-matrix-sdk = { git = "https://github.com/project-robius/matrix-rust-sdk/", branch = "reduce_log_verbosity_to_trace", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
-matrix-sdk-ui = { git = "https://github.com/project-robius/matrix-rust-sdk/", branch = "reduce_log_verbosity_to_trace", default-features = false, features = [ "rustls-tls" ] }
+matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
+matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "rustls-tls" ] }
 rand = "0.8.5"
 rangemap = "1.5.0"
 serde = "1.0"
 serde_json = "1.0"
-tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.43.1", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = "0.3.17"
 unicode-segmentation = "1.11.0"
 url = "2.5.0"
-emojis = "0.6.1"
 bytesize = "1.3.0"
 bitflags = "2.6.0"
 indexmap = "2.6.0"
 blurhash = { version = "0.2.3", default-features = false }
+
+[patch.crates-io]
+async-compat = { git = "https://github.com/element-hq/async-compat", rev = "5a27c8b290f1f1dcfc0c4ec22c464e38528aa591" }
 
 [package.metadata.docs.rs]
 all-features = true
@@ -164,8 +165,8 @@ keyword_idents_2024 = "forbid"
 non_ascii_idents = "forbid"
 non_local_definitions = "forbid"
 unsafe_op_in_unsafe_fn = "forbid"
-
-unexpected_cfgs = "warn"
+## The list of `cfg` options that are explicitly allowed when building Robrix.
+unexpected_cfgs = { level = "warn", check-cfg = [ 'cfg(log_room_list_diffs)', 'cfg(log_timeline_diffs)', 'cfg(hide_windows_console)' ] }
 unnameable_types = "warn"
 unused_import_braces = "warn"
 

@@ -38,8 +38,10 @@ live_design! {
     use link::widgets::*;
 
     use crate::shared::styles::*;
+
     COLOR_BUTTON_GREY = #B6BABF
     REACTION_LIST_PADDING_RIGHT = 30.0;
+
     pub ReactionList = {{ReactionList}} {
         width: Fill,
         height: Fit,
@@ -55,37 +57,41 @@ live_design! {
             // Use a zero margin on the left because we want the first reaction
             // to be flush with the left edge of the message text.
             margin: { top: 3, bottom: 3, left: 0, right: 6 },
+
             draw_bg: {
-                instance color: (COLOR_BUTTON_GREY)
-                instance color_hover: #fef65b
-                instance border_width: 1.5
-                instance border_color: #001A11
-                instance radius: 3.0
-                instance hover: 0.0
+                // Anything that we apply over must be an `instance`,
+                // and their names must be distinct from the base Button type.
+                instance reaction_bg_color: (COLOR_BUTTON_GREY)
+                instance reaction_border_color: #001A11
+                // Override values from the base Button type.
+                color_hover: #fef65b
+                hover: 0.0
+                border_size: 1.5
+                border_radius: 3.0
+
                 fn get_color(self) -> vec4 {
-                    return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
+                    return mix(self.reaction_bg_color, mix(self.reaction_bg_color, self.color_hover, 0.2), self.hover)
                 }
 
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                     sdf.box(
-                        self.border_width,
-                        self.border_width,
-                        self.rect_size.x - self.border_width * 2.0,
-                        self.rect_size.y - self.border_width * 2.0,
-                        max(1.0, self.radius)
+                        self.border_size,
+                        self.border_size,
+                        self.rect_size.x - self.border_size * 2.0,
+                        self.rect_size.y - self.border_size * 2.0,
+                        max(1.0, self.border_radius)
                     )
                     sdf.fill_keep(self.get_color())
-                    if self.border_width > 0.0 {
-                        //let stroke_color = mix(self.get_color(), self.border_color, 0.2);
-                        sdf.stroke(self.border_color, self.border_width)
+                    if self.border_size > 0.0 {
+                        sdf.stroke(self.reaction_border_color, self.border_size)
                     }
                     return sdf.result;
                 }
             }
             draw_text: {
                 text_style: <REGULAR_TEXT>{font_size: 9},
-                color: #000
+                color: #000000
                 fn get_color(self) -> vec4 {
                     return self.color;
                 }
@@ -96,11 +102,8 @@ live_design! {
 }
 #[derive(Clone, Debug)]
 pub struct ReactionData {
-    /// Refers to an emoji "shortcode" string, which is a temporary hack
-    /// because Makepad does not yet support drawing actual emoji.
-    pub emoji_shortcode: String,
     /// Original reaction string from the backend before emoji shortcode conversion.
-    pub reaction_raw: String,
+    pub reaction: String,
     /// Boolean indicating if the current user is also a sender of this reaction.
     pub includes_user: bool,
     /// List of all users who have reacted to the emoji.
@@ -175,7 +178,7 @@ impl Widget for ReactionList {
                         submit_async_request(MatrixRequest::ToggleReaction {
                             room_id: room_id.clone(),
                             timeline_event_id: timeline_event_id.clone(),
-                            reaction: reaction_data.reaction_raw.clone(),
+                            reaction: reaction_data.reaction.clone(),
                         });
                         // update the reaction button before the timeline is updated
                         let (bg_color, border_color) = if !reaction_data.includes_user {
@@ -184,9 +187,9 @@ impl Widget for ReactionList {
                             (EMOJI_BG_COLOR_NOT_INCLUDE_SELF, EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF)
                         };
                         button_ref.apply_over(cx, live! {
-                            draw_bg: { color: (bg_color) , border_color: (border_color) }
+                            draw_bg: { reaction_bg_color: (bg_color) , reaction_border_color: (border_color) }
                         });
-                        self.do_hover_in(cx, scope, button_ref, reaction_data.clone());
+                        self.do_hover_out(cx, scope, button_ref);
                     }
                     break;
                 }
@@ -252,32 +255,27 @@ impl ReactionListRef {
     pub fn set_list(
         &mut self,
         cx: &mut Cx,
-        event_tl_item_reactions: &ReactionsByKeyBySender,
+        event_tl_item_reactions: Option<&ReactionsByKeyBySender>,
         room_id: OwnedRoomId,
         timeline_event_item_id: TimelineEventItemId,
-        id: usize,
+        _id: usize,
     ) {
-        const DRAW_ITEM_ID_REACTION: bool = false;
-
         let Some(client_user_id) = current_user_id() else {
             return;
         };
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        if event_tl_item_reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
+        let Some(event_tl_item_reactions) = event_tl_item_reactions else {
             inner.children.clear();
             return;
-        }
+        };
         inner.children.clear(); //Inefficient but we don't want to compare the event_tl_item_reactions
-        for (reaction_raw, reaction_senders) in event_tl_item_reactions.iter() {
-            // Just take the first char of the emoji, which ignores any variant selectors.
-            let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
-            let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
+        for (reaction_text, reaction_senders) in event_tl_item_reactions.iter() {
+            // // Just take the first char of the emoji, which ignores any variant selectors.
+            // let reaction_first_char = reaction_text.chars().next().map(|c| c.to_string());
+            // let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_text);
             let mut includes_user: bool = false;
-            let emoji_text = emojis::get(reaction_str)
-                .and_then(|e| e.shortcode())
-                .unwrap_or(reaction_raw);
             for (sender, _) in reaction_senders.iter() {
                 if sender == &client_user_id {
                     includes_user = true;
@@ -285,15 +283,9 @@ impl ReactionListRef {
                 // Cache the reaction sender's user profile so that tooltip will show displayable name
                 let _ = get_user_profile_and_room_member(cx, sender.clone(), &room_id, true);
             }
-            let mut emoji_text = emoji_text.to_string();
 
-            // Debugging: draw the item ID as a reaction
-            if DRAW_ITEM_ID_REACTION {
-                emoji_text = format!("{emoji_text}\n ID: {}", id);
-            }
             let reaction_data = ReactionData {
-                reaction_raw: reaction_raw.to_string(),
-                emoji_shortcode: emoji_text.to_string(),
+                reaction: reaction_text.to_string(),
                 includes_user,
                 reaction_senders: reaction_senders.clone(),
                 room_id: room_id.clone(),
@@ -303,7 +295,7 @@ impl ReactionListRef {
                 cx,
                 &format!(
                     "{}  {}",
-                    reaction_data.emoji_shortcode,
+                    reaction_data.reaction,
                     reaction_senders.len()
                 ),
             );
@@ -318,7 +310,7 @@ impl ReactionListRef {
             button.apply_over(
                 cx,
                 live! {
-                    draw_bg: { color: (bg_color) , border_color: (border_color) }
+                    draw_bg: { reaction_bg_color: (bg_color) , reaction_border_color: (border_color) }
                 },
             );
             inner.children.push((button, reaction_data));

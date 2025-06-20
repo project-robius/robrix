@@ -56,8 +56,9 @@ live_design! {
             }
             
             text = <Label> {
+                padding: 0,
                 width: Fit, height: Fit,
-                padding: { top: 0.5 } // for better vertical alignment
+                flow: Right, // do not wrap
                 draw_text: {
                     text_style: <TITLE_TEXT>{ font_size: 15. }
                     color: #f,
@@ -205,7 +206,7 @@ impl Avatar {
 
     /// Returns whether this avatar is currently displaying an image or text.
     pub fn status(&mut self) -> AvatarDisplayStatus {
-        if self.view(id!(img_view)).is_visible() {
+        if self.view(id!(img_view)).visible() {
             AvatarDisplayStatus::Image
         } else {
             AvatarDisplayStatus::Text

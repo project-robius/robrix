@@ -1,8 +1,9 @@
 use std::{borrow::Cow, time::SystemTime};
 
+use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId}};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
 
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
@@ -91,9 +92,70 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
 }
 
 
-pub fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
+pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
     let millis: i64 = millis.get().into();
     Local.timestamp_millis_opt(millis).single()
+}
+
+/// Returns a string error message, handling special cases related to joining/leaving rooms.
+pub fn stringify_join_leave_error(
+    error: &matrix_sdk::Error,
+    room_name: Option<&str>,
+    was_join: bool,
+    was_invite: bool,
+) -> String {
+    let room_str = room_name.map_or_else(
+        || String::from("room"),
+        |r| format!("\"{r}\""),
+    );
+    let msg_opt = match error {
+        // The below is a stupid hack to workaround `WrongRoomState` being private.
+        // We get the string representation of the error and then search for the "got" state.
+        matrix_sdk::Error::WrongRoomState(wrs) => {
+            if was_join && wrs.to_string().contains(", got: Joined") {
+                Some(format!("Failed to join {room_str}: it has already been joined."))
+            } else if !was_join && wrs.to_string().contains(", got: Left") {
+                Some(format!("Failed to leave {room_str}: it has already been left."))
+            } else {
+                None
+            }
+        }
+        // Special case for 404 errors, which indicate the room no longer exists.
+        // This avoids the weird "no known servers" error, which is misleading and incorrect.
+        // See: <https://github.com/element-hq/element-web/issues/25627>.
+        matrix_sdk::Error::Http(error)
+            if error.as_client_api_error().is_some_and(|e| e.status_code.as_u16() == 404) =>
+        {
+            Some(format!(
+                "Failed to {} {room_str}: the room no longer exists on the server.{}",
+                if was_join { "join" } else { "leave" },
+                if was_join && was_invite { "\n\nYou may safely reject this invite." } else { "" },
+            ))
+        }
+        _ => None,
+    };
+    msg_opt.unwrap_or_else(|| format!(
+        "Failed to {} {}: {}",
+        match (was_join, was_invite) {
+            (true, true) => "accept invite to",
+            (true, false) => "join",
+            (false, true) => "reject invite to",
+            (false, false) => "leave",
+        },
+        room_str,
+        error
+    ))
+}
+
+/// Returns a string representation of the room name or ID.
+pub fn room_name_or_id(
+    room_name: Option<impl Into<String>>,
+    room_id: impl AsRef<RoomId>,
+) -> String {
+    room_name.map_or_else(
+        || format!("Room ID {}", room_id.as_ref()),
+        |name| name.into(),
+    )
 }
 
 /// Formats a given Unix timestamp in milliseconds into a relative human-readable date.
@@ -111,7 +173,7 @@ pub fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Opti
 ///
 /// # Returns:
 /// - `Option<String>` representing the human-readable time or `None` if formatting fails.
-pub fn relative_format(millis: &MilliSecondsSinceUnixEpoch) -> Option<String> {
+pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
     let datetime = unix_time_millis_to_datetime(millis)?;
 
     // Calculate the time difference between now and the given timestamp
@@ -417,6 +479,65 @@ pub fn get_or_fetch_event_sender(
     }
     .unwrap_or_else(|| event_tl_item.sender().as_str());
     sender_username.to_owned()
+}
+
+/// Converts a byte index in a string to the corresponding grapheme index
+pub fn byte_index_to_grapheme_index(text: &str, byte_idx: usize) -> usize {
+    let mut current_byte_pos = 0;
+    for (i, g) in text.graphemes(true).enumerate() {
+        if current_byte_pos <= byte_idx && current_byte_pos + g.len() > byte_idx {
+            return i;
+        }
+        current_byte_pos += g.len();
+    }
+    // If byte_idx is at end of string or past it, return grapheme count
+    text.graphemes(true).count()
+}
+
+/// Safely extracts a substring between two byte indices, ensuring proper
+/// grapheme boundaries are respected
+pub fn safe_substring_by_byte_indices(text: &str, start_byte: usize, end_byte: usize) -> String {
+    if start_byte >= end_byte || start_byte >= text.len() {
+        return String::new();
+    }
+
+    let start_grapheme_idx = byte_index_to_grapheme_index(text, start_byte);
+    let end_grapheme_idx = byte_index_to_grapheme_index(text, end_byte);
+
+    text.graphemes(true)
+        .enumerate()
+        .filter(|(i, _)| *i >= start_grapheme_idx && *i < end_grapheme_idx)
+        .map(|(_, g)| g)
+        .collect()
+}
+
+/// Safely replaces text between byte indices with a new string,
+/// ensuring proper grapheme boundaries are respected
+pub fn safe_replace_by_byte_indices(text: &str, start_byte: usize, end_byte: usize, replacement: &str) -> String {
+    let text_graphemes: Vec<&str> = text.graphemes(true).collect();
+
+    let start_grapheme_idx = byte_index_to_grapheme_index(text, start_byte);
+    let end_grapheme_idx = byte_index_to_grapheme_index(text, end_byte);
+
+    let before = text_graphemes[..start_grapheme_idx].join("");
+    let after = text_graphemes[end_grapheme_idx..].join("");
+
+    format!("{before}{replacement}{after}")
+}
+
+/// Builds a mapping array from graphemes to byte positions in the string
+pub fn build_grapheme_byte_positions(text: &str) -> Vec<usize> {
+    let mut positions = Vec::with_capacity(text.graphemes(true).count() + 1);
+    let mut byte_pos = 0;
+
+    positions.push(0);
+
+    for g in text.graphemes(true) {
+        byte_pos += g.len();
+        positions.push(byte_pos);
+    }
+
+    positions
 }
 
 

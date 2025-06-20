@@ -43,7 +43,7 @@ live_design! {
 
             text = <Label> {
                 width: Fit, height: Fit,
-                padding: { top: 1.0 } // for better vertical alignment
+                flow: Right, // do not wrap
                 draw_text: {
                     text_style: { font_size: 13. }
                     color: #f,
@@ -65,15 +65,13 @@ live_design! {
 
     Home = <RoundedView> {
         width: Fit, height: Fit
-        // FIXME: the extra padding on the right is because the icon is not correctly centered
-        // within its parent
-        padding: {top: 8, left: 8, right: 12, bottom: 8}
+        padding: {top: 8, left: 12, right: 12, bottom: 8}
         show_bg: true
         draw_bg: {
             color: (COLOR_PRIMARY_DARKER)
-            radius: 4.0
-            border_color: (COLOR_SELECTED_PRIMARY)
-            border_width: 1.5
+            border_radius: 4.0
+            border_color: (COLOR_ACTIVE_PRIMARY)
+            border_size: 1.5
         }
 
         align: {x: 0.5, y: 0.5}
@@ -90,11 +88,10 @@ live_design! {
 
     Settings = <View> {
         width: Fit, height: Fit
-        // FIXME: the extra padding on the right is because the icon is not correctly centered
-        // within its parent
-        padding: {top: 8, left: 8, right: 12, bottom: 8}
+        padding: {top: 8, left: 8, right: 8, bottom: 8}
         align: {x: 0.5, y: 0.5}
         <Button> {
+            spacing: 0,
             enabled: false
             draw_bg: {
                 fn pixel(self) -> vec4 {

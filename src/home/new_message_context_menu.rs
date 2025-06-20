@@ -4,13 +4,13 @@
 use bitflags::bitflags;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedEventId;
-use matrix_sdk_ui::timeline::EventTimelineItem;
+use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeContent};
 
 use crate::sliding_sync::UserPowerLevels;
 
-use super::room_screen::{MessageAction, MessageOrSticker};
+use super::room_screen::MessageAction;
 
-const BUTTON_HEIGHT: f64 = 30.0; // KEEP IN SYNC WITH BUTTON_HEIGHT BELOW
+const BUTTON_HEIGHT: f64 = 35.0; // KEEP IN SYNC WITH BUTTON_HEIGHT BELOW
 const MENU_WIDTH: f64 = 215.0;   // KEEP IN SYNC WITH MENU_WIDTH BELOW
 
 live_design! {
@@ -23,8 +23,15 @@ live_design! {
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
 
-    BUTTON_HEIGHT = 30  // KEEP IN SYNC WITH BUTTON_HEIGHT ABOVE
+    BUTTON_HEIGHT = 35  // KEEP IN SYNC WITH BUTTON_HEIGHT ABOVE
     MENU_WIDTH = 215    // KEEP IN SYNC WITH MENU_WIDTH ABOVE
+
+    ContextMenuButton = <RobrixIconButton> {
+        height: (BUTTON_HEIGHT)
+        width: Fill,
+        margin: 0,
+        icon_walk: {width: 16, height: 16, margin: {right: 3}}
+    }
 
     pub NewMessageContextMenu = {{NewMessageContextMenu}} {
         visible: false,
@@ -48,15 +55,15 @@ live_design! {
             flow: Down
             width: (MENU_WIDTH),
             height: Fit,
-            padding: 15
-            spacing: 2
+            padding: 10
+            spacing: 0,
             align: {x: 0, y: 0}
 
             show_bg: true
             draw_bg: {
                 color: #fff
-                radius: 5.0
-                border_width: 0.5
+                border_radius: 5.0
+                border_size: 0.5
                 border_color: #888
             }
 
@@ -64,19 +71,16 @@ live_design! {
             react_view = <View> {
                 flow: Overlay
                 height: (BUTTON_HEIGHT)
-                react_button = <RobrixIconButton> {
-                    height: (BUTTON_HEIGHT)
-                    width: Fill,
-                    draw_icon: {
-                        svg_file: (ICON_ADD_REACTION)
-                    }
-                    icon_walk: {width: 16, height: 16, margin: {right: 3}}
+                align: {y: 0.5}
+                react_button = <ContextMenuButton> {
+                    draw_icon: { svg_file: (ICON_ADD_REACTION) }
                     text: "Add Reaction"
                 }
 
                 reaction_input_view = <View> {
                     width: Fill,
                     height: (BUTTON_HEIGHT)
+                    align: {y: 0.5}
                     flow: Right,
                     visible: false, // will be shown once the react_button is clicked
 
@@ -84,7 +88,8 @@ live_design! {
                         width: Fill,
                         height: Fit,
                         align: {x: 0, y: 0.5}
-                        empty_message: "Enter reaction..."
+                        empty_text: "Enter reaction..."
+                        flow: Right, // do not wrap
                         draw_text: {
                             // TODO: we want the TextInput flow to show all text
                             // within the single-line box by scrolling horizontally
@@ -98,7 +103,8 @@ live_design! {
                     reaction_send_button = <RobrixIconButton> {
                         height: (BUTTON_HEIGHT)
                         align: {x: 0.5, y: 0.5}
-                        padding: {left: 10, right: 10}
+                        padding: {left: 10, right: 10, top: 8, bottom: 8}
+                        spacing: 0,
                         draw_icon: {
                             svg_file: (ICON_SEND)
                             color: (COLOR_ACCEPT_GREEN),
@@ -117,13 +123,9 @@ live_design! {
                 }
             }
 
-            reply_button = <RobrixIconButton> {
-                height: (BUTTON_HEIGHT)
-                width: Fill,
-                draw_icon: {
-                    svg_file: (ICON_REPLY)
-                }
-                icon_walk: {width: 16, height: 16, margin: {right: 3}}
+            reply_button = <ContextMenuButton> {
+                draw_icon: { svg_file: (ICON_REPLY) }
+                icon_walk: { margin: {top: 1, right: 3}}
                 text: "Reply"
             }
 
@@ -133,13 +135,9 @@ live_design! {
                 width: Fill,
             }
 
-            edit_message_button = <RobrixIconButton> {
-                height: (BUTTON_HEIGHT)
-                width: Fill,
-                draw_icon: {
-                    svg_file: (ICON_EDIT)
-                }
-                icon_walk: {width: 16, height: 16, margin: {top: -3, right: 3} }
+            edit_message_button = <ContextMenuButton> {
+                draw_icon: { svg_file: (ICON_EDIT) }
+                icon_walk: { margin: {top: -3, right: 3} }
                 text: "Edit Message"
             }
 
@@ -147,63 +145,35 @@ live_design! {
             //       using https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk/struct.RoomInfo.html#method.is_pinned_event.
             //       The caller of `show()` will also need to check if the current user is allowed to
             //       pin/unpin messages using: https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_pin_or_unpin_event
-            pin_button = <RobrixIconButton> {
-                height: (BUTTON_HEIGHT)
-                width: Fill,
-                draw_icon: {
-                    svg_file: (ICON_PIN)
-                }
-                icon_walk: {width: 16, height: 16, margin: {right: 3} }
+            pin_button = <ContextMenuButton> {
+                draw_icon: { svg_file: (ICON_PIN) }
                 text: "" // set dynamically to "Pin Message" or "Unpin Message"
             }
 
-            copy_text_button = <RobrixIconButton> {
-                height: (BUTTON_HEIGHT)
-                width: Fill,
-                draw_icon: {
-                    svg_file: (ICON_COPY)
-                }
-                icon_walk: {width: 16, height: 16, margin: {right: 3} }
+            copy_text_button = <ContextMenuButton> {
+                draw_icon: { svg_file: (ICON_COPY) }
                 text: "Copy Text"
             }
 
-            copy_html_button = <RobrixIconButton> {
-                height: (BUTTON_HEIGHT)
-                width: Fill,
-                draw_icon: {
-                    svg_file: (ICON_HTML_FILE)
-                }
-                icon_walk: {width: 16, height: 16, margin: {left: 1.5, right: 1.5} }
+            copy_html_button = <ContextMenuButton> {
+                draw_icon: { svg_file: (ICON_HTML_FILE) }
+                icon_walk: { margin: {left: 1.5, right: 1.5} }
                 text: "Copy Text as HTML"
             }
 
-            copy_link_to_message_button = <RobrixIconButton> {
-                height: (BUTTON_HEIGHT)
-                width: Fill,
-                draw_icon: {
-                    svg_file: (ICON_LINK)
-                }
-                icon_walk: {width: 16, height: 16, margin: {right: 3} }
+            copy_link_to_message_button = <ContextMenuButton> {
+                draw_icon: { svg_file: (ICON_LINK) }
                 text: "Copy Link to Message"
             }
 
-            view_source_button = <RobrixIconButton> {
-                height: (BUTTON_HEIGHT)
-                width: Fill,
-                draw_icon: {
-                    svg_file: (ICON_VIEW_SOURCE)
-                }
-                icon_walk: {width: 16, height: 16, margin: {top: 6, right: 3} }
+            view_source_button = <ContextMenuButton> {
+                draw_icon: { svg_file: (ICON_VIEW_SOURCE) }
+                icon_walk: { margin: {top: 6, right: 3} }
                 text: "View Source"
             }
 
-            jump_to_related_button = <RobrixIconButton> {
-                height: (BUTTON_HEIGHT)
-                width: Fill,
-                draw_icon: {
-                    svg_file: (ICON_JUMP)
-                }
-                icon_walk: {width: 16, height: 16, margin: {right: 3} }
+            jump_to_related_button = <ContextMenuButton> {
+                draw_icon: { svg_file: (ICON_JUMP) }
                 text: "Jump to Related Event"
             }
 
@@ -213,14 +183,12 @@ live_design! {
                 width: Fill,
             }
 
-            // report_button = <RobrixIconButton> {
-            //     height: (BUTTON_HEIGHT)
-            //     width: Fill,
+            // report_button = <ContextMenuButton> {
             //     draw_icon: {
             //         svg_file: (ICON_TRASH) // TODO: ICON_REPORT/WARNING/FLAG
             //         color: (COLOR_DANGER_RED),
             //     }
-            //     icon_walk: {width: 16, height: 16, margin: {left: -2, right: 3} }
+            //     icon_walk: { margin: {left: -2, right: 3} }
             //
             //     draw_bg: {
             //         border_color: (COLOR_DANGER_RED),
@@ -237,15 +205,11 @@ live_design! {
             //       The caller needs to use `can_redact_own()` or `can_redact_other()`:
             //       https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_redact_own
 
-            delete_button = <RobrixIconButton> {
-                height: (BUTTON_HEIGHT)
-                width: Fill,
+            delete_button = <ContextMenuButton> {
                 draw_icon: {
                     svg_file: (ICON_TRASH)
                     color: (COLOR_DANGER_RED),
                 }
-                icon_walk: {width: 16, height: 16, margin: {right: 3} }
-
                 draw_bg: {
                     border_color: (COLOR_DANGER_RED),
                     color: #fff0f0
@@ -286,7 +250,7 @@ impl MessageAbilities {
     pub fn from_user_power_and_event(
         user_power_levels: &UserPowerLevels,
         event_tl_item: &EventTimelineItem,
-        _message: &MessageOrSticker,
+        _message: &MsgLikeContent,
         has_html: bool,
     ) -> Self {
         let mut abilities = Self::empty();
@@ -402,7 +366,7 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             );
             close_menu = true;
         }
-        else if reaction_text_input.escape(actions) {
+        else if reaction_text_input.escaped(actions) {
             close_menu = true;
         }
         else if self.button(id!(react_button)).clicked(actions) {
@@ -628,12 +592,11 @@ impl NewMessageContextMenu {
             + show_delete as u8;
 
         // Calculate and return the total expected height:
-        (num_visible_buttons as f64 * (BUTTON_HEIGHT + 2.0 + 2.0))
+        (num_visible_buttons as f64 * BUTTON_HEIGHT)
             + if show_divider_after_react_reply { 10.0 } else { 0.0 }
             + if show_divider_before_report_delete { 10.0 } else { 0.0 }
             + 20.0  // top and bottom padding
             + 1.0   // top and bottom border
-            - 4.0   // no 2.0 spacers at the top and bottom
     }
 
     fn close(&mut self, cx: &mut Cx) {
