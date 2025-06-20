@@ -136,7 +136,6 @@ pub async fn restore_session(
     let client = Client::builder()
         .homeserver_url(client_session.homeserver)
         .sqlite_store(client_session.db_path, Some(&client_session.passphrase))
-        //.sliding_sync_version_builder(VersionBuilder::DiscoverNative)
         .handle_refresh_tokens()
         .build()
         .await?;
