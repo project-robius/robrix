@@ -2844,7 +2844,7 @@ async fn logout_and_refresh() -> Result<RefreshState> {
         return Err(anyhow::anyhow!(error_msg));
     };
 
-    if !client.logged_in() {
+    if !client.matrix_auth().logged_in() {
         let error_msg = "Client not logged in, skipping server-side logout";
         log!("Error: {}", error_msg);
         Cx::post_action(LoginAction::LogoutFailure(error_msg.to_string()));
@@ -2893,7 +2893,7 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     }
 
     log!("Deleting latest user ID file...");
-    // We delete last_login.txt here for the following reasons:
+    // We delete latest_user_id here for the following reasons:
     // 1. we delete the latest user ID such that Robrix won't auto-login the next time it starts,
     // 2. we don't delete the session file, such that the user could re-login using that session in the future.
     if let Err(e) = delete_latest_user_id().await {
