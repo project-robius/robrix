@@ -9,7 +9,7 @@ use matrix_sdk::{
         },
     },
 };
-use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineEventItemId, TimelineItemContent};
+use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeKind, TimelineEventItemId, TimelineItemContent};
 
 use crate::{
     shared::popup_list::{enqueue_popup_notification, PopupItem}, sliding_sync::{submit_async_request, MatrixRequest}
@@ -297,128 +297,135 @@ impl Widget for EditingPane {
             {
                 let edited_text = edit_text_input.text().trim().to_string();
                 let edited_content = match info.event_tl_item.content() {
-                    TimelineItemContent::Message(message) => {
-                        // Only these types of messages can be edited.
-                        let mut edited_content = match message.msgtype() {
-                            // TODO: try to distinguish between plaintext, markdown, and html messages,
-                            //       For now, we just assume that all messages are markdown.
-                            //       But this is a problem, since the body of the text/emote message might not be markdown.
+                    TimelineItemContent::MsgLike(msg_like_content) => {
+                        match &msg_like_content.kind {
+                            MsgLikeKind::Message(message) => {
+                                // Only these types of messages can be edited.
+                                let mut edited_content = match message.msgtype() {
+                                    // TODO: try to distinguish between plaintext, markdown, and html messages,
+                                    //       For now, we just assume that all messages are markdown.
+                                    //       But this is a problem, since the body of the text/emote message might not be markdown.
 
-                            // TODO: also handle "/html" or "/plain" prefixes, just like when sending new messages.
-                            MessageType::Text(_) => EditedContent::RoomMessage(
-                                RoomMessageEventContentWithoutRelation::text_markdown(&edited_text),
-                            ),
-                            MessageType::Emote(_) => EditedContent::RoomMessage(
-                                RoomMessageEventContentWithoutRelation::emote_markdown(
-                                    &edited_text,
-                                ),
-                            ),
-                            // TODO: support adding/removing attachments.
-                            //       For now, we just support modifying the body/formatted body of the message.
-                            // TODO: once we update the matrix-sdk dependency, we can use the new
-                            //       `EditedContent::MediaCaption` variant to edit media messages captions only.
-                            MessageType::Image(image) => {
-                                let mut new_image_msg = image.clone();
-                                if image.formatted.is_some() {
-                                    new_image_msg.formatted = FormattedBody::markdown(&edited_text);
-                                }
-                                new_image_msg.body = edited_text.clone();
-                                EditedContent::RoomMessage(
-                                    RoomMessageEventContentWithoutRelation::new(
-                                        MessageType::Image(new_image_msg),
+                                    // TODO: also handle "/html" or "/plain" prefixes, just like when sending new messages.
+                                    MessageType::Text(_text) => EditedContent::RoomMessage(
+                                        RoomMessageEventContentWithoutRelation::text_markdown(&edited_text),
                                     ),
-                                )
-                            },
-                            MessageType::Audio(audio) => {
-                                let mut new_audio_msg = audio.clone();
-                                if audio.formatted.is_some() {
-                                    new_audio_msg.formatted = FormattedBody::markdown(&edited_text);
-                                }
-                                new_audio_msg.body = edited_text.clone();
-                                EditedContent::RoomMessage(
-                                    RoomMessageEventContentWithoutRelation::new(
-                                        MessageType::Audio(new_audio_msg),
+                                    MessageType::Emote(_emote) => EditedContent::RoomMessage(
+                                        RoomMessageEventContentWithoutRelation::emote_markdown(
+                                            &edited_text,
+                                        ),
                                     ),
-                                )
-                            },
-                            MessageType::File(file) => {
-                                let mut new_file_msg = file.clone();
-                                if file.formatted.is_some() {
-                                    new_file_msg.formatted = FormattedBody::markdown(&edited_text);
-                                }
-                                new_file_msg.body = edited_text.clone();
-                                EditedContent::RoomMessage(
-                                    RoomMessageEventContentWithoutRelation::new(MessageType::File(
-                                        new_file_msg,
-                                    )),
-                                )
-                            },
-                            MessageType::Video(video) => {
-                                let mut new_video_msg = video.clone();
-                                if video.formatted.is_some() {
-                                    new_video_msg.formatted = FormattedBody::markdown(&edited_text);
-                                }
-                                new_video_msg.body = edited_text.clone();
-                                EditedContent::RoomMessage(
-                                    RoomMessageEventContentWithoutRelation::new(
-                                        MessageType::Video(new_video_msg),
-                                    ),
-                                )
-                            },
-                            _non_editable => {
-                                enqueue_popup_notification(PopupItem { 
-                                    message: "That message type cannot be edited.".into(), 
-                                    auto_dismissal_duration: None
-                                });
-                                self.animator_play(cx, id!(panel.hide));
-                                self.redraw(cx);
-                                return;
-                            },
-                        };
+                                    // TODO: support adding/removing attachments.
+                                    //       For now, we just support modifying the body/formatted body of the message.
+                                    // TODO: once we update the matrix-sdk dependency, we can use the new
+                                    //       `EditedContent::MediaCaption` variant to edit media messages captions only.
+                                    MessageType::Image(image) => {
+                                        let mut new_image_msg = image.clone();
+                                        if image.formatted.is_some() {
+                                            new_image_msg.formatted = FormattedBody::markdown(&edited_text);
+                                        }
+                                        new_image_msg.body = edited_text.clone();
+                                        EditedContent::RoomMessage(
+                                            RoomMessageEventContentWithoutRelation::new(
+                                                MessageType::Image(new_image_msg),
+                                            ),
+                                        )
+                                    },
+                                    MessageType::Audio(audio) => {
+                                        let mut new_audio_msg = audio.clone();
+                                        if audio.formatted.is_some() {
+                                            new_audio_msg.formatted = FormattedBody::markdown(&edited_text);
+                                        }
+                                        new_audio_msg.body = edited_text.clone();
+                                        EditedContent::RoomMessage(
+                                            RoomMessageEventContentWithoutRelation::new(
+                                                MessageType::Audio(new_audio_msg),
+                                            ),
+                                        )
+                                    },
+                                    MessageType::File(file) => {
+                                        let mut new_file_msg = file.clone();
+                                        if file.formatted.is_some() {
+                                            new_file_msg.formatted = FormattedBody::markdown(&edited_text);
+                                        }
+                                        new_file_msg.body = edited_text.clone();
+                                        EditedContent::RoomMessage(
+                                            RoomMessageEventContentWithoutRelation::new(MessageType::File(
+                                                new_file_msg,
+                                            )),
+                                        )
+                                    },
+                                    MessageType::Video(video) => {
+                                        let mut new_video_msg = video.clone();
+                                        if video.formatted.is_some() {
+                                            new_video_msg.formatted = FormattedBody::markdown(&edited_text);
+                                        }
+                                        new_video_msg.body = edited_text.clone();
+                                        EditedContent::RoomMessage(
+                                            RoomMessageEventContentWithoutRelation::new(
+                                                MessageType::Video(new_video_msg),
+                                            ),
+                                        )
+                                    },
+                                    _non_editable => {
+                                        enqueue_popup_notification(PopupItem { message: "That message type cannot be edited.".into(), auto_dismissal_duration: None });
+                                        self.animator_play(cx, id!(panel.hide));
+                                        self.redraw(cx);
+                                        return;
+                                    },
+                                };
 
-                        // TODO: extract mentions out of the new edited text and use them here.
-                        if let Some(existing_mentions) = message.mentions() {
-                            if let EditedContent::RoomMessage(new_message_content) =
-                                &mut edited_content
-                            {
-                                new_message_content.mentions = Some(existing_mentions.clone());
+                                // TODO: extract mentions out of the new edited text and use them here.
+                                if let Some(existing_mentions) = message.mentions() {
+                                    if let EditedContent::RoomMessage(new_message_content) =
+                                        &mut edited_content
+                                    {
+                                        new_message_content.mentions = Some(existing_mentions.clone());
+                                    }
+                                    // TODO: once we update the matrix-sdk dependency, uncomment this.
+                                    // EditedContent::MediaCaption { mentions, .. }) => {
+                                    //     mentions = Some(existing_mentions);
+                                    // }
+                                }
+
+                                edited_content
                             }
-                            // TODO: once we update the matrix-sdk dependency, uncomment this.
-                            // EditedContent::MediaCaption { mentions, .. }) => {
-                            //     mentions = Some(existing_mentions);
-                            // }
+                        
+                            MsgLikeKind::Poll(poll) => {
+                                let poll_result = poll.results();
+                                let poll_answers = poll_result.answers;
+                                // TODO: support editing poll answers. For now, just keep the same answers.
+                                let Ok(new_poll_answers) = poll_answers
+                                    .into_iter()
+                                    .map(|answer| UnstablePollAnswer::new(answer.id, answer.text))
+                                    .collect::<Vec<_>>()
+                                    .try_into()
+                                else {
+                                    enqueue_popup_notification(
+                                        PopupItem { message: "Failed to obtain existing poll answers while editing poll.".into(), auto_dismissal_duration: None }
+                                    );
+                                    return;
+                                };
+                                let mut new_content_block = UnstablePollStartContentBlock::new(
+                                    edited_text.clone(),
+                                    new_poll_answers,
+                                );
+                                new_content_block.kind = poll_result.kind;
+                                new_content_block.max_selections = poll_result.max_selections
+                                    .try_into()
+                                    .inspect_err(|e| error!("BUG: failed to obtain existing poll max selections while editing: {}", e))
+                                    .unwrap_or_default();
+                                EditedContent::PollStart {
+                                    fallback_text: edited_text,
+                                    new_content: new_content_block,
+                                }
+                            }
+                            _ => {
+                                enqueue_popup_notification(PopupItem { message: "That event type cannot be edited.".into(), auto_dismissal_duration: None });
+                                return;
+                            }
                         }
-
-                        edited_content
-                    },
-
-                    TimelineItemContent::Poll(poll) => {
-                        let poll_result = poll.results();
-                        let poll_answers = poll_result.answers;
-                        // TODO: support editing poll answers. For now, just keep the same answers.
-                        let Ok(new_poll_answers) = poll_answers
-                            .into_iter()
-                            .map(|answer| UnstablePollAnswer::new(answer.id, answer.text))
-                            .collect::<Vec<_>>()
-                            .try_into()
-                        else {
-                            enqueue_popup_notification(PopupItem { message: "Failed to obtain existing poll answers while editing poll.".into(), auto_dismissal_duration: None });
-                            return;
-                        };
-                        let mut new_content_block = UnstablePollStartContentBlock::new(
-                            edited_text.clone(),
-                            new_poll_answers,
-                        );
-                        new_content_block.kind = poll_result.kind;
-                        new_content_block.max_selections = poll_result.max_selections
-                            .try_into()
-                            .inspect_err(|e| error!("BUG: failed to obtain existing poll max selections while editing: {}", e))
-                            .unwrap_or_default();
-                        EditedContent::PollStart {
-                            fallback_text: edited_text,
-                            new_content: new_content_block,
-                        }
-                    },
+                    }
                     _ => {
                         enqueue_popup_notification(PopupItem { message: "That event type cannot be edited.".into(), auto_dismissal_duration: None });
                         return;
@@ -486,17 +493,13 @@ impl EditingPane {
         }
 
         let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
-        match event_tl_item.content() {
-            TimelineItemContent::Message(message) => {
-                edit_text_input.set_text(cx, message.body());
-            },
-            TimelineItemContent::Poll(poll) => {
-                edit_text_input.set_text(cx, &poll.results().question);
-            },
-            _ => {
-                enqueue_popup_notification(PopupItem { message: "That message cannot be edited.".into(), auto_dismissal_duration: None });
+        if let Some(message) = event_tl_item.content().as_message() {
+            edit_text_input.set_text(cx, message.body());
+        } else if let Some(poll) = event_tl_item.content().as_poll() {
+            edit_text_input.set_text(cx, &poll.results().question);
+        } else {
+             enqueue_popup_notification(PopupItem { message: "That message cannot be edited.".into(), auto_dismissal_duration: None });
                 return;
-            },
         }
 
         self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
