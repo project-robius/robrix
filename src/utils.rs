@@ -3,7 +3,7 @@ use std::{borrow::Cow, time::SystemTime};
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::{client::media::get_content_thumbnail::v3::Method, error::FromHttpResponseError}, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}, RumaApiError};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
 
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
@@ -123,7 +123,9 @@ pub fn stringify_join_leave_error(
         // Special case for 404 errors, which indicate the room no longer exists.
         // This avoids the weird "no known servers" error, which is misleading and incorrect.
         // See: <https://github.com/element-hq/element-web/issues/25627>.
-        matrix_sdk::Error::Http(matrix_sdk::HttpError::Api(FromHttpResponseError::Server(RumaApiError::ClientApi(e)))) if e.status_code.as_u16() == 404 => {
+        matrix_sdk::Error::Http(error)
+            if error.as_client_api_error().is_some_and(|e| e.status_code.as_u16() == 404) =>
+        {
             Some(format!(
                 "Failed to {} {room_str}: the room no longer exists on the server.{}",
                 if was_join { "join" } else { "leave" },
