@@ -946,7 +946,7 @@ impl Widget for RoomScreen {
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
             let message_input = self.room_input_bar(id!(input_bar)).mentionable_text_input(id!(message_input));
-            let text_input = message_input.text_input(id!(text_input));
+            let text_input = message_input.text_input_ref();
 
             for action in actions {
                 // Handle the highlight animation.
