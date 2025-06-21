@@ -1,4 +1,4 @@
-use makepad_widgets::*;
+use makepad_widgets::{makepad_futures::channel::oneshot::Sender, *};
 use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
@@ -212,6 +212,18 @@ impl MainDesktopUI {
         self.open_rooms.remove(&tab_id);
     }
 
+    /// Closes all tabs
+    pub fn close_all_tabs(&mut self, cx: &mut Cx, sender: Sender::<String>) {
+        let tab_ids: Vec<LiveId> = self.open_rooms.keys().cloned().collect();
+        for tab_id in tab_ids {
+            self.tab_to_close = Some(tab_id);
+            self.close_tab(cx, tab_id);
+        }
+        self.redraw(cx);
+        cx.action(MainDesktopUiAction::DockSave);
+        sender.send("All tab closed".to_string()).unwrap();
+    }
+
     /// Replaces an invite with a joined room in the dock.
     fn replace_invite_with_joined_room(
         &mut self,
@@ -263,6 +275,11 @@ impl WidgetMatchEvent for MainDesktopUI {
         let mut should_save_dock_action: bool = false;
         for action in actions {
             let widget_action = action.as_widget_action();
+
+            if let Some(MainDesktopUiAction::CloseAllTabs { sender }) = action.downcast_ref() {
+                self.close_all_tabs(cx, sender.clone()); 
+                continue;
+            }
 
             // Handle actions emitted by the dock within the MainDesktopUI
             match widget_action.cast() { // TODO: don't we need to call `widget_uid_eq(dock.widget_uid())` here?
@@ -398,10 +415,14 @@ impl WidgetMatchEvent for MainDesktopUI {
 
 /// Actions sent to the MainDesktopUI widget for saving/restoring its dock state.
 #[derive(Clone, Debug, DefaultNone)]
-enum MainDesktopUiAction {
+pub enum MainDesktopUiAction {
     /// Save the dock state from the dock to the AppState.
     DockSave,
     /// Load the room panel state from the AppState to the dock.
     DockLoad,
+    /// Close all tabs; see [`MainDesktopUI::close_all_tabs()`]
+    CloseAllTabs {
+        sender: Sender<String>,
+    },
     None,
 }

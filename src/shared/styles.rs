@@ -230,3 +230,7 @@ live_design! {
 pub const COLOR_ACCEPT_GREEN: Vec3 = vec3(0.074, 0.533, 0.031); // #138808
 pub const COLOR_DISABLE_GRAY: Vec3 = vec3(0.7, 0.7, 0.7); // #B3B3B3
 pub const COLOR_DANGER_RED: Vec3 = vec3(0.863, 0.0, 0.02); // #DC0005
+pub const COLOR_ACTIVE_PRIMARY: Vec3 = vec3(0.059, 0.533, 0.996); // #0f88fe
+pub const COLOR_PRIMARY: Vec3 = vec3(1.0, 1.0, 1.0); // #ffffff
+pub const COLOR_SECONDARY: Vec3 = vec3(0.933, 0.949, 0.957); // #eef2f4
+pub const COLOR_TEXT: Vec3 = vec3(0.11, 0.153, 0.298); // #1C274C
