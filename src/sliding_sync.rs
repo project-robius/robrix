@@ -2025,8 +2025,11 @@ fn get_latest_event_details(
     let sender_username = &utils::get_or_fetch_event_sender(latest_event, Some(room_id));
     (
         latest_event.timestamp(),
-        text_preview_of_timeline_item(latest_event.content(), sender_username)
-            .format_with(sender_username, true),
+        text_preview_of_timeline_item(
+            latest_event.content(),
+            latest_event.sender(),
+            sender_username,
+        ).format_with(sender_username, true),
     )
 }
 
