@@ -9,7 +9,6 @@ use matrix_sdk::{
         },
     },
 };
-use std::collections::BTreeMap;
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineEventItemId, TimelineItemContent};
 
 use crate::shared::mentionable_text_input::MentionableTextInputWidgetExt;
@@ -214,7 +213,7 @@ impl Widget for EditingPane {
 
         if let Event::Actions(actions) = event {
 
-            let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input)).text_input(id!(text_input));
+            let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input)).text_input_ref();
 
             // Hide the editing pane if the cancel button was clicked
             // or if the `Escape` key was pressed within the edit text input.
@@ -229,9 +228,7 @@ impl Widget for EditingPane {
             let Some(info) = self.info.as_ref() else { return };
 
             if self.button(id!(accept_button)).clicked(actions)
-                || edit_text_input.returned(actions).is_some_and(
-                    |(_text, modifiers)| modifiers.is_primary()
-                )
+                || edit_text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
             {
                 let edited_text = edit_text_input.text().trim().to_string();
                 let edited_content = match info.event_tl_item.content() {
@@ -314,16 +311,10 @@ impl Widget for EditingPane {
                             },
                         };
 
-                        // TODO: extract mentions out of the new edited text and use them here.
+                        // Mentions are now properly extracted from the original event by
+                        // extract_existing_mentions_from_event() called above during editing pane setup.
 
                         let edit_text_input_widget = self.mentionable_text_input(id!(editing_content.edit_text_input));
-
-                        // Handle @room mentions that may have been added during editing
-                        // This ensures that newly added @room mentions are properly detected
-                        if edited_text.contains("@room") {
-                            edit_text_input_widget.set_possible_room_mention(true);
-                        }
-
                         let message_with_mentions = edit_text_input_widget.create_message_with_mentions(&edited_text);
 
                         if let EditedContent::RoomMessage(new_message_content) = &mut edited_content {
@@ -433,13 +424,14 @@ impl EditingPane {
 
         let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
 
-        // Clear any previous mentions to avoid accumulation
-        edit_text_input.set_possible_mentions(&BTreeMap::new());
-        edit_text_input.set_possible_room_mention(false);
-
         match event_tl_item.content() {
             TimelineItemContent::Message(message) => {
-                edit_text_input.set_text(cx, message.body());
+                let initial_text = if let MessageType::Text(text_content) = message.msgtype() {
+                    text_content.formatted.as_ref().map_or(message.body(), |fb| &fb.body)
+                } else {
+                    message.body()
+                };
+                edit_text_input.set_text(cx, initial_text);
             },
             TimelineItemContent::Poll(poll) => {
                 edit_text_input.set_text(cx, &poll.results().question);
@@ -450,8 +442,8 @@ impl EditingPane {
             },
         }
 
-        // Mark existing @room and mention positions as completed to prevent popup re-triggering
-        edit_text_input.mark_existing_mentions_as_completed();
+        // Extract existing @room and user mentions from the original event and text content
+        edit_text_input.extract_existing_mentions_from_event(cx, &event_tl_item);
 
         self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
 
@@ -461,7 +453,7 @@ impl EditingPane {
         self.animator_play(cx, id!(panel.show));
 
         // Set the text input's cursor to the end and give it key focus.
-        let inner_text_input = edit_text_input.text_input(id!(text_input));
+        let inner_text_input = edit_text_input.text_input_ref();
         let text_len = edit_text_input.text().len();
         inner_text_input.set_cursor(
             cx,
@@ -478,7 +470,7 @@ impl EditingPane {
             event_tl_item: info.event_tl_item.clone(),
             text_input_state: self
                 .mentionable_text_input(id!(editing_content.edit_text_input))
-                .text_input(id!(text_input))
+                .text_input_ref()
                 .save_state(),
         })
     }
@@ -492,7 +484,7 @@ impl EditingPane {
     ) {
         let EditingPaneState { event_tl_item, text_input_state } = editing_pane_state;
         self.mentionable_text_input(id!(editing_content.edit_text_input))
-            .text_input(id!(text_input))
+            .text_input_ref()
             .restore_state(cx, text_input_state);
         self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
         self.visible = true;
