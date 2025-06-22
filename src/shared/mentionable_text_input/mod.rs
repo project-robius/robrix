@@ -7,8 +7,10 @@ use crate::shared::typing_animation::TypingAnimationWidgetRefExt;
 use crate::shared::styles::COLOR_UNKNOWN_ROOM_AVATAR;
 use crate::utils;
 
+mod mention_utils;
+
 use makepad_widgets::{text::selection::Cursor, *};
-use matrix_sdk::ruma::{events::room::message::RoomMessageEventContent, events::Mentions, OwnedRoomId, OwnedUserId};
+use matrix_sdk::ruma::{events::{room::message::RoomMessageEventContent, Mentions, AnySyncTimelineEvent, AnySyncMessageLikeEvent}, OwnedRoomId, OwnedUserId};
 use matrix_sdk::room::RoomMember;
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_segmentation::UnicodeSegmentation;
@@ -314,77 +316,52 @@ impl Widget for MentionableTextInput {
             .room_id.clone();
 
         if let Event::Actions(actions) = event {
-
-            let text_input_ref = self.cmd_text_input.text_input_ref(); // Get reference to the inner TextInput
+            let text_input_ref = self.cmd_text_input.text_input_ref();
             let text_input_uid = text_input_ref.widget_uid();
             let text_input_area = text_input_ref.area();
             let has_focus = cx.has_key_focus(text_input_area);
 
-
+            // Handle item selection from mention popup
             if let Some(selected) = self.cmd_text_input.item_selected(actions) {
                 self.on_user_selected(cx, scope, selected);
-                // return;
             }
 
+            // Handle build items request
             if self.cmd_text_input.should_build_items(actions) {
-                // Only build the list when this instance's TextInput has focus
                 if has_focus {
                     let search_text = self.cmd_text_input.search_text().to_lowercase();
-                    // update_user_list already includes a check for Scope room_id
                     self.update_user_list(cx, &search_text, scope);
-                } else {
-                    // If no focus but received a build request (possibly from a previous state), ensure popup is closed
-                    if self.cmd_text_input.view(id!(popup)).visible() {
-                        self.close_mention_popup(cx);
-                    }
+                } else if self.cmd_text_input.view(id!(popup)).visible() {
+                    self.close_mention_popup(cx);
                 }
             }
 
-            if let Some(action) =
-                actions.find_widget_action(self.cmd_text_input.text_input_ref().widget_uid())
-            {
-                if let TextInputAction::Changed(text) = action.cast() {
-                    self.handle_text_change(cx, scope, text);
-                }
-            }
-
+            // Process all actions
             for action in actions {
-                // Check if it's a TextInputAction
+                // Handle TextInput changes
                 if let Some(widget_action) = action.as_widget_action() {
-                    // Ensure the Action comes from our own TextInput
                     if widget_action.widget_uid == text_input_uid {
-                        // Removed special backspace key detection, instead detect deletion in text change
-
                         if let TextInputAction::Changed(text) = widget_action.cast() {
-                            // Only process text changes when this instance's TextInput has focus
                             if has_focus {
-                                // handle_text_change internally calls update_user_list,
-                                // update_user_list has internal Scope room_id check
                                 self.handle_text_change(cx, scope, text.to_owned());
                             }
-                            // Found the corresponding Change Action, can break out of inner loop
-                            break;
+                            break; // Found our text change action, no need to continue
                         }
                     }
                 }
 
-                // Check for MentionableTextInputAction actions
+                // Handle MentionableTextInputAction actions
                 if let Some(action_ref) = action.downcast_ref::<MentionableTextInputAction>() {
                     match action_ref {
                         MentionableTextInputAction::PowerLevelsUpdated(room_id, can_notify_room) => {
-                            // If Scope room_id doesn't match action's room_id, this action may be for another room
-                            // This is important to avoid applying actions to the wrong room context
                             if &scope_room_id != room_id {
-                                continue; // Skip this action
+                                continue;
                             }
 
-                            // Only update and possibly redraw when can_notify_room state actually changes
                             if self.can_notify_room != *can_notify_room {
                                 self.can_notify_room = *can_notify_room;
-                                // If currently searching, may need to immediately update list to show/hide @room
-                                if self.is_searching && has_focus { // Only update list when has focus
+                                if self.is_searching && has_focus {
                                     let search_text = self.cmd_text_input.search_text().to_lowercase();
-                                    // Pass scope to update_user_list to ensure consistent context
                                     self.update_user_list(cx, &search_text, scope);
                                 } else {
                                     self.redraw(cx);
@@ -392,18 +369,11 @@ impl Widget for MentionableTextInput {
                             }
                         },
                         MentionableTextInputAction::RoomMembersLoaded(room_id) => {
-                            // Only process if this action is for the current room
-                            if &scope_room_id == room_id {
-
-                                // If we were showing loading, hide it and refresh the list
-                                if self.members_loading {
-                                    self.members_loading = false;
-
-                                    // If currently searching, refresh the user list
-                                    if self.is_searching && has_focus {
-                                        let search_text = self.cmd_text_input.search_text().to_lowercase();
-                                        self.update_user_list(cx, &search_text, scope);
-                                    }
+                            if &scope_room_id == room_id && self.members_loading {
+                                self.members_loading = false;
+                                if self.is_searching && has_focus {
+                                    let search_text = self.cmd_text_input.search_text().to_lowercase();
+                                    self.update_user_list(cx, &search_text, scope);
                                 }
                             }
                         },
@@ -412,8 +382,9 @@ impl Widget for MentionableTextInput {
                 }
             }
 
+            // Close popup if focus is lost
             if !has_focus && self.cmd_text_input.view(id!(popup)).visible() {
-                    self.close_mention_popup(cx);
+                self.close_mention_popup(cx);
             }
         }
     }
@@ -425,6 +396,239 @@ impl Widget for MentionableTextInput {
 
 
 impl MentionableTextInput {
+
+    // Check if members are loading and show loading indicator if needed
+    // Returns true if we should return early (loading state)
+    fn handle_members_loading_state(&mut self, cx: &mut Cx, room_members: &Option<std::sync::Arc<Vec<RoomMember>>>) -> bool {
+        let Some(room_members) = room_members else {
+            self.members_loading = true;
+            self.show_loading_indicator(cx);
+            return true;
+        };
+
+        let members_are_empty = room_members.is_empty();
+
+        if members_are_empty && !self.members_loading {
+            // Members list is empty and we're not already showing loading - start loading state
+            self.members_loading = true;
+            self.show_loading_indicator(cx);
+            return true;
+        } else if !members_are_empty && self.members_loading {
+            // Members have been loaded, stop loading state
+            self.members_loading = false;
+            // Reset popup height to ensure proper calculation for user list
+            let popup = self.cmd_text_input.view(id!(popup));
+            popup.apply_over(cx, live! { height: Fit });
+        } else if members_are_empty && self.members_loading {
+            // Still loading and members are empty - keep showing loading indicator
+            return true;
+        }
+
+        false
+    }
+
+    // Try to add @room mention item to the list
+    // Returns true if @room item was added
+    fn try_add_room_mention_item(&mut self, cx: &mut Cx, search_text: &str, room_id: &OwnedRoomId, is_desktop: bool) -> bool {
+        if !self.can_notify_room || !("@room".contains(search_text) || search_text.is_empty()) {
+            return false;
+        }
+
+        let Some(ptr) = self.room_mention_list_item else { return false };
+        let room_mention_item = WidgetRef::new_from_ptr(cx, Some(ptr));
+        let mut room_avatar_shown = false;
+
+        let avatar_ref = room_mention_item.avatar(id!(user_info.room_avatar));
+
+        // Get room avatar fallback text from room display name
+        let room_name_first_char = get_client()
+            .and_then(|client| client.get_room(room_id))
+            .and_then(|room| room.cached_display_name().map(|name| name.to_string()))
+            .and_then(|name| name.graphemes(true).next().map(|s| s.to_uppercase()))
+            .filter(|s| s != "@" && s.chars().all(|c| c.is_alphabetic()))
+            .unwrap_or_else(|| "R".to_string());
+
+        if let Some(client) = get_client() {
+            if let Some(room) = client.get_room(room_id) {
+                if let Some(avatar_url) = room.avatar_url() {
+                    match get_or_fetch_avatar(cx, avatar_url.to_owned()) {
+                        AvatarCacheEntry::Loaded(avatar_data) => {
+                            // Display room avatar
+                            let result = avatar_ref.show_image(cx, None, |cx, img| {
+                                utils::load_png_or_jpg(&img, cx, &avatar_data)
+                            });
+                            if result.is_ok() {
+                                room_avatar_shown = true;
+                            } else {
+                                log!("Failed to show @room avatar with room avatar image");
+                            }
+                        },
+                        AvatarCacheEntry::Requested => {
+                            avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &room_name_first_char);
+                            room_avatar_shown = true;
+                        },
+                        AvatarCacheEntry::Failed => {
+                            log!("Failed to load room avatar for @room");
+                        }
+                    }
+                } else {
+                    log!("Room has no avatar URL for @room");
+                }
+            } else {
+                log!("Could not find room for @room avatar with room_id: {}", room_id);
+            }
+        } else {
+            log!("Could not get client for @room avatar");
+        }
+
+        // If unable to display room avatar, show first character of room name
+        if !room_avatar_shown {
+            avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &room_name_first_char);
+        }
+
+        // Apply layout and height styling based on device type
+        let new_height = if is_desktop { DESKTOP_ITEM_HEIGHT } else { MOBILE_ITEM_HEIGHT };
+        if is_desktop {
+            room_mention_item.apply_over(cx, live! {
+                height: (new_height),
+                flow: Right,
+            });
+        } else {
+            room_mention_item.apply_over(cx, live! {
+                height: (new_height),
+                flow: Down,
+            });
+        }
+
+        self.cmd_text_input.add_item(room_mention_item);
+        true
+    }
+
+    // Find and sort matching members based on search text
+    fn find_and_sort_matching_members(&self, search_text: &str, room_members: &std::sync::Arc<Vec<RoomMember>>, max_matched_members: usize) -> Vec<(String, RoomMember)> {
+        let mut prioritized_members = Vec::new();
+
+        // Get current user ID to filter out self-mentions
+        let current_user_id = crate::sliding_sync::current_user_id();
+
+        for member in room_members.iter() {
+            if prioritized_members.len() >= max_matched_members {
+                break;
+            }
+
+            // Skip the current user - users should not be able to mention themselves
+            if let Some(ref current_id) = current_user_id {
+                if member.user_id() == current_id {
+                    continue;
+                }
+            }
+
+            // Check if this member matches the search text (including Matrix ID)
+            if self.user_matches_search(member, search_text) {
+                let display_name = member
+                    .display_name()
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| member.user_id().to_string());
+
+                let priority = self.get_match_priority(member, search_text);
+                prioritized_members.push((priority, display_name, member.clone()));
+            }
+        }
+
+        // Sort by priority (lower number = higher priority)
+        prioritized_members.sort_by_key(|(priority, _, _)| *priority);
+
+        // Convert to the format expected by the rest of the code
+        prioritized_members
+            .into_iter()
+            .map(|(_, display_name, member)| (display_name, member))
+            .collect()
+    }
+
+    // Add user mention items to the list
+    // Returns the number of items added
+    fn add_user_mention_items(&mut self, cx: &mut Cx, matched_members: Vec<(String, RoomMember)>, user_items_limit: usize, is_desktop: bool) -> usize {
+        let mut items_added = 0;
+
+        for (index, (display_name, member)) in matched_members.into_iter().take(user_items_limit).enumerate() {
+            let Some(user_list_item_ptr) = self.user_list_item else { continue };
+            let item = WidgetRef::new_from_ptr(cx, Some(user_list_item_ptr));
+
+            item.label(id!(user_info.username)).set_text(cx, &display_name);
+
+            // Use the full user ID string
+            let user_id_str = member.user_id().as_str();
+            item.label(id!(user_id)).set_text(cx, user_id_str);
+
+            if is_desktop {
+                item.apply_over(
+                    cx,
+                    live!(
+                        flow: Right,
+                        height: (DESKTOP_ITEM_HEIGHT),
+                        align: {y: 0.5}
+                    ),
+                );
+                item.view(id!(user_info.filler)).set_visible(cx, true);
+            } else {
+                item.apply_over(
+                    cx,
+                    live!(
+                        flow: Down,
+                        height: (MOBILE_ITEM_HEIGHT),
+                        spacing: (MOBILE_USERNAME_SPACING)
+                    ),
+                );
+                item.view(id!(user_info.filler)).set_visible(cx, false);
+            }
+
+            let avatar = item.avatar(id!(user_info.avatar));
+            if let Some(mxc_uri) = member.avatar_url() {
+                match get_or_fetch_avatar(cx, mxc_uri.to_owned()) {
+                    AvatarCacheEntry::Loaded(avatar_data) => {
+                        let _ = avatar.show_image(cx, None, |cx, img| {
+                            utils::load_png_or_jpg(&img, cx, &avatar_data)
+                        });
+                    }
+                    AvatarCacheEntry::Requested | AvatarCacheEntry::Failed => {
+                        avatar.show_text(cx, None, None, &display_name);
+                    }
+                }
+            } else {
+                avatar.show_text(cx, None, None, &display_name);
+            }
+
+            self.cmd_text_input.add_item(item.clone());
+            items_added += 1;
+
+            // Set keyboard focus to the first item
+            if index == 0 {
+                // If @room exists, it's index 0, otherwise first user is index 0
+                self.cmd_text_input.set_keyboard_focus_index(0);
+            }
+        }
+
+        items_added
+    }
+
+    // Update popup visibility and layout
+    fn update_popup_visibility(&mut self, cx: &mut Cx, has_items: bool) {
+        let popup = self.cmd_text_input.view(id!(popup));
+
+        if has_items {
+            popup.set_visible(cx, true);
+            if self.is_searching {
+                self.cmd_text_input.text_input_ref().set_key_focus(cx);
+            }
+        } else {
+            // If there are no matching items, just hide the entire popup and clear search state
+            popup.apply_over(cx, live! { height: Fit });
+            self.cmd_text_input.view(id!(popup)).set_visible(cx, false);
+            // Clear search state
+            self.is_searching = false;
+            self.current_mention_start_index = None;
+        }
+    }
 
     // Handles item selection from mention popup (either user or @room)
     fn on_user_selected(&mut self, cx: &mut Cx, _scope: &mut Scope, selected: WidgetRef) {
@@ -546,260 +750,42 @@ impl MentionableTextInput {
         // Use room_id from scope - it's always current and correct
         let room_id = &room_props.room_id;
 
-        // Always use room_members provided in current scope
-        // These member lists should come from TimelineUiState.room_members_map and are already the correct list for current room
-        let Some(room_members) = &room_props.room_members else {
-            self.members_loading = true;
-            self.show_loading_indicator(cx);
-            return;
-        };
-
-        // 4. Check if members are loaded or still loading
-        let members_are_empty = room_members.is_empty();
-
-        if members_are_empty && !self.members_loading {
-            // Members list is empty and we're not already showing loading - start loading state
-            self.members_loading = true;
-            self.show_loading_indicator(cx);
-            return;
-        } else if !members_are_empty && self.members_loading {
-            // Members have been loaded, stop loading state
-            self.members_loading = false;
-            // Reset popup height to ensure proper calculation for user list
-            let popup = self.cmd_text_input.view(id!(popup));
-            popup.apply_over(cx, live! { height: Fit });
-        } else if members_are_empty && self.members_loading {
-            // Still loading and members are empty - keep showing loading indicator
+        // 2. Check if members are loading and handle loading state
+        if self.handle_members_loading_state(cx, &room_props.room_members) {
             return;
         }
+
+        // 3. Get room members (we know they exist because handle_members_loading_state returned false)
+        let room_members = room_props.room_members.as_ref().unwrap();
 
         // Clear old list items, prepare to populate new list
         self.cmd_text_input.clear_items();
 
-        if self.is_searching {
-            let is_desktop = cx.display_context.is_desktop();
-            let max_visible_items = if is_desktop { 10 } else { 5 };
-
-            if self.can_notify_room && ("@room".contains(search_text) || search_text.is_empty()) {
-                let room_mention_item = match self.room_mention_list_item {
-                    Some(ptr) => WidgetRef::new_from_ptr(cx, Some(ptr)),
-                    None => {
-                        return;
-                    }
-                };
-                let mut room_avatar_shown = false;
-
-                let avatar_ref = room_mention_item.avatar(id!(user_info.room_avatar));
-
-                // Get room avatar fallback text from room display name
-                let room_name_first_char = get_client()
-                    .and_then(|client| client.get_room(room_id))
-                    .and_then(|room| room.cached_display_name().map(|name| name.to_string()))
-                    .and_then(|name| name.graphemes(true).next().map(|s| s.to_uppercase()))
-                    .filter(|s| s != "@" && s.chars().all(|c| c.is_alphabetic()))
-                    .unwrap_or_else(|| "R".to_string());
-
-                if let Some(client) = get_client() {
-                    if let Some(room) = client.get_room(room_id) {
-                        if let Some(avatar_url) = room.avatar_url() {
-
-                            match get_or_fetch_avatar(cx, avatar_url.to_owned()) {
-                                AvatarCacheEntry::Loaded(avatar_data) => {
-                                    // Display room avatar
-                                    let result = avatar_ref.show_image(cx, None, |cx, img| {
-                                        utils::load_png_or_jpg(&img, cx, &avatar_data)
-                                    });
-                                    if result.is_ok() {
-                                        room_avatar_shown = true;
-                                    } else {
-                                        log!("Failed to show @room avatar with room avatar image");
-                                    }
-                                },
-                                AvatarCacheEntry::Requested => {
-                                    avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &room_name_first_char);
-                                    room_avatar_shown = true;
-                                },
-                                AvatarCacheEntry::Failed => {
-                                    log!("Failed to load room avatar for @room");
-                                }
-                            }
-                        } else {
-                            log!("Room has no avatar URL for @room");
-                        }
-                    } else {
-                        log!("Could not find room for @room avatar with room_id: {}", room_id);
-                    }
-                } else {
-                    log!("Could not get client for @room avatar");
-                }
-
-                // If unable to display room avatar, show first character of room name
-                if !room_avatar_shown {
-                    avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &room_name_first_char);
-                }
-
-                // The room_user_id already has "@room" text set in the template
-                // No need to set it again
-
-                // Apply layout and height styling based on device type
-                let new_height = if is_desktop { DESKTOP_ITEM_HEIGHT } else { MOBILE_ITEM_HEIGHT };
-                if is_desktop {
-                    room_mention_item.apply_over(cx, live! {
-                        height: (new_height),
-                        flow: Right,
-                    });
-                } else {
-                    room_mention_item.apply_over(cx, live! {
-                        height: (new_height),
-                        flow: Down,
-                    });
-                }
-
-                self.cmd_text_input.add_item(room_mention_item);
-            }
-
-            // Improved search: match both display names and Matrix IDs, then sort by priority
-            let max_matched_members = max_visible_items * 2;  // Buffer for better UX
-
-            // Collect all matching members with their priority scores
-            let mut prioritized_members = Vec::new();
-
-            // Get current user ID to filter out self-mentions
-            let current_user_id = crate::sliding_sync::current_user_id();
-
-            for member in room_members.iter() {
-                if prioritized_members.len() >= max_matched_members {
-                    break;
-                }
-
-                // Skip the current user - users should not be able to mention themselves
-                if let Some(ref current_id) = current_user_id {
-                    if member.user_id() == current_id {
-                        continue;
-                    }
-                }
-
-                // Check if this member matches the search text (including Matrix ID)
-                if self.user_matches_search(member, search_text) {
-                    let display_name = member
-                        .display_name()
-                        .map(|n| n.to_string())
-                        .unwrap_or_else(|| member.user_id().to_string());
-
-                    let priority = self.get_match_priority(member, search_text);
-                    prioritized_members.push((priority, display_name, member));
-                }
-            }
-
-            // Sort by priority (lower number = higher priority)
-            prioritized_members.sort_by_key(|(priority, _, _)| *priority);
-
-            // Convert to the format expected by the rest of the code
-            let matched_members: Vec<(String, &RoomMember)> = prioritized_members
-                .into_iter()
-                .map(|(_, display_name, member)| (display_name, member))
-                .collect();
-
-            let member_count = matched_members.len();
-
-            // Performance issue: When a room has more than 2,000 users, rendering the mention popup causes the app to lag and show a loading spinner.
-            //
-            // Performance Bottlenecks:
-            // 1. Unrestricted iteration over all 2,000+ members
-            // 2. Widget instances are created for all matching members, even those not visible
-            // 3. No virtualization or limiting mechanism
-
-            // Solution:
-            // 1. Early Termination: Limit the number of matching members to MAX_VISIBLE_ITEMS * 2 (30 items)
-            // 2. Smart Search: Two-stage search—first match by prefix, then by substring—to provide a better user experience
-            // 3. Virtualization: Only create Widget instances for actually visible items (‎⁠take(MAX_VISIBLE_ITEMS)⁠)
-
-            // Performance Improvements:
-            // 1. Reduces processing from over 2,000 items to a reasonable amount
-            // 2. Reduces Widget creation to visible items only
-            // 3. Significantly decreases string operations and Widget creation overhead
-            let popup = self.cmd_text_input.view(id!(popup));
-
-            // Adjust height calculation to include the potential @room item
-            // Use the same condition as when actually adding the @room item
-            let has_room_item = self.can_notify_room && ("@room".contains(search_text) || search_text.is_empty());
-            let total_items_in_list = member_count + has_room_item as usize;
-
-            if total_items_in_list == 0 {
-                // If there are no matching items, just hide the entire popup and clear search state
-                popup.apply_over(cx, live! { height: Fit });
-                self.cmd_text_input.view(id!(popup)).set_visible(cx, false);
-                // Clear search state
-                self.is_searching = false;
-                self.current_mention_start_index = None;
-                return;
-            }
-
-            // Only create widgets for items that will actually be visible
-            // If @room exists, reserve one slot for it
-            let user_items_limit = max_visible_items.saturating_sub(has_room_item as usize);
-            for (index, (display_name, member)) in matched_members.into_iter().take(user_items_limit).enumerate() {
-                let item = WidgetRef::new_from_ptr(cx, self.user_list_item);
-
-                item.label(id!(user_info.username)).set_text(cx, &display_name);
-
-                // Use the full user ID string
-                let user_id_str = member.user_id().as_str();
-                item.label(id!(user_id)).set_text(cx, user_id_str);
-
-                if is_desktop {
-                    item.apply_over(
-                        cx,
-                        live!(
-                            flow: Right,
-                            height: (DESKTOP_ITEM_HEIGHT),
-                            align: {y: 0.5}
-                        ),
-                    );
-                    item.view(id!(user_info.filler)).set_visible(cx, true);
-                } else {
-                    item.apply_over(
-                        cx,
-                        live!(
-                            flow: Down,
-                            height: (MOBILE_ITEM_HEIGHT),
-                            spacing: (MOBILE_USERNAME_SPACING)
-                        ),
-                    );
-                    item.view(id!(user_info.filler)).set_visible(cx, false);
-                }
-
-                let avatar = item.avatar(id!(user_info.avatar));
-                if let Some(mxc_uri) = member.avatar_url() {
-                    match get_or_fetch_avatar(cx, mxc_uri.to_owned()) {
-                        AvatarCacheEntry::Loaded(avatar_data) => {
-                            let _ = avatar.show_image(cx, None, |cx, img| {
-                                utils::load_png_or_jpg(&img, cx, &avatar_data)
-                            });
-                        }
-                        AvatarCacheEntry::Requested | AvatarCacheEntry::Failed => {
-                            avatar.show_text(cx, None, None, &display_name);
-                        }
-                    }
-                } else {
-                    avatar.show_text(cx, None, None, &display_name);
-                }
-
-                self.cmd_text_input.add_item(item.clone());
-
-                // Set keyboard focus to the first item
-                if index == 0 {
-                    // If @room exists, it's index 0, otherwise first user is index 0
-                    self.cmd_text_input.set_keyboard_focus_index(0);
-                }
-            }
-
-            let popup = self.cmd_text_input.view(id!(popup));
-            popup.set_visible(cx, true);
-            if self.is_searching {
-                self.cmd_text_input.text_input_ref().set_key_focus(cx);
-            }
+        if !self.is_searching {
+            return;
         }
+
+        let is_desktop = cx.display_context.is_desktop();
+        let max_visible_items = if is_desktop { 10 } else { 5 };
+        let mut items_added = 0;
+
+        // 4. Try to add @room mention item
+        let has_room_item = self.try_add_room_mention_item(cx, search_text, room_id, is_desktop);
+        if has_room_item {
+            items_added += 1;
+        }
+
+        // 5. Find and sort matching members
+        let max_matched_members = max_visible_items * 2;  // Buffer for better UX
+        let matched_members = self.find_and_sort_matching_members(search_text, room_members, max_matched_members);
+
+        // 6. Add user mention items
+        let user_items_limit = max_visible_items.saturating_sub(has_room_item as usize);
+        let user_items_added = self.add_user_mention_items(cx, matched_members, user_items_limit, is_desktop);
+        items_added += user_items_added;
+
+        // 7. Update popup visibility based on whether we have items
+        self.update_popup_visibility(cx, items_added > 0);
     }
 
     // Detects valid mention trigger positions in text
@@ -1045,7 +1031,7 @@ impl MentionableTextInput {
     /// 1. Original Matrix event data (preferred): extracts from event.content.mentions if available
     /// 2. Text analysis fallback: searches for markdown patterns in the text
     ///    - @room mentions: literal "@room" text
-    ///    - User mentions: markdown links in format [displayname](matrix:u/@userid:server.com)
+    ///    - User mentions: markdown links in format [displayname](matrix:to/@userid:server.com)
     ///
     /// This allows the text input to properly track mentions when editing existing messages.
     pub fn extract_existing_mentions(&mut self, cx: &mut Cx) {
@@ -1059,8 +1045,7 @@ impl MentionableTextInput {
         let mut mentions_from_event = false;
         if let Some(event_item) = original_event_item {
             if let Some(original_event) = event_item.latest_json() {
-                if let Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
-                    matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(sync_event)
+                if let Ok(AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(sync_event)
                 )) = original_event.deserialize() {
                     if let Some(mentions) = sync_event.as_original().and_then(|evt| evt.content.mentions.as_ref()) {
                         // Convert BTreeSet<OwnedUserId> to BTreeMap<OwnedUserId, String> for possible_mentions
@@ -1085,16 +1070,19 @@ impl MentionableTextInput {
         }
     }
 
+    /// Checks if text contains Matrix user mention links in any supported format
+    fn contains_matrix_user_mentions(&self, text: &str) -> bool {
+        self::mention_utils::contains_matrix_user_mentions(text)
+    }
+
     /// Reconstructs the text content to include proper mention markdown when the text
     /// has been stripped of markdown by other clients (like Element) but we still have
     /// the mention information from the original event.
     fn reconstruct_text_with_mentions(&mut self, cx: &mut Cx) {
         let current_text = self.text();
 
-        log!("Reconstructing text with mentions {:#?}", current_text);
-
         // Check if the text already contains markdown mentions - if so, don't modify it
-        if current_text.contains("](matrix:u/") {
+        if self.contains_matrix_user_mentions(&current_text) {
             return;
         }
 
@@ -1102,11 +1090,11 @@ impl MentionableTextInput {
 
         // First, try to convert HTML format mentions to Markdown
         if current_text.contains("<a href=") {
-            reconstructed_text = self.convert_html_mentions_to_markdown(&current_text);
+            reconstructed_text = self::mention_utils::convert_html_mentions_to_markdown(&current_text);
         }
 
         // If we still don't have markdown mentions, try to reconstruct from plain text
-        if !reconstructed_text.contains("](matrix:u/") {
+        if !self.contains_matrix_user_mentions(&reconstructed_text) {
             // Reconstruct user mentions: replace plain text usernames with markdown links
             for user_id in self.possible_mentions.clone().keys() {
                 // Try to find the user's display name or localpart in the text
@@ -1147,117 +1135,58 @@ impl MentionableTextInput {
         }
     }
 
-    /// Converts HTML format mentions to Markdown format.
-    /// Handles Matrix HTML mentions with any valid Matrix URI format.
-    /// Converts them to Markdown format while preserving the original URI.
-    fn convert_html_mentions_to_markdown(&self, html_text: &str) -> String {
-        let mut markdown_text = html_text.to_string();
-
-        // Pattern to match HTML links: <a href="...">DisplayName</a>
-        let mut pos = 0;
-        while let Some(start_pos) = markdown_text[pos..].find("<a href=\"") {
-            let absolute_start = pos + start_pos;
-
-            // Find the end of the href attribute
-            if let Some(href_end) = markdown_text[absolute_start..].find("\">") {
-                let href_end_absolute = absolute_start + href_end;
-
-                // Extract the full URL from the href
-                let href_start = absolute_start + "<a href=\"".len();
-                let full_url = &markdown_text[href_start..href_end_absolute];
-
-                // Check if this is a Matrix user mention by looking for @user:domain pattern in the URL
-                let is_matrix_user_mention = self.is_matrix_user_mention_url(full_url);
-
-                if is_matrix_user_mention {
-                    // Find the display name (text between > and </a>)
-                    let display_name_start = href_end_absolute + 2; // Skip ">
-                    if let Some(link_end) = markdown_text[display_name_start..].find("</a>") {
-                        let link_end_absolute = display_name_start + link_end;
-                        let display_name = &markdown_text[display_name_start..link_end_absolute];
-
-                        // Create the Markdown mention, preserving the original URL
-                        let markdown_mention = format!("[{}]({})", display_name, full_url);
-
-                        // Replace the entire HTML mention with Markdown
-                        let full_link_end = link_end_absolute + 4; // Include "</a>"
-                        markdown_text.replace_range(absolute_start..full_link_end, &markdown_mention);
-
-                        // Update position to continue searching after the replacement
-                        pos = absolute_start + markdown_mention.len();
-                    } else {
-                        // Malformed HTML, skip
-                        pos = href_end_absolute + 2;
-                    }
-                } else {
-                    // Not a Matrix user mention, skip this link
-                    pos = href_end_absolute + 2;
-                }
-            } else {
-                // Malformed HTML, skip
-                pos = absolute_start + 1;
-            }
-        }
-
-        markdown_text
-    }
-
-    /// Checks if a URL is a Matrix user mention.
-    /// This method looks for @user:domain patterns in the URL, regardless of the URL format.
-    fn is_matrix_user_mention_url(&self, url: &str) -> bool {
-        // Look for Matrix user ID pattern: @username:domain
-        // Use simple string parsing to avoid regex dependency
-        if let Some(at_pos) = url.find('@') {
-            // Find the colon after the @
-            if let Some(colon_pos) = url[at_pos..].find(':') {
-                let colon_abs_pos = at_pos + colon_pos;
-
-                // Check that there's content after the colon (domain part)
-                if colon_abs_pos + 1 < url.len() {
-                    // Extract potential username and domain
-                    let username_part = &url[at_pos + 1..colon_abs_pos];
-                    let remaining = &url[colon_abs_pos + 1..];
-
-                    // Find where domain part ends (could be end of string, or next special char)
-                    let domain_end = remaining.find(|c: char| !c.is_alphanumeric() && c != '.' && c != '-')
-                        .unwrap_or(remaining.len());
-                    let domain_part = &remaining[..domain_end];
-
-                    // Basic validation: username and domain should not be empty and contain valid chars
-                    return !username_part.is_empty()
-                        && !domain_part.is_empty()
-                        && username_part.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '=' || c == '-')
-                        && domain_part.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-')
-                        && domain_part.contains('.');
-                }
-            }
-        }
-
-        false
-    }
-
     /// Fallback method that extracts mentions by analyzing the text content.
     /// This is used when the original event data is not available.
+    ///
+    /// Enhanced with better validation and bounds checking.
     fn extract_mentions_from_text(&mut self) {
         let text = self.text();
+
+        // Basic input validation
+        if text.is_empty() || text.len() > 65536 {  // Reasonable message length limit
+            return;
+        }
 
         // === Part 1: Find all @room mentions ===
         // Search pattern: "@room"
         // Example: "Hello @room everyone" -> finds @room at position 6
         let mut pos = 0;
+        let mut room_mention_count = 0;
+        const MAX_ROOM_MENTIONS: usize = 50;  // Prevent excessive processing
+
         while let Some(found_pos) = text[pos..].find("@room") {
+            room_mention_count += 1;
+            if room_mention_count > MAX_ROOM_MENTIONS {
+                log!("Warning: Found more than {} @room mentions, stopping processing", MAX_ROOM_MENTIONS);
+                break;
+            }
+
             let absolute_pos = pos + found_pos;
 
+            // Bounds check
+            if absolute_pos >= text.len() {
+                break;
+            }
+
             // Validate: @room must be at text start OR preceded by whitespace
-            // Valid: "@room", " @room", "\n@room"
-            // Invalid: "fake@room", "test@room"
-            let is_valid_room_mention = absolute_pos == 0 ||
-                text.chars().nth(absolute_pos - 1).is_some_and(|c| c.is_whitespace());
+            // Also ensure it's followed by whitespace or end of text
+            let is_valid_room_mention = {
+                let preceded_ok = absolute_pos == 0 ||
+                    text.chars().nth(absolute_pos.saturating_sub(1))
+                        .is_some_and(|c| c.is_whitespace());
+
+                let followed_ok = {
+                    let room_end = absolute_pos + 5; // "@room".len() = 5
+                    room_end >= text.len() ||
+                    text.chars().nth(room_end)
+                        .is_none_or(|c| c.is_whitespace() || c.is_ascii_punctuation())
+                };
+
+                preceded_ok && followed_ok
+            };
 
             if is_valid_room_mention {
-                // Enable room mentions for this text input
                 self.possible_room_mention = true;
-
             }
 
             // Continue searching from next character to find multiple @room mentions
@@ -1266,41 +1195,171 @@ impl MentionableTextInput {
 
         // === Part 2: Find all user mention patterns ===
         // Search pattern: "](matrix:u/" which is part of [displayname](matrix:u/@userid:server.com)
-        // Example: "Hello [Alice](matrix:u/@alice:example.com) there"
-        //          Structure: [Alice](matrix:u/@alice:example.com)
-        //                     ^     ^              ^               ^
-        //                     |     |              |               |
-        //               bracket_start  link_pattern_start    user_id_end
         pos = 0;
+        let mut user_mention_count = 0;
+        const MAX_USER_MENTIONS: usize = 100;  // Prevent excessive processing
+
         while let Some(found_pos) = text[pos..].find("](matrix:u/") {
+            user_mention_count += 1;
+            if user_mention_count > MAX_USER_MENTIONS {
+                log!("Warning: Found more than {} user mention patterns, stopping processing", MAX_USER_MENTIONS);
+                break;
+            }
+
             let link_end = pos + found_pos; // Position right before "]"
 
+            // Bounds check
+            if link_end >= text.len() {
+                break;
+            }
+
             // Find the corresponding opening bracket by searching backwards
-            // This handles cases where there might be multiple '[' characters
             if let Some(bracket_start) = text[..link_end].rfind('[') {
+                // Validate bracket pairing - ensure reasonable distance
+                if link_end.saturating_sub(bracket_start) > 256 {  // Display name too long
+                    pos = link_end + 1;
+                    continue;
+                }
 
                 // Validate: mention must be at text start OR preceded by whitespace
-                // This prevents matching partial mentions like "fake[user](matrix:u/...)"
                 let is_valid_user_mention = bracket_start == 0 ||
-                    text.chars().nth(bracket_start - 1).is_some_and(|c| c.is_whitespace());
+                    text.chars().nth(bracket_start.saturating_sub(1))
+                        .is_some_and(|c| c.is_whitespace());
 
                 if is_valid_user_mention {
-                    // Extract user ID from the URL part: matrix:u/@userid:server.com)
-                    // Search for '@' after "](matrix:u/" and extract until ')'
-                    if let Some(user_id_start) = text[link_end..].find("@") {
-                        if let Some(user_id_end) = text[link_end + user_id_start..].find(")") {
-                            // Extract the full user ID string (e.g., "@alice:example.com")
-                            let user_id_str = &text[link_end + user_id_start..link_end + user_id_start + user_id_end];
+                    // Extract user ID from the URL part
+                    let search_start = link_end + "](matrix:u/".len();
 
-                            // Try to parse as a valid Matrix user ID
-                            if let Ok(user_id) = user_id_str.try_into() {
-                                // Store the user ID for mention detection during final message creation
-                                // Key: OwnedUserId, Value: display string (currently just the user ID)
-                                self.possible_mentions.insert(user_id, user_id_str.to_string());
+                    // Bounds check for user ID search
+                    if search_start >= text.len() {
+                        pos = link_end + 1;
+                        continue;
+                    }
+
+                    if let Some(user_id_start_rel) = text[search_start..].find("@") {
+                        let user_id_start_abs = search_start + user_id_start_rel;
+
+                        // Bounds check
+                        if user_id_start_abs >= text.len() {
+                            pos = link_end + 1;
+                            continue;
+                        }
+
+                        if let Some(user_id_end_rel) = text[user_id_start_abs..].find(")") {
+                            let user_id_end_abs = user_id_start_abs + user_id_end_rel;
+
+                            // Bounds check and length validation
+                            if user_id_end_abs > text.len() ||
+                               user_id_end_abs.saturating_sub(user_id_start_abs) > 256 {
+                                pos = link_end + 1;
+                                continue;
+                            }
+
+                            // Extract the full user ID string
+                            let user_id_str = &text[user_id_start_abs..user_id_end_abs];
+
+                            // Validate user ID format before parsing
+                            if !user_id_str.is_empty() &&
+                               user_id_str.len() <= 255 &&
+                               user_id_str.contains(':') &&
+                               !user_id_str.contains('\n') &&
+                               !user_id_str.contains('\r') {
+
+                                // Try to parse as a valid Matrix user ID
+                                match user_id_str.try_into() {
+                                    Ok(user_id) => {
+                                        self.possible_mentions.insert(user_id, user_id_str.to_string());
+                                    }
+                                    Err(e) => {
+                                        log!("Warning: Failed to parse user ID '{}': {}", user_id_str, e);
+                                    }
+                                }
                             }
                         }
                     }
+                }
+            }
 
+            // Continue searching from after the current pattern
+            pos = link_end + 1;
+        }
+
+        // === Part 3: Find matrix.to user mentions ===
+        // Search pattern: "](https://matrix.to/#/@" which is part of [displayname](https://matrix.to/#/@userid:server.com)
+        pos = 0;
+        user_mention_count = 0;
+
+        while let Some(found_pos) = text[pos..].find("](https://matrix.to/#/@") {
+            user_mention_count += 1;
+            if user_mention_count > MAX_USER_MENTIONS {
+                log!("Warning: Found more than {} matrix.to user mention patterns, stopping processing", MAX_USER_MENTIONS);
+                break;
+            }
+
+            let link_end = pos + found_pos; // Position right before "]"
+
+            // Bounds check
+            if link_end >= text.len() {
+                break;
+            }
+
+            // Find the corresponding opening bracket by searching backwards
+            if let Some(bracket_start) = text[..link_end].rfind('[') {
+                // Validate bracket pairing - ensure reasonable distance
+                if link_end.saturating_sub(bracket_start) > 256 {  // Display name too long
+                    pos = link_end + 1;
+                    continue;
+                }
+
+                // Validate: mention must be at text start OR preceded by whitespace
+                let is_valid_user_mention = bracket_start == 0 ||
+                    text.chars().nth(bracket_start.saturating_sub(1))
+                        .is_some_and(|c| c.is_whitespace());
+
+                if is_valid_user_mention {
+                    // Extract user ID from the URL part
+                    let search_start = link_end + "](https://matrix.to/#/@".len();
+
+                    // Bounds check for user ID search
+                    if search_start >= text.len() {
+                        pos = link_end + 1;
+                        continue;
+                    }
+
+                    if let Some(user_id_end_rel) = text[search_start..].find(")") {
+                        let user_id_end_abs = search_start + user_id_end_rel;
+
+                        // Bounds check and length validation
+                        if user_id_end_abs > text.len() ||
+                           user_id_end_abs.saturating_sub(search_start) > 256 {
+                            pos = link_end + 1;
+                            continue;
+                        }
+
+                        // Extract the full user ID string (already includes @)
+                        let user_id_str = &text[search_start..user_id_end_abs];
+
+                        // Validate user ID format before parsing
+                        if !user_id_str.is_empty() &&
+                           user_id_str.len() <= 255 &&
+                           user_id_str.contains(':') &&
+                           !user_id_str.contains('\n') &&
+                           !user_id_str.contains('\r') {
+
+                            // Parse the user ID
+                            if let Ok(user_id) = matrix_sdk::ruma::UserId::parse(user_id_str) {
+                                // Extract display name
+                                let display_name = utils::safe_substring_by_byte_indices(
+                                    &text,
+                                    bracket_start + 1,
+                                    link_end
+                                );
+
+                                // Add to possible mentions
+                                self.possible_mentions.insert(user_id, display_name.to_string());
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1444,6 +1503,7 @@ impl MentionableTextInputRef {
 
 #[cfg(test)]
 mod tests_html_to_markdown_conversion {
+    use super::mention_utils;
     #[test]
     fn tests_convert_single_html_mention_to_markdown() {
         // Create a mock MentionableTextInput for testing
@@ -1513,6 +1573,92 @@ mod tests_html_to_markdown_conversion {
     }
 
     #[test]
+    fn tests_extract_mentions_from_text_matrix_to_format() {
+        // Test that extract_mentions_from_text can properly extract matrix.to format mentions
+        let text_with_matrix_to = "Hello [Alice](https://matrix.to/#/@alice:example.com) and [Bob](https://matrix.to/#/@bob:test.org) how are you?";
+
+        // We can't easily instantiate MentionableTextInput in tests, so let's test the logic directly
+        // by checking if contains_matrix_user_mentions detects matrix.to format
+        assert!(contains_matrix_user_mentions_test_helper(text_with_matrix_to));
+
+        // Test that mixed formats are both detected
+        let text_mixed = "Hi [Alice](matrix:u/@alice:example.com) and [Bob](https://matrix.to/#/@bob:example.com)";
+        assert!(contains_matrix_user_mentions_test_helper(text_mixed));
+
+        // Test matrix.to format specifically
+        let text_matrix_to_only = "Check [User](https://matrix.to/#/@user:server.com)";
+        assert!(contains_matrix_user_mentions_test_helper(text_matrix_to_only));
+
+        // Test that non-Matrix URLs are not detected
+        let text_no_matrix = "Visit [our site](https://example.com) for more info";
+        assert!(!contains_matrix_user_mentions_test_helper(text_no_matrix));
+    }
+
+    #[test]
+    fn tests_extract_mentions_matrix_to_edge_cases() {
+        // Test edge cases for matrix.to format detection
+
+        // Test with trailing content
+        let text_with_trailing = "Hello [User Name](https://matrix.to/#/@user:server.com) goodbye!";
+        assert!(contains_matrix_user_mentions_test_helper(text_with_trailing));
+
+        // Test with multiple matrix.to mentions
+        let text_multiple = "[A](https://matrix.to/#/@a:test.com) [B](https://matrix.to/#/@b:test.com) [C](https://matrix.to/#/@c:test.com)";
+        assert!(contains_matrix_user_mentions_test_helper(text_multiple));
+
+        // Test that incomplete matrix.to URLs are not detected
+        let text_incomplete = "Hello [Invalid](https://matrix.to/#/) world";
+        assert!(!contains_matrix_user_mentions_test_helper(text_incomplete));
+
+        // Test that matrix.to URLs without @ are not detected as user mentions
+        let text_no_at = "Hello [Room](https://matrix.to/#/!room:server.com) world";
+        assert!(!contains_matrix_user_mentions_test_helper(text_no_at));
+    }
+
+    #[test]
+    fn tests_matrix_to_vs_matrix_u_detection() {
+        // Ensure both formats are detected correctly
+
+        // MSC1270 format
+        let text_msc1270 = "Hello [Alice](matrix:u/@alice:example.com)";
+        assert!(contains_matrix_user_mentions_test_helper(text_msc1270));
+
+        // Traditional matrix.to format
+        let text_matrix_to = "Hi [Bob](https://matrix.to/#/@bob:example.com)";
+        assert!(contains_matrix_user_mentions_test_helper(text_matrix_to));
+
+        // Mixed formats in one message
+        let text_mixed = "Hi [Alice](matrix:u/@alice:example.com) and [Bob](https://matrix.to/#/@bob:example.com)";
+        assert!(contains_matrix_user_mentions_test_helper(text_mixed));
+
+        // Custom server format (should also be detected by contains_custom_matrix_links)
+        let text_custom = "Hey [Charlie](https://custom.server/#/@charlie:example.com)";
+        assert!(contains_matrix_user_mentions_test_helper(text_custom));
+    }
+
+    #[test]
+    fn tests_matrix_to_validation_patterns() {
+        // Test various validation scenarios for matrix.to format detection
+
+        // Valid patterns
+        assert!(contains_matrix_user_mentions_test_helper("[User](https://matrix.to/#/@user:server.com)"));
+        assert!(contains_matrix_user_mentions_test_helper("Hello [User](https://matrix.to/#/@user:server.com)"));
+        assert!(contains_matrix_user_mentions_test_helper("[Long User Name](https://matrix.to/#/@user:server.com)"));
+
+        // Invalid patterns - these should NOT be detected as Matrix user mentions
+        assert!(!contains_matrix_user_mentions_test_helper("[Link](https://matrix.to/)"));
+        assert!(!contains_matrix_user_mentions_test_helper("[Room](https://matrix.to/#/!room:server.com)"));
+        assert!(!contains_matrix_user_mentions_test_helper("[Event](https://matrix.to/#/!room:server.com/$event)"));
+        assert!(!contains_matrix_user_mentions_test_helper("[Website](https://example.com)"));
+        assert!(!contains_matrix_user_mentions_test_helper("[Email](mailto:user@example.com)"));
+
+        // Edge cases
+        assert!(!contains_matrix_user_mentions_test_helper(""));
+        assert!(!contains_matrix_user_mentions_test_helper("No links here"));
+        assert!(!contains_matrix_user_mentions_test_helper("@user:server.com without markdown"));
+    }
+
+    #[test]
     fn tests_debug_problematic_input() {
         // Test the exact problematic input to debug the issue
         let problematic_input = r#"@room [Feeds](https://matrix.to/#/@feeds:integrations.ems.host)"#;
@@ -1527,73 +1673,43 @@ mod tests_html_to_markdown_conversion {
         assert_eq!(result, expected_markdown);
     }
 
+    #[test]
+    fn tests_matrix_user_mentions_detection() {
+        // Create a mock instance for testing (we can't easily create a full widget in tests)
+
+        // Test MSC1270 format
+        let text_msc1270 = "Hello [Alice](matrix:u/@alice:example.com) how are you?";
+        assert!(contains_matrix_user_mentions_test_helper(text_msc1270));
+
+        // Test traditional matrix.to format
+        let text_matrix_to = "Hi [Bob](https://matrix.to/#/@bob:example.com) there!";
+        assert!(contains_matrix_user_mentions_test_helper(text_matrix_to));
+
+        // Test custom server format
+        let text_custom = "Hey [Charlie](https://custom.server/#/@charlie:example.com)!";
+        assert!(contains_matrix_user_mentions_test_helper(text_custom));
+
+        // Test mixed formats
+        let text_mixed = "Hi [Alice](matrix:u/@alice:example.com) and [Bob](https://matrix.to/#/@bob:example.com)";
+        assert!(contains_matrix_user_mentions_test_helper(text_mixed));
+
+        // Test non-Matrix links (should return false)
+        let text_no_matrix = "Check out [this link](https://example.com) and [email](mailto:test@example.com)";
+        assert!(!contains_matrix_user_mentions_test_helper(text_no_matrix));
+
+        // Test plain text (should return false)
+        let text_plain = "Hello @alice how are you?";
+        assert!(!contains_matrix_user_mentions_test_helper(text_plain));
+    }
+
+    // Helper function to test Matrix user mentions detection
+    fn contains_matrix_user_mentions_test_helper(text: &str) -> bool {
+        self::mention_utils::contains_matrix_user_mentions(text)
+    }
+
     // Helper function to test the HTML to Markdown conversion logic
     fn convert_html_mention_to_markdown_test_helper(html_text: &str) -> String {
-        let mut markdown_text = html_text.to_string();
-
-        // This is the same logic as in convert_html_mentions_to_markdown
-        let mut pos = 0;
-        while let Some(start_pos) = markdown_text[pos..].find("<a href=\"") {
-            let absolute_start = pos + start_pos;
-
-            if let Some(href_end) = markdown_text[absolute_start..].find("\">") {
-                let href_end_absolute = absolute_start + href_end;
-
-                let href_start = absolute_start + "<a href=\"".len();
-                let full_url = &markdown_text[href_start..href_end_absolute];
-
-                // Check if this is a Matrix user mention
-                let is_matrix_user_mention = is_matrix_user_mention_url_test_helper(full_url);
-
-                if is_matrix_user_mention {
-                    let display_name_start = href_end_absolute + 2;
-                    if let Some(link_end) = markdown_text[display_name_start..].find("</a>") {
-                        let link_end_absolute = display_name_start + link_end;
-                        let display_name = &markdown_text[display_name_start..link_end_absolute];
-
-                        let markdown_mention = format!("[{}]({})", display_name, full_url);
-
-                        let full_link_end = link_end_absolute + 4;
-                        markdown_text.replace_range(absolute_start..full_link_end, &markdown_mention);
-
-                        pos = absolute_start + markdown_mention.len();
-                    } else {
-                        pos = href_end_absolute + 2;
-                    }
-                } else {
-                    pos = href_end_absolute + 2;
-                }
-            } else {
-                pos = absolute_start + 1;
-            }
-        }
-
-        markdown_text
+        self::mention_utils::convert_html_mentions_to_markdown(html_text)
     }
 
-    // Helper function for testing Matrix user mention URL detection
-    fn is_matrix_user_mention_url_test_helper(url: &str) -> bool {
-        if let Some(at_pos) = url.find('@') {
-            if let Some(colon_pos) = url[at_pos..].find(':') {
-                let colon_abs_pos = at_pos + colon_pos;
-
-                if colon_abs_pos + 1 < url.len() {
-                    let username_part = &url[at_pos + 1..colon_abs_pos];
-                    let remaining = &url[colon_abs_pos + 1..];
-
-                    let domain_end = remaining.find(|c: char| !c.is_alphanumeric() && c != '.' && c != '-')
-                        .unwrap_or(remaining.len());
-                    let domain_part = &remaining[..domain_end];
-
-                    return !username_part.is_empty()
-                        && !domain_part.is_empty()
-                        && username_part.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '=' || c == '-')
-                        && domain_part.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-')
-                        && domain_part.contains('.');
-                }
-            }
-        }
-
-        false
-    }
 }
