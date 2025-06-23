@@ -427,7 +427,7 @@ impl Widget for EditingPane {
                         }
                     }
                     _ => {
-                        enqueue_popup_notification(PopupItem { message: "That event type cannot be edited.".into(), status: PopupStatus::Failure,auto_dismissal_duration: None });
+                        enqueue_popup_notification(PopupItem { message: "That event type cannot be edited.".into(), status: PopupStatus::Failure, auto_dismissal_duration: None });
                         return;
                     },
                 };

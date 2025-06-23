@@ -1862,7 +1862,7 @@ impl RoomScreen {
                 }
                 MessageAction::Pin(_details) => {
                     // TODO
-                    enqueue_popup_notification(PopupItem { message: "Pinning messages is not yet implemented.".to_string(), status: PopupStatus::Failure,auto_dismissal_duration: None });
+                    enqueue_popup_notification(PopupItem { message: "Pinning messages is not yet implemented.".to_string(), status: PopupStatus::Failure, auto_dismissal_duration: None });
                 }
                 MessageAction::Unpin(_details) => {
                     // TODO
@@ -1914,7 +1914,7 @@ impl RoomScreen {
                         }
                     }
                     if !success {
-                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to copy HTML from.".to_string(), status: PopupStatus::Failure,auto_dismissal_duration: None });
+                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to copy HTML from.".to_string(), status: PopupStatus::Failure, auto_dismissal_duration: None });
                         error!("MessageAction::CopyHtml: couldn't find event [{}] {:?} to copy HTML from in room {}",
                             details.item_id,
                             details.event_id.as_deref(),

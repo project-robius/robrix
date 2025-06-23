@@ -60,14 +60,12 @@ live_design! {
                 let border_color = #d4;
                 let border_size = 1;
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                
                 // Choose background color based on status
                 let body = mix(
                     (COLOR_POPUP_GREEN),  // success: green
                     (COLOR_POPUP_RED),    // failure: red
                     self.popup_status
                 );
-
                 sdf.box(
                     1.,
                     1.,
@@ -298,15 +296,15 @@ pub struct RobrixPopupNotification {
     layout: Layout,
     #[walk]
     walk: Walk,
-    // A list of tuples containing individual widgets, their content, status and the close timer in the order they were added.
+    // A list of tuples containing individual widgets and the close timer in the order they were added.
     #[rust]
-    popups: Vec<(View, String, PopupStatus, Timer)>,
+    popups: Vec<(View, Timer)>,
 }
 
 impl LiveHook for RobrixPopupNotification {
     fn after_apply(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) {
         self.draw_list.redraw(cx);
-        for (view, _, _, _) in self.popups.iter_mut() {
+        for (view, _) in self.popups.iter_mut() {
             if let Some(index) = nodes.child_by_name(index, live_id!(popup_content).as_field()) {
                 view.apply(cx, apply, index, nodes);
             }
@@ -326,7 +324,7 @@ impl Widget for RobrixPopupNotification {
         }
 
         let mut removed_indices = Vec::new();
-        for (index, (view, _message, _status, close_popup_timer)) in self.popups.iter_mut().enumerate() {
+        for (index, (view, close_popup_timer)) in self.popups.iter_mut().enumerate() {
             if close_popup_timer.is_event(event).is_some() {
                 removed_indices.push(index);
             }
@@ -347,7 +345,7 @@ impl Widget for RobrixPopupNotification {
         self.draw_bg.begin(cx, walk, self.layout);
         if !self.popups.is_empty() {
             cx.begin_turtle(walk, self.layout);
-            for (view, _, _, _) in self.popups.iter_mut() {
+            for (view, _) in self.popups.iter_mut() {
                 let walk = walk.with_margin_bottom(5.0);
                 let _ = view.draw_walk(cx, scope, walk);
             }
@@ -406,7 +404,7 @@ impl RobrixPopupNotification {
             );
             Timer::empty()
         };
-        self.popups.push((view, popup_item.message, popup_item.status, close_timer));
+        self.popups.push((view, close_timer));
         self.redraw(cx);
     }
 }
@@ -414,7 +412,7 @@ impl RobrixPopupNotification {
 impl WidgetMatchEvent for RobrixPopupNotification {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let mut removed_indices = Vec::new();
-        for (i, (view, _data, _status, close_timer)) in self.popups.iter_mut().enumerate() {
+        for (i, (view, close_timer)) in self.popups.iter_mut().enumerate() {
             if view.button(id!(close_button)).clicked(actions) {
                 removed_indices.push(i);
                 cx.stop_timer(*close_timer);
