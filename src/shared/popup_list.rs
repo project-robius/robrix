@@ -44,6 +44,8 @@ live_design! {
     use crate::shared::icon_button::RobrixIconButton;
     ICO_CHECK = dep("crate://self/resources/icons/checkmark.svg")
     ICO_FAT_CROSS = dep("crate://self/resources/icons/fat_cross.svg")
+    COLOR_POPUP_GREEN = #43bb9e;
+    COLOR_POPUP_RED = #e74c3c;
     PopupDialog = <RoundedView> {
         width: 275
         height: Fit
@@ -61,8 +63,8 @@ live_design! {
                 
                 // Choose background color based on status
                 let body = mix(
-                    (COLOR_ACCEPT_GREEN),  // success: green
-                    (COLOR_DANGER_RED),    // failure: red
+                    (COLOR_POPUP_GREEN),  // success: green
+                    (COLOR_POPUP_RED),    // failure: red
                     self.popup_status
                 );
 
@@ -176,7 +178,7 @@ live_design! {
                     instance direction: 0.0, // Direction of the progress bar: 0.0 is right to left, 1.0 is top to bottom.
                     uniform border_radius: 4.,
                     uniform border_size: 1.0,
-                    uniform progress_bar_color: #00000080,
+                    uniform progress_bar_color: #00000033,
                     instance display_progress_bar: 1.0 // TODO: this is the only thing that should be an `instance`
                     uniform anim_time: 0.0,
                     uniform anim_duration: 2.0,
