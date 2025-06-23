@@ -53,9 +53,6 @@ bitflags = "2.6.0"
 indexmap = "2.6.0"
 blurhash = { version = "0.2.3", default-features = false }
 
-[patch.crates-io]
-async-compat = { git = "https://github.com/element-hq/async-compat", rev = "5a27c8b290f1f1dcfc0c4ec22c464e38528aa591" }
-
 [package.metadata.docs.rs]
 all-features = true
 
