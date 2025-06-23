@@ -44,8 +44,9 @@ live_design! {
     use crate::shared::icon_button::RobrixIconButton;
     ICO_CHECK = dep("crate://self/resources/icons/checkmark.svg")
     ICO_FAT_CROSS = dep("crate://self/resources/icons/fat_cross.svg")
-    COLOR_POPUP_GREEN = #43bb9e;
-    COLOR_POPUP_RED = #e74c3c;
+    // Other possible color themes that is not too glaring.
+    // COLOR_POPUP_GREEN = #43bb9e;
+    // COLOR_POPUP_RED = #e74c3c;
     PopupDialog = <RoundedView> {
         width: 275
         height: Fit
@@ -62,8 +63,8 @@ live_design! {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 // Choose background color based on status
                 let body = mix(
-                    (COLOR_POPUP_GREEN),  // success: green
-                    (COLOR_POPUP_RED),    // failure: red
+                    (COLOR_ACCEPT_GREEN),  // success: green
+                    (COLOR_DANGER_RED),    // failure: red
                     self.popup_status
                 );
                 sdf.box(
