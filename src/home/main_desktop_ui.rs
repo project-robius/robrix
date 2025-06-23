@@ -97,9 +97,7 @@ impl Widget for MainDesktopUI {
         if !self.drawn_previously {
             let app_state = scope.data.get_mut::<AppState>().unwrap();
             if !app_state.saved_dock_state.open_rooms.is_empty() {
-                cx.action(RoomsPanelRestoreAction::RestoreDockFromPersistentState(
-                    app_state.saved_dock_state.clone(),
-                ));
+                cx.action(MainDesktopUiAction::DockLoadToAppState);
             }
             cx.set_global(self.view.rooms_list(id!(rooms_list)));
             self.drawn_previously = true;
