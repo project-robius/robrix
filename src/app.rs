@@ -389,12 +389,7 @@ impl AppMain for App {
                 }
             }
         }
-        //
-        if let Event::MouseMove(move_event) = event {
-            if move_event.abs.x < 0.0 || move_event.abs.x > self.ui.window(id!(main_window)).get_inner_size(cx).x + self.ui.window(id!(main_window)).get_position(cx).x {
-                self.ui.redraw(cx);
-            }
-        }
+        
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
