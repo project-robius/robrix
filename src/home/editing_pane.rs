@@ -12,7 +12,7 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeKind, TimelineEventItemId, TimelineItemContent};
 
 use crate::{
-    shared::popup_list::{enqueue_popup_notification, PopupItem}, sliding_sync::{submit_async_request, MatrixRequest}
+    shared::popup_list::{enqueue_popup_notification, PopupItem, PopupStatus}, sliding_sync::{submit_async_request, MatrixRequest}
 };
 
 use crate::room::room_member_manager::{RoomMemberSubscriber, RoomMemberSubscription};
@@ -368,7 +368,7 @@ impl Widget for EditingPane {
                                         )
                                     },
                                     _non_editable => {
-                                        enqueue_popup_notification(PopupItem { message: "That message type cannot be edited.".into(), auto_dismissal_duration: None });
+                                        enqueue_popup_notification(PopupItem { message: "That message type cannot be edited.".into(), status: PopupStatus::Failure, auto_dismissal_duration: None });
                                         self.animator_play(cx, id!(panel.hide));
                                         self.redraw(cx);
                                         return;
@@ -402,7 +402,7 @@ impl Widget for EditingPane {
                                     .try_into()
                                 else {
                                     enqueue_popup_notification(
-                                        PopupItem { message: "Failed to obtain existing poll answers while editing poll.".into(), auto_dismissal_duration: None }
+                                        PopupItem { message: "Failed to obtain existing poll answers while editing poll.".into(), status: PopupStatus::Failure, auto_dismissal_duration: None }
                                     );
                                     return;
                                 };
@@ -421,13 +421,13 @@ impl Widget for EditingPane {
                                 }
                             }
                             _ => {
-                                enqueue_popup_notification(PopupItem { message: "That event type cannot be edited.".into(), auto_dismissal_duration: None });
+                                enqueue_popup_notification(PopupItem { message: "That event type cannot be edited.".into(), status: PopupStatus::Failure, auto_dismissal_duration: None });
                                 return;
                             }
                         }
                     }
                     _ => {
-                        enqueue_popup_notification(PopupItem { message: "That event type cannot be edited.".into(), auto_dismissal_duration: None });
+                        enqueue_popup_notification(PopupItem { message: "That event type cannot be edited.".into(), status: PopupStatus::Failure,auto_dismissal_duration: None });
                         return;
                     },
                 };
@@ -480,7 +480,7 @@ impl EditingPane {
                 self.animator_play(cx, id!(panel.hide));
             },
             Err(e) => {
-                enqueue_popup_notification(PopupItem { message: format!("Failed to edit message: {}", e), auto_dismissal_duration: None});
+                enqueue_popup_notification(PopupItem { message: format!("Failed to edit message: {}", e), status: PopupStatus::Failure, auto_dismissal_duration: None});
             },
         }
     }
@@ -488,7 +488,7 @@ impl EditingPane {
     /// Shows the editing pane and sets it up to edit the given `event`'s content.
     pub fn show(&mut self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
         if !event_tl_item.is_editable() {
-            enqueue_popup_notification(PopupItem { message: "That message cannot be edited.".into(), auto_dismissal_duration: None });
+            enqueue_popup_notification(PopupItem { message: "That message cannot be edited.".into(), status: PopupStatus::Failure, auto_dismissal_duration: None });
             return;
         }
 
@@ -498,7 +498,7 @@ impl EditingPane {
         } else if let Some(poll) = event_tl_item.content().as_poll() {
             edit_text_input.set_text(cx, &poll.results().question);
         } else {
-             enqueue_popup_notification(PopupItem { message: "That message cannot be edited.".into(), auto_dismissal_duration: None });
+             enqueue_popup_notification(PopupItem { message: "That message cannot be edited.".into(), status: PopupStatus::Failure, auto_dismissal_duration: None });
                 return;
         }
 

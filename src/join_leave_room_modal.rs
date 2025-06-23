@@ -1,7 +1,7 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{home::invite_screen::{InviteDetails, JoinRoomAction, LeaveRoomAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
+use crate::{home::invite_screen::{InviteDetails, JoinRoomAction, LeaveRoomAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupStatus}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
 
 live_design! {
     use link::theme::*;
@@ -299,7 +299,8 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
             match action.downcast_ref() {
                 Some(JoinRoomAction::Joined { room_id }) if room_id == kind.room_id() => {
                     enqueue_popup_notification(PopupItem{
-                        message: "Successfully joined room.".into(), 
+                        message: "Successfully joined room.".into(),
+                        status: PopupStatus::Success, 
                         auto_dismissal_duration: Some(3.0),
                     });
                     self.view.label(id!(title)).set_text(cx, "Joined room!");
@@ -320,6 +321,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     self.view.label(id!(description)).set_text(cx, &msg);
                     enqueue_popup_notification(PopupItem{
                         message: msg, 
+                        status: PopupStatus::Failure,
                         auto_dismissal_duration: None}
                     );
                     accept_button.set_enabled(cx, true);
@@ -355,7 +357,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     }
                     self.view.label(id!(title)).set_text(cx, title);
                     self.view.label(id!(description)).set_text(cx, &description);
-                    enqueue_popup_notification(PopupItem { message: popup_msg, auto_dismissal_duration: Some(3.0) });
+                    enqueue_popup_notification(PopupItem { message: popup_msg, status: PopupStatus::Success, auto_dismissal_duration: Some(3.0) });
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
                     cancel_button.set_visible(cx, false);
@@ -381,7 +383,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
 
                     self.view.label(id!(title)).set_text(cx, title);
                     self.view.label(id!(description)).set_text(cx, &description);
-                    enqueue_popup_notification(PopupItem { message: popup_msg, auto_dismissal_duration: None });
+                    enqueue_popup_notification(PopupItem { message: popup_msg, status: PopupStatus::Failure, auto_dismissal_duration: None });
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
                     cancel_button.set_visible(cx, false);
