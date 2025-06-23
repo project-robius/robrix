@@ -7,8 +7,8 @@
 
 use std::borrow::Cow;
 
-use matrix_sdk::ruma::events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent};
-use matrix_sdk_ui::timeline::{self, AnyOtherFullStateEventContent, EventTimelineItem, MemberProfileChange, MembershipChange, RoomMembershipChange, TimelineItemContent};
+use matrix_sdk::{crypto::types::events::UtdCause, ruma::{events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent}, serde::Raw, UserId}};
+use matrix_sdk_ui::timeline::{self, AnyOtherFullStateEventContent, EncryptedMessage, EventTimelineItem, MemberProfileChange, MembershipChange, MsgLikeKind, RoomMembershipChange, TimelineItemContent};
 
 use crate::utils;
 
@@ -45,11 +45,11 @@ impl TextPreview {
         let Self { text, before_text } = self;
         match before_text {
             BeforeText::Nothing => text,
-            BeforeText::UsernameWithColon => format!(
-                "<b>{}</b>: {}",
-                if as_html { htmlize::escape_text(username) } else { username.into() },
-                text,
-            ),
+            BeforeText::UsernameWithColon => if as_html {
+                format!("<b>{}</b>: {}", htmlize::escape_text(username), text)
+            } else {
+                format!("{}: {}", username, text)
+            },
             BeforeText::UsernameWithoutColon => format!(
                 "{} {}",
                 if as_html { htmlize::escape_text(username) } else { username.into() },
@@ -62,22 +62,39 @@ impl TextPreview {
 /// Returns a text preview of the given timeline event as an Html-formatted string.
 pub fn text_preview_of_timeline_item(
     content: &TimelineItemContent,
+    sender_user_id: &UserId,
     sender_username: &str,
 ) -> TextPreview {
     match content {
-        TimelineItemContent::Message(m) => text_preview_of_message(m, sender_username),
-        TimelineItemContent::RedactedMessage => TextPreview::from((
-            String::from("[Message was deleted]"),
-            BeforeText::UsernameWithColon,
-        )),
-        TimelineItemContent::Sticker(sticker) => TextPreview::from((
-            format!("[Sticker]: <i>{}</i>", htmlize::escape_text(&sticker.content().body)),
-            BeforeText::UsernameWithColon,
-        )),
-        TimelineItemContent::UnableToDecrypt(_encrypted_msg) => TextPreview::from((
-            String::from("[Unable to decrypt message]"),
-            BeforeText::UsernameWithColon,
-        )),
+        TimelineItemContent::MsgLike(msg_like_content) => {
+            match &msg_like_content.kind {
+                MsgLikeKind::Message(msg) => text_preview_of_message(msg, sender_username),
+                MsgLikeKind::Redacted => {
+                    let mut preview = text_preview_of_redacted_message(
+                        None,
+                        sender_user_id,
+                        sender_username,
+                    );
+                    preview.text = htmlize::escape_text(&preview.text).into();
+                    preview
+                }
+                MsgLikeKind::Sticker(sticker) => TextPreview::from((
+                    format!("[Sticker]: <i>{}</i>", htmlize::escape_text(&sticker.content().body)),
+                    BeforeText::UsernameWithColon,
+                )),
+                MsgLikeKind::UnableToDecrypt(em) => text_preview_of_encrypted_message(em),
+                MsgLikeKind::Poll(poll_state) => TextPreview::from((
+                    format!(
+                        "[Poll]: {}",
+                        htmlize::escape_text(
+                            poll_state.fallback_text()
+                                .unwrap_or_else(|| poll_state.results().question)
+                        ),
+                    ),
+                    BeforeText::UsernameWithColon,
+                )),
+            }
+        }
         TimelineItemContent::MembershipChange(membership_change) => {
             text_preview_of_room_membership_change(membership_change, true)
                 .unwrap_or_else(|| TextPreview::from((
@@ -103,16 +120,6 @@ pub fn text_preview_of_timeline_item(
             format!("[Failed to parse <i>{}</i> state]", event_type),
             BeforeText::UsernameWithColon,
         )),
-        TimelineItemContent::Poll(poll_state) => TextPreview::from((
-            format!(
-                "[Poll]: {}",
-                htmlize::escape_text(
-                    poll_state.fallback_text()
-                        .unwrap_or_else(|| poll_state.results().question)
-                ),
-            ),
-            BeforeText::UsernameWithColon,
-        )),
         TimelineItemContent::CallInvite => TextPreview::from((
             String::from("[Call Invitation]"),
             BeforeText::UsernameWithColon,
@@ -131,10 +138,33 @@ pub fn plaintext_body_of_timeline_item(
     event_tl_item: &EventTimelineItem,
 ) -> String {
     match event_tl_item.content() {
-        TimelineItemContent::Message(m) => m.body().into(),
-        TimelineItemContent::RedactedMessage => "[Message was deleted]".into(),
-        TimelineItemContent::Sticker(sticker) => sticker.content().body.clone(),
-        TimelineItemContent::UnableToDecrypt(_encrypted_msg) => "[Unable to Decrypt]".into(),
+        TimelineItemContent::MsgLike(msg_likecontent) => {
+            match &msg_likecontent.kind {
+                MsgLikeKind::Message(msg) => {
+                    msg.body().into()
+                },
+                MsgLikeKind::Redacted => {
+                    let sender_username = utils::get_or_fetch_event_sender(event_tl_item, None);
+                    text_preview_of_redacted_message(
+                        event_tl_item.latest_json(),
+                        event_tl_item.sender(),
+                        &sender_username,
+                    ).format_with(&sender_username, false)
+                },
+                MsgLikeKind::Sticker(sticker) => {
+                    sticker.content().body.clone()
+                },
+                MsgLikeKind::UnableToDecrypt(em) => {
+                    text_preview_of_encrypted_message(em)
+                        .format_with(&utils::get_or_fetch_event_sender(event_tl_item, None), false)
+                }
+                MsgLikeKind::Poll(poll_state) => {
+                    format!("[Poll]: {}", 
+                        poll_state.fallback_text().unwrap_or_else(|| poll_state.results().question)
+                    )
+                }
+            }
+        }
         TimelineItemContent::MembershipChange(membership_change) => {
             text_preview_of_room_membership_change(membership_change, false)
                 .unwrap_or_else(|| TextPreview::from((
@@ -163,11 +193,6 @@ pub fn plaintext_body_of_timeline_item(
         }
         TimelineItemContent::FailedToParseState { event_type, error, state_key } => {
             format!("Failed to parse {} state; key: {}. Error: {}", event_type, state_key, error)
-        }
-        TimelineItemContent::Poll(poll_state) => {
-            format!("[Poll]: {}", 
-                poll_state.fallback_text().unwrap_or_else(|| poll_state.results().question)
-            )
         }
         TimelineItemContent::CallInvite => String::from("[Call Invitation]"),
         TimelineItemContent::CallNotify => String::from("[Call Notification]"),
@@ -272,44 +297,99 @@ pub fn text_preview_of_message(
 }
 
 
-/// Returns a text preview of a redacted message of the given event as an Html-formatted string.
+/// Returns a plaintext preview of the given redacted message.
+///
+/// Note: this function accepts the component parts of an [`EventTimelineItem`]
+/// instead of an `EventTimelineItem` itself, in order to also accommodate
+/// being invoked with the content/details of an [`EmbeddedEvent`].
+///
+/// [`EmbeddedEvent`]: matrix_sdk_ui::timeline::EmbeddedEvent
 pub fn text_preview_of_redacted_message(
-    event_tl_item: &EventTimelineItem,
-    original_sender: &str,
+    latest_json: Option<&Raw<AnySyncTimelineEvent>>,
+    sender_user_id: &UserId,
+    original_sender_username: &str,
 ) -> TextPreview {
-    let redactor_and_reason = {
-        let mut rr = None;
-        if let Some(redacted_msg) = event_tl_item.latest_json() {
-            if let Ok(AnySyncTimelineEvent::MessageLike(
+    let mut redactor_and_reason = None;
+    if let Some(redacted_msg) = latest_json {
+        if let Ok(
+            AnySyncTimelineEvent::MessageLike(
                 AnySyncMessageLikeEvent::RoomMessage(
                     SyncMessageLikeEvent::Redacted(redaction)
                 )
-            )) = redacted_msg.deserialize() {
-                rr = Some((
-                    redaction.unsigned.redacted_because.sender,
-                    redaction.unsigned.redacted_because.content.reason,
-                ));
-            }
+            )
+        ) = redacted_msg.deserialize() {
+            redactor_and_reason = Some((
+                redaction.unsigned.redacted_because.sender,
+                redaction.unsigned.redacted_because.content.reason,
+            ));
         }
-        rr
-    };
+    }
     let text = match redactor_and_reason {
         Some((redactor, Some(reason))) => {
-            // TODO: get the redactor's display name if possible
-            format!("{} deleted {}'s message: {:?}.", redactor, original_sender, reason)
+            if redactor == sender_user_id {
+                format!("{} deleted their own message: \"{}\".", original_sender_username, reason)
+            } else {
+                // TODO: get the redactor's display name if possible
+                format!("{} deleted {}'s message: \"{}\".", redactor, original_sender_username, reason)
+            }
         }
         Some((redactor, None)) => {
-            if redactor == event_tl_item.sender() {
-                format!("{} deleted their own message.", original_sender)
+            if redactor == sender_user_id {
+                format!("{} deleted their own message.", original_sender_username)
             } else {
-                format!("{} deleted {}'s message.", redactor, original_sender)
+                format!("{} deleted {}'s message.", redactor, original_sender_username)
             }
         }
         None => {
-            format!("{}'s message was deleted.", original_sender)
+            format!("{}'s message was deleted.", original_sender_username)
         }
     };
     TextPreview::from((text, BeforeText::Nothing))
+}
+
+/// Returns a plaintext preview of the given encrypted message that could not be decrypted.
+///
+/// This is used for "Unable to decrypt" messages, which may have a known cause
+/// for why they could not be decrypted.
+pub fn text_preview_of_encrypted_message(
+    encrypted_message: &EncryptedMessage,
+) -> TextPreview {
+    let cause_str = match encrypted_message {
+        EncryptedMessage::MegolmV1AesSha2 { cause, .. } => match cause {
+            UtdCause::Unknown => None,
+            UtdCause::SentBeforeWeJoined => Some(
+                "this message was sent before you joined the room."
+            ),
+            UtdCause::VerificationViolation => Some(
+                "this message was sent by an unverified user."
+            ),
+            UtdCause::UnsignedDevice => Some(
+                "the sending device wasn't signed by its owner."
+            ),
+            UtdCause::UnknownDevice => Some(
+                "the sending device's signature was not found."
+            ),
+            UtdCause::HistoricalMessageAndBackupIsDisabled => Some(
+                "historical messages are not available on this device because server-side key backup was disabled."
+            ),
+            UtdCause::WithheldForUnverifiedOrInsecureDevice => Some(
+                "your device doesn't meet the sender's security requirements."
+            ),
+            UtdCause::WithheldBySender => Some(
+                "the sender withheld this message from you."
+            ),
+            UtdCause::HistoricalMessageAndDeviceIsUnverified => Some(
+                "historical messages are not available; you must verify this device."
+            ),
+        }
+        _ => None,
+    };
+    let text = if let Some(cause) = cause_str {
+        format!("Unable to decrypt: {cause}")
+    } else {
+        String::from("Unable to decrypt this message.")
+    };
+    TextPreview::from((text, BeforeText::UsernameWithColon))
 }
 
 
