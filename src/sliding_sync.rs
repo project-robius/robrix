@@ -1999,9 +1999,10 @@ fn handle_load_rooms_panel_state(user_id: OwnedUserId) {
                     Cx::post_action(RoomsPanelRestoreAction::RestoreDockFromPersistentState(rooms_panel_state));
                 }
             }
-            Err(e) => {
+            Err(_e) => {
+                log!("Failed to restore dock layout from persistent state: {_e}");
                 enqueue_popup_notification(PopupItem {
-                    message: format!("Could not restore the previous dock layout: {e}"),
+                    message: format!("Could not restore the previous dock layout."),
                     auto_dismissal_duration: None
                 });
             }

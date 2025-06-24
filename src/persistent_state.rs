@@ -2,7 +2,7 @@
 use std::path::PathBuf;
 use anyhow::{anyhow, bail};
 use makepad_widgets::{
-    error, log, makepad_micro_serde::{DeRon, SerRon}, Cx, DVec2, WindowRef
+    dvec2, error, log, makepad_micro_serde::{DeRon, SerRon}, Cx, WindowRef
 };
 use matrix_sdk::{
     authentication::matrix::MatrixSession,
@@ -229,6 +229,7 @@ pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
         app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME),
         serde_json::to_string(&window_geom)?,
     )?;
+    log!("Successfully saved window geometry: {window_geom:?}");
     Ok(())
 }
 
@@ -250,21 +251,17 @@ pub fn load_window_state(window_ref: WindowRef, cx: &mut Cx) -> anyhow::Result<(
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(e.into()),
     };
+    let window_geom = serde_json::from_reader(file).map_err(|e| anyhow!(e))?;
+    log!("Restoring window geometry: {window_geom:?}");
     let WindowGeomState {
         inner_size,
         position,
         is_fullscreen,
-    } = serde_json::from_reader(file).map_err(|e| anyhow!(e))?;
+    } = window_geom;
     window_ref.configure_window(
         cx,
-        DVec2 {
-            x: inner_size.0,
-            y: inner_size.1
-        },
-        DVec2 {
-            x: position.0,
-            y: position.1
-        },
+        dvec2(inner_size.0, inner_size.1),
+        dvec2(position.0, position.1),
         is_fullscreen,
         "Robrix".to_string(),
     );
