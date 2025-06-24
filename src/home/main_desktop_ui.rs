@@ -165,7 +165,7 @@ impl MainDesktopUI {
                     );
                 }
             }
-            cx.action(MainDesktopUiAction::DockSaveToAppState);
+            cx.action(MainDesktopUiAction::SaveDockIntoAppState);
         } else {
             error!("BUG: failed to create tab for {room:?}");
         }
@@ -370,7 +370,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                             }
                         }
                     } else {
-                        error!("BUG: failed to load dock state upon LoadDockFromAppState action.");
+                        error!("BUG: failed to borrow dock widget to restore state upon LoadDockFromAppState action.");
                         continue;
                     }
                     // Note: the borrow of `dock` must end here *before* we call `self.focus_or_create_tab()`.
@@ -380,7 +380,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                     }
                     self.view.redraw(cx);
                 }
-                Some(MainDesktopUiAction::DockSaveToAppState) => {
+                Some(MainDesktopUiAction::SaveDockIntoAppState) => {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
                     let dock = self.view.dock(id!(dock));
                     if let Some(dock_items) = dock.clone_state() {
@@ -394,7 +394,7 @@ impl WidgetMatchEvent for MainDesktopUI {
         }
 
         if should_save_dock_action {
-            cx.action(MainDesktopUiAction::DockSaveToAppState);
+            cx.action(MainDesktopUiAction::SaveDockIntoAppState);
         }
     }
 }
@@ -402,8 +402,8 @@ impl WidgetMatchEvent for MainDesktopUI {
 /// Actions sent to the MainDesktopUI widget for saving/restoring its dock state.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum MainDesktopUiAction {
-    /// Save the dock state from the dock to the AppState.
-    DockSaveToAppState,
+    /// Save the state of the dock into the AppState.
+    SaveDockIntoAppState,
     /// Load the room panel state from the AppState to the dock.
     LoadDockFromAppState,
     None,

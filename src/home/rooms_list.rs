@@ -338,19 +338,18 @@ impl LiveHook for RoomsList {
 }
 
 impl RoomsList {
-
-    /// Determines if all known rooms have been loaded.
+    /// Determines if all known rooms have been loaded from the homeserver.
     ///
     /// Returns `true` if the number of rooms in `all_joined_rooms` and `invited_rooms` equals or exceeds
-    /// `max_known_rooms`, or `false` if `max_known_rooms` is `None`.
+    /// `max_known_rooms`.
+    /// Returns `false` if `max_known_rooms` is `None`.
     pub fn all_known_rooms_loaded(&self) -> bool {
         self.max_known_rooms.is_some_and(|max_rooms| {
             self.all_joined_rooms.len() + self.invited_rooms.borrow().len() >= max_rooms as usize
         })
     }
 
-    /// Returns `true` if the given `room_id` is already in the `all_joined_rooms` and `invited_rooms` lists.
-    /// and `false` if it is not.
+    /// Returns `true` if the given `room_id` is in the `all_joined_rooms` or `invited_rooms` list.
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
         self.all_joined_rooms.contains_key(room_id)
             || self.invited_rooms.borrow().contains_key(room_id)

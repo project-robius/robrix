@@ -541,7 +541,7 @@ pub fn build_grapheme_byte_positions(text: &str) -> Vec<usize> {
     positions
 }
 
-/// A ron serializable data type for room id.
+/// A RON-(de)serializable wrapper around [`OwnedRoomId`].
 #[derive(Clone, Debug)]
 pub struct OwnedRoomIdRon(pub OwnedRoomId);
 impl SerRon for OwnedRoomIdRon {

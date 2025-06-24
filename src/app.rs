@@ -383,7 +383,6 @@ impl AppMain for App {
             }
             if let Some(user_id) = current_user_id() {
                 let rooms_panel = self.app_state.saved_dock_state.clone();
-                let user_id = user_id.clone();
                 if let Err(e) = save_room_panel(rooms_panel, user_id) {
                     error!("Failed to save room panel. Error details: {}", e);
                 }
@@ -545,12 +544,15 @@ pub enum AppStateAction {
 pub enum RoomsPanelRestoreAction {
     /// The previously-saved state of the rooms panel & dock was loaded from storage
     /// and is now ready to be restored to the dock UI widget.
-    /// This will be handled by the top-level App and by each RoomScreen in the dock.
-    /// There is not SaveDockToPersistentState variant, as the dock will be save into persistent
-    /// storage during Event::Shutdown directly.
+    ///
+    /// This will be handled by the top-level App and by each RoomScreen.
+    ///
+    /// Note: there is no SaveDockToPersistentState variant.
+    /// The dock state is saved to persistent in the Event::Shutdown handler directly.
     RestoreDockFromPersistentState(SavedDockState),
     /// The given room was successfully loaded from the homeserver
-    /// and is known to our client.
+    /// and is now known to our client.
+    ///
     /// The RoomScreen for this room can now fully display the room's timeline.
     Success(OwnedRoomId),
     None,

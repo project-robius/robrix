@@ -616,11 +616,13 @@ live_design! {
                 color: (COLOR_PRIMARY_DARKER)
             }
             restore_status_label = <Label> {
-                align: {x: 0.0, y: 0.5},
+                align: {x: 0.5, y: 0.5},
                 padding: {left: 5.0, right: 0.0}
+                flow: RightWrap,
                 draw_text: {
                     color: (TYPING_NOTICE_TEXT_COLOR),
                     text_style: <REGULAR_TEXT>{font_size: 9}
+                    wrap: Word,
                 }
                 text: ""
             }
@@ -824,10 +826,10 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
-    /// Whether or not the room has been loaded yet.
+    /// Whether this room has been successfully loaded (received from the homeserver).
     #[rust] is_loaded: bool,
-    /// Whether or not all rooms have been loaded.
-    #[rust] all_room_loaded: bool,
+    /// Whether or not all rooms have been loaded (received from the homeserver).
+    #[rust] all_rooms_loaded: bool,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -851,17 +853,18 @@ impl Widget for RoomScreen {
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
-            if let (Some(room_id), true, false) = (&self.room_id, cx.has_global::<RoomsListRef>(), self.is_loaded) {
+            if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
                 if !rooms_list_ref.is_room_loaded(room_id) {
                     let status_text = if rooms_list_ref.all_known_rooms_loaded() {
-                        self.all_room_loaded = true;
+                        self.all_rooms_loaded = true;
                         format!(
                             "Room {} was not found in the homeserver's list of all rooms.",
                             self.room_name
                         )
                     } else {
-                        "[Placeholder for Spinner]".to_string()
+                        String::from("[Placeholder for Loading Spinner]\n\
+                         Waiting for this room to be loaded from the homeserver]")
                     };
                     self.view
                         .label(id!(restore_status_label))
@@ -869,7 +872,7 @@ impl Widget for RoomScreen {
                     return;
                 } else {
                     self.is_loaded = true;
-                    self.all_room_loaded = true;
+                    self.all_rooms_loaded = true;
                 }
             }
             self.process_timeline_updates(cx, &portal_list);
@@ -951,7 +954,8 @@ impl Widget for RoomScreen {
                 // Handle actions related to restoring the previously-saved state of rooms.
                 if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
                     if self.room_id.as_ref().is_some_and(|r| r == room_id) {
-                        // Reset room_id before displaying room.
+                        // `set_displayed_room` does nothing if the room_id is already set,
+                        // so we must clear it here.
                         self.room_id = None;
                         self.set_displayed_room(cx, room_id.clone(), self.room_name.clone());
                         self.view.label(id!(restore_status_label)).set_text(cx, "");
@@ -959,9 +963,7 @@ impl Widget for RoomScreen {
                     }
                 }
                 // Handle the highlight animation.
-                let Some(tl) = self.tl_state.as_mut() else {
-                    continue;
-                };
+                let Some(tl) = self.tl_state.as_mut() else { continue };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {
                         cx.widget_action(
@@ -2241,17 +2243,17 @@ impl RoomScreen {
             (existing, false)
         } else {
             let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
-                // RoomScreen is not waiting for the room to be loaded.
-                if !self.is_loaded && self.all_room_loaded {
-                    panic!("The timeline is not loaded and room_id {:?} is not waiting for its timeline to be loaded.", room_id);
+                if !self.is_loaded && self.all_rooms_loaded {
+                    panic!("BUG: timeline is not loaded, but room_id {:?} was not waiting for its timeline to be loaded.", room_id);
                 }
                 return;
             };
             let new_tl_state = TimelineUiState {
                 room_id: room_id.clone(),
-                // We assume the user has all power levels by default, just to avoid
-                // unexpectedly hiding any UI elements that should be visible to the user.
-                // This doesn't mean that the user can actually perform all actions.
+                // Initially, we assume the user has all power levels by default.
+                // This avoids unexpectedly hiding any UI elements that should be visible to the user.
+                // This doesn't mean that the user can actually perform all actions;
+                // the power levels will be updated from the homeserver once the room is opened.
                 user_power: UserPowerLevels::all(),
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,

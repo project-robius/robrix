@@ -2001,7 +2001,7 @@ fn handle_load_rooms_panel_state(user_id: OwnedUserId) {
             }
             Err(e) => {
                 enqueue_popup_notification(PopupItem {
-                    message: format!("Failed to restore the previous persistent dock state: {e}"),
+                    message: format!("Could not restore the previous dock layout: {e}"),
                     auto_dismissal_duration: None
                 });
             }
