@@ -97,7 +97,7 @@ impl Widget for MainDesktopUI {
         if !self.drawn_previously {
             let app_state = scope.data.get_mut::<AppState>().unwrap();
             if !app_state.saved_dock_state.open_rooms.is_empty() {
-                cx.action(MainDesktopUiAction::DockLoadToAppState);
+                cx.action(MainDesktopUiAction::LoadDockFromAppState);
             }
             cx.set_global(self.view.rooms_list(id!(rooms_list)));
             self.drawn_previously = true;
@@ -343,7 +343,7 @@ impl WidgetMatchEvent for MainDesktopUI {
 
             // Handle our own actions related to dock updates that we have previously emitted.
             match action.downcast_ref() {
-                Some(MainDesktopUiAction::DockLoadToAppState) => {
+                Some(MainDesktopUiAction::LoadDockFromAppState) => {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
                     let dock = self.view.dock(id!(dock));
                     self.room_order = app_state.saved_dock_state.room_order.clone();
@@ -370,7 +370,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                             }
                         }
                     } else {
-                        error!("BUG: failed to load dock state upon DockLoadToAppState action.");
+                        error!("BUG: failed to load dock state upon LoadDockFromAppState action.");
                         continue;
                     }
                     // Note: the borrow of `dock` must end here *before* we call `self.focus_or_create_tab()`.

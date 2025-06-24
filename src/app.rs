@@ -253,7 +253,7 @@ impl MatchEvent for App {
 
             if let Some(RoomsPanelRestoreAction::RestoreDockFromPersistentState(rooms_panel_state)) = action.downcast_ref() {
                 self.app_state.saved_dock_state = rooms_panel_state.clone();
-                cx.action(MainDesktopUiAction::DockLoadToAppState);
+                cx.action(MainDesktopUiAction::LoadDockFromAppState);
             }
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
