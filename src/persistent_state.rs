@@ -2,9 +2,7 @@
 use std::path::PathBuf;
 use anyhow::{anyhow, bail};
 use makepad_widgets::{
-    log,
-    makepad_micro_serde::{DeRon, SerRon},
-    Cx, WindowRef,
+    error, log, makepad_micro_serde::{DeRon, SerRon}, Cx, DVec2, WindowRef
 };
 use matrix_sdk::{
     authentication::matrix::MatrixSession,
@@ -209,11 +207,9 @@ pub fn save_room_panel(
         match room {
             SelectedRoom::JoinedRoom { room_id, .. }
             | SelectedRoom::InvitedRoom { room_id, .. } => {
-                assert!(
-                    rooms_panel_state.dock_items.contains_key(tab_id),
-                    "Open room id: {} not found in dock state",
-                    room_id
-                );
+                if !rooms_panel_state.dock_items.contains_key(tab_id) {
+                    error!("Room id: {} already in dock state", room_id);
+                }
             }
         }
     }
@@ -222,11 +218,11 @@ pub fn save_room_panel(
 
 /// Save the current state of window geometry state to persistent storage using windowRef.
 pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
-    let inner_size = window_ref.get_inner_size(cx).into();
-    let position = window_ref.get_position(cx).into();
+    let inner_size = window_ref.get_inner_size(cx);
+    let position = window_ref.get_position(cx);
     let window_geom = WindowGeomState {
-        inner_size,
-        position,
+        inner_size: (inner_size.x, inner_size.y),
+        position: (position.x, position.y),
         is_fullscreen: window_ref.is_fullscreen(cx),
     };
     std::fs::write(
@@ -262,8 +258,14 @@ pub fn load_window_state(window_ref: WindowRef, cx: &mut Cx) -> anyhow::Result<(
     } = serde_json::from_reader(file).map_err(|e| anyhow!(e))?;
     window_ref.configure_window(
         cx,
-        inner_size.into(),
-        position.into(),
+        DVec2 {
+            x: inner_size.0,
+            y: inner_size.1
+        },
+        DVec2 {
+            x: position.0,
+            y: position.1
+        },
         is_fullscreen,
         "Robrix".to_string(),
     );

@@ -374,6 +374,8 @@ impl RoomsList {
                         }
                     }
                     self.update_status_rooms_count();
+                    // Signal the UI to update the RoomScreen
+                    SignalToUI::set_ui_signal();
                 }
                 RoomsListUpdate::AddJoinedRoom(joined_room) => {
                     let room_id = joined_room.room_id.clone();

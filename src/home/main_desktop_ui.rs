@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
-use crate::{app::{AppState, AppStateAction, RoomsPanelRestoreAction, SelectedRoom}, home::rooms_list::RoomsListWidgetExt, utils::room_name_or_id};
+use crate::{app::{AppState, AppStateAction, SelectedRoom}, home::rooms_list::RoomsListWidgetExt, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 live_design! {

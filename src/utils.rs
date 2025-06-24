@@ -1,9 +1,9 @@
-use std::{borrow::Cow, fmt::Display, str::{Chars, FromStr}, time::SystemTime};
+use std::{borrow::Cow, fmt::Display, ops::Deref, str::{Chars, FromStr}, time::SystemTime};
 
-use serde::{ser::SerializeTuple, Deserialize, Serialize, Serializer, Deserializer};
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, Cx, DVec2, Event, ImageRef};
+//use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, Cx, Event, ImageRef};
+use makepad_widgets::{image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, *};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
 
@@ -586,47 +586,18 @@ impl AsRef<RoomId> for OwnedRoomIdRon {
         &self.0
     }
 }
+impl Deref for OwnedRoomIdRon {
+    type Target = OwnedRoomId;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 impl Display for OwnedRoomIdRon {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
-/// A Json serializable data type for `DVec2`.
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct DVec2Json(pub DVec2);
-impl Serialize for DVec2Json {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut tuple = serializer.serialize_tuple(2)?;
-        tuple.serialize_element(&self.0.x)?;
-        tuple.serialize_element(&self.0.y)?;
-        tuple.end()
-    }
-}
-impl<'de> Deserialize<'de> for DVec2Json {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let tuple = <(f64, f64)>::deserialize(deserializer)?;
-        Ok(DVec2Json(DVec2 {
-            x: tuple.0,
-            y: tuple.1,
-        }))
-    }
-}
-impl From<DVec2Json> for DVec2 {
-    fn from(dvec: DVec2Json) -> Self {
-        dvec.0
-    }
-}
-impl From<DVec2> for DVec2Json {
-    fn from(dvec: DVec2) -> Self {
-        DVec2Json(dvec)
-    }
-}
+
 
 #[cfg(test)]
 mod tests_human_readable_list {

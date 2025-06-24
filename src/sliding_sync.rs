@@ -1906,7 +1906,6 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
             replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
         },
     );
-    Cx::post_action(RoomsPanelRestoreAction::Success(room_id.clone()));
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can
     // send the `AddJoinedRoom` update to the UI, because the UI might immediately
     // issue a `MatrixRequest` that relies on that room being in `ALL_JOINED_ROOMS`.
@@ -1926,6 +1925,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         is_direct,
     }));
 
+    Cx::post_action(RoomsPanelRestoreAction::Success(room_id.clone()));
     spawn_fetch_room_avatar(room.clone());
 
     Ok(())

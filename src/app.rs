@@ -6,7 +6,7 @@ use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, DVec2Json, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 use serde::{self, Deserialize, Serialize};
 
@@ -488,8 +488,8 @@ pub enum SelectedRoom {
 impl SelectedRoom {
     pub fn room_id(&self) -> &OwnedRoomId {
         match self {
-            SelectedRoom::JoinedRoom { room_id, .. } => room_id.into(),
-            SelectedRoom::InvitedRoom { room_id, .. } => room_id.into(),
+            SelectedRoom::JoinedRoom { room_id, .. } => room_id,
+            SelectedRoom::InvitedRoom { room_id, .. } => room_id,
         }
     }
 
@@ -560,9 +560,9 @@ pub enum RoomsPanelRestoreAction {
 /// The state of the window geometry
 pub struct WindowGeomState {
     /// A tuple containing the window's width and height.
-    pub inner_size: DVec2Json,
+    pub inner_size: (f64, f64),
     /// A tuple containing the window's x and y position.
-    pub position: DVec2Json,
+    pub position: (f64, f64),
     /// Maximise fullscreen if true.
     pub is_fullscreen: bool,
 }
