@@ -2002,7 +2002,7 @@ fn handle_load_rooms_panel_state(user_id: OwnedUserId) {
             Err(_e) => {
                 log!("Failed to restore dock layout from persistent state: {_e}");
                 enqueue_popup_notification(PopupItem {
-                    message: format!("Could not restore the previous dock layout."),
+                    message: String::from("Could not restore the previous dock layout."),
                     auto_dismissal_duration: None
                 });
             }
