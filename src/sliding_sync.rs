@@ -121,10 +121,11 @@ async fn build_client(
     );
 
     let client = builder.build().await?;
+    let homeserver_url =  client.homeserver().to_string();
     Ok((
         client,
         ClientSessionPersisted {
-            homeserver: homeserver_url.to_string(),
+            homeserver: homeserver_url,
             db_path,
             passphrase,
         },

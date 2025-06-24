@@ -41,11 +41,14 @@ pub struct FullSessionPersisted {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sync_token: Option<String>,
 
-    /// The serializable version of the sliding_sync::Version.
+    /// The sliding sync version to use for this client session.
     /// 
-    /// If it is Native, it will use sliding sync.
-    /// If it is None, it will not use sliding sync.
-    /// This is set to the Matrix Client after being built.
+    /// This determines the sync protocol used by the Matrix client:
+    /// - `Native`: Uses the server's native sliding sync implementation for efficient syncing
+    /// - `None`: Falls back to standard Matrix sync (without sliding sync optimizations)
+    /// 
+    /// The value is restored and applied to the client via `client.set_sliding_sync_version()`
+    /// when rebuilding the session from persistent storage.
     pub sliding_sync_version: SlidingSyncVersion,
 }
 /// The serializable version of the sliding_sync::Version
@@ -53,6 +56,24 @@ pub struct FullSessionPersisted {
 pub enum SlidingSyncVersion {
     None,
     Native,
+}
+
+impl From<SlidingSyncVersion> for sliding_sync::Version {
+    fn from(version: SlidingSyncVersion) -> Self {
+        match version {
+            SlidingSyncVersion::None => sliding_sync::Version::None,
+            SlidingSyncVersion::Native => sliding_sync::Version::Native,
+        }
+    }
+}
+
+impl From<sliding_sync::Version> for SlidingSyncVersion {
+    fn from(version: sliding_sync::Version) -> Self {
+        match version {
+            sliding_sync::Version::None => SlidingSyncVersion::None,
+            sliding_sync::Version::Native => SlidingSyncVersion::Native,
+        }
+    }
 }
 
 fn user_id_to_file_name(user_id: &UserId) -> String {
@@ -131,7 +152,6 @@ pub async fn restore_session(
         title: "Connecting to homeserver".into(),
         status: status_str,
     });
-
     // Build the client with the previous settings from the session.
     let client = Client::builder()
         .homeserver_url(client_session.homeserver)
@@ -139,10 +159,7 @@ pub async fn restore_session(
         .handle_refresh_tokens()
         .build()
         .await?;
-    let sliding_sync_version = match sliding_sync_version {
-        SlidingSyncVersion::None => sliding_sync::Version::None,
-        SlidingSyncVersion::Native => sliding_sync::Version::Native
-    };
+    let sliding_sync_version = sliding_sync_version.into();
     client.set_sliding_sync_version(sliding_sync_version);
     let status_str = format!("Authenticating previous login session for {}...", user_session.meta.user_id);
     log!("{status_str}");
@@ -175,11 +192,7 @@ pub async fn save_session(
         .ok_or_else(|| anyhow!("A logged-in client should have a session"))?;
 
     save_latest_user_id(&user_session.meta.user_id).await?;
-    let sliding_sync_version = client.sliding_sync_version();
-    let sliding_sync_version = match sliding_sync_version {
-        sliding_sync::Version::None => SlidingSyncVersion::None,
-        sliding_sync::Version::Native => SlidingSyncVersion::Native
-    };
+    let sliding_sync_version = client.sliding_sync_version().into();
     // Save that user's session.
     let session_file = session_file_path(&user_session.meta.user_id);
     let serialized_session = serde_json::to_string(&FullSessionPersisted {
