@@ -216,7 +216,7 @@ pub fn save_room_panel(
     Ok(())
 }
 
-/// Save the current state of window geometry state to persistent storage using windowRef.
+/// Save the current state of the given window's geometry to persistent storage.
 pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
     let inner_size = window_ref.get_inner_size(cx);
     let position = window_ref.get_position(cx);
