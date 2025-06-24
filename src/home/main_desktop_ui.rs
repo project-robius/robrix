@@ -405,6 +405,6 @@ pub enum MainDesktopUiAction {
     /// Save the dock state from the dock to the AppState.
     DockSaveToAppState,
     /// Load the room panel state from the AppState to the dock.
-    DockLoadToAppState,
+    LoadDockFromAppState,
     None,
 }
