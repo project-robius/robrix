@@ -239,9 +239,8 @@ pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<SavedDoc
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(SavedDockState::default()),
         Err(e) => return Err(e.into())
     };
-    let dock_state: SavedDockState =
-        SavedDockState::deserialize_ron(&content).map_err(|er| anyhow::Error::msg(er.msg))?;
-    Ok(dock_state)
+    SavedDockState::deserialize_ron(&content)
+        .map_err(|er| anyhow::Error::msg(er.msg))
 }
 
 /// Loads the window geometry's state from persistent storage.
