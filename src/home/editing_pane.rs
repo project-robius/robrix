@@ -325,7 +325,7 @@ impl Widget for EditingPane {
 
                                 edited_content
                             }
-                        
+
                             MsgLikeKind::Poll(poll) => {
                                 let poll_result = poll.results();
                                 let poll_answers = poll_result.answers;
