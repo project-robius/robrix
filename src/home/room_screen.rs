@@ -615,13 +615,16 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
+
             restore_status_label = <Label> {
-                align: {x: 0.5, y: 0.5},
+                width: Fill, height: Fit,
+                align: {x: 0.5, y: 0.0},
                 padding: {left: 5.0, right: 0.0}
+                margin: 0,
                 flow: RightWrap,
                 draw_text: {
                     color: (TYPING_NOTICE_TEXT_COLOR),
-                    text_style: <REGULAR_TEXT>{font_size: 9}
+                    text_style: <REGULAR_TEXT>{font_size: 11}
                     wrap: Word,
                 }
                 text: ""
@@ -864,7 +867,7 @@ impl Widget for RoomScreen {
                         )
                     } else {
                         String::from("[Placeholder for Loading Spinner]\n\
-                         Waiting for this room to be loaded from the homeserver]")
+                         Waiting for this room to be loaded from the homeserver")
                     };
                     self.view
                         .label(id!(restore_status_label))

@@ -35,27 +35,32 @@ live_design! {
         draw_bg: {
             color: (COLOR_PRIMARY),
         }
-        
+
         inviter_view = <View> {
             width: Fill, height: Fit
             align: {x: 0.5, y: 0}
             spacing: 15,
             flow: Down,
+
+            restore_status_label = <Label> {
+                width: Fill, height: Fit,
+                align: {x: 0.5, y: 0},
+                padding: {left: 5.0, right: 0.0}
+                flow: RightWrap,
+                margin: 0,
+                draw_text: {
+                    color: (TYPING_NOTICE_TEXT_COLOR),
+                    text_style: <REGULAR_TEXT>{font_size: 11}
+                    wrap: Word,
+                }
+                text: ""
+            }
+
             <View> {
                 width: Fill, height: Fit
                 align: {x: 0.5, y: 0}
                 spacing: 10
-                restore_status_label = <Label> {
-                    align: {x: 0.5, y: 0.5},
-                    padding: {left: 5.0, right: 0.0}
-                    flow: RightWrap,
-                    draw_text: {
-                        color: (TYPING_NOTICE_TEXT_COLOR),
-                        text_style: <REGULAR_TEXT>{font_size: 9}
-                        wrap: Word,
-                    }
-                    text: ""
-                }
+
                 inviter_avatar = <Avatar> {
                     width: 30,
                     height: 30,
@@ -250,12 +255,12 @@ impl Widget for InviteScreen {
                     let status_text = if rooms_list_ref.all_known_rooms_loaded() {
                         self.all_rooms_loaded = true;
                         format!(
-                            "Room {:?} was not found in the \nhomeserver's list of all rooms.",
-                            self.room_name.clone().unwrap_or("unknown".to_string())
+                            "Room {:?} was not found in the homeserver's list of all rooms.",
+                            self.room_name.as_deref().unwrap_or_else(|| room_id.as_str())
                         )
                     } else {
                         String::from("[Placeholder for Loading Spinner]\n\
-                         Waiting for this room to be loaded from the homeserver]")
+                         Waiting for this room to be loaded from the homeserver")
                     };
                     self.view
                         .label(id!(restore_status_label))
@@ -273,7 +278,17 @@ impl Widget for InviteScreen {
 
         // Handle button clicks to accept or decline the invite
         if let Event::Actions(actions) = event {
-            let Some(info) = self.info.clone() else { return; };
+            // Handle actions related to restoring the previously-saved state of rooms.
+            for action in actions {
+                if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
+                    if self.room_id.as_ref().is_some_and(|inner_room_id| inner_room_id == room_id) {
+                        self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
+                        break;
+                    }
+                }
+            }
+
+            let Some(info) = self.info.as_ref() else { return; };
             if let Some(modifiers) = self.view.button(id!(cancel_button)).clicked_modifiers(actions) {
                 self.invite_state = InviteState::WaitingForLeaveResult;
                 if modifiers.shift {
@@ -348,14 +363,6 @@ impl Widget for InviteScreen {
                         self.invite_state = InviteState::WaitingOnUserInput;
                     }
                     continue;
-                }
-
-                // Handle actions related to restoring the previously-saved state of rooms.
-                if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
-                    if self.room_id.as_ref().is_some_and(|inner_room_id| inner_room_id == room_id) {
-                        self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
-                        continue;
-                    }
                 }
             }
         }
@@ -502,6 +509,9 @@ impl InviteScreen {
             self.has_shown_confirmation = false;
             self.is_loaded = true;
             self.all_rooms_loaded = true;
+            self.view
+                .label(id!(restore_status_label))
+                .set_text(cx, "");
             self.redraw(cx);
         }
     }

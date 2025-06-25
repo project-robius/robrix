@@ -1837,7 +1837,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
                 is_selected: false,
                 is_direct,
             }));
-            Cx::post_action(RoomsPanelRestoreAction::Success(room_id.clone()));
+            Cx::post_action(RoomsPanelRestoreAction::Success(room_id));
             return Ok(());
         }
         RoomState::Joined => { } // Fall through to adding the joined room below.
@@ -1925,7 +1925,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         is_direct,
     }));
 
-    Cx::post_action(RoomsPanelRestoreAction::Success(room_id.clone()));
+    Cx::post_action(RoomsPanelRestoreAction::Success(room_id));
     spawn_fetch_room_avatar(room.clone());
 
     Ok(())
