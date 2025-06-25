@@ -219,14 +219,14 @@ pub struct LogoutButton{
     /// This prevents showing multiple modal dialogs if the user
     /// clicks the logout button repeatedly.
     #[rust(false)] has_shown_modal: bool,
-    #[rust] logout_state: LogoutState,
+    #[rust] modal_interaction_state: LogoutModalState,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug,Default)]
-enum LogoutState {
+enum LogoutModalState {
     #[default]
-    Idle,
-    ConfirmationShown,
+    Ready,
+    ModalDisplayed,
     LogoutInProgress,
 }
 
@@ -245,8 +245,8 @@ impl WidgetMatchEvent for LogoutButton {
     fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
         let button = self.button(id!(logout_button));
         
-        if button.clicked(actions) && self.logout_state == LogoutState::Idle {
-            self.logout_state = LogoutState::ConfirmationShown;
+        if button.clicked(actions) && self.modal_interaction_state == LogoutModalState::Ready {
+            self.modal_interaction_state = LogoutModalState::ModalDisplayed;
             self.has_shown_modal = true;
             cx.action(LogoutConfirmModalAction::Open);
         }
@@ -256,18 +256,18 @@ impl WidgetMatchEvent for LogoutButton {
             if let Some(modal_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
                 match modal_action {
                     LogoutConfirmModalAction::Close => {
-                        self.logout_state = LogoutState::Idle;
+                        self.modal_interaction_state = LogoutModalState::Ready;
                         self.has_shown_modal = false;
                     },
                     LogoutConfirmModalAction::Confirm => {
-                        self.logout_state = LogoutState::LogoutInProgress;
+                        self.modal_interaction_state = LogoutModalState::LogoutInProgress;
                     },
                     LogoutConfirmModalAction::LogoutSuccess => {
-                        self.logout_state = LogoutState::Idle;
+                        self.modal_interaction_state = LogoutModalState::Ready;
                         self.has_shown_modal = false;
                     },
                     LogoutConfirmModalAction::LogoutFailed(_) => {
-                        self.logout_state = LogoutState::Idle;
+                        self.modal_interaction_state = LogoutModalState::Ready;
                         self.has_shown_modal = false;
                     },
                     _ => {}
