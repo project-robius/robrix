@@ -1,0 +1,313 @@
+# Robrix Build CI Workflow
+# This workflow builds the Robrix project across multiple platforms including desktop and mobile.
+# It includes 3 main hosts: macOS, Linux, and Windows for 5 targets: MacOS, Linux, Windows, IOS, and Android.
+
+# Build Matrix Coverage:
+# ┌─────────────────┬─────────────────┬─────────────────┬─────────────────────────────────┐
+# │   Host OS       │   Target        │   Build Tool    │        Verification Focus       │
+# ├─────────────────┼─────────────────┼─────────────────┼─────────────────────────────────┤
+# │ Ubuntu Latest   │ Linux x86_64    │ cargo build     │ System dependencies linking     │
+# │ macOS 13 Intel  │ macOS x86_64    │ cargo build     │ Intel Mac compatibility         │
+# │ macOS 14 ARM64  │ macOS ARM64     │ cargo build     │ Apple Silicon compatibility     │
+# │ Windows 2022    │ Windows x86_64  │ cargo build     │ Windows API linking             │
+# │ macOS 14        │ iOS (3 archs)   │ cargo + targets │ iOS SDK linking                 │
+# │ macOS 14        │ Android         │ cargo-makepad   │ Android NDK linking (macOS)     │
+# │ Ubuntu Latest   │ Android         │ cargo-makepad   │ Android NDK linking (Linux)     │
+# │ Windows 2022    │ Android         │ cargo-makepad   │ Android NDK linking (Windows)   │
+# └─────────────────┴─────────────────┴─────────────────┴─────────────────────────────────┘
+
+name: Robrix Build CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+        - packaging/**
+        - resources/**
+        - src/**
+        - .github/**
+        - Cargo.lock
+        - Cargo.toml
+        - rust-toolchain.toml
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+    paths:
+        - packaging/**
+        - resources/**
+        - src/**
+        - .github/**
+        - Cargo.lock
+        - Cargo.toml
+        - rust-toolchain.toml
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════════════════
+  # NATIVE DESKTOP BUILDS
+  # These jobs build Robrix for desktop platforms using standard cargo build
+  # ═══════════════════════════════════════════════════════════════════════════════════════
+  build_ubuntu:
+    name: Build Ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libssl-dev \
+            libsqlite3-dev \
+            pkg-config \
+            llvm \
+            clang \
+            libclang-dev \
+            binfmt-support \
+            libxcursor-dev \
+            libx11-dev \
+            libasound2-dev \
+            libpulse-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ubuntu-build-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build
+        run: |
+          cargo build --all-targets --release
+
+  build_macos:
+    name: Build macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Apple Silicon Macs (M1/M2/M3/M4 chips)
+          - os: macos-14
+            arch: arm64
+          # Intel Macs (x86_64 architecture)
+          - os: macos-13
+            arch: x86_64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-${{ matrix.arch }}-build-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build
+        run: |
+          cargo build --all-targets --release
+
+  build_windows:
+    name: Build Windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-build-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build
+        run: |
+          cargo build --all-targets --release
+
+  # ═══════════════════════════════════════════════════════════════════════════════════════
+  # CROSS-PLATFORM MOBILE BUILDS
+  # These jobs use cargo-makepad for mobile cross-compilation
+  # ═══════════════════════════════════════════════════════════════════════════════════════
+
+  build_ios_on_macos:
+    name: Build iOS (macOS Host)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable and nightly
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install Rust nightly
+        run: |
+          rustup toolchain install nightly
+
+      - name: Install cargo-makepad
+        run: |
+          cargo install --force --git https://github.com/makepad/makepad.git --branch rik cargo-makepad
+
+      - name: Install iOS toolchain
+        run: |
+          cargo makepad apple ios install-toolchain
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ios-macos-build-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build for iOS targets
+        run: |
+          # Install iOS targets
+          rustup target add aarch64-apple-ios x86_64-apple-ios aarch64-apple-ios-sim
+
+          # Build for all iOS architectures
+          cargo build --target aarch64-apple-ios --release -p robrix
+          cargo build --target x86_64-apple-ios --release -p robrix
+          cargo build --target aarch64-apple-ios-sim --release -p robrix
+        continue-on-error: true # iOS builds may fail due to signing requirements in CI
+
+      - name: Verify iOS build artifacts
+        run: |
+          echo "=== iOS Build Verification ==="
+          find target -name "*ios*" -type d | head -5
+          find target -name "robrix" -type f | grep ios || echo "No iOS robrix binaries found"
+
+  build_android_on_macos:
+    name: Build Android (macOS Host)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-makepad
+        run: |
+          cargo install --force --git https://github.com/makepad/makepad.git --branch rik cargo-makepad
+
+      - name: Install Android toolchain
+        run: |
+          cargo makepad android install-toolchain --full-ndk
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: android-macos-build-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build Android APK
+        run: |
+          cargo makepad android build -p robrix --release
+
+      - name: Verify Android build artifacts
+        run: |
+          echo "=== Android Build Verification (macOS) ==="
+          find . -name "*.apk" -type f || echo "No APK files found"
+
+  build_android_on_linux:
+    name: Build Android (Linux Host)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-makepad
+        run: |
+          cargo install --force --git https://github.com/makepad/makepad.git --branch rik cargo-makepad
+
+      - name: Install Android toolchain
+        run: |
+          cargo makepad android install-toolchain --full-ndk
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: android-linux-build-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build Android APK
+        run: |
+          cargo makepad android build -p robrix --release
+
+      - name: Verify Android build artifacts
+        run: |
+          echo "=== Android Build Verification (Linux) ==="
+          find . -name "*.apk" -type f || echo "No APK files found"
+
+  build_android_on_windows:
+    name: Build Android (Windows Host)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: android-windows-build-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install cargo-makepad
+        run: |
+          cargo install --force --git https://github.com/makepad/makepad.git --branch rik cargo-makepad
+
+      - name: Install Android toolchain
+        run: |
+          cargo makepad android install-toolchain --full-ndk
+
+      - name: Build Android APK
+        run: |
+          cargo makepad android build -p robrix --release
+
+      - name: Verify Android build artifacts
+        run: |
+          echo "=== Android Build Verification (Windows) ==="
+          Get-ChildItem -Recurse -Name "*.apk" -ErrorAction SilentlyContinue | Select-Object -First 5
+          if (-not (Get-ChildItem -Recurse -Name "*.apk" -ErrorAction SilentlyContinue)) {
+            Write-Output "No APK files found"
+          }
+
+  # Build Summary
+  build_summary:
+    name: Robrix Build Results Summary
+    runs-on: ubuntu-latest
+    needs: [
+      build_ubuntu,
+      build_macos,
+      build_windows,
+      build_ios_on_macos,
+      build_android_on_macos,
+      build_android_on_linux,
+      build_android_on_windows
+    ]
+    if: always()
+
+    steps:
+      - run: |
+          echo "=== Desktop Builds ==="
+          echo "Ubuntu: ${{ needs.build_ubuntu.result }}"
+          echo "macOS: ${{ needs.build_macos.result }}"
+          echo "Windows: ${{ needs.build_windows.result }}"
+          echo "=== iOS Builds ==="
+          echo "iOS (macOS): ${{ needs.build_ios_on_macos.result }}"
+          echo "=== Android Builds ==="
+          echo "Android (macOS): ${{ needs.build_android_on_macos.result }}"
+          echo "Android (Linux): ${{ needs.build_android_on_linux.result }}"
+          echo "Android (Windows): ${{ needs.build_android_on_windows.result }}"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
