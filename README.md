@@ -56,7 +56,10 @@ The following table shows which host systems can currently be used to build Robr
    sudo apt-get install libssl-dev libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev
    ```
 
-3. Then, build and run Robrix (`--release` is optional):
+3. Then, build and run Robrix. 
+> [!TIP]
+> The `--release` argument is optional. You can remove it for quicker builds, or replace it with `--profile release-lto` or `--profile distribution` for longer builds with higher performance. See the various `[profile.*]` sections in the [Cargo.toml](./Cargo.toml) file.
+
    ```sh
    cargo run --release
    ```
@@ -66,14 +69,14 @@ The following table shows which host systems can currently be used to build Robr
    ```
     * Note that if you enter your password on the command line, you should wrap it in **single quotes** (not double quotes) in order to prevent your shell from treating certain symbols as globs/regex patterns.
     * The `HOMESERVER_URL` argument is optional and uses the `matrix.org` homeserver by default.
-    * The Matrix homeserver must support native Sliding Sync, the same requirement as Element X.
+    * The specified homeserver must support native Sliding Sync, the same requirement as Element X.
 
 
 ## Building & Running Robrix on Mobile: Android, iOS, iPadOS
 
 1. Install the `cargo-makepad` build tool:
    ```sh
-   cargo install --force --git https://github.com/makepad/makepad.git --branch rik cargo-makepad
+   cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
    ```
 
 ### Android
