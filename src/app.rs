@@ -247,38 +247,26 @@ impl MatchEvent for App {
                         submit_async_request(MatrixRequest::Logout { is_desktop });
                     },
                     LogoutConfirmModalAction::LogoutSuccess => {
-                        logout_modal.set_loading(cx, false); 
+                        logout_modal.set_loading(cx, false);
                         modal.close(cx);
+                        self.app_state.logged_in = false;
+                        self.update_login_visibility(cx);
+                        self.ui.redraw(cx);
+                        continue;
                     },
-                    LogoutConfirmModalAction::LogoutFailed(error) => {
+                    LogoutConfirmModalAction::LogoutFailure(error) => {
                         logout_modal.set_loading(cx, false);
                         logout_modal.set_message(cx, &format!("Logout failed: {}", error));
                     },
                 }
             }
 
-            if let Some(login_action) = action.downcast_ref::<LoginAction>() {
-                match login_action {
-                    LoginAction::LoginSuccess => {
-                        log!("Received LoginAction::LoginSuccess, hiding login view.");
-                        self.app_state.logged_in = true;
-                        self.update_login_visibility(cx);
-                        self.ui.redraw(cx);
-                        continue;
-                    },
-                    LoginAction::LogoutSuccess => {
-                        cx.action(LogoutConfirmModalAction::LogoutSuccess);
-                        log!("Received LoginAction::LogoutSuccess, showing login view.");
-                        self.app_state.logged_in = false;
-                        self.update_login_visibility(cx);
-                        self.ui.redraw(cx);
-                        continue;
-                    },
-                    LoginAction::LogoutFailure(error) => {
-                        cx.action(LogoutConfirmModalAction::LogoutFailed(error.clone()));
-                    },
-                    _ => {}
-                }
+            if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
+                log!("Received LoginAction::LoginSuccess, hiding login view.");
+                self.app_state.logged_in = true;
+                self.update_login_visibility(cx);
+                self.ui.redraw(cx);
+                continue;
             }
 
             // Handle an action requesting to open the new message context menu.

@@ -266,7 +266,7 @@ impl WidgetMatchEvent for LogoutButton {
                         self.modal_interaction_state = LogoutModalState::Ready;
                         self.has_shown_modal = false;
                     },
-                    LogoutConfirmModalAction::LogoutFailed(_) => {
+                    LogoutConfirmModalAction::LogoutFailure(_) => {
                         self.modal_interaction_state = LogoutModalState::Ready;
                         self.has_shown_modal = false;
                     },

@@ -109,13 +109,14 @@ pub struct LogoutConfirmModal {
     #[rust(false)] dismiss_handled: bool,
 }
 
+/// Actions sent to or from the logout_confrim_modal.
 #[derive(Clone, Debug)]
 pub enum LogoutConfirmModalAction {
     Open,
     Close,
     Confirm,
     LogoutSuccess,
-    LogoutFailed(String),
+    LogoutFailure(String),
 }
 
 impl Widget for LogoutConfirmModal {
