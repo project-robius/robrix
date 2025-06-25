@@ -87,13 +87,13 @@ impl Widget for MainMobileUI {
                     .room_screen(id!(room_screen))
                     .set_displayed_room(cx, room_id.clone().into(), room_name.clone());
             }
-            Some(SelectedRoom::InvitedRoom { room_id, room_name: _ }) => {
+            Some(SelectedRoom::InvitedRoom { room_id, room_name }) => {
                 show_welcome = false;
                 show_room = false;
                 show_invite = true;
                 self.view
                     .invite_screen(id!(invite_screen))
-                    .set_displayed_invite(cx, room_id.clone().into());
+                    .set_displayed_invite(cx, room_id.clone().into(), room_name.clone());
             }
             None => {
                 show_welcome = true;

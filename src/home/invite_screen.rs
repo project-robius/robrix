@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem}}, sliding_sync::{submit_async_request, MatrixRequest}, utils};
+use crate::{app::RoomsPanelRestoreAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem}}, sliding_sync::{submit_async_request, MatrixRequest}, utils};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -35,17 +35,27 @@ live_design! {
         draw_bg: {
             color: (COLOR_PRIMARY),
         }
-
+        
         inviter_view = <View> {
             width: Fill, height: Fit
             align: {x: 0.5, y: 0}
             spacing: 15,
             flow: Down,
-
             <View> {
                 width: Fill, height: Fit
                 align: {x: 0.5, y: 0}
                 spacing: 10
+                restore_status_label = <Label> {
+                    align: {x: 0.5, y: 0.5},
+                    padding: {left: 5.0, right: 0.0}
+                    flow: RightWrap,
+                    draw_text: {
+                        color: (TYPING_NOTICE_TEXT_COLOR),
+                        text_style: <REGULAR_TEXT>{font_size: 9}
+                        wrap: Word,
+                    }
+                    text: ""
+                }
                 inviter_avatar = <Avatar> {
                     width: 30,
                     height: 30,
@@ -223,17 +233,47 @@ pub struct InviteScreen {
     /// This is used to prevent showing multiple popup notifications
     /// (one from the JoinLeaveRoomModal, and one from this invite screen).
     #[rust] has_shown_confirmation: bool,
+    /// The ID of the room that has been invited.
+    /// This is used to wait for RoomsPanel
+    #[rust] room_id: Option<OwnedRoomId>,
+    #[rust] room_name: Option<String>,
+    #[rust] is_loaded: bool,
+    #[rust] all_rooms_loaded: bool,
 }
 
 impl Widget for InviteScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if let Event::Signal = event {
+            if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
+                let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                if !rooms_list_ref.is_room_loaded(room_id) {
+                    let status_text = if rooms_list_ref.all_known_rooms_loaded() {
+                        self.all_rooms_loaded = true;
+                        format!(
+                            "Room {:?} was not found in the \nhomeserver's list of all rooms.",
+                            self.room_name.clone().unwrap_or("unknown".to_string())
+                        )
+                    } else {
+                        String::from("[Placeholder for Loading Spinner]\n\
+                         Waiting for this room to be loaded from the homeserver]")
+                    };
+                    self.view
+                        .label(id!(restore_status_label))
+                        .set_text(cx, &status_text);
+                    return;
+                } else {
+                    self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
+                }
+            }
+        }
+        
         self.view.handle_event(cx, event, scope);
 
         let orig_state = self.invite_state;
 
         // Handle button clicks to accept or decline the invite
         if let Event::Actions(actions) = event {
-            let Some(info) = self.info.as_ref() else { return; };
+            let Some(info) = self.info.clone() else { return; };
             if let Some(modifiers) = self.view.button(id!(cancel_button)).clicked_modifiers(actions) {
                 self.invite_state = InviteState::WaitingForLeaveResult;
                 if modifiers.shift {
@@ -264,6 +304,14 @@ impl Widget for InviteScreen {
             }
 
             for action in actions {
+                // Handle actions related to restoring the previously-saved state of rooms.
+                if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
+                    println!("RoomsPanelRestoreAction::Success({room_id}) now instant {:?} self.room_id {:?}", std::time::Instant::now(), self.room_id);
+                    if self.room_id.as_ref().is_some_and(|inner_room_id| inner_room_id == room_id) {
+                        self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
+                        continue;
+                    }
+                }
                 match action.downcast_ref() {
                     Some(JoinRoomAction::Joined { room_id }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingForJoinedRoom;
@@ -309,6 +357,7 @@ impl Widget for InviteScreen {
                     }
                     continue;
                 }
+                
             }
         }
 
@@ -319,6 +368,10 @@ impl Widget for InviteScreen {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if !self.is_loaded {
+            return self.view.label(id!(restore_status_label)).draw(cx, scope);
+            //return self.view.draw_walk(cx, scope, walk);
+        }
         let Some(info) = self.info.as_ref() else {
             // If we don't have any info, just return.
             return self.view.draw_walk(cx, scope, walk);
@@ -431,7 +484,10 @@ impl Widget for InviteScreen {
 
 impl InviteScreen {
     /// Sets the ID of the invited room that will be displayed by this screen.
-    pub fn set_displayed_invite(&mut self, cx: &mut Cx, room_id: OwnedRoomId) {
+    pub fn set_displayed_invite<S: Into<Option<String>>>(&mut self, cx: &mut Cx, room_id: OwnedRoomId, room_name: S) {
+        println!("RoomsPanelRestoreAction set_displayed_invite {:?}", room_id);
+        self.room_id = Some(room_id.clone());
+        self.room_name = room_name.into();
         if let Some(invite) = super::rooms_list::get_invited_rooms(cx)
             .borrow()
             .get(&room_id)
@@ -446,6 +502,8 @@ impl InviteScreen {
             });
             self.invite_state = invite.invite_state;
             self.has_shown_confirmation = false;
+            self.is_loaded = true;
+            self.all_rooms_loaded = true;
             self.redraw(cx);
         }
     }
@@ -453,9 +511,9 @@ impl InviteScreen {
 
 impl InviteScreenRef {
     /// See [`InviteScreen::set_displayed_invite()`].
-    pub fn set_displayed_invite(&self, cx: &mut Cx, room_id: OwnedRoomId) {
+    pub fn set_displayed_invite<S: Into<Option<String>>>(&self, cx: &mut Cx, room_id: OwnedRoomId, room_name: S) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_displayed_invite(cx, room_id);
+            inner.set_displayed_invite(cx, room_id, room_name);
         }
     }
 }

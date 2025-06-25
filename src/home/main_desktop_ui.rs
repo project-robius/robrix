@@ -87,7 +87,7 @@ pub struct MainDesktopUI {
 }
 
 impl Widget for MainDesktopUI {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {            
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.widget_match_event(cx, event, scope); // invokes `WidgetMatchEvent` impl
         self.view.handle_event(cx, event, scope);
     }
@@ -162,6 +162,7 @@ impl MainDesktopUI {
                     new_widget.as_invite_screen().set_displayed_invite(
                         cx,
                         room_id.clone().into(),
+                        room.room_name().cloned()
                     );
                 }
             }
@@ -363,8 +364,8 @@ impl WidgetMatchEvent for MainDesktopUI {
                                         room_name.clone(),
                                     );
                                 }
-                                Some(SelectedRoom::InvitedRoom { room_id, room_name: _ }) => {
-                                    widget.as_invite_screen().set_displayed_invite(cx, room_id.clone().into());
+                                Some(SelectedRoom::InvitedRoom { room_id, room_name }) => {
+                                    widget.as_invite_screen().set_displayed_invite(cx, room_id.clone().into(), room_name.clone());
                                 }
                                 _ => { }
                             }
