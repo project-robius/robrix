@@ -56,13 +56,14 @@ The following table shows which host systems can currently be used to build Robr
    sudo apt-get install libssl-dev libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev
    ```
 
-3. Then, build and run Robrix. 
-> [!TIP]
-> The `--release` argument is optional. You can remove it for quicker builds, or replace it with `--profile release-lto` or `--profile distribution` for longer builds with higher performance. See the various `[profile.*]` sections in the [Cargo.toml](./Cargo.toml) file.
-
+3. Then, build and run Robrix.
    ```sh
    cargo run --release
-   ```
+   ```   
+> [!TIP]
+> The `--release` argument is optional. You can remove it for quicker builds, or replace it with `--profile release-lto` or `--profile distribution` for longer builds with higher performance.    
+> See the various `[profile.*]` sections in the [Cargo.toml](./Cargo.toml) file.
+
    Optionally, you can provide a username and password on the command line for fast auto-login. Note that you only have to specify this once; after one successful login, Robrix will automatically re-login the most recent user without having to specify the user ID or password.
    ```sh
    cargo run --release -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
