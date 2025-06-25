@@ -96,7 +96,16 @@ live_design! {
 pub struct LogoutConfirmModal {
     #[deref] view: View,
     #[rust(false)] is_logging_out: bool,
-    /// Tracks if the modal has already processed a dismiss event to prevent infinite loops.
+    /// Flag to track if a background dismiss event has been processed.
+    /// 
+    /// This prevents event loops when the modal background is clicked:
+    /// 1. User clicks modal background → ModalAction::Dismissed is triggered
+    /// 2. We set dismiss_handled=true and emit Close event
+    /// 3. Any subsequent Dismissed events are ignored to break the loop
+    /// 
+    /// IMPORTANT: Must call reset_state() before opening the modal
+    /// to ensure background clicks can be processed again. This reset
+    /// typically happens in app.rs when handling LogoutConfirmModalAction::Open.
     #[rust(false)] dismiss_handled: bool,
 }
 
@@ -133,6 +142,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
             return;
         }
 
+        // Handle background click dismiss event, but only once to prevent event loops
         if modal_dismissed && !self.dismiss_handled {
             self.dismiss_handled = true;
             cx.action(LogoutConfirmModalAction::Close);
