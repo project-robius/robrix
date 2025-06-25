@@ -33,7 +33,7 @@ live_design! {
 
         show_bg: true,
         draw_bg: {
-            color: (COLOR_PRIMARY),
+            color: (COLOR_PRIMARY_DARKER),
         }
 
         inviter_view = <View> {
@@ -375,8 +375,8 @@ impl Widget for InviteScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if !self.is_loaded {
+            // only draw the loading status label if the room is not loaded yet.
             return self.view.label(id!(restore_status_label)).draw(cx, scope);
-            //return self.view.draw_walk(cx, scope, walk);
         }
         let Some(info) = self.info.as_ref() else {
             // If we don't have any info, just return.

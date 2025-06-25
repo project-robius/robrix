@@ -603,11 +603,6 @@ live_design! {
         flow: Down,
         spacing: 0.0
 
-        show_bg: true,
-        draw_bg: {
-            color: (COLOR_SECONDARY)
-        }
-
         room_screen_wrapper = <View> {
             width: Fill, height: Fill,
             flow: Overlay,
@@ -1242,7 +1237,8 @@ impl Widget for RoomScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if !self.is_loaded {
-            return self.view.draw_walk(cx, scope, walk);
+            // only draw the loading status label if the room is not loaded yet.
+            return self.view.label(id!(restore_status_label)).draw(cx, scope);
         }
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
