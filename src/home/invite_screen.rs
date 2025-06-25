@@ -304,14 +304,6 @@ impl Widget for InviteScreen {
             }
 
             for action in actions {
-                // Handle actions related to restoring the previously-saved state of rooms.
-                if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
-                    println!("RoomsPanelRestoreAction::Success({room_id}) now instant {:?} self.room_id {:?}", std::time::Instant::now(), self.room_id);
-                    if self.room_id.as_ref().is_some_and(|inner_room_id| inner_room_id == room_id) {
-                        self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
-                        continue;
-                    }
-                }
                 match action.downcast_ref() {
                     Some(JoinRoomAction::Joined { room_id }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingForJoinedRoom;
@@ -357,7 +349,14 @@ impl Widget for InviteScreen {
                     }
                     continue;
                 }
-                
+
+                // Handle actions related to restoring the previously-saved state of rooms.
+                if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
+                    if self.room_id.as_ref().is_some_and(|inner_room_id| inner_room_id == room_id) {
+                        self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
+                        continue;
+                    }
+                }
             }
         }
 
@@ -485,7 +484,6 @@ impl Widget for InviteScreen {
 impl InviteScreen {
     /// Sets the ID of the invited room that will be displayed by this screen.
     pub fn set_displayed_invite<S: Into<Option<String>>>(&mut self, cx: &mut Cx, room_id: OwnedRoomId, room_name: S) {
-        println!("RoomsPanelRestoreAction set_displayed_invite {:?}", room_id);
         self.room_id = Some(room_id.clone());
         self.room_name = room_name.into();
         if let Some(invite) = super::rooms_list::get_invited_rooms(cx)
