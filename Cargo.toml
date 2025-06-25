@@ -56,10 +56,21 @@ blurhash = { version = "0.2.3", default-features = false }
 all-features = true
 
 
-# Temporarily include all debug info even for release builds.
-[profile.release]
-debug = "full"
+## An optimized profile for development, with full debug info and assertions.
+[profile.debug-opt]
+inherits = "dev"
+opt-level = 3
 
+## An optimized release profile with thin LTO.
+[profile.release-lto]
+inherits = "release"
+lto = "thin"
+
+## Enable full optimizations when building app bundles for distribution.
+[profile.distribution]
+inherits = "release"
+codegen-units = 1
+lto = "fat" 
 
 
 ## Configuration for `cargo packager`
