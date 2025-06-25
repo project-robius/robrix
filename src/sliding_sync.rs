@@ -1455,7 +1455,7 @@ async fn async_main_loop(
                                 enqueue_rooms_list_update(RoomsListUpdate::Status {
                                     status: format!("Login failed: {e}"),
                                 });
-                    }
+                            }
                         }
                     },
                     None => {

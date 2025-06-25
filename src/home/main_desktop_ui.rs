@@ -365,7 +365,11 @@ impl WidgetMatchEvent for MainDesktopUI {
                                     );
                                 }
                                 Some(SelectedRoom::InvitedRoom { room_id, room_name }) => {
-                                    widget.as_invite_screen().set_displayed_invite(cx, room_id.clone().into(), room_name.clone());
+                                    widget.as_invite_screen().set_displayed_invite(
+                                        cx,
+                                        room_id.clone().into(),
+                                        room_name.clone(),
+                                    );
                                 }
                                 _ => { }
                             }
