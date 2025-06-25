@@ -12,7 +12,6 @@ live_design! {
     pub LogoutConfirmModal = {{LogoutConfirmModal}} {
         width: Fit,
         height: Fit,
-        align: {x: 0.5, y: 0.5},
 
         <RoundedView> {
             width: 300,
@@ -96,13 +95,15 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct LogoutConfirmModal {
     #[deref] view: View,
-    #[rust(false)] is_loading: bool,
+    #[rust(false)] is_logging_out: bool,
+    /// Tracks if the modal has already processed a dismiss event to prevent infinite loops.
+    #[rust(false)] dismiss_handled: bool,
 }
 
 #[derive(Clone, Debug)]
 pub enum LogoutConfirmModalAction {
     Open,
-    Cancel,
+    Close,
     Confirm,
     LogoutSuccess,
     LogoutFailed(String),
@@ -110,9 +111,6 @@ pub enum LogoutConfirmModalAction {
 
 impl Widget for LogoutConfirmModal {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if self.is_loading {
-            return;
-        }
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
     }
@@ -131,16 +129,22 @@ impl WidgetMatchEvent for LogoutConfirmModal {
             .iter()
             .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
 
-        if modal_dismissed && self.is_loading {
-            return
+        if modal_dismissed && self.is_logging_out {
+            return;
+        }
+
+        if modal_dismissed && !self.dismiss_handled {
+            self.dismiss_handled = true;
+            cx.action(LogoutConfirmModalAction::Close);
+            return;
         }
 
         let cancel_button_clicked = cancel_button.clicked(actions) ;
         if cancel_button_clicked { 
-            cx.action(LogoutConfirmModalAction::Cancel);
+            cx.action(LogoutConfirmModalAction::Close);
         }
-        if confirm_button.clicked(actions) && !self.is_loading {
-            self.is_loading = true;
+        if confirm_button.clicked(actions) && !self.is_logging_out {
+            self.is_logging_out = true;
             self.set_message(cx, "Waiting for logout...");
             self.update_button_states(cx);
             cx.action(LogoutConfirmModalAction::Confirm);
@@ -154,21 +158,16 @@ impl LogoutConfirmModal {
         self.label(id!(message)).set_text(cx, message);
     }
 
-    /// Returns a reference to the cancel button
-    fn cancel_button_ref(&self) -> ButtonRef {
-        self.button(id!(cancel_button))
-    }
-
-    /// Returns a reference to the confirm button
-    fn confirm_button_ref(&self) -> ButtonRef {
-        self.button(id!(confirm_button))
+    fn reset_state(&mut self) {
+        self.dismiss_handled = false;
+        self.is_logging_out = false;
     }
 
     fn update_button_states(&mut self, cx: &mut Cx) {
         let cancel_button = self.button(id!(cancel_button));
         let confirm_button = self.button(id!(confirm_button));
         
-        if self.is_loading {
+        if self.is_logging_out {
             cancel_button.apply_over(cx, live! {
                 draw_bg: { color: (COLOR_SECONDARY) },
                 draw_text: { color: (COLOR_DISABLE_GRAY) },
@@ -194,7 +193,7 @@ impl LogoutConfirmModal {
     }
 
     pub fn set_loading(&mut self, cx: &mut Cx, is_loading: bool) {
-        self.is_loading = is_loading;
+        self.is_logging_out = is_loading;
         self.update_button_states(cx);
         if !is_loading {
             self.set_message(cx, "Are you sure you want to logout?");
@@ -211,24 +210,16 @@ impl LogoutConfirmModalRef {
         }
     }
 
-    /// See [`LogoutConfirmModal::cancel_button_ref()`].
-    pub fn cancel_button_ref(&self) -> ButtonRef {
-        self.borrow()
-            .map(|inner| inner.cancel_button_ref())
-            .unwrap_or_default()
-    }
-
-    /// See [`LogoutConfirmModal::confirm_button_ref()`].
-    pub fn confirm_button_ref(&self) -> ButtonRef {
-        self.borrow()
-            .map(|inner| inner.confirm_button_ref())
-            .unwrap_or_default()
-    }
-
     /// See [`LogoutConfirmModal::set_loading()`].
     pub fn set_loading(&self, cx: &mut Cx, is_loading: bool) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_loading(cx, is_loading);
+        }
+    }
+
+    pub fn reset_state(&self) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.reset_state();
         }
     }
 

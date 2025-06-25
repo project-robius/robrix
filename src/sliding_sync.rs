@@ -1297,16 +1297,6 @@ pub fn get_client() -> Option<Client> {
     CLIENT.lock().unwrap().clone()
 }
 
-/// Sets the global Matrix client instance.
-/// This replaces any existing client with the new one.
-fn set_client(client: Client) {
-    if let Ok(mut client_guard) = CLIENT.lock() {
-        *client_guard = Some(client);
-    } else {
-        error!("Failed to acquire CLIENT lock when setting client");
-    }
-}
-
 /// Returns the user ID of the currently logged-in user, if any.
 pub fn current_user_id() -> Option<OwnedUserId> {
     CLIENT.lock().unwrap().as_ref().and_then(|c|
@@ -1532,7 +1522,7 @@ async fn async_main_loop(
     // enqueue_popup_notification(status.clone());
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
-    set_client(client.clone());
+    *CLIENT.lock().unwrap() = Some(client.clone());
 
     add_verification_event_handlers_and_sync_client(client.clone());
 

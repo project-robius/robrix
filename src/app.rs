@@ -168,8 +168,8 @@ live_design! {
 
                     // Logout confirmation modal 
                     logout_confirm_modal = <Modal> {
-                        align: {x: 0.5, y: 0.5} 
-                        width: Fill, height: Fill 
+                        // align: {x: 0.5, y: 0.5} 
+                        // width: Fill, height: Fill 
                         content: {
                             logout_confirm_modal_inner = <LogoutConfirmModal> {}
                         }
@@ -235,9 +235,10 @@ impl MatchEvent for App {
                 
                 match logout_action {
                     LogoutConfirmModalAction::Open=> {
+                        logout_modal.reset_state();
                         modal.open(cx)
                     },
-                    LogoutConfirmModalAction::Cancel => {
+                    LogoutConfirmModalAction::Close=> {
                         modal.close(cx);
                     },
                     LogoutConfirmModalAction::Confirm => {

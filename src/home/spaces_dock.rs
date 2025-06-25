@@ -215,6 +215,19 @@ impl Widget for Profile {
 #[derive(Live, LiveHook, Widget)]
 pub struct LogoutButton{
     #[deref] view: View,
+    /// Whether a LogoutConfirmModal dialog has been displayed.
+    /// This prevents showing multiple modal dialogs if the user
+    /// clicks the logout button repeatedly.
+    #[rust(false)] has_shown_modal: bool,
+    #[rust] logout_state: LogoutState,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug,Default)]
+enum LogoutState {
+    #[default]
+    Idle,
+    ConfirmationShown,
+    LogoutInProgress,
 }
 
 impl Widget for LogoutButton{
@@ -231,9 +244,37 @@ impl Widget for LogoutButton{
 impl WidgetMatchEvent for LogoutButton {
     fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
         let button = self.button(id!(logout_button));
-        if button.clicked(actions) {
+        
+        if button.clicked(actions) && self.logout_state == LogoutState::Idle {
+            self.logout_state = LogoutState::ConfirmationShown;
+            self.has_shown_modal = true;
             cx.action(LogoutConfirmModalAction::Open);
-            self.view.redraw(cx);
-        } 
+        }
+        
+        for action in actions.iter() {
+
+            if let Some(modal_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
+                match modal_action {
+                    LogoutConfirmModalAction::Close => {
+                        self.logout_state = LogoutState::Idle;
+                        self.has_shown_modal = false;
+                    },
+                    LogoutConfirmModalAction::Confirm => {
+                        self.logout_state = LogoutState::LogoutInProgress;
+                    },
+                    LogoutConfirmModalAction::LogoutSuccess => {
+                        self.logout_state = LogoutState::Idle;
+                        self.has_shown_modal = false;
+                    },
+                    LogoutConfirmModalAction::LogoutFailed(_) => {
+                        self.logout_state = LogoutState::Idle;
+                        self.has_shown_modal = false;
+                    },
+                    _ => {}
+                }
+            }
+
+        }
+
     }
 }
