@@ -414,8 +414,8 @@ impl WidgetMatchEvent for RobrixPopupNotification {
             if view.button(id!(close_button)).clicked(actions) {
                 cx.stop_timer(*close_timer);
                 view.animator_cut(cx, id!(mode.close_slider));
-                self.draw_bg.redraw(cx);
                 self.popups.remove(i);
+                self.draw_bg.redraw(cx);
                 break;
             }
         }
