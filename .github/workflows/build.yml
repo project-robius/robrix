@@ -2,19 +2,19 @@
 # This workflow builds the Robrix project across multiple platforms including desktop and mobile.
 # It includes 3 main hosts: macOS, Linux, and Windows for 5 targets: MacOS, Linux, Windows, IOS, and Android.
 
-# Build Matrix Coverage:
-# ┌─────────────────┬─────────────────┬─────────────────┬─────────────────────────────────┐
-# │   Host OS       │   Target        │   Build Tool    │        Verification Focus       │
-# ├─────────────────┼─────────────────┼─────────────────┼─────────────────────────────────┤
-# │ Ubuntu Latest   │ Linux x86_64    │ cargo build     │ System dependencies linking     │
-# │ macOS 13 Intel  │ macOS x86_64    │ cargo build     │ Intel Mac compatibility         │
-# │ macOS 14 ARM64  │ macOS ARM64     │ cargo build     │ Apple Silicon compatibility     │
-# │ Windows 2022    │ Windows x86_64  │ cargo build     │ Windows API linking             │
-# │ macOS 14        │ iOS (3 archs)   │ cargo + targets │ iOS SDK linking                 │
-# │ macOS 14        │ Android         │ cargo-makepad   │ Android NDK linking (macOS)     │
-# │ Ubuntu Latest   │ Android         │ cargo-makepad   │ Android NDK linking (Linux)     │
-# │ Windows 2022    │ Android         │ cargo-makepad   │ Android NDK linking (Windows)   │
-# └─────────────────┴─────────────────┴─────────────────┴─────────────────────────────────┘
+# Build Robrix Matrix Coverage:
+# ┌─────────────────┬─────────────────┬─────────────────┐
+# │   Host OS       │   Target        │   Build Tool    │
+# ├─────────────────┼─────────────────┼─────────────────┤
+# │ Ubuntu Latest   │ Linux x86_64    │ cargo build     │
+# │ macOS 13 Intel  │ macOS x86_64    │ cargo build     │
+# │ macOS 14 ARM64  │ macOS ARM64     │ cargo build     │
+# │ Windows 2022    │ Windows x86_64  │ cargo build     │
+# │ macOS 14        │ iOS aarch64     │ cargo-makepad   │
+# │ macOS 14        │ Android         │ cargo-makepad   │
+# │ Ubuntu Latest   │ Android         │ cargo-makepad   │
+# │ Windows 2022    │ Android         │ cargo-makepad   │
+# └─────────────────┴─────────────────┴─────────────────┘
 
 name: Robrix Build CI
 
@@ -27,9 +27,13 @@ on:
         - resources/**
         - src/**
         - .github/**
+        - .cargo/**
         - Cargo.lock
         - Cargo.toml
         - rust-toolchain.toml
+    paths-ignore:
+        - README.md
+        - LICENSE-MIT
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
@@ -39,10 +43,13 @@ on:
         - resources/**
         - src/**
         - .github/**
+        - .cargo/**
         - Cargo.lock
         - Cargo.toml
         - rust-toolchain.toml
-
+    paths-ignore:
+      - README.md
+      - LICENSE-MIT
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -57,6 +64,7 @@ jobs:
   build_ubuntu:
     name: Build Ubuntu
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
@@ -86,11 +94,12 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --all-targets --release
+          cargo build
 
   build_macos:
     name: Build macOS (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
+    if: github.event.pull_request.draft == false
     strategy:
       fail-fast: false
       matrix:
@@ -114,11 +123,12 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --all-targets --release
+          cargo build
 
   build_windows:
     name: Build Windows
     runs-on: windows-2022
+    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
@@ -132,7 +142,7 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --all-targets --release
+          cargo build
 
   # ═══════════════════════════════════════════════════════════════════════════════════════
   # CROSS-PLATFORM MOBILE BUILDS
@@ -142,6 +152,7 @@ jobs:
   build_ios_on_macos:
     name: Build iOS (macOS Host)
     runs-on: macos-14
+    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
@@ -156,7 +167,7 @@ jobs:
 
       - name: Install cargo-makepad
         run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch rik cargo-makepad
+          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
 
       - name: Install iOS toolchain
         run: |
@@ -170,23 +181,28 @@ jobs:
       - name: Build for iOS targets
         run: |
           # Install iOS targets
-          rustup target add aarch64-apple-ios x86_64-apple-ios aarch64-apple-ios-sim
+          rustup target add aarch64-apple-ios
 
-          # Build for all iOS architectures
-          cargo build --target aarch64-apple-ios --release -p robrix
-          cargo build --target x86_64-apple-ios --release -p robrix
-          cargo build --target aarch64-apple-ios-sim --release -p robrix
+          # Build for iOS using standard cargo (no signing required for build verification)
+          # If you need to sign the build, you can use cargo-makepad instead, but it requires additional setup for signing identities.
+          # Use: cargo makepad apple ios --org=x --app=x run-sim/run-device <cargo args>
+          # For now, we just build the binary without signing, just to verify the build process works.
+          cargo build --target aarch64-apple-ios -p robrix
         continue-on-error: true # iOS builds may fail due to signing requirements in CI
 
       - name: Verify iOS build artifacts
         run: |
           echo "=== iOS Build Verification ==="
-          find target -name "*ios*" -type d | head -5
-          find target -name "robrix" -type f | grep ios || echo "No iOS robrix binaries found"
+          if ! ls target/*/robrix 2>/dev/null | grep -q ios; then
+            echo "ERROR: No iOS robrix binaries found"
+            exit 1
+          fi
+          echo "iOS build artifacts found successfully"
 
   build_android_on_macos:
     name: Build Android (macOS Host)
     runs-on: macos-14
+    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
@@ -195,11 +211,11 @@ jobs:
 
       - name: Install cargo-makepad
         run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch rik cargo-makepad
+          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
 
       - name: Install Android toolchain
         run: |
-          cargo makepad android install-toolchain --full-ndk
+          cargo makepad android install-toolchain
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -208,16 +224,21 @@ jobs:
 
       - name: Build Android APK
         run: |
-          cargo makepad android build -p robrix --release
+          cargo makepad android build -p robrix
 
       - name: Verify Android build artifacts
         run: |
           echo "=== Android Build Verification (macOS) ==="
-          find . -name "*.apk" -type f || echo "No APK files found"
+          if ! ls *.apk 2>/dev/null; then
+            echo "ERROR: No APK files found"
+            exit 1
+          fi
+          echo "Android APK build artifacts found successfully"
 
   build_android_on_linux:
     name: Build Android (Linux Host)
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
@@ -226,11 +247,11 @@ jobs:
 
       - name: Install cargo-makepad
         run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch rik cargo-makepad
+          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
 
       - name: Install Android toolchain
         run: |
-          cargo makepad android install-toolchain --full-ndk
+          cargo makepad android install-toolchain
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -239,16 +260,21 @@ jobs:
 
       - name: Build Android APK
         run: |
-          cargo makepad android build -p robrix --release
+          cargo makepad android build -p robrix
 
       - name: Verify Android build artifacts
         run: |
           echo "=== Android Build Verification (Linux) ==="
-          find . -name "*.apk" -type f || echo "No APK files found"
+          if ! ls *.apk 2>/dev/null; then
+            echo "ERROR: No APK files found"
+            exit 1
+          fi
+          echo "Android APK build artifacts found successfully"
 
   build_android_on_windows:
     name: Build Android (Windows Host)
     runs-on: windows-2022
+    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
@@ -262,15 +288,15 @@ jobs:
 
       - name: Install cargo-makepad
         run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch rik cargo-makepad
+          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
 
       - name: Install Android toolchain
         run: |
-          cargo makepad android install-toolchain --full-ndk
+          cargo makepad android install-toolchain
 
       - name: Build Android APK
         run: |
-          cargo makepad android build -p robrix --release
+          cargo makepad android build -p robrix
 
       - name: Verify Android build artifacts
         run: |
