@@ -16,8 +16,7 @@ version = "0.0.1-pre-alpha-3"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev" }
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "emit_key_down_unhandled_on_unused_hit" }
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
 robius-use-makepad = "0.1.1"
@@ -57,10 +56,21 @@ blurhash = { version = "0.2.3", default-features = false }
 all-features = true
 
 
-# Temporarily include all debug info even for release builds.
-[profile.release]
-debug = "full"
+## An optimized profile for development, with full debug info and assertions.
+[profile.debug-opt]
+inherits = "dev"
+opt-level = 3
 
+## An optimized release profile with thin LTO.
+[profile.release-lto]
+inherits = "release"
+lto = "thin"
+
+## Enable full optimizations when building app bundles for distribution.
+[profile.distribution]
+inherits = "release"
+codegen-units = 1
+lto = "fat" 
 
 
 ## Configuration for `cargo packager`
