@@ -25,7 +25,7 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, Once}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex}};
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -436,14 +436,12 @@ async fn async_worker(
             MatrixRequest::Logout { is_desktop } => {
                 let _logout_task = Handle::current().spawn(async move {
                     match logout_and_refresh(is_desktop).await {
-                        Ok(state) => match state {
-                            RefreshState::NeedRelogin => {
-                                log!("need to relogin");
-                            }
+                        Ok(()) => {
+                            log!("need to relogin");
                         },
                         Err(e) => {
                             error!("Logout and refresh failed: {e:?}");
-                            enqueue_popup_notification(PopupItem { message: format!("Operation failed: {e}"), auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem { message: format!("Logout failed: {e}"), auto_dismissal_duration: None });
                         }
                     }
                 });
@@ -1313,15 +1311,6 @@ pub fn get_sync_service() -> Option<Arc<SyncService>> {
     SYNC_SERVICE.lock().ok()?.as_ref().cloned()
 }
 
-/// Set the sync service.
-fn set_sync_service(service: SyncService) {
-    if let Ok(mut service_guard) = SYNC_SERVICE.lock() {
-        *service_guard = Some(Arc::new(service));
-    } else {
-        error!("Failed to acquire SYNC_SERVICE lock when setting sync service");
-    }
-}
-
 /// The list of users that the current user has chosen to ignore.
 /// Ideally we shouldn't have to maintain this list ourselves,
 /// but the Matrix SDK doesn't currently properly maintain the list of ignored users.
@@ -1383,7 +1372,6 @@ fn username_to_full_user_id(
 }
 
 
-static TRACING_INITIALIZED: Once = Once::new();
 /// Info we store about a room received by the room list service.
 ///
 /// This struct is necessary in order for us to track the previous state
@@ -1417,9 +1405,7 @@ async fn async_main_loop(
     mut login_receiver: Receiver<LoginRequest>,
 ) -> Result<()> {
     // only init subscribe once
-    TRACING_INITIALIZED.call_once(|| {
-        tracing_subscriber::fmt::init();
-    });
+    let _ = tracing_subscriber::fmt::try_init();
 
     let most_recent_user_id = persistent_state::most_recent_user_id();
     log!("Most recent user ID: {most_recent_user_id:?}");
@@ -1434,7 +1420,7 @@ async fn async_main_loop(
         most_recent_user_id.is_none()
             || std::env::args().any(|arg| arg == "--login-screen" || arg == "--force-login")
     );
-
+    log!("Waiting for login? {}", wait_for_login);
 
     let new_login_opt = if !wait_for_login {
         let specified_username = cli_parse_result.as_ref().ok().and_then(|cli|
@@ -1535,7 +1521,7 @@ async fn async_main_loop(
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
     let room_list_service = sync_service.room_list_service();
-    set_sync_service(sync_service);
+    *SYNC_SERVICE.lock().unwrap() = Some(Arc::new(sync_service));
 
     let all_rooms_list = room_list_service.all_rooms().await?;
     handle_room_list_service_loading_state(all_rooms_list.loading_state());
@@ -2558,7 +2544,6 @@ async fn spawn_sso_server(
     // if that occurs.
     let client_and_session_opt = DEFAULT_SSO_CLIENT.lock().unwrap().take();
 
-    // handle in SsoClient Task, registered
     Handle::current().spawn(async move {
         // Try to use the DEFAULT_SSO_CLIENT that we proactively created
         // during initialization (to speed up opening the SSO browser window).
@@ -2812,11 +2797,6 @@ impl UserPowerLevels {
     }
 }
 
-#[derive(Debug)]
-enum RefreshState {
-    NeedRelogin,
-}
-
 /// Logs out the current user and prepares the application for a new login session.
 ///
 /// Performs server-side logout, cleans up client state, closes all tabs, 
@@ -2826,9 +2806,9 @@ enum RefreshState {
 /// - `is_desktop` - Boolean indicating if the current UI mode is desktop (true) or mobile (false).
 /// 
 /// # Returns
-/// - `Ok(RefreshState::NeedRelogin)` - Logout succeeded (possibly with cleanup warnings)
+/// - `Ok(())` - Logout succeeded (possibly with cleanup warnings)
 /// - `Err(...)` - Logout failed with detailed error
-async fn logout_and_refresh(is_desktop :bool) -> Result<RefreshState> {
+async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
     // Collect all errors encountered during the logout process
     let mut errors = Vec::new();
     log!("Starting logout process...");
@@ -2873,12 +2853,12 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<RefreshState> {
 
     // Desktop UI has tabs that must be properly closed, while mobile UI has no tabs concept.
     if is_desktop {
-        log!("Requesting to close all tabs in desktop...");
-        let (tx, rx)  = oneshot::channel::<String>();
-        Cx::post_action(MainDesktopUiAction::CloseAllTabs { sender: tx });
+        log!("Requesting to close all tabs in desktop");
+        let (tx, rx)  = oneshot::channel::<bool>();
+        Cx::post_action(MainDesktopUiAction::CloseAllTabs { on_close_all: tx });
         match rx.await {
             Ok(_) => {
-                log!("Success close all tabs...");
+                log!("Received signal that the MainDesktopUI successfully closed all tabs");
             },
             Err(e)=> {
                 let error_msg = format!("Close all tab failed {e}");
@@ -2901,12 +2881,10 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<RefreshState> {
     // Restart the Matrix tokio runtime
     // This is a critical step; failure might prevent future logins
     log!("Restarting Matrix tokio runtime...");
-    if let Err(e) = start_matrix_tokio() {
-        let error_msg = format!("Failed to restart Matrix runtime: {}. Manual app restart might be required to log in again.", e);
-        log!("Error: {}", error_msg);
-        errors.push(error_msg.clone());
+    if let Err(_) = start_matrix_tokio() {
         // Send failure notification and return immediately, as the runtime is fundamental
-        let final_error_msg = format!("Critical error during logout: {}. Please try restarting the application.", errors.join("; "));
+        let final_error_msg = String::from("Logout succeeded, but Robrix could not re-connect to the Matrix backend. Please exit and restart Robrix");
+
         Cx::post_action(LogoutAction::LogoutFailure(final_error_msg.clone()));
         return Err(anyhow::anyhow!(final_error_msg));
     }
@@ -2917,7 +2895,7 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<RefreshState> {
         // Complete success
         log!("Logout process completed successfully.");
         Cx::post_action(LogoutAction::LogoutSuccess);
-        Ok(RefreshState::NeedRelogin)
+        Ok(())
     } else {
         // Partial success (server logout ok, but cleanup errors)
         let warning_msg = format!(
@@ -2926,7 +2904,7 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<RefreshState> {
         );
         log!("Warning: {}", warning_msg);
         Cx::post_action(LogoutAction::LogoutSuccess); 
-        Ok(RefreshState::NeedRelogin)
+        Ok(())
     }
 
 }

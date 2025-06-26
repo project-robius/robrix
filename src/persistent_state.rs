@@ -195,17 +195,14 @@ pub async fn delete_latest_user_id() -> anyhow::Result<bool> {
     if last_login_path.exists() {
         match fs::remove_file(&last_login_path).await {
             Ok(_) => {
-                log!("Successfully deleted last_login.txt");
+                log!("Successfully removed latest user file during logout process");
                 Ok(true)
             }
             Err(e) => {
-                let err_msg = format!("Failed to remove {LATEST_USER_ID_FILE_NAME}: {e}");
-                log!("{}", err_msg);
-                Err(anyhow::anyhow!(err_msg))
+                Err(anyhow::anyhow!("Failed to remove latest user file: {e}"))
             }
         }
     } else {
-        log!("{LATEST_USER_ID_FILE_NAME} not found, nothing to delete");
         Ok(false)
     }
 }
