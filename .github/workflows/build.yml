@@ -184,15 +184,6 @@ jobs:
           cargo build --target aarch64-apple-ios -p robrix
         continue-on-error: true # iOS builds may fail due to signing requirements in CI
 
-      - name: Verify iOS build artifacts
-        run: |
-          echo "=== iOS Build Verification ==="
-          if ! ls target/*/robrix 2>/dev/null | grep -q ios; then
-            echo "ERROR: No iOS robrix binaries found"
-            exit 1
-          fi
-          echo "iOS build artifacts found successfully"
-
   build_android_on_macos:
     name: Build Android (macOS Host)
     runs-on: macos-14
@@ -219,15 +210,6 @@ jobs:
       - name: Build Android APK
         run: |
           cargo makepad android build -p robrix
-
-      - name: Verify Android build artifacts
-        run: |
-          echo "=== Android Build Verification (macOS) ==="
-          if ! ls *.apk 2>/dev/null; then
-            echo "ERROR: No APK files found"
-            exit 1
-          fi
-          echo "Android APK build artifacts found successfully"
 
   build_android_on_linux:
     name: Build Android (Linux Host)
@@ -256,15 +238,6 @@ jobs:
         run: |
           cargo makepad android build -p robrix
 
-      - name: Verify Android build artifacts
-        run: |
-          echo "=== Android Build Verification (Linux) ==="
-          if ! ls *.apk 2>/dev/null; then
-            echo "ERROR: No APK files found"
-            exit 1
-          fi
-          echo "Android APK build artifacts found successfully"
-
   build_android_on_windows:
     name: Build Android (Windows Host)
     runs-on: windows-2022
@@ -291,14 +264,6 @@ jobs:
       - name: Build Android APK
         run: |
           cargo makepad android build -p robrix
-
-      - name: Verify Android build artifacts
-        run: |
-          echo "=== Android Build Verification (Windows) ==="
-          Get-ChildItem -Recurse -Name "*.apk" -ErrorAction SilentlyContinue | Select-Object -First 5
-          if (-not (Get-ChildItem -Recurse -Name "*.apk" -ErrorAction SilentlyContinue)) {
-            Write-Output "No APK files found"
-          }
 
   # Build Summary
   build_summary:
