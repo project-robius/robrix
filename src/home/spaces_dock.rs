@@ -254,11 +254,9 @@ impl WidgetMatchEvent for LogoutButton {
 
             if let Some(modal_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
                 match modal_action {
-                    LogoutConfirmModalAction::Close { successful, was_internal } => {
-                        if *was_internal || *successful {
-                            self.modal_interaction_state = LogoutModalState::Ready;
-                            self.has_shown_modal = false;
-                        }
+                    LogoutConfirmModalAction::Close { .. } => {
+                        self.modal_interaction_state = LogoutModalState::Ready;
+                        self.has_shown_modal = false;
                     },
                     _ => {}
                 }

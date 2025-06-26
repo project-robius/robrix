@@ -230,17 +230,14 @@ impl MatchEvent for App {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
             if let Some(logout_modal_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
-                let modal = self.ui.modal(id!(logout_confirm_modal));
-                let logout_modal = self.ui.logout_confirm_modal(id!(logout_confirm_modal_inner));
-                
                 match logout_modal_action {
                     LogoutConfirmModalAction::Open=> {
-                        logout_modal.reset_state();
-                        modal.open(cx)
+                        self.ui.logout_confirm_modal(id!(logout_confirm_modal_inner)).reset_state(cx);
+                        self.ui.modal(id!(logout_confirm_modal)).open(cx)
                     },
                     LogoutConfirmModalAction::Close {was_internal, ..}=> {
                         if *was_internal {
-                            modal.close(cx);
+                            self.ui.modal(id!(logout_confirm_modal)).close(cx);
                         }
                     },
                     _ => {}

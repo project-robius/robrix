@@ -150,7 +150,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
         
         if cancel_clicked || modal_dismissed {
             cx.action(LogoutConfirmModalAction::Close { successful: false, was_internal: cancel_clicked });
-            self.reset_state();
+            self.reset_state(cx);
             return;
         }
 
@@ -158,11 +158,10 @@ impl WidgetMatchEvent for LogoutConfirmModal {
         if confirm_button.clicked(actions) {
             if let Some(successful) = self.final_success {
                 cx.action(LogoutConfirmModalAction::Close { successful, was_internal: true });
-                self.reset_state();
+                self.reset_state(cx);
                 return;
             } else {
                 self.set_message(cx, "Waiting for logout...");
-                
                 confirm_button.set_enabled(cx, false);
                 cancel_button.set_enabled(cx, false);
                 submit_async_request(MatrixRequest::Logout { is_desktop: cx.display_context.is_desktop() });
@@ -171,25 +170,13 @@ impl WidgetMatchEvent for LogoutConfirmModal {
         }
 
         for action in actions {
-            match action.downcast_ref() {
-                Some(LogoutAction::LogoutSuccess) => {
-                    self.set_message(cx, &format!("Are you sure you want to logout?"));
-                    confirm_button.set_enabled(cx, true);
-                    confirm_button.set_text(cx, "Confirm");
-                    cancel_button.set_visible(cx, true);
-                    cancel_button.set_enabled(cx, true);
-                    self.final_success = None;
-                    needs_redraw = true;
-                },
-                Some(LogoutAction::LogoutFailure(error)) => {
-                    self.set_message(cx, &format!("Logout failed: {}", error));
-                    self.final_success = Some(false);
-                    confirm_button.set_text(cx, "Okay");
-                    confirm_button.set_enabled(cx, true);
-                    cancel_button.set_visible(cx, false);
-                    needs_redraw = true;
-                }
-                _=> {}
+            if let Some(LogoutAction::LogoutFailure(error)) = action.downcast_ref() {
+                self.set_message(cx, &format!("Logout failed: {}", error));
+                self.final_success = Some(false);
+                confirm_button.set_text(cx, "Okay");
+                confirm_button.set_enabled(cx, true);
+                cancel_button.set_visible(cx, false);
+                needs_redraw = true;
             }
         }
 
@@ -206,8 +193,16 @@ impl LogoutConfirmModal {
         self.label(id!(message)).set_text(cx, message);
     }
 
-    fn reset_state(&mut self) {
+    fn reset_state(&mut self, cx: &mut Cx) {
+        let cancel_button = self.button(id!(cancel_button));
+        let confirm_button = self.button(id!(confirm_button));
         self.final_success = None;
+        self.set_message(cx, &format!("Are you sure you want to logout?"));
+        confirm_button.set_enabled(cx, true);
+        confirm_button.set_text(cx, "Confirm");
+        cancel_button.set_visible(cx, true);
+        cancel_button.set_enabled(cx, true);
+        self.redraw(cx);
     }
 
 }
@@ -221,9 +216,9 @@ impl LogoutConfirmModalRef {
         }
     }
 
-    pub fn reset_state(&self) {
+    pub fn reset_state(&self,cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.reset_state();
+            inner.reset_state(cx);
         }
     }
 
