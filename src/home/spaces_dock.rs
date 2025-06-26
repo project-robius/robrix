@@ -242,14 +242,8 @@ impl WidgetMatchEvent for LogoutButton {
         }
         
         for action in actions.iter() {
-
-            if let Some(modal_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
-                match modal_action {
-                    LogoutConfirmModalAction::Close { .. } => {
-                        self.has_shown_modal = false;
-                    },
-                    _ => {}
-                }
+            if let Some(LogoutConfirmModalAction::Close { .. }) = action.downcast_ref::<LogoutConfirmModalAction>() {
+                self.has_shown_modal = false;
             }
 
         }

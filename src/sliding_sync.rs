@@ -2829,13 +2829,19 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
     get_sync_service().unwrap().stop().await;
 
     log!("Performing server-side logout...");
-    match client.matrix_auth().logout().await {
-        Ok(_) => {
+    match tokio::time::timeout(tokio::time::Duration::from_secs(5), client.matrix_auth().logout()).await {
+        Ok(Ok(_)) => {
             log!("Server-side logout successful.")
         },
-        Err(e) => {
-            let error_msg = format!("Server-side logout failed: {}", e);
+        Ok(Err(e)) => {
+            let error_msg = format!("Server-side logout failed: {}. Please try again later", e);
             log!("Error :{}", error_msg);
+            Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
+            return Err(anyhow::anyhow!(error_msg));
+        },
+        Err(_) => {
+            let error_msg = "Server-side logout timed out after 5 seconds. Please try again later";
+            log!("Error: {}", error_msg);
             Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
             return Err(anyhow::anyhow!(error_msg));
         },
@@ -2881,10 +2887,9 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
     // Restart the Matrix tokio runtime
     // This is a critical step; failure might prevent future logins
     log!("Restarting Matrix tokio runtime...");
-    if let Err(_) = start_matrix_tokio() {
+    if start_matrix_tokio().is_err() {
         // Send failure notification and return immediately, as the runtime is fundamental
         let final_error_msg = String::from("Logout succeeded, but Robrix could not re-connect to the Matrix backend. Please exit and restart Robrix");
-
         Cx::post_action(LogoutAction::LogoutFailure(final_error_msg.clone()));
         return Err(anyhow::anyhow!(final_error_msg));
     }
