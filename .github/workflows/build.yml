@@ -31,9 +31,6 @@ on:
         - Cargo.lock
         - Cargo.toml
         - rust-toolchain.toml
-    paths-ignore:
-        - README.md
-        - LICENSE-MIT
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
@@ -47,9 +44,6 @@ on:
         - Cargo.lock
         - Cargo.toml
         - rust-toolchain.toml
-    paths-ignore:
-      - README.md
-      - LICENSE-MIT
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
