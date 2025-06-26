@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::{login_screen::LoginAction, logout_confirm_modal::{LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::{submit_async_request, MatrixRequest}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::{login_screen::LoginAction, logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -229,36 +229,30 @@ impl MatchEvent for App {
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
-            if let Some(logout_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
+            if let Some(logout_modal_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
                 let modal = self.ui.modal(id!(logout_confirm_modal));
                 let logout_modal = self.ui.logout_confirm_modal(id!(logout_confirm_modal_inner));
                 
-                match logout_action {
+                match logout_modal_action {
                     LogoutConfirmModalAction::Open=> {
                         logout_modal.reset_state();
                         modal.open(cx)
                     },
-                    LogoutConfirmModalAction::Close=> {
-                        modal.close(cx);
+                    LogoutConfirmModalAction::Close {was_internal, ..}=> {
+                        if *was_internal {
+                            modal.close(cx);
+                        }
                     },
-                    LogoutConfirmModalAction::Confirm => {
-                        logout_modal.set_loading(cx, true);
-                        let is_desktop = cx.display_context.is_desktop();
-                        submit_async_request(MatrixRequest::Logout { is_desktop });
-                    },
-                    LogoutConfirmModalAction::LogoutSuccess => {
-                        logout_modal.set_loading(cx, false);
-                        modal.close(cx);
-                        self.app_state.logged_in = false;
-                        self.update_login_visibility(cx);
-                        self.ui.redraw(cx);
-                        continue;
-                    },
-                    LogoutConfirmModalAction::LogoutFailure(error) => {
-                        logout_modal.set_loading(cx, false);
-                        logout_modal.set_message(cx, &format!("Logout failed: {}", error));
-                    },
+                    _ => {}
                 }
+            }
+
+            if let Some(LogoutAction::LogoutSuccess) = action.downcast_ref() {
+                self.app_state.logged_in = false;
+                self.ui.modal(id!(logout_confirm_modal)).close(cx);
+                self.update_login_visibility(cx);
+                self.ui.redraw(cx);
+                continue;
             }
 
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {

@@ -30,7 +30,7 @@ use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         invite_screen::{JoinRoomAction, LeaveRoomAction}, main_desktop_ui::MainDesktopUiAction, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}
-    }, login::{login_screen::LoginAction, logout_confirm_modal::LogoutConfirmModalAction}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_latest_user_id, ClientSessionPersisted}, profile::{
+    }, login::{login_screen::LoginAction, logout_confirm_modal::LogoutAction}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_latest_user_id, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -2835,19 +2835,18 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<RefreshState> {
     let Some(client) = get_client() else {
         let error_msg = "Logout failed: No active client found";
         log!("Error: {}", error_msg);
-        Cx::post_action(LogoutConfirmModalAction::LogoutFailure(error_msg.to_string()));
+        Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
         return Err(anyhow::anyhow!(error_msg));
     };
 
     if !client.matrix_auth().logged_in() {
         let error_msg = "Client not logged in, skipping server-side logout";
         log!("Error: {}", error_msg);
-        Cx::post_action(LogoutConfirmModalAction::LogoutFailure(error_msg.to_string()));
+        Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
         return Err(anyhow::anyhow!(error_msg));
     }
 
-    let sync_service: Arc<SyncService> = get_sync_service().unwrap();
-    sync_service.stop().await;
+    get_sync_service().unwrap().stop().await;
 
     log!("Performing server-side logout...");
     match client.matrix_auth().logout().await {
@@ -2857,14 +2856,14 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<RefreshState> {
         Err(e) => {
             let error_msg = format!("Server-side logout failed: {}", e);
             log!("Error :{}", error_msg);
-            Cx::post_action(LogoutConfirmModalAction::LogoutFailure(error_msg.to_string()));
+            Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
             return Err(anyhow::anyhow!(error_msg));
         },
     }
 
     // Clean up client state and caches
     log!("Cleaning up client state and caches...");
-    CLIENT.lock().ok().unwrap().take();
+    CLIENT.lock().unwrap().take();
     SYNC_SERVICE.lock().unwrap().take();
     TOMBSTONED_ROOMS.lock().unwrap().clear();
     IGNORED_USERS.lock().unwrap().clear();
@@ -2879,12 +2878,12 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<RefreshState> {
         Cx::post_action(MainDesktopUiAction::CloseAllTabs { sender: tx });
         match rx.await {
             Ok(_) => {
-                log!("Succes close all tabs...");
+                log!("Success close all tabs...");
             },
             Err(e)=> {
                 let error_msg = format!("Close all tab failed {e}");
                 log!("Error :{}", error_msg);
-                Cx::post_action(LogoutConfirmModalAction::LogoutFailure(error_msg.to_string()));
+                Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
                 return Err(anyhow::anyhow!(error_msg));
             },
         }
@@ -2908,7 +2907,7 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<RefreshState> {
         errors.push(error_msg.clone());
         // Send failure notification and return immediately, as the runtime is fundamental
         let final_error_msg = format!("Critical error during logout: {}. Please try restarting the application.", errors.join("; "));
-        Cx::post_action(LogoutConfirmModalAction::LogoutFailure(final_error_msg.clone()));
+        Cx::post_action(LogoutAction::LogoutFailure(final_error_msg.clone()));
         return Err(anyhow::anyhow!(final_error_msg));
     }
     log!("Matrix tokio runtime restarted successfully.");
@@ -2917,7 +2916,7 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<RefreshState> {
     if errors.is_empty() {
         // Complete success
         log!("Logout process completed successfully.");
-        Cx::post_action(LogoutConfirmModalAction::LogoutSuccess);
+        Cx::post_action(LogoutAction::LogoutSuccess);
         Ok(RefreshState::NeedRelogin)
     } else {
         // Partial success (server logout ok, but cleanup errors)
@@ -2926,7 +2925,7 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<RefreshState> {
             errors.join("; ")
         );
         log!("Warning: {}", warning_msg);
-        Cx::post_action(LogoutConfirmModalAction::LogoutSuccess); 
+        Cx::post_action(LogoutAction::LogoutSuccess); 
         Ok(RefreshState::NeedRelogin)
     }
 

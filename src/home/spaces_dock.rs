@@ -227,7 +227,6 @@ enum LogoutModalState {
     #[default]
     Ready,
     ModalDisplayed,
-    LogoutInProgress,
 }
 
 impl Widget for LogoutButton{
@@ -255,20 +254,11 @@ impl WidgetMatchEvent for LogoutButton {
 
             if let Some(modal_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
                 match modal_action {
-                    LogoutConfirmModalAction::Close => {
-                        self.modal_interaction_state = LogoutModalState::Ready;
-                        self.has_shown_modal = false;
-                    },
-                    LogoutConfirmModalAction::Confirm => {
-                        self.modal_interaction_state = LogoutModalState::LogoutInProgress;
-                    },
-                    LogoutConfirmModalAction::LogoutSuccess => {
-                        self.modal_interaction_state = LogoutModalState::Ready;
-                        self.has_shown_modal = false;
-                    },
-                    LogoutConfirmModalAction::LogoutFailure(_) => {
-                        self.modal_interaction_state = LogoutModalState::Ready;
-                        self.has_shown_modal = false;
+                    LogoutConfirmModalAction::Close { successful, was_internal } => {
+                        if *was_internal || *successful {
+                            self.modal_interaction_state = LogoutModalState::Ready;
+                            self.has_shown_modal = false;
+                        }
                     },
                     _ => {}
                 }

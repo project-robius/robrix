@@ -1,5 +1,5 @@
 use makepad_widgets::*;
-use crate::shared::styles::{COLOR_ACTIVE_PRIMARY, COLOR_DISABLE_GRAY, COLOR_PRIMARY, COLOR_SECONDARY, COLOR_TEXT};
+use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
 live_design! {
     use link::theme::*;
@@ -95,28 +95,38 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct LogoutConfirmModal {
     #[deref] view: View,
-    #[rust(false)] is_logging_out: bool,
-    /// Flag to track if a background dismiss event has been processed.
-    /// 
-    /// This prevents event loops when the modal background is clicked:
-    /// 1. User clicks modal background → ModalAction::Dismissed is triggered
-    /// 2. We set dismiss_handled=true and emit Close event
-    /// 3. Any subsequent Dismissed events are ignored to break the loop
-    /// 
-    /// IMPORTANT: Must call reset_state() before opening the modal
-    /// to ensure background clicks can be processed again. This reset
-    /// typically happens in app.rs when handling LogoutConfirmModalAction::Open.
-    #[rust(false)] dismiss_handled: bool,
+    /// Whether the modal is in a final state, meaning the user can only click "Okay" to close it.
+    ///
+    /// * Set to `Some(true)` after a successful logout Action
+    /// * Set to `Some(false)` after a logout error occurs.
+    /// * Set to `None` when the user is still able to interact with the modal.
+    #[rust] final_success: Option<bool>,
 }
 
-/// Actions sent to or from the logout_confrim_modal.
-#[derive(Clone, Debug)]
+/// Actions handled by the parent widget of the [`LogoutConfirmModal`].
+#[derive(Clone, Debug, DefaultNone)]
 pub enum LogoutConfirmModalAction {
+    /// The modal should be opened
     Open,
-    Close,
-    Confirm,
+    /// The modal requested its parent widget to close.
+    Close {
+        /// `True` if the modal was closed after a successful logout action.
+        /// `False` if the modal was dismissed or closed after a failure/error.
+        successful: bool,
+        /// Whether the modal was dismissed by the user clicking an internal button.
+        was_internal: bool,
+    },
+    None,
+}
+
+/// Actions related to logout that should be handled by the top-level app context
+#[derive(Clone, DefaultNone, Debug)]
+pub enum LogoutAction {
+    /// A positive response from the backend Matrix task to the logout.
     LogoutSuccess,
+    /// A negative response from the backend Matrix task to the logout.
     LogoutFailure(String),
+    None,
 }
 
 impl Widget for LogoutConfirmModal {
@@ -135,31 +145,58 @@ impl WidgetMatchEvent for LogoutConfirmModal {
         let cancel_button = self.button(id!(cancel_button));
         let confirm_button = self.button(id!(confirm_button));
         
-        let modal_dismissed = actions
-            .iter()
-            .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
-
-        if modal_dismissed && self.is_logging_out {
+        let modal_dismissed = actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
+        let cancel_clicked = cancel_button.clicked(actions); 
+        
+        if cancel_clicked || modal_dismissed {
+            cx.action(LogoutConfirmModalAction::Close { successful: false, was_internal: cancel_clicked });
+            self.reset_state();
             return;
         }
 
-        // Handle background click dismiss event, but only once to prevent event loops
-        if modal_dismissed && !self.dismiss_handled {
-            self.dismiss_handled = true;
-            cx.action(LogoutConfirmModalAction::Close);
-            return;
+        let mut needs_redraw = false;
+        if confirm_button.clicked(actions) {
+            if let Some(successful) = self.final_success {
+                cx.action(LogoutConfirmModalAction::Close { successful, was_internal: true });
+                self.reset_state();
+                return;
+            } else {
+                self.set_message(cx, "Waiting for logout...");
+                
+                confirm_button.set_enabled(cx, false);
+                cancel_button.set_enabled(cx, false);
+                submit_async_request(MatrixRequest::Logout { is_desktop: cx.display_context.is_desktop() });
+                needs_redraw = true;
+            }
         }
 
-        let cancel_button_clicked = cancel_button.clicked(actions) ;
-        if cancel_button_clicked { 
-            cx.action(LogoutConfirmModalAction::Close);
+        for action in actions {
+            match action.downcast_ref() {
+                Some(LogoutAction::LogoutSuccess) => {
+                    self.set_message(cx, &format!("Are you sure you want to logout?"));
+                    confirm_button.set_enabled(cx, true);
+                    confirm_button.set_text(cx, "Confirm");
+                    cancel_button.set_visible(cx, true);
+                    cancel_button.set_enabled(cx, true);
+                    self.final_success = None;
+                    needs_redraw = true;
+                },
+                Some(LogoutAction::LogoutFailure(error)) => {
+                    self.set_message(cx, &format!("Logout failed: {}", error));
+                    self.final_success = Some(false);
+                    confirm_button.set_text(cx, "Okay");
+                    confirm_button.set_enabled(cx, true);
+                    cancel_button.set_visible(cx, false);
+                    needs_redraw = true;
+                }
+                _=> {}
+            }
         }
-        if confirm_button.clicked(actions) && !self.is_logging_out {
-            self.is_logging_out = true;
-            self.set_message(cx, "Waiting for logout...");
-            self.update_button_states(cx);
-            cx.action(LogoutConfirmModalAction::Confirm);
+
+        if needs_redraw {
+            self.redraw(cx);
         }
+
     }
 }
 
@@ -170,46 +207,9 @@ impl LogoutConfirmModal {
     }
 
     fn reset_state(&mut self) {
-        self.dismiss_handled = false;
-        self.is_logging_out = false;
+        self.final_success = None;
     }
 
-    fn update_button_states(&mut self, cx: &mut Cx) {
-        let cancel_button = self.button(id!(cancel_button));
-        let confirm_button = self.button(id!(confirm_button));
-        
-        if self.is_logging_out {
-            cancel_button.apply_over(cx, live! {
-                draw_bg: { color: (COLOR_SECONDARY) },
-                draw_text: { color: (COLOR_DISABLE_GRAY) },
-                enabled: false
-            });
-            confirm_button.apply_over(cx, live! {
-                draw_bg: { color: (COLOR_DISABLE_GRAY) },
-                draw_text: { color: (COLOR_SECONDARY) },
-                enabled: false
-            });
-        } else {
-            cancel_button.apply_over(cx, live! {
-                draw_bg: { color: (COLOR_SECONDARY) },
-                draw_text: { color: (COLOR_TEXT) },
-                enabled: true
-            });
-            confirm_button.apply_over(cx, live! {
-                draw_bg: { color: (COLOR_ACTIVE_PRIMARY) },
-                draw_text: { color: (COLOR_PRIMARY) },
-                enabled: true
-            });
-        }
-    }
-
-    pub fn set_loading(&mut self, cx: &mut Cx, is_loading: bool) {
-        self.is_logging_out = is_loading;
-        self.update_button_states(cx);
-        if !is_loading {
-            self.set_message(cx, "Are you sure you want to logout?");
-        }
-    }
 }
 
 
@@ -218,13 +218,6 @@ impl LogoutConfirmModalRef {
     pub fn set_message(&self, cx: &mut Cx, message: &str) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_message(cx, message);
-        }
-    }
-
-    /// See [`LogoutConfirmModal::set_loading()`].
-    pub fn set_loading(&self, cx: &mut Cx, is_loading: bool) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.set_loading(cx, is_loading);
         }
     }
 
