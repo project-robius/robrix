@@ -177,11 +177,11 @@ jobs:
           # Install iOS targets
           rustup target add aarch64-apple-ios
 
-          # Build for iOS using standard cargo (no signing required for build verification)
-          # If you need to sign the build, you can use cargo-makepad instead, but it requires additional setup for signing identities.
-          # Use: cargo makepad apple ios --org=x --app=x run-sim/run-device <cargo args>
-          # For now, we just build the binary without signing, just to verify the build process works.
-          cargo build --target aarch64-apple-ios -p robrix
+          # Build the iOS simulator and device targets
+          cargo makepad apple ios \
+          --org=rs.robius \
+          --app=robrix \
+          run-sim -p robrix
         continue-on-error: true # iOS builds may fail due to signing requirements in CI
 
   build_android_on_macos:
