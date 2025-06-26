@@ -338,6 +338,23 @@ impl LiveHook for RoomsList {
 }
 
 impl RoomsList {
+    /// Determines if all known rooms have been loaded from the homeserver.
+    ///
+    /// Returns `true` if the number of rooms in `all_joined_rooms` and `invited_rooms` equals or exceeds
+    /// `max_known_rooms`.
+    /// Returns `false` if `max_known_rooms` is `None`.
+    pub fn all_known_rooms_loaded(&self) -> bool {
+        self.max_known_rooms.is_some_and(|max_rooms| {
+            self.all_joined_rooms.len() + self.invited_rooms.borrow().len() >= max_rooms as usize
+        })
+    }
+
+    /// Returns `true` if the given `room_id` is in the `all_joined_rooms` or `invited_rooms` list.
+    pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
+        self.all_joined_rooms.contains_key(room_id)
+            || self.invited_rooms.borrow().contains_key(room_id)
+    }
+
     /// Handle all pending updates to the list of all rooms.
     fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, scope: &mut Scope) {
         let mut num_updates: usize = 0;
@@ -356,6 +373,8 @@ impl RoomsList {
                         }
                     }
                     self.update_status_rooms_count();
+                    // Signal the UI to update the RoomScreen
+                    SignalToUI::set_ui_signal();
                 }
                 RoomsListUpdate::AddJoinedRoom(joined_room) => {
                     let room_id = joined_room.room_id.clone();
@@ -393,6 +412,8 @@ impl RoomsList {
                         );
                     }
                     self.update_status_rooms_count();
+                    // Signal the UI to update the RoomScreen
+                    SignalToUI::set_ui_signal();
                 }
                 RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
@@ -733,12 +754,12 @@ impl Widget for RoomsList {
             if let RoomPreviewAction::Clicked(clicked_room_id) = list_action.as_widget_action().cast() {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
                     SelectedRoom::JoinedRoom {
-                        room_id: jr.room_id.clone(),
+                        room_id: jr.room_id.clone().into(),
                         room_name: jr.room_name.clone(),
                     }
                 } else if let Some(ir) = self.invited_rooms.borrow().get(&clicked_room_id) {
                     SelectedRoom::InvitedRoom {
-                        room_id: ir.room_id.to_owned(),
+                        room_id: ir.room_id.to_owned().into(),
                         room_name: ir.room_name.clone(),
                     }
                 } else {
@@ -946,6 +967,23 @@ impl Widget for RoomsList {
     }
 }
 
+impl RoomsListRef {
+    /// See [`RoomsList::all_known_rooms_loaded()`].
+    pub fn all_known_rooms_loaded(&self) -> bool {
+        let Some(inner) = self.borrow() else {
+            return false;
+        };
+        inner.all_known_rooms_loaded()
+    }
+
+    /// See [`RoomsList::is_room_loaded()`].
+    pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
+        let Some(inner) = self.borrow() else {
+            return false;
+        };
+        inner.is_room_loaded(room_id)
+    }
+}
 pub struct RoomsListScopeProps {
     /// Whether the RoomsList's inner PortalList was scrolling
     /// when the latest finger down event occurred.
