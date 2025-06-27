@@ -19,23 +19,13 @@ live_design! {
         }
     }
 
-    pub Divider = <View> {
-        width: Fill, height: Fit
-        flow: Down
-        <RoundedView> {
-            width: Fill,
-            height: 1.,
-            draw_bg: {color: (#ddd)}
-        }
-    }
-
     pub LineH = <RoundedView> {
         width: Fill,
         height: 2.0,
         margin: 0.0,
         padding: 0.0, spacing: 0.0
         show_bg: true
-        draw_bg: {color: (COLOR_DIVIDER)}
+        draw_bg: {color: (COLOR_DIVIDER_DARK)}
     }
 
     pub FillerX = <View> { width: Fill, height: Fit }

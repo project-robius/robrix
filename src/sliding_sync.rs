@@ -7,7 +7,7 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
+    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
             receipt::ReceiptThread, room::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
@@ -25,7 +25,7 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use crate::{
     app::RoomsPanelRestoreAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -107,6 +107,13 @@ async fn build_client(
         .sqlite_store(&db_path, Some(&passphrase))
         // The sliding sync proxy has now been deprecated in favor of native sliding sync.
         .sliding_sync_version_builder(VersionBuilder::DiscoverNative)
+        .with_decryption_trust_requirement(matrix_sdk::crypto::TrustRequirement::Untrusted)
+        .with_encryption_settings(EncryptionSettings {
+            auto_enable_cross_signing: true,
+            backup_download_strategy: matrix_sdk::encryption::BackupDownloadStrategy::OneShot,
+            auto_enable_backups: true,
+        })
+        .with_enable_share_history_on_invite(true)
         .handle_refresh_tokens();
 
     if let Some(proxy) = cli.proxy.as_ref() {
@@ -603,7 +610,7 @@ async fn async_worker(
                         LeaveRoomAction::Failed {
                             room_id,
                             error: matrix_sdk::Error::UnknownError(
-                                String::from("Client couldn't locate room to join it.").into()
+                                String::from("Client couldn't locate room to leave it.").into()
                             ),
                         }
                     };
@@ -1240,7 +1247,7 @@ struct JoinedRoomDetails {
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
-        log!("Dropping RoomInfo for room {}", self.room_id);
+        log!("Dropping JoinedRoomDetails for room {}", self.room_id);
         self.timeline_subscriber_handler_task.abort();
         drop(self.typing_notice_subscriber.take());
         if let Some(replaces_tombstoned_room) = self.replaces_tombstoned_room.take() {
@@ -1541,18 +1548,28 @@ async fn async_main_loop(
                     add_new_room(&new_room, &room_list_service).await?;
                     all_known_rooms.push_back(new_room.into());
                 }
-                VectorDiff::PopFront => {
+                remove_diff @ VectorDiff::PopFront => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopFront"); }
                     if let Some(room) = all_known_rooms.pop_front() {
-                        if LOG_ROOM_LIST_DIFFS { log!("PopFront: removing {}", room.room_id); }
-                        remove_room(&room);
+                        optimize_remove_then_add_into_update(
+                            remove_diff,
+                            &room,
+                            &mut peekable_diffs,
+                            &mut all_known_rooms,
+                            &room_list_service,
+                        ).await?;
                     }
                 }
-                VectorDiff::PopBack => {
+                remove_diff @ VectorDiff::PopBack => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopBack"); }
                     if let Some(room) = all_known_rooms.pop_back() {
-                        if LOG_ROOM_LIST_DIFFS { log!("PopBack: removing {}", room.room_id); }
-                        remove_room(&room);
+                        optimize_remove_then_add_into_update(
+                            remove_diff,
+                            &room,
+                            &mut peekable_diffs,
+                            &mut all_known_rooms,
+                            &room_list_service,
+                        ).await?;
                     }
                 }
                 VectorDiff::Insert { index, value: new_room } => {
@@ -1569,33 +1586,17 @@ async fn async_main_loop(
                     }
                     all_known_rooms.set(index, changed_room.into());
                 }
-                VectorDiff::Remove { index: remove_index } => {
+                remove_diff @ VectorDiff::Remove { index: remove_index } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Remove at {remove_index}"); }
                     if remove_index < all_known_rooms.len() {
                         let room = all_known_rooms.remove(remove_index);
-                        // Try to optimize a common operation, in which a `Remove` diff
-                        // is immediately followed by an `Insert` diff for the same room,
-                        // which happens frequently in order to change the room's state
-                        // or to "sort" the room list by changing its positional order.
-                        // We treat this as a simple `Set` operation (`update_room()`),
-                        // which is way more efficient.
-                        let mut next_diff_was_handled = false;
-                        if let Some(VectorDiff::Insert { index: insert_index, value: new_room }) = peekable_diffs.peek() {
-                            if room.room_id == new_room.room_id() {
-                                if LOG_ROOM_LIST_DIFFS {
-                                    log!("Optimizing Remove({remove_index}) + Insert({insert_index}) into Update for room {}", room.room_id);
-                                }
-                                update_room(&room, new_room, &room_list_service).await?;
-                                all_known_rooms.insert(*insert_index, new_room.clone().into());
-                                next_diff_was_handled = true;
-                            }
-                        }
-                        if next_diff_was_handled {
-                            peekable_diffs.next(); // consume the next diff
-                        } else {
-                            warning!("UNTESTED SCENARIO: room_list: diff Remove({remove_index}) was NOT followed by an Insert. Removed room: {}", room.room_id);
-                            remove_room(&room);
-                        }
+                        optimize_remove_then_add_into_update(
+                            remove_diff,
+                            &room,
+                            &mut peekable_diffs,
+                            &mut all_known_rooms,
+                            &room_list_service,
+                        ).await?;
                     } else {
                         error!("BUG: room_list: diff Remove index {remove_index} out of bounds, len {}", all_known_rooms.len());
                     }
@@ -1634,6 +1635,65 @@ async fn async_main_loop(
 }
 
 
+/// Attempts to optimize a common RoomListService operation of remove + add.
+///
+/// If a `Remove` diff (or `PopBack` or `PopFront`) is immediately followed by
+/// an `Insert` diff (or `PushFront` or `PushBack`) for the same room,
+/// we can treat it as a simple `Set` operation, in which we call `update_room()`.
+/// This is much more efficient than removing the room and then adding it back.
+///
+/// This tends to happen frequently in order to change the room's state
+/// or to "sort" the room list by changing its positional order.
+async fn optimize_remove_then_add_into_update(
+    remove_diff: VectorDiff<Room>,
+    room: &RoomListServiceRoomInfo,
+    peekable_diffs: &mut Peekable<impl Iterator<Item = VectorDiff<matrix_sdk::Room>>>,
+    all_known_rooms: &mut Vector<RoomListServiceRoomInfo>,
+    room_list_service: &RoomListService,
+) -> Result<()> {
+    let next_diff_was_handled: bool;
+    match peekable_diffs.peek() {
+        Some(VectorDiff::Insert { index: insert_index, value: new_room })
+            if room.room_id == new_room.room_id() =>
+        {
+            if LOG_ROOM_LIST_DIFFS {
+                log!("Optimizing {remove_diff:?} + Insert({insert_index}) into Update for room {}", room.room_id);
+            }
+            update_room(&room, new_room, &room_list_service).await?;
+            all_known_rooms.insert(*insert_index, new_room.clone().into());
+            next_diff_was_handled = true;
+        }
+        Some(VectorDiff::PushFront { value: new_room })
+            if room.room_id == new_room.room_id() =>
+        {
+            if LOG_ROOM_LIST_DIFFS {
+                log!("Optimizing {remove_diff:?} + PushFront into Update for room {}", room.room_id);
+            }
+            update_room(&room, new_room, &room_list_service).await?;
+            all_known_rooms.push_front(new_room.clone().into());
+            next_diff_was_handled = true;
+        }
+        Some(VectorDiff::PushBack { value: new_room })
+            if room.room_id == new_room.room_id() =>
+        {
+            if LOG_ROOM_LIST_DIFFS {
+                log!("Optimizing {remove_diff:?} + PushBack into Update for room {}", room.room_id);
+            }
+            update_room(&room, new_room, &room_list_service).await?;
+            all_known_rooms.push_back(new_room.clone().into());
+            next_diff_was_handled = true;
+        }
+        _ => next_diff_was_handled = false,
+    }
+    if next_diff_was_handled {
+        peekable_diffs.next(); // consume the next diff
+    } else {
+        remove_room(&room);
+    }
+    Ok(())
+}
+
+
 /// Invoked when the room list service has received an update that changes an existing room.
 async fn update_room(
     old_room: &RoomListServiceRoomInfo,
@@ -1661,12 +1721,12 @@ async fn update_room(
                 }
                 RoomState::Left => {
                     log!("Removing Left room: {new_room_name:?} ({new_room_id})");
-                    remove_room(&new_room.into());
-                    // TODO: we could add this to the list of left rooms,
-                    //       which is collapsed by default.
-                    //       Upon clicking a left room, we can show a splash page
-                    //       that prompts the user to rejoin the room or forget it.
+                    // TODO: instead of removing this, we could optionally add it to
+                    //       a separate list of left rooms, which would be collapsed by default.
+                    //       Upon clicking a left room, we could show a splash page
+                    //       that prompts the user to rejoin the room or forget it permanently.
                     //       Currently, we just remove it and do not show left rooms at all.
+                    remove_room(&new_room.into());
                     return Ok(());
                 }
                 RoomState::Joined => {
@@ -2077,9 +2137,9 @@ pub struct BackwardsPaginateUntilEventRequest {
 }
 
 /// Whether to enable verbose logging of all timeline diff updates.
-const LOG_TIMELINE_DIFFS: bool = cfg!(log_timeline_diffs);
+const LOG_TIMELINE_DIFFS: bool = cfg!(feature = "log_timeline_diffs");
 /// Whether to enable verbose logging of all room list service diff updates.
-const LOG_ROOM_LIST_DIFFS: bool = cfg!(log_room_list_diffs);
+const LOG_ROOM_LIST_DIFFS: bool = cfg!(feature = "log_room_list_diffs");
 
 /// A per-room async task that listens for timeline updates and sends them to the UI thread.
 ///
