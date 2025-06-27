@@ -1659,7 +1659,7 @@ async fn optimize_remove_then_add_into_update(
             if LOG_ROOM_LIST_DIFFS {
                 log!("Optimizing {remove_diff:?} + Insert({insert_index}) into Update for room {}", room.room_id);
             }
-            update_room(&room, new_room, &room_list_service).await?;
+            update_room(room, new_room, room_list_service).await?;
             all_known_rooms.insert(*insert_index, new_room.clone().into());
             next_diff_was_handled = true;
         }
@@ -1669,7 +1669,7 @@ async fn optimize_remove_then_add_into_update(
             if LOG_ROOM_LIST_DIFFS {
                 log!("Optimizing {remove_diff:?} + PushFront into Update for room {}", room.room_id);
             }
-            update_room(&room, new_room, &room_list_service).await?;
+            update_room(room, new_room, room_list_service).await?;
             all_known_rooms.push_front(new_room.clone().into());
             next_diff_was_handled = true;
         }
@@ -1679,7 +1679,7 @@ async fn optimize_remove_then_add_into_update(
             if LOG_ROOM_LIST_DIFFS {
                 log!("Optimizing {remove_diff:?} + PushBack into Update for room {}", room.room_id);
             }
-            update_room(&room, new_room, &room_list_service).await?;
+            update_room(room, new_room, room_list_service).await?;
             all_known_rooms.push_back(new_room.clone().into());
             next_diff_was_handled = true;
         }
@@ -1688,7 +1688,7 @@ async fn optimize_remove_then_add_into_update(
     if next_diff_was_handled {
         peekable_diffs.next(); // consume the next diff
     } else {
-        remove_room(&room);
+        remove_room(room);
     }
     Ok(())
 }
