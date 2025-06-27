@@ -131,7 +131,6 @@ live_design! {
 
             divider_after_react_reply = <LineH> {
                 margin: {top: 3, bottom: 3}
-                draw_bg: {color: (COLOR_DIVIDER_DARK)}
                 width: Fill,
             }
 
@@ -179,7 +178,6 @@ live_design! {
 
             divider_before_report_delete = <LineH> {
                 margin: {top: 3, bottom: 3}
-                draw_bg: {color: (COLOR_DIVIDER_DARK)}
                 width: Fill,
             }
 

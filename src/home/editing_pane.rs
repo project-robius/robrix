@@ -96,9 +96,7 @@ live_design! {
             }
         }
 
-        <LineH> {
-            draw_bg: {color: (COLOR_DIVIDER_DARK)}
-        }
+        <LineH> { }
 
         edit_text_input = <MentionableTextInput> {
             width: Fill, height: Fit,
