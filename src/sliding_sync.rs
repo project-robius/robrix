@@ -2947,6 +2947,8 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
     TOMBSTONED_ROOMS.lock().unwrap().clear();
     IGNORED_USERS.lock().unwrap().clear();
     DEFAULT_SSO_CLIENT.lock().unwrap().take();
+    // Note: Taking REQUEST_SENDER closes the channel sender, causing the async_worker task to exit its loop
+    // This triggers the "async_worker task ended unexpectedly" error in the monitor task, but this is expected during logout
     REQUEST_SENDER.lock().unwrap().take();
     log!("Client state and caches cleared after successful server logout.");
 
