@@ -502,9 +502,7 @@ live_design! {
         spacing: 0.0,
         align: {x: 0.5, y: 0.5} // center horizontally and vertically
 
-        left_line = <LineH> {
-            draw_bg: {color: (COLOR_DIVIDER_DARK)}
-        }
+        left_line = <LineH> { }
 
         date = <Label> {
             padding: {left: 7.0, right: 7.0}
@@ -515,9 +513,7 @@ live_design! {
             text: "<date>"
         }
 
-        right_line = <LineH> {
-            draw_bg: {color: (COLOR_DIVIDER_DARK)}
-        }
+        right_line = <LineH> { }
     }
 
     // The view used for the divider indicating where the user's last-viewed message is.
@@ -713,7 +709,6 @@ live_design! {
                     }
 
                     <LineH> {
-                        draw_bg: {color: (COLOR_DIVIDER_DARK)}
                         margin: {bottom: 5.0}
                     }
 
