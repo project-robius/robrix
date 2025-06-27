@@ -473,8 +473,8 @@ impl RoomsList {
                     }
                 }
                 RoomsListUpdate::RemoveRoom { room_id, new_state: _ } => {
-                    log!("Removed room {room_id} from the list of all joined rooms");
                     if let Some(removed) = self.all_joined_rooms.remove(&room_id) {
+                        log!("Removed room {room_id} from the list of all joined rooms");
                         if removed.is_direct {
                             self.displayed_direct_rooms.iter()
                                 .position(|r| r == &room_id)
@@ -491,19 +491,8 @@ impl RoomsList {
                             .position(|r| r == &room_id)
                             .map(|index| self.displayed_invited_rooms.remove(index));
                     }
-                    else {
-                        error!("Error: couldn't find room {room_id} to remove it.");
-                    };
 
                     self.update_status_rooms_count();
-
-                    // TODO: send an action to the RoomScreen to hide this room
-                    //       if it is currently being displayed,
-                    //       and also ensure that the room's TimelineUIState is preserved
-                    //       and saved (if the room has not been left),
-                    //       and also that its MediaCache instance is put into a special state
-                    //       where its internal update sender gets replaced upon next usage
-                    //       (that is, upon the next time that same room is opened by the user).
                 }
                 RoomsListUpdate::ClearRooms => {
                     self.all_joined_rooms.clear();
