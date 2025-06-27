@@ -81,7 +81,7 @@ The following table shows which host systems can currently be used to build Robr
    ```
 
 ### Android
-2. Use `cargo-makepad` to install the Android toolchain, with the full NDK:
+2. Use `cargo-makepad` to install the Android toolchain:
    ```sh
    cargo makepad android install-toolchain
    ```
