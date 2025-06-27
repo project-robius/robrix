@@ -83,7 +83,7 @@ The following table shows which host systems can currently be used to build Robr
 ### Android
 2. Use `cargo-makepad` to install the Android toolchain, with the full NDK:
    ```sh
-   cargo makepad android install-toolchain --full-ndk
+   cargo makepad android install-toolchain
    ```
 
 3. Build and run Robrix using `cargo-makepad`:
