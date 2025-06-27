@@ -2948,7 +2948,7 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
     IGNORED_USERS.lock().unwrap().clear();
     DEFAULT_SSO_CLIENT.lock().unwrap().take();
     REQUEST_SENDER.lock().unwrap().take();
-    log!("Client state and caches cleared.");
+    log!("Client state and caches cleared after successful server logout.");
 
     // Desktop UI has tabs that must be properly closed, while mobile UI has no tabs concept.
     if is_desktop {
