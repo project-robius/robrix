@@ -710,7 +710,7 @@ impl MentionableTextInput {
         if self.is_searching {
             if let Some(start_pos) = self.current_mention_start_index {
                 // Check if the @ symbol at the start position still exists
-                if start_pos >= text.len() || &text[start_pos..start_pos+1] != "@" {
+                if start_pos >= text.len() || text.get(start_pos..start_pos+1).is_some_and(|c| c != "@") {
                     // The @ symbol was deleted, stop searching
                     self.close_mention_popup(cx);
                     return;
