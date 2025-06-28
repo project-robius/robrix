@@ -448,9 +448,8 @@ impl MentionableTextInput {
             .filter(|s| s != "@" && s.chars().all(|c| c.is_alphabetic()))
             .unwrap_or_else(|| "R".to_string());
 
-        if let Some(client) = get_client() {
-            if let Some(room) = client.get_room(room_id) {
-                if let Some(avatar_url) = room.avatar_url() {
+        if let Some(client) = get_client().and_then(|c| c.get_room(room_id).and_then(|r| r.avatar_url())).flatten() {
+            ...
                     match get_or_fetch_avatar(cx, avatar_url.to_owned()) {
                         AvatarCacheEntry::Loaded(avatar_data) => {
                             // Display room avatar
