@@ -810,7 +810,7 @@ live_design! {
 }
 
 /// The main widget that displays a single Matrix room.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Live, Widget)]
 pub struct RoomScreen {
     #[deref] view: View,
     #[animator] animator: Animator,
@@ -838,6 +838,16 @@ impl Drop for RoomScreen {
         // RoomScreen will be dropped whenever its widget instance is destroyed, e.g.,
         // when a Tab is closed or the app is resized to a different AdaptiveView layout.
         self.hide_timeline();
+    }
+}
+impl LiveHook for RoomScreen {
+    fn after_update_from_doc(&mut self, cx: &mut Cx) {
+        if let Some(tl_state) = &mut self.tl_state.as_mut() {
+            // Clear the timeline's drawn items caches and redraw it.
+            tl_state.content_drawn_since_last_update.clear();
+            tl_state.profile_drawn_since_last_update.clear();
+            self.view.redraw(cx);
+        }
     }
 }
 
