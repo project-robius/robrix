@@ -5,7 +5,7 @@ use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
-use makepad_widgets::{error, log, warning, Cx, SignalToUI};
+use makepad_widgets::{error, log, makepad_futures::channel::oneshot, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
@@ -25,12 +25,12 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex}};
 use std::io;
 use crate::{
     app::RoomsPanelRestoreAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_rooms_panel_state, ClientSessionPersisted}, profile::{
+        invite_screen::{JoinRoomAction, LeaveRoomAction}, main_desktop_ui::MainDesktopUiAction, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}
+    }, login::{login_screen::LoginAction, logout_confirm_modal::LogoutAction}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_latest_user_id, load_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -228,6 +228,10 @@ pub type OnMediaFetchedFn = fn(
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
     Login(LoginRequest),
+    /// Request to logout.
+    Logout{
+        is_desktop: bool,
+    },
     /// Request to paginate the older (or newer) events of a room's timeline.
     PaginateRoomTimeline {
         room_id: OwnedRoomId,
@@ -393,10 +397,10 @@ pub enum MatrixRequest {
 
 /// Submits a request to the worker thread to be executed asynchronously.
 pub fn submit_async_request(req: MatrixRequest) {
-    REQUEST_SENDER.get()
-        .unwrap() // this is initialized
-        .send(req)
-        .expect("BUG: async worker task receiver has died!");
+    if let Some(sender) = REQUEST_SENDER.lock().unwrap().as_ref() {
+        sender.send(req)
+            .expect("BUG: async worker task receiver has died!");
+    }
 }
 
 /// Details of a login request that get submitted within [`MatrixRequest::Login`].
@@ -435,6 +439,21 @@ async fn async_worker(
                     )));
                 }
             }
+
+            MatrixRequest::Logout { is_desktop } => {
+                let _logout_task = Handle::current().spawn(async move {
+                    match logout_and_refresh(is_desktop).await {
+                        Ok(()) => {
+                            log!("need to relogin");
+                        },
+                        Err(e) => {
+                            error!("Logout and refresh failed: {e:?}");
+                            enqueue_popup_notification(PopupItem { message: format!("Logout failed: {e}"), auto_dismissal_duration: None });
+                        }
+                    }
+                });
+            }
+
             MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
                 let (timeline, sender) = {
                     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
@@ -563,7 +582,7 @@ async fn async_worker(
             }
 
             MatrixRequest::JoinRoom { room_id } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _join_room_task = Handle::current().spawn(async move {
                     log!("Sending request to join room {room_id}...");
                     let result_action = if let Some(room) = client.get_room(&room_id) {
@@ -591,7 +610,7 @@ async fn async_worker(
             }
 
             MatrixRequest::LeaveRoom { room_id } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _leave_room_task = Handle::current().spawn(async move {
                     log!("Sending request to leave room {room_id}...");
                     let result_action = if let Some(room) = client.get_room(&room_id) {
@@ -652,7 +671,7 @@ async fn async_worker(
             }
 
             MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending get user profile request: user: {user_id}, \
                     //     room: {room_id:?}, local_only: {local_only}...",
@@ -743,7 +762,7 @@ async fn async_worker(
                 });
             }
             MatrixRequest::IgnoreUser { ignore, room_member, room_id } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _ignore_task = Handle::current().spawn(async move {
                     let user_id = room_member.user_id();
                     log!("Sending request to {}ignore user: {user_id}...", if ignore { "" } else { "un" });
@@ -796,7 +815,7 @@ async fn async_worker(
             }
 
             MatrixRequest::SendTypingNotice { room_id, typing } => {
-                let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                let Some(room) = get_client().and_then(|c| c.get_room(&room_id)) else {
                     error!("BUG: client/room not found for typing notice request {room_id}");
                     continue;
                 };
@@ -819,7 +838,7 @@ async fn async_worker(
                             warning!("Note: room {room_id} is already subscribed to typing notices.");
                             continue;
                         } else {
-                            let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                            let Some(room) = get_client().and_then(|c| c.get_room(&room_id)) else {
                                 error!("BUG: client/room not found when subscribing to typing notices request, room: {room_id}");
                                 continue;
                             };
@@ -899,7 +918,7 @@ async fn async_worker(
                 spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
             }
             MatrixRequest::ResolveRoomAlias(room_alias) => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _resolve_task = Handle::current().spawn(async move {
                     log!("Sending resolve room alias request for {room_alias}...");
                     let res = client.resolve_room_alias(&room_alias).await;
@@ -908,8 +927,8 @@ async fn async_worker(
                 });
             }
             MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
-                let Some(client) = CLIENT.get() else { continue };
-                let _fetch_task = Handle::current().spawn(async move {
+                let Some(client) = get_client() else { continue };
+                Handle::current().spawn(async move {
                     // log!("Sending fetch avatar request for {mxc_uri:?}...");
                     let media_request = MediaRequestParameters {
                         source: MediaSource::Plain(mxc_uri.clone()),
@@ -922,7 +941,7 @@ async fn async_worker(
             }
 
             MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let media = client.media();
 
                 let _fetch_task = Handle::current().spawn(async move {
@@ -1064,6 +1083,7 @@ async fn async_worker(
                         Err(_e) => error!("Failed to send toggle reaction to room {room_id} {reaction}; error: {_e:?}"),
                     }
                 });
+
             },
             MatrixRequest::RedactMessage { room_id, timeline_event_id, reason } => {
                 let timeline = {
@@ -1086,7 +1106,7 @@ async fn async_worker(
                 });
             },
             MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {
                     let room_or_alias_id: Option<&RoomOrAliasId> = match &matrix_id {
                         MatrixId::Room(room_id) => Some((&**room_id).into()),
@@ -1120,11 +1140,11 @@ async fn async_worker(
 
 
 /// The single global Tokio runtime that is used by all async tasks.
-static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+static TOKIO_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
-static REQUEST_SENDER: OnceLock<UnboundedSender<MatrixRequest>> = OnceLock::new();
+static REQUEST_SENDER: Mutex<Option<UnboundedSender<MatrixRequest>>> = Mutex::new(None);
 
 /// A client object that is proactively created during initialization
 /// in order to speed up the client-building process when the user logs in.
@@ -1135,22 +1155,28 @@ static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
 );
 
 pub fn start_matrix_tokio() -> Result<()> {
-    // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
-    let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
+    let rt_handle = {
+        let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
+        let runtime = rt_guard.get_or_insert_with(|| {
+            log!("Creating new Tokio runtime...");
+            tokio::runtime::Runtime::new().unwrap()
+        });
+        runtime.handle().clone()
+    };
 
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
-    REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
+    *REQUEST_SENDER.lock().unwrap() = Some(sender);
 
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
     // Start a high-level async task that will start and monitor all other tasks.
-    let _monitor = rt.spawn(async move {
+    let rt = rt_handle.clone();
+    let _monitor = rt_handle.spawn(async move {
         // Spawn the actual async worker thread.
         let mut worker_join_handle = rt.spawn(async_worker(receiver, login_sender));
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
-
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
@@ -1270,26 +1296,27 @@ static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex
 static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
-static CLIENT: OnceLock<Client> = OnceLock::new();
+static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
 
 pub fn get_client() -> Option<Client> {
-    CLIENT.get().cloned()
+    CLIENT.lock().unwrap().clone()
 }
 
 /// Returns the user ID of the currently logged-in user, if any.
 pub fn current_user_id() -> Option<OwnedUserId> {
-    CLIENT.get().and_then(|c|
+    CLIENT.lock().unwrap().as_ref().and_then(|c|
         c.session_meta().map(|m| m.user_id.clone())
     )
 }
 
 /// The singleton sync service.
-static SYNC_SERVICE: OnceLock<SyncService> = OnceLock::new();
+/// sync_service if build from the client, and is used to sync the client with the server.
+static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
 
-pub fn get_sync_service() -> Option<&'static SyncService> {
-    SYNC_SERVICE.get()
+/// Get a clone of the sync service, if available.
+pub fn get_sync_service() -> Option<Arc<SyncService>> {
+    SYNC_SERVICE.lock().ok()?.as_ref().cloned()
 }
-
 
 /// The list of users that the current user has chosen to ignore.
 /// Ideally we shouldn't have to maintain this list ourselves,
@@ -1351,6 +1378,7 @@ fn username_to_full_user_id(
         })
 }
 
+
 /// Info we store about a room received by the room list service.
 ///
 /// This struct is necessary in order for us to track the previous state
@@ -1380,11 +1408,11 @@ impl From<matrix_sdk::Room> for RoomListServiceRoomInfo {
     }
 }
 
-
 async fn async_main_loop(
     mut login_receiver: Receiver<LoginRequest>,
 ) -> Result<()> {
-    tracing_subscriber::fmt::init();
+    // only init subscribe once
+    let _ = tracing_subscriber::fmt::try_init();
 
     let most_recent_user_id = persistent_state::most_recent_user_id();
     log!("Most recent user ID: {most_recent_user_id:?}");
@@ -1487,7 +1515,7 @@ async fn async_main_loop(
     // enqueue_popup_notification(status.clone());
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
-    CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
+    *CLIENT.lock().unwrap() = Some(client.clone());
 
     add_verification_event_handlers_and_sync_client(client.clone());
 
@@ -1504,7 +1532,7 @@ async fn async_main_loop(
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
     let room_list_service = sync_service.room_list_service();
-    SYNC_SERVICE.set(sync_service).unwrap_or_else(|_| panic!("BUG: SYNC_SERVICE already set!"));
+    *SYNC_SERVICE.lock().unwrap() = Some(Arc::new(sync_service));
 
     let all_rooms_list = room_list_service.all_rooms().await?;
     handle_room_list_service_loading_state(all_rooms_list.loading_state());
@@ -2077,9 +2105,8 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
             log!("Received a sync service state update: {state:?}");
             if state == sync_service::State::Error {
                 log!("Restarting sync service due to error.");
-                if let Some(ss) = SYNC_SERVICE.get() {
-                    ss.start().await;
-                }
+                let sync_service = get_sync_service().expect("BUG: sync service is None");
+                sync_service.start().await;
             }
         }
     });
@@ -2860,5 +2887,131 @@ impl UserPowerLevels {
     #[doc(alias("unpin"))]
     pub fn can_pin(self) -> bool {
         self.contains(UserPowerLevels::RoomPinnedEvents)
+    }
+}
+
+/// Logs out the current user and prepares the application for a new login session.
+///
+/// Performs server-side logout, cleans up client state, closes all tabs, 
+/// and restarts the Matrix runtime. Reports success or failure via LoginAction.
+///
+/// # Parameters
+/// - `is_desktop` - Boolean indicating if the current UI mode is desktop (true) or mobile (false).
+/// 
+/// # Returns
+/// - `Ok(())` - Logout succeeded (possibly with cleanup warnings)
+/// - `Err(...)` - Logout failed with detailed error
+async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
+    // Collect all errors encountered during the logout process
+    let mut errors = Vec::new();
+    log!("Starting logout process...");
+    let Some(client) = get_client() else {
+        let error_msg = "Logout failed: No active client found";
+        log!("Error: {}", error_msg);
+        Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
+        return Err(anyhow::anyhow!(error_msg));
+    };
+
+    if !client.matrix_auth().logged_in() {
+        let error_msg = "Client not logged in, skipping server-side logout";
+        log!("Error: {}", error_msg);
+        Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
+        return Err(anyhow::anyhow!(error_msg));
+    }
+
+    get_sync_service().unwrap().stop().await;
+
+    log!("Performing server-side logout...");
+    match tokio::time::timeout(tokio::time::Duration::from_secs(5), client.matrix_auth().logout()).await {
+        Ok(Ok(_)) => {
+            log!("Server-side logout successful.")
+        },
+        Ok(Err(e)) => {
+            let error_msg = format!("Server-side logout failed: {}. Please try again later", e);
+            log!("Error :{}", error_msg);
+            Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
+            return Err(anyhow::anyhow!(error_msg));
+        },
+        Err(_) => {
+            let error_msg = "Server-side logout timed out after 5 seconds. Please try again later";
+            log!("Error: {}", error_msg);
+            Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
+            return Err(anyhow::anyhow!(error_msg));
+        },
+    }
+
+    // Clean up client state and caches
+    log!("Cleaning up client state and caches...");
+    CLIENT.lock().unwrap().take();
+    SYNC_SERVICE.lock().unwrap().take();
+    TOMBSTONED_ROOMS.lock().unwrap().clear();
+    IGNORED_USERS.lock().unwrap().clear();
+    DEFAULT_SSO_CLIENT.lock().unwrap().take();
+    // Note: Taking REQUEST_SENDER closes the channel sender, causing the async_worker task to exit its loop
+    // This triggers the "async_worker task ended unexpectedly" error in the monitor task, but this is expected during logout
+    REQUEST_SENDER.lock().unwrap().take();
+    log!("Client state and caches cleared after successful server logout.");
+
+    // Desktop UI has tabs that must be properly closed, while mobile UI has no tabs concept.
+    if is_desktop {
+        log!("Requesting to close all tabs in desktop");
+        let (tx, rx)  = oneshot::channel::<bool>();
+        Cx::post_action(MainDesktopUiAction::CloseAllTabs { on_close_all: tx });
+        match rx.await {
+            Ok(_) => {
+                log!("Received signal that the MainDesktopUI successfully closed all tabs");
+            },
+            Err(e)=> {
+                let error_msg = format!("Close all tab failed {e}");
+                log!("Error :{}", error_msg);
+                Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
+                return Err(anyhow::anyhow!(error_msg));
+            },
+        }
+    }
+
+    log!("Deleting latest user ID file...");
+    // We delete latest_user_id here for the following reasons:
+    // 1. we delete the latest user ID such that Robrix won't auto-login the next time it starts,
+    // 2. we don't delete the session file, such that the user could re-login using that session in the future.
+    if let Err(e) = delete_latest_user_id().await {
+        errors.push(e.to_string());
+    }
+
+    shutdown_background_tasks().await;
+    // Restart the Matrix tokio runtime
+    // This is a critical step; failure might prevent future logins
+    log!("Restarting Matrix tokio runtime...");
+    if start_matrix_tokio().is_err() {
+        // Send failure notification and return immediately, as the runtime is fundamental
+        let final_error_msg = String::from("Logout succeeded, but Robrix could not re-connect to the Matrix backend. Please exit and restart Robrix");
+        Cx::post_action(LogoutAction::LogoutFailure(final_error_msg.clone()));
+        return Err(anyhow::anyhow!(final_error_msg));
+    }
+    log!("Matrix tokio runtime restarted successfully.");
+
+    // --- Final result handling ---
+    if errors.is_empty() {
+        // Complete success
+        log!("Logout process completed successfully.");
+        Cx::post_action(LogoutAction::LogoutSuccess);
+        Ok(())
+    } else {
+        // Partial success (server logout ok, but cleanup errors)
+        let warning_msg = format!(
+            "Logout completed, but some cleanup operations failed: {}",
+            errors.join("; ")
+        );
+        log!("Warning: {}", warning_msg);
+        Cx::post_action(LogoutAction::LogoutSuccess); 
+        Ok(())
+    }
+
+}
+
+async fn shutdown_background_tasks() {
+    let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
+    if let Some(existing_rt) = rt_guard.take() {
+        existing_rt.shutdown_background();
     }
 }
