@@ -1431,8 +1431,7 @@ impl MentionableTextInputRef {
     }
 
 
-    /// Returns the mentions analysis for the given html message content.
-    /// Returns (user_mentions, has_room_mention)
+    /// Returns the mentions actually present in the given html message content.
     fn get_real_mentions_in_html_text(&self, html: &str) -> Mentions {
         let mut mentions = Mentions::new();
 
