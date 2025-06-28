@@ -1,6 +1,6 @@
 use std::sync::Arc;
-use makepad_widgets::Cx;
-use matrix_sdk::ruma::OwnedRoomId;
+use makepad_widgets::{Cx, WidgetUid};
+use matrix_sdk::{ruma::{OwnedRoomAliasId, OwnedRoomId}, OwnedServerName};
 
 pub mod room_input_bar;
 pub mod room_member_manager;
@@ -8,6 +8,22 @@ pub mod room_display_filter;
 
 pub fn live_design(cx: &mut Cx) {
     room_input_bar::live_design(cx)
+}
+
+/// Actions sent from the backend task as a result of a [`MatrixRequest::ResolveRoomAlias`].
+#[derive(Debug)]
+pub enum ResolveRoomAliasAction {
+    Resolved {
+        requester_uid: WidgetUid,
+        room_alias: OwnedRoomAliasId,
+        room_id: OwnedRoomId,
+        servers: Vec<OwnedServerName>,
+    },
+    Failed {
+        requester_uid: WidgetUid,
+        room_alias: OwnedRoomAliasId,
+        error: matrix_sdk::Error,
+    }
 }
 
 /// Basic details about a room, used for displaying a preview of it.
