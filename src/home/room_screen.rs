@@ -19,7 +19,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::RoomsPanelRestoreAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{RoomsPanelRestoreAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::{RoomsListAction, RoomsListRef}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -27,6 +27,7 @@ use crate::{
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
+use crate::room::ResolveRoomAliasAction;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
@@ -995,6 +996,43 @@ impl Widget for RoomScreen {
                         );
                     }
                 }
+
+                // Handle resolved room alias actions - only for requests from this widget
+                if let Some(ResolveRoomAliasAction::Resolved { requester_uid, room_alias: _ , room_id, servers: _ }) = action.downcast_ref() {
+                    // Only handle this action if it was requested by this widget
+                    if *requester_uid == room_screen_widget_uid {
+                        if let Some(known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+                            if known_room.is_space() {
+                                enqueue_popup_notification(PopupItem {
+                                    message: format!("Found space {} but it is a space, not a regular room.", room_id),
+                                    auto_dismissal_duration: Some(3.0)
+                                });
+                            } else {
+                                cx.widget_action(room_screen_widget_uid, &scope.path, RoomsListAction::Selected(
+                                    SelectedRoom::JoinedRoom {
+                                        room_id: room_id.clone().into(),
+                                        room_name: known_room.name()
+                                    }
+                                ));
+                            }
+                        } else {
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Found room {} but you are not joined to it yet.", room_id),
+                                auto_dismissal_duration: Some(3.0)
+                            });
+                        }
+                    }
+                }
+
+                if let Some(ResolveRoomAliasAction::Failed { requester_uid, room_alias, error }) = action.downcast_ref() {
+                    if *requester_uid == room_screen_widget_uid {
+                        error!("Failed to resolve room alias {}: {:?}", room_alias, error);
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Could not find room with alias: {}", room_alias),
+                            auto_dismissal_duration: None
+                        });
+                    }
+                }
             }
 
             /*
@@ -1731,6 +1769,7 @@ impl RoomScreen {
         action: &Action,
         pane: &UserProfileSlidingPaneRef,
     ) -> bool {
+        let uid = self.widget_uid();
         // A closure that handles both MatrixToUri and MatrixUri links,
         // and returns whether the link was handled.
         let mut handle_matrix_link = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
@@ -1763,26 +1802,59 @@ impl RoomScreen {
                 }
                 MatrixId::Room(room_id) => {
                     if self.room_id.as_ref() == Some(room_id) {
-                        enqueue_popup_notification(PopupItem { 
-                            message: "You are already viewing that room.".into(), 
-                            auto_dismissal_duration: None 
+                        enqueue_popup_notification(PopupItem {
+                            message: "You are already viewing that room.".into(),
+                            auto_dismissal_duration: Some(3.0)
                         });
                         return true;
                     }
-                    if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
-                        log!("TODO: jump to known room {}", room_id);
+                    if let Some(known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+                        cx.widget_action(uid, &Scope::empty().path, RoomsListAction::Selected(
+                            SelectedRoom::JoinedRoom {
+                                room_id: room_id.clone().into(),
+                                room_name: known_room.name()
+                            }
+                        ));
                     } else {
-                        log!("TODO: fetch and display room preview for room {}", room_id);
+                        // TODO: fetch and display a room preview for the given room ID.
+                        enqueue_popup_notification(PopupItem {
+                            message: "You are not joined to this room yet.".into(),
+                            auto_dismissal_duration: Some(3.0)
+                        });
                     }
-                    false
+                    true
                 }
                 MatrixId::RoomAlias(room_alias) => {
-                    log!("TODO: open room alias {}", room_alias);
-                    // TODO: open a room loading screen that shows a spinner
-                    //       while our background async task calls Client::resolve_room_alias()
-                    //       and then either jumps to the room if known, or fetches and displays
-                    //       a room preview for that room.
-                    false
+                    // Check if we already have this room alias in the client
+                    if let Some(known_room) = get_client().and_then(|c| {
+                        c.rooms().into_iter().find(|room| {
+                            room.canonical_alias().as_ref() == Some(room_alias) ||
+                            room.alt_aliases().contains(room_alias)
+                        })
+                    }) {
+                        let room_id = known_room.room_id();
+                        if self.room_id.as_ref() == Some(&room_id.to_owned()) {
+                            enqueue_popup_notification(PopupItem {
+                                message: "You are already viewing that room.".into(),
+                                auto_dismissal_duration: Some(3.0)
+                            });
+                        } else {
+                            cx.widget_action(uid, &Scope::empty().path, RoomsListAction::Selected(
+                                SelectedRoom::JoinedRoom {
+                                    room_id: room_id.to_owned().into(),
+                                    room_name: known_room.name()
+                                }
+                            ));
+                        }
+                        return true;
+                    }
+                    // TODO: open a room loading screen that shows a spinner.
+                    // Submit async request to resolve the room alias
+                    submit_async_request(MatrixRequest::ResolveRoomAlias {
+                        room_alias: room_alias.clone(),
+                        requester_uid: uid,
+                    });
+                    true
                 }
                 MatrixId::Event(room_id, event_id) => {
                     log!("TODO: open event {} in room {}", event_id, room_id);
@@ -1795,15 +1867,10 @@ impl RoomScreen {
             }
         };
 
-        if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
-            let mut link_was_handled = false;
-            if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
-                link_was_handled |= handle_matrix_link(matrix_to_uri.id(), matrix_to_uri.via());
-            }
-            else if let Ok(matrix_uri) = MatrixUri::parse(&url) {
-                link_was_handled |= handle_matrix_link(matrix_uri.id(), matrix_uri.via());
-            }
-
+        // Prioritize handling RobrixHtmlLinkAction::ClickedMatrixLink over HtmlLinkAction::Clicked
+        // to avoid duplicate processing of the same Matrix link
+        if let RobrixHtmlLinkAction::ClickedMatrixLink { url, matrix_id, via, .. } = action.as_widget_action().cast() {
+            let link_was_handled = handle_matrix_link(&matrix_id, &via);
             if !link_was_handled {
                 log!("Opening URL \"{}\"", url);
                 if let Err(e) = robius_open::Uri::new(&url).open() {
@@ -1816,8 +1883,15 @@ impl RoomScreen {
             }
             true
         }
-        else if let RobrixHtmlLinkAction::ClickedMatrixLink { url, matrix_id, via, .. } = action.as_widget_action().cast() {
-            let link_was_handled = handle_matrix_link(&matrix_id, &via);
+        else if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
+            let mut link_was_handled = false;
+            if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
+                link_was_handled |= handle_matrix_link(matrix_to_uri.id(), matrix_to_uri.via());
+            }
+            else if let Ok(matrix_uri) = MatrixUri::parse(&url) {
+                link_was_handled |= handle_matrix_link(matrix_uri.id(), matrix_uri.via());
+            }
+
             if !link_was_handled {
                 log!("Opening URL \"{}\"", url);
                 if let Err(e) = robius_open::Uri::new(&url).open() {

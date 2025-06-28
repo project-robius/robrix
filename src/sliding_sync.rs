@@ -5,7 +5,7 @@ use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
-use makepad_widgets::{error, log, warning, Cx, SignalToUI};
+use makepad_widgets::{error, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
@@ -33,7 +33,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, room::{ResolveRoomAliasAction, RoomPreviewAvatar}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -295,7 +295,10 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
     },
     /// Request to resolve a room alias into a room ID and the servers that know about that room.
-    ResolveRoomAlias(OwnedRoomAliasId),
+    ResolveRoomAlias {
+        requester_uid: WidgetUid,
+        room_alias: OwnedRoomAliasId,
+    },
     /// Request to fetch an Avatar image from the server.
     /// Upon completion of the async media request, the `on_fetched` function
     /// will be invoked with the content of an `AvatarUpdate`.
@@ -898,13 +901,28 @@ async fn async_worker(
             MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
                 spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
             }
-            MatrixRequest::ResolveRoomAlias(room_alias) => {
+            MatrixRequest::ResolveRoomAlias { room_alias, requester_uid } => {
                 let Some(client) = CLIENT.get() else { continue };
                 let _resolve_task = Handle::current().spawn(async move {
                     log!("Sending resolve room alias request for {room_alias}...");
-                    let res = client.resolve_room_alias(&room_alias).await;
-                    log!("Resolved room alias {room_alias} to: {res:?}");
-                    todo!("Send the resolved room alias back to the UI thread somehow.");
+                    let result_action = match client.resolve_room_alias(&room_alias).await {
+                        Ok(response) => {
+                            ResolveRoomAliasAction::Resolved {
+                                requester_uid,
+                                room_alias,
+                                room_id: response.room_id,
+                                servers: response.servers
+                            }
+                        }
+                        Err(e) => {
+                            ResolveRoomAliasAction::Failed {
+                                requester_uid,
+                                room_alias,
+                                error: e.into()
+                            }
+                        }
+                    };
+                    Cx::post_action(result_action);
                 });
             }
             MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
