@@ -914,10 +914,9 @@ impl Widget for RoomScreen {
                     let Some(_tl_state) = self.tl_state.as_ref() else { continue };
                     let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
                         // Use the room_members from global manager first, then fallback to global cache
-                        let current_room_members = room_members::get_room_members(&reaction_data.room_id)
-                            .unwrap_or_else(|| Arc::new(Vec::new()));
-                        let current_room_members = current_room_members.as_ref();
-                        if let Some(member) = current_room_members.iter().find(|m| m.user_id() == sender) {
+                        if let Some(current_room_members) = room_members::get_room_members(&reaction_data.room_id)
+                            .and_then(|members| members.iter().find(|m| m.user_id() == sender))
+                        {
                             member.display_name().map(|n| n.to_string()).unwrap_or_else(|| sender.to_string())
                         } else {
                             user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
