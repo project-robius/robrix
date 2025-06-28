@@ -15,8 +15,15 @@ pub fn enqueue_popup_notification(mut popup_item: PopupItem) {
     SignalToUI::set_ui_signal();
 }
 
+/// Status of a popup notification.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum PopupStatus {
+    #[default] Success,
+    Failure,
+}
+
 /// Popup notification item.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PopupItem {
     /// Text to be displayed in the popup.
     pub message: String,
@@ -24,6 +31,8 @@ pub struct PopupItem {
     /// Maximum duration is 3 minutes.
     /// If none, the popup will not automatically close.
     pub auto_dismissal_duration: Option<f64>,
+    /// Status of the popup (success or failure).
+    pub status: PopupStatus,
 }
 
 live_design! {
@@ -33,23 +42,31 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::icon_button::RobrixIconButton;
-    ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
-
+    ICO_CHECK = dep("crate://self/resources/icons/checkmark.svg")
+    ICO_FAT_CROSS = dep("crate://self/resources/icons/fat_cross.svg")
+    // Other possible color themes that is not too glaring.
+    // COLOR_POPUP_GREEN = #43bb9e;
+    // COLOR_POPUP_RED = #e74c3c;
     PopupDialog = <RoundedView> {
         width: 275
         height: Fit
-        padding: {top: 0, right: 5, bottom: 0, left: 10}
+        padding: 0,
         flow: Overlay
         show_bg: true,
         draw_bg: {
             color: #fff
             instance border_radius: 4.0
+            instance popup_status: 0.0  // 0.0 = success, 1.0 = failure
             fn pixel(self) -> vec4 {
                 let border_color = #d4;
                 let border_size = 1;
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                let body = #fff
-
+                // Choose background color based on status
+                let body = mix(
+                    (COLOR_ACCEPT_GREEN),  // success: green
+                    (COLOR_DANGER_RED),    // failure: red
+                    self.popup_status
+                );
                 sdf.box(
                     1.,
                     1.,
@@ -69,80 +86,130 @@ live_design! {
         popup_content = <View> {
             width: Fill,
             height: Fit,
-            flow: Right
+            flow: Down
             <View> {
-                width: 240,
+                width: Fill,
                 height: Fit,
-                align: {x: 0.0, y: 0.5}
-                padding: {left: 5, top: 10, bottom: 10, right: 0}
-                popup_label = <Label> {
-                    width: Fill,
+                padding: { top: 0, right: 5, bottom: 0, left: 10 }
+                flow: Right,
+                align: {
+                    y: 0.5,
+                }
+                // Left side with status icon
+                <View> {
+                    width: 25,
                     height: Fit,
-                    draw_text: {
-                        color: #000,
-                        text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10 },
-                        wrap: Word
+                    align: { x: 0.5, y: 0.5 }
+                    padding: { left: 0, top: 10, bottom: 10, right: 0 }
+                    check_icon = <View> {
+                        width: Fill,
+                        height: Fit,
+                        visible: false,
+                        <Icon> {
+                            draw_icon: {
+                                svg_file: (ICO_CHECK),
+                                color: #ffffff,
+                            }
+                            icon_walk: { width: 18, height: 18 }
+                        }
+                    }
+                    cross_icon = <View> {
+                        width: Fill,
+                        height: Fit,
+                        visible: false,
+                        <Icon> {
+                            draw_icon: {
+                                svg_file: (ICO_FAT_CROSS),
+                                color: #ffffff,
+                            }
+                            icon_walk: { width: 18, height: 18 }
+                        }
+                    }
+                }
+                
+                // Main content area
+                <View> {
+                    width: 215,
+                    height: Fit,
+                    align: { x: 0.0, y: 0.5 }
+                    padding: {left: 0, top: 10, bottom: 10, right: 5}
+                    popup_label = <Label> {
+                        width: Fill,
+                        height: Fit,
+                        draw_text: {
+                            color: #fff,
+                            text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10 },
+                            wrap: Word
+                        }
+                    }
+                }
+                right_view = <View> {
+                    width: Fit,
+                    height: Fill,
+                    flow: Down
+                    // The "X" close button on the top right
+                    close_button = <RobrixIconButton> {
+                        width: Fit,
+                        height: Fit,
+                        padding: 4
+                        spacing: 0,
+                        align: { x: 0.5, y: 0.5 }
+                        draw_bg: {
+                            instance color: #FEFEFE00
+                        }
+                        draw_icon: {
+                            svg_file: (ICO_FAT_CROSS),
+                            fn get_color(self) -> vec4 {
+                                return #FFFFFF;
+                            }
+                        }
+                        icon_walk: {width: 12, height: 12}
                     }
                 }
             }
-            right_view = <View> {
-                width: Fit,
-                height: Fill,
-                flow: Down
-                // The "X" close button on the top right
-                close_button = <RobrixIconButton> {
-                    width: Fit,
-                    height: Fit,
-                    padding: 4
-                    spacing: 0,
-                    align: {x: 0.5, y: 0.5}
-                    draw_icon: {
-                        svg_file: (ICON_CLOSE),
-                        fn get_color(self) -> vec4 {
-                            return #x888;
-                        }
-                    }
-                    icon_walk: {width: 12, height: 12}
-                }
-                progress_bar = <View> {
-                    width: Fill,
-                    height: Fill,
-                    show_bg: true,
-                    draw_bg: {
-                        instance border_radius: 2.,
-                        instance border_size: 1.0,
-                        instance progress_bar_color: (COLOR_AVATAR_BG_IDLE),
-                        instance progress_bar_background_color: (COLOR_DISABLE_GRAY),
-                        instance display_progress_bar: 1.0 // TODO: this is the only thing that should be an `instance`
-                        uniform anim_time: 0.0,
-                        uniform anim_duration: 2.0,
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            let rect_size = self.rect_size;
-                            if self.display_progress_bar > 0.5 {
+            progress_bar = <View> {
+                width: Fill,
+                height: 10,
+                show_bg: true,
+                margin: { bottom: 0 },
+                padding: 0,
+                draw_bg: {
+                    instance direction: 0.0, // Direction of the progress bar: 0.0 is right to left, 1.0 is top to bottom.
+                    uniform border_radius: 4.,
+                    uniform border_size: 1.0,
+                    uniform progress_bar_color: #00000033,
+                    instance display_progress_bar: 1.0 // TODO: this is the only thing that should be an `instance`
+                    uniform anim_time: 0.0,
+                    uniform anim_duration: 2.0,
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let rect_size = self.rect_size;
+                        if self.display_progress_bar > 0.5 {
+                            if self.direction > 0.5 {
+                                // Top to bottom
                                 sdf.box(
-                                    self.border_size,
-                                    self.border_size,
+                                    self.border_size * 2.0,
+                                    self.border_size * 2.0,
                                     rect_size.x - self.border_size * 2.0,
+                                    rect_size.y * min(1.0, self.anim_time / self.anim_duration) - self.border_size * 2.0,
+                                    max(1.0, self.border_radius)
+                                )
+                            } else {
+                                // Right to left
+                                sdf.box(
+                                    self.border_size * 2.0,
+                                    self.border_size * 2.0,
+                                    rect_size.x * max(0.0, (self.anim_duration - self.anim_time) / self.anim_duration) - self.border_size * 2.0,
                                     rect_size.y - self.border_size * 2.0,
                                     max(1.0, self.border_radius)
                                 )
-                                sdf.fill(self.progress_bar_background_color);
-                                sdf.box(
-                                    self.border_size * 1.5,
-                                    self.border_size * 2.0,
-                                    rect_size.x - self.border_size * 3.0,
-                                    rect_size.y * min(1.0,self.anim_time / self.anim_duration) - self.border_size * 2.0,
-                                    max(1.0, self.border_radius)
-                                )
-                                sdf.fill(self.progress_bar_color);
                             }
-                            return sdf.result
+                            sdf.fill(self.progress_bar_color);
                         }
+                        return sdf.result
                     }
                 }
             }
-            
         }
 
         animator: {
@@ -153,24 +220,20 @@ live_design! {
                     from: {all: Forward {duration: 0.0}}
                     apply: {
                         popup_content = {
-                            right_view = {
-                                progress_bar = {
-                                    draw_bg: {anim_time: 0.0}
-                                }
+                            progress_bar = {
+                                draw_bg: {anim_time: 0.0}
                             }
                         }
                     }
                 }
-                slide_down = {
+                slide = {
                     redraw: true,
                     // Maximum auto dismissal duration is 3 minutes.
                     from: {all: Forward {duration: 180.0}}
                     apply: {
                         popup_content = {
-                            right_view = {
-                                progress_bar = {
-                                    draw_bg: {anim_time: 180.0}
-                                }
+                            progress_bar = {
+                                draw_bg: {anim_time: 180.0}
                             }
                         }
                     }
@@ -229,24 +292,28 @@ pub struct RobrixPopupNotification {
     #[redraw]
     #[live]
     draw_bg: DrawQuad,
-
     #[layout]
     layout: Layout,
     #[walk]
     walk: Walk,
-    // A list of tuples containing individual widgets, their content and the close timer in the order they were added.
+    // A list of tuples containing individual widgets, its content and the close timer in the order they were added.
     #[rust]
-    popups: Vec<(View, String, Timer)>,
+    popups: Vec<(View, PopupItem, Timer)>,
 }
 
 impl LiveHook for RobrixPopupNotification {
     fn after_apply(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) {
-        self.draw_list.redraw(cx);
-        for (view, _, _) in self.popups.iter_mut() {
-            if let Some(index) = nodes.child_by_name(index, live_id!(popup_content).as_field()) {
+        for (view, popup_item, _) in self.popups.iter_mut() {
+            if let Some(index) = nodes.child_by_name(index, live_id!(content).as_field()) {                
                 view.apply(cx, apply, index, nodes);
+                view.label(id!(popup_label))
+                    .set_text(cx, &popup_item.message);
+                let is_success = popup_item.status == PopupStatus::Success;
+                view.view(id!(check_icon)).set_visible(cx, is_success);
+                view.view(id!(cross_icon)).set_visible(cx, !is_success);
             }
         }
+        self.draw_list.redraw(cx);
     }
 }
 
@@ -260,22 +327,16 @@ impl Widget for RobrixPopupNotification {
         if self.popups.is_empty() {
             return;
         }
-
-        let mut removed_indices = Vec::new();
-        for (index, (view, _message, close_popup_timer)) in self.popups.iter_mut().enumerate() {
-            if close_popup_timer.is_event(event).is_some() {
-                removed_indices.push(index);
-            }
+        for (index, (view, _popup_item, close_popup_timer)) in self.popups.iter_mut().enumerate() {
             view.handle_event(cx, event, scope);
+            if close_popup_timer.is_event(event).is_some() {
+                self.popups.remove(index);
+                // Without this redraw, the last popup will not be removed from the screen automatically.
+                self.draw_bg.redraw(cx);
+                break;
+            }
         }
         self.widget_match_event(cx, event, scope);
-        if removed_indices.is_empty() {
-            return;
-        }
-        for &i in removed_indices.iter() {
-            self.popups.remove(i);
-        }
-        self.draw_bg.redraw(cx);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -283,7 +344,7 @@ impl Widget for RobrixPopupNotification {
         self.draw_bg.begin(cx, walk, self.layout);
         if !self.popups.is_empty() {
             cx.begin_turtle(walk, self.layout);
-            for (view, _, _) in self.popups.iter_mut() {
+            for (view, _popup_item, _) in self.popups.iter_mut() {
                 let walk = walk.with_margin_bottom(5.0);
                 let _ = view.draw_walk(cx, scope, walk);
             }
@@ -304,57 +365,59 @@ impl RobrixPopupNotification {
         let mut view = View::new_from_ptr(cx, self.content);
         view.label(id!(popup_label))
             .set_text(cx, &popup_item.message);
+        let is_success = popup_item.status == PopupStatus::Success;
+        view.view(id!(check_icon)).set_visible(cx, is_success);
+        view.view(id!(cross_icon)).set_visible(cx, !is_success);
+        // Apply status-specific styling
+        view.apply_over(
+            cx,
+            live! {
+                draw_bg: {
+                    popup_status:  ( if is_success { 0.0 } else { 1.0 } )
+                }
+            },
+        );
         let close_timer = if let Some(duration) = popup_item.auto_dismissal_duration {
             view.apply_over(
                 cx,
                 live! {
                     popup_content = {
-                        right_view = {
-                            progress_bar = {
-                                draw_bg: {anim_duration: (duration)}
-                            }
+                        progress_bar = {
+                            draw_bg: { anim_duration: (duration) }
                         }
                     }
                 },
             );
-            view.animator_play(cx, id!(mode.slide_down));
+            view.animator_play(cx, id!(mode.slide));
             cx.start_timeout(duration)
         } else {
             view.apply_over(
                 cx,
                 live! {
                     popup_content = {
-                        right_view = {
-                            progress_bar = {
-                                draw_bg: {display_progress_bar: 0.0}
-                            }
+                        progress_bar = {
+                            draw_bg: { display_progress_bar: 0.0 }
                         }
                     }
                 },
             );
             Timer::empty()
         };
-        self.popups.push((view, popup_item.message, close_timer));
+        self.popups.push((view, popup_item, close_timer));
         self.redraw(cx);
     }
 }
 
 impl WidgetMatchEvent for RobrixPopupNotification {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let mut removed_indices = Vec::new();
-        for (i, (view, _data, close_timer)) in self.popups.iter_mut().enumerate() {
+        for (i, (view, _popup_item, close_timer)) in self.popups.iter_mut().enumerate() {
             if view.button(id!(close_button)).clicked(actions) {
-                removed_indices.push(i);
                 cx.stop_timer(*close_timer);
                 view.animator_cut(cx, id!(mode.close_slider));
+                self.popups.remove(i);
+                self.draw_bg.redraw(cx);
+                break;
             }
         }
-        if removed_indices.is_empty() {
-            return;
-        }
-        for &i in removed_indices.iter() {
-            self.popups.remove(i);
-        }
-        self.draw_bg.redraw(cx);
     }
 }
