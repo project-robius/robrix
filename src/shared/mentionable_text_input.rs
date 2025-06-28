@@ -1458,8 +1458,7 @@ impl MentionableTextInputRef {
         mentions
     }
 
-    /// Returns the mentions analysis for the given markdown message content.
-    /// Returns (user_mentions, has_room_mention)
+    /// Returns the mentions actually present in the given markdown message content.
     fn get_real_mentions_in_markdown_text(&self, markdown: &str) -> Mentions {
         let mut mentions = Mentions::new();
 
