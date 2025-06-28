@@ -397,8 +397,9 @@ impl Widget for MentionableTextInput {
 
 impl MentionableTextInput {
 
-    // Check if members are loading and show loading indicator if needed
-    // Returns true if we should return early (loading state)
+    /// Check if members are loading and show loading indicator if needed.
+    ///
+    /// Returns true if we should return early because we're in the loading state.
     fn handle_members_loading_state(&mut self, cx: &mut Cx, room_members: &Option<std::sync::Arc<Vec<RoomMember>>>) -> bool {
         let Some(room_members) = room_members else {
             self.members_loading = true;
