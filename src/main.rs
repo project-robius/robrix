@@ -4,7 +4,7 @@
 
 // This cfg option hides the command prompt console window on Windows.
 // TODO: move this into Makepad itself as an addition to the `MAKEPAD` env var.
-#![cfg_attr(all(hide_windows_console, target_os = "windows"), windows_subsystem = "windows")]
+#![cfg_attr(all(feature = "hide_windows_console", target_os = "windows"), windows_subsystem = "windows")]
 
 fn main() {
     robrix::app::app_main()
