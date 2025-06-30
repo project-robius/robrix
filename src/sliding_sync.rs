@@ -128,10 +128,11 @@ async fn build_client(
     );
 
     let client = builder.build().await?;
+    let homeserver_url =  client.homeserver().to_string();
     Ok((
         client,
         ClientSessionPersisted {
-            homeserver: homeserver_url.to_string(),
+            homeserver: homeserver_url,
             db_path,
             passphrase,
         },
@@ -1487,6 +1488,8 @@ async fn async_main_loop(
     // enqueue_popup_notification(status.clone());
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
+    client.event_cache().subscribe().expect("BUG: CLIENT's event cache unable to subscribe");
+
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
 
     add_verification_event_handlers_and_sync_client(client.clone());
@@ -1495,6 +1498,7 @@ async fn async_main_loop(
     handle_ignore_user_list_subscriber(client.clone());
 
     let sync_service = SyncService::builder(client.clone())
+        .with_offline_mode()
         .build()
         .await?;
 
