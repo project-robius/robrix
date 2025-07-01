@@ -126,6 +126,8 @@ pub enum LogoutAction {
     LogoutSuccess,
     /// A negative response from the backend Matrix task to the logout.
     LogoutFailure(String),
+    /// Signal to clean up mobile mode resources 
+    CleanupMobileResources,
     None,
 }
 

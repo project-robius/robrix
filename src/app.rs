@@ -129,7 +129,7 @@ live_design! {
                         // However, the DesktopButton widget doesn't support drawing a background color yet,
                         // so these colors are the colors of the icon itself, not the background highlight.
                         // When it supports that, we will keep the icon color always black,
-                        // and change the background color instead based on the above colors.
+                        // and change the background color instss'sbssed on the above colors.
                         min   = { draw_bg: {color: #0, color_hover: #9, color_down: #3} }
                         max   = { draw_bg: {color: #0, color_hover: #9, color_down: #3} }
                         close = { draw_bg: {color: #0, color_hover: #E81123, color_down: #FF0015} }
@@ -260,6 +260,12 @@ impl MatchEvent for App {
                 self.ui.modal(id!(logout_confirm_modal)).close(cx);
                 self.update_login_visibility(cx);
                 self.ui.redraw(cx);
+                continue;
+            }
+
+            if let Some(LogoutAction::CleanupMobileResources) = action.downcast_ref() {
+                // Reset saved dock state to prevent crashes when switching back to desktop mode
+                self.app_state.saved_dock_state = Default::default();
                 continue;
             }
 

@@ -33,7 +33,7 @@ use crate::{
     }, login::{login_screen::LoginAction, logout_confirm_modal::LogoutAction}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_latest_user_id, load_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, room::{room_member_manager::RoomMemberManager, RoomPreviewAvatar}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -2922,7 +2922,7 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
     get_sync_service().unwrap().stop().await;
 
     log!("Performing server-side logout...");
-    match tokio::time::timeout(tokio::time::Duration::from_secs(5), client.matrix_auth().logout()).await {
+    match tokio::time::timeout(tokio::time::Duration::from_secs(30), client.matrix_auth().logout()).await {
         Ok(Ok(_)) => {
             log!("Server-side logout successful.")
         },
@@ -2968,6 +2968,10 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
                 return Err(anyhow::anyhow!(error_msg));
             },
         }
+    } else {
+        // Clean up tabs state from desktop mode when logging out in mobile mode.
+        // This prevents crashes when switching back to desktop mode after login.
+        Cx::post_action(LogoutAction::CleanupMobileResources);
     }
 
     log!("Deleting latest user ID file...");
