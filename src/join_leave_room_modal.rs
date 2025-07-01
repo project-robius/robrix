@@ -465,9 +465,11 @@ impl JoinLeaveRoomModal {
         accept_button.set_text(cx, "Yes");
         accept_button.set_enabled(cx, true);
         accept_button.set_visible(cx, true);
+        accept_button.reset_hover(cx);
         cancel_button.set_text(cx, "Cancel");
         cancel_button.set_enabled(cx, true);
         cancel_button.set_visible(cx, true);
+        cancel_button.reset_hover(cx);
 
         self.kind = Some(kind);
         self.final_success = None;

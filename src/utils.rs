@@ -1,9 +1,9 @@
-use std::{borrow::Cow, time::SystemTime};
+use std::{borrow::Cow, fmt::Display, ops::Deref, str::{Chars, FromStr}, time::SystemTime};
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::{client::media::get_content_thumbnail::v3::Method, error::FromHttpResponseError}, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}, RumaApiError};
+use makepad_widgets::{image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, *};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
 
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
@@ -123,7 +123,9 @@ pub fn stringify_join_leave_error(
         // Special case for 404 errors, which indicate the room no longer exists.
         // This avoids the weird "no known servers" error, which is misleading and incorrect.
         // See: <https://github.com/element-hq/element-web/issues/25627>.
-        matrix_sdk::Error::Http(matrix_sdk::HttpError::Api(FromHttpResponseError::Server(RumaApiError::ClientApi(e)))) if e.status_code.as_u16() == 404 => {
+        matrix_sdk::Error::Http(error)
+            if error.as_client_api_error().is_some_and(|e| e.status_code.as_u16() == 404) =>
+        {
             Some(format!(
                 "Failed to {} {room_str}: the room no longer exists on the server.{}",
                 if was_join { "join" } else { "leave" },
@@ -536,6 +538,63 @@ pub fn build_grapheme_byte_positions(text: &str) -> Vec<usize> {
     }
 
     positions
+}
+
+/// A RON-(de)serializable wrapper around [`OwnedRoomId`].
+#[derive(Clone, Debug)]
+pub struct OwnedRoomIdRon(pub OwnedRoomId);
+impl SerRon for OwnedRoomIdRon {
+    /// Serialize a `OwnedRoomId` to its string form, using ron.
+    fn ser_ron(&self, d: usize, s: &mut SerRonState) {
+        self.0.to_string().ser_ron(d, s);
+    }
+}
+impl DeRon for OwnedRoomIdRon {
+    fn de_ron(s: &mut DeRonState, i: &mut Chars) -> Result<Self, DeRonErr> {
+        OwnedRoomId::from_str(&String::de_ron(s, i)?)
+            .map(OwnedRoomIdRon)
+            .map_err(|e| DeRonErr {
+                msg: e.to_string(),
+                line: s.line,
+                col: s.col,
+            })
+    }
+}
+impl From<OwnedRoomId> for OwnedRoomIdRon {
+    fn from(room_id: OwnedRoomId) -> Self {
+        OwnedRoomIdRon(room_id)
+    }
+}
+impl<'a> From<&'a OwnedRoomIdRon> for &'a OwnedRoomId {
+    fn from(room_id: &'a OwnedRoomIdRon) -> Self {
+        &room_id.0
+    }
+}
+impl From<OwnedRoomIdRon> for OwnedRoomId {
+    fn from(room_id: OwnedRoomIdRon) -> Self {
+        room_id.0
+    }
+}
+impl<'a> From<&'a OwnedRoomIdRon> for &'a RoomId {
+    fn from(room_id: &'a OwnedRoomIdRon) -> Self {
+        &room_id.0
+    }
+}
+impl AsRef<RoomId> for OwnedRoomIdRon {
+    fn as_ref(&self) -> &RoomId {
+        &self.0
+    }
+}
+impl Deref for OwnedRoomIdRon {
+    type Target = OwnedRoomId;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl Display for OwnedRoomIdRon {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 

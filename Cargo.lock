@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "ab_glyph_rasterizer"
 version = "0.1.8"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 
 [[package]]
 name = "accessory"
@@ -53,18 +53,6 @@ dependencies = [
  "cfg-if",
  "cipher",
  "cpufeatures",
-]
-
-[[package]]
-name = "ahash"
-version = "0.8.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e89da841a80418a9b391ebaea17f5c112ffaaa96f621d2c285b5174da76b9011"
-dependencies = [
- "cfg-if",
- "once_cell",
- "version_check",
- "zerocopy 0.7.35",
 ]
 
 [[package]]
@@ -176,6 +164,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "archery"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eae2ed21cd55021f05707a807a5fc85695dafb98832921f6cfa06db67ca5b869"
+
+[[package]]
 name = "arrayref"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -192,9 +186,9 @@ dependencies = [
 
 [[package]]
 name = "as_variant"
-version = "1.2.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f38fa22307249f86fb7fad906fcae77f2564caeb56d7209103c551cd1cf4798f"
+checksum = "9dbc3a507a82b17ba0d98f6ce8fd6954ea0c8152e98009d36a40d8dcc8ce078a"
 
 [[package]]
 name = "assign"
@@ -226,12 +220,6 @@ dependencies = [
  "pin-project-lite",
  "tokio",
 ]
-
-[[package]]
-name = "async-once-cell"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4288f83726785267c6f2ef073a3d83dc3f9b81464e9f99898240cced85fce35a"
 
 [[package]]
 name = "async-rx"
@@ -349,16 +337,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "backoff"
-version = "0.4.0"
+name = "backon"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b62ddb9cb1ec0a098ad4bbf9344d0713fa193ae1a80af55febcff2627b6a00c1"
+checksum = "302eaff5357a264a2c42f127ecb8bac761cf99749fc3dc95677e2743991f99e7"
 dependencies = [
- "futures-core",
- "getrandom 0.2.15",
- "instant",
- "pin-project-lite",
- "rand 0.8.5",
+ "fastrand",
+ "gloo-timers",
  "tokio",
 ]
 
@@ -412,9 +397,9 @@ checksum = "a1d084b0137aaa901caf9f1e8b21daa6aa24d41cd806e111335541eff9683bd6"
 
 [[package]]
 name = "blake3"
-version = "1.6.1"
+version = "1.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "675f87afced0413c9bb02843499dbbd3882a237645883f71a2b59644a6d2f753"
+checksum = "3888aaa89e4b2a40fca9848e400f6a658a5a3978de7be858e209cafa8be9a4a0"
 dependencies = [
  "arrayref",
  "arrayvec",
@@ -442,31 +427,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "block-sys"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae85a0696e7ea3b835a453750bf002770776609115e6d25c6d2ff28a8200f7e7"
-dependencies = [
- "objc-sys",
-]
-
-[[package]]
-name = "block2"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e58aa60e59d8dbfcc36138f5f18be5f24394d33b38b24f7fd0b1caa33095f22f"
-dependencies = [
- "block-sys",
- "objc2",
-]
-
-[[package]]
 name = "block2"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c132eebf10f5cad5289222520a4a058514204aed6d791f1cf4fe8088b82d15f"
 dependencies = [
- "objc2",
+ "objc2 0.5.2",
+]
+
+[[package]]
+name = "block2"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "340d2f0bdb2a43c1d3cd40513185b2bd7def0aa1052f956455114bc98f82dcf2"
+dependencies = [
+ "objc2 0.6.1",
 ]
 
 [[package]]
@@ -513,6 +488,12 @@ name = "bytesize"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3e368af43e418a04d52505cf3dbc23dda4e3407ae2fa99fd0e4f308ce546acc"
+
+[[package]]
+name = "bytesize"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3c8f83209414aacf0eeae3cf730b18d6981697fba62f200fcfb92b9f082acba"
 
 [[package]]
 name = "cbc"
@@ -584,6 +565,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -831,9 +813,9 @@ dependencies = [
 
 [[package]]
 name = "deadpool-sqlite"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "656f14fc1ab819c65f332045ea7cb38841bbe551f3b2bc7e3abefb559af4155c"
+checksum = "d84a12c51972a50e54895427e43743da9737af66395a609283be01ec72efd9fb"
 dependencies = [
  "deadpool",
  "deadpool-sync",
@@ -851,12 +833,11 @@ dependencies = [
 
 [[package]]
 name = "decancer"
-version = "3.2.8"
+version = "3.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a41401dd84c9335e2f5aec7f64057e243585d62622260d41c245919a601ccc9"
+checksum = "76698a292994722b2dd891c29ffee0e56267a957e20401800f098a469a16ba46"
 dependencies = [
  "lazy_static",
- "paste",
  "regex",
 ]
 
@@ -912,6 +893,16 @@ dependencies = [
  "option-ext",
  "redox_users",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "dispatch2"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89a09f22a6c6069a18470eb92d2298acf25463f14256d24778e1230d789a2aec"
+dependencies = [
+ "bitflags 2.9.0",
+ "objc2 0.6.1",
 ]
 
 [[package]]
@@ -1006,7 +997,8 @@ dependencies = [
 [[package]]
 name = "eyeball"
 version = "0.8.8"
-source = "git+https://github.com/jplatte/eyeball?branch=main#b4ca8997db0ee3767bbc08a2aec788cac05c55ac"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d93bd0ebf93d61d6332d3c09a96e97975968a44e19a64c947bde06e6baff383f"
 dependencies = [
  "futures-core",
  "readlock",
@@ -1018,8 +1010,9 @@ dependencies = [
 
 [[package]]
 name = "eyeball-im"
-version = "0.6.0"
-source = "git+https://github.com/jplatte/eyeball?branch=main#b4ca8997db0ee3767bbc08a2aec788cac05c55ac"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43e8e9d31591be508826b875d8fe6056aebcaec3281ac0e45434ff303686c566"
 dependencies = [
  "futures-core",
  "imbl",
@@ -1029,8 +1022,9 @@ dependencies = [
 
 [[package]]
 name = "eyeball-im-util"
-version = "0.8.0"
-source = "git+https://github.com/jplatte/eyeball?branch=main#b4ca8997db0ee3767bbc08a2aec788cac05c55ac"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bda2d08a8fa99050bdb84d077193a371e9abd29696921971aa26ae076adb6023"
 dependencies = [
  "arrayvec",
  "eyeball-im",
@@ -1108,6 +1102,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
+name = "foldhash"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
+
+[[package]]
 name = "form_urlencoded"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1140,6 +1140,17 @@ name = "futures-core"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05f29059c0c2090612e8d742178b0580d2dc940c837851ad723096f87af6663e"
+
+[[package]]
+name = "futures-executor"
+version = "0.3.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e28d1d997f585e54aebc3f97d39e72338912123a67330d723fdbb564d646c9f"
+dependencies = [
+ "futures-core",
+ "futures-task",
+ "futures-util",
+]
 
 [[package]]
 name = "futures-io"
@@ -1305,26 +1316,20 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.14.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
-dependencies = [
- "ahash",
-]
-
-[[package]]
-name = "hashbrown"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e087f84d4f86bf4b218b927129862374b72199ae7d8657835f1e89000eea4fb"
+dependencies = [
+ "foldhash",
+]
 
 [[package]]
 name = "hashlink"
-version = "0.9.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ba4ff7128dee98c7dc9794b6a411377e1404dba1c97deb8d1a55297bd25d8af"
+checksum = "7382cf6263419f2d8df38c55d7da83da5c18aef87fc7a7fc1fb1e344edfe14c1"
 dependencies = [
- "hashbrown 0.14.5",
+ "hashbrown",
 ]
 
 [[package]]
@@ -1515,16 +1520,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "icrate"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fb69199826926eb864697bddd27f73d9fddcffc004f5733131e15b465e30642"
-dependencies = [
- "block2 0.4.0",
- "objc2",
-]
-
-[[package]]
 name = "icu_collections"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1671,13 +1666,14 @@ checksum = "029d73f573d8e8d63e6d5020011d3255b28c3ba85d6cf870a07184ed23de9284"
 
 [[package]]
 name = "imbl"
-version = "4.0.1"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ae128b3bc67ed43ec0a7bb1c337a9f026717628b3c4033f07ded1da3e854951"
+checksum = "e4308a675e4cfc1920f36a8f4d8fb62d5533b7da106844bd1ec51c6f1fa94a0c"
 dependencies = [
+ "archery",
  "bitmaps",
  "imbl-sized-chunks",
- "rand_core 0.6.4",
+ "rand_core 0.9.3",
  "rand_xoshiro",
  "serde",
  "version_check",
@@ -1741,7 +1737,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c9c992b02b5b4c94ea26e32fe5bccb7aa7d9f390ab5c1221ff895bc7ea8b652"
 dependencies = [
  "equivalent",
- "hashbrown 0.15.0",
+ "hashbrown",
  "serde",
 ]
 
@@ -1753,15 +1749,6 @@ checksum = "a0c10553d664a4d0bcff9f4215d0aac67a639cc68ef660840afe309b807bc9f5"
 dependencies = [
  "block-padding",
  "generic-array",
-]
-
-[[package]]
-name = "instant"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
-dependencies = [
- "cfg-if",
 ]
 
 [[package]]
@@ -1880,6 +1867,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "language-tags"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4345964bb142484797b161f473a503a434de77149dd8c7427788c6e13379388"
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1913,9 +1906,9 @@ dependencies = [
 
 [[package]]
 name = "libsqlite3-sys"
-version = "0.30.1"
+version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e99fb7a497b1e3339bc746195567ed8d3e24945ecd636e3619d20b9de9e9149"
+checksum = "ad8935b44e7c13394a179a438e0cebba0fe08fe01b54f152e29a93b5cf993fd4"
 dependencies = [
  "cc",
  "pkg-config",
@@ -2024,7 +2017,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-live"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -2033,7 +2026,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-wasm-bridge"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -2041,7 +2034,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-widget"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -2050,7 +2043,7 @@ dependencies = [
 [[package]]
 name = "makepad-draw"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "ab_glyph_rasterizer",
  "fxhash",
@@ -2069,7 +2062,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-chinese-bold"
 version = "1.0.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-platform",
 ]
@@ -2077,7 +2070,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-chinese-bold-2"
 version = "1.0.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-platform",
 ]
@@ -2085,7 +2078,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-chinese-regular"
 version = "1.0.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-platform",
 ]
@@ -2093,7 +2086,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-chinese-regular-2"
 version = "1.0.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-platform",
 ]
@@ -2101,7 +2094,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-emoji"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-platform",
 ]
@@ -2109,17 +2102,17 @@ dependencies = [
 [[package]]
 name = "makepad-futures"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 
 [[package]]
 name = "makepad-futures-legacy"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 
 [[package]]
 name = "makepad-html"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-live-id",
 ]
@@ -2127,7 +2120,7 @@ dependencies = [
 [[package]]
 name = "makepad-http"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 
 [[package]]
 name = "makepad-jni-sys"
@@ -2138,7 +2131,7 @@ checksum = "9775cbec5fa0647500c3e5de7c850280a88335d1d2d770e5aa2332b801ba7064"
 [[package]]
 name = "makepad-live-compiler"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-derive-live",
  "makepad-live-tokenizer",
@@ -2148,7 +2141,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-live-id-macros",
 ]
@@ -2156,7 +2149,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id-macros"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -2164,7 +2157,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-tokenizer"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-live-id",
  "makepad-math",
@@ -2174,7 +2167,7 @@ dependencies = [
 [[package]]
 name = "makepad-math"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-micro-serde",
 ]
@@ -2182,12 +2175,12 @@ dependencies = [
 [[package]]
 name = "makepad-micro-proc-macro"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 
 [[package]]
 name = "makepad-micro-serde"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-serde-derive",
@@ -2196,7 +2189,7 @@ dependencies = [
 [[package]]
 name = "makepad-micro-serde-derive"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -2204,12 +2197,12 @@ dependencies = [
 [[package]]
 name = "makepad-objc-sys"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 
 [[package]]
 name = "makepad-platform"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "bitflags 2.9.0",
  "hilog-sys",
@@ -2233,7 +2226,7 @@ dependencies = [
 [[package]]
 name = "makepad-rustybuzz"
 version = "0.8.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "bitflags 1.3.2",
  "bytemuck",
@@ -2248,7 +2241,7 @@ dependencies = [
 [[package]]
 name = "makepad-shader-compiler"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-live-compiler",
 ]
@@ -2256,12 +2249,12 @@ dependencies = [
 [[package]]
 name = "makepad-ttf-parser"
 version = "0.21.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 
 [[package]]
 name = "makepad-vector"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-ttf-parser",
  "resvg",
@@ -2270,7 +2263,7 @@ dependencies = [
 [[package]]
 name = "makepad-wasm-bridge"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-derive-wasm-bridge",
  "makepad-live-id",
@@ -2279,7 +2272,7 @@ dependencies = [
 [[package]]
 name = "makepad-widgets"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-derive-widget",
  "makepad-draw",
@@ -2291,14 +2284,14 @@ dependencies = [
  "makepad-html",
  "makepad-zune-jpeg",
  "makepad-zune-png",
- "pulldown-cmark",
+ "pulldown-cmark 0.12.2",
  "unicode-segmentation",
 ]
 
 [[package]]
 name = "makepad-zune-core"
 version = "0.2.14"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "bitflags 2.9.0",
 ]
@@ -2306,7 +2299,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-jpeg"
 version = "0.3.17"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "makepad-zune-core",
 ]
@@ -2314,7 +2307,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-png"
 version = "0.4.10"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 dependencies = [
  "zune-core",
  "zune-inflate",
@@ -2371,8 +2364,8 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk"
-version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
+version = "0.12.0"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#9676daee5ab864088993f869de52ec5d8b72cce9"
 dependencies = [
  "anymap2",
  "aquamarine",
@@ -2381,26 +2374,28 @@ dependencies = [
  "async-stream",
  "async-trait",
  "axum",
- "backoff",
+ "backon",
  "bytes",
- "bytesize",
+ "bytesize 2.0.1",
+ "cfg-if",
  "event-listener",
  "eyeball",
  "eyeball-im",
  "futures-core",
  "futures-util",
  "gloo-timers",
- "growable-bloom-filter",
  "http",
  "imbl",
  "indexmap",
  "js_int",
+ "language-tags",
  "matrix-sdk-base",
  "matrix-sdk-common",
  "matrix-sdk-indexeddb",
  "matrix-sdk-sqlite",
  "mime",
  "mime2ext",
+ "oauth2",
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
@@ -2410,6 +2405,7 @@ dependencies = [
  "serde",
  "serde_html_form",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.12",
  "tokio",
@@ -2425,8 +2421,8 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk-base"
-version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
+version = "0.12.0"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#9676daee5ab864088993f869de52ec5d8b72cce9"
 dependencies = [
  "as_variant",
  "async-trait",
@@ -2452,12 +2448,12 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk-common"
-version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
+version = "0.12.0"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#9676daee5ab864088993f869de52ec5d8b72cce9"
 dependencies = [
- "async-trait",
  "eyeball-im",
  "futures-core",
+ "futures-executor",
  "futures-util",
  "gloo-timers",
  "imbl",
@@ -2475,8 +2471,8 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk-crypto"
-version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
+version = "0.12.0"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#9676daee5ab864088993f869de52ec5d8b72cce9"
 dependencies = [
  "aes",
  "aquamarine",
@@ -2515,8 +2511,8 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk-indexeddb"
-version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
+version = "0.12.0"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#9676daee5ab864088993f869de52ec5d8b72cce9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2543,15 +2539,17 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk-sqlite"
-version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
+version = "0.12.0"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#9676daee5ab864088993f869de52ec5d8b72cce9"
 dependencies = [
+ "as_variant",
  "async-trait",
  "deadpool-sqlite",
  "itertools 0.14.0",
  "matrix-sdk-base",
  "matrix-sdk-crypto",
  "matrix-sdk-store-encryption",
+ "num_cpus",
  "rmp-serde",
  "ruma",
  "rusqlite",
@@ -2565,8 +2563,8 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk-store-encryption"
-version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
+version = "0.12.0"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#9676daee5ab864088993f869de52ec5d8b72cce9"
 dependencies = [
  "base64",
  "blake3",
@@ -2584,14 +2582,14 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk-ui"
-version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
+version = "0.12.0"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#9676daee5ab864088993f869de52ec5d8b72cce9"
 dependencies = [
  "as_variant",
- "async-once-cell",
  "async-rx",
  "async-stream",
  "async_cell",
+ "bitflags 2.9.0",
  "chrono",
  "emojis",
  "eyeball",
@@ -2606,6 +2604,7 @@ dependencies = [
  "itertools 0.14.0",
  "matrix-sdk",
  "matrix-sdk-base",
+ "matrix-sdk-common",
  "mime",
  "once_cell",
  "pin-project-lite",
@@ -2757,6 +2756,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "oauth2"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51e219e79014df21a225b1860a479e2dcd7cbd9130f4defd4bd0e191ea31d67d"
+dependencies = [
+ "base64",
+ "chrono",
+ "getrandom 0.2.15",
+ "http",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "sha2",
+ "thiserror 1.0.68",
+ "url",
+]
+
+[[package]]
 name = "objc-sys"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2773,14 +2792,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88c6597e14493ab2e44ce58f2fdecf095a51f12ca57bec060a11c57332520551"
+dependencies = [
+ "objc2-encode",
+]
+
+[[package]]
+name = "objc2-app-kit"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6f29f568bec459b0ddff777cec4fe3fd8666d82d5a40ebd0ff7e66134f89bcc"
+dependencies = [
+ "bitflags 2.9.0",
+ "objc2 0.6.1",
+ "objc2-foundation 0.3.1",
+]
+
+[[package]]
 name = "objc2-contacts"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a5ff520e9c33812fd374d8deecef01d4a840e7b41862d849513de77e44aa4889"
 dependencies = [
  "block2 0.5.1",
- "objc2",
- "objc2-foundation",
+ "objc2 0.5.2",
+ "objc2-foundation 0.2.2",
+]
+
+[[package]]
+name = "objc2-core-foundation"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c10c2894a6fed806ade6027bcd50662746363a9589d3ec9d9bef30a4e4bc166"
+dependencies = [
+ "bitflags 2.9.0",
+ "dispatch2",
+ "objc2 0.6.1",
 ]
 
 [[package]]
@@ -2790,16 +2840,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "000cfee34e683244f284252ee206a27953279d370e309649dc3ee317b37e5781"
 dependencies = [
  "block2 0.5.1",
- "objc2",
+ "objc2 0.5.2",
  "objc2-contacts",
- "objc2-foundation",
+ "objc2-foundation 0.2.2",
 ]
 
 [[package]]
 name = "objc2-encode"
-version = "4.0.3"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7891e71393cd1f227313c9379a26a584ff3d7e6e7159e988851f0934c993f0f8"
+checksum = "ef25abbcd74fb2609453eb695bd2f860d389e457f67dc17cafc8b8cbc89d0c33"
 
 [[package]]
 name = "objc2-foundation"
@@ -2810,7 +2860,30 @@ dependencies = [
  "bitflags 2.9.0",
  "block2 0.5.1",
  "libc",
- "objc2",
+ "objc2 0.5.2",
+]
+
+[[package]]
+name = "objc2-foundation"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "900831247d2fe1a09a683278e5384cfb8c80c79fe6b166f9d14bfdde0ea1b03c"
+dependencies = [
+ "bitflags 2.9.0",
+ "objc2 0.6.1",
+ "objc2-core-foundation",
+]
+
+[[package]]
+name = "objc2-ui-kit"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25b1312ad7bc8a0e92adae17aa10f90aae1fb618832f9b993b022b591027daed"
+dependencies = [
+ "bitflags 2.9.0",
+ "block2 0.6.1",
+ "objc2 0.6.1",
+ "objc2-foundation 0.3.1",
 ]
 
 [[package]]
@@ -3128,6 +3201,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulldown-cmark"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e8bbe1a966bd2f362681a44f6edce3c2310ac21e4d5067a6e7ec396297a6ea0"
+dependencies = [
+ "bitflags 2.9.0",
+ "memchr",
+ "pulldown-cmark-escape",
+ "unicase",
+]
+
+[[package]]
 name = "pulldown-cmark-escape"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3253,11 +3338,11 @@ dependencies = [
 
 [[package]]
 name = "rand_xoshiro"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f97cdb2a36ed4183de61b2f824cc45c9f1037f28afe0a322e9fff4c108b5aaa"
+checksum = "f703f4665700daf5512dcca5f43afa6af89f09db47fb56be587f80636bda2d41"
 dependencies = [
- "rand_core 0.6.4",
+ "rand_core 0.9.3",
 ]
 
 [[package]]
@@ -3467,23 +3552,25 @@ dependencies = [
  "android-build",
  "cfg-if",
  "jni",
- "objc2",
+ "objc2 0.5.2",
  "objc2-core-location",
- "objc2-foundation",
+ "objc2-foundation 0.2.2",
  "robius-android-env",
  "windows 0.57.0",
 ]
 
 [[package]]
 name = "robius-open"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "243e2abbc8c1ca8ddc283056d4675b67e452fd527c3741c5318642da37840ff3"
+version = "0.2.0"
+source = "git+https://github.com/project-robius/robius-open#d9dddbce32bb7501781ecbdf7b76c6fc031e4d51"
 dependencies = [
+ "block2 0.6.1",
  "cfg-if",
- "icrate",
  "jni",
- "objc2",
+ "objc2 0.6.1",
+ "objc2-app-kit",
+ "objc2-foundation 0.3.1",
+ "objc2-ui-kit",
  "robius-android-env",
  "windows 0.54.0",
 ]
@@ -3504,7 +3591,7 @@ dependencies = [
  "anyhow",
  "bitflags 2.9.0",
  "blurhash",
- "bytesize",
+ "bytesize 1.3.0",
  "chrono",
  "clap",
  "crossbeam-channel",
@@ -3542,8 +3629,8 @@ checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
 
 [[package]]
 name = "ruma"
-version = "0.12.1"
-source = "git+https://github.com/ruma/ruma?rev=7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39#7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39"
+version = "0.12.3"
+source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
 dependencies = [
  "assign",
  "js_int",
@@ -3558,8 +3645,8 @@ dependencies = [
 
 [[package]]
 name = "ruma-client-api"
-version = "0.20.1"
-source = "git+https://github.com/ruma/ruma?rev=7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39#7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39"
+version = "0.20.3"
+source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
 dependencies = [
  "as_variant",
  "assign",
@@ -3581,8 +3668,8 @@ dependencies = [
 
 [[package]]
 name = "ruma-common"
-version = "0.15.1"
-source = "git+https://github.com/ruma/ruma?rev=7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39#7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39"
+version = "0.15.2"
+source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
 dependencies = [
  "as_variant",
  "base64",
@@ -3613,15 +3700,15 @@ dependencies = [
 
 [[package]]
 name = "ruma-events"
-version = "0.30.1"
-source = "git+https://github.com/ruma/ruma?rev=7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39#7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39"
+version = "0.30.3"
+source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
 dependencies = [
  "as_variant",
  "indexmap",
  "js_int",
  "js_option",
  "percent-encoding",
- "pulldown-cmark",
+ "pulldown-cmark 0.13.0",
  "regex",
  "ruma-common",
  "ruma-html",
@@ -3638,8 +3725,8 @@ dependencies = [
 
 [[package]]
 name = "ruma-federation-api"
-version = "0.11.0"
-source = "git+https://github.com/ruma/ruma?rev=7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39#7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39"
+version = "0.11.1"
+source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
 dependencies = [
  "http",
  "js_int",
@@ -3652,8 +3739,8 @@ dependencies = [
 
 [[package]]
 name = "ruma-html"
-version = "0.4.0"
-source = "git+https://github.com/ruma/ruma?rev=7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39#7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39"
+version = "0.4.1"
+source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
 dependencies = [
  "as_variant",
  "html5ever",
@@ -3665,7 +3752,7 @@ dependencies = [
 [[package]]
 name = "ruma-identifiers-validation"
 version = "0.10.1"
-source = "git+https://github.com/ruma/ruma?rev=7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39#7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39"
+source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
 dependencies = [
  "js_int",
  "thiserror 2.0.12",
@@ -3674,7 +3761,7 @@ dependencies = [
 [[package]]
 name = "ruma-macros"
 version = "0.15.1"
-source = "git+https://github.com/ruma/ruma?rev=7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39#7755c7cbc580f8d8aea30d78cc1a6850b1a6fd39"
+source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
 dependencies = [
  "cfg-if",
  "proc-macro-crate",
@@ -3688,9 +3775,9 @@ dependencies = [
 
 [[package]]
 name = "rusqlite"
-version = "0.32.1"
+version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7753b721174eb8ff87a9a0e799e2d7bc3749323e773db92e0984debb00019d6e"
+checksum = "1c6d5e5acb6f6129fe3f7ba0a7fc77bca1942cb568535e18e7bc40262baf3110"
 dependencies = [
  "bitflags 2.9.0",
  "fallible-iterator",
@@ -3804,7 +3891,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "sdfer"
 version = "0.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=emit_key_down_unhandled_on_unused_hit#d04b409a233622a1d6a1f40d7e91fa091b5906d8"
+source = "git+https://github.com/makepad/makepad?branch=dev#836d042c4519148fd37e13375a5cf9b3d86c6c5d"
 
 [[package]]
 name = "semver"
@@ -4264,9 +4351,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.43.0"
+version = "1.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d61fa4ffa3de412bfea335c6ecff681de2b609ba3c77ef3e00e521813a9ed9e"
+checksum = "75ef51a33ef1da925cea3e4eb122833cb377c61439ca401b770f54902b806779"
 dependencies = [
  "backtrace",
  "bytes",
@@ -4860,7 +4947,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -4,11 +4,11 @@
 use bitflags::bitflags;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedEventId;
-use matrix_sdk_ui::timeline::EventTimelineItem;
+use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeContent};
 
 use crate::sliding_sync::UserPowerLevels;
 
-use super::room_screen::{MessageAction, MessageOrSticker};
+use super::room_screen::MessageAction;
 
 const BUTTON_HEIGHT: f64 = 35.0; // KEEP IN SYNC WITH BUTTON_HEIGHT BELOW
 const MENU_WIDTH: f64 = 215.0;   // KEEP IN SYNC WITH MENU_WIDTH BELOW
@@ -131,7 +131,6 @@ live_design! {
 
             divider_after_react_reply = <LineH> {
                 margin: {top: 3, bottom: 3}
-                draw_bg: {color: (COLOR_DIVIDER_DARK)}
                 width: Fill,
             }
 
@@ -179,7 +178,6 @@ live_design! {
 
             divider_before_report_delete = <LineH> {
                 margin: {top: 3, bottom: 3}
-                draw_bg: {color: (COLOR_DIVIDER_DARK)}
                 width: Fill,
             }
 
@@ -250,7 +248,7 @@ impl MessageAbilities {
     pub fn from_user_power_and_event(
         user_power_levels: &UserPowerLevels,
         event_tl_item: &EventTimelineItem,
-        _message: &MessageOrSticker,
+        _message: &MsgLikeContent,
         has_html: bool,
     ) -> Self {
         let mut abilities = Self::empty();
