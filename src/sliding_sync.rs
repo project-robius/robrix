@@ -1501,6 +1501,17 @@ async fn async_main_loop(
         .with_offline_mode()
         .build()
         .await?;
+
+    let sync_indicator_stream = sync_service.room_list_service()
+        .sync_indicator(
+            Duration::from_millis(500), 
+            Duration::from_millis(1000)
+        );
+    // Since the sync indicator stream contains references or other elements
+    // that prevent it from automatically implementing Unpin.
+    // Pin the sync indicator stream manually so that it can be used in the async task.
+    let sync_indicator_stream_box = Box::pin(sync_indicator_stream);
+    handle_sync_indicator_subscriber(sync_indicator_stream_box);
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
     let room_list_service = sync_service.room_list_service();
