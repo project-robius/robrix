@@ -64,9 +64,12 @@ live_design! {
                     height: Fit,
                 }
                 loading_spinner = <LoadingSpinner> {
-                    // draw_bg: {
-                    //     color: #x0
-                    // }
+                    width: 20,
+                    height: 20,
+                    draw_bg: {
+                        radius: 8.0,
+                        stroke_width: 2.0,
+                    }
                 }
             }
             <CachedWidget> {
@@ -100,12 +103,12 @@ live_design! {
                     width: Fill,
                     height: Fit,
                 }
-                loading_spinner = <View> {
-                    width:10,
-                    height: 10,
-                    show_bg: true,
+                loading_spinner = <LoadingSpinner> {
+                    width: 20,
+                    height: 20,
                     draw_bg: {
-                        color: #x0
+                        radius: 8.0,
+                        stroke_width: 2.0,
                     }
                 }
             }
