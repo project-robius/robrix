@@ -33,7 +33,7 @@ use crate::{
     }, login::{login_screen::LoginAction, logout_confirm_modal::LogoutAction}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_latest_user_id, load_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, room::{room_member_manager::RoomMemberManager, RoomPreviewAvatar}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -2922,21 +2922,23 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
     get_sync_service().unwrap().stop().await;
 
     log!("Performing server-side logout...");
-    match tokio::time::timeout(tokio::time::Duration::from_secs(30), client.matrix_auth().logout()).await {
-        Ok(Ok(_)) => {
-            log!("Server-side logout successful.")
+    match client.matrix_auth().logout().await {
+        Ok(_) => {
+            log!("Server-side logout successful.") 
         },
-        Ok(Err(e)) => {
-            let error_msg = format!("Server-side logout failed: {}. Please try again later", e);
-            log!("Error :{}", error_msg);
-            Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
-            return Err(anyhow::anyhow!(error_msg));
-        },
-        Err(_) => {
-            let error_msg = "Server-side logout timed out after 5 seconds. Please try again later";
-            log!("Error: {}", error_msg);
-            Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
-            return Err(anyhow::anyhow!(error_msg));
+        Err(e) => {
+            // Handle M_UNKNOWN_TOKEN errors as successful logouts
+            // This occurs when the token was already invalidated server-side,
+            // which can happen if a previous logout request reached the server
+            // but the response didn't make it back to the client
+            if e.to_string().contains("M_UNKNOWN_TOKEN") {
+                log!("Token already invalidated, considering logout as successful.");
+            } else {
+                let error_msg = format!("Server-side logout failed: {}. Please try again later", e);
+                log!("Error :{}", error_msg);
+                Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
+                return Err(anyhow::anyhow!(error_msg)); 
+            }
         },
     }
 
@@ -2957,17 +2959,25 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
         log!("Requesting to close all tabs in desktop");
         let (tx, rx)  = oneshot::channel::<bool>();
         Cx::post_action(MainDesktopUiAction::CloseAllTabs { on_close_all: tx });
-        match rx.await {
-            Ok(_) => {
+        match tokio::time::timeout(tokio::time::Duration::from_secs(5), rx).await {
+            Ok(Ok(_)) => {
                 log!("Received signal that the MainDesktopUI successfully closed all tabs");
             },
-            Err(e)=> {
-                let error_msg = format!("Close all tab failed {e}");
-                log!("Error :{}", error_msg);
+            Ok(Err(e)) => {
+                // Channel error but not timeout
+                let error_msg = format!("Close all tabs failed: {e}");
+                log!("Error: {}", error_msg);
                 Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
                 return Err(anyhow::anyhow!(error_msg));
             },
+            Err(_) => {
+                let error_msg = "Timed out waiting for desktop tabs to close after 5 seconds";
+                log!("Error: {}", error_msg);
+                Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
+                return Err(anyhow::anyhow!(error_msg));
+            }
         }
+
     } else {
         // Clean up tabs state from desktop mode when logging out in mobile mode.
         // This prevents crashes when switching back to desktop mode after login.
