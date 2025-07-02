@@ -502,9 +502,7 @@ live_design! {
         spacing: 0.0,
         align: {x: 0.5, y: 0.5} // center horizontally and vertically
 
-        left_line = <LineH> {
-            draw_bg: {color: (COLOR_DIVIDER_DARK)}
-        }
+        left_line = <LineH> { }
 
         date = <Label> {
             padding: {left: 7.0, right: 7.0}
@@ -515,9 +513,7 @@ live_design! {
             text: "<date>"
         }
 
-        right_line = <LineH> {
-            draw_bg: {color: (COLOR_DIVIDER_DARK)}
-        }
+        right_line = <LineH> { }
     }
 
     // The view used for the divider indicating where the user's last-viewed message is.
@@ -622,7 +618,7 @@ live_design! {
                     text_style: <REGULAR_TEXT>{font_size: 11}
                     wrap: Word,
                 }
-                text: ""
+                text: "Waiting for this room to be loaded from the homeserver",
             }
 
             keyboard_view = <KeyboardView> {
@@ -713,7 +709,6 @@ live_design! {
                     }
 
                     <LineH> {
-                        draw_bg: {color: (COLOR_DIVIDER_DARK)}
                         margin: {bottom: 5.0}
                     }
 
@@ -813,7 +808,7 @@ live_design! {
 }
 
 /// The main widget that displays a single Matrix room.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Live, Widget)]
 pub struct RoomScreen {
     #[deref] view: View,
     #[animator] animator: Animator,
@@ -839,6 +834,16 @@ impl Drop for RoomScreen {
         self.hide_timeline();
     }
 }
+impl LiveHook for RoomScreen {
+    fn after_update_from_doc(&mut self, cx: &mut Cx) {
+        if let Some(tl_state) = &mut self.tl_state.as_mut() {
+            // Clear the timeline's drawn items caches and redraw it.
+            tl_state.content_drawn_since_last_update.clear();
+            tl_state.profile_drawn_since_last_update.clear();
+            self.view.redraw(cx);
+        }
+    }
+}
 
 impl Widget for RoomScreen {
     // Handle events and actions for the RoomScreen widget and its inner Timeline view.
@@ -848,31 +853,34 @@ impl Widget for RoomScreen {
         let user_profile_sliding_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(id!(loading_pane));
 
-        // Currently, a Signal event is only used to tell this widget
-        // that its timeline events have been updated in the background.
+        // Currently, a Signal event is only used to tell this widget:
+        // 1. to check if the room has been loaded from the homeserver yet, or
+        // 2. that its timeline events have been updated in the background.
         if let Event::Signal = event {
             if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                let restore_status_label = self.view.label(id!(restore_status_label));
                 if !rooms_list_ref.is_room_loaded(room_id) {
                     let status_text = if rooms_list_ref.all_known_rooms_loaded() {
                         self.all_rooms_loaded = true;
                         format!(
-                            "Room {} was not found in the homeserver's list of all rooms.",
+                            "Room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
+                             You may close this screen.",
                             self.room_name
                         )
                     } else {
                         String::from("[Placeholder for Loading Spinner]\n\
                          Waiting for this room to be loaded from the homeserver")
                     };
-                    self.view
-                        .label(id!(restore_status_label))
-                        .set_text(cx, &status_text);
+                    restore_status_label.set_text(cx, &status_text);
                     return;
                 } else {
                     self.is_loaded = true;
                     self.all_rooms_loaded = true;
+                    restore_status_label.set_text(cx, "");
                 }
             }
+
             self.process_timeline_updates(cx, &portal_list);
 
             // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
@@ -1246,6 +1254,7 @@ impl Widget for RoomScreen {
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
             return DrawStep::done();
         }
+
 
         let room_screen_widget_uid = self.widget_uid();
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
@@ -2278,6 +2287,14 @@ impl RoomScreen {
             (new_tl_state, true)
         };
 
+        if cx.has_global::<RoomsListRef>() {
+            let rooms_list_ref = cx.get_global::<RoomsListRef>();
+            self.is_loaded = rooms_list_ref.is_room_loaded(&room_id);
+            if self.is_loaded {
+                self.view.label(id!(restore_status_label)).set_text(cx, "");
+            }
+        }
+
         // Subscribe to typing notices, but hide the typing notice view initially.
         self.view(id!(typing_notice)).set_visible(cx, false);
         submit_async_request(
@@ -2286,8 +2303,10 @@ impl RoomScreen {
                 subscribe: true,
             }
         );
-
+        // Subscribe to own user read receipts, so that we can update the read marker
+        // and properly send read receipts when the user scrolls through the timeline.
         submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id: room_id.clone(), subscribe: true });
+
         // Kick off a back pagination request for this room. This is "urgent",
         // because we want to show the user some messages as soon as possible
         // when they first open the room, and there might not be any messages yet.

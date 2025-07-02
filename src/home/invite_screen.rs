@@ -29,72 +29,86 @@ live_design! {
         flow: Down,
         align: {x: 0.5, y: 0}
         padding: {left: 20, right: 20, top: 50}
-        spacing: 30,
+        spacing: 0,
 
         show_bg: true,
         draw_bg: {
             color: (COLOR_PRIMARY_DARKER),
         }
 
+        restore_status_label = <Label> {
+            width: Fill, height: Fit,
+            align: {x: 0.5, y: 0},
+            padding: {left: 5.0, right: 0.0}
+            flow: RightWrap,
+            margin: 0,
+            draw_text: {
+                color: (TYPING_NOTICE_TEXT_COLOR),
+                text_style: <REGULAR_TEXT>{font_size: 11}
+                wrap: Word,
+            }
+            text: ""
+        }
+
+        // This view is only shown if `inviter` is Some.
         inviter_view = <View> {
             width: Fill, height: Fit
             align: {x: 0.5, y: 0}
-            spacing: 15,
+            spacing: 10,
             flow: Down,
 
-            restore_status_label = <Label> {
-                width: Fill, height: Fit,
-                align: {x: 0.5, y: 0},
-                padding: {left: 5.0, right: 0.0}
-                flow: RightWrap,
-                margin: 0,
-                draw_text: {
-                    color: (TYPING_NOTICE_TEXT_COLOR),
-                    text_style: <REGULAR_TEXT>{font_size: 11}
-                    wrap: Word,
-                }
-                text: ""
+            inviter_avatar = <Avatar> {
+                width: 30,
+                height: 30,
+                text_view = { text = { draw_text: {
+                    text_style: <TITLE_TEXT>{ font_size: 10.0 }
+                }}}
             }
 
-            <View> {
-                width: Fill, height: Fit
-                align: {x: 0.5, y: 0}
-                spacing: 10
-
-                inviter_avatar = <Avatar> {
-                    width: 30,
-                    height: 30,
-        
-                    text_view = { text = { draw_text: {
-                        text_style: <TITLE_TEXT>{ font_size: 10.0 }
-                    }}}
-                }
-
-                inviter_name = <Label> {
-                    margin: {top: 2}
-                    padding: 0,
-                    text: ""
-                    draw_text: {
-                        text_style: <TITLE_TEXT>{
-                            font_size: 15,
-                        },
-                        color: #000
-                    }
+            inviter_name = <Label> {
+                width: Fill, height: Fit,
+                align: {x: 0.5, y: 0},
+                margin: {top: 2}
+                padding: 0,
+                flow: RightWrap,
+                text: ""
+                draw_text: {
+                    text_style: <TITLE_TEXT>{
+                        font_size: 15,
+                    },
+                    color: #000
+                    wrap: Word
                 }
             }
 
             inviter_user_id = <Label> {
+                width: Fill, height: Fit,
+                align: {x: 0.5, y: 0},
+                margin: {top: -3},
+                flow: RightWrap,
                 text: ""
                 draw_text: {
                     text_style: <TITLE_TEXT>{
                         font_size: 10,
                     },
                     color: #888
+                    wrap: Word,
+                }
+            }
+
+            <LineH> {
+                width: 240,
+                draw_bg: {
+                    color: (COLOR_DIVIDER),
                 }
             }
         }
 
         invite_message = <Label> {
+            margin: {top: 15, bottom: 15},
+            width: Fill, height: Fit,
+            align: {x: 0.5, y: 0},
+            flow: RightWrap,
             text: "",
             draw_text: {
                 text_style: <REGULAR_TEXT>{
@@ -109,7 +123,7 @@ live_design! {
             width: Fill, height: Fit
             align: {x: 0.5, y: 0}
             spacing: 10,
-            flow: Right,
+            flow: Down,
 
             room_avatar = <Avatar> {
                 width: 40,
@@ -121,12 +135,17 @@ live_design! {
             }
 
             room_name = <Label> {
+                width: Fill, height: Fit,
+                align: {x: 0.5, y: 0},
                 text: ""
+                // margin: {top: 3}
+                flow: RightWrap,
                 draw_text: {
                     text_style: <TITLE_TEXT>{
                         font_size: 18,
                     },
                     color: #000
+                    wrap: Word,
                 }
             }
         }
@@ -177,6 +196,19 @@ live_design! {
                     color: (COLOR_ACCEPT_GREEN),
                 }
             }
+        }
+
+        completion_label = <Label> {
+            width: Fill, height: Fit,
+            align: {x: 0.5, y: 0},
+            margin: {top: 10, bottom: 10},
+            flow: RightWrap,
+            draw_text: {
+                color: (COLOR_ACCEPT_GREEN),
+                text_style: <THEME_FONT_BOLD>{font_size: 12}
+                wrap: Word,
+            }
+            text: ""
         }
 
         filler = <View> {
@@ -248,37 +280,40 @@ pub struct InviteScreen {
 
 impl Widget for InviteScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Currently, a Signal event is only used to tell this widget
+        // to check if the room has been loaded from the homeserver yet.
         if let Event::Signal = event {
             if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                let restore_status_label = self.view.label(id!(restore_status_label));
                 if !rooms_list_ref.is_room_loaded(room_id) {
                     let status_text = if rooms_list_ref.all_known_rooms_loaded() {
                         self.all_rooms_loaded = true;
                         format!(
-                            "Room {:?} was not found in the homeserver's list of all rooms.",
+                            "An invite to room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
+                             You may close this screen.",
                             self.room_name.as_deref().unwrap_or_else(|| room_id.as_str())
                         )
                     } else {
                         String::from("[Placeholder for Loading Spinner]\n\
                          Waiting for this room to be loaded from the homeserver")
                     };
-                    self.view
-                        .label(id!(restore_status_label))
-                        .set_text(cx, &status_text);
+                    restore_status_label.set_text(cx, &status_text);
                     return;
                 } else {
                     self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
                 }
             }
         }
-        
+
         self.view.handle_event(cx, event, scope);
 
         let orig_state = self.invite_state;
 
         // Handle button clicks to accept or decline the invite
         if let Event::Actions(actions) = event {
-            // Handle actions related to restoring the previously-saved state of rooms.
+            // First, we quickly loop over the actions up front to handle the case
+            // where this room was restored and has now been successfully loaded from the homeserver.
             for action in actions {
                 if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
                     if self.room_id.as_ref().is_some_and(|inner_room_id| inner_room_id == room_id) {
@@ -477,10 +512,12 @@ impl Widget for InviteScreen {
                 accept_button.set_text(cx, "Joined!");
             }
             InviteState::RoomLeft => {
-                cancel_button.set_enabled(cx, false);
-                accept_button.set_enabled(cx, false);
-                cancel_button.set_text(cx, "Rejected!");
-                accept_button.set_text(cx, "Join Room");
+                cancel_button.set_visible(cx, false);
+                accept_button.set_visible(cx, false);
+                self.view.label(id!(completion_label)).set_text(
+                    cx,
+                    "Invite successfully rejected. You may close this invite.",
+                );
             }
         }
 
