@@ -428,8 +428,9 @@ impl MentionableTextInput {
         false
     }
 
-    // Try to add @room mention item to the list
-    // Returns true if @room item was added
+    /// Tries to add the `@room` mention item to the list of selectable popup mentions.
+    ///
+    /// Returns true if @room item was added to the list and will be displayed in the popup.
     fn try_add_room_mention_item(&mut self, cx: &mut Cx, search_text: &str, room_id: &OwnedRoomId, is_desktop: bool) -> bool {
         if !self.can_notify_room || !("@room".contains(search_text) || search_text.is_empty()) {
             return false;
