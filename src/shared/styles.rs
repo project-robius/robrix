@@ -11,7 +11,9 @@ live_design! {
     pub ICON_CLOSE        = dep("crate://self/resources/icons/close.svg")
     pub ICON_COPY         = dep("crate://self/resources/icons/copy.svg")
     pub ICON_EDIT         = dep("crate://self/resources/icons/edit.svg")
+    pub ICON_FAT_CROSS    = dep("crate://self/resources/icons/fat_cross.svg")
     pub ICON_HTML_FILE    = dep("crate://self/resources/icons/html_file.svg")
+    pub ICON_INFO         = dep("crate://self/resources/icons/info.svg")
     pub ICON_JUMP         = dep("crate://self/resources/icons/go_back.svg")
     pub ICON_LINK         = dep("crate://self/resources/icons/link.svg")
     pub ICON_PIN          = dep("crate://self/resources/icons/pin.svg")
@@ -19,6 +21,7 @@ live_design! {
     pub ICON_SEND         = dep("crate://self/resources/icon_send.svg")
     pub ICON_TRASH        = dep("crate://self/resources/icons/trash.svg")
     pub ICON_VIEW_SOURCE  = dep("crate://self/resources/icons/view_source.svg")
+    pub ICON_WARNING      = dep("crate://self/resources/icons/warning-bold.svg")
 
     pub TITLE_TEXT = <THEME_FONT_REGULAR>{
         font_size: (13),
@@ -101,6 +104,7 @@ live_design! {
     pub COLOR_TEXT = #1C274C
     pub COLOR_TEXT_INPUT_IDLE = #d8d8d8
 
+    pub COLOR_WARNING = #fcdb03
     // An icon that can be rotated at a custom angle.
     pub IconRotated = <Icon> {
         draw_icon: {
@@ -230,3 +234,6 @@ live_design! {
 pub const COLOR_ACCEPT_GREEN: Vec3 = vec3(0.074, 0.533, 0.031); // #138808
 pub const COLOR_DISABLE_GRAY: Vec3 = vec3(0.7, 0.7, 0.7); // #B3B3B3
 pub const COLOR_DANGER_RED: Vec3 = vec3(0.863, 0.0, 0.02); // #DC0005
+pub const COLOR_WARNING_ORANGE: Vec3 = vec3(0.988, 0.859, 0.01); // #fcdb03
+pub const COLOR_PRIMARY: Vec3 = vec3(1.0, 1.0, 1.0); // #ffffff
+pub const COLOR_TEXT: Vec3 = vec3(0.11, 0.15, 0.31); // #1C274C

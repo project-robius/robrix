@@ -1,29 +1,48 @@
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 
-static POPUP_NOTIFICATION: SegQueue<PopupItem> = SegQueue::new();
+use crate::shared::styles::*;
 
+static POPUP_NOTIFICATION: SegQueue<PopupItem> = SegQueue::new();
+const POPUP_KINDS: [(PopupKind, Vec3); 4] = [
+    (PopupKind::Error, COLOR_DANGER_RED),
+    (PopupKind::Info, COLOR_PRIMARY),
+    (PopupKind::Success, COLOR_ACCEPT_GREEN),
+    (PopupKind::Warning, COLOR_WARNING_ORANGE),
+];
+const ICON_SET: &[&[LiveId]] = ids!(error_icon, info_icon, success_icon, warning_icon,);
 /// Displays a new popup notification with a popup item.
-/// 
+///
 /// Popup notifications will be shown in the order they were enqueued,
 /// and can be removed when manually closed by the user or automatically.
 /// Maximum auto dismissal duration is 3 minutes.
 pub fn enqueue_popup_notification(mut popup_item: PopupItem) {
     // Limit auto dismiss duration to 180 seconds
-    popup_item.auto_dismissal_duration = popup_item.auto_dismissal_duration.map(|duration| duration.min(3. * 60.));
+    popup_item.auto_dismissal_duration = popup_item
+        .auto_dismissal_duration
+        .map(|duration| duration.min(3. * 60.));
     POPUP_NOTIFICATION.push(popup_item);
     SignalToUI::set_ui_signal();
 }
 
-/// Status of a popup notification.
+/// Kind of a popup notification.
 #[derive(Debug, Clone, PartialEq, Default)]
-pub enum PopupStatus {
-    #[default] Success,
-    Failure,
+pub enum PopupKind {
+    /// Shows no icon at all.
+    #[default]
+    Blank,
+    /// Shows a red background and a error icon.
+    Error,
+    /// Shows a white background and a blue stack icon.
+    Info,
+    /// Shows a green background and a checkmark icon.
+    Success,
+    /// Shows a yellow background and a warning icon.
+    Warning,
 }
 
 /// Popup notification item.
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct PopupItem {
     /// Text to be displayed in the popup.
     pub message: String,
@@ -31,8 +50,8 @@ pub struct PopupItem {
     /// Maximum duration is 3 minutes.
     /// If none, the popup will not automatically close.
     pub auto_dismissal_duration: Option<f64>,
-    /// Status of the popup (success or failure).
-    pub status: PopupStatus,
+    /// Kind of the popup defined by [`PopupKind`].
+    pub kind: PopupKind,
 }
 
 live_design! {
@@ -42,31 +61,148 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::icon_button::RobrixIconButton;
-    ICO_CHECK = dep("crate://self/resources/icons/checkmark.svg")
-    ICO_FAT_CROSS = dep("crate://self/resources/icons/fat_cross.svg")
+    CHECK_ICON = <View> {
+        width: Fill,
+        height: Fit,
+        visible: false,
+        <Icon> {
+            draw_icon: {
+                svg_file: (ICON_CHECKMARK),
+                color: #ffffff,
+            }
+            icon_walk: { width: 18, height: 18 }
+        }
+    }
+    CROSS_ICON = <CHECK_ICON> {
+        <Icon> {
+            draw_icon: {
+                svg_file: (ICON_FAT_CROSS),
+                color: #ffffff,
+            }
+        }
+    }
+    INFO_ICON = <CHECK_ICON> {
+        <Icon> {
+            draw_icon: {
+                svg_file: (ICON_INFO),
+                color: (COLOR_SELECT_TEXT),
+            }
+        }
+    }
+    WARNING_ICON = <CHECK_ICON> {
+        <Icon> {
+            draw_icon: {
+                svg_file: (ICON_WARNING),
+                color: #ffffff,
+            }
+        }
+    }
+    PROGRESS_BAR = <View> {
+        width: Fill,
+        height: 10,
+        show_bg: true,
+        margin: { bottom: 0 },
+        padding: 0,
+        draw_bg: {
+            instance direction: 0.0, // Direction of the progress bar: 0.0 is right to left, 1.0 is top to bottom.
+            uniform border_radius: 4.,
+            uniform border_size: 1.0,
+            uniform progress_bar_color: #00000080,
+            instance display_progress_bar: 1.0
+            uniform anim_time: 0.0,
+            uniform anim_duration: 2.0,
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                let rect_size = self.rect_size;
+                if self.display_progress_bar > 0.5 {
+                    if self.direction > 0.5 {
+                        // Top to bottom
+                        sdf.box(
+                            self.border_size * 2.0,
+                            self.border_size * 2.0,
+                            rect_size.x - self.border_size * 2.0,
+                            rect_size.y * min(1.0, self.anim_time / self.anim_duration) - self.border_size * 2.0,
+                            max(1.0, self.border_radius)
+                        )
+                    } else {
+                        // Right to left
+                        sdf.box(
+                            self.border_size * 2.0,
+                            self.border_size * 2.0,
+                            rect_size.x * max(0.0, (self.anim_duration - self.anim_time) / self.anim_duration) - self.border_size * 2.0,
+                            rect_size.y - self.border_size * 2.0,
+                            max(1.0, self.border_radius)
+                        )
+                    }
+                    sdf.fill(self.progress_bar_color);
+                }
+                return sdf.result
+            }
+        }
+    }
+    MAIN_CONTENT = <View> {
+        width: Fill,
+        height: Fit,
+        align: { x: 0.0, y: 0.5 }
+        padding: {left: 0, top: 0, bottom: 10, right: 5}
+        popup_label = <Label> {
+            width: Fill,
+            height: Fit,
+            draw_text: {
+                color: (COLOR_TEXT),
+                text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10 },
+                wrap: Word
+            }
+        }
+    }
+    LEFT_SIDE_VIEW = <View> {
+        width: 25,
+        height: Fit,
+        align: { x: 0.5, y: 0.5 }
+        padding: { left: 0, top: 10, bottom: 10, right: 0 }
+        success_icon = <CHECK_ICON> {}
+        error_icon = <CROSS_ICON> {}
+        info_icon = <INFO_ICON> {}
+        warning_icon = <WARNING_ICON> {}
+    }
+    CLOSE_BUTTON_VIEW = <View> {
+        width: Fill,
+        height: Fit,
+        flow: Down,
+        align: { x: 0.98, y: 0.01 }
+        // The "X" close button on the top right
+        close_button = <RobrixIconButton> {
+            width: Fit,
+            height: Fit,
+            padding: 0
+            spacing: 0,
+            align: { x: 0.5, y: 0.5 }
+            draw_bg: {
+                instance color: #FEFEFE00
+            }
+            draw_icon: {
+                svg_file: (ICON_FAT_CROSS),
+                color: (COLOR_TEXT),
+            }
+            icon_walk: {width: 12, height: 12}
+        }
+    }
     // Other possible color themes that is not too glaring.
     // COLOR_POPUP_GREEN = #43bb9e;
     // COLOR_POPUP_RED = #e74c3c;
-    PopupDialog = <RoundedView> {
+    PopupDialogRightToLeftProgress = <RoundedView> {
         width: 275
         height: Fit
         padding: 0,
         flow: Overlay
         show_bg: true,
         draw_bg: {
-            color: #fff
-            instance border_radius: 4.0
-            instance popup_status: 0.0  // 0.0 = success, 1.0 = failure
+            uniform border_radius: 4.0
+            uniform border_color: #000000
+            uniform border_size: 2.0
+            instance background_color: #ffffff
             fn pixel(self) -> vec4 {
-                let border_color = #d4;
-                let border_size = 1;
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                // Choose background color based on status
-                let body = mix(
-                    (COLOR_ACCEPT_GREEN),  // success: green
-                    (COLOR_DANGER_RED),    // failure: red
-                    self.popup_status
-                );
                 sdf.box(
                     1.,
                     1.,
@@ -74,20 +210,26 @@ live_design! {
                     self.rect_size.y - 2.0,
                     self.border_radius
                 )
-                sdf.fill_keep(body)
-
-                sdf.stroke(
-                    border_color,
-                    border_size
-                )
+                sdf.fill_keep(self.background_color)
+                
+                // Only draw black border for white background (blank popups)
+                if length(self.background_color.rgb - vec3(1.0, 1.0, 1.0)) < 0.1 {
+                    sdf.stroke(
+                        self.border_color,
+                        self.border_size
+                    )
+                }
                 return sdf.result
             }
         }
+
         popup_content = <View> {
             width: Fill,
             height: Fit,
             flow: Down
-            <View> {
+            //Right side view with close button
+            close_button_view = <CLOSE_BUTTON_VIEW> {}
+            inner = <View> {
                 width: Fill,
                 height: Fit,
                 padding: { top: 0, right: 5, bottom: 0, left: 10 }
@@ -95,121 +237,12 @@ live_design! {
                 align: {
                     y: 0.5,
                 }
-                // Left side with status icon
-                <View> {
-                    width: 25,
-                    height: Fit,
-                    align: { x: 0.5, y: 0.5 }
-                    padding: { left: 0, top: 10, bottom: 10, right: 0 }
-                    check_icon = <View> {
-                        width: Fill,
-                        height: Fit,
-                        visible: false,
-                        <Icon> {
-                            draw_icon: {
-                                svg_file: (ICO_CHECK),
-                                color: #ffffff,
-                            }
-                            icon_walk: { width: 18, height: 18 }
-                        }
-                    }
-                    cross_icon = <View> {
-                        width: Fill,
-                        height: Fit,
-                        visible: false,
-                        <Icon> {
-                            draw_icon: {
-                                svg_file: (ICO_FAT_CROSS),
-                                color: #ffffff,
-                            }
-                            icon_walk: { width: 18, height: 18 }
-                        }
-                    }
-                }
-                
+                // Left side with icon for popup kind.
+                <LEFT_SIDE_VIEW> {}
                 // Main content area
-                <View> {
-                    width: 215,
-                    height: Fit,
-                    align: { x: 0.0, y: 0.5 }
-                    padding: {left: 0, top: 10, bottom: 10, right: 5}
-                    popup_label = <Label> {
-                        width: Fill,
-                        height: Fit,
-                        draw_text: {
-                            color: #fff,
-                            text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10 },
-                            wrap: Word
-                        }
-                    }
-                }
-                right_view = <View> {
-                    width: Fit,
-                    height: Fill,
-                    flow: Down
-                    // The "X" close button on the top right
-                    close_button = <RobrixIconButton> {
-                        width: Fit,
-                        height: Fit,
-                        padding: 4
-                        spacing: 0,
-                        align: { x: 0.5, y: 0.5 }
-                        draw_bg: {
-                            instance color: #FEFEFE00
-                        }
-                        draw_icon: {
-                            svg_file: (ICO_FAT_CROSS),
-                            fn get_color(self) -> vec4 {
-                                return #FFFFFF;
-                            }
-                        }
-                        icon_walk: {width: 12, height: 12}
-                    }
-                }
+                main_content = <MAIN_CONTENT> {}
             }
-            progress_bar = <View> {
-                width: Fill,
-                height: 10,
-                show_bg: true,
-                margin: { bottom: 0 },
-                padding: 0,
-                draw_bg: {
-                    instance direction: 0.0, // Direction of the progress bar: 0.0 is right to left, 1.0 is top to bottom.
-                    uniform border_radius: 4.,
-                    uniform border_size: 1.0,
-                    uniform progress_bar_color: #00000033,
-                    instance display_progress_bar: 1.0 // TODO: this is the only thing that should be an `instance`
-                    uniform anim_time: 0.0,
-                    uniform anim_duration: 2.0,
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        let rect_size = self.rect_size;
-                        if self.display_progress_bar > 0.5 {
-                            if self.direction > 0.5 {
-                                // Top to bottom
-                                sdf.box(
-                                    self.border_size * 2.0,
-                                    self.border_size * 2.0,
-                                    rect_size.x - self.border_size * 2.0,
-                                    rect_size.y * min(1.0, self.anim_time / self.anim_duration) - self.border_size * 2.0,
-                                    max(1.0, self.border_radius)
-                                )
-                            } else {
-                                // Right to left
-                                sdf.box(
-                                    self.border_size * 2.0,
-                                    self.border_size * 2.0,
-                                    rect_size.x * max(0.0, (self.anim_duration - self.anim_time) / self.anim_duration) - self.border_size * 2.0,
-                                    rect_size.y - self.border_size * 2.0,
-                                    max(1.0, self.border_radius)
-                                )
-                            }
-                            sdf.fill(self.progress_bar_color);
-                        }
-                        return sdf.result
-                    }
-                }
-            }
+            progress_bar = <PROGRESS_BAR> {}
         }
 
         animator: {
@@ -259,7 +292,42 @@ live_design! {
             }
         }
     }
-    pub RobrixPopupNotification = {{RobrixPopupNotification}} {
+    PopupDialogTopToBottomProgress = <PopupDialogRightToLeftProgress> {
+        popup_content = <View> {
+            width: Fill,
+            height: Fit,
+            flow: Right,
+            spacing: 0,
+            // Left side with for popup kind.
+            <LEFT_SIDE_VIEW> {
+                align: { x: 0.0, y: 0.0 }
+                margin: {left: 10}
+                spacing: 0,
+                padding: { left: 0, top: 20, bottom: 0, right: 0 }
+            }
+            inner = <View> {
+                width: 230,
+                height: Fit,
+                padding: 0,
+                flow: Down,
+                close_button_view = <CLOSE_BUTTON_VIEW> {}
+                // Main content area
+                main_content = <MAIN_CONTENT> {
+                    padding: {left: 0}
+                }                
+            }
+            progress_bar = <PROGRESS_BAR> {
+                width: 10,
+                height: Fill,
+                draw_bg: {
+                    instance direction: 1.0,
+                    uniform anim_time: 1.0,
+                    uniform border_radius: 2.,
+                }
+            }
+        }
+    }
+    pub RobrixPopupNotificationRightToLeftProgress = {{RobrixPopupNotification}} {
         width: 275
         height: Fit
         flow: Down
@@ -268,15 +336,23 @@ live_design! {
                 return vec4(0., 0., 0., 0.0)
             }
         }
-
-        content: <PopupDialog> {}
+        content: <PopupDialogRightToLeftProgress> {}
+    }
+    pub RobrixPopupNotificationTopToBottomProgress = <RobrixPopupNotificationRightToLeftProgress> {
+        content: <PopupDialogTopToBottomProgress> {}
     }
     // A widget that displays a vertical list of popups at the top right corner of the screen.
+    // The progress bar slides from right to left.
     pub PopupList = <View> {
         width: Fill,
         height: Fill,
         align: {x: 0.99, y: 0.05}
-        <RobrixPopupNotification>{}
+        <RobrixPopupNotificationRightToLeftProgress>{}
+    }
+    // A widget that displays a vertical list of popups at the top right corner of the screen.
+    // The progress bar slides from top to bottom.
+    pub PopupListTopToBottomProgress = <PopupList> {
+        <RobrixPopupNotificationTopToBottomProgress>{}
     }
 }
 
@@ -304,13 +380,17 @@ pub struct RobrixPopupNotification {
 impl LiveHook for RobrixPopupNotification {
     fn after_apply(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) {
         for (view, popup_item, _) in self.popups.iter_mut() {
-            if let Some(index) = nodes.child_by_name(index, live_id!(content).as_field()) {                
+            if let Some(index) = nodes.child_by_name(index, live_id!(content).as_field()) {
                 view.apply(cx, apply, index, nodes);
                 view.label(id!(popup_label))
                     .set_text(cx, &popup_item.message);
-                let is_success = popup_item.status == PopupStatus::Success;
-                view.view(id!(check_icon)).set_visible(cx, is_success);
-                view.view(id!(cross_icon)).set_visible(cx, !is_success);
+                for (view, (popup_kind, _color)) in view.view_set(ICON_SET).iter().zip(POPUP_KINDS) {
+                    if popup_item.kind == popup_kind {
+                        view.set_visible(cx, true);
+                    } else {
+                        view.set_visible(cx, false);
+                    }
+                }
             }
         }
         self.draw_list.redraw(cx);
@@ -344,8 +424,10 @@ impl Widget for RobrixPopupNotification {
         self.draw_bg.begin(cx, walk, self.layout);
         if !self.popups.is_empty() {
             cx.begin_turtle(walk, self.layout);
-            for (view, _popup_item, _) in self.popups.iter_mut() {
+            for (view, popup_item, _) in self.popups.iter_mut() {
                 let walk = walk.with_margin_bottom(5.0);
+                view.label(id!(popup_label))
+                    .set_text(cx, &popup_item.message);
                 let _ = view.draw_walk(cx, scope, walk);
             }
             cx.end_turtle();
@@ -363,20 +445,53 @@ impl RobrixPopupNotification {
     /// New popup will be displayed below the previous ones.
     pub fn push(&mut self, cx: &mut Cx, popup_item: PopupItem) {
         let mut view = View::new_from_ptr(cx, self.content);
-        view.label(id!(popup_label))
-            .set_text(cx, &popup_item.message);
-        let is_success = popup_item.status == PopupStatus::Success;
-        view.view(id!(check_icon)).set_visible(cx, is_success);
-        view.view(id!(cross_icon)).set_visible(cx, !is_success);
-        // Apply status-specific styling
-        view.apply_over(
-            cx,
-            live! {
-                draw_bg: {
-                    popup_status:  ( if is_success { 0.0 } else { 1.0 } )
-                }
-            },
-        );
+        let mut background_color = COLOR_PRIMARY;
+        for (view, (popup_kind, color)) in view.view_set(ICON_SET).iter().zip(POPUP_KINDS) {
+            if popup_item.kind == popup_kind {
+                view.set_visible(cx, true);
+                background_color = color;
+            } else {
+                view.set_visible(cx, false);
+            }
+        }
+        // Apply popup item kind-specific styling
+        if background_color != COLOR_PRIMARY {
+            view.apply_over(
+                cx,
+                live! {
+                    popup_content = {
+                        inner = {
+                            main_content = {
+                                popup_label = {
+                                    draw_text: {
+                                        color: (COLOR_PRIMARY),
+                                    }
+                                }
+                            }
+                            // For top to bottom progress bar.
+                            close_button_view = {
+                                close_button = {
+                                    draw_icon: {
+                                        color: (COLOR_PRIMARY),
+                                    }
+                                }
+                            }
+                        }
+                        // For Right to left rogress bar.
+                        close_button_view = {
+                            close_button = {
+                                draw_icon: {
+                                    color: (COLOR_PRIMARY),
+                                }
+                            }
+                        }
+                    }
+                    draw_bg: {
+                        background_color: ( background_color )
+                    }
+                },
+            );
+        }
         let close_timer = if let Some(duration) = popup_item.auto_dismissal_duration {
             view.apply_over(
                 cx,
