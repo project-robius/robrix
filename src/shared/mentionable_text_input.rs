@@ -7,10 +7,9 @@ use crate::shared::typing_animation::TypingAnimationWidgetRefExt;
 use crate::shared::styles::COLOR_UNKNOWN_ROOM_AVATAR;
 use crate::utils;
 
-mod mention_utils;
 
 use makepad_widgets::{text::selection::Cursor, *};
-use matrix_sdk::ruma::{events::{room::message::RoomMessageEventContent, Mentions, AnySyncTimelineEvent, AnySyncMessageLikeEvent}, OwnedRoomId, OwnedUserId};
+use matrix_sdk::ruma::{events::{room::message::RoomMessageEventContent, Mentions}, OwnedRoomId, OwnedUserId};
 use matrix_sdk::room::RoomMember;
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_segmentation::UnicodeSegmentation;
@@ -345,7 +344,7 @@ impl Widget for MentionableTextInput {
                             if has_focus {
                                 self.handle_text_change(cx, scope, text.to_owned());
                             }
-                            break; // Found our text change action, no need to continue
+                            continue; // Continue processing other actions
                         }
                     }
                 }
@@ -400,7 +399,11 @@ impl MentionableTextInput {
     /// Check if members are loading and show loading indicator if needed.
     ///
     /// Returns true if we should return early because we're in the loading state.
-    fn handle_members_loading_state(&mut self, cx: &mut Cx, room_members: &Option<std::sync::Arc<Vec<RoomMember>>>) -> bool {
+    fn handle_members_loading_state(
+        &mut self,
+        cx: &mut Cx,
+        room_members: &Option<std::sync::Arc<Vec<RoomMember>>>,
+    ) -> bool {
         let Some(room_members) = room_members else {
             self.members_loading = true;
             self.show_loading_indicator(cx);
@@ -431,7 +434,13 @@ impl MentionableTextInput {
     /// Tries to add the `@room` mention item to the list of selectable popup mentions.
     ///
     /// Returns true if @room item was added to the list and will be displayed in the popup.
-    fn try_add_room_mention_item(&mut self, cx: &mut Cx, search_text: &str, room_id: &OwnedRoomId, is_desktop: bool) -> bool {
+    fn try_add_room_mention_item(
+        &mut self,
+        cx: &mut Cx,
+        search_text: &str,
+        room_id: &OwnedRoomId,
+        is_desktop: bool,
+    ) -> bool {
         if !self.can_notify_room || !("@room".contains(search_text) || search_text.is_empty()) {
             return false;
         }
@@ -450,36 +459,29 @@ impl MentionableTextInput {
             .filter(|s| s != "@" && s.chars().all(|c| c.is_alphabetic()))
             .unwrap_or_else(|| "R".to_string());
 
-        if let Some(client) = get_client().and_then(|c| c.get_room(room_id).and_then(|r| r.avatar_url())).flatten() {
-            ...
-                    match get_or_fetch_avatar(cx, avatar_url.to_owned()) {
-                        AvatarCacheEntry::Loaded(avatar_data) => {
-                            // Display room avatar
-                            let result = avatar_ref.show_image(cx, None, |cx, img| {
-                                utils::load_png_or_jpg(&img, cx, &avatar_data)
-                            });
-                            if result.is_ok() {
-                                room_avatar_shown = true;
-                            } else {
-                                log!("Failed to show @room avatar with room avatar image");
-                            }
-                        },
-                        AvatarCacheEntry::Requested => {
-                            avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &room_name_first_char);
-                            room_avatar_shown = true;
-                        },
-                        AvatarCacheEntry::Failed => {
-                            log!("Failed to load room avatar for @room");
-                        }
+        if let Some(avatar_url) = get_client()
+            .and_then(|c| c.get_room(room_id))
+            .and_then(|r| r.avatar_url()) {
+            match get_or_fetch_avatar(cx, avatar_url.to_owned()) {
+                AvatarCacheEntry::Loaded(avatar_data) => {
+                    // Display room avatar
+                    let result = avatar_ref.show_image(cx, None, |cx, img| {
+                        utils::load_png_or_jpg(&img, cx, &avatar_data)
+                    });
+                    if result.is_ok() {
+                        room_avatar_shown = true;
+                    } else {
+                        log!("Failed to show @room avatar with room avatar image");
                     }
-                } else {
-                    log!("Room has no avatar URL for @room");
+                },
+                AvatarCacheEntry::Requested => {
+                    avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &room_name_first_char);
+                    room_avatar_shown = true;
+                },
+                AvatarCacheEntry::Failed => {
+                    log!("Failed to load room avatar for @room");
                 }
-            } else {
-                log!("Could not find room for @room avatar with room_id: {}", room_id);
             }
-        } else {
-            log!("Could not get client for @room avatar");
         }
 
         // If unable to display room avatar, show first character of room name
@@ -505,8 +507,13 @@ impl MentionableTextInput {
         true
     }
 
-    // Find and sort matching members based on search text
-    fn find_and_sort_matching_members(&self, search_text: &str, room_members: &std::sync::Arc<Vec<RoomMember>>, max_matched_members: usize) -> Vec<(String, RoomMember)> {
+    /// Find and sort matching members based on search text
+    fn find_and_sort_matching_members(
+        &self,
+        search_text: &str,
+        room_members: &std::sync::Arc<Vec<RoomMember>>,
+        max_matched_members: usize,
+    ) -> Vec<(String, RoomMember)> {
         let mut prioritized_members = Vec::new();
 
         // Get current user ID to filter out self-mentions
@@ -546,9 +553,15 @@ impl MentionableTextInput {
             .collect()
     }
 
-    // Add user mention items to the list
-    // Returns the number of items added
-    fn add_user_mention_items(&mut self, cx: &mut Cx, matched_members: Vec<(String, RoomMember)>, user_items_limit: usize, is_desktop: bool) -> usize {
+    /// Add user mention items to the list
+    /// Returns the number of items added
+    fn add_user_mention_items(
+        &mut self,
+        cx: &mut Cx,
+        matched_members: Vec<(String, RoomMember)>,
+        user_items_limit: usize,
+        is_desktop: bool,
+    ) -> usize {
         let mut items_added = 0;
 
         for (index, (display_name, member)) in matched_members.into_iter().take(user_items_limit).enumerate() {
@@ -612,7 +625,7 @@ impl MentionableTextInput {
         items_added
     }
 
-    // Update popup visibility and layout
+    /// Update popup visibility and layout
     fn update_popup_visibility(&mut self, cx: &mut Cx, has_items: bool) {
         let popup = self.cmd_text_input.view(id!(popup));
 
@@ -631,7 +644,7 @@ impl MentionableTextInput {
         }
     }
 
-    // Handles item selection from mention popup (either user or @room)
+    /// Handles item selection from mention popup (either user or @room)
     fn on_user_selected(&mut self, cx: &mut Cx, _scope: &mut Scope, selected: WidgetRef) {
         // Note: We receive scope as parameter but don't use it in this method
         // This is good practice to maintain signature consistency with other methods
@@ -692,7 +705,7 @@ impl MentionableTextInput {
         self.close_mention_popup(cx);
     }
 
-    // Core text change handler that manages mention context
+    /// Core text change handler that manages mention context
     fn handle_text_change(&mut self, cx: &mut Cx, scope: &mut Scope, text: String) {
         // Check if text is empty or contains only whitespace
         let trimmed_text = text.trim();
@@ -742,7 +755,7 @@ impl MentionableTextInput {
         }
     }
 
-    // Updates the mention suggestion list based on search
+    /// Updates the mention suggestion list based on search
     fn update_user_list(&mut self, cx: &mut Cx, search_text: &str, scope: &mut Scope) {
         // 1. Get Props from Scope
         let room_props = scope.props.get::<RoomScreenProps>()
@@ -789,7 +802,7 @@ impl MentionableTextInput {
         self.update_popup_visibility(cx, items_added > 0);
     }
 
-    // Detects valid mention trigger positions in text
+    /// Detects valid mention trigger positions in text
     fn find_mention_trigger_position(&self, text: &str, cursor_pos: usize) -> Option<usize> {
         if cursor_pos == 0 {
             return None;
@@ -843,9 +856,7 @@ impl MentionableTextInput {
         None
     }
 
-    // Check if the cursor is inside a markdown link
-
-    // Simple validation for mention text
+    /// Simple validation for mention text
     fn is_valid_mention_text(&self, graphemes: &[&str]) -> bool {
         // Allow empty text (for @)
         if graphemes.is_empty() {
@@ -856,8 +867,8 @@ impl MentionableTextInput {
         !graphemes.iter().any(|g| g.contains('\n'))
     }
 
-    // Helper function to check if a user matches the search text
-    // Checks both display name and Matrix ID for matching
+    /// Helper function to check if a user matches the search text
+    /// Checks both display name and Matrix ID for matching
     fn user_matches_search(&self, member: &RoomMember, search_text: &str) -> bool {
         let search_text_lower = search_text.to_lowercase();
 
@@ -883,8 +894,8 @@ impl MentionableTextInput {
         false
     }
 
-    // Helper function to determine match priority for sorting
-    // Lower values = higher priority (better matches shown first)
+    /// Helper function to determine match priority for sorting
+    /// Lower values = higher priority (better matches shown first)
     fn get_match_priority(&self, member: &RoomMember, search_text: &str) -> u8 {
         let search_text_lower = search_text.to_lowercase();
 
@@ -952,7 +963,7 @@ impl MentionableTextInput {
         u8::MAX
     }
 
-    // Shows the loading indicator when members are being fetched
+    /// Shows the loading indicator when members are being fetched
     fn show_loading_indicator(&mut self, cx: &mut Cx) {
         // Clear any existing items
         self.cmd_text_input.clear_items();
@@ -984,7 +995,7 @@ impl MentionableTextInput {
         }
     }
 
-    // Cleanup helper for closing mention popup
+    /// Cleanup helper for closing mention popup
     fn close_mention_popup(&mut self, cx: &mut Cx) {
         self.current_mention_start_index = None;
         self.is_searching = false;
@@ -1025,349 +1036,8 @@ impl MentionableTextInput {
         self.redraw(cx);
     }
 
-    /// Extracts existing @room and user mentions from the current text and optionally from the original event
-    /// and populates possible_mentions and possible_room_mention for editing.
-    ///
-    /// The method searches for mentions from two sources:
-    /// 1. Original Matrix event data (preferred): extracts from event.content.mentions if available
-    /// 2. Text analysis fallback: searches for markdown patterns in the text
-    ///    - @room mentions: literal "@room" text
-    ///    - User mentions: markdown links in format [displayname](matrix:to/@userid:server.com)
-    ///
-    /// This allows the text input to properly track mentions when editing existing messages.
-    pub fn extract_existing_mentions(&mut self, cx: &mut Cx) {
-        self.extract_existing_mentions_with_event(cx, None);
-    }
 
-    /// Internal method that extracts mentions from both the original event and text analysis.
-    /// This is called by both extract_existing_mentions() and the editing flow.
-    fn extract_existing_mentions_with_event(&mut self, cx: &mut Cx, original_event_item: Option<&matrix_sdk_ui::timeline::EventTimelineItem>) {
-        // First, try to extract mentions from the original Matrix event data (most reliable)
-        let mut mentions_from_event = false;
-        if let Some(event_item) = original_event_item {
-            if let Some(original_event) = event_item.latest_json() {
-                if let Ok(AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(sync_event)
-                )) = original_event.deserialize() {
-                    if let Some(mentions) = sync_event.as_original().and_then(|evt| evt.content.mentions.as_ref()) {
-                        // Convert BTreeSet<OwnedUserId> to BTreeMap<OwnedUserId, String> for possible_mentions
-                        self.possible_mentions = mentions.user_ids.iter()
-                            .map(|user_id| (user_id.clone(), user_id.to_string()))
-                            .collect();
 
-                        self.possible_room_mention = mentions.room;
-                        mentions_from_event = true;
-
-                        // If we have mentions but the current text doesn't contain proper markdown format,
-                        // reconstruct the text with proper mention markdown to preserve formatting
-                        self.reconstruct_text_with_mentions(cx);
-                    }
-                }
-            }
-        }
-
-        // If we couldn't extract mentions from the event, fall back to text analysis
-        if !mentions_from_event {
-            self.extract_mentions_from_text();
-        }
-    }
-
-    /// Checks if text contains Matrix user mention links in any supported format
-    fn contains_matrix_user_mentions(&self, text: &str) -> bool {
-        self::mention_utils::contains_matrix_user_mentions(text)
-    }
-
-    /// Reconstructs the text content to include proper mention markdown when the text
-    /// has been stripped of markdown by other clients (like Element) but we still have
-    /// the mention information from the original event.
-    fn reconstruct_text_with_mentions(&mut self, cx: &mut Cx) {
-        let current_text = self.text();
-
-        // Check if the text already contains markdown mentions - if so, don't modify it
-        if self.contains_matrix_user_mentions(&current_text) {
-            return;
-        }
-
-        let mut reconstructed_text = current_text.clone();
-
-        // First, try to convert HTML format mentions to Markdown
-        if current_text.contains("<a href=") {
-            reconstructed_text = self::mention_utils::convert_html_mentions_to_markdown(&current_text);
-        }
-
-        // If we still don't have markdown mentions, try to reconstruct from plain text
-        if !self.contains_matrix_user_mentions(&reconstructed_text) {
-            // Reconstruct user mentions: replace plain text usernames with markdown links
-            for user_id in self.possible_mentions.clone().keys() {
-                // Try to find the user's display name or localpart in the text
-                let localpart = user_id.localpart();
-
-                // Look for patterns like the user's localpart or display name that should be linked
-                // This is a heuristic approach - we replace text that looks like it should be a mention
-                let patterns_to_try = vec![
-                    localpart.to_string(),
-                    format!("@{}", localpart),
-                    user_id.to_string(),
-                ];
-
-                for pattern in patterns_to_try {
-                    if reconstructed_text.contains(&pattern) {
-                        // Create the markdown mention link
-                        let mention_markdown = format!("[{}]({})", pattern.trim_start_matches('@'), user_id.matrix_to_uri());
-
-                        // Replace the first occurrence to avoid replacing the same mention multiple times
-                        if let Some(pos) = reconstructed_text.find(&pattern) {
-                            // Check if this text is at word boundary (not part of another word)
-                            let is_word_boundary = (pos == 0 || !reconstructed_text.chars().nth(pos - 1).unwrap_or(' ').is_alphanumeric()) &&
-                                (pos + pattern.len() >= reconstructed_text.len() || !reconstructed_text.chars().nth(pos + pattern.len()).unwrap_or(' ').is_alphanumeric());
-
-                            if is_word_boundary {
-                                reconstructed_text.replace_range(pos..pos + pattern.len(), &mention_markdown);
-                                break; // Only replace the first occurrence of this user
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Update the text if we made changes
-        if reconstructed_text != current_text {
-            self.cmd_text_input.text_input_ref().set_text(cx, &reconstructed_text);
-        }
-    }
-
-    /// Fallback method that extracts mentions by analyzing the text content.
-    /// This is used when the original event data is not available.
-    ///
-    /// Enhanced with better validation and bounds checking.
-    fn extract_mentions_from_text(&mut self) {
-        let text = self.text();
-
-        // Basic input validation
-        if text.is_empty() || text.len() > 65536 {  // Reasonable message length limit
-            return;
-        }
-
-        // === Part 1: Find all @room mentions ===
-        // Search pattern: "@room"
-        // Example: "Hello @room everyone" -> finds @room at position 6
-        let mut pos = 0;
-        let mut room_mention_count = 0;
-        const MAX_ROOM_MENTIONS: usize = 50;  // Prevent excessive processing
-
-        while let Some(found_pos) = text[pos..].find("@room") {
-            room_mention_count += 1;
-            if room_mention_count > MAX_ROOM_MENTIONS {
-                log!("Warning: Found more than {} @room mentions, stopping processing", MAX_ROOM_MENTIONS);
-                break;
-            }
-
-            let absolute_pos = pos + found_pos;
-
-            // Bounds check
-            if absolute_pos >= text.len() {
-                break;
-            }
-
-            // Validate: @room must be at text start OR preceded by whitespace
-            // Also ensure it's followed by whitespace or end of text
-            let is_valid_room_mention = {
-                let preceded_ok = absolute_pos == 0 ||
-                    text.chars().nth(absolute_pos.saturating_sub(1))
-                        .is_some_and(|c| c.is_whitespace());
-
-                let followed_ok = {
-                    let room_end = absolute_pos + 5; // "@room".len() = 5
-                    room_end >= text.len() ||
-                    text.chars().nth(room_end)
-                        .is_none_or(|c| c.is_whitespace() || c.is_ascii_punctuation())
-                };
-
-                preceded_ok && followed_ok
-            };
-
-            if is_valid_room_mention {
-                self.possible_room_mention = true;
-            }
-
-            // Continue searching from next character to find multiple @room mentions
-            pos = absolute_pos + 1;
-        }
-
-        // === Part 2: Find all user mention patterns ===
-        // Search pattern: "](matrix:u/" which is part of [displayname](matrix:u/@userid:server.com)
-        pos = 0;
-        let mut user_mention_count = 0;
-        const MAX_USER_MENTIONS: usize = 100;  // Prevent excessive processing
-
-        while let Some(found_pos) = text[pos..].find("](matrix:u/") {
-            user_mention_count += 1;
-            if user_mention_count > MAX_USER_MENTIONS {
-                log!("Warning: Found more than {} user mention patterns, stopping processing", MAX_USER_MENTIONS);
-                break;
-            }
-
-            let link_end = pos + found_pos; // Position right before "]"
-
-            // Bounds check
-            if link_end >= text.len() {
-                break;
-            }
-
-            // Find the corresponding opening bracket by searching backwards
-            if let Some(bracket_start) = text[..link_end].rfind('[') {
-                // Validate bracket pairing - ensure reasonable distance
-                if link_end.saturating_sub(bracket_start) > 256 {  // Display name too long
-                    pos = link_end + 1;
-                    continue;
-                }
-
-                // Validate: mention must be at text start OR preceded by whitespace
-                let is_valid_user_mention = bracket_start == 0 ||
-                    text.chars().nth(bracket_start.saturating_sub(1))
-                        .is_some_and(|c| c.is_whitespace());
-
-                if is_valid_user_mention {
-                    // Extract user ID from the URL part
-                    let search_start = link_end + "](matrix:u/".len();
-
-                    // Bounds check for user ID search
-                    if search_start >= text.len() {
-                        pos = link_end + 1;
-                        continue;
-                    }
-
-                    if let Some(user_id_start_rel) = text[search_start..].find("@") {
-                        let user_id_start_abs = search_start + user_id_start_rel;
-
-                        // Bounds check
-                        if user_id_start_abs >= text.len() {
-                            pos = link_end + 1;
-                            continue;
-                        }
-
-                        if let Some(user_id_end_rel) = text[user_id_start_abs..].find(")") {
-                            let user_id_end_abs = user_id_start_abs + user_id_end_rel;
-
-                            // Bounds check and length validation
-                            if user_id_end_abs > text.len() ||
-                               user_id_end_abs.saturating_sub(user_id_start_abs) > 256 {
-                                pos = link_end + 1;
-                                continue;
-                            }
-
-                            // Extract the full user ID string
-                            let user_id_str = &text[user_id_start_abs..user_id_end_abs];
-
-                            // Validate user ID format before parsing
-                            if !user_id_str.is_empty() &&
-                               user_id_str.len() <= 255 &&
-                               user_id_str.contains(':') &&
-                               !user_id_str.contains('\n') &&
-                               !user_id_str.contains('\r') {
-
-                                // Try to parse as a valid Matrix user ID
-                                match user_id_str.try_into() {
-                                    Ok(user_id) => {
-                                        self.possible_mentions.insert(user_id, user_id_str.to_string());
-                                    }
-                                    Err(e) => {
-                                        log!("Warning: Failed to parse user ID '{}': {}", user_id_str, e);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Continue searching from after the current pattern
-            pos = link_end + 1;
-        }
-
-        // === Part 3: Find matrix.to user mentions ===
-        // Search pattern: "](https://matrix.to/#/@" which is part of [displayname](https://matrix.to/#/@userid:server.com)
-        pos = 0;
-        user_mention_count = 0;
-
-        while let Some(found_pos) = text[pos..].find("](https://matrix.to/#/@") {
-            user_mention_count += 1;
-            if user_mention_count > MAX_USER_MENTIONS {
-                log!("Warning: Found more than {} matrix.to user mention patterns, stopping processing", MAX_USER_MENTIONS);
-                break;
-            }
-
-            let link_end = pos + found_pos; // Position right before "]"
-
-            // Bounds check
-            if link_end >= text.len() {
-                break;
-            }
-
-            // Find the corresponding opening bracket by searching backwards
-            if let Some(bracket_start) = text[..link_end].rfind('[') {
-                // Validate bracket pairing - ensure reasonable distance
-                if link_end.saturating_sub(bracket_start) > 256 {  // Display name too long
-                    pos = link_end + 1;
-                    continue;
-                }
-
-                // Validate: mention must be at text start OR preceded by whitespace
-                let is_valid_user_mention = bracket_start == 0 ||
-                    text.chars().nth(bracket_start.saturating_sub(1))
-                        .is_some_and(|c| c.is_whitespace());
-
-                if is_valid_user_mention {
-                    // Extract user ID from the URL part
-                    let search_start = link_end + "](https://matrix.to/#/@".len();
-
-                    // Bounds check for user ID search
-                    if search_start >= text.len() {
-                        pos = link_end + 1;
-                        continue;
-                    }
-
-                    if let Some(user_id_end_rel) = text[search_start..].find(")") {
-                        let user_id_end_abs = search_start + user_id_end_rel;
-
-                        // Bounds check and length validation
-                        if user_id_end_abs > text.len() ||
-                           user_id_end_abs.saturating_sub(search_start) > 256 {
-                            pos = link_end + 1;
-                            continue;
-                        }
-
-                        // Extract the full user ID string (already includes @)
-                        let user_id_str = &text[search_start..user_id_end_abs];
-
-                        // Validate user ID format before parsing
-                        if !user_id_str.is_empty() &&
-                           user_id_str.len() <= 255 &&
-                           user_id_str.contains(':') &&
-                           !user_id_str.contains('\n') &&
-                           !user_id_str.contains('\r') {
-
-                            // Parse the user ID
-                            if let Ok(user_id) = matrix_sdk::ruma::UserId::parse(user_id_str) {
-                                // Extract display name
-                                let display_name = utils::safe_substring_by_byte_indices(
-                                    &text,
-                                    bracket_start + 1,
-                                    link_end
-                                );
-
-                                // Add to possible mentions
-                                self.possible_mentions.insert(user_id, display_name.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Continue searching from after the current pattern
-            pos = link_end + 1;
-        }
-    }
 
     /// Sets whether the current user can notify the entire room (@room mention)
     pub fn set_can_notify_room(&mut self, can_notify: bool) {
@@ -1400,24 +1070,6 @@ impl MentionableTextInputRef {
         }
     }
 
-    /// Extracts existing @room and user mentions from the current text
-    pub fn extract_existing_mentions(&self, cx: &mut Cx) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.extract_existing_mentions(cx);
-        }
-    }
-
-    /// Extracts existing mentions from both the original Matrix event data and text analysis.
-    /// This method should be used when editing a message to preserve the original mentions.
-    ///
-    /// Priority:
-    /// 1. First tries to extract from the original Matrix event data (most reliable)
-    /// 2. Falls back to text analysis if event data is unavailable
-    pub fn extract_existing_mentions_from_event(&self, cx: &mut Cx, original_event_item: &matrix_sdk_ui::timeline::EventTimelineItem) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.extract_existing_mentions_with_event(cx, Some(original_event_item));
-        }
-    }
 
     /// Sets whether the current user can notify the entire room (@room mention)
     pub fn set_can_notify_room(&self, can_notify: bool) {
@@ -1499,4 +1151,3 @@ impl MentionableTextInputRef {
     }
 
 }
-

@@ -309,17 +309,17 @@ impl Widget for EditingPane {
                                 };
 
                                 // TODO: extract mentions out of the new edited text and use them here.
-                                let edit_text_input_widget = self.mentionable_text_input(id!(editing_content.edit_text_input));
-                                let message_with_mentions = edit_text_input_widget.create_message_with_mentions(&edited_text);
-
-                                if let EditedContent::RoomMessage(new_message_content) = &mut edited_content {
-                                    // Use the mentions from the newly created message
-                                    new_message_content.mentions = message_with_mentions.mentions;
+                                if let Some(existing_mentions) = message.mentions() {
+                                    if let EditedContent::RoomMessage(new_message_content) =
+                                        &mut edited_content
+                                    {
+                                        new_message_content.mentions = Some(existing_mentions.clone());
+                                    }
+                                    // TODO: once we update the matrix-sdk dependency, uncomment this.
+                                    // EditedContent::MediaCaption { mentions, .. }) => {
+                                    //     mentions = Some(existing_mentions);
+                                    // }
                                 }
-                                // TODO: once we update the matrix-sdk dependency, uncomment this.
-                                // EditedContent::MediaCaption { mentions, .. }) => {
-                                //     mentions = message_with_mentions.mentions;
-                                // }
 
                                 edited_content
                             }
@@ -437,8 +437,6 @@ impl EditingPane {
              return;
         }
 
-        // Extract existing @room and user mentions from the original event and text content
-        edit_text_input.extract_existing_mentions_from_event(cx, &event_tl_item);
 
         self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
 

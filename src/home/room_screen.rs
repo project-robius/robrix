@@ -823,8 +823,6 @@ pub struct RoomScreen {
     #[rust] tl_state: Option<TimelineUiState>,
     /// The subscription to room member updates for the current room.
     #[rust] member_subscription: Option<RoomMemberSubscription>,
-    /// The room ID from the previous event handling cycle, used to detect changes.
-    #[rust] prev_event_room_id: Option<OwnedRoomId>,
     /// Whether this room has been successfully loaded (received from the homeserver).
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
@@ -859,24 +857,6 @@ impl Widget for RoomScreen {
         let user_profile_sliding_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(id!(loading_pane));
 
-        // Detect if the room_id has just been set by set_displayed_room (called from draw_walk)
-        // This happens in the event handling phase, which is safe for sending actions.
-        if self.room_id != self.prev_event_room_id {
-            if let Some(current_room_id) = self.room_id.as_ref() {
-                log!("RoomScreen({:?}) detected room_id change to {}", self.widget_uid(), current_room_id);
-                // Send Action to MentionableTextInput instances immediately with the new room_id
-                // Assume false initially for can_notify_room, will be corrected when PowerLevels is fetched
-                let initial_can_notify_room = false;
-
-                cx.action(MentionableTextInputAction::PowerLevelsUpdated(
-                    current_room_id.clone(),
-                    initial_can_notify_room
-                ));
-
-            }
-            // Update prev_event_room_id *after* sending actions in this event cycle
-            self.prev_event_room_id = self.room_id.clone();
-        }
 
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
@@ -924,10 +904,14 @@ impl Widget for RoomScreen {
                     let Some(_tl_state) = self.tl_state.as_ref() else { continue };
                     let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
                         // Use the room_members from global manager first, then fallback to global cache
-                        if let Some(current_room_members) = room_members::get_room_members(&reaction_data.room_id)
-                            .and_then(|members| members.iter().find(|m| m.user_id() == sender))
-                        {
-                            member.display_name().map(|n| n.to_string()).unwrap_or_else(|| sender.to_string())
+                        if let Some(room_members_arc) = room_members::get_room_members(&reaction_data.room_id) {
+                            if let Some(member) = room_members_arc.iter().find(|m| m.user_id() == sender) {
+                                member.display_name().map(|n| n.to_string()).unwrap_or_else(|| sender.to_string())
+                            } else {
+                                user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
+                                    .map(|user_profile| user_profile.displayable_name().to_string())
+                                    .unwrap_or_else(|| sender.to_string())
+                            }
                         } else {
                             user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
                                 .map(|user_profile| user_profile.displayable_name().to_string())
@@ -1033,13 +1017,6 @@ impl Widget for RoomScreen {
                     }
                 }
 
-                // Handle RoomScreen-specific actions posted back from subscribers tasks
-                if let Some(RoomMembersAction::Updated(update_room_id, _members)) = action.downcast_ref() {
-                    // Note: The room members are now managed by the global room member manager
-                    // through the subscription system, so we don't need to store them here.
-                    // Just notify MentionableTextInput components that room members have been loaded
-                    cx.action(MentionableTextInputAction::RoomMembersLoaded(update_room_id.clone()));
-                }
             }
 
             /*
@@ -2515,7 +2492,13 @@ impl RoomScreen {
         self.room_name = room_name_or_id(room_name.into(), &room_id);
         self.room_id = Some(room_id.clone());
 
-        self.prev_event_room_id = None;
+        // Send Action to MentionableTextInput instances immediately with the new room_id
+        // Assume false initially for can_notify_room, will be corrected when PowerLevels is fetched
+        let initial_can_notify_room = false;
+        cx.action(MentionableTextInputAction::PowerLevelsUpdated(
+            room_id.clone(),
+            initial_can_notify_room
+        ));
 
         self.show_timeline(cx);
     }
@@ -2641,12 +2624,6 @@ pub struct RoomScreenProps {
     // Add other room-related state here if needed
 }
 
-#[derive(Clone, DefaultNone, Debug)]
-pub enum RoomMembersAction {
-    None,
-    /// Room members data has been updated for this room.
-    Updated(OwnedRoomId, Arc<Vec<RoomMember>>),
-}
 
 /// Subscriber for RoomScreen to receive room member updates
 #[allow(dead_code)]
@@ -2658,10 +2635,10 @@ struct RoomScreenMemberSubscriber {
 /// Implement `RoomMemberSubscriber` trait, receive member update notifications
 impl RoomMemberSubscriber for RoomScreenMemberSubscriber {
     fn on_room_members_updated(
-        &mut self, room_id: &OwnedRoomId, members: Arc<Vec<RoomMember>>,
+        &mut self, room_id: &OwnedRoomId, _members: Arc<Vec<RoomMember>>,
     ) {
-        // Now we always forward updates, even for different rooms, because we use a map to store the member lists for all rooms
-        Cx::post_action(RoomMembersAction::Updated(room_id.clone(), members));
+        // Directly notify MentionableTextInput components that room members have been loaded
+        Cx::post_action(MentionableTextInputAction::RoomMembersLoaded(room_id.clone()));
     }
 }
 
