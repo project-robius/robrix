@@ -104,16 +104,23 @@ live_design! {
         margin: { bottom: 0 },
         padding: 0,
         draw_bg: {
-            instance direction: 0.0, // Direction of the progress bar: 0.0 is right to left, 1.0 is top to bottom.
+            uniform direction: 0.0, // Direction of the progress bar: 0.0 is right to left, 1.0 is top to bottom.
             uniform border_radius: 4.,
             uniform border_size: 1.0,
-            uniform progress_bar_color: #00000080,
-            instance display_progress_bar: 1.0
+            uniform progress_bar_color: #00000080, //Black with 50% opacity.
+            uniform display_progress_bar: 1.0 // Display progress bar when there is auto_dismissal_duration.
+            // Display progress bar even when mode.slide is off.
+            // 0.0 animate according to anim_time and anim_duration, 1.0 displays oscillating progress bar.
+            uniform debug_progress_bar: 0.0, 
             uniform anim_time: 0.0,
             uniform anim_duration: 2.0,
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let rect_size = self.rect_size;
+                let time = self.anim_time / self.anim_duration;
+                if self.debug_progress_bar > 0.5 {
+                    time = sin(self.time * PI)
+                }
                 if self.display_progress_bar > 0.5 {
                     if self.direction > 0.5 {
                         // Top to bottom
@@ -121,7 +128,7 @@ live_design! {
                             self.border_size * 2.0,
                             self.border_size * 2.0,
                             rect_size.x - self.border_size * 2.0,
-                            rect_size.y * min(1.0, self.anim_time / self.anim_duration) - self.border_size * 2.0,
+                            rect_size.y * min(1.0, time) - self.border_size * 2.0,
                             max(1.0, self.border_radius)
                         )
                     } else {
@@ -129,7 +136,7 @@ live_design! {
                         sdf.box(
                             self.border_size * 2.0,
                             self.border_size * 2.0,
-                            rect_size.x * max(0.0, (self.anim_duration - self.anim_time) / self.anim_duration) - self.border_size * 2.0,
+                            rect_size.x * max(0.0, 1.0 - time) - self.border_size * 2.0,
                             rect_size.y - self.border_size * 2.0,
                             max(1.0, self.border_radius)
                         )
@@ -169,7 +176,7 @@ live_design! {
         width: Fill,
         height: Fit,
         flow: Down,
-        align: { x: 0.98, y: 0.01 }
+        align: { x: 0.99, y: 0.01 }
         // The "X" close button on the top right
         close_button = <RobrixIconButton> {
             width: Fit,
@@ -229,6 +236,7 @@ live_design! {
             flow: Down
             //Right side view with close button
             close_button_view = <CLOSE_BUTTON_VIEW> {}
+            padding: { right: 2, top: 2}
             inner = <View> {
                 width: Fill,
                 height: Fit,
@@ -238,7 +246,10 @@ live_design! {
                     y: 0.5,
                 }
                 // Left side with icon for popup kind.
-                <LEFT_SIDE_VIEW> {}
+                <LEFT_SIDE_VIEW> {
+                    // To offset the height of the close button_view.
+                    margin: {top: -12,}
+                }
                 // Main content area
                 main_content = <MAIN_CONTENT> {}
             }
@@ -298,12 +309,12 @@ live_design! {
             height: Fit,
             flow: Right,
             spacing: 0,
+            align: { x: 0.0, y: 0.5 }
             // Left side with for popup kind.
             <LEFT_SIDE_VIEW> {
-                align: { x: 0.0, y: 0.0 }
-                margin: {left: 10}
+                height: Fit,
+                margin: {left: 10 }
                 spacing: 0,
-                padding: { left: 0, top: 20, bottom: 0, right: 0 }
             }
             inner = <View> {
                 width: 230,
@@ -320,7 +331,7 @@ live_design! {
                 width: 10,
                 height: Fill,
                 draw_bg: {
-                    instance direction: 1.0,
+                    uniform direction: 1.0,
                     uniform anim_time: 1.0,
                     uniform border_radius: 2.,
                 }
