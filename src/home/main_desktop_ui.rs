@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
-use crate::{app::{AppState, AppStateAction, SelectedRoom}, home::rooms_list::RoomsListWidgetExt, utils::room_name_or_id};
+use crate::{app::{AppState, AppStateAction, SelectedRoom}, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 live_design! {
@@ -31,10 +31,10 @@ live_design! {
                 b: main
             }
 
-            // Not really a tab, but it needs to be one to be used in the dock
+            // This is a "fixed" tab with no header that cannot be closed.
             rooms_sidebar_tab = Tab {
                 name: "" // show no tab header
-                kind: rooms_sidebar
+                kind: rooms_sidebar // this template is defined below.
             }
 
             main = Tabs{tabs:[home_tab], selected:0}
@@ -80,8 +80,8 @@ pub struct MainDesktopUI {
     /// Boolean to indicate if we've drawn the MainDesktopUi previously in the desktop view.
     ///
     /// When switching mobile view to desktop, we need to restore the rooms panel state.
-    /// If it is false, we will post an action to load the dock from the saved dock state.
-    /// If it is true, we will do nothing.
+    /// If false, this widget emits an action to load the dock from the saved dock state.
+    /// If true, this widget proceeds to draw the desktop UI as normal.
     #[rust]
     drawn_previously: bool,
 }
@@ -99,7 +99,6 @@ impl Widget for MainDesktopUI {
             if !app_state.saved_dock_state.open_rooms.is_empty() {
                 cx.action(MainDesktopUiAction::LoadDockFromAppState);
             }
-            cx.set_global(self.view.rooms_list(id!(rooms_list)));
             self.drawn_previously = true;
         }
         self.view.draw_walk(cx, scope, walk)
