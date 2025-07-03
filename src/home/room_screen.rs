@@ -905,20 +905,9 @@ impl Widget for RoomScreen {
                 } = reaction_list.hover_in(actions) {
                     let Some(_tl_state) = self.tl_state.as_ref() else { continue };
                     let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
-                        // Use the room_members from global manager first, then fallback to global cache
-                        if let Some(room_members_arc) = room_members::get_room_members(&reaction_data.room_id) {
-                            if let Some(member) = room_members_arc.iter().find(|m| m.user_id() == sender) {
-                                member.display_name().map(|n| n.to_string()).unwrap_or_else(|| sender.to_string())
-                            } else {
-                                user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
-                                    .map(|user_profile| user_profile.displayable_name().to_string())
-                                    .unwrap_or_else(|| sender.to_string())
-                            }
-                        } else {
-                            user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
-                                .map(|user_profile| user_profile.displayable_name().to_string())
-                                .unwrap_or_else(|| sender.to_string())
-                        }
+                        user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
+                            .map(|user_profile| user_profile.displayable_name().to_string())
+                            .unwrap_or_else(|| sender.to_string())
                     }).collect();
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.reaction));
@@ -1004,16 +993,13 @@ impl Widget for RoomScreen {
                 if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
                     // Only show the user profile in room that this avatar belongs to
                     if self.room_id.as_ref().is_some_and(|r| r == &profile_and_room_id.room_id) {
-                        // Pass the current room members to the UserProfilePaneInfo
-                        let room_member_opt = room_members::get_room_members(&profile_and_room_id.room_id)
-                            .and_then(|members| members.iter().find(|m| m.user_id() == profile_and_room_id.user_id).cloned());
                         self.show_user_profile(
                             cx,
                             &user_profile_sliding_pane,
                             UserProfilePaneInfo {
                                 profile_and_room_id,
                                 room_name: self.room_name.clone(),
-                                room_member: room_member_opt,
+                                room_member: None,
                             },
                         );
                     }
@@ -1185,16 +1171,30 @@ impl Widget for RoomScreen {
         let room_props = if let Some(tl) = self.tl_state.as_ref() {
             let room_id = tl.room_id.clone();
             let room_members = room_members::get_room_members(&room_id);
+            
+            // Fetch room data once to avoid duplicate expensive lookups
+            let (room_display_name, room_avatar_url) = get_client()
+                .and_then(|client| client.get_room(&room_id))
+                .map(|room| (
+                    room.cached_display_name().map(|name| name.to_string()),
+                    room.avatar_url()
+                ))
+                .unwrap_or((None, None));
+            
             RoomScreenProps {
                 room_id,
-                room_members
+                room_members,
+                room_display_name,
+                room_avatar_url,
             }
         } else if let Some(room_id) = self.room_id.clone() {
             // Fallback case: we have a room_id but no tl_state yet
             log!("RoomScreen handling event with room_id {} but no tl_state, using empty member list", room_id);
             RoomScreenProps {
                 room_id,
-                room_members: None
+                room_members: None,
+                room_display_name: None,
+                room_avatar_url: None,
             }
         } else {
             // No room selected yet, skip event handling that requires room context
@@ -1205,7 +1205,9 @@ impl Widget for RoomScreen {
             // Use a dummy room props for non-room-specific events
             RoomScreenProps {
                 room_id: matrix_sdk::ruma::OwnedRoomId::try_from("!dummy:matrix.org").unwrap(),
-                room_members: None
+                room_members: None,
+                room_display_name: None,
+                room_avatar_url: None,
             }
         };
         let mut room_scope = Scope::with_props(&room_props);
@@ -2634,7 +2636,8 @@ impl RoomScreenRef {
 pub struct RoomScreenProps {
     pub room_id: OwnedRoomId,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
-    // Add other room-related state here if needed
+    pub room_display_name: Option<String>,
+    pub room_avatar_url: Option<OwnedMxcUri>,
 }
 
 

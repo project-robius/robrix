@@ -14,7 +14,6 @@ use matrix_sdk::room::RoomMember;
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_segmentation::UnicodeSegmentation;
 use crate::home::room_screen::RoomScreenProps;
-use crate::sliding_sync::get_client;
 
 // Constants for mention popup height calculations
 const DESKTOP_ITEM_HEIGHT: f64 = 32.0;
@@ -438,7 +437,7 @@ impl MentionableTextInput {
         &mut self,
         cx: &mut Cx,
         search_text: &str,
-        room_id: &OwnedRoomId,
+        room_props: &RoomScreenProps,
         is_desktop: bool,
     ) -> bool {
         if !self.can_notify_room || !("@room".contains(search_text) || search_text.is_empty()) {
@@ -452,16 +451,13 @@ impl MentionableTextInput {
         let avatar_ref = room_mention_item.avatar(id!(user_info.room_avatar));
 
         // Get room avatar fallback text from room display name
-        let room_name_first_char = get_client()
-            .and_then(|client| client.get_room(room_id))
-            .and_then(|room| room.cached_display_name().map(|name| name.to_string()))
+        let room_name_first_char = room_props.room_display_name
+            .as_ref()
             .and_then(|name| name.graphemes(true).next().map(|s| s.to_uppercase()))
             .filter(|s| s != "@" && s.chars().all(|c| c.is_alphabetic()))
             .unwrap_or_else(|| "R".to_string());
 
-        if let Some(avatar_url) = get_client()
-            .and_then(|c| c.get_room(room_id))
-            .and_then(|r| r.avatar_url()) {
+        if let Some(avatar_url) = &room_props.room_avatar_url {
             match get_or_fetch_avatar(cx, avatar_url.to_owned()) {
                 AvatarCacheEntry::Loaded(avatar_data) => {
                     // Display room avatar
@@ -761,9 +757,6 @@ impl MentionableTextInput {
         let room_props = scope.props.get::<RoomScreenProps>()
             .expect("RoomScreenProps should be available in scope for MentionableTextInput");
 
-        // Use room_id from scope - it's always current and correct
-        let room_id = &room_props.room_id;
-
         // 2. Check if members are loading and handle loading state
         if self.handle_members_loading_state(cx, &room_props.room_members) {
             return;
@@ -784,7 +777,7 @@ impl MentionableTextInput {
         let mut items_added = 0;
 
         // 4. Try to add @room mention item
-        let has_room_item = self.try_add_room_mention_item(cx, search_text, room_id, is_desktop);
+        let has_room_item = self.try_add_room_mention_item(cx, search_text, room_props, is_desktop);
         if has_room_item {
             items_added += 1;
         }
@@ -817,34 +810,33 @@ impl MentionableTextInput {
 
         // Simple logic: trigger when cursor is immediately after @ symbol
         // Only trigger if @ is preceded by whitespace or beginning of text
-        if cursor_grapheme_idx > 0 && text_graphemes[cursor_grapheme_idx - 1] == "@" {
+        if cursor_grapheme_idx > 0 && text_graphemes.get(cursor_grapheme_idx - 1) == Some(&"@") {
             let is_preceded_by_whitespace_or_start = cursor_grapheme_idx == 1 ||
-                (cursor_grapheme_idx > 1 && text_graphemes[cursor_grapheme_idx - 2].trim().is_empty());
-            if is_preceded_by_whitespace_or_start && cursor_grapheme_idx - 1 < byte_positions.len() {
-                return Some(byte_positions[cursor_grapheme_idx - 1]);
+                (cursor_grapheme_idx > 1 && text_graphemes.get(cursor_grapheme_idx - 2).is_some_and(|g| g.trim().is_empty()));
+            if is_preceded_by_whitespace_or_start {
+                if let Some(&byte_pos) = byte_positions.get(cursor_grapheme_idx - 1) {
+                    return Some(byte_pos);
+                }
             }
         }
 
         // Find the last @ symbol before the cursor for search continuation
         // Only continue if we're already in search mode
         if self.is_searching {
-            let last_at_pos = text_graphemes[..cursor_grapheme_idx]
-                .iter()
-                .enumerate()
-                .filter(|(_, g)| **g == "@")
-                .map(|(i, _)| i)
-                .next_back();
+            let last_at_pos = text_graphemes.get(..cursor_grapheme_idx)
+                .and_then(|slice| slice.iter()
+                    .enumerate()
+                    .filter(|(_, g)| **g == "@")
+                    .map(|(i, _)| i)
+                    .next_back());
 
             if let Some(at_idx) = last_at_pos {
                 // Get the byte position of this @ symbol
-                let at_byte_pos = if at_idx < byte_positions.len() {
-                    byte_positions[at_idx]
-                } else {
-                    return None;
-                };
+                let &at_byte_pos = byte_positions.get(at_idx)?;
 
                 // Extract the text after the @ symbol up to the cursor position
-                let mention_text = &text_graphemes[at_idx + 1..cursor_grapheme_idx];
+                let mention_text = text_graphemes.get(at_idx + 1..cursor_grapheme_idx)
+                    .unwrap_or(&[]);
 
                 // Only trigger if this looks like an ongoing mention (contains only alphanumeric and basic chars)
                 if self.is_valid_mention_text(mention_text) {
