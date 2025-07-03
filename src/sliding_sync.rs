@@ -25,7 +25,7 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, sync::{atomic::{AtomicBool, Ordering}, Arc, LazyLock, Mutex}};
 use std::io;
 use crate::{
     app::RoomsPanelRestoreAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -2890,17 +2890,10 @@ impl UserPowerLevels {
     }
 }
 
-/// Logs out the current user and prepares the application for a new login session.
-///
-/// Performs server-side logout, cleans up client state, closes all tabs, 
-/// and restarts the Matrix runtime. Reports success or failure via LoginAction.
-///
-/// # Parameters
-/// - `is_desktop` - Boolean indicating if the current UI mode is desktop (true) or mobile (false).
-/// 
-/// # Returns
-/// - `Ok(())` - Logout succeeded (possibly with cleanup warnings)
-/// - `Err(...)` - Logout failed with detailed error
+/// Global atomic flag indicating if the logout process has reached the "point of no return"
+/// where aborting the logout operation is no longer safe.
+pub static LOGOUT_POINT_OF_NO_RETURN: AtomicBool = AtomicBool::new(false);
+
 /// Logs out the current user and prepares the application for a new login session.
 ///
 /// Performs server-side logout, cleans up client state, closes all tabs, 
@@ -2913,6 +2906,9 @@ impl UserPowerLevels {
 /// - `Ok(())` - Logout succeeded (possibly with cleanup warnings)
 /// - `Err(...)` - Logout failed with detailed error
 async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
+    // Reset the point of no return flag at the start of logout process
+    LOGOUT_POINT_OF_NO_RETURN.store(false, Ordering::Relaxed);
+
     // Collect all errors encountered during the logout process
     let mut errors = Vec::new();
     log!("Starting logout process...");
@@ -2935,14 +2931,24 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
     log!("Performing server-side logout...");
     match client.matrix_auth().logout().await {
         Ok(_) => {
+            LOGOUT_POINT_OF_NO_RETURN.store(true, Ordering::Relaxed);
+            log!("Deleting latest user ID file...");
+            // We delete latest_user_id after reaching LOGOUT_POINT_OF_NO_RETURN:
+            // 1. To prevent auto-login with invalid session on next start
+            // 2. While keeping session file intact for potential future login
+            if let Err(e) = delete_latest_user_id().await {
+                errors.push(e.to_string());
+            }
             log!("Server-side logout successful.") 
         },
         Err(e) => {
-            // Handle M_UNKNOWN_TOKEN errors as successful logouts
-            // This occurs when the token was already invalidated server-side,
-            // which can happen if a previous logout request reached the server
-            // but the response didn't make it back to the client
             if e.to_string().contains("M_UNKNOWN_TOKEN") {
+                LOGOUT_POINT_OF_NO_RETURN.store(true, Ordering::);
+                log!("Deleting latest user ID file...");
+                // Same delete operation as in the success case above
+                if let Err(e) = delete_latest_user_id().await {
+                    errors.push(e.to_string());
+                }
                 log!("Token already invalidated, considering logout as successful.");
             } else {
                 let error_msg = format!("Server-side logout failed: {}. Please try again later", e);
@@ -3010,14 +3016,6 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
                 return Err(anyhow::anyhow!(error_msg));
             }
         }
-    }
-
-    log!("Deleting latest user ID file...");
-    // We delete latest_user_id here for the following reasons:
-    // 1. we delete the latest user ID such that Robrix won't auto-login the next time it starts,
-    // 2. we don't delete the session file, such that the user could re-login using that session in the future.
-    if let Err(e) = delete_latest_user_id().await {
-        errors.push(e.to_string());
     }
 
     shutdown_background_tasks().await;

@@ -1,5 +1,7 @@
+use std::sync::atomic::Ordering;
+
 use makepad_widgets::{makepad_futures::channel::oneshot::Sender, *};
-use crate::sliding_sync::{submit_async_request, MatrixRequest};
+use crate::sliding_sync::{submit_async_request, MatrixRequest, LOGOUT_POINT_OF_NO_RETURN};
 
 live_design! {
     use link::theme::*;
@@ -161,13 +163,18 @@ impl WidgetMatchEvent for LogoutConfirmModal {
         let mut needs_redraw = false;
         if confirm_button.clicked(actions) {
             if let Some(successful) = self.final_success {
+                if LOGOUT_POINT_OF_NO_RETURN.load(Ordering::Acquire) && !successful {
+                    log!("User requested immediate restart after unrecoverable logout error");
+                    std::process::exit(0);
+                }
+
                 cx.action(LogoutConfirmModalAction::Close { successful, was_internal: true });
                 self.reset_state(cx);
                 return;
             } else {
+                self.label(id!(title)).set_text(cx, "");
                 self.set_message(cx, "Waiting for logout...");
                 confirm_button.set_enabled(cx, false);
-                cancel_button.set_enabled(cx, false);
                 submit_async_request(MatrixRequest::Logout { is_desktop: cx.display_context.is_desktop() });
                 needs_redraw = true;
             }
@@ -175,11 +182,41 @@ impl WidgetMatchEvent for LogoutConfirmModal {
 
         for action in actions {
             if let Some(LogoutAction::LogoutFailure(error)) = action.downcast_ref() {
-                self.set_message(cx, &format!("Logout failed: {}", error));
+
+                if LOGOUT_POINT_OF_NO_RETURN.load(Ordering::Acquire) {
+                    self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
+                    self.set_message(cx, "The logout process encountered an error when communicating with the homeserver. Since your login session has been partially invalidated, Robrix must restart in order to continue to properly function.");
+
+                    let confirm_button = self.button(id!(confirm_button));
+                    confirm_button.set_text(cx, "Restart now");
+                    confirm_button.apply_over(cx, live!{
+                        draw_bg: {
+                            color: #xE23A3A
+                        }
+                    });
+                    confirm_button.set_enabled(cx, true);
+
+                    let cancel_button = self.button(id!(cancel_button));
+                    cancel_button.set_visible(cx, true);
+                    cancel_button.set_text(cx, "Restart later");
+                    cancel_button.apply_over(cx, live!{
+                        draw_bg: {
+                            color: #x3A78E2
+                        }
+                    });
+                    cancel_button.set_enabled(cx, true);
+
+                } else {
+                    self.set_message(cx, &format!("Logout failed: {}", error));
+                    let confirm_button = self.button(id!(confirm_button));
+                    confirm_button.set_text(cx, "Okay");
+                    confirm_button.set_enabled(cx, true);
+
+                    let cancel_button = self.button(id!(cancel_button));
+                    cancel_button.set_visible(cx, false);
+                }
+
                 self.final_success = Some(false);
-                confirm_button.set_text(cx, "Okay");
-                confirm_button.set_enabled(cx, true);
-                cancel_button.set_visible(cx, false);
                 needs_redraw = true;
             }
         }
