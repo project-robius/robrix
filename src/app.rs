@@ -263,9 +263,10 @@ impl MatchEvent for App {
                 continue;
             }
 
-            if let Some(LogoutAction::CleanupMobileResources) = action.downcast_ref() {
+            if let Some(LogoutAction::CleanupMobileResources { on_clean_resources }) = action.downcast_ref() {
                 // Reset saved dock state to prevent crashes when switching back to desktop mode
                 self.app_state.saved_dock_state = Default::default();
+                on_clean_resources.clone().send(true).unwrap();
                 continue;
             }
 

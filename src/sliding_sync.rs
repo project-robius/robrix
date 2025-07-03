@@ -2901,6 +2901,17 @@ impl UserPowerLevels {
 /// # Returns
 /// - `Ok(())` - Logout succeeded (possibly with cleanup warnings)
 /// - `Err(...)` - Logout failed with detailed error
+/// Logs out the current user and prepares the application for a new login session.
+///
+/// Performs server-side logout, cleans up client state, closes all tabs, 
+/// and restarts the Matrix runtime. Reports success or failure via LoginAction.
+///
+/// # Parameters
+/// - `is_desktop` - Boolean indicating if the current UI mode is desktop (true) or mobile (false).
+/// 
+/// # Returns
+/// - `Ok(())` - Logout succeeded (possibly with cleanup warnings)
+/// - `Err(...)` - Logout failed with detailed error
 async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
     // Collect all errors encountered during the logout process
     let mut errors = Vec::new();
@@ -2912,8 +2923,8 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
         return Err(anyhow::anyhow!(error_msg));
     };
 
-    if !client.matrix_auth().logged_in() {
-        let error_msg = "Client not logged in, skipping server-side logout";
+    if  client.access_token().is_none() {
+        let error_msg = "Client has no access token, skipping server-side logout";
         log!("Error: {}", error_msg);
         Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
         return Err(anyhow::anyhow!(error_msg));
@@ -2948,7 +2959,6 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
     SYNC_SERVICE.lock().unwrap().take();
     TOMBSTONED_ROOMS.lock().unwrap().clear();
     IGNORED_USERS.lock().unwrap().clear();
-    DEFAULT_SSO_CLIENT.lock().unwrap().take();
     // Note: Taking REQUEST_SENDER closes the channel sender, causing the async_worker task to exit its loop
     // This triggers the "async_worker task ended unexpectedly" error in the monitor task, but this is expected during logout
     REQUEST_SENDER.lock().unwrap().take();
@@ -2981,7 +2991,25 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
     } else {
         // Clean up tabs state from desktop mode when logging out in mobile mode.
         // This prevents crashes when switching back to desktop mode after login.
-        Cx::post_action(LogoutAction::CleanupMobileResources);
+        let (tx, rx)  = oneshot::channel::<bool>();
+        Cx::post_action(LogoutAction::CleanupMobileResources {on_clean_resources: tx});
+        match tokio::time::timeout(tokio::time::Duration::from_secs(5), rx).await {
+            Ok(Ok(_)) => {
+                log!("Received signal that mobile resources were cleaned up");
+            },
+            Ok(Err(e)) => {
+                // Channel error but not timeout
+                let error_msg = format!("Mobile cleanup failed: {e}");
+                Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
+                return Err(anyhow::anyhow!(error_msg));
+            },
+            Err(_) => {
+                let error_msg = "Timed out waiting for mobile resources cleanup after 5 seconds";
+                log!("Error: {}", error_msg);
+                Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
+                return Err(anyhow::anyhow!(error_msg));
+            }
+        }
     }
 
     log!("Deleting latest user ID file...");

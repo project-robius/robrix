@@ -1,4 +1,4 @@
-use makepad_widgets::*;
+use makepad_widgets::{makepad_futures::channel::oneshot::Sender, *};
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
 live_design! {
@@ -127,7 +127,9 @@ pub enum LogoutAction {
     /// A negative response from the backend Matrix task to the logout.
     LogoutFailure(String),
     /// Signal to clean up mobile mode resources 
-    CleanupMobileResources,
+    CleanupMobileResources {
+        on_clean_resources: Sender<bool>
+    },
     None,
 }
 
