@@ -2943,7 +2943,7 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
         },
         Err(e) => {
             if e.to_string().contains("M_UNKNOWN_TOKEN") {
-                LOGOUT_POINT_OF_NO_RETURN.store(true, Ordering::);
+                LOGOUT_POINT_OF_NO_RETURN.store(true, Ordering::Relaxed);
                 log!("Deleting latest user ID file...");
                 // Same delete operation as in the success case above
                 if let Err(e) = delete_latest_user_id().await {
