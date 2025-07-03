@@ -890,6 +890,21 @@ async fn async_worker(
                                 if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
                                     error!("Failed to get own user read receipt: {e:?}");
                                 }
+                                // When read receipts change (from other devices), update unread count
+                                let unread_count = timeline.room().num_unread_messages();
+                                let unread_mentions = timeline.room().num_unread_mentions();
+                                // Send updated unread count to the UI
+                                if let Err(e) = sender.send(TimelineUpdate::NewUnreadMessagesCount(
+                                    UnreadMessageCount::Known(unread_count)
+                                )) {
+                                    error!("Failed to send unread message count update: {e:?}");
+                                }
+                                // Update the rooms list with new unread counts
+                                enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+                                    room_id: timeline.room().room_id().to_owned(),
+                                    count: UnreadMessageCount::Known(unread_count),
+                                    unread_mentions,
+                                });
                             }
                         }
                     }
@@ -2362,7 +2377,7 @@ async fn timeline_subscriber_handler(
                         if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Insert at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                         reobtain_latest_event = true;
                     }
-                    VectorDiff::Set { index, value } => {
+                    VectorDiff::Set { index, value } => { //123
                         index_of_first_change = min(index_of_first_change, index);
                         index_of_last_change  = max(index_of_last_change, index.saturating_add(1));
                         timeline_items.set(index, value);
