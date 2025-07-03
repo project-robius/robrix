@@ -210,6 +210,7 @@ pub struct JoinedRoomInfo {
     pub is_selected: bool,
     /// Whether this a direct room.
     pub is_direct: bool,
+    pub is_tombstoned: bool,
 }
 
 /// UI-related info about a room that the user has been invited to.
@@ -742,9 +743,19 @@ impl Widget for RoomsList {
         for list_action in list_actions {
             if let RoomPreviewAction::Clicked(clicked_room_id) = list_action.as_widget_action().cast() {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
-                    SelectedRoom::JoinedRoom {
-                        room_id: jr.room_id.clone().into(),
-                        room_name: jr.room_name.clone(),
+                    if jr.is_tombstoned {
+                        let mut replacement_room_id = None;
+                        if let Ok(guard) = crate::sliding_sync::TOMBSTONED_ROOMS.lock() {
+                            if let Some(successor_room_id) = guard.get(&clicked_room_id).cloned() {
+                                replacement_room_id = Some(successor_room_id.into());
+                            }
+                        }
+                        SelectedRoom::TombstoneRoom { room_id: jr.room_id.clone().into(), room_name: jr.room_name.clone(), replacement_room_id }
+                    } else {
+                        SelectedRoom::JoinedRoom {
+                            room_id: jr.room_id.clone().into(),
+                            room_name: jr.room_name.clone(),
+                        }
                     }
                 } else if let Some(ir) = self.invited_rooms.borrow().get(&clicked_room_id) {
                     SelectedRoom::InvitedRoom {

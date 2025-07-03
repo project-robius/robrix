@@ -1268,7 +1268,7 @@ static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex
 ///
 /// The map key is the **NEW** replacement room ID, and the value is the **OLD** tombstoned room ID.
 /// This allows us to quickly query if a newly-encountered room is a replacement for an old tombstoned room.
-static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
+pub static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: OnceLock<Client> = OnceLock::new();
@@ -1928,6 +1928,25 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         else {
             TOMBSTONED_ROOMS.lock().unwrap().insert(replacement_room_id, room_id.clone());
         }
+
+        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
+            room_id: room_id.clone(),
+            latest: None,
+            tags: room.tags().await.ok().flatten().unwrap_or_default(),
+            num_unread_messages: room.num_unread_messages(),
+            num_unread_mentions: room.num_unread_mentions(),
+            // start with a basic text avatar; the avatar image will be fetched asynchronously below.
+            avatar: avatar_from_room_name(room_name.as_deref()),
+            room_name,
+            canonical_alias: room.canonical_alias(),
+            alt_aliases: room.alt_aliases(),
+            has_been_paginated: false,
+            is_selected: false,
+            is_direct,
+            is_tombstoned: true,
+        }));
+
+        Cx::post_action(RoomsPanelRestoreAction::Success(room_id));
         return Ok(());
     }
 
@@ -1987,6 +2006,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         has_been_paginated: false,
         is_selected: false,
         is_direct,
+        is_tombstoned: false,
     }));
 
     Cx::post_action(RoomsPanelRestoreAction::Success(room_id));
