@@ -198,6 +198,16 @@ impl RoomMemberManager {
         let manager = instance.lock().unwrap();
         manager.room_members.len()
     }
+
+    /// Clean all data from the room member manager
+    pub fn clear_all() {
+        let instance = Self::instance();
+        let mut manager = instance.lock().unwrap();
+        manager.subscribers.clear();
+        manager.room_members.clear();
+        manager.active_subscribers_count.clear();
+    }
+
 }
 
 /// Helper type for managing subscription lifecycles

@@ -190,7 +190,6 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                 self.reset_state(cx);
                 return;
             } else {
-                self.label(id!(title)).set_text(cx, "");
                 self.set_message(cx, "Waiting for logout...");
                 confirm_button.set_enabled(cx, false);
                 submit_async_request(MatrixRequest::Logout { is_desktop: cx.display_context.is_desktop() });

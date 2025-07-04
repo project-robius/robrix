@@ -33,7 +33,7 @@ use crate::{
     }, login::{login_screen::LoginAction, logout_confirm_modal::{LogoutAction, MissingComponentType}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_latest_user_id, load_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, room::{room_member_manager::RoomMemberManager, RoomPreviewAvatar}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -2971,17 +2971,6 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
         },
     }
 
-    // Clean up client state and caches
-    log!("Cleaning up client state and caches...");
-    CLIENT.lock().unwrap().take();
-    SYNC_SERVICE.lock().unwrap().take();
-    TOMBSTONED_ROOMS.lock().unwrap().clear();
-    IGNORED_USERS.lock().unwrap().clear();
-    // Note: Taking REQUEST_SENDER closes the channel sender, causing the async_worker task to exit its loop
-    // This triggers the "async_worker task ended unexpectedly" error in the monitor task, but this is expected during logout
-    REQUEST_SENDER.lock().unwrap().take();
-    log!("Client state and caches cleared after successful server logout.");
-
     // Desktop UI has tabs that must be properly closed, while mobile UI has no tabs concept.
     if is_desktop {
         log!("Requesting to close all tabs in desktop");
@@ -3029,6 +3018,21 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
             }
         }
     }
+
+    // Failure to call this method before shutting down the runtime can result in
+    // crashes during re-login, as room member data might attempt to use database
+    // connections (via deadpool) when the Tokio runtime is no longer available.
+    RoomMemberManager::clear_all();
+    // Clean up client state and caches
+    log!("Cleaning up client state and caches...");
+    CLIENT.lock().unwrap().take();
+    SYNC_SERVICE.lock().unwrap().take();
+    TOMBSTONED_ROOMS.lock().unwrap().clear();
+    IGNORED_USERS.lock().unwrap().clear();
+    // Note: Taking REQUEST_SENDER closes the channel sender, causing the async_worker task to exit its loop
+    // This triggers the "async_worker task ended unexpectedly" error in the monitor task, but this is expected during logout
+    REQUEST_SENDER.lock().unwrap().take();
+    log!("Client state and caches cleared after successful server logout.");
 
     shutdown_background_tasks().await;
     // Restart the Matrix tokio runtime
