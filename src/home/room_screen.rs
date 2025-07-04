@@ -22,7 +22,7 @@ use crate::{
     avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
-    }, shared::{
+    }, room::room_events_group::{EventGroupType, EventsGroupedState, GroupedEventsState, GroupingAction, GroupedSmallStateEventAction}, shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem}, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
@@ -70,6 +70,7 @@ live_design! {
     use crate::room::room_input_bar::*;
     use crate::room::room_input_bar::*;
     use crate::home::room_read_receipt::*;
+    use crate::room::room_events_group::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -586,6 +587,7 @@ live_design! {
             ImageMessage = <ImageMessage> {}
             CondensedImageMessage = <CondensedImageMessage> {}
             SmallStateEvent = <SmallStateEvent> {}
+            GroupedSmallStateEvent = <GroupedSmallStateEvent> {}
             Empty = <Empty> {}
             DateDivider = <DateDivider> {}
             ReadMarker = <ReadMarker> {}
@@ -944,6 +946,33 @@ impl Widget for RoomScreen {
                         );
                     }
                 }
+
+                // Handle the action to toggle expand/collapse for grouped small state events
+                if let GroupedSmallStateEventAction::ToggleExpanded { group_id, expanded: _ } = action.as_widget_action().cast() {
+                    log!("RoomScreen received GroupedSmallStateEventAction::ToggleExpanded for group_id: {}", group_id);
+                    if let Some(tl_state) = self.tl_state.as_mut() {
+                        // Extract widget UID from the group_id format
+                        if group_id.starts_with("widget_") {
+                            if let Ok(widget_uid_raw) = group_id.strip_prefix("widget_").unwrap().parse::<u64>() {
+                                // Get the actual group_id first, then toggle it
+                                let actual_group_id = tl_state.events_grouped_state.get_group_id_for_widget(widget_uid_raw).cloned();
+                                if let Some(actual_group_id) = actual_group_id {
+                                    log!("Found actual group_id '{}' for widget UID {}", actual_group_id, widget_uid_raw);
+                                    tl_state.events_grouped_state.toggle_group_expanded(&actual_group_id);
+                                } else {
+                                    log!("No group_id found for widget UID {}", widget_uid_raw);
+                                }
+                            } else {
+                                log!("Failed to parse widget UID from group_id: {}", group_id);
+                            }
+                        } else {
+                            // Direct group_id (for backward compatibility)
+                            tl_state.events_grouped_state.toggle_group_expanded(&group_id);
+                        }
+                        log!("Group expansion toggled, redrawing...");
+                        self.redraw(cx);
+                    }
+                }
             }
 
             /*
@@ -1222,7 +1251,22 @@ impl Widget for RoomScreen {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
                         list.item(cx, item_id, live_id!(Empty));
+                        tl_state.events_grouped_state.finish_current_grouping();
                         continue;
+                    };
+
+                    let grouping_action = if let Some(group_type) = Self::can_group_timeline_item(timeline_item) {
+                        tl_state
+                            .events_grouped_state
+                            .try_add_event_to_group(
+                                tl_idx,
+                                group_type,
+                            )
+                    } else {
+                        tl_state
+                            .events_grouped_state
+                            .finish_current_grouping();
+                        GroupingAction::None
                     };
 
                     // Determine whether this item's content and profile have been drawn since the last update.
@@ -1232,7 +1276,251 @@ impl Widget for RoomScreen {
                         content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
                         profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
                     };
-                    let (item, item_new_draw_status) = match timeline_item.kind() {
+                    // Determine how to handle this event based on grouping
+                    let (item, item_new_draw_status) = match &grouping_action {
+                        GroupingAction::StartNewGroup(Some(group)) |
+                        GroupingAction::ExtendGroup(group) => {
+                            // Only show as group if it meets minimum size requirements
+                            if !group.meets_minimum_size(&tl_state.events_grouped_state.config) {
+                                log!("Group {} with {} items doesn't meet minimum size, showing individual event", 
+                                     group.get_group_id(), group.items_count);
+                                match timeline_item.kind() {
+                                    TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
+                                        TimelineItemContent::MsgLike(msg_like_content) => match &msg_like_content.kind {
+                                            MsgLikeKind::Message(_) | MsgLikeKind::Sticker(_) => {
+                                                let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
+                                                populate_message_view(
+                                                    cx,
+                                                    list,
+                                                    item_id,
+                                                    room_id,
+                                                    event_tl_item,
+                                                    msg_like_content,
+                                                    prev_event,
+                                                    &mut tl_state.media_cache,
+                                                    &tl_state.user_power,
+                                                    item_drawn_status,
+                                                    room_screen_widget_uid,
+                                                )
+                                            },
+                                            MsgLikeKind::Poll(poll_state) => populate_small_state_event(
+                                                cx,
+                                                list,
+                                                item_id,
+                                                room_id,
+                                                event_tl_item,
+                                                poll_state,
+                                                item_drawn_status,
+                                            ),
+                                            MsgLikeKind::Redacted => populate_small_state_event(
+                                                cx,
+                                                list,
+                                                item_id,
+                                                room_id,
+                                                event_tl_item,
+                                                &RedactedMessageEventMarker,
+                                                item_drawn_status,
+                                            ),
+                                            MsgLikeKind::UnableToDecrypt(utd) => populate_small_state_event(
+                                                cx,
+                                                list,
+                                                item_id,
+                                                room_id,
+                                                event_tl_item,
+                                                utd,
+                                                item_drawn_status,
+                                            ),
+                                        },
+                                        TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
+                                            cx,
+                                            list,
+                                            item_id,
+                                            room_id,
+                                            event_tl_item,
+                                            membership_change,
+                                            item_drawn_status,
+                                        ),
+                                        TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
+                                            cx,
+                                            list,
+                                            item_id,
+                                            room_id,
+                                            event_tl_item,
+                                            profile_change,
+                                            item_drawn_status,
+                                        ),
+                                        TimelineItemContent::OtherState(other) => populate_small_state_event(
+                                            cx,
+                                            list,
+                                            item_id,
+                                            room_id,
+                                            event_tl_item,
+                                            other,
+                                            item_drawn_status,
+                                        ),
+                                        unhandled => {
+                                            let item = list.item(cx, item_id, live_id!(SmallStateEvent));
+                                            item.label(id!(content)).set_text(cx, &format!("[Unsupported] {:?}", unhandled));
+                                            (item, ItemDrawnStatus::both_drawn())
+                                        }
+                                    }
+                                    TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(millis)) => {
+                                        let item = list.item(cx, item_id, live_id!(DateDivider));
+                                        let text = unix_time_millis_to_datetime(*millis)
+                                            .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
+                                            .unwrap_or_else(|| format!("{:?}", millis));
+                                        item.label(id!(date)).set_text(cx, &text);
+                                        (item, ItemDrawnStatus::both_drawn())
+                                    }
+                                    TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
+                                        let item = list.item(cx, item_id, live_id!(ReadMarker));
+                                        (item, ItemDrawnStatus::both_drawn())
+                                    }
+                                    TimelineItemKind::Virtual(VirtualTimelineItem::TimelineStart) => {
+                                        let item = list.item(cx, item_id, live_id!(Empty));
+                                        (item, ItemDrawnStatus::both_drawn())
+                                    }
+                                }
+                            } else {
+                                let is_expanded = tl_state.events_grouped_state.is_group_expanded(group.get_group_id());
+                                let is_first_in_group = tl_idx == group.start_index;
+
+                                if is_expanded {
+                                    if is_first_in_group {
+                                        // Show the group header with collapse button for first item
+                                        log!("Group {} is expanded, showing group header with collapse button", group.get_group_id());
+                                        populate_grouped_small_state_event(
+                                            cx,
+                                            list,
+                                            item_id,
+                                            room_id,
+                                            group,
+                                            &mut tl_state.events_grouped_state,
+                                            item_drawn_status,
+                                            tl_items,
+                                        )
+                                    } else {
+                                        match timeline_item.kind() {
+                                            TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
+                                                TimelineItemContent::MsgLike(msg_like_content) => match &msg_like_content.kind {
+                                                    MsgLikeKind::Message(_) | MsgLikeKind::Sticker(_) => {
+                                                        let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
+                                                        populate_message_view(
+                                                            cx,
+                                                            list,
+                                                            item_id,
+                                                            room_id,
+                                                            event_tl_item,
+                                                            msg_like_content,
+                                                            prev_event,
+                                                            &mut tl_state.media_cache,
+                                                            &tl_state.user_power,
+                                                            item_drawn_status,
+                                                            room_screen_widget_uid,
+                                                        )
+                                                    },
+                                                    MsgLikeKind::Poll(poll_state) => populate_small_state_event(
+                                                        cx,
+                                                        list,
+                                                        item_id,
+                                                        room_id,
+                                                        event_tl_item,
+                                                        poll_state,
+                                                        item_drawn_status,
+                                                    ),
+                                                    MsgLikeKind::Redacted => populate_small_state_event(
+                                                        cx,
+                                                        list,
+                                                        item_id,
+                                                        room_id,
+                                                        event_tl_item,
+                                                        &RedactedMessageEventMarker,
+                                                        item_drawn_status,
+                                                    ),
+                                                    MsgLikeKind::UnableToDecrypt(utd) => populate_small_state_event(
+                                                        cx,
+                                                        list,
+                                                        item_id,
+                                                        room_id,
+                                                        event_tl_item,
+                                                        utd,
+                                                        item_drawn_status,
+                                                    ),
+                                                },
+                                                TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
+                                                    cx,
+                                                    list,
+                                                    item_id,
+                                                    room_id,
+                                                    event_tl_item,
+                                                    membership_change,
+                                                    item_drawn_status,
+                                                ),
+                                                TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
+                                                    cx,
+                                                    list,
+                                                    item_id,
+                                                    room_id,
+                                                    event_tl_item,
+                                                    profile_change,
+                                                    item_drawn_status,
+                                                ),
+                                                TimelineItemContent::OtherState(other) => populate_small_state_event(
+                                                    cx,
+                                                    list,
+                                                    item_id,
+                                                    room_id,
+                                                    event_tl_item,
+                                                    other,
+                                                    item_drawn_status,
+                                                ),
+                                                unhandled => {
+                                                    let item = list.item(cx, item_id, live_id!(SmallStateEvent));
+                                                    item.label(id!(content)).set_text(cx, &format!("[Unsupported] {:?}", unhandled));
+                                                    (item, ItemDrawnStatus::both_drawn())
+                                                }
+                                            }
+                                            TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(millis)) => {
+                                                let item = list.item(cx, item_id, live_id!(DateDivider));
+                                                let text = unix_time_millis_to_datetime(*millis)
+                                                    .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
+                                                    .unwrap_or_else(|| format!("{:?}", millis));
+                                                item.label(id!(date)).set_text(cx, &text);
+                                                (item, ItemDrawnStatus::both_drawn())
+                                            }
+                                            TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
+                                                let item = list.item(cx, item_id, live_id!(ReadMarker));
+                                                (item, ItemDrawnStatus::both_drawn())
+                                            }
+                                            TimelineItemKind::Virtual(VirtualTimelineItem::TimelineStart) => {
+                                                let item = list.item(cx, item_id, live_id!(Empty));
+                                                (item, ItemDrawnStatus::both_drawn())
+                                            }
+                                        }
+                                    }
+                                } else if is_first_in_group {
+                                    // Group is collapsed, show group summary for first item
+                                    log!("Group {} is collapsed, showing group summary with {} items", group.get_group_id(), group.items_count);
+                                    populate_grouped_small_state_event(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        room_id,
+                                        group,
+                                        &mut tl_state.events_grouped_state,
+                                        item_drawn_status,
+                                        tl_items,
+                                    )
+                                } else {
+                                    // Group is collapsed, hide non-first items
+                                    let item = list.item(cx, item_id, live_id!(Empty));
+                                    (item, ItemDrawnStatus::both_drawn())
+                                }
+                            }
+                        },
+                        _ => {
+                            // Not grouped, show individual event normally
+                        match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
                             TimelineItemContent::MsgLike(msg_like_content) => match &msg_like_content.kind {
                                 MsgLikeKind::Message(_) | MsgLikeKind::Sticker(_) => {
@@ -1330,6 +1618,8 @@ impl Widget for RoomScreen {
                             let item = list.item(cx, item_id, live_id!(Empty));
                             (item, ItemDrawnStatus::both_drawn())
                         }
+                        }
+                    }
                     };
 
                     // Now that we've drawn the item, add its index to the set of drawn items.
@@ -1342,6 +1632,13 @@ impl Widget for RoomScreen {
                     item
                 };
                 item.draw_all(cx, &mut Scope::empty());
+            }
+
+            // Finalize any remaining group at the end of timeline processing
+            if let Some(tl_state) = &mut self.tl_state {
+                if let Some(final_group) = tl_state.events_grouped_state.finish_current_grouping() {
+                    log!("Finalized last group: {} with {} items", final_group.get_group_id(), final_group.items_count);
+                }
             }
         }
         DrawStep::done()
@@ -2219,6 +2516,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
+                events_grouped_state: EventsGroupedState::default(),
             };
             (new_tl_state, true)
         };
@@ -2478,6 +2776,24 @@ impl RoomScreen {
         }
         tl.last_scrolled_index = first_index;
     }
+
+    fn can_group_timeline_item(timeline_item: &TimelineItem) -> Option<EventGroupType> {
+        match timeline_item.kind() {
+            TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
+                TimelineItemContent::MembershipChange(_) |
+                TimelineItemContent::ProfileChange(_) |
+                TimelineItemContent::OtherState(_) => Some(EventGroupType::SmallStateEvent),
+                TimelineItemContent::MsgLike(msg_like_content) => match &msg_like_content.kind {
+                    MsgLikeKind::Poll(_) |
+                    MsgLikeKind::Redacted |
+                    MsgLikeKind::UnableToDecrypt(_) => Some(EventGroupType::SmallStateEvent),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        }
+    }
 }
 
 impl RoomScreenRef {
@@ -2704,6 +3020,8 @@ struct TimelineUiState {
     /// When new message come in, this value is reset to `false`.
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
+
+    events_grouped_state: EventsGroupedState,
 }
 
 #[derive(Default, Debug)]
@@ -3975,6 +4293,75 @@ fn populate_small_state_event(
     )
 }
 
+fn populate_grouped_small_state_event(
+    cx: &mut Cx2d,
+    list: &mut PortalList,
+    item_id: usize,
+    _room_id: &OwnedRoomId,
+    group: &GroupedEventsState,
+    events_grouped_state: &mut EventsGroupedState,
+    _item_drawn_status: ItemDrawnStatus,
+    tl_items: &imbl::Vector<std::sync::Arc<matrix_sdk_ui::timeline::TimelineItem>>,
+) -> (WidgetRef, ItemDrawnStatus) {
+    // Ensure the group is finalized and meets minimum size requirements
+    if !group.is_finalized() {
+        log!("Warning: Attempting to render non-finalized group {}", group.get_group_id());
+    }
+    if !group.meets_minimum_size(&events_grouped_state.config) {
+        log!("Warning: Rendering group {} that doesn't meet minimum size ({})", group.get_group_id(), group.get_items_count());
+    }
+
+    let item = list.item(cx, item_id, live_id!(GroupedSmallStateEvent));
+    // When the group is expanded, the first item shows the GroupedSmallStateEvent component
+    // and the remaining items show the actual events, so subtract 1 from the total count
+    let is_expanded = events_grouped_state.is_group_expanded(group.get_group_id());
+    let visible_events_count = if is_expanded {
+        group.get_items_count().saturating_sub(1)
+    } else {
+        group.get_items_count()
+    };
+    let summary_text = if is_expanded {
+        format!("{} state events", visible_events_count)
+    } else {
+        // Use a more specific cache key that includes group range
+        let cache_key = group.get_cache_key();
+        if let Some(cached_summary) = events_grouped_state.get_cached_summary(&cache_key) {
+            cached_summary.clone()
+        } else {
+            // Generate summary and cache it
+            let summary = group.create_summary(tl_items);
+            events_grouped_state.cache_summary(cache_key, summary.clone());
+            summary
+        }
+    };
+
+    item.label(id!(summary_text)).set_text(cx, &summary_text);
+    
+    // Set the group_id on the widget for event handling
+    log!("Creating grouped small state event for group_id: {}", group.get_group_id());
+    
+    let button = item.button(id!(collapse_button));
+    let is_expanded = events_grouped_state.is_group_expanded(group.get_group_id());
+    let button_text = if is_expanded { "collapse" } else { "expand" };
+    button.set_text(cx, button_text);
+    
+    // Register the widget's UID to the group_id mapping
+    let widget_uid = item.widget_uid().0;
+    let group_id = group.get_group_id().to_string();
+    
+    // Check if this widget was already registered to a different group
+    if let Some(existing_group_id) = events_grouped_state.get_group_id_for_widget(widget_uid) {
+        if existing_group_id != &group_id {
+            log!("Warning: Widget UID {} was previously registered to group {}, now registering to {}", 
+                 widget_uid, existing_group_id, group_id);
+        }
+    }
+    
+    events_grouped_state.register_widget_to_group(widget_uid, group_id.clone());
+    log!("Registered widget UID {} to group {}", widget_uid, group_id);
+
+    (item, ItemDrawnStatus::both_drawn())
+}
 
 /// Returns the display name of the sender of the given `event_tl_item`, if available.
 fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String> {
