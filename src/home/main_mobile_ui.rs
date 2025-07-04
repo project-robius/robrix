@@ -104,7 +104,7 @@ impl Widget for MainMobileUI {
                     .invite_screen(id!(invite_screen))
                     .set_displayed_invite(cx, room_id.clone().into(), room_name.clone());
             }
-            Some(SelectedRoom::TombstoneRoom { room_id, room_name: _ }) => {
+            Some(SelectedRoom::TombstoneRoom { room_id, room_name}) => {
                 show_welcome = false;
                 show_room = false;
                 show_invite = false;
@@ -113,7 +113,8 @@ impl Widget for MainMobileUI {
                     .tombstone_screen(id!(tombstone_screen))
                     .set_displayed_tombstone(
                         cx, 
-                        room_id
+                        room_id.clone().into(),
+                        room_name.clone(),
                     );
             }
             None => {

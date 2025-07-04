@@ -170,10 +170,11 @@ impl MainDesktopUI {
                         room.room_name().cloned()
                     );
                 }
-                SelectedRoom::TombstoneRoom { room_id,  .. } => {
+                SelectedRoom::TombstoneRoom { room_id,  room_name } => {
                     new_widget.as_tombstone_screen().set_displayed_tombstone(
                         cx,
-                        room_id
+                        room_id.clone().into(),
+                        room_name.clone()
                     );
                 }
             }
@@ -382,10 +383,11 @@ impl WidgetMatchEvent for MainDesktopUI {
                                         room_name.clone(),
                                     );
                                 }
-                                Some(SelectedRoom::TombstoneRoom { room_id, .. }) => {                                    
+                                Some(SelectedRoom::TombstoneRoom { room_id, room_name }) => {                                    
                                     widget.as_tombstone_screen().set_displayed_tombstone(
                                         cx,
-                                        room_id.into()
+                                        room_id.clone().into(),
+                                        room_name.clone(),
                                     );
                                 }
                                 _ => { }

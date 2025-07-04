@@ -292,7 +292,7 @@ impl Widget for TombstoneScreen {
                     restore_status_label.set_text(cx, &status_text);
                     return;
                 } else {
-                    self.set_displayed_tombstone(cx, &room_id.clone());
+                    self.set_displayed_tombstone(cx, room_id.clone(), self.room_name.clone());
                 }
             }
         }
@@ -319,7 +319,7 @@ impl Widget for TombstoneScreen {
             for action in actions {
                 if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
                     if self.room_id.as_ref().is_some_and(|r| r == room_id) {
-                        self.set_displayed_tombstone(cx, room_id);
+                        self.set_displayed_tombstone(cx, room_id.clone(), self.room_name.clone());
                         return;
                     }
                 }
@@ -441,21 +441,21 @@ impl TombstoneScreen {
     pub fn set_displayed_tombstone(
         &mut self, 
         cx: &mut Cx, 
-        room_id: &OwnedRoomId,
+        room_id: OwnedRoomId,
+        room_name: Option<String>,
     ) {
         self.room_id = Some(room_id.clone());
+        self.room_name = room_name.clone();
         let mut replacement_room_id: Option<OwnedRoomId> = None;
         let mut replacement_room_name = None;
-        let mut room_name = None;
         let rooms_list_ref = cx.get_global::<RoomsListRef>();
-        let Some(avatar_preview) = rooms_list_ref.get_room_avatar(room_id) else { return };
+        let Some(avatar_preview) = rooms_list_ref.get_room_avatar(&room_id) else { return };
         if let Ok(guard) = crate::sliding_sync::ALL_JOINED_ROOMS.lock() {
             for (inner_room_id, room_info) in (*guard).iter() {
                 room_info.replaces_tombstoned_room.clone().is_some_and(|replaces| replaces == *room_id)
                     .then(|| {
                         replacement_room_id = Some(inner_room_id.clone());
                         replacement_room_name = room_info.room_name.clone();
-                        room_name = room_info.room_name.clone();
                     });
             }
         }
@@ -463,7 +463,7 @@ impl TombstoneScreen {
         // TODO: Get successor room info from the backend
         let current_room_info = crate::room::BasicRoomDetails {
             room_id: room_id.clone(),
-            room_name: room_name.clone(),
+            room_name: room_name,
             room_avatar: avatar_preview,
         };
         let successor_room_info = replacement_room_id.as_ref().map(|successor_id| {
@@ -474,7 +474,6 @@ impl TombstoneScreen {
             }
         });
         self.successor_room_id = replacement_room_id;
-        self.room_name = room_name;
         self.info = Some(TombstoneDetails { current_room_info, successor_room_info, tombstone_message: Some("This room has been tombstoned and replaced.".to_string()) });
         self.has_shown_confirmation = false;
         self.is_loaded = true;
@@ -490,10 +489,11 @@ impl TombstoneScreenRef {
     pub fn set_displayed_tombstone(
         &self, 
         cx: &mut Cx, 
-        room_id: &OwnedRoomId,
+        room_id: OwnedRoomId,
+        room_name: Option<String>,
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_displayed_tombstone(cx, room_id);
+            inner.set_displayed_tombstone(cx, room_id, room_name);
         }
     }
 }
