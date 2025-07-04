@@ -121,7 +121,7 @@ pub enum LogoutConfirmModalAction {
     None,
 }
 
-/// Actions related to logout that should be handled by the top-level app context
+/// Actions related to logout process 
 #[derive(Clone, DefaultNone, Debug)]
 pub enum LogoutAction {
     /// A positive response from the backend Matrix task to the logout.
@@ -132,6 +132,24 @@ pub enum LogoutAction {
     CleanupMobileResources {
         on_clean_resources: Sender<bool>
     },
+    /// Signal that the application is in an invalid state and needs to be restarted.
+    /// This happens when critical components have been cleaned up during a previous
+    /// logout attempt that reached the point of no return, but the app wasn't restarted.
+    ApplicationRequiresRestart {
+        /// Indicates which critical component is missing
+        missing_component: MissingComponentType,
+    },
+    None,
+}
+
+/// Indicates which critical component is missing after a partial logout,
+/// requiring application restart to restore functionality.
+#[derive(Clone, Copy, Debug, DefaultNone)]
+pub enum MissingComponentType {
+    /// The Matrix client has been disposed
+    ClientMissing,
+    /// The sync service has been disposed
+    SyncServiceMissing,
     None,
 }
 
@@ -182,7 +200,6 @@ impl WidgetMatchEvent for LogoutConfirmModal {
 
         for action in actions {
             if let Some(LogoutAction::LogoutFailure(error)) = action.downcast_ref() {
-
                 if LOGOUT_POINT_OF_NO_RETURN.load(Ordering::Acquire) {
                     self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
                     self.set_message(cx, "The logout process encountered an error when communicating with the homeserver. Since your login session has been partially invalidated, Robrix must restart in order to continue to properly function.");
@@ -219,6 +236,34 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                 self.final_success = Some(false);
                 needs_redraw = true;
             }
+
+            if let Some(LogoutAction::ApplicationRequiresRestart { .. }) = action.downcast_ref() {
+                self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
+                self.set_message(cx, "Application is in an inconsistent state and needs to be restarted to continue.");
+    
+                let confirm_button = self.button(id!(confirm_button));
+                confirm_button.set_text(cx, "Restart now");
+                confirm_button.apply_over(cx, live!{
+                    draw_bg: {
+                        color: #xE23A3A
+                    }
+                });
+                confirm_button.set_enabled(cx, true);
+
+                let cancel_button = self.button(id!(cancel_button));
+                cancel_button.set_visible(cx, true);
+                cancel_button.set_text(cx, "Restart later");
+                cancel_button.apply_over(cx, live!{
+                    draw_bg: {
+                        color: #x3A78E2
+                    }
+                });
+                cancel_button.set_enabled(cx, true);
+                
+                self.final_success = Some(false);
+                needs_redraw = true;
+            }
+
         }
 
         if needs_redraw {

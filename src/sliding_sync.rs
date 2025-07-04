@@ -30,7 +30,7 @@ use std::io;
 use crate::{
     app::RoomsPanelRestoreAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         invite_screen::{JoinRoomAction, LeaveRoomAction}, main_desktop_ui::MainDesktopUiAction, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}
-    }, login::{login_screen::LoginAction, logout_confirm_modal::LogoutAction}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_latest_user_id, load_rooms_panel_state, ClientSessionPersisted}, profile::{
+    }, login::{login_screen::LoginAction, logout_confirm_modal::{LogoutAction, MissingComponentType}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_latest_user_id, load_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -2912,10 +2912,12 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
     // Collect all errors encountered during the logout process
     let mut errors = Vec::new();
     log!("Starting logout process...");
+    // Check for client existence - this could be None if a previous logout attempt 
+    // reached point of no return and cleaned up resources( CLIENT.lock().unwrap().take(); ) but the app wasn't restarted
     let Some(client) = get_client() else {
         let error_msg = "Logout failed: No active client found";
         log!("Error: {}", error_msg);
-        Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
+        Cx::post_action(LogoutAction::ApplicationRequiresRestart { missing_component: MissingComponentType::ClientMissing });
         return Err(anyhow::anyhow!(error_msg));
     };
 
@@ -2926,7 +2928,15 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
         return Err(anyhow::anyhow!(error_msg));
     }
 
-    get_sync_service().unwrap().stop().await;
+    // Similar to client check above, sync_service could be None if previous logout 
+    // partially succeeded but the app wasn't restarted afterward
+    let Some(sync_service) = get_sync_service() else {
+        let error_msg = "Logout failed: No active sync_service found";
+        log!("Error: {}", error_msg);
+        Cx::post_action(LogoutAction::ApplicationRequiresRestart { missing_component: MissingComponentType::SyncServiceMissing });
+        return Err(anyhow::anyhow!(error_msg)); 
+    };
+    sync_service.stop().await;
 
     log!("Performing server-side logout...");
     match client.matrix_auth().logout().await {
@@ -2951,6 +2961,8 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
                 }
                 log!("Token already invalidated, considering logout as successful.");
             } else {
+                // haven't reached point of no return, so restart sync service to allow normal app usage
+                sync_service.start().await; 
                 let error_msg = format!("Server-side logout failed: {}. Please try again later", e);
                 log!("Error :{}", error_msg);
                 Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
