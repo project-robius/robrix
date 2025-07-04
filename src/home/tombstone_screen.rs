@@ -9,17 +9,13 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
-    room::{BasicRoomDetails, RoomPreviewAvatar},
-    shared::{
+    app::{RoomsPanelRestoreAction, SelectedRoom}, home::rooms_list::RoomsListRef, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{
         avatar::AvatarWidgetRefExt,
         popup_list::{enqueue_popup_notification, PopupItem}
-    },
-    sliding_sync::{submit_async_request, MatrixRequest},
-    utils
+    }, utils::{self, OwnedRoomIdRon}
 };
 
-use super::invite_screen::JoinRoomAction;
+use super::{invite_screen::JoinRoomAction, rooms_list::RoomsListAction};
 
 live_design! {
     use link::theme::*;
@@ -43,7 +39,19 @@ live_design! {
         draw_bg: {
             color: (COLOR_PRIMARY_DARKER),
         }
-
+        restore_status_label = <Label> {
+            width: Fill, height: Fit,
+            align: {x: 0.5, y: 0},
+            padding: {left: 5.0, right: 0.0}
+            flow: RightWrap,
+            margin: 0,
+            draw_text: {
+                color: (TYPING_NOTICE_TEXT_COLOR),
+                text_style: <REGULAR_TEXT>{font_size: 11}
+                wrap: Word,
+            }
+            text: ""
+        }
         // Tombstone icon and header
         tombstone_header = <View> {
             width: Fill, height: Fit
@@ -191,25 +199,6 @@ live_design! {
             margin: {top: 20}
             spacing: 40
 
-            stay_button = <RobrixIconButton> {
-                align: {x: 0.5, y: 0.5}
-                padding: 15,
-                draw_icon: {
-                    svg_file: (ICON_BLOCK_USER)
-                    color: (COLOR_DANGER_RED),
-                }
-                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
-
-                draw_bg: {
-                    border_color: (COLOR_DANGER_RED),
-                    color: #fff0f0 // light red
-                }
-                text: "Stay Here"
-                draw_text:{
-                    color: (COLOR_DANGER_RED),
-                }
-            }
-
             join_successor_button = <RobrixIconButton> {
                 align: {x: 0.5, y: 0.5}
                 padding: 15,
@@ -223,7 +212,7 @@ live_design! {
                     border_color: (COLOR_ACCEPT_GREEN),
                     color: #f0fff0 // light green
                 }
-                text: "Join Successor Room"
+                text: "The conversation continues here."
                 draw_text:{
                     color: (COLOR_ACCEPT_GREEN),
                 }
@@ -263,21 +252,10 @@ impl Deref for TombstoneDetails {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub enum TombstoneState {
-    #[default]
-    WaitingOnUserInput,
-    WaitingForJoinResult,
-    WaitingForJoinedRoom,
-    JoinedSuccessor,
-}
-
 /// A view that shows information about a tombstoned room and its successor.
 #[derive(Live, LiveHook, Widget)]
 pub struct TombstoneScreen {
     #[deref] view: View,
-
-    #[rust] tombstone_state: TombstoneState,
     #[rust] info: Option<TombstoneDetails>,
     /// Whether a JoinLeaveRoomModal dialog has been displayed
     #[rust] has_shown_confirmation: bool,
@@ -287,61 +265,89 @@ pub struct TombstoneScreen {
     #[rust] successor_room_id: Option<OwnedRoomId>,
     #[rust] room_name: Option<String>,
     #[rust] is_loaded: bool,
+    #[rust] all_rooms_loaded: bool,
 }
 
 impl Widget for TombstoneScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
-
-        let orig_state = self.tombstone_state.clone();
-
-        // Handle button clicks to join successor room or stay in current room
-        if let Event::Actions(actions) = event {
-            let Some(info) = self.info.as_ref() else { return; };
-            
-            if let Some(modifiers) = self.view.button(id!(stay_button)).clicked_modifiers(actions) {
-                // User chooses to stay in the tombstoned room
-                self.tombstone_state = TombstoneState::WaitingOnUserInput;
-                if !modifiers.shift {
-                    // Just show a message that they're staying in the tombstoned room
-                    self.view.label(id!(completion_label)).set_text(
-                        cx,
-                        "You are staying in the tombstoned room. Note that this room is no longer active.",
-                    );
+        // Currently, a Signal event is only used to tell this widget
+        // to check if the room has been loaded from the homeserver yet.
+        if let Event::Signal = event {
+            if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
+                let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                let restore_status_label = self.view.label(id!(restore_status_label));
+                if !rooms_list_ref.is_room_loaded(room_id) {
+                    let status_text = if rooms_list_ref.all_known_rooms_loaded() {
+                        self.all_rooms_loaded = true;
+                        format!(
+                            "This tombstone room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
+                             You may close this screen.",
+                            self.room_name.as_deref().unwrap_or_else(|| room_id.as_str())
+                        )
+                    } else {
+                        String::from("[Placeholder for Loading Spinner]\n\
+                         Waiting for this room to be loaded from the homeserver")
+                    };
+                    restore_status_label.set_text(cx, &status_text);
+                    return;
+                } else {
+                    self.set_displayed_tombstone(cx, &room_id.clone());
                 }
             }
+        }
+        // Handle button clicks to join successor room or stay in current room
+        if let Event::Actions(actions) = event {
             
-            if let Some(modifiers) = self.view.button(id!(join_successor_button)).clicked_modifiers(actions) {
+            if self.view.button(id!(join_successor_button)).clicked(actions) {
+                let Some(info) = self.info.as_ref() else { 
+                    return; 
+                };
                 if let Some(successor_info) = info.successor_room_info.as_ref() {
-                    self.tombstone_state = TombstoneState::WaitingForJoinResult;
-                    if modifiers.shift {
-                        submit_async_request(MatrixRequest::JoinRoom {
-                            room_id: successor_info.room_id.clone(),
-                        });
-                        self.has_shown_confirmation = false;
-                    } else {
-                        cx.action(JoinLeaveRoomModalAction::Open(
-                            JoinLeaveModalKind::JoinRoom(successor_info.clone())
-                        ));
-                        self.has_shown_confirmation = true;
-                    }
+                    let new_selected_room = SelectedRoom::JoinedRoom {
+                        room_id: OwnedRoomIdRon(successor_info.room_id.clone()),
+                        room_name: successor_info.room_name.clone(),
+                    };
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        RoomsListAction::Selected(new_selected_room),
+                    );
                 }
             }
 
             for action in actions {
+                if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
+                    if self.room_id.as_ref().is_some_and(|r| r == room_id) {
+                        self.set_displayed_tombstone(cx, room_id);
+                        return;
+                    }
+                }
                 match action.downcast_ref() {
                     Some(JoinRoomAction::Joined { room_id }) if Some(room_id) == self.successor_room_id.as_ref() => {
-                        self.tombstone_state = TombstoneState::JoinedSuccessor;
                         if !self.has_shown_confirmation {
                             enqueue_popup_notification(PopupItem{ 
                                 message: "Successfully joined successor room.".into(), 
                                 auto_dismissal_duration: None 
                             });
                         }
+                        // Redirect to the successor room
+                        let Some(info) = self.info.as_ref() else { 
+                            return; 
+                        };
+                        if let Some(successor_info) = info.successor_room_info.as_ref() {
+                            let selected_room = SelectedRoom::JoinedRoom {
+                                room_id: OwnedRoomIdRon(successor_info.room_id.clone()),
+                                room_name: successor_info.room_name.clone(),
+                            };
+                            cx.widget_action(self.widget_uid(), &scope.path, RoomsListAction::Selected(selected_room));
+                        }
                         continue;
                     }
                     Some(JoinRoomAction::Failed { room_id, error }) if Some(room_id) == self.successor_room_id.as_ref() => {
-                        self.tombstone_state = TombstoneState::WaitingOnUserInput;
+                        let Some(info) = self.info.as_ref() else { 
+                            return; 
+                        };
                         if !self.has_shown_confirmation {
                             let msg = utils::stringify_join_leave_error(
                                 error, 
@@ -355,22 +361,16 @@ impl Widget for TombstoneScreen {
                     }
                     _ => {}
                 }
-
-                if let Some(JoinLeaveRoomModalAction::Close { successful, .. }) = action.downcast_ref() {
-                    if !*successful {
-                        self.tombstone_state = TombstoneState::WaitingOnUserInput;
-                    }
-                    continue;
-                }
             }
         }
 
-        if self.tombstone_state != orig_state {
-            self.redraw(cx);
-        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if !self.is_loaded {
+            // only draw the loading status label if the room is not loaded yet.
+            return self.view.label(id!(restore_status_label)).draw(cx, scope);
+        }
         let Some(info) = self.info.as_ref() else {
             return self.view.draw_walk(cx, scope, walk);
         };
@@ -428,39 +428,10 @@ impl Widget for TombstoneScreen {
         }
 
         // Set button states based on tombstone state
-        let stay_button = self.view.button(id!(stay_button));
         let join_successor_button = self.view.button(id!(join_successor_button));
-        
-        match self.tombstone_state {
-            TombstoneState::WaitingOnUserInput => {
-                join_successor_button.set_enabled(cx, true);
-                stay_button.set_enabled(cx, true);
-                join_successor_button.set_enabled(cx, info.successor_room_info.is_some());
-                stay_button.set_text(cx, "Stay Here");
-                join_successor_button.set_text(cx, "Join Successor Room");
-            }
-            TombstoneState::WaitingForJoinResult => {
-                stay_button.set_enabled(cx, false);
-                //join_successor_button.set_enabled(cx, false);
-                stay_button.set_text(cx, "Stay Here");
-                join_successor_button.set_text(cx, "Joining...");
-            }
-            TombstoneState::WaitingForJoinedRoom => {
-                stay_button.set_enabled(cx, false);
-                //join_successor_button.set_enabled(cx, false);
-                stay_button.set_text(cx, "Stay Here");
-                join_successor_button.set_text(cx, "Joined!");
-            }
-            TombstoneState::JoinedSuccessor => {
-                stay_button.set_visible(cx, false);
-                join_successor_button.set_visible(cx, false);
-                self.view.label(id!(completion_label)).set_text(
-                    cx,
-                    "Successfully joined successor room!",
-                );
-            }
-        }
 
+        join_successor_button.set_enabled(cx, info.successor_room_info.is_some());
+        join_successor_button.set_text(cx, "Join Successor Room");
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -470,23 +441,46 @@ impl TombstoneScreen {
     pub fn set_displayed_tombstone(
         &mut self, 
         cx: &mut Cx, 
-        current_room_info: BasicRoomDetails,
-        successor_room_info: Option<BasicRoomDetails>,
-        tombstone_message: Option<String>,
+        room_id: &OwnedRoomId,
     ) {
-        self.room_id = Some(current_room_info.room_id.clone());
-        self.successor_room_id = successor_room_info.as_ref().map(|s| s.room_id.clone());
-        self.room_name = current_room_info.room_name.clone();
-        
-        self.info = Some(TombstoneDetails {
-            current_room_info,
-            successor_room_info,
-            tombstone_message,
+        self.room_id = Some(room_id.clone());
+        let mut replacement_room_id: Option<OwnedRoomId> = None;
+        let mut replacement_room_name = None;
+        let mut room_name = None;
+        let rooms_list_ref = cx.get_global::<RoomsListRef>();
+        let Some(avatar_preview) = rooms_list_ref.get_room_avatar(room_id) else { return };
+        if let Ok(guard) = crate::sliding_sync::ALL_JOINED_ROOMS.lock() {
+            for (inner_room_id, room_info) in (*guard).iter() {
+                room_info.replaces_tombstoned_room.clone().is_some_and(|replaces| replaces == *room_id)
+                    .then(|| {
+                        replacement_room_id = Some(inner_room_id.clone());
+                        replacement_room_name = room_info.room_name.clone();
+                        room_name = room_info.room_name.clone();
+                    });
+            }
+        }
+        let Some(replacement_avatar_preview) = replacement_room_id.as_ref().and_then(|room_id| rooms_list_ref.get_room_avatar(room_id)) else { return };
+        // TODO: Get successor room info from the backend
+        let current_room_info = crate::room::BasicRoomDetails {
+            room_id: room_id.clone(),
+            room_name: room_name.clone(),
+            room_avatar: avatar_preview,
+        };
+        let successor_room_info = replacement_room_id.as_ref().map(|successor_id| {
+            crate::room::BasicRoomDetails {
+                room_id: successor_id.clone(),
+                room_name: replacement_room_name.clone(),
+                room_avatar: replacement_avatar_preview,
+            }
         });
-        
-        self.tombstone_state = TombstoneState::WaitingOnUserInput;
+        self.successor_room_id = replacement_room_id;
+        self.room_name = room_name;
+        self.info = Some(TombstoneDetails { current_room_info, successor_room_info, tombstone_message: Some("This room has been tombstoned and replaced.".to_string()) });
         self.has_shown_confirmation = false;
         self.is_loaded = true;
+        self.view
+            .label(id!(restore_status_label))
+            .set_text(cx, "");
         self.redraw(cx);
     }
 }
@@ -496,12 +490,10 @@ impl TombstoneScreenRef {
     pub fn set_displayed_tombstone(
         &self, 
         cx: &mut Cx, 
-        current_room_info: BasicRoomDetails,
-        successor_room_info: Option<BasicRoomDetails>,
-        tombstone_message: Option<String>,
+        room_id: &OwnedRoomId,
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_displayed_tombstone(cx, current_room_info, successor_room_info, tombstone_message);
+            inner.set_displayed_tombstone(cx, room_id);
         }
     }
 }

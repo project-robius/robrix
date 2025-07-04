@@ -170,25 +170,10 @@ impl MainDesktopUI {
                         room.room_name().cloned()
                     );
                 }
-                SelectedRoom::TombstoneRoom { room_id, replacement_room_id, .. } => {
-                    // TODO: Get successor room info from the backend
-                    let current_room_info = crate::room::BasicRoomDetails {
-                        room_id: room_id.clone().into(),
-                        room_name: room.room_name().cloned(),
-                        room_avatar: crate::room::RoomPreviewAvatar::Text("T".to_string()),
-                    };
-                    let successor_room_info = replacement_room_id.as_ref().map(|successor_id| {
-                        crate::room::BasicRoomDetails {
-                            room_id: successor_id.clone().into(),
-                            room_name: None,
-                            room_avatar: crate::room::RoomPreviewAvatar::Text("S".to_string()),
-                        }
-                    });
+                SelectedRoom::TombstoneRoom { room_id,  .. } => {
                     new_widget.as_tombstone_screen().set_displayed_tombstone(
                         cx,
-                        current_room_info,
-                        successor_room_info,
-                        Some("This room has been tombstoned and replaced.".to_string()),
+                        room_id
                     );
                 }
             }
@@ -395,6 +380,12 @@ impl WidgetMatchEvent for MainDesktopUI {
                                         cx,
                                         room_id.clone().into(),
                                         room_name.clone(),
+                                    );
+                                }
+                                Some(SelectedRoom::TombstoneRoom { room_id, .. }) => {                                    
+                                    widget.as_tombstone_screen().set_displayed_tombstone(
+                                        cx,
+                                        room_id.into()
                                     );
                                 }
                                 _ => { }

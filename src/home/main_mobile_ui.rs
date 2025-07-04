@@ -104,31 +104,16 @@ impl Widget for MainMobileUI {
                     .invite_screen(id!(invite_screen))
                     .set_displayed_invite(cx, room_id.clone().into(), room_name.clone());
             }
-            Some(SelectedRoom::TombstoneRoom { room_id, room_name, replacement_room_id }) => {
+            Some(SelectedRoom::TombstoneRoom { room_id, room_name: _ }) => {
                 show_welcome = false;
                 show_room = false;
                 show_invite = false;
                 show_tombstone = true;
-                // TODO: Get proper room info from backend
-                let current_room_info = crate::room::BasicRoomDetails {
-                    room_id: room_id.clone().into(),
-                    room_name: room_name.clone(),
-                    room_avatar: crate::room::RoomPreviewAvatar::Text("T".to_string()),
-                };
-                let successor_room_info = replacement_room_id.as_ref().map(|successor_id| {
-                    crate::room::BasicRoomDetails {
-                        room_id: successor_id.clone().into(),
-                        room_name: None,
-                        room_avatar: crate::room::RoomPreviewAvatar::Text("S".to_string()),
-                    }
-                });
                 self.view
                     .tombstone_screen(id!(tombstone_screen))
                     .set_displayed_tombstone(
                         cx, 
-                        current_room_info,
-                        successor_room_info,
-                        Some("This room has been tombstoned and replaced.".to_string()),
+                        room_id
                     );
             }
             None => {

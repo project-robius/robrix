@@ -488,7 +488,6 @@ pub enum SelectedRoom {
     TombstoneRoom {
         room_id: OwnedRoomIdRon,
         room_name: Option<String>,
-        replacement_room_id: Option<OwnedRoomIdRon>,
     },
 }
 
