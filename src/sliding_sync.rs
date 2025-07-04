@@ -1439,34 +1439,35 @@ async fn async_main_loop(
         log!("Trying to restore session for user: {:?}",
             specified_username.as_ref().or(most_recent_user_id.as_ref())
         );
-        if let Ok(session) = persistent_state::restore_session(specified_username).await {
-            Some(session)
-        } else {
-            let status_err = "Could not restore previous user session.\n\nPlease login again.";
-            log!("{status_err}");
-            Cx::post_action(LoginAction::LoginFailure(status_err.to_string()));
+        match persistent_state::restore_session(specified_username).await {
+            Ok(session) => Some(session),
+            Err(e) => {
+                let status_err = "Could not restore previous user session.\n\nPlease login again.";
+                log!("{status_err} Error: {e:?}");
+                Cx::post_action(LoginAction::LoginFailure(status_err.to_string()));
 
-            if let Ok(cli) = &cli_parse_result {
-                log!("Attempting auto-login from CLI arguments as user '{}'...", cli.user_id);
-                Cx::post_action(LoginAction::CliAutoLogin {
-                    user_id: cli.user_id.clone(),
-                    homeserver: cli.homeserver.clone(),
-                });
-                match login(cli, LoginRequest::LoginByCli).await {
-                    Ok(new_login) => Some(new_login),
-                    Err(e) => {
-                        error!("CLI-based login failed: {e:?}");
-                        Cx::post_action(LoginAction::LoginFailure(
-                            format!("Could not login with CLI-provided arguments.\n\nPlease login manually.\n\nError: {e}")
-                        ));
-                        enqueue_rooms_list_update(RoomsListUpdate::Status {
-                            status: format!("Login failed: {e:?}"),
-                        });
-                        None
+                if let Ok(cli) = &cli_parse_result {
+                    log!("Attempting auto-login from CLI arguments as user '{}'...", cli.user_id);
+                    Cx::post_action(LoginAction::CliAutoLogin {
+                        user_id: cli.user_id.clone(),
+                        homeserver: cli.homeserver.clone(),
+                    });
+                    match login(cli, LoginRequest::LoginByCli).await {
+                        Ok(new_login) => Some(new_login),
+                        Err(e) => {
+                            error!("CLI-based login failed: {e:?}");
+                            Cx::post_action(LoginAction::LoginFailure(
+                                format!("Could not login with CLI-provided arguments.\n\nPlease login manually.\n\nError: {e}")
+                            ));
+                            enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                status: format!("Login failed: {e:?}"),
+                            });
+                            None
+                        }
                     }
+                } else {
+                    None
                 }
-            } else {
-                None
             }
         }
     } else {
