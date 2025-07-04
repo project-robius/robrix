@@ -1,3 +1,4 @@
+#![allow(clippy::question_mark)]
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
@@ -210,6 +211,7 @@ pub struct JoinedRoomInfo {
     pub is_selected: bool,
     /// Whether this a direct room.
     pub is_direct: bool,
+    pub is_tombstoned: bool,
 }
 
 /// UI-related info about a room that the user has been invited to.
@@ -353,6 +355,11 @@ impl RoomsList {
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
         self.all_joined_rooms.contains_key(room_id)
             || self.invited_rooms.borrow().contains_key(room_id)
+    }
+
+    /// Returns the `RoomPreviewAvatar` for the given `room_id`, if it exists in the list of all joined rooms.
+    pub fn get_room_avatar(&self, room_id: &OwnedRoomId) -> Option<RoomPreviewAvatar> {
+        self.all_joined_rooms.get(room_id).map(|room| room.avatar.clone())
     }
 
     /// Handle all pending updates to the list of all rooms.
@@ -742,9 +749,13 @@ impl Widget for RoomsList {
         for list_action in list_actions {
             if let RoomPreviewAction::Clicked(clicked_room_id) = list_action.as_widget_action().cast() {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
-                    SelectedRoom::JoinedRoom {
-                        room_id: jr.room_id.clone().into(),
-                        room_name: jr.room_name.clone(),
+                    if jr.is_tombstoned {
+                        SelectedRoom::TombstoneRoom { room_id: jr.room_id.clone().into(), room_name: jr.room_name.clone() }
+                    } else {
+                        SelectedRoom::JoinedRoom {
+                            room_id: jr.room_id.clone().into(),
+                            room_name: jr.room_name.clone(),
+                        }
                     }
                 } else if let Some(ir) = self.invited_rooms.borrow().get(&clicked_room_id) {
                     SelectedRoom::InvitedRoom {
@@ -971,6 +982,12 @@ impl RoomsListRef {
             return false;
         };
         inner.is_room_loaded(room_id)
+    }
+    pub fn get_room_avatar(&self, room_id: &OwnedRoomId) -> Option<RoomPreviewAvatar> {
+        let Some(inner) = self.borrow() else {
+            return None;
+        };
+        inner.get_room_avatar(room_id)
     }
 }
 pub struct RoomsListScopeProps {

@@ -3,7 +3,7 @@ use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
 use crate::{app::{AppState, AppStateAction, SelectedRoom}, utils::room_name_or_id};
-use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
+use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction, tombstone_screen::TombstoneScreenWidgetRefExt};
 
 live_design! {
     use link::theme::*;
@@ -16,6 +16,7 @@ live_design! {
     use crate::home::welcome_screen::WelcomeScreen;
     use crate::home::room_screen::RoomScreen;
     use crate::home::invite_screen::InviteScreen;
+    use crate::home::tombstone_screen::TombstoneScreen;
 
     pub MainDesktopUI = {{MainDesktopUI}} {
         dock = <Dock> {
@@ -50,6 +51,7 @@ live_design! {
             welcome_screen = <WelcomeScreen> {}
             room_screen = <RoomScreen> {}
             invite_screen = <InviteScreen> {}
+            tombstone_screen = <TombstoneScreen> {}
         }
     }
 }
@@ -134,6 +136,10 @@ impl MainDesktopUI {
                 live_id!(invite_screen),
                 room_name_or_id(room_name.as_ref(), room_id),
             ),
+            SelectedRoom::TombstoneRoom { room_id, room_name, .. } => (
+                live_id!(tombstone_screen),
+                room_name_or_id(room_name.as_ref(), room_id),
+            ),
         };
         let new_tab_widget = dock.create_and_select_tab(
             cx,
@@ -162,6 +168,13 @@ impl MainDesktopUI {
                         cx,
                         room_id.clone().into(),
                         room.room_name().cloned()
+                    );
+                }
+                SelectedRoom::TombstoneRoom { room_id,  room_name } => {
+                    new_widget.as_tombstone_screen().set_displayed_tombstone(
+                        cx,
+                        room_id.clone().into(),
+                        room_name.clone()
                     );
                 }
             }
@@ -365,6 +378,13 @@ impl WidgetMatchEvent for MainDesktopUI {
                                 }
                                 Some(SelectedRoom::InvitedRoom { room_id, room_name }) => {
                                     widget.as_invite_screen().set_displayed_invite(
+                                        cx,
+                                        room_id.clone().into(),
+                                        room_name.clone(),
+                                    );
+                                }
+                                Some(SelectedRoom::TombstoneRoom { room_id, room_name }) => {                                    
+                                    widget.as_tombstone_screen().set_displayed_tombstone(
                                         cx,
                                         room_id.clone().into(),
                                         room_name.clone(),
