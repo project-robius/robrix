@@ -28,10 +28,8 @@ use crate::{
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
-use crate::room::room_member_manager::room_members;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::shared::mentionable_text_input::{MentionableTextInputWidgetRefExt, MentionableTextInputAction};
-use crate::room::room_member_manager::{RoomMemberSubscriber, RoomMemberSubscription};
 
 use rangemap::RangeSet;
 
@@ -821,8 +819,6 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
-    /// The subscription to room member updates for the current room.
-    #[rust] member_subscription: Option<RoomMemberSubscription>,
     /// Whether this room has been successfully loaded (received from the homeserver).
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
@@ -1170,7 +1166,7 @@ impl Widget for RoomScreen {
         // This scope is needed by child widgets like MentionableTextInput during event handling.
         let room_props = if let Some(tl) = self.tl_state.as_ref() {
             let room_id = tl.room_id.clone();
-            let room_members = room_members::get_room_members(&room_id);
+            let room_members = tl.room_members.clone();
             
             // Fetch room data once to avoid duplicate expensive lookups
             let (room_display_name, room_avatar_url) = get_client()
@@ -1675,9 +1671,8 @@ impl RoomScreen {
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
                 TimelineUpdate::RoomMembersListFetched { members } => {
-                    // Use `pub/sub` pattern here to let multiple components share room members data
-                    use crate::room::room_member_manager::room_members;
-                    room_members::update(tl.room_id.clone(), members);
+                    // Store room members directly in TimelineUiState
+                    tl.room_members = Some(Arc::new(members));
                 },
                 TimelineUpdate::MediaFetched => {
                     log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
@@ -2309,6 +2304,8 @@ impl RoomScreen {
                 // This doesn't mean that the user can actually perform all actions;
                 // the power levels will be updated from the homeserver once the room is opened.
                 user_power: UserPowerLevels::all(),
+                // Room members start as None and get populated when fetched from the server
+                room_members: None,
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
                 items: Vector::new(),
@@ -2328,12 +2325,6 @@ impl RoomScreen {
             (new_tl_state, true)
         };
 
-        // Create room member subscriber
-        let subscriber = Arc::new(Mutex::new(RoomScreenMemberSubscriber {
-            widget_uid: self.widget_uid(),
-            room_id: room_id.clone(),
-        }));
-        self.member_subscription = Some(RoomMemberSubscription::new(room_id.clone(), subscriber));
         // Request room members data immediately upon showing the room
         submit_async_request(MatrixRequest::GetRoomMembers {
             room_id: room_id.clone(),
@@ -2405,9 +2396,6 @@ impl RoomScreen {
 
         self.save_state();
 
-        // Clear the member subscription
-        self.member_subscription = None;
-
         // When closing a room view, we do the following with non-persistent states:
         // * Unsubscribe from typing notices, since we don't care about them
         //   when a given room isn't visible.
@@ -2444,6 +2432,8 @@ impl RoomScreen {
             editing_pane_state,
         };
         tl.saved_state = state;
+        // Clear room_members to prevent memory leaks when state is stored long-term
+        tl.room_members = None;
         // Store this Timeline's `TimelineUiState` in the global map of states.
         TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
     }
@@ -2641,22 +2631,6 @@ pub struct RoomScreenProps {
 }
 
 
-/// Subscriber for RoomScreen to receive room member updates
-#[allow(dead_code)]
-struct RoomScreenMemberSubscriber {
-    widget_uid: WidgetUid,
-    room_id: OwnedRoomId, // Store the room_id for verification
-}
-
-/// Implement `RoomMemberSubscriber` trait, receive member update notifications
-impl RoomMemberSubscriber for RoomScreenMemberSubscriber {
-    fn on_room_members_updated(
-        &mut self, room_id: &OwnedRoomId, _members: Arc<Vec<RoomMember>>,
-    ) {
-        // Directly notify MentionableTextInput components that room members have been loaded
-        Cx::post_action(MentionableTextInputAction::RoomMembersLoaded(room_id.clone()));
-    }
-}
 
 /// Actions for the room screen's tooltip.
 #[derive(Clone, Debug, DefaultNone)]
@@ -2785,6 +2759,9 @@ struct TimelineUiState {
 
     /// The power levels of the currently logged-in user in this room.
     user_power: UserPowerLevels,
+
+    /// The list of room members for this room.
+    room_members: Option<Arc<Vec<RoomMember>>>,
 
     /// Whether this room's timeline has been fully paginated, which means
     /// that the oldest (first) event in the timeline is locally synced and available.

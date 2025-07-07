@@ -630,49 +630,23 @@ async fn async_worker(
                 };
 
                 let _get_members_task = Handle::current().spawn(async move {
-                    use crate::room::room_member_manager::room_members;
-
                     let room = timeline.room();
 
-                    let check_and_send_update = |members: Vec<matrix_sdk::room::RoomMember>, source: &str| {
+                    let send_update = |members: Vec<matrix_sdk::room::RoomMember>, source: &str| {
                         log!("{} {} members for room {}", source, members.len(), room_id);
-
-                        // Check if members actually changed before sending update
-                        let members_changed = if let Some(existing_members) = room_members::get_room_members(&room_id) {
-                            if existing_members.len() != members.len() {
-                                true
-                            } else {
-                                // Compare member user IDs
-                                let existing_ids: std::collections::HashSet<_> = existing_members.iter()
-                                    .map(|m| m.user_id().to_owned())
-                                    .collect();
-                                let new_ids: std::collections::HashSet<_> = members.iter()
-                                    .map(|m| m.user_id().to_owned())
-                                    .collect();
-                                existing_ids != new_ids
-                            }
-                        } else {
-                            // First update, always considered as changed
-                            true
-                        };
-
-                        if members_changed {
-                            sender.send(TimelineUpdate::RoomMembersListFetched {
-                                members
-                            }).unwrap();
-                            SignalToUI::set_ui_signal();
-                        } else {
-                            log!("Skipping room {} member update (no actual changes)", room_id);
-                        }
+                        sender.send(TimelineUpdate::RoomMembersListFetched {
+                            members
+                        }).unwrap();
+                        SignalToUI::set_ui_signal();
                     };
 
                     if local_only {
                         if let Ok(members) = room.members_no_sync(memberships).await {
-                            check_and_send_update(members, "Got");
+                            send_update(members, "Got");
                         }
                     } else {
                         if let Ok(members) = room.members(memberships).await {
-                            check_and_send_update(members, "Successfully fetched");
+                            send_update(members, "Successfully fetched");
                         }
                     }
                 });

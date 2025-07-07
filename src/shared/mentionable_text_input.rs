@@ -267,8 +267,6 @@ live_design! {
 pub enum MentionableTextInputAction {
     /// Notifies the MentionableTextInput about updated power levels for the room.
     PowerLevelsUpdated(OwnedRoomId, bool),
-    /// Notifies that room members have been loaded/updated
-    RoomMembersLoaded(OwnedRoomId),
     None,
 }
 
@@ -366,15 +364,6 @@ impl Widget for MentionableTextInput {
                                 }
                             }
                         },
-                        MentionableTextInputAction::RoomMembersLoaded(room_id) => {
-                            if &scope_room_id == room_id && self.members_loading {
-                                self.members_loading = false;
-                                if self.is_searching && has_focus {
-                                    let search_text = self.cmd_text_input.search_text().to_lowercase();
-                                    self.update_user_list(cx, &search_text, scope);
-                                }
-                            }
-                        },
                         _ => {},
                     }
                 }
@@ -383,6 +372,29 @@ impl Widget for MentionableTextInput {
             // Close popup if focus is lost
             if !has_focus && self.cmd_text_input.view(id!(popup)).visible() {
                 self.close_mention_popup(cx);
+            }
+        }
+
+        // Check if we were waiting for members and they're now available
+        if self.members_loading && self.is_searching {
+            let room_props = scope
+                .props
+                .get::<RoomScreenProps>()
+                .expect("RoomScreenProps should be available in scope");
+
+            if let Some(room_members) = &room_props.room_members {
+                if !room_members.is_empty() {
+                    // Members are now available, update the list
+                    self.members_loading = false;
+                    let text_input = self.cmd_text_input.text_input(id!(text_input));
+                    let text_input_area = text_input.area();
+                    let is_focused = cx.has_key_focus(text_input_area);
+                    
+                    if is_focused {
+                        let search_text = self.cmd_text_input.search_text().to_lowercase();
+                        self.update_user_list(cx, &search_text, scope);
+                    }
+                }
             }
         }
     }
