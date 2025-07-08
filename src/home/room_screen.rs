@@ -13,13 +13,13 @@ use matrix_sdk::{room::{reply::{EnforceThread, Reply}, RoomMember}, ruma::{
         }, ImageInfo, MediaSource
     },
     sticker::{StickerEventContent, StickerMediaSource}, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
-}, OwnedServerName};
+}, OwnedServerName, RoomState};
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 
 use crate::{
-    app::RoomsPanelRestoreAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{RoomsPanelRestoreAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::{RoomsListAction, RoomsListRef}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -27,6 +27,7 @@ use crate::{
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
+use crate::room::ResolveRoomAliasAction;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
@@ -998,6 +999,83 @@ impl Widget for RoomScreen {
                         );
                     }
                 }
+
+                // Handle resolved room alias actions - only for requests from this widget
+                if let Some(resolve_action) = action.downcast_ref::<ResolveRoomAliasAction>() {
+                    let Some(self_room_id) = &self.room_id else {
+                        error!("RoomScreen received a ResolveRoomAliasAction but has no room_id set.");
+                        continue;
+                    };
+
+                    match resolve_action {
+                        ResolveRoomAliasAction::Resolved { requester_room_id, room_alias: _ , room_id, servers: _ } => {
+                            // Only handle this action if it was requested by this widget
+                            if requester_room_id == self_room_id {
+                                if let Some(known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+                                    if known_room.is_space() {
+                                        enqueue_popup_notification(PopupItem {
+                                            message: format!("Found space {} but it is a space, not a regular room.", room_id),
+                                            auto_dismissal_duration: Some(3.0)
+                                        });
+                                    } else if known_room.state() == RoomState::Joined {
+                                        cx.widget_action(room_screen_widget_uid, &scope.path, RoomsListAction::Selected(
+                                            SelectedRoom::JoinedRoom {
+                                                room_id: room_id.clone().into(),
+                                                room_name: known_room.name()
+                                            }
+                                        ));
+                                    } else {
+                                        // Room exists but we're not joined - show join modal
+                                        use crate::join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveModalKind};
+                                        use crate::room::{BasicRoomDetails, RoomPreviewAvatar};
+
+                                        let room_details = BasicRoomDetails {
+                                            room_id: room_id.clone().into(),
+                                            room_name: known_room.name(),
+                                            room_avatar: RoomPreviewAvatar::default(),
+                                        };
+
+                                        cx.widget_action(room_screen_widget_uid, &scope.path, JoinLeaveRoomModalAction::Open(
+                                            JoinLeaveModalKind::JoinRoom(room_details)
+                                        ));
+                                    }
+                                } else {
+                                    // Room was resolved but we don't have it locally - show join modal with basic info
+                                    use crate::join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveModalKind};
+                                    use crate::room::{BasicRoomDetails, RoomPreviewAvatar};
+                                    let room_details = BasicRoomDetails {
+                                        room_id: room_id.clone().into(),
+                                        room_name: None,
+                                        room_avatar: RoomPreviewAvatar::default(),
+                                    };
+                                    cx.widget_action(room_screen_widget_uid, &scope.path, JoinLeaveRoomModalAction::Open(
+                                        JoinLeaveModalKind::JoinRoom(room_details)
+                                    ));
+                                }
+                            }
+                        }
+                        ResolveRoomAliasAction::Failed { requester_room_id, room_alias, error } => {
+                            if requester_room_id == self_room_id {
+                                error!("Failed to resolve room alias {}: {:?}", room_alias, error);
+                                // Provide more helpful error messages based on the error type
+                                let error_message = match error {
+                                    matrix_sdk::Error::Http(http_error) => {
+                                        if http_error.to_string().contains("404") {
+                                            format!("Room alias '{}' not found. It may have been deleted or never existed.", room_alias)
+                                        } else {
+                                            format!("Network error while resolving '{}': {}", room_alias, http_error)
+                                        }
+                                    }
+                                    _ => format!("Could not resolve room alias: {}", room_alias)
+                                };
+                                enqueue_popup_notification(PopupItem {
+                                    message: error_message,
+                                    auto_dismissal_duration: Some(8.0)
+                                });
+                            }
+                        }
+                    }
+                }
             }
 
             /*
@@ -1735,6 +1813,7 @@ impl RoomScreen {
         action: &Action,
         pane: &UserProfileSlidingPaneRef,
     ) -> bool {
+        let uid = self.widget_uid();
         // A closure that handles both MatrixToUri and MatrixUri links,
         // and returns whether the link was handled.
         let mut handle_matrix_link = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
@@ -1767,47 +1846,110 @@ impl RoomScreen {
                 }
                 MatrixId::Room(room_id) => {
                     if self.room_id.as_ref() == Some(room_id) {
-                        enqueue_popup_notification(PopupItem { 
-                            message: "You are already viewing that room.".into(), 
-                            auto_dismissal_duration: None 
+                        enqueue_popup_notification(PopupItem {
+                            message: "You are already viewing that room.".into(),
+                            auto_dismissal_duration: Some(3.0)
                         });
                         return true;
                     }
-                    if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
-                        log!("TODO: jump to known room {}", room_id);
+                    if let Some(known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+                        // Check if we're already joined to this room
+                        if known_room.state() == RoomState::Joined {
+                            cx.widget_action(uid, &Scope::empty().path, RoomsListAction::Selected(
+                                SelectedRoom::JoinedRoom {
+                                    room_id: room_id.clone().into(),
+                                    room_name: known_room.name()
+                                }
+                            ));
+                        } else {
+                            // Room exists but we're not joined - show join modal
+                            use crate::join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveModalKind};
+                            use crate::room::{BasicRoomDetails, RoomPreviewAvatar};
+
+                            let room_details = BasicRoomDetails {
+                                room_id: room_id.clone().into(),
+                                room_name: known_room.name(),
+                                room_avatar: RoomPreviewAvatar::default(),
+                            };
+
+                            cx.widget_action(uid, &Scope::empty().path, JoinLeaveRoomModalAction::Open(
+                                JoinLeaveModalKind::JoinRoom(room_details)
+                            ));
+                        }
                     } else {
-                        log!("TODO: fetch and display room preview for room {}", room_id);
+                        // Room doesn't exist locally - show informative message
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Room {} not found. You may need to join it first.", room_id),
+                            auto_dismissal_duration: Some(3.0)
+                        });
                     }
-                    false
+                    true
                 }
                 MatrixId::RoomAlias(room_alias) => {
-                    log!("TODO: open room alias {}", room_alias);
-                    // TODO: open a room loading screen that shows a spinner
-                    //       while our background async task calls Client::resolve_room_alias()
-                    //       and then either jumps to the room if known, or fetches and displays
-                    //       a room preview for that room.
-                    false
+                    submit_async_request(MatrixRequest::ResolveRoomAlias {
+                        requester_room_id: self.room_id.clone().unwrap(),
+                        room_alias: room_alias.clone()
+                    });
+                    true
                 }
-                MatrixId::Event(room_id, event_id) => {
-                    log!("TODO: open event {} in room {}", event_id, room_id);
-                    // TODO: this requires the same first step as the `MatrixId::Room` case above,
-                    //       but then we need to call Room::event_with_context() to get the event
-                    //       and its context (surrounding events ?).
-                    false
+                MatrixId::Event(room_or_alias_id, event_id) => {
+                    log!("Attempting to navigate to event {} in room {}", event_id, room_or_alias_id);
+                    // Check if room_or_alias_id is a room ID (not an alias)
+                    if room_or_alias_id.is_room_id() {
+                        // Convert to RoomId for get_room() call
+                        use matrix_sdk::ruma::RoomId;
+                        if let Ok(room_id) = RoomId::parse(room_or_alias_id.as_str()) {
+                            // First check if we have the room
+                            if let Some(known_room) = get_client().and_then(|c| c.get_room(&room_id)) {
+                                if known_room.state() == RoomState::Joined {
+                                    // If we're joined to the room, try to navigate to it first
+                                    cx.widget_action(uid, &Scope::empty().path, RoomsListAction::Selected(
+                                        SelectedRoom::JoinedRoom {
+                                            room_id: room_id.to_owned().into(),
+                                            room_name: known_room.name()
+                                        }
+                                    ));
+                                    // TODO: After navigating to the room, scroll to the specific event
+                                    // This would require calling Room::event_with_context() to get the event
+                                    // and its context (surrounding events), then scrolling to it
+                                    enqueue_popup_notification(PopupItem {
+                                        message: format!("Navigated to room. Event navigation not yet implemented."),
+                                        auto_dismissal_duration: Some(3.0)
+                                    });
+                                } else {
+                                    enqueue_popup_notification(PopupItem {
+                                        message: format!("Cannot view event: you are not joined to room {}", room_id),
+                                        auto_dismissal_duration: Some(5.0)
+                                    });
+                                }
+                            } else {
+                                enqueue_popup_notification(PopupItem {
+                                    message: format!("Cannot view event: room {} not found", room_id),
+                                    auto_dismissal_duration: Some(5.0)
+                                });
+                            }
+                        } else {
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Cannot parse room ID: {}", room_or_alias_id),
+                                auto_dismissal_duration: Some(5.0)
+                            });
+                        }
+                    } else {
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Event navigation with room aliases not yet supported: {}", room_or_alias_id),
+                            auto_dismissal_duration: Some(5.0)
+                        });
+                    }
+                    true
                 }
                 _ => false,
             }
         };
 
-        if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
-            let mut link_was_handled = false;
-            if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
-                link_was_handled |= handle_matrix_link(matrix_to_uri.id(), matrix_to_uri.via());
-            }
-            else if let Ok(matrix_uri) = MatrixUri::parse(&url) {
-                link_was_handled |= handle_matrix_link(matrix_uri.id(), matrix_uri.via());
-            }
-
+        // Prioritize handling RobrixHtmlLinkAction::ClickedMatrixLink over HtmlLinkAction::Clicked
+        // to avoid duplicate processing of the same Matrix link
+        if let RobrixHtmlLinkAction::ClickedMatrixLink { url, matrix_id, via, .. } = action.as_widget_action().cast() {
+            let link_was_handled = handle_matrix_link(&matrix_id, &via);
             if !link_was_handled {
                 log!("Opening URL \"{}\"", url);
                 if let Err(e) = robius_open::Uri::new(&url).open() {
@@ -1820,8 +1962,15 @@ impl RoomScreen {
             }
             true
         }
-        else if let RobrixHtmlLinkAction::ClickedMatrixLink { url, matrix_id, via, .. } = action.as_widget_action().cast() {
-            let link_was_handled = handle_matrix_link(&matrix_id, &via);
+        else if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
+            let mut link_was_handled = false;
+            if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
+                link_was_handled |= handle_matrix_link(matrix_to_uri.id(), matrix_to_uri.via());
+            }
+            else if let Ok(matrix_uri) = MatrixUri::parse(&url) {
+                link_was_handled |= handle_matrix_link(matrix_uri.id(), matrix_uri.via());
+            }
+
             if !link_was_handled {
                 log!("Opening URL \"{}\"", url);
                 if let Err(e) = robius_open::Uri::new(&url).open() {
