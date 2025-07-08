@@ -528,7 +528,7 @@ async fn async_worker(
                     let result = timeline.fetch_details_for_event(&event_id).await;
                     match result {
                         Ok(_) => {
-                            log!("Successfully fetched details for event {event_id} in room {room_id}.");
+                            // log!("Successfully fetched details for event {event_id} in room {room_id}.");
                         }
                         Err(ref _e) => {
                             // error!("Error fetching details for event {event_id} in room {room_id}: {e:?}");
