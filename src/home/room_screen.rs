@@ -722,7 +722,7 @@ live_design! {
                 // * the message input bar
                 // * the slide-up editing pane
                 // * a notice that the user can't send messages to this room
-                <View> {
+                input_bar_view = <View> {
                     width: Fill, height: Fit,
                     flow: Overlay,
 
@@ -1271,7 +1271,6 @@ impl Widget for RoomScreen {
 
             // Set the portal list's range based on the number of timeline items.
             let last_item_id = tl_items.len();
-
             let list = list_ref.deref_mut();
             list.set_item_range(cx, 0, last_item_id);
 

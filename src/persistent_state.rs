@@ -240,7 +240,8 @@ pub fn save_room_panel(
     for (tab_id, room) in &rooms_panel_state.open_rooms {
         match room {
             SelectedRoom::JoinedRoom { room_id, .. }
-            | SelectedRoom::InvitedRoom { room_id, .. } => {
+            | SelectedRoom::InvitedRoom { room_id, .. }
+            | SelectedRoom::TombstoneRoom { room_id, .. } => {
                 if !rooms_panel_state.dock_items.contains_key(tab_id) {
                     error!("Room id: {} already in dock state", room_id);
                 }

@@ -1218,9 +1218,10 @@ pub type TimelineRequestSender = watch::Sender<Vec<BackwardsPaginateUntilEventRe
 
 
 /// Backend-specific details about a joined room that our client currently knows about.
-struct JoinedRoomDetails {
+pub struct JoinedRoomDetails {
     #[allow(unused)]
     room_id: OwnedRoomId,
+    pub room_name: Option<String>,
     /// A reference to this room's timeline of events.
     timeline: Arc<Timeline>,
     /// An instance of the clone-able sender that can be used to send updates to this room's timeline.
@@ -1244,7 +1245,7 @@ struct JoinedRoomDetails {
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
     /// The ID of the old tombstoned room that this room has replaced, if any.
-    replaces_tombstoned_room: Option<OwnedRoomId>,
+    pub replaces_tombstoned_room: Option<OwnedRoomId>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
@@ -1262,13 +1263,13 @@ impl Drop for JoinedRoomDetails {
 
 
 /// Information about all joined rooms that our client currently know about.
-static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
+pub static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
 
 /// Information about all of the rooms that have been tombstoned.
 ///
 /// The map key is the **NEW** replacement room ID, and the value is the **OLD** tombstoned room ID.
 /// This allows us to quickly query if a newly-encountered room is a replacement for an old tombstoned room.
-static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
+pub static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: OnceLock<Client> = OnceLock::new();
@@ -1920,7 +1921,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         // to indicate that it replaces this tombstoned room.
         let replacement_room_id = tombstoned_info.room_id;
         if let Some(room_info) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&replacement_room_id) {
-            room_info.replaces_tombstoned_room = Some(replacement_room_id.clone());
+            room_info.replaces_tombstoned_room = Some(room_id.clone());
         }
         // But if we don't know about the replacement room yet, we need to save this tombstoned room
         // in a separate list so that the replacement room we will discover in the future
@@ -1928,7 +1929,6 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         else {
             TOMBSTONED_ROOMS.lock().unwrap().insert(replacement_room_id, room_id.clone());
         }
-        return Ok(());
     }
 
     let timeline = Arc::new(
@@ -1958,10 +1958,12 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         .remove(&room_id);
 
     log!("Adding new joined room {room_id}. Replaces tombstoned room: {tombstoned_room_replaced_by_this_room:?}");
+    
     ALL_JOINED_ROOMS.lock().unwrap().insert(
         room_id.clone(),
         JoinedRoomDetails {
             room_id: room_id.clone(),
+            room_name: room_name.clone(),
             timeline,
             timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender)),
             timeline_update_sender,
@@ -1987,6 +1989,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         has_been_paginated: false,
         is_selected: false,
         is_direct,
+        is_tombstoned: room.is_tombstoned(),
     }));
 
     Cx::post_action(RoomsPanelRestoreAction::Success(room_id));

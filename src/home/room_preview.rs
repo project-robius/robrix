@@ -20,6 +20,22 @@ live_design! {
     use crate::shared::html_or_plaintext::HtmlOrPlaintext;
     use crate::shared::unread_badge::UnreadBadge;
 
+    TombstoneIcon = <View> {
+        width: Fit, height: Fit,
+        visible: false,                                
+        <Icon> {
+            width: 24, height: 24,
+            align: {x: 0.5, y: 0.5}
+            draw_icon: {
+                svg_file: (ICON_TOMBSTONE)
+                fn get_color(self) -> vec4 {
+                    return #666;
+                }
+            }
+        }
+    }
+                            
+
     RoomName = <Label> {
         width: Fill, height: Fit
         flow: Right, // do not wrap
@@ -147,6 +163,7 @@ live_design! {
                     align: { x: 1.0 }
                     avatar = <Avatar> {}
                     unread_badge = <UnreadBadge> {}
+                    tombstone_icon = <TombstoneIcon> {}
                 }
             }
             IconAndName = <RoomPreviewContent> {
@@ -155,6 +172,7 @@ live_design! {
                 avatar = <Avatar> {}
                 room_name = <RoomName> {}
                 unread_badge = <UnreadBadge>  {}
+                tombstone_icon = <TombstoneIcon> {}
             }
             FullPreview = <RoomPreviewContent> {
                 padding: 10
@@ -181,6 +199,7 @@ live_design! {
                             width: Fit, height: Fit
                             align: { x: 1.0 }
                             unread_badge = <UnreadBadge> {}
+                            tombstone_icon = <TombstoneIcon> {}
                         }
                     }
                 }
@@ -294,6 +313,8 @@ impl RoomPreviewContent {
         self.view
             .unread_badge(id!(unread_badge))
             .update_counts(room_info.num_unread_mentions, room_info.num_unread_messages);
+        // Show tombstone icon if the room is tombstoned
+        self.view.view(id!(tombstone_icon)).set_visible(cx, room_info.is_tombstoned);
 
         self.draw_common(cx, &room_info.avatar, room_info.is_selected);
     }
@@ -334,6 +355,9 @@ impl RoomPreviewContent {
         self.view
             .unread_badge(id!(unread_badge))
             .update_counts(1, 0);
+
+        // Hide tombstone icon for invited rooms
+        self.view.view(id!(tombstone_icon)).set_visible(cx, false);
 
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
     }

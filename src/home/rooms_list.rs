@@ -1,3 +1,4 @@
+#![allow(clippy::question_mark)]
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
@@ -170,6 +171,8 @@ pub enum RoomsListAction {
         room_id: OwnedRoomId,
         room_name: Option<String>,
     },
+    /// Close a room.
+    Close(SelectedRoom),
     None,
 }
 
@@ -210,6 +213,7 @@ pub struct JoinedRoomInfo {
     pub is_selected: bool,
     /// Whether this a direct room.
     pub is_direct: bool,
+    pub is_tombstoned: bool,
 }
 
 /// UI-related info about a room that the user has been invited to.
@@ -353,6 +357,11 @@ impl RoomsList {
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
         self.all_joined_rooms.contains_key(room_id)
             || self.invited_rooms.borrow().contains_key(room_id)
+    }
+
+    /// Returns the `RoomPreviewAvatar` for the given `room_id`, if it exists in the list of all joined rooms.
+    pub fn get_room_avatar(&self, room_id: &OwnedRoomId) -> Option<RoomPreviewAvatar> {
+        self.all_joined_rooms.get(room_id).map(|room| room.avatar.clone())
     }
 
     /// Handle all pending updates to the list of all rooms.
@@ -742,9 +751,13 @@ impl Widget for RoomsList {
         for list_action in list_actions {
             if let RoomPreviewAction::Clicked(clicked_room_id) = list_action.as_widget_action().cast() {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
-                    SelectedRoom::JoinedRoom {
-                        room_id: jr.room_id.clone().into(),
-                        room_name: jr.room_name.clone(),
+                    if jr.is_tombstoned {
+                        SelectedRoom::TombstoneRoom { room_id: jr.room_id.clone().into(), room_name: jr.room_name.clone() }
+                    } else {
+                        SelectedRoom::JoinedRoom {
+                            room_id: jr.room_id.clone().into(),
+                            room_name: jr.room_name.clone(),
+                        }
                     }
                 } else if let Some(ir) = self.invited_rooms.borrow().get(&clicked_room_id) {
                     SelectedRoom::InvitedRoom {
@@ -786,6 +799,35 @@ impl Widget for RoomsList {
             for action in actions {
                 if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast() {
                     self.update_displayed_rooms(cx, &keywords);
+                }
+                if let RoomPreviewAction::Clicked(clicked_room_id) = action.as_widget_action().cast() {
+                    println!("clicked_room_id {:?}", clicked_room_id);
+                    let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
+                        if jr.is_tombstoned {
+                            SelectedRoom::TombstoneRoom { room_id: jr.room_id.clone().into(), room_name: jr.room_name.clone() }
+                        } else {
+                            SelectedRoom::JoinedRoom {
+                                room_id: jr.room_id.clone().into(),
+                                room_name: jr.room_name.clone(),
+                            }
+                        }
+                    } else if let Some(ir) = self.invited_rooms.borrow().get(&clicked_room_id) {
+                        SelectedRoom::InvitedRoom {
+                            room_id: ir.room_id.to_owned().into(),
+                            room_name: ir.room_name.clone(),
+                        }
+                    } else {
+                        error!("BUG: couldn't find clicked room details for room {clicked_room_id}");
+                        continue;
+                    };
+
+                    self.current_active_room = Some(clicked_room_id.clone());
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        RoomsListAction::Selected(new_selected_room),
+                    );
+                    self.redraw(cx);
                 }
             }
         }
@@ -971,6 +1013,12 @@ impl RoomsListRef {
             return false;
         };
         inner.is_room_loaded(room_id)
+    }
+    pub fn get_room_avatar(&self, room_id: &OwnedRoomId) -> Option<RoomPreviewAvatar> {
+        let Some(inner) = self.borrow() else {
+            return None;
+        };
+        inner.get_room_avatar(room_id)
     }
 }
 pub struct RoomsListScopeProps {
