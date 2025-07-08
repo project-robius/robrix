@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use makepad_widgets::{Cx, WidgetUid};
+use makepad_widgets::Cx;
 use matrix_sdk::{ruma::{OwnedRoomAliasId, OwnedRoomId}, OwnedServerName};
 
 pub mod room_input_bar;
@@ -14,13 +14,13 @@ pub fn live_design(cx: &mut Cx) {
 #[derive(Debug)]
 pub enum ResolveRoomAliasAction {
     Resolved {
-        requester_uid: WidgetUid,
+        requester_room_id: OwnedRoomId,
         room_alias: OwnedRoomAliasId,
         room_id: OwnedRoomId,
         servers: Vec<OwnedServerName>,
     },
     Failed {
-        requester_uid: WidgetUid,
+        requester_room_id: OwnedRoomId,
         room_alias: OwnedRoomAliasId,
         error: matrix_sdk::Error,
     }

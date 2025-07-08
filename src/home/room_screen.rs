@@ -13,7 +13,7 @@ use matrix_sdk::{room::{reply::{EnforceThread, Reply}, RoomMember}, ruma::{
         }, ImageInfo, MediaSource
     },
     sticker::{StickerEventContent, StickerMediaSource}, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
-}, OwnedServerName};
+}, OwnedServerName, RoomState};
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
@@ -1001,39 +1001,79 @@ impl Widget for RoomScreen {
                 }
 
                 // Handle resolved room alias actions - only for requests from this widget
-                if let Some(ResolveRoomAliasAction::Resolved { requester_uid, room_alias: _ , room_id, servers: _ }) = action.downcast_ref() {
-                    // Only handle this action if it was requested by this widget
-                    if *requester_uid == room_screen_widget_uid {
-                        if let Some(known_room) = get_client().and_then(|c| c.get_room(room_id)) {
-                            if known_room.is_space() {
-                                enqueue_popup_notification(PopupItem {
-                                    message: format!("Found space {} but it is a space, not a regular room.", room_id),
-                                    auto_dismissal_duration: Some(3.0)
-                                });
-                            } else {
-                                cx.widget_action(room_screen_widget_uid, &scope.path, RoomsListAction::Selected(
-                                    SelectedRoom::JoinedRoom {
-                                        room_id: room_id.clone().into(),
-                                        room_name: known_room.name()
-                                    }
-                                ));
-                            }
-                        } else {
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("Found room {} but you are not joined to it yet.", room_id),
-                                auto_dismissal_duration: Some(3.0)
-                            });
-                        }
-                    }
-                }
+                if let Some(resolve_action) = action.downcast_ref::<ResolveRoomAliasAction>() {
+                    let Some(self_room_id) = &self.room_id else {
+                        error!("RoomScreen received a ResolveRoomAliasAction but has no room_id set.");
+                        continue;
+                    };
 
-                if let Some(ResolveRoomAliasAction::Failed { requester_uid, room_alias, error }) = action.downcast_ref() {
-                    if *requester_uid == room_screen_widget_uid {
-                        error!("Failed to resolve room alias {}: {:?}", room_alias, error);
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Could not find room with alias: {}", room_alias),
-                            auto_dismissal_duration: None
-                        });
+                    match resolve_action {
+                        ResolveRoomAliasAction::Resolved { requester_room_id, room_alias: _ , room_id, servers: _ } => {
+                            // Only handle this action if it was requested by this widget
+                            if requester_room_id == self_room_id {
+                                if let Some(known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+                                    if known_room.is_space() {
+                                        enqueue_popup_notification(PopupItem {
+                                            message: format!("Found space {} but it is a space, not a regular room.", room_id),
+                                            auto_dismissal_duration: Some(3.0)
+                                        });
+                                    } else if known_room.state() == RoomState::Joined {
+                                        cx.widget_action(room_screen_widget_uid, &scope.path, RoomsListAction::Selected(
+                                            SelectedRoom::JoinedRoom {
+                                                room_id: room_id.clone().into(),
+                                                room_name: known_room.name()
+                                            }
+                                        ));
+                                    } else {
+                                        // Room exists but we're not joined - show join modal
+                                        use crate::join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveModalKind};
+                                        use crate::room::{BasicRoomDetails, RoomPreviewAvatar};
+
+                                        let room_details = BasicRoomDetails {
+                                            room_id: room_id.clone().into(),
+                                            room_name: known_room.name(),
+                                            room_avatar: RoomPreviewAvatar::default(),
+                                        };
+
+                                        cx.widget_action(room_screen_widget_uid, &scope.path, JoinLeaveRoomModalAction::Open(
+                                            JoinLeaveModalKind::JoinRoom(room_details)
+                                        ));
+                                    }
+                                } else {
+                                    // Room was resolved but we don't have it locally - show join modal with basic info
+                                    use crate::join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveModalKind};
+                                    use crate::room::{BasicRoomDetails, RoomPreviewAvatar};
+                                    let room_details = BasicRoomDetails {
+                                        room_id: room_id.clone().into(),
+                                        room_name: None,
+                                        room_avatar: RoomPreviewAvatar::default(),
+                                    };
+                                    cx.widget_action(room_screen_widget_uid, &scope.path, JoinLeaveRoomModalAction::Open(
+                                        JoinLeaveModalKind::JoinRoom(room_details)
+                                    ));
+                                }
+                            }
+                        }
+                        ResolveRoomAliasAction::Failed { requester_room_id, room_alias, error } => {
+                            if requester_room_id == self_room_id {
+                                error!("Failed to resolve room alias {}: {:?}", room_alias, error);
+                                // Provide more helpful error messages based on the error type
+                                let error_message = match error {
+                                    matrix_sdk::Error::Http(http_error) => {
+                                        if http_error.to_string().contains("404") {
+                                            format!("Room alias '{}' not found. It may have been deleted or never existed.", room_alias)
+                                        } else {
+                                            format!("Network error while resolving '{}': {}", room_alias, http_error)
+                                        }
+                                    }
+                                    _ => format!("Could not resolve room alias: {}", room_alias)
+                                };
+                                enqueue_popup_notification(PopupItem {
+                                    message: error_message,
+                                    auto_dismissal_duration: Some(8.0)
+                                });
+                            }
+                        }
                     }
                 }
             }
@@ -1813,59 +1853,94 @@ impl RoomScreen {
                         return true;
                     }
                     if let Some(known_room) = get_client().and_then(|c| c.get_room(room_id)) {
-                        cx.widget_action(uid, &Scope::empty().path, RoomsListAction::Selected(
-                            SelectedRoom::JoinedRoom {
+                        // Check if we're already joined to this room
+                        if known_room.state() == RoomState::Joined {
+                            cx.widget_action(uid, &Scope::empty().path, RoomsListAction::Selected(
+                                SelectedRoom::JoinedRoom {
+                                    room_id: room_id.clone().into(),
+                                    room_name: known_room.name()
+                                }
+                            ));
+                        } else {
+                            // Room exists but we're not joined - show join modal
+                            use crate::join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveModalKind};
+                            use crate::room::{BasicRoomDetails, RoomPreviewAvatar};
+
+                            let room_details = BasicRoomDetails {
                                 room_id: room_id.clone().into(),
-                                room_name: known_room.name()
-                            }
-                        ));
+                                room_name: known_room.name(),
+                                room_avatar: RoomPreviewAvatar::default(),
+                            };
+
+                            cx.widget_action(uid, &Scope::empty().path, JoinLeaveRoomModalAction::Open(
+                                JoinLeaveModalKind::JoinRoom(room_details)
+                            ));
+                        }
                     } else {
-                        // TODO: fetch and display a room preview for the given room ID.
+                        // Room doesn't exist locally - show informative message
                         enqueue_popup_notification(PopupItem {
-                            message: "You are not joined to this room yet.".into(),
+                            message: format!("Room {} not found. You may need to join it first.", room_id),
                             auto_dismissal_duration: Some(3.0)
                         });
                     }
                     true
                 }
                 MatrixId::RoomAlias(room_alias) => {
-                    // Check if we already have this room alias in the client
-                    if let Some(known_room) = get_client().and_then(|c| {
-                        c.rooms().into_iter().find(|room| {
-                            room.canonical_alias().as_ref() == Some(room_alias) ||
-                            room.alt_aliases().contains(room_alias)
-                        })
-                    }) {
-                        let room_id = known_room.room_id();
-                        if self.room_id.as_ref() == Some(&room_id.to_owned()) {
-                            enqueue_popup_notification(PopupItem {
-                                message: "You are already viewing that room.".into(),
-                                auto_dismissal_duration: Some(3.0)
-                            });
-                        } else {
-                            cx.widget_action(uid, &Scope::empty().path, RoomsListAction::Selected(
-                                SelectedRoom::JoinedRoom {
-                                    room_id: room_id.to_owned().into(),
-                                    room_name: known_room.name()
-                                }
-                            ));
-                        }
-                        return true;
-                    }
-                    // TODO: open a room loading screen that shows a spinner.
-                    // Submit async request to resolve the room alias
                     submit_async_request(MatrixRequest::ResolveRoomAlias {
-                        room_alias: room_alias.clone(),
-                        requester_uid: uid,
+                        requester_room_id: self.room_id.clone().unwrap(),
+                        room_alias: room_alias.clone()
                     });
                     true
                 }
-                MatrixId::Event(room_id, event_id) => {
-                    log!("TODO: open event {} in room {}", event_id, room_id);
-                    // TODO: this requires the same first step as the `MatrixId::Room` case above,
-                    //       but then we need to call Room::event_with_context() to get the event
-                    //       and its context (surrounding events ?).
-                    false
+                MatrixId::Event(room_or_alias_id, event_id) => {
+                    log!("Attempting to navigate to event {} in room {}", event_id, room_or_alias_id);
+                    // Check if room_or_alias_id is a room ID (not an alias)
+                    if room_or_alias_id.is_room_id() {
+                        // Convert to RoomId for get_room() call
+                        use matrix_sdk::ruma::RoomId;
+                        if let Ok(room_id) = RoomId::parse(room_or_alias_id.as_str()) {
+                            // First check if we have the room
+                            if let Some(known_room) = get_client().and_then(|c| c.get_room(&room_id)) {
+                                if known_room.state() == RoomState::Joined {
+                                    // If we're joined to the room, try to navigate to it first
+                                    cx.widget_action(uid, &Scope::empty().path, RoomsListAction::Selected(
+                                        SelectedRoom::JoinedRoom {
+                                            room_id: room_id.to_owned().into(),
+                                            room_name: known_room.name()
+                                        }
+                                    ));
+                                    // TODO: After navigating to the room, scroll to the specific event
+                                    // This would require calling Room::event_with_context() to get the event
+                                    // and its context (surrounding events), then scrolling to it
+                                    enqueue_popup_notification(PopupItem {
+                                        message: format!("Navigated to room. Event navigation not yet implemented."),
+                                        auto_dismissal_duration: Some(3.0)
+                                    });
+                                } else {
+                                    enqueue_popup_notification(PopupItem {
+                                        message: format!("Cannot view event: you are not joined to room {}", room_id),
+                                        auto_dismissal_duration: Some(5.0)
+                                    });
+                                }
+                            } else {
+                                enqueue_popup_notification(PopupItem {
+                                    message: format!("Cannot view event: room {} not found", room_id),
+                                    auto_dismissal_duration: Some(5.0)
+                                });
+                            }
+                        } else {
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Cannot parse room ID: {}", room_or_alias_id),
+                                auto_dismissal_duration: Some(5.0)
+                            });
+                        }
+                    } else {
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Event navigation with room aliases not yet supported: {}", room_or_alias_id),
+                            auto_dismissal_duration: Some(5.0)
+                        });
+                    }
+                    true
                 }
                 _ => false,
             }

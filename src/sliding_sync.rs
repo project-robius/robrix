@@ -5,7 +5,7 @@ use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
-use makepad_widgets::{error, log, warning, Cx, SignalToUI, WidgetUid};
+use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
@@ -297,7 +297,7 @@ pub enum MatrixRequest {
     },
     /// Request to resolve a room alias into a room ID and the servers that know about that room.
     ResolveRoomAlias {
-        requester_uid: WidgetUid,
+        requester_room_id: OwnedRoomId,
         room_alias: OwnedRoomAliasId,
     },
     /// Request to fetch an Avatar image from the server.
@@ -902,14 +902,31 @@ async fn async_worker(
             MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
                 spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
             }
-            MatrixRequest::ResolveRoomAlias { room_alias, requester_uid } => {
+            MatrixRequest::ResolveRoomAlias { requester_room_id, room_alias } => {
                 let Some(client) = CLIENT.get() else { continue };
                 let _resolve_task = Handle::current().spawn(async move {
-                    log!("Sending resolve room alias request for {room_alias}...");
+                    log!("Resolving room alias {room_alias}...");
+                    // First check if we already have this room alias in the client
+                    if let Some(known_room) = client.rooms().into_iter().find(|room| {
+                        room.canonical_alias().as_ref() == Some(&room_alias) ||
+                        room.alt_aliases().contains(&room_alias)
+                    }) {
+                        log!("Found room alias {room_alias} in local cache");
+                        let result_action = ResolveRoomAliasAction::Resolved {
+                            requester_room_id,
+                            room_alias,
+                            room_id: known_room.room_id().to_owned(),
+                            servers: vec![]
+                        };
+                        Cx::post_action(result_action);
+                        return;
+                    }
+                    // If not found locally, resolve remotely
+                    log!("Room alias {room_alias} not found locally, sending remote resolve request...");
                     let result_action = match client.resolve_room_alias(&room_alias).await {
                         Ok(response) => {
                             ResolveRoomAliasAction::Resolved {
-                                requester_uid,
+                                requester_room_id,
                                 room_alias,
                                 room_id: response.room_id,
                                 servers: response.servers
@@ -917,7 +934,7 @@ async fn async_worker(
                         }
                         Err(e) => {
                             ResolveRoomAliasAction::Failed {
-                                requester_uid,
+                                requester_room_id,
                                 room_alias,
                                 error: e.into()
                             }
