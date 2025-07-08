@@ -632,23 +632,23 @@ async fn async_worker(
                 let _get_members_task = Handle::current().spawn(async move {
                     let room = timeline.room();
 
+                    let send_update = |members: Vec<matrix_sdk::room::RoomMember>, source: &str| {
+                        log!("{} {} members for room {}", source, members.len(), room_id);
+                        sender.send(TimelineUpdate::RoomMembersListFetched {
+                            members
+                        }).unwrap();
+                        SignalToUI::set_ui_signal();
+                    };
+
                     if local_only {
                         if let Ok(members) = room.members_no_sync(memberships).await {
-                            log!("Got {} members from cache for room {}", members.len(), room_id);
-                            sender.send(TimelineUpdate::RoomMembersListFetched {
-                                members
-                            }).unwrap();
+                            send_update(members, "Got");
                         }
                     } else {
                         if let Ok(members) = room.members(memberships).await {
-                            log!("Successfully fetched {} members from server for room {}", members.len(), room_id);
-                            sender.send(TimelineUpdate::RoomMembersListFetched {
-                                members
-                            }).unwrap();
+                            send_update(members, "Successfully fetched");
                         }
                     }
-
-                    SignalToUI::set_ui_signal();
                 });
             }
 
@@ -946,6 +946,7 @@ async fn async_worker(
                 // Spawn a new async task that will send the actual message.
                 let _send_message_task = Handle::current().spawn(async move {
                     log!("Sending message to room {room_id}: {message:?}...");
+                    // The message already contains mentions, no need to add them again
                     if let Some(replied_to_info) = replied_to {
                         match timeline.send_reply(message.into(), replied_to_info).await {
                             Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
