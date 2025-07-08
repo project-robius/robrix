@@ -347,24 +347,19 @@ impl Widget for MentionableTextInput {
                 }
 
                 // Handle MentionableTextInputAction actions
-                if let Some(action_ref) = action.downcast_ref::<MentionableTextInputAction>() {
-                    match action_ref {
-                        MentionableTextInputAction::PowerLevelsUpdated(room_id, can_notify_room) => {
-                            if &scope_room_id != room_id {
-                                continue;
-                            }
+                if let Some(MentionableTextInputAction::PowerLevelsUpdated(room_id, can_notify_room)) = action.downcast_ref::<MentionableTextInputAction>() {
+                    if &scope_room_id != room_id {
+                        continue;
+                    }
 
-                            if self.can_notify_room != *can_notify_room {
-                                self.can_notify_room = *can_notify_room;
-                                if self.is_searching && has_focus {
-                                    let search_text = self.cmd_text_input.search_text().to_lowercase();
-                                    self.update_user_list(cx, &search_text, scope);
-                                } else {
-                                    self.redraw(cx);
-                                }
-                            }
-                        },
-                        _ => {},
+                    if self.can_notify_room != *can_notify_room {
+                        self.can_notify_room = *can_notify_room;
+                        if self.is_searching && has_focus {
+                            let search_text = self.cmd_text_input.search_text().to_lowercase();
+                            self.update_user_list(cx, &search_text, scope);
+                        } else {
+                            self.redraw(cx);
+                        }
                     }
                 }
             }
