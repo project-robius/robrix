@@ -2578,7 +2578,7 @@ async fn room_avatar(room: &Room, room_name: Option<&str>) -> RoomPreviewAvatar 
 /// Returns a text avatar string containing the first character of the room name.
 ///
 /// Skips the first character if it is a `#` or `!`, the sigils used for Room aliases and Room IDs.
-fn avatar_from_room_name(room_name: Option<&str>) -> RoomPreviewAvatar {
+pub fn avatar_from_room_name(room_name: Option<&str>) -> RoomPreviewAvatar {
     let first = room_name.and_then(|rn| rn
         .graphemes(true)
         .find(|&g| g != "#" && g != "!")

@@ -9,9 +9,9 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    app::{RoomsPanelRestoreAction, SelectedRoom}, home::{invite_screen::InviteScreenWidgetExt, room_preview::RoomPreviewAction, room_screen::RoomScreenWidgetExt, rooms_list::RoomsListRef}, room::{room_input_bar::RoomInputBarWidgetRefExt, BasicRoomDetails, RoomPreviewAvatar}, shared::{
+    app::{RoomsPanelRestoreAction, SelectedRoom}, home::{invite_screen::InviteScreenWidgetExt, room_preview::RoomPreviewAction, room_screen::RoomScreenWidgetExt, rooms_list::RoomsListRef}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{room_input_bar::RoomInputBarWidgetRefExt, BasicRoomDetails, RoomPreviewAvatar}, shared::{
         avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem}
-    }, utils::{self, OwnedRoomIdRon}
+    }, sliding_sync::avatar_from_room_name, utils::{self, OwnedRoomIdRon}
 };
 
 use super::{invite_screen::JoinRoomAction, rooms_list::RoomsListAction};
@@ -203,6 +203,20 @@ impl Widget for TombstoneScreen {
                         room_id: OwnedRoomIdRon(successor_info.room_id.clone()),
                         room_name: successor_info.room_name.clone(),
                     };
+
+                    // Check if successor room is loaded, if not show join modal
+                    let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                    if !rooms_list_ref.is_room_loaded(&successor_info.room_id) {
+                        // Show join room modal for the successor room
+                        cx.action(
+                            JoinLeaveRoomModalAction::Open(
+                                JoinLeaveModalKind::JoinRoom(successor_info.clone())
+                            ),
+                        );
+                        self.has_shown_confirmation = true;
+                        return;
+                    }
+
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
@@ -225,6 +239,40 @@ impl Widget for TombstoneScreen {
                         self.set_displayed_tombstone(cx, room_id.clone(), self.room_name.clone());
                         return;
                     }
+                }
+                
+                // Handle modal close actions
+                if let Some(JoinLeaveRoomModalAction::Close { successful, was_internal }) = action.downcast_ref() {
+                    if *was_internal && *successful {
+                        // Modal was closed after successful join, navigate to successor room
+                        if let Some(info) = self.info.as_ref() {
+                            if let Some(successor_info) = info.successor_room_info.as_ref() {
+                                let new_selected_room = SelectedRoom::JoinedRoom {
+                                    room_id: OwnedRoomIdRon(successor_info.room_id.clone()),
+                                    room_name: successor_info.room_name.clone(),
+                                };
+                                if let Some(current_room_id) = &self.room_id {
+                                    cx.widget_action(
+                                        self.widget_uid(),
+                                        &scope.path,
+                                        RoomsListAction::Close(SelectedRoom::TombstoneRoom {
+                                            room_id: OwnedRoomIdRon(current_room_id.clone()),
+                                            room_name: self.room_name.clone(),
+                                        }),
+                                    );
+                                    cx.widget_action(
+                                        self.widget_uid(),
+                                        &scope.path,
+                                        RoomPreviewAction::Clicked(new_selected_room.room_id().clone())
+                                    );
+                                }
+                            }
+                        }
+                    } else if *was_internal && !*successful {
+                        // Modal was closed after failed join or cancellation
+                        self.has_shown_confirmation = false;
+                    }
+                    return;
                 }
                 match action.downcast_ref() {
                     Some(JoinRoomAction::Joined { room_id }) if Some(room_id) == self.successor_room_id.as_ref() => {
@@ -306,8 +354,25 @@ impl TombstoneScreen {
                         replacement_room_name = room_info.room_name.clone();
                     });
             }
+            // Search for a replacement room ID in the TOBTOMBSTONED_ROOMS map if not found in ALL_JOINED_ROOMS.
+            // This happens when the replacement room id is not one of the user's joined rooms.
+            if replacement_room_id.is_none() {
+                if let Ok(guard) = crate::sliding_sync::TOMBSTONED_ROOMS.lock() {
+                    for (new_room_id, old_room_id) in (*guard).iter() {
+                        if old_room_id == &room_id {
+                            replacement_room_id = Some(new_room_id.clone());
+                            break; // Stop searching once we find a replacement
+                        }
+                    }
+                }
+                if replacement_room_id.is_none() {
+                    return;
+                }
+            }
         }
-        let Some(replacement_avatar_preview) = replacement_room_id.as_ref().and_then(|room_id| rooms_list_ref.get_room_avatar(room_id)) else { return };
+        let replacement_avatar_preview = replacement_room_id.as_ref().map(|room_id| {
+            rooms_list_ref.get_room_avatar(room_id).unwrap_or_else(|| avatar_from_room_name(None))
+        }).unwrap_or_else(|| avatar_from_room_name(None));
         // TODO: Get successor room info from the backend
         let current_room_info = crate::room::BasicRoomDetails {
             room_id: room_id.clone(),
