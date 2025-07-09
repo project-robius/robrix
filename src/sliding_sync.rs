@@ -873,7 +873,7 @@ async fn async_worker(
                     };
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
-
+                let room_id_clone = room_id.clone();
                 let subscribe_own_read_receipt_task = Handle::current().spawn(async move {
                     let update_receiver = timeline.subscribe_own_user_read_receipts_changed().await;
                     pin_mut!(update_receiver);
@@ -901,7 +901,7 @@ async fn async_worker(
                                 }
                                 // Update the rooms list with new unread counts
                                 enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
-                                    room_id: timeline.room().room_id().to_owned(),
+                                    room_id: room_id_clone.clone(),
                                     count: UnreadMessageCount::Known(unread_count),
                                     unread_mentions,
                                 });
@@ -2377,7 +2377,7 @@ async fn timeline_subscriber_handler(
                         if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Insert at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                         reobtain_latest_event = true;
                     }
-                    VectorDiff::Set { index, value } => { //123
+                    VectorDiff::Set { index, value } => {
                         index_of_first_change = min(index_of_first_change, index);
                         index_of_last_change  = max(index_of_last_change, index.saturating_add(1));
                         timeline_items.set(index, value);
