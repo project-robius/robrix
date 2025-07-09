@@ -1503,6 +1503,7 @@ async fn async_main_loop(
         .with_offline_mode()
         .build()
         .await?;
+
     // Attempt to load the previously-saved rooms panel state.
     // Include this after re-login. 
     handle_load_rooms_panel_state(logged_in_user_id.to_owned());
