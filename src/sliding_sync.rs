@@ -2099,7 +2099,6 @@ fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
         );
     
     Handle::current().spawn(async move {
-        // Pin the stream within the closure to avoid needing Box::pin
         let mut sync_indicator_stream = std::pin::pin!(sync_indicator_stream);
         
         while let Some(indicator) = sync_indicator_stream.next().await {

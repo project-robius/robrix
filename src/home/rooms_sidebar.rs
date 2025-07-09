@@ -83,7 +83,7 @@ live_design! {
 ///   showing only the title label and the RoomsList
 ///   (because the search bar is at the top of the HomeScreen).
 #[derive(Live, Widget)]
-struct RoomsSideBar {
+pub struct RoomsSideBar {
     #[deref] view: AdaptiveView,
 }
 impl LiveHook for RoomsSideBar {
