@@ -2284,17 +2284,14 @@ impl RoomScreen {
 
         let state_opt = TIMELINE_STATES.lock().unwrap().remove(&room_id);
         let (mut tl_state, mut is_first_time_being_loaded) = if let Some(existing) = state_opt {
-            log!("Restoring existing timeline state for room {}", room_id);
             (existing, false)
         } else {
             let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
                 if !self.is_loaded && self.all_rooms_loaded {
                     panic!("BUG: timeline is not loaded, but room_id {:?} was not waiting for its timeline to be loaded.", room_id);
                 }
-                log!("Unable to take timeline endpoints for room {} ({}), returning!!!!!!!!", self.room_name,room_id);
                 return;
             };
-            log!("Successfully took timeline endpoints, creating new TimelineUiState for room {} ({})", self.room_name, room_id);
             let tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // Initially, we assume the user has all power levels by default.
@@ -2337,7 +2334,9 @@ impl RoomScreen {
             let rooms_list_ref = cx.get_global::<RoomsListRef>();
             let is_loaded_now = rooms_list_ref.is_room_loaded(&room_id);
             if is_loaded_now && !self.is_loaded {
-                log!("Detected that room \"{}\" ({}) is now loaded, setting `is_loaded` to true", self.room_name, room_id);
+                log!("Detected that room \"{}\" ({}) is now loaded for the first time",
+                    self.room_name, room_id,
+                );
                 is_first_time_being_loaded = true;
             }
             self.is_loaded = is_loaded_now;
