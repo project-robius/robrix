@@ -369,9 +369,6 @@ impl WidgetMatchEvent for MainDesktopUI {
                     self.replace_invite_with_joined_room(cx, scope, room_id, room_name);
                 }
                 RoomsListAction::Close(selected_room) => {
-                    // Note that this cannot be performed within draw_walk() as the draw flow prevents from
-                    // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
-                    // a redraw to be happening in order to draw the tab content.
                     self.close_tab_by_room_id(cx, selected_room.room_id());
                 }
                 RoomsListAction::None => { }

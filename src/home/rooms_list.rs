@@ -752,7 +752,10 @@ impl Widget for RoomsList {
             if let RoomPreviewAction::Clicked(clicked_room_id) = list_action.as_widget_action().cast() {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
                     if jr.is_tombstoned {
-                        SelectedRoom::TombstoneRoom { room_id: jr.room_id.clone().into(), room_name: jr.room_name.clone() }
+                        SelectedRoom::TombstoneRoom { 
+                            room_id: jr.room_id.clone().into(), 
+                            room_name: jr.room_name.clone() 
+                        }
                     } else {
                         SelectedRoom::JoinedRoom {
                             room_id: jr.room_id.clone().into(),
@@ -799,35 +802,6 @@ impl Widget for RoomsList {
             for action in actions {
                 if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast() {
                     self.update_displayed_rooms(cx, &keywords);
-                }
-                if let RoomPreviewAction::Clicked(clicked_room_id) = action.as_widget_action().cast() {
-                    println!("clicked_room_id {:?}", clicked_room_id);
-                    let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
-                        if jr.is_tombstoned {
-                            SelectedRoom::TombstoneRoom { room_id: jr.room_id.clone().into(), room_name: jr.room_name.clone() }
-                        } else {
-                            SelectedRoom::JoinedRoom {
-                                room_id: jr.room_id.clone().into(),
-                                room_name: jr.room_name.clone(),
-                            }
-                        }
-                    } else if let Some(ir) = self.invited_rooms.borrow().get(&clicked_room_id) {
-                        SelectedRoom::InvitedRoom {
-                            room_id: ir.room_id.to_owned().into(),
-                            room_name: ir.room_name.clone(),
-                        }
-                    } else {
-                        error!("BUG: couldn't find clicked room details for room {clicked_room_id}");
-                        continue;
-                    };
-
-                    self.current_active_room = Some(clicked_room_id.clone());
-                    cx.widget_action(
-                        self.widget_uid(),
-                        &scope.path,
-                        RoomsListAction::Selected(new_selected_room),
-                    );
-                    self.redraw(cx);
                 }
             }
         }
@@ -1014,6 +988,8 @@ impl RoomsListRef {
         };
         inner.is_room_loaded(room_id)
     }
+
+    /// See [`RoomsList::get_room_avatar()`].
     pub fn get_room_avatar(&self, room_id: &OwnedRoomId) -> Option<RoomPreviewAvatar> {
         let Some(inner) = self.borrow() else {
             return None;
