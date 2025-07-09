@@ -1,7 +1,7 @@
 //! A room screen is the UI view that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}};
+use std::{borrow::Cow, cell::RefCell, collections::BTreeMap, ops::{DerefMut, Range}, sync::Arc};
 
 use bytesize::ByteSize;
 use imbl::Vector;
@@ -2297,7 +2297,7 @@ impl RoomScreen {
         let room_id = self.room_id.clone()
             .expect("BUG: Timeline::show_timeline(): no room_id was set.");
 
-        let state_opt = TIMELINE_STATES.lock().unwrap().remove(&room_id);
+        let state_opt = TIMELINE_STATES.with_borrow_mut(|ts| ts.remove(&room_id));
         let (mut tl_state, mut is_first_time_being_loaded) = if let Some(existing) = state_opt {
             (existing, false)
         } else {
@@ -2461,7 +2461,7 @@ impl RoomScreen {
         // Clear room_members to prevent memory leaks when state is stored long-term
         tl.room_members = None;
         // Store this Timeline's `TimelineUiState` in the global map of states.
-        TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
+        TIMELINE_STATES.with_borrow_mut(|ts| ts.insert(tl.room_id.clone(), tl));
     }
 
     /// Restores the previously-saved visual UI state of this room.
@@ -2770,8 +2770,14 @@ pub enum TimelineUpdate {
 
 }
 
-/// The global set of all timeline states, one entry per room.
-static TIMELINE_STATES: Mutex<BTreeMap<OwnedRoomId, TimelineUiState>> = Mutex::new(BTreeMap::new());
+thread_local! {
+    /// The global set of all timeline states, one entry per room.
+    ///
+    /// This is only useful when accessed from the main UI thread.
+    static TIMELINE_STATES: RefCell<BTreeMap<OwnedRoomId, TimelineUiState>> = const {
+        RefCell::new(BTreeMap::new())
+    };
+}
 
 /// The UI-side state of a single room's timeline, which is only accessed/updated by the UI thread.
 ///
