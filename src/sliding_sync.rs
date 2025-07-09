@@ -873,14 +873,13 @@ async fn async_worker(
                     };
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
-
-                let room_id2 = room_id.clone();
+                let room_id_clone = room_id.clone();
                 let subscribe_own_read_receipt_task = Handle::current().spawn(async move {
                     let update_receiver = timeline.subscribe_own_user_read_receipts_changed().await;
                     pin_mut!(update_receiver);
                     if let Some(client_user_id) = current_user_id() {
                         if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                            log!("Received own user read receipt for room {room_id2}: {receipt:?} {event_id:?}");
+                            log!("Received own user read receipt for room {room_id_clone}: {receipt:?}, event ID: {event_id:?}");
                             if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
                                 error!("Failed to get own user read receipt: {e:?}");
                             }
@@ -891,6 +890,21 @@ async fn async_worker(
                                 if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
                                     error!("Failed to get own user read receipt: {e:?}");
                                 }
+                                // When read receipts change (from other devices), update unread count
+                                let unread_count = timeline.room().num_unread_messages();
+                                let unread_mentions = timeline.room().num_unread_mentions();
+                                // Send updated unread count to the UI
+                                if let Err(e) = sender.send(TimelineUpdate::NewUnreadMessagesCount(
+                                    UnreadMessageCount::Known(unread_count)
+                                )) {
+                                    error!("Failed to send unread message count update: {e:?}");
+                                }
+                                // Update the rooms list with new unread counts
+                                enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+                                    room_id: room_id_clone.clone(),
+                                    count: UnreadMessageCount::Known(unread_count),
+                                    unread_mentions,
+                                });
                             }
                         }
                     }
