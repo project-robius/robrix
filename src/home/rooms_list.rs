@@ -436,7 +436,7 @@ impl RoomsList {
                             UnreadMessageCount::Known(count) => (count, unread_mentions),
                         };
                     } else {
-                        error!("Error: couldn't find room {} to update unread messages count", room_id);
+                        warning!("Warning: couldn't find room {} to update unread messages count", room_id);
                     }
                 }
                 RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
@@ -515,7 +515,7 @@ impl RoomsList {
                     } else if let Some(_room) = self.invited_rooms.borrow().get(&room_id) {
                         log!("Ignoring updated tags update for invited room {room_id}");
                     } else {
-                        error!("Error: skipping updated Tags for unknown room {room_id}.");
+                        warning!("Warning: skipping updated Tags for unknown room {room_id}.");
                     }
                 }
                 RoomsListUpdate::Status { status } => {
