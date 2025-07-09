@@ -2759,7 +2759,9 @@ thread_local! {
     /// The global set of all timeline states, one entry per room.
     ///
     /// This is only useful when accessed from the main UI thread.
-    static TIMELINE_STATES: RefCell<BTreeMap<OwnedRoomId, TimelineUiState>> = RefCell::new(BTreeMap::new());
+    static TIMELINE_STATES: RefCell<BTreeMap<OwnedRoomId, TimelineUiState>> = const {
+        RefCell::new(BTreeMap::new())
+    };
 }
 
 /// The UI-side state of a single room's timeline, which is only accessed/updated by the UI thread.
