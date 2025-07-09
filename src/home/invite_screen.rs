@@ -57,6 +57,7 @@ live_design! {
             spacing: 10,
             flow: Down,
 
+
             inviter_avatar = <Avatar> {
                 width: 30,
                 height: 30,
@@ -64,6 +65,7 @@ live_design! {
                     text_style: <TITLE_TEXT>{ font_size: 10.0 }
                 }}}
             }
+
 
             inviter_name = <Label> {
                 width: Fill, height: Fit,
@@ -280,37 +282,40 @@ pub struct InviteScreen {
 
 impl Widget for InviteScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Currently, a Signal event is only used to tell this widget
+        // to check if the room has been loaded from the homeserver yet.
         if let Event::Signal = event {
             if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                let restore_status_label = self.view.label(id!(restore_status_label));
                 if !rooms_list_ref.is_room_loaded(room_id) {
                     let status_text = if rooms_list_ref.all_known_rooms_loaded() {
                         self.all_rooms_loaded = true;
                         format!(
-                            "Room {:?} was not found in the homeserver's list of all rooms.",
+                            "An invite to room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
+                             You may close this screen.",
                             self.room_name.as_deref().unwrap_or_else(|| room_id.as_str())
                         )
                     } else {
                         String::from("[Placeholder for Loading Spinner]\n\
                          Waiting for this room to be loaded from the homeserver")
                     };
-                    self.view
-                        .label(id!(restore_status_label))
-                        .set_text(cx, &status_text);
+                    restore_status_label.set_text(cx, &status_text);
                     return;
                 } else {
                     self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
                 }
             }
         }
-        
+
         self.view.handle_event(cx, event, scope);
 
         let orig_state = self.invite_state;
 
         // Handle button clicks to accept or decline the invite
         if let Event::Actions(actions) = event {
-            // Handle actions related to restoring the previously-saved state of rooms.
+            // First, we quickly loop over the actions up front to handle the case
+            // where this room was restored and has now been successfully loaded from the homeserver.
             for action in actions {
                 if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
                     if self.room_id.as_ref().is_some_and(|inner_room_id| inner_room_id == room_id) {
@@ -414,7 +419,7 @@ impl Widget for InviteScreen {
             // If we don't have any info, just return.
             return self.view.draw_walk(cx, scope, walk);
         };
-        
+
         // First, populate the inviter info, if we have it.
         let inviter_view = self.view.view(id!(inviter_view));
         let (is_visible, invite_text) = if let Some(inviter) = info.inviter.as_ref() {
@@ -430,6 +435,7 @@ impl Widget for InviteScreen {
             if !drew_avatar {
                 inviter_avatar.show_text(
                     cx,
+                    None,
                     None, // don't make this avatar clickable.
                     inviter.display_name.as_deref().unwrap_or_else(|| inviter.user_id.as_str()),
                 );
@@ -444,7 +450,7 @@ impl Widget for InviteScreen {
             }
             else {
                 // If we only have a user ID, show it in the user_name field,
-                // and hide the user ID field. 
+                // and hide the user ID field.
                 inviter_name.set_text(cx, inviter.user_id.as_str());
                 inviter_user_id.set_visible(cx, false);
             }
@@ -463,6 +469,7 @@ impl Widget for InviteScreen {
             RoomPreviewAvatar::Text(text) => {
                 room_avatar.show_text(
                     cx,
+                    None,
                     None, // don't make this avatar clickable.
                     text,
                 );

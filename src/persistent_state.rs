@@ -57,13 +57,15 @@ pub struct FullSessionPersisted {
     /// 
     /// The value is restored and applied to the client via `client.set_sliding_sync_version()`
     /// when rebuilding the session from persistent storage.
+    #[serde(default)]
     pub sliding_sync_version: SlidingSyncVersion,
 }
 /// The serializable version of the sliding_sync::Version
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub enum SlidingSyncVersion {
-    None,
+    #[default]
     Native,
+    None,
 }
 
 impl From<SlidingSyncVersion> for sliding_sync::Version {
