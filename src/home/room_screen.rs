@@ -1437,6 +1437,17 @@ impl Widget for RoomScreen {
                 };
                 item.draw_all(cx, scope);
             }
+
+            // If the list is not filling the viewport, we need to back paginate the timeline
+            // until we have enough events items to fill the viewport.
+            if !tl_state.fully_paginated && !list.is_filling_viewport() {
+                log!("Automatically paginating timeline to fill viewport for room \"{}\" ({})", self.room_name, room_id);
+                submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                    room_id: room_id.clone(),
+                    num_events: 50,
+                    direction: PaginationDirection::Backwards,
+                });
+            }
         }
         DrawStep::done()
     }
@@ -1644,11 +1655,15 @@ impl RoomScreen {
                 }
                 TimelineUpdate::PaginationError { error, direction } => {
                     error!("Pagination error ({direction}) in room {}: {error:?}", tl.room_id);
+                    enqueue_popup_notification(PopupItem {
+                        message: format!("Error loading earlier messages in \"{}\": {error}", self.room_name),
+                        auto_dismissal_duration: None,
+                    });
                     done_loading = true;
                 }
                 TimelineUpdate::PaginationIdle { fully_paginated, direction } => {
                     if direction == PaginationDirection::Backwards {
-                        // Don't set `done_loading` to `true`` here, because we want to keep the top space visible
+                        // Don't set `done_loading` to `true` here, because we want to keep the top space visible
                         // (with the "loading" message) until the corresponding `NewItems` update is received.
                         tl.fully_paginated = fully_paginated;
                         if fully_paginated {
