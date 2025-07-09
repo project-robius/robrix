@@ -859,25 +859,16 @@ impl Widget for RoomScreen {
         if let Event::Signal = event {
             if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
-                let restore_status_label = self.view.label(id!(restore_status_label));
-                if !rooms_list_ref.is_room_loaded(room_id) {
-                    let status_text = if rooms_list_ref.all_known_rooms_loaded() {
-                        self.all_rooms_loaded = true;
-                        format!(
-                            "Room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
-                             You may close this screen.",
-                            self.room_name
-                        )
-                    } else {
-                        String::from("[Placeholder for Loading Spinner]\n\
-                         Waiting for this room to be loaded from the homeserver")
-                    };
-                    restore_status_label.set_text(cx, &status_text);
-                    return;
+                if rooms_list_ref.is_room_loaded(room_id) {
+                    let same_room_id = room_id.clone();
+                    // This room has been loaded now, so we call `set_displayed_room()`
+                    // to fully display it. That function does nothing if the room_id is unchanged,
+                    // so we clear it first.
+                    self.room_id = None;
+                    self.set_displayed_room(cx, same_room_id, self.room_name.clone());
                 } else {
-                    self.is_loaded = true;
-                    self.all_rooms_loaded = true;
-                    restore_status_label.set_text(cx, "");
+                    self.all_rooms_loaded = rooms_list_ref.all_known_rooms_loaded();
+                    return;
                 }
             }
 
@@ -962,11 +953,9 @@ impl Widget for RoomScreen {
                 // Handle actions related to restoring the previously-saved state of rooms.
                 if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
                     if self.room_id.as_ref().is_some_and(|r| r == room_id) {
-                        // `set_displayed_room` does nothing if the room_id is already set,
-                        // so we must clear it here.
+                        // `set_displayed_room()` does nothing if the room_id is unchanged, so we clear it first.
                         self.room_id = None;
                         self.set_displayed_room(cx, room_id.clone(), self.room_name.clone());
-                        self.view.label(id!(restore_status_label)).set_text(cx, "");
                         return;
                     }
                 }
@@ -1000,7 +989,6 @@ impl Widget for RoomScreen {
                         );
                     }
                 }
-
             }
 
             /*
@@ -1185,7 +1173,7 @@ impl Widget for RoomScreen {
             }
         } else if let Some(room_id) = self.room_id.clone() {
             // Fallback case: we have a room_id but no tl_state yet
-            log!("RoomScreen handling event with room_id {} but no tl_state, using empty member list", room_id);
+            // log!("RoomScreen handling event with room_id {} but no tl_state, using empty member list", room_id);
             RoomScreenProps {
                 room_id,
                 room_members: None,
@@ -1277,9 +1265,21 @@ impl Widget for RoomScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // If the room isn't loaded yet, we show the restore status label only.
         if !self.is_loaded {
-            // only draw the loading status label if the room is not loaded yet.
-            return self.view.label(id!(restore_status_label)).draw(cx, scope);
+            let mut restore_status_label = self.view.label(id!(restore_status_label));
+            let status_text = if self.all_rooms_loaded {
+                format!(
+                    "Room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
+                        You may close this screen.",
+                    self.room_name
+                )
+            } else {
+                String::from("[Placeholder for Loading Spinner]\n\
+                    Waiting for this room to be loaded from the homeserver")
+            };
+            restore_status_label.set_text(cx, &status_text);
+            return restore_status_label.draw(cx, scope);
         }
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
@@ -1703,13 +1703,10 @@ impl RoomScreen {
                         .set_visible(cx, !can_send_message);
 
                     // Update the @room mention capability based on the user's power level
-                    let can_notify_room = user_power_level.can_notify_room();
-
-                    cx.action(MentionableTextInputAction::PowerLevelsUpdated(
-                        tl.room_id.clone(),
-                        can_notify_room
-                    ));
-
+                    cx.action(MentionableTextInputAction::PowerLevelsUpdated {
+                        room_id: tl.room_id.clone(),
+                        can_notify_room: user_power_level.can_notify_room(),
+                    });
                 }
 
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
@@ -2284,20 +2281,21 @@ impl RoomScreen {
     fn show_timeline(&mut self, cx: &mut Cx) {
         let room_id = self.room_id.clone()
             .expect("BUG: Timeline::show_timeline(): no room_id was set.");
-        // Obtain the current user's power levels for this room.
-        submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_id.clone() });
 
         let state_opt = TIMELINE_STATES.lock().unwrap().remove(&room_id);
-        let (mut tl_state, first_time_showing_room) = if let Some(existing) = state_opt {
+        let (mut tl_state, mut is_first_time_being_loaded) = if let Some(existing) = state_opt {
+            log!("Restoring existing timeline state for room {}", room_id);
             (existing, false)
         } else {
             let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
                 if !self.is_loaded && self.all_rooms_loaded {
                     panic!("BUG: timeline is not loaded, but room_id {:?} was not waiting for its timeline to be loaded.", room_id);
                 }
+                log!("Unable to take timeline endpoints for room {} ({}), returning!!!!!!!!", self.room_name,room_id);
                 return;
             };
-            let new_tl_state = TimelineUiState {
+            log!("Successfully took timeline endpoints, creating new TimelineUiState for room {} ({})", self.room_name, room_id);
+            let tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // Initially, we assume the user has all power levels by default.
                 // This avoids unexpectedly hiding any UI elements that should be visible to the user.
@@ -2322,54 +2320,72 @@ impl RoomScreen {
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
             };
-            (new_tl_state, true)
+            (tl_state, true)
         };
 
-        // Request room members data immediately upon showing the room
-        submit_async_request(MatrixRequest::GetRoomMembers {
-            room_id: room_id.clone(),
-            memberships: matrix_sdk::RoomMemberships::JOIN,
-            // Important.
-            // Fetch from local,
-            // Because SyncRoomMemberList has already pre-fetched the members from the server.
-            local_only: true,
-        });
-
-        if cx.has_global::<RoomsListRef>() {
+        // It is possible that this room has already been loaded (received from the server)
+        // but that the RoomsList doesn't yet know about it.
+        // In that case, `is_first_time_being_loaded` will already be `true` here,
+        // so we can bypass checking the RoomsList to determine if a room is loaded.
+        //
+        // Note that we *do* still need to check the RoomsList to see whether this room is loaded
+        // in order to handle the case when we're switching between rooms within
+        // the same RoomScreen widget, as one room may be loaded while another is not.
+        if is_first_time_being_loaded {
+            self.is_loaded = true;
+        } else if cx.has_global::<RoomsListRef>() {
             let rooms_list_ref = cx.get_global::<RoomsListRef>();
-            self.is_loaded = rooms_list_ref.is_room_loaded(&room_id);
-            if self.is_loaded {
-                self.view.label(id!(restore_status_label)).set_text(cx, "");
+            let is_loaded_now = rooms_list_ref.is_room_loaded(&room_id);
+            if is_loaded_now && !self.is_loaded {
+                log!("Detected that room \"{}\" ({}) is now loaded, setting `is_loaded` to true", self.room_name, room_id);
+                is_first_time_being_loaded = true;
             }
+            self.is_loaded = is_loaded_now;
         }
 
-        // Subscribe to typing notices, but hide the typing notice view initially.
-        self.view(id!(typing_notice)).set_visible(cx, false);
-        submit_async_request(
-            MatrixRequest::SubscribeToTypingNotices {
-                room_id: room_id.clone(),
-                subscribe: true,
-            }
-        );
-        // Subscribe to own user read receipts, so that we can update the read marker
-        // and properly send read receipts when the user scrolls through the timeline.
-        submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id: room_id.clone(), subscribe: true });
+        if self.is_loaded {
+            self.view.label(id!(restore_status_label)).set_text(cx, "");
+        }
 
-        // Kick off a back pagination request for this room. This is "urgent",
+        // Kick off a back pagination request if it's the first time loading this room,
         // because we want to show the user some messages as soon as possible
         // when they first open the room, and there might not be any messages yet.
-        if first_time_showing_room && !tl_state.fully_paginated {
-            log!("Sending a first-time backwards pagination request for room {}", room_id);
-            submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                room_id: room_id.clone(),
-                num_events: 50,
-                direction: PaginationDirection::Backwards,
-            });
+        if is_first_time_being_loaded {
+            if !tl_state.fully_paginated {
+                log!("Sending a first-time backwards pagination request for room \"{}\" {}", self.room_name, room_id);
+                submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                    room_id: room_id.clone(),
+                    num_events: 50,
+                    direction: PaginationDirection::Backwards,
+                });
+            }
 
             // Even though we specify that room member profiles should be lazy-loaded,
             // the matrix server still doesn't consistently send them to our client properly.
             // So we kick off a request to fetch the room members here upon first viewing the room.
-            submit_async_request(MatrixRequest::SyncRoomMemberList { room_id });
+            submit_async_request(MatrixRequest::SyncRoomMemberList { room_id: room_id.clone() });
+        }
+
+        // Hide the typing notice view initially.
+        self.view(id!(typing_notice)).set_visible(cx, false);
+        // If the room is loaded, we need to get a few key states:
+        // 1. Subscribe to typing notices again, now that the room is being shown.
+        // 2. Subscribe to our own user's read receipts so that we can update the
+        //    read marker and properly send read receipts while scrolling through the timeline.
+        // 3. Get the current user's power levels for this room so that we can
+        //    show/hide UI elements based on the user's permissions.
+        if self.is_loaded {
+            submit_async_request(MatrixRequest::SubscribeToTypingNotices {
+                room_id: room_id.clone(),
+                subscribe: true,
+            });
+            submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
+                room_id: room_id.clone(),
+                subscribe: true,
+            });
+            submit_async_request(MatrixRequest::GetRoomPowerLevels {
+                room_id,
+            });
         }
 
         // Now, restore the visual state of this timeline from its previously-saved state.
@@ -2380,12 +2396,8 @@ impl RoomScreen {
         self.tl_state = Some(tl_state);
 
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
-        // we can proceed to processing pending background updates, and if any were processed,
-        // the timeline will also be redrawn.
-        if first_time_showing_room {
-            let portal_list = self.portal_list(id!(list));
-            self.process_timeline_updates(cx, &portal_list);
-        }
+        // we can proceed to processing pending background updates.
+        self.process_timeline_updates(cx, &self.portal_list(id!(list)));
 
         self.redraw(cx);
     }
@@ -2497,13 +2509,13 @@ impl RoomScreen {
         self.room_name = room_name_or_id(room_name.into(), &room_id);
         self.room_id = Some(room_id.clone());
 
-        // Send Action to MentionableTextInput instances immediately with the new room_id
-        // Assume false initially for can_notify_room, will be corrected when PowerLevels is fetched
-        let initial_can_notify_room = false;
-        cx.action(MentionableTextInputAction::PowerLevelsUpdated(
-            room_id.clone(),
-            initial_can_notify_room
-        ));
+        // We initially tell every MentionableTextInput widget that the current user
+        // *does not* has privileges to notify the entire room;
+        // this gets properly updated when room PowerLevels get fetched.
+        cx.action(MentionableTextInputAction::PowerLevelsUpdated {
+            room_id: room_id.clone(),
+            can_notify_room: false,
+        });
 
         self.show_timeline(cx);
     }
