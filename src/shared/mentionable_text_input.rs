@@ -263,11 +263,13 @@ live_design! {
 // const MENTION_START_STRING: &str = "\u{8288}@\u{8288}";
 
 
-#[derive(Clone, DefaultNone, Debug)]
+#[derive(Debug)]
 pub enum MentionableTextInputAction {
     /// Notifies the MentionableTextInput about updated power levels for the room.
-    PowerLevelsUpdated(OwnedRoomId, bool),
-    None,
+    PowerLevelsUpdated {
+        room_id: OwnedRoomId,
+        can_notify_room: bool,
+    }
 }
 
 /// Widget that extends CommandTextInput with @mention capabilities
@@ -309,7 +311,8 @@ impl Widget for MentionableTextInput {
         // Scope represents the current widget context as passed down from parents
         let scope_room_id = scope.props.get::<RoomScreenProps>()
             .expect("RoomScreenProps should be available in scope for MentionableTextInput")
-            .room_id.clone();
+            .room_id
+            .clone();
 
         if let Event::Actions(actions) = event {
             let text_input_ref = self.cmd_text_input.text_input_ref();
@@ -347,7 +350,7 @@ impl Widget for MentionableTextInput {
                 }
 
                 // Handle MentionableTextInputAction actions
-                if let Some(MentionableTextInputAction::PowerLevelsUpdated(room_id, can_notify_room)) = action.downcast_ref::<MentionableTextInputAction>() {
+                if let Some(MentionableTextInputAction::PowerLevelsUpdated { room_id, can_notify_room }) = action.downcast_ref() {
                     if &scope_room_id != room_id {
                         continue;
                     }

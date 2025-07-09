@@ -879,7 +879,7 @@ async fn async_worker(
                     pin_mut!(update_receiver);
                     if let Some(client_user_id) = current_user_id() {
                         if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                            log!("Received own user read receipt: {receipt:?} {event_id:?}");
+                            log!("Received own user read receipt for room {room_id_clone}: {receipt:?}, event ID: {event_id:?}");
                             if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
                                 error!("Failed to get own user read receipt: {e:?}");
                             }
