@@ -150,8 +150,8 @@ impl Widget for RoomsSideBar {
     }
 }
 
-#[derive(Clone, Debug, DefaultNone)]
-pub enum RoomsSideBarAction {
-    SetSyncStatus(bool),
-    None,
+/// ADD DOCS HERE
+#[derive(Debug)]
+pub enum SyncStatusAction {
+    IsSyncing(bool),
 }
