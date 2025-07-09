@@ -19,6 +19,7 @@ live_design! {
     use crate::shared::room_filter_input_bar::RoomFilterInputBar;
 
     use crate::home::rooms_list::RoomsList;
+    use crate::home::rooms_list_header::RoomsListHeader;
 
     pub RoomsSideBar = {{RoomsSideBar}}<AdaptiveView> {
         Desktop = <View> {
@@ -42,35 +43,8 @@ live_design! {
                 }
             }
 
-            <View> {
-                width: Fill,
-                height: Fit,
-                flow: Right,
-                visible: true,
-                align: {
-                    x: 0.5,
-                    y: 0.5
-                }
-                sidebar_title = <Label> {
-                    flow: Right, // do not wrap
-                    text: "All Rooms"
-                    draw_text: {
-                        color: #x0
-                        text_style: <TITLE_TEXT>{}
-                    }
-                },
-                <View> {
-                    width: Fill,
-                    height: Fit,
-                }
-                loading_spinner = <LoadingSpinner> {
-                    width: 20,
-                    height: 20,
-                    draw_bg: {
-                        radius: 8.0,
-                        stroke_width: 2.0,
-                    }
-                }
+            <CachedWidget> {
+                rooms_list_header = <RoomsListHeader> {}
             }
             <CachedWidget> {
                 rooms_list = <RoomsList> {}
@@ -82,35 +56,8 @@ live_design! {
             flow: Down, spacing: 7
             width: Fill, height: Fill
 
-            <View> {
-                width: Fill,
-                height: Fit,
-                flow: Right, 
-                visible: true,
-                align: {
-                    x: 0.5,
-                    y: 0.5
-                }
-                sidebar_title = <Label> {
-                    flow: Right, // do not wrap
-                    text: "All Rooms"
-                    draw_text: {
-                        color: #x0
-                        text_style: <TITLE_TEXT>{}
-                    }
-                },
-                <View> {
-                    width: Fill,
-                    height: Fit,
-                }
-                loading_spinner = <LoadingSpinner> {
-                    width: 20,
-                    height: 20,
-                    draw_bg: {
-                        radius: 8.0,
-                        stroke_width: 2.0,
-                    }
-                }
+            <CachedWidget> {
+                rooms_list_header = <RoomsListHeader> {}
             }
             <CachedWidget> {
                 <RoomFilterInputBar> {
@@ -135,8 +82,10 @@ impl Widget for RoomsSideBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
             for action in actions {
-                if let Some(RoomsSideBarAction::SetSyncStatus(is_syncing)) = action.downcast_ref() {
-                    self.view(id!(loading_spinner)).set_visible(cx, is_syncing.clone());
+                if let Some(SyncStatusAction::IsSyncing(is_syncing)) = action.downcast_ref() {
+                    self.view(id!(rooms_list_header))
+                        .view(id!(loading_spinner))
+                        .set_visible(cx, *is_syncing);
                     self.redraw(cx);
                 }
             }

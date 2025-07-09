@@ -3,7 +3,7 @@ use bitflags::bitflags;
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
-use futures_util::{pin_mut, Stream, StreamExt};
+use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
@@ -25,11 +25,11 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, pin::Pin, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
 use std::io;
 use crate::{
     app::RoomsPanelRestoreAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_sidebar::RoomsSideBarAction
+        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_sidebar::SyncStatusAction
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -1501,17 +1501,10 @@ async fn async_main_loop(
         .with_offline_mode()
         .build()
         .await?;
-
-    let sync_indicator_stream = sync_service.room_list_service()
-        .sync_indicator(
-            Duration::from_millis(500), 
-            Duration::from_millis(1000)
-        );
-    // Since the sync indicator stream contains references or other elements
-    // that prevent it from automatically implementing Unpin.
-    // Pin the sync indicator stream manually so that it can be used in the async task.
-    let sync_indicator_stream_box = Box::pin(sync_indicator_stream);
-    handle_sync_indicator_subscriber(sync_indicator_stream_box);
+    // Attempt to load the previously-saved rooms panel state.
+    // Include this after re-login. 
+    handle_load_rooms_panel_state(logged_in_user_id.to_owned());
+    handle_sync_indicator_subscriber(&sync_service);
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
     let room_list_service = sync_service.room_list_service();
@@ -2096,15 +2089,24 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
     });
 }
 
-fn handle_sync_indicator_subscriber(mut sync_indicator_stream: Pin<Box<dyn Stream<Item = SyncIndicator> + Send + 'static>>) {
+fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
+    let sync_indicator_stream = sync_service.room_list_service()
+        .sync_indicator(
+            Duration::from_millis(500), 
+            Duration::from_millis(1000)
+        );
+    
     Handle::current().spawn(async move {
+        // Pin the stream within the closure to avoid needing Box::pin
+        let mut sync_indicator_stream = std::pin::pin!(sync_indicator_stream);
+        
         while let Some(indicator) = sync_indicator_stream.next().await {
             let is_syncing = match indicator {
                 SyncIndicator::Show => true,
                 SyncIndicator::Hide => false,
             };
             
-            Cx::post_action(RoomsSideBarAction::SetSyncStatus(is_syncing));
+            Cx::post_action(SyncStatusAction::IsSyncing(is_syncing));
         }
     });
 }
