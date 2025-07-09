@@ -20,7 +20,7 @@ live_design! {
 
     use crate::home::rooms_list::RoomsList;
 
-    pub RoomsSideBar = {{RoomsSideBar}} {
+    pub RoomsSideBar = {{RoomsSideBar}}<AdaptiveView> {
         Desktop = <View> {
             padding: {top: 20, left: 10, right: 10}
             flow: Down, spacing: 10
