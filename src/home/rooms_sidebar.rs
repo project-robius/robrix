@@ -86,6 +86,7 @@ live_design! {
 pub struct RoomsSideBar {
     #[deref] view: AdaptiveView,
 }
+
 impl LiveHook for RoomsSideBar {
     fn after_new_from_doc(&mut self, cx: &mut Cx) {
         // Here we set the global singleton for the RoomsList widget,
@@ -93,6 +94,7 @@ impl LiveHook for RoomsSideBar {
         Cx::set_global(cx, self.view.rooms_list(id!(rooms_list)));
     }
 }
+
 impl Widget for RoomsSideBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
@@ -114,8 +116,11 @@ impl Widget for RoomsSideBar {
     }
 }
 
-/// ADD DOCS HERE
+/// An enum that represents the possible actions that can be sent to the `RoomsSideBar`.
 #[derive(Debug)]
 pub enum SyncStatusAction {
+    /// Indicates whether the app is currently syncing data.
+    /// If `true`, the loading spinner will be shown in the RoomsListHeader.
+    /// If `false`, the spinner will be hidden.
     IsSyncing(bool),
 }
