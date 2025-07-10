@@ -202,6 +202,29 @@ live_design! {
         }
     }
 
+    // Template for no matches indicator when no users match the search
+    NoMatchesIndicator = <View> {
+        width: Fill,
+        height: 48,
+        margin: {left: 4, right: 4}
+        padding: {left: 8, right: 8, top: 8, bottom: 8},
+        flow: Right,
+        spacing: 8.0,
+        align: {x: 0.0, y: 0.5}
+        draw_bg: {
+            color: (COLOR_PRIMARY),
+        }
+
+        no_matches_text = <Label> {
+            height: Fit,
+            draw_text: {
+                color: #666,
+                text_style: {font_size: 14.0}
+            }
+            text: "No matching users found"
+        }
+    }
+
     pub MentionableTextInput = {{MentionableTextInput}}<CommandTextInput> {
         width: Fill,
         height: Fit
@@ -253,6 +276,7 @@ live_design! {
         user_list_item: <UserListItem> {}
         room_mention_list_item: <RoomMentionListItem> {}
         loading_indicator: <LoadingIndicator> {}
+        no_matches_indicator: <NoMatchesIndicator> {}
     }
 }
 
@@ -283,6 +307,8 @@ pub struct MentionableTextInput {
     #[live] room_mention_list_item: Option<LivePtr>,
     /// Template for loading indicator
     #[live] loading_indicator: Option<LivePtr>,
+    /// Template for no matches indicator
+    #[live] no_matches_indicator: Option<LivePtr>,
     /// Position where the @ mention starts
     #[rust] current_mention_start_index: Option<usize>,
     /// The set of users that were mentioned (at one point) in this text input.
@@ -387,7 +413,7 @@ impl Widget for MentionableTextInput {
                     let text_input = self.cmd_text_input.text_input(id!(text_input));
                     let text_input_area = text_input.area();
                     let is_focused = cx.has_key_focus(text_input_area);
-                    
+
                     if is_focused {
                         let search_text = self.cmd_text_input.search_text().to_lowercase();
                         self.update_user_list(cx, &search_text, scope);
@@ -640,13 +666,16 @@ impl MentionableTextInput {
             if self.is_searching {
                 self.cmd_text_input.text_input_ref().set_key_focus(cx);
             }
+        } else if self.is_searching {
+            // If we're searching but have no items, show "no matches" message
+            // Keep the popup open so users can correct their search
+            self.show_no_matches_indicator(cx);
+            popup.set_visible(cx, true);
+            self.cmd_text_input.text_input_ref().set_key_focus(cx);
         } else {
-            // If there are no matching items, just hide the entire popup and clear search state
+            // Only hide popup if we're not actively searching
             popup.apply_over(cx, live! { height: Fit });
-            self.cmd_text_input.view(id!(popup)).set_visible(cx, false);
-            // Clear search state
-            self.is_searching = false;
-            self.current_mention_start_index = None;
+            popup.set_visible(cx, false);
         }
     }
 
@@ -992,6 +1021,34 @@ impl MentionableTextInput {
         popup.set_visible(cx, true);
 
         // Maintain text input focus
+        if self.is_searching {
+            self.cmd_text_input.text_input_ref().set_key_focus(cx);
+        }
+    }
+
+    /// Shows the no matches indicator when no users match the search
+    fn show_no_matches_indicator(&mut self, cx: &mut Cx) {
+        // Clear any existing items
+        self.cmd_text_input.clear_items();
+
+        // Create no matches indicator widget
+        let Some(ptr) = self.no_matches_indicator else { return };
+        let no_matches_item = WidgetRef::new_from_ptr(cx, Some(ptr));
+
+        // Add the no matches indicator to the popup
+        self.cmd_text_input.add_item(no_matches_item);
+
+        // Setup popup dimensions for no matches state
+        let popup = self.cmd_text_input.view(id!(popup));
+        let header_view = self.cmd_text_input.view(id!(popup.header_view));
+
+        // Ensure header is visible
+        header_view.set_visible(cx, true);
+
+        // Let popup auto-size based on content
+        popup.apply_over(cx, live! { height: Fit });
+
+        // Maintain text input focus so user can continue typing
         if self.is_searching {
             self.cmd_text_input.text_input_ref().set_key_focus(cx);
         }
