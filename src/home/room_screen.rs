@@ -2335,8 +2335,6 @@ impl RoomScreen {
             (tl_state, true)
         };
 
-
-
         // It is possible that this room has already been loaded (received from the server)
         // but that the RoomsList doesn't yet know about it.
         // In that case, `is_first_time_being_loaded` will already be `true` here,
@@ -2361,16 +2359,6 @@ impl RoomScreen {
 
         if self.is_loaded {
             self.view.label(id!(restore_status_label)).set_text(cx, "");
-
-            // Request room members data immediately upon showing the room
-            submit_async_request(MatrixRequest::GetRoomMembers {
-                room_id: room_id.clone(),
-                memberships: matrix_sdk::RoomMemberships::JOIN,
-                // Important.
-                // Fetch from local,
-                // Because SyncRoomMemberList has already pre-fetched the members from the server.
-                local_only: true,
-            });
         }
 
         // Kick off a back pagination request if it's the first time loading this room,
@@ -2395,22 +2383,30 @@ impl RoomScreen {
         // Hide the typing notice view initially.
         self.view(id!(typing_notice)).set_visible(cx, false);
         // If the room is loaded, we need to get a few key states:
-        // 1. Subscribe to typing notices again, now that the room is being shown.
-        // 2. Subscribe to our own user's read receipts so that we can update the
-        //    read marker and properly send read receipts while scrolling through the timeline.
-        // 3. Get the current user's power levels for this room so that we can
+        // 1. Get the current user's power levels for this room so that we can
         //    show/hide UI elements based on the user's permissions.
+        // 2. Get the list of members in this room (from the SDK's local cache).
+        // 3. Subscribe to our own user's read receipts so that we can update the
+        //    read marker and properly send read receipts while scrolling through the timeline. 
+        // 4. Subscribe to typing notices again, now that the room is being shown.
         if self.is_loaded {
+            submit_async_request(MatrixRequest::GetRoomPowerLevels {
+                room_id: room_id.clone(),
+            });
+            submit_async_request(MatrixRequest::GetRoomMembers {
+                room_id: room_id.clone(),
+                memberships: matrix_sdk::RoomMemberships::JOIN,
+                // Fetch from the local cache, as we already requested to sync
+                // the room members from the homeserver above.
+                local_only: true,
+            }); 
             submit_async_request(MatrixRequest::SubscribeToTypingNotices {
                 room_id: room_id.clone(),
                 subscribe: true,
             });
             submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
-                room_id: room_id.clone(),
-                subscribe: true,
-            });
-            submit_async_request(MatrixRequest::GetRoomPowerLevels {
                 room_id,
+                subscribe: true,
             });
         }
 
