@@ -22,7 +22,7 @@ live_design! {
 
     TombstoneIcon = <View> {
         width: Fit, height: Fit,
-        visible: false,                                
+        visible: false,
         <Icon> {
             width: 24, height: 24,
             align: {x: 0.5, y: 0.5}

@@ -752,9 +752,9 @@ impl Widget for RoomsList {
             if let RoomPreviewAction::Clicked(clicked_room_id) = list_action.as_widget_action().cast() {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
                     if jr.is_tombstoned {
-                        SelectedRoom::TombstoneRoom { 
-                            room_id: jr.room_id.clone().into(), 
-                            room_name: jr.room_name.clone() 
+                        SelectedRoom::TombstoneRoom {
+                            room_id: jr.room_id.clone().into(),
+                            room_name: jr.room_name.clone()
                         }
                     } else {
                         SelectedRoom::JoinedRoom {

@@ -5,7 +5,7 @@ pub mod editing_pane;
 pub mod home_screen;
 pub mod invite_screen;
 pub mod light_themed_dock;
-pub mod tombstone_screen;  
+pub mod tombstone_screen;
 pub mod loading_pane;
 pub mod location_preview;
 pub mod main_desktop_ui;
