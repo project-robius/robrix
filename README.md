@@ -81,9 +81,9 @@ The following table shows which host systems can currently be used to build Robr
    ```
 
 ### Android
-2. Use `cargo-makepad` to install the Android toolchain, with the full NDK:
+2. Use `cargo-makepad` to install the Android toolchain:
    ```sh
-   cargo makepad android install-toolchain --full-ndk
+   cargo makepad android install-toolchain
    ```
 
 3. Build and run Robrix using `cargo-makepad`:
@@ -167,8 +167,8 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Send standalone messages
 - [x] Interactive reaction button, send reactions: https://github.com/project-robius/robrix/issues/115
 - [x] Show reply button, send reply: https://github.com/project-robius/robrix/issues/83
+- [x] Edit existing messages
 - [x] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
-- [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
 - [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
 
 
@@ -177,16 +177,18 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
 - [x] Username/password login screen: https://github.com/project-robius/robrix/issues/113
 - [x] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
+- [x] Client logout, with server-side logout and app state reset: https://github.com/project-robius/robrix/pull/432
 - [x] Side panel showing detailed user profile info (click on their Avatar)
 - [x] Ignore and unignore users (see known issues)
 - [x] Display read receipts besides messages: https://github.com/project-robius/robrix/pull/162
 - [x] Mention users within a room (or the whole `@room`): https://github.com/project-robius/robrix/issues/452
+- [x] Dedicated view of direct messages (DMs): https://github.com/project-robius/robrix/issues/139
+- [x] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
 - [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
+- [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
 - [ ] User settings screen
 - [ ] Dedicated view of spaces
-- [ ] Dedicated view of direct messages (DMs): https://github.com/project-robius/robrix/issues/139
 - [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
-- [x] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
 - [ ] Room browser, search for public rooms
 - [x] Accept/reject room invites
@@ -195,7 +197,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Administrative abilities: ban, kick, etc
 - [ ] Room creation/settings/info screen
 - [ ] Room members pane
-- [ ] Save/restore events in rooms to/from the event cache upon app shutdown/start: https://github.com/project-robius/robrix/issues/164
+- [ ] Offline mode with persistent event cache: https://github.com/project-robius/robrix/pull/445
 
 
 ## Packaging Robrix for Distribution on Desktop Platforms

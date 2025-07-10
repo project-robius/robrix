@@ -33,7 +33,7 @@ use crate::{
     }, login::{login_screen::LoginAction, logout_confirm_modal::{LogoutAction, MissingComponentType}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_latest_user_id, load_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, room::{room_member_manager::RoomMemberManager, RoomPreviewAvatar}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -128,10 +128,11 @@ async fn build_client(
     );
 
     let client = builder.build().await?;
+    let homeserver_url =  client.homeserver().to_string();
     Ok((
         client,
         ClientSessionPersisted {
-            homeserver: homeserver_url.to_string(),
+            homeserver: homeserver_url,
             db_path,
             passphrase,
         },
@@ -650,23 +651,23 @@ async fn async_worker(
                 let _get_members_task = Handle::current().spawn(async move {
                     let room = timeline.room();
 
+                    let send_update = |members: Vec<matrix_sdk::room::RoomMember>, source: &str| {
+                        log!("{} {} members for room {}", source, members.len(), room_id);
+                        sender.send(TimelineUpdate::RoomMembersListFetched {
+                            members
+                        }).unwrap();
+                        SignalToUI::set_ui_signal();
+                    };
+
                     if local_only {
                         if let Ok(members) = room.members_no_sync(memberships).await {
-                            log!("Got {} members from cache for room {}", members.len(), room_id);
-                            sender.send(TimelineUpdate::RoomMembersListFetched {
-                                members
-                            }).unwrap();
+                            send_update(members, "Got");
                         }
                     } else {
                         if let Ok(members) = room.members(memberships).await {
-                            log!("Successfully fetched {} members from server for room {}", members.len(), room_id);
-                            sender.send(TimelineUpdate::RoomMembersListFetched {
-                                members
-                            }).unwrap();
+                            send_update(members, "Successfully fetched");
                         }
                     }
-
-                    SignalToUI::set_ui_signal();
                 });
             }
 
@@ -891,13 +892,13 @@ async fn async_worker(
                     };
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
-
+                let room_id_clone = room_id.clone();
                 let subscribe_own_read_receipt_task = Handle::current().spawn(async move {
                     let update_receiver = timeline.subscribe_own_user_read_receipts_changed().await;
                     pin_mut!(update_receiver);
                     if let Some(client_user_id) = current_user_id() {
                         if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                            log!("Received own user read receipt: {receipt:?} {event_id:?}");
+                            log!("Received own user read receipt for room {room_id_clone}: {receipt:?}, event ID: {event_id:?}");
                             if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
                                 error!("Failed to get own user read receipt: {e:?}");
                             }
@@ -908,6 +909,21 @@ async fn async_worker(
                                 if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
                                     error!("Failed to get own user read receipt: {e:?}");
                                 }
+                                // When read receipts change (from other devices), update unread count
+                                let unread_count = timeline.room().num_unread_messages();
+                                let unread_mentions = timeline.room().num_unread_mentions();
+                                // Send updated unread count to the UI
+                                if let Err(e) = sender.send(TimelineUpdate::NewUnreadMessagesCount(
+                                    UnreadMessageCount::Known(unread_count)
+                                )) {
+                                    error!("Failed to send unread message count update: {e:?}");
+                                }
+                                // Update the rooms list with new unread counts
+                                enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+                                    room_id: room_id_clone.clone(),
+                                    count: UnreadMessageCount::Known(unread_count),
+                                    unread_mentions,
+                                });
                             }
                         }
                     }
@@ -964,6 +980,7 @@ async fn async_worker(
                 // Spawn a new async task that will send the actual message.
                 let _send_message_task = Handle::current().spawn(async move {
                     log!("Sending message to room {room_id}: {message:?}...");
+                    // The message already contains mentions, no need to add them again
                     if let Some(replied_to_info) = replied_to {
                         match timeline.send_reply(message.into(), replied_to_info).await {
                             Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
@@ -1439,34 +1456,35 @@ async fn async_main_loop(
         log!("Trying to restore session for user: {:?}",
             specified_username.as_ref().or(most_recent_user_id.as_ref())
         );
-        if let Ok(session) = persistent_state::restore_session(specified_username).await {
-            Some(session)
-        } else {
-            let status_err = "Could not restore previous user session.\n\nPlease login again.";
-            log!("{status_err}");
-            Cx::post_action(LoginAction::LoginFailure(status_err.to_string()));
+        match persistent_state::restore_session(specified_username).await {
+            Ok(session) => Some(session),
+            Err(e) => {
+                let status_err = "Could not restore previous user session.\n\nPlease login again.";
+                log!("{status_err} Error: {e:?}");
+                Cx::post_action(LoginAction::LoginFailure(status_err.to_string()));
 
-            if let Ok(cli) = &cli_parse_result {
-                log!("Attempting auto-login from CLI arguments as user '{}'...", cli.user_id);
-                Cx::post_action(LoginAction::CliAutoLogin {
-                    user_id: cli.user_id.clone(),
-                    homeserver: cli.homeserver.clone(),
-                });
-                match login(cli, LoginRequest::LoginByCli).await {
-                    Ok(new_login) => Some(new_login),
-                    Err(e) => {
-                        error!("CLI-based login failed: {e:?}");
-                        Cx::post_action(LoginAction::LoginFailure(
-                            format!("Could not login with CLI-provided arguments.\n\nPlease login manually.\n\nError: {e}")
-                        ));
-                        enqueue_rooms_list_update(RoomsListUpdate::Status {
-                            status: format!("Login failed: {e:?}"),
-                        });
-                        None
+                if let Ok(cli) = &cli_parse_result {
+                    log!("Attempting auto-login from CLI arguments as user '{}'...", cli.user_id);
+                    Cx::post_action(LoginAction::CliAutoLogin {
+                        user_id: cli.user_id.clone(),
+                        homeserver: cli.homeserver.clone(),
+                    });
+                    match login(cli, LoginRequest::LoginByCli).await {
+                        Ok(new_login) => Some(new_login),
+                        Err(e) => {
+                            error!("CLI-based login failed: {e:?}");
+                            Cx::post_action(LoginAction::LoginFailure(
+                                format!("Could not login with CLI-provided arguments.\n\nPlease login manually.\n\nError: {e}")
+                            ));
+                            enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                status: format!("Login failed: {e:?}"),
+                            });
+                            None
+                        }
                     }
+                } else {
+                    None
                 }
-            } else {
-                None
             }
         }
     } else {
@@ -1515,6 +1533,8 @@ async fn async_main_loop(
     // enqueue_popup_notification(status.clone());
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
+    client.event_cache().subscribe().expect("BUG: CLIENT's event cache unable to subscribe");
+
     *CLIENT.lock().unwrap() = Some(client.clone());
 
     add_verification_event_handlers_and_sync_client(client.clone());
@@ -1523,6 +1543,7 @@ async fn async_main_loop(
     handle_ignore_user_list_subscriber(client.clone());
 
     let sync_service = SyncService::builder(client.clone())
+        .with_offline_mode()
         .build()
         .await?;
 
@@ -3019,10 +3040,6 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
         }
     }
 
-    // Failure to call this method before shutting down the runtime can result in
-    // crashes during re-login, as room member data might attempt to use database
-    // connections (via deadpool) when the Tokio runtime is no longer available.
-    RoomMemberManager::clear_all();
     // Clean up client state and caches
     log!("Cleaning up client state and caches...");
     CLIENT.lock().unwrap().take();
