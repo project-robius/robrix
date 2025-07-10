@@ -220,7 +220,7 @@ pub type OnMediaFetchedFn = fn(
     &Mutex<MediaCacheEntry>,
     MediaRequestParameters,
     matrix_sdk::Result<Vec<u8>>,
-    Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    Vec<crossbeam_channel::Sender<TimelineUpdate>>,
 );
 
 
@@ -312,7 +312,7 @@ pub enum MatrixRequest {
         media_request: MediaRequestParameters,
         on_fetched: OnMediaFetchedFn,
         destination: MediaCacheEntryRef,
-        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+        update_sender: Vec<crossbeam_channel::Sender<TimelineUpdate>>,
     },
     /// Request to send a message to the given room.
     SendMessage {

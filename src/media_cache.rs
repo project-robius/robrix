@@ -1,4 +1,4 @@
-use std::{collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
+use std::{collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::{Arc, Mutex, OnceLock}, time::SystemTime};
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}};
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
@@ -32,8 +32,8 @@ pub type MediaCacheEntryRef = Arc<Mutex<MediaCacheEntry>>;
 pub struct MediaCache {
     /// The actual cached data.
     cache: BTreeMap<OwnedMxcUri, MediaCacheValue>,
-    /// A channel to send updates to a particular timeline when a media request has completed.
-    timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    /// A list of channels to send updates to various timelines when a media request has completed.
+    timeline_update_senders: Vec<crossbeam_channel::Sender<TimelineUpdate>>,
 }
 impl Deref for MediaCache {
     type Target = BTreeMap<OwnedMxcUri, MediaCacheValue>;
@@ -48,18 +48,22 @@ impl DerefMut for MediaCache {
 }
 
 impl MediaCache {
-    /// Creates a new media cache that will use the given media format
-    /// when fetching media from the server.
-    ///
-    /// It will also optionally send updates to the given timeline update sender
-    /// when a media request has completed.
-    pub const fn new(
-        timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
-    ) -> Self {
+    /// Creates a new media cache.
+    pub const fn new() -> Self {
         Self {
             cache: BTreeMap::new(),
-            timeline_update_sender,
+            timeline_update_senders: Vec::new(),
         }
+    }
+
+    /// Add a timeline update sender to receive notifications when media requests complete.
+    pub fn add_timeline_update_sender(&mut self, sender: crossbeam_channel::Sender<TimelineUpdate>) {
+        self.timeline_update_senders.push(sender);
+    }
+
+    /// Remove a timeline update sender.
+    pub fn remove_timeline_update_sender(&mut self, sender: &crossbeam_channel::Sender<TimelineUpdate>) {
+        self.timeline_update_senders.retain(|s| !std::ptr::eq(s, sender));
     }
 
     /// Tries to get the media from the cache, or submits an async request to fetch it.
@@ -158,7 +162,7 @@ impl MediaCache {
                 },
                 on_fetched: insert_into_cache,
                 destination: entry_ref,
-                update_sender: self.timeline_update_sender.clone(),
+                update_sender: self.timeline_update_senders.clone(),
             }
         );
         post_request_retval
@@ -170,7 +174,7 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
     value_ref: &Mutex<MediaCacheEntry>,
     _request: MediaRequestParameters,
     data: matrix_sdk::Result<D>,
-    update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    update_senders: Vec<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
     let new_value = match data {
         Ok(data) => {
@@ -202,8 +206,16 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
 
     *value_ref.lock().unwrap() = new_value;
 
-    if let Some(sender) = update_sender {
+    for sender in update_senders {
         let _ = sender.send(TimelineUpdate::MediaFetched);
     }
     SignalToUI::set_ui_signal();
+}
+
+/// Global media cache instance shared across all rooms.
+static MEDIA_CACHE: OnceLock<Arc<Mutex<MediaCache>>> = OnceLock::new();
+
+/// Get a reference to the global media cache.
+pub fn get_media_cache() -> &'static Arc<Mutex<MediaCache>> {
+    MEDIA_CACHE.get_or_init(|| Arc::new(Mutex::new(MediaCache::new())))
 }
