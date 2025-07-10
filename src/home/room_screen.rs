@@ -2335,15 +2335,7 @@ impl RoomScreen {
             (tl_state, true)
         };
 
-        // Request room members data immediately upon showing the room
-        submit_async_request(MatrixRequest::GetRoomMembers {
-            room_id: room_id.clone(),
-            memberships: matrix_sdk::RoomMemberships::JOIN,
-            // Important.
-            // Fetch from local,
-            // Because SyncRoomMemberList has already pre-fetched the members from the server.
-            local_only: true,
-        });
+
 
         // It is possible that this room has already been loaded (received from the server)
         // but that the RoomsList doesn't yet know about it.
@@ -2369,6 +2361,16 @@ impl RoomScreen {
 
         if self.is_loaded {
             self.view.label(id!(restore_status_label)).set_text(cx, "");
+
+            // Request room members data immediately upon showing the room
+            submit_async_request(MatrixRequest::GetRoomMembers {
+                room_id: room_id.clone(),
+                memberships: matrix_sdk::RoomMemberships::JOIN,
+                // Important.
+                // Fetch from local,
+                // Because SyncRoomMemberList has already pre-fetched the members from the server.
+                local_only: true,
+            });
         }
 
         // Kick off a back pagination request if it's the first time loading this room,
