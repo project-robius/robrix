@@ -1155,7 +1155,7 @@ impl Widget for RoomScreen {
         let room_props = if let Some(tl) = self.tl_state.as_ref() {
             let room_id = tl.room_id.clone();
             let room_members = tl.room_members.clone();
-            
+
             // Fetch room data once to avoid duplicate expensive lookups
             let (room_display_name, room_avatar_url) = get_client()
                 .and_then(|client| client.get_room(&room_id))
@@ -1164,7 +1164,7 @@ impl Widget for RoomScreen {
                     room.avatar_url()
                 ))
                 .unwrap_or((None, None));
-            
+
             RoomScreenProps {
                 room_id,
                 room_members,
@@ -2334,6 +2334,16 @@ impl RoomScreen {
             };
             (tl_state, true)
         };
+
+        // Request room members data immediately upon showing the room
+        submit_async_request(MatrixRequest::GetRoomMembers {
+            room_id: room_id.clone(),
+            memberships: matrix_sdk::RoomMemberships::JOIN,
+            // Important.
+            // Fetch from local,
+            // Because SyncRoomMemberList has already pre-fetched the members from the server.
+            local_only: true,
+        });
 
         // It is possible that this room has already been loaded (received from the server)
         // but that the RoomsList doesn't yet know about it.
