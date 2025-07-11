@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
-    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::{login_screen::LoginAction, logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}}, persistent_state::{load_window_state, save_room_panel, save_window_state}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 use serde::{self, Deserialize, Serialize};
 
@@ -23,6 +23,7 @@ live_design! {
     use crate::verification_modal::VerificationModal;
     use crate::join_leave_room_modal::JoinLeaveRoomModal;
     use crate::login::login_screen::LoginScreen;
+    use crate::login::logout_confirm_modal::LogoutConfirmModal;
     use crate::shared::popup_list::PopupList;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
@@ -128,7 +129,7 @@ live_design! {
                         // However, the DesktopButton widget doesn't support drawing a background color yet,
                         // so these colors are the colors of the icon itself, not the background highlight.
                         // When it supports that, we will keep the icon color always black,
-                        // and change the background color instead based on the above colors.
+                        // and change the background color instss'sbssed on the above colors.
                         min   = { draw_bg: {color: #0, color_hover: #9, color_down: #3} }
                         max   = { draw_bg: {color: #0, color_hover: #9, color_down: #3} }
                         close = { draw_bg: {color: #0, color_hover: #E81123, color_down: #FF0015} }
@@ -171,6 +172,15 @@ live_design! {
                                 verification_modal_inner = <VerificationModal> {}
                             }
                         }
+
+                    // Logout confirmation modal 
+                    logout_confirm_modal = <Modal> {
+                        // align: {x: 0.5, y: 0.5} 
+                        // width: Fill, height: Fill 
+                        content: {
+                            logout_confirm_modal_inner = <LogoutConfirmModal> {}
+                        }
+                    }
                     }
                 } // end of body
             }
@@ -230,6 +240,36 @@ impl MatchEvent for App {
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
+            if let Some(logout_modal_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
+                match logout_modal_action {
+                    LogoutConfirmModalAction::Open=> {
+                        self.ui.logout_confirm_modal(id!(logout_confirm_modal_inner)).reset_state(cx);
+                        self.ui.modal(id!(logout_confirm_modal)).open(cx)
+                    },
+                    LogoutConfirmModalAction::Close {was_internal, ..}=> {
+                        if *was_internal {
+                            self.ui.modal(id!(logout_confirm_modal)).close(cx);
+                        }
+                    },
+                    _ => {}
+                }
+            }
+
+            if let Some(LogoutAction::LogoutSuccess) = action.downcast_ref() {
+                self.app_state.logged_in = false;
+                self.ui.modal(id!(logout_confirm_modal)).close(cx);
+                self.update_login_visibility(cx);
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            if let Some(LogoutAction::CleanupMobileResources { on_clean_resources }) = action.downcast_ref() {
+                // Reset saved dock state to prevent crashes when switching back to desktop mode
+                self.app_state.saved_dock_state = Default::default();
+                on_clean_resources.clone().send(true).unwrap();
+                continue;
+            }
+
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                 log!("Received LoginAction::LoginSuccess, hiding login view.");
                 self.app_state.logged_in = true;
@@ -432,6 +472,7 @@ impl AppMain for App {
 }
 
 impl App {
+   
     fn update_login_visibility(&self, cx: &mut Cx) {
         let show_login = !self.app_state.logged_in;
         if !show_login {
