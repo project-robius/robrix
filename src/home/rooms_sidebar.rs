@@ -96,18 +96,7 @@ impl LiveHook for RoomsSideBar {
 }
 
 impl Widget for RoomsSideBar {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if let Event::Actions(actions) = event {
-            for action in actions {
-                if let Some(SyncStatusAction::IsSyncing(is_syncing)) = action.downcast_ref() {
-                    self.view(id!(rooms_list_header))
-                        .view(id!(loading_spinner))
-                        .set_visible(cx, *is_syncing);
-                    self.redraw(cx);
-                }
-            }
-        }
-        
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {        
         self.view.handle_event(cx, event, scope);
     }
 
@@ -116,11 +105,3 @@ impl Widget for RoomsSideBar {
     }
 }
 
-/// An enum that represents the possible actions that can be sent to the `RoomsSideBar`.
-#[derive(Debug)]
-pub enum SyncStatusAction {
-    /// Indicates whether the app is currently syncing data.
-    /// If `true`, the loading spinner will be shown in the RoomsListHeader.
-    /// If `false`, the spinner will be hidden.
-    IsSyncing(bool),
-}

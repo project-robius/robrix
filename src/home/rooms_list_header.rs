@@ -13,13 +13,13 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
 
-    pub RoomsListHeader = {{RoomsListHeader}}<View> {
+    pub RoomsListHeader = {{RoomsListHeader}} {
         width: Fill,
         height: Fit,
         flow: Right,
         visible: true,
         align: {
-            x: 0.5,
+            x: 0.0,
             y: 0.5
         }
         sidebar_title = <Label> {
@@ -30,16 +30,13 @@ live_design! {
                 text_style: <TITLE_TEXT>{}
             }
         },
-        <View> {
-            width: Fill,
-            height: Fit,
-        }
+        <FillerX> {}
         loading_spinner = <LoadingSpinner> {
             width: 20,
-            height: 20,
+            height: Fill,
             draw_bg: {
-                radius: 8.0,
-                stroke_width: 2.0,
+                color: (COLOR_SELECT_TEXT)
+                border_size: 3.0,
             }
         }
     }
@@ -69,6 +66,7 @@ impl Widget for RoomsListHeader {
     }
 }
 
+/// An enum that represents the possible actions that can be sent to the `RoomsListHeader`.
 #[derive(Debug)]
 pub enum RoomsListHeaderAction {
     SetSyncStatus(bool),
