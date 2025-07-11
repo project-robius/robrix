@@ -33,7 +33,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, room::{RoomPreviewAvatar, member_search::search_room_members_streaming}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, mentionable_text_input::MentionableTextInputAction, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, room::{RoomPreviewAvatar, member_search::search_room_members_streaming}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -660,12 +660,12 @@ async fn async_worker(
                     }
                 });
             }
-            
+
             MatrixRequest::SearchRoomMembers { room_id, search_text, search_id, max_results, can_notify_room, cached_members } => {
                 // Only proceed if we have cached members
                 if let Some(members) = cached_members {
                     log!("Searching {} cached members for room {}", members.len(), room_id);
-                    
+
                     // Directly spawn blocking task for search
                     let _search_task = tokio::task::spawn_blocking(move || {
                         // Perform streaming search
@@ -673,14 +673,6 @@ async fn async_worker(
                     });
                 } else {
                     log!("No cached members available for room {room_id}, search request ignored");
-                    // Send empty result to indicate no members available
-                    Cx::post_action(MentionableTextInputAction::MemberSearchPartialResults {
-                        room_id,
-                        search_id,
-                        results: Vec::new(),
-                        is_complete: true,
-                        search_text,
-                    });
                 }
             }
 
@@ -1552,7 +1544,7 @@ async fn async_main_loop(
         .await?;
 
     // Attempt to load the previously-saved rooms panel state.
-    // Include this after re-login. 
+    // Include this after re-login.
     handle_load_rooms_panel_state(logged_in_user_id.to_owned());
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
