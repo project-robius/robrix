@@ -208,6 +208,9 @@ impl LiveRegister for App {
 
 impl LiveHook for App {
     fn after_update_from_doc(&mut self, cx: &mut Cx) {
+        // Here we set the global singleton for the PopupList widget,
+        // which is used to access PopupList Widget from anywhere in the app.
+        crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
         self.update_login_visibility(cx);
     }
 }

@@ -1658,6 +1658,7 @@ impl RoomScreen {
                     error!("Pagination error ({direction}) in room {}: {error:?}", tl.room_id);
                     enqueue_popup_notification(PopupItem {
                         message: format!("Error loading earlier messages in \"{}\": {error}", self.room_name),
+                        kind: PopupKind::Error,
                         auto_dismissal_duration: None,
                     });
                     done_loading = true;

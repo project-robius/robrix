@@ -11,8 +11,10 @@ const POPUP_KINDS: [(PopupKind, Vec3); 4] = [
     (PopupKind::Warning, COLOR_WARNING_ORANGE),
 ];
 const ICON_SET: &[&[LiveId]] = ids!(error_icon, info_icon, success_icon, warning_icon,);
+
 /// Displays a new popup notification with a popup item.
 ///
+/// This function can be used when there is no Makepad widget context in its arguments.
 /// Popup notifications will be shown in the order they were enqueued,
 /// and can be removed when manually closed by the user or automatically.
 /// Maximum auto dismissal duration is 3 minutes.
@@ -23,6 +25,28 @@ pub fn enqueue_popup_notification(mut popup_item: PopupItem) {
         .map(|duration| duration.min(3. * 60.));
     POPUP_NOTIFICATION.push(popup_item);
     SignalToUI::set_ui_signal();
+}
+
+/// Retrieves a mutable reference to the global `RobrixPopupNotificationRef`.
+///
+/// This function accesses the global context to obtain a reference to the
+/// `RobrixPopupNotificationRef`, which is used for managing and displaying
+/// popup notifications within the application. It enables interaction with
+/// the popup notification system from various parts of the application.
+pub fn get_global_popup_list(cx: &mut Cx) -> &mut RobrixPopupNotificationRef {
+    cx.get_global::<RobrixPopupNotificationRef>()
+}
+
+/// Sets the global popup list notification widget reference.
+///
+/// This function sets the global context to point to the provided
+/// `WidgetRef`, which is expected to be a `RobrixPopupNotificationRef`.
+/// It is used to display popup notifications anywhere in the application.
+pub fn set_global_popup_list(cx: &mut Cx, parent_ref: &WidgetRef) {
+    Cx::set_global(
+        cx,
+        parent_ref.robrix_popup_notification(id!(popup_notification)),
+    );
 }
 
 /// Kind of a popup notification.
@@ -111,7 +135,7 @@ live_design! {
             uniform display_progress_bar: 1.0 // Display progress bar when there is auto_dismissal_duration.
             // Display progress bar even when mode.slide is off.
             // 0.0 animate according to anim_time and anim_duration, 1.0 displays oscillating progress bar.
-            uniform debug_progress_bar: 0.0, 
+            uniform debug_progress_bar: 0.0,
             uniform anim_time: 0.0,
             uniform anim_duration: 2.0,
             fn pixel(self) -> vec4 {
@@ -218,7 +242,7 @@ live_design! {
                     self.border_radius
                 )
                 sdf.fill_keep(self.background_color)
-                
+
                 // Only draw black border for white background (blank popups)
                 if length(self.background_color.rgb - vec3(1.0, 1.0, 1.0)) < 0.1 {
                     sdf.stroke(
@@ -325,7 +349,7 @@ live_design! {
                 // Main content area
                 main_content = <MAIN_CONTENT> {
                     padding: {left: 0}
-                }                
+                }
             }
             progress_bar = <PROGRESS_BAR> {
                 width: 10,
@@ -358,12 +382,12 @@ live_design! {
         width: Fill,
         height: Fill,
         align: {x: 0.99, y: 0.05}
-        <RobrixPopupNotificationRightToLeftProgress>{}
+        popup_notification = <RobrixPopupNotificationRightToLeftProgress>{}
     }
     // A widget that displays a vertical list of popups at the top right corner of the screen.
     // The progress bar slides from top to bottom.
     pub PopupListTopToBottomProgress = <PopupList> {
-        <RobrixPopupNotificationTopToBottomProgress>{}
+        popup_notification = <RobrixPopupNotificationTopToBottomProgress>{}
     }
 }
 
@@ -371,7 +395,7 @@ live_design! {
 #[derive(Live, Widget)]
 pub struct RobrixPopupNotification {
     #[live]
-    content: Option<LivePtr>,
+    pub content: Option<LivePtr>,
 
     #[rust(DrawList2d::new(cx))]
     draw_list: DrawList2d,
@@ -385,7 +409,7 @@ pub struct RobrixPopupNotification {
     walk: Walk,
     // A list of tuples containing individual widgets, its content and the close timer in the order they were added.
     #[rust]
-    popups: Vec<(View, PopupItem, Timer)>,
+    pub popups: Vec<(View, PopupItem, Timer)>,
 }
 
 impl LiveHook for RobrixPopupNotification {
@@ -395,7 +419,8 @@ impl LiveHook for RobrixPopupNotification {
                 view.apply(cx, apply, index, nodes);
                 view.label(id!(popup_label))
                     .set_text(cx, &popup_item.message);
-                for (view, (popup_kind, _color)) in view.view_set(ICON_SET).iter().zip(POPUP_KINDS) {
+                for (view, (popup_kind, _color)) in view.view_set(ICON_SET).iter().zip(POPUP_KINDS)
+                {
                     if popup_item.kind == popup_kind {
                         view.set_visible(cx, true);
                     } else {
@@ -435,10 +460,8 @@ impl Widget for RobrixPopupNotification {
         self.draw_bg.begin(cx, walk, self.layout);
         if !self.popups.is_empty() {
             cx.begin_turtle(walk, self.layout);
-            for (view, popup_item, _) in self.popups.iter_mut() {
+            for (view, _popup_item, _) in self.popups.iter_mut() {
                 let walk = walk.with_margin_bottom(5.0);
-                view.label(id!(popup_label))
-                    .set_text(cx, &popup_item.message);
                 let _ = view.draw_walk(cx, scope, walk);
             }
             cx.end_turtle();
@@ -457,6 +480,8 @@ impl RobrixPopupNotification {
     pub fn push(&mut self, cx: &mut Cx, popup_item: PopupItem) {
         let mut view = View::new_from_ptr(cx, self.content);
         let mut background_color = COLOR_PRIMARY;
+        view.label(id!(popup_label))
+            .set_text(cx, &popup_item.message);
         for (view, (popup_kind, color)) in view.view_set(ICON_SET).iter().zip(POPUP_KINDS) {
             if popup_item.kind == popup_kind {
                 view.set_visible(cx, true);
@@ -532,6 +557,60 @@ impl RobrixPopupNotification {
         self.popups.push((view, popup_item, close_timer));
         self.redraw(cx);
     }
+
+    /// Adds a new popup with a custom view to the right side of the screen.
+    ///
+    /// This allows arbitrary content to be displayed via RobrixPopupNotification's content live dsl.
+    ///
+    /// The `view` parameter should be constructed using `RobrixPopupNotification::content()`.
+    /// The view should have a view with the id `popup_content` which should contain
+    /// a `progress_bar` view with the id `progress_bar` and a `popup_label` view with the id `popup_label`.
+    /// The `progress_bar` view should have a `draw_bg` field with a `anim_duration` field that will be used to animate the progress bar.
+    /// The `popup_label` view should have a `draw_text` field that will be used to display the popup's message.
+    /// The custom view should also have a close button with the id `close_button` which should have a `draw_icon` field that will be used to display the close button's icon.
+    ///
+    /// The `auto_dismissal_duration` field of the `PopupItem` parameter will be used to automatically dismiss the popup after the given duration.
+    /// If `auto_dismissal_duration` is `None`, the popup will not be automatically dismissed and the user will have to manually close it.
+    /// The maximum auto dismissal duration is 3 minutes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
+    /// let content = crate::shared::popup_list::get_global_popup_list(cx).content();
+    /// let view = View::new_from_ptr(cx, content);
+    /// let popup_item = PopupItem {
+    ///     kind: PopupKind::Info,
+    ///     message: "Welcome!".to_string(),
+    ///     auto_dismissal_duration: Some(4.0),
+    /// };
+    ///  view.label(id!(popup_label))
+    ///     .set_text(cx, &popup_item.message);
+    ///  let close_timer = if let Some(duration) = popup_item.auto_dismissal_duration {
+    ///     cx.start_timeout(duration)
+    /// } else {
+    ///     Timer::empty()
+    /// };
+    /// crate::shared::popup_list::get_global_popup_list(cx).push_with_custom_view(popup_item, view, close_timer);
+    /// ```
+    pub fn push_with_custom_view(
+        &mut self,
+        mut popup_item: PopupItem,
+        view: View,
+        close_timer: Timer,
+    ) {
+        popup_item.auto_dismissal_duration = popup_item
+            .auto_dismissal_duration
+            .map(|duration| duration.min(3. * 60.));
+        self.popups.push((view, popup_item, close_timer));
+    }
+
+    /// Returns a clone of the template for each  popup in the list.
+    ///
+    /// This is used to construct the View for the popup notification.
+    pub fn content(&self) -> Option<LivePtr> {
+        self.content
+    }
 }
 
 impl WidgetMatchEvent for RobrixPopupNotification {
@@ -544,6 +623,34 @@ impl WidgetMatchEvent for RobrixPopupNotification {
                 self.draw_bg.redraw(cx);
                 break;
             }
+        }
+    }
+}
+impl RobrixPopupNotificationRef {
+    /// See [`RobrixPopupNotification::push()`].
+    pub fn push(&self, cx: &mut Cx, popup_item: PopupItem) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.push(cx, popup_item);
+        } else {
+            log!("RobrixPopupNotificationRef is not initialized.");
+        }
+    }
+
+    /// See [`RobrixPopupNotification::content()`].
+    pub fn content(&self) -> Option<LivePtr> {
+        if let Some(inner) = self.borrow() {
+            inner.content()
+        } else {
+            None
+        }
+    }
+
+    /// See [`RobrixPopupNotification::push_with_custom_view()`].
+    pub fn push_with_custom_view(&self, popup_item: PopupItem, view: View, close_timer: Timer) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.push_with_custom_view(popup_item, view, close_timer);
+        } else {
+            log!("RobrixPopupNotificationRef is not initialized.");
         }
     }
 }
