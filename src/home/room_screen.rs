@@ -3562,12 +3562,16 @@ fn populate_image_message_content(
                 fully_drawn = true;
             }
             (MediaCacheEntry::Requested, _media_format) => {
-                if let Some(ref blurhash)= image_info.blurhash.clone() {
+                if let (Some(ref blurhash), Some(width), Some(height))= (image_info.blurhash.clone(), image_info.width, image_info.height) {
                     let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
-                        // Use arbitrary small image size. (640, 480) is obtained from img.size_in_pixels(cx).
-                        let width = 640; 
-                        let height = 480;
-                        if let Ok(data) = blurhash::decode(blurhash, width, height, 1.0) {
+                        let (Ok(width), Ok(height)) = (width.try_into() , height.try_into()) else { return Err(image_cache::ImageError::EmptyData)};
+                        let width: u32 = width;
+                        let height: u32 = height;
+                        let aspect_ratio: f32 = height as f32 / width as f32;
+                        if aspect_ratio == 0.0 { return Err(image_cache::ImageError::EmptyData); }
+                        let width = std::cmp::max(width , 500) as f32;
+                        let height = width * aspect_ratio;
+                        if let Ok(data) = blurhash::decode(blurhash, width as u32, height as u32, 1.0) {
                             ImageBuffer::new(&data, width as usize, height as usize).map(|img_buff| {
                                 let texture = Some(img_buff.into_new_texture(cx));
                                 img.set_texture(cx, texture);
