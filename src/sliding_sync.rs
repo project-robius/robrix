@@ -3042,15 +3042,21 @@ async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
 
     // Clean up client state and caches
     log!("Cleaning up client state and caches...");
-    CLIENT.lock().unwrap().take();
+    CLIENT.lock().unwrap().take(); 
     SYNC_SERVICE.lock().unwrap().take();
     TOMBSTONED_ROOMS.lock().unwrap().clear();
     IGNORED_USERS.lock().unwrap().clear();
+    ALL_JOINED_ROOMS.lock().unwrap().clear();
     // Note: Taking REQUEST_SENDER closes the channel sender, causing the async_worker task to exit its loop
     // This triggers the "async_worker task ended unexpectedly" error in the monitor task, but this is expected during logout
     REQUEST_SENDER.lock().unwrap().take();
     log!("Client state and caches cleared after successful server logout.");
 
+    // Note:: This will cause a panic in deadpool-runtime when shutting down the tokio runtime
+    // The dependency chain is: matrix-sdk -> matrix-sdk-sqlite -> rusqlite -> deadpool-sqlite -> deadpool-runtime.
+    // because Matrix SDK uses deadpool-sqlite internally and doesn't provide a way to
+    // gracefully close these connections. When we have upgraded to a newer version of Matrix SDK 
+    // that fixes this, we can remove this note.
     shutdown_background_tasks().await;
     // Restart the Matrix tokio runtime
     // This is a critical step; failure might prevent future logins
