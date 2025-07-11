@@ -22,7 +22,7 @@ live_design! {
             x: 0.0,
             y: 0.5
         }
-        sidebar_title = <Label> {
+        header_title = <Label> {
             flow: Right, // do not wrap
             text: "All Rooms"
             draw_text: {
