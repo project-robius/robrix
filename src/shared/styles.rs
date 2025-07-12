@@ -227,7 +227,8 @@ live_design! {
     }
 }
 
-pub const COLOR_ACCEPT_GREEN: Vec3 = vec3(0.074, 0.533, 0.031); // #138808
-pub const COLOR_DISABLE_GRAY: Vec3 = vec3(0.7, 0.7, 0.7); // #B3B3B3
-pub const COLOR_DANGER_RED: Vec3 = vec3(0.863, 0.0, 0.02); // #DC0005
+pub const COLOR_ACCEPT_GREEN:        Vec3 = vec3(0.074, 0.533, 0.031); // #138808
+pub const COLOR_DISABLE_GRAY:        Vec3 = vec3(0.7, 0.7, 0.7); // #B3B3B3
+pub const COLOR_ROBRIX_PURPLE:       Vec3 = vec3(0.341, 0.176, 0.8); // #572DCC
+pub const COLOR_DANGER_RED:          Vec3 = vec3(0.863, 0.0, 0.02); // #DC0005
 pub const COLOR_UNKNOWN_ROOM_AVATAR: Vec3 = vec3(1.0, 0.431, 0.0); // #FF6e00

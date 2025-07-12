@@ -44,7 +44,7 @@ live_design! {
             align: { x: 0.5, y: 0.5 }
             show_bg: true,
             draw_bg: {
-                instance background_color: (COLOR_AVATAR_BG)
+                uniform background_color: (COLOR_AVATAR_BG)
 
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
