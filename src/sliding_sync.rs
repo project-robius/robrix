@@ -275,7 +275,6 @@ pub enum MatrixRequest {
         search_text: String,
         search_id: u64,
         max_results: usize,
-        can_notify_room: bool,
         cached_members: Option<Arc<Vec<RoomMember>>>,
     },
     /// Request to fetch profile information for the given user ID.
@@ -661,7 +660,7 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::SearchRoomMembers { room_id, search_text, search_id, max_results, can_notify_room, cached_members } => {
+            MatrixRequest::SearchRoomMembers { room_id, search_text, search_id, max_results, cached_members } => {
                 // Only proceed if we have cached members
                 if let Some(members) = cached_members {
                     log!("Searching {} cached members for room {}", members.len(), room_id);
@@ -669,7 +668,7 @@ async fn async_worker(
                     // Directly spawn blocking task for search
                     let _search_task = tokio::task::spawn_blocking(move || {
                         // Perform streaming search
-                        search_room_members_streaming(members, search_text, max_results, can_notify_room, room_id, search_id);
+                        search_room_members_streaming(members, search_text, max_results, room_id, search_id);
                     });
                 } else {
                     log!("No cached members available for room {room_id}, search request ignored");

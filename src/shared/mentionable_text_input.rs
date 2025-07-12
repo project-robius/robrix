@@ -872,7 +872,6 @@ impl MentionableTextInput {
             search_text: search_text.to_string(),
             search_id,
             max_results: max_visible_items * SEARCH_BUFFER_MULTIPLIER,  // Buffer for better UX
-            can_notify_room: self.can_notify_room,
             cached_members: room_props.room_members.clone(),
         });
     }

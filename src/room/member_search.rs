@@ -15,7 +15,6 @@ pub fn search_room_members_streaming(
     members: Arc<Vec<RoomMember>>,
     search_text: String,
     max_results: usize,
-    _can_notify_room: bool,
     room_id: OwnedRoomId,
     search_id: u64,
 ) {
