@@ -3,8 +3,13 @@ use std::{path::Path, sync::OnceLock};
 use robius_directories::ProjectDirs;
 
 pub use makepad_widgets;
+
+/// The top-level main application module.
 pub mod app;
+/// Function for loading and saving persistent application/session state.
 pub mod persistent_state;
+/// The settings screen and settings-related content/widgets.
+pub mod settings;
 
 /// Login screen
 pub mod login;

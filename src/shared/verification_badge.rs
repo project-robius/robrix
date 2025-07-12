@@ -107,7 +107,7 @@ pub struct VerificationBadge {
 }
 
 impl LiveHook for VerificationBadge {
-    fn after_new_from_doc(&mut self, cx: &mut Cx) {
+    fn after_apply_from_doc(&mut self, cx: &mut Cx) {
         if let Some(client) = get_client() {
             let current_verification_state = client.encryption().verification_state().get();
             if self.verification_state != current_verification_state {
@@ -167,7 +167,7 @@ impl Widget for VerificationBadge {
 }
 
 impl VerificationBadge {
-    pub fn update_icon_visibility(&mut self, cx: &mut Cx) {
+    fn update_icon_visibility(&mut self, cx: &mut Cx) {
         let (yes, no, unk) = match self.verification_state {
             VerificationState::Unknown => (false, false, true),
             VerificationState::Unverified => (false, true, false),
