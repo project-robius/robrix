@@ -110,39 +110,6 @@ impl Widget for VerificationBadge {
                 }
             }
         }
-
-        // Note: this is now being handled in the ProfileIcon widget,
-        //       due to problems with Makepad not being able to support
-        //       multiple calls to `event.hits()` for nested widgets
-        //       in different event handlers (such as the ProfileIcon
-        //       widget and the VerificationBadge widget).
-        //
-        // let badge = self.view(id!(verification_icons));
-        // let badge_area = badge.area();
-        // let should_hover_in = match event.hits(cx, badge_area) {
-        //     Hit::FingerLongPress(_)
-        //     | Hit::FingerHoverOver(..) // TODO: remove once CalloutTooltip bug is fixed
-        //     | Hit::FingerHoverIn(..) => true,
-        //     Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => true,
-        //     Hit::FingerHoverOut(_) => {
-        //         cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
-        //         false
-        //     }
-        //     _ => false,
-        // };
-        // if should_hover_in {
-        //     let badge_rect = badge_area.rect(cx);
-        //     cx.widget_action(
-        //         self.widget_uid(),
-        //         &scope.path,
-        //         TooltipAction::HoverIn {
-        //             widget_rect: badge_rect,
-        //             text: verification_state_str(self.verification_state).to_string(),
-        //             bg_color: Some(verification_state_color(self.verification_state)),
-        //             text_color: None,
-        //         },
-        //     );
-        // }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
