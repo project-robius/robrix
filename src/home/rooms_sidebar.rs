@@ -96,7 +96,7 @@ impl LiveHook for RoomsSideBar {
 }
 
 impl Widget for RoomsSideBar {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {        
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
     }
 
