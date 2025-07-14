@@ -513,7 +513,7 @@ impl RobrixPopupNotification {
                                 }
                             }
                         }
-                        // For Right to left rogress bar.
+                        // For Right to left progress bar.
                         close_button_view = {
                             close_button = {
                                 draw_icon: {
