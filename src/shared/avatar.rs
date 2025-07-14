@@ -148,7 +148,7 @@ impl Avatar {
     pub fn show_text<T: AsRef<str>>(
         &mut self,
         cx: &mut Cx,
-        bg_color: Option<Vec3>,
+        bg_color: Option<Vec4>,
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
@@ -357,7 +357,7 @@ impl AvatarRef {
     pub fn show_text<T: AsRef<str>>(
         &self,
         cx: &mut Cx,
-        bg_color: Option<Vec3>,
+        bg_color: Option<Vec4>,
         info: Option<AvatarTextInfo>,
         username: T,
     ) {

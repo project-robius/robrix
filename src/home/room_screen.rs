@@ -614,7 +614,7 @@ live_design! {
                     text_style: <REGULAR_TEXT>{font_size: 11}
                     wrap: Word,
                 }
-                text: "Waiting for this room to be loaded from the homeserver",
+                text: "",
             }
 
             keyboard_view = <KeyboardView> {

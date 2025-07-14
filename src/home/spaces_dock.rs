@@ -11,7 +11,7 @@ use crate::{
         avatar::AvatarWidgetExt,
         callout_tooltip::TooltipAction,
         popup_list::{enqueue_popup_notification, PopupItem},
-        styles::{COLOR_DISABLE_GRAY, COLOR_ROBRIX_PURPLE},
+        styles::{COLOR_DISABLE_GRAY, COLOR_ROBRIX_PURPLE}, verification_badge::VerificationBadgeWidgetExt,
     },
     sliding_sync::current_user_id,
     utils,
@@ -25,6 +25,9 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::verification_badge::*;
+    use crate::shared::avatar::*;
+
+    SPACES_DOCK_SIZE = 68
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
@@ -35,20 +38,21 @@ live_design! {
 
     ProfileIcon = {{ProfileIcon}} {
         flow: Overlay
-        width: Fit, height: Fit
+        width: (SPACES_DOCK_SIZE - 6), height: (SPACES_DOCK_SIZE - 6)
         align: { x: 0.5, y: 0.5 }
+        cursor: Hand,
 
         avatar = <Avatar> {
-            width: 40, height: 40
+            width: 45, height: 45
             // If no avatar picture, use white text on a dark background.
             text_view = {
                 draw_bg: {
                     background_color: (COLOR_DISABLE_GRAY),
                 }
-                text = {
-                    font_size: 16.0,
+                text = { draw_text: {
+                    text_style: { font_size: 16.0 },
                     color: (COLOR_PRIMARY),
-                }
+                } }
             }
         }
 
@@ -91,7 +95,7 @@ live_design! {
             flow: Down, spacing: 15
             align: {x: 0.5}
             padding: {top: 40., bottom: 20.}
-            width: 68., height: Fill
+            width: (SPACES_DOCK_SIZE), height: Fill
             show_bg: true
             draw_bg: {
                 color: (COLOR_SECONDARY)
@@ -100,10 +104,10 @@ live_design! {
             <Home> {}
             
             <Separator> {}
-            
-            <ProfileIcon> {}
 
             <Filler> {}
+            
+            <ProfileIcon> {}
         }
 
         // TODO: make this horizontally scrollable
@@ -111,7 +115,7 @@ live_design! {
             flow: Right
             align: {x: 0.5, y: 0.5}
             padding: {top: 10, right: 10, bottom: 10, left: 10}
-            width: Fill, height: Fit
+            width: Fill, height: (SPACES_DOCK_SIZE)
             show_bg: true
             draw_bg: {
                 color: (COLOR_SECONDARY)
@@ -156,8 +160,6 @@ impl Widget for ProfileIcon {
             }
         }
 
-        self.view.handle_event(cx, event, scope);
-
         // TODO: handle login/logout actions, as well as actions related to
         //       the currently-logged-in user's account (such as them changing
         //       their avatar, display name, etc.)
@@ -165,18 +167,35 @@ impl Widget for ProfileIcon {
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
+                    log!("[ProfileIcon] Login successful, calling get_own_profile().");
                     self.get_own_profile(cx);
                 }
             }
         }
 
-        let area = self.area();
-        let should_hover_in: bool;
+        let area = self.view.area();
         match event.hits(cx, area) {
             Hit::FingerLongPress(_)
-            | Hit::FingerHoverOver(..) // TODO: remove once CalloutTooltip bug is fixed
-            | Hit::FingerHoverIn(..) => {
-                should_hover_in = true;
+            | Hit::FingerHoverOver(_)
+            | Hit::FingerHoverIn(_) => {
+                let (verification_str, bg_color) = self.view
+                    .verification_badge(id!(verification_badge))
+                    .tooltip_content();
+                let text = self.own_profile.as_ref().map_or_else(
+                    || format!("Not logged in.\n\n{}\n\nTap to view Profiles & Settings.", verification_str),
+                    |p| format!("Logged in as \"{}\".\n\n{}\n\nTap to view Profile & Settings.", p.displayable_name(), verification_str)
+                );
+                let rect = area.rect(cx);
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    TooltipAction::HoverIn {
+                        widget_rect: rect,
+                        text,
+                        bg_color,
+                        text_color: None,
+                    },
+                );
             }
             Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => {
                 // TODO: emit action to show profile/settings screen in the parent view.
@@ -184,33 +203,14 @@ impl Widget for ProfileIcon {
                     message: String::from("ProfileIcon & Settings screen is not yet implemented."),
                     auto_dismissal_duration: None,
                 });
-                should_hover_in = false;
             }
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
-                should_hover_in = false;
             }
-            _ => {
-                should_hover_in = false;
-            }
+            _ => { }
         };
-        if should_hover_in {
-            let rect = area.rect(cx);
-            let text = self.own_profile.as_ref().map_or_else(
-                || format!("Not logged in.\n\nClick to view Profiles & Settings"),
-                |p| format!("Logged in as \"{}\".\n\nClick to view Profile & Settings.", p.displayable_name())
-            );
-            cx.widget_action(
-                self.widget_uid(),
-                &scope.path,
-                TooltipAction::HoverIn {
-                    widget_rect: rect,
-                    text,
-                    bg_color: None,
-                    text_color: None,
-                },
-            );
-        }
+
+        self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -270,6 +270,7 @@ impl ProfileIcon {
                     }
                 }
             }
+            log!("[ProfileIcon] Updated own profile: {:?}", self.own_profile);
         }
 
         if needs_redraw {
