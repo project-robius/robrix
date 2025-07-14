@@ -3572,12 +3572,16 @@ fn populate_image_message_content(
                         let height: u32 = height;
                         if width == 0 { error!("Failed to get aspect ratio by dividing 0 for its width."); return Err(image_cache::ImageError::EmptyData); }
                         let aspect_ratio: f32 = height as f32 / width as f32;
-                        if aspect_ratio == 0.0 { return Err(image_cache::ImageError::EmptyData); }
-                        let width = std::cmp::max(width , BLURIMAGE_WIDTH_CAP) as f32;
-                        let height = width * aspect_ratio;
-                        match blurhash::decode(blurhash, width as u32, height as u32, 1.0) {
+                        if aspect_ratio <= 0.0 || !aspect_ratio.is_finite() {
+                            return Err(image_cache::ImageError::EmptyData);
+                        }
+                        let capped_width = width.max(BLURIMAGE_WIDTH_CAP) as f32;
+                        let capped_height = capped_width * aspect_ratio;
+                        let final_width = capped_width.floor() as u32;
+                        let final_height = capped_height.floor() as u32;
+                        match blurhash::decode(blurhash, final_width, final_height, 1.0) {
                             Ok(data) => {
-                                ImageBuffer::new(&data, width as usize, height as usize).map(|img_buff| {
+                                ImageBuffer::new(&data, final_width as usize, final_height as usize).map(|img_buff| {
                                     let texture = Some(img_buff.into_new_texture(cx));
                                     img.set_texture(cx, texture);
                                     img.size_in_pixels(cx).unwrap_or_default()
