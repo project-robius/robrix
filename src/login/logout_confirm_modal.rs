@@ -129,8 +129,8 @@ pub enum LogoutAction {
     /// A negative response from the backend Matrix task to the logout.
     LogoutFailure(String),
     /// Signal to clean up mobile mode resources 
-    CleanupMobileResources {
-        on_clean_resources: Sender<bool>
+    CleanAppState {
+        on_clean_appstate: Sender<bool>
     },
     /// Signal that the application is in an invalid state and needs to be restarted.
     /// This happens when critical components have been cleaned up during a previous
