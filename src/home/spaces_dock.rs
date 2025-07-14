@@ -254,8 +254,7 @@ impl ProfileIcon {
         let mut needs_redraw = false;
         if let Some(own_user_id) = current_user_id() {
             let avatar_uri_to_fetch = user_profile_cache::with_user_profile(cx, own_user_id, true, |new_profile, _rooms| {
-                needs_redraw = self.own_profile.as_ref().map_or(
-                    true,
+                needs_redraw = self.own_profile.as_ref().is_none_or(
                     |p| p.displayable_name() != new_profile.displayable_name()
                 );
                 let avatar_uri_to_fetch = new_profile.avatar_state.uri().cloned();
