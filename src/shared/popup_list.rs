@@ -57,7 +57,7 @@ pub enum PopupKind {
     Blank,
     /// Shows a red background and a error icon.
     Error,
-    /// Shows a white background and a blue stack icon.
+    /// Shows a white background and a blue info icon.
     Info,
     /// Shows a green background and a checkmark icon.
     Success,
