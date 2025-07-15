@@ -83,10 +83,6 @@ live_design! {
 
     CAN_NOT_SEND_NOTICE = "You don't have permission to post to this room."
 
-    FillerY = <View> {width: Fill}
-
-    FillerX = <View> {height: Fill}
-
     REACTION_TEXT_COLOR = #4c00b0
 
     // The content of a reply preview, which shows a small preview
@@ -618,7 +614,7 @@ live_design! {
                     text_style: <REGULAR_TEXT>{font_size: 11}
                     wrap: Word,
                 }
-                text: "Waiting for this room to be loaded from the homeserver",
+                text: "",
             }
 
             keyboard_view = <KeyboardView> {
