@@ -213,7 +213,7 @@ live_design! {
             text: ""
         }
 
-        filler = <View> {
+        <View> {
             width: Fill, height: 30,
         }
     }

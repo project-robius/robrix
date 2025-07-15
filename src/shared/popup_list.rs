@@ -4,9 +4,9 @@ use makepad_widgets::*;
 use crate::shared::styles::*;
 
 static POPUP_NOTIFICATION: SegQueue<PopupItem> = SegQueue::new();
-const POPUP_KINDS: [(PopupKind, Vec3); 4] = [
+const POPUP_KINDS: [(PopupKind, Vec4); 4] = [
     (PopupKind::Error, COLOR_DANGER_RED),
-    (PopupKind::Info, COLOR_ACTIVE_PRIMARY),
+    (PopupKind::Info, COLOR_INFO_BLUE),
     (PopupKind::Success, COLOR_ACCEPT_GREEN),
     (PopupKind::Warning, COLOR_WARNING_ORANGE),
 ];
@@ -183,7 +183,7 @@ live_design! {
             width: Fill,
             height: Fit,
             draw_text: {
-                color: (COLOR_TEXT),
+                color: (COLOR_TEXT_IDLE),
                 text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10 },
                 wrap: Word
             }
@@ -216,7 +216,7 @@ live_design! {
             }
             draw_icon: {
                 svg_file: (ICON_FAT_CROSS),
-                color: (COLOR_TEXT),
+                color: (COLOR_TEXT_IDLE),
             }
             icon_walk: {width: 12, height: 12}
         }
@@ -482,7 +482,7 @@ impl RobrixPopupNotification {
     /// New popup will be displayed below the previous ones.
     pub fn push(&mut self, cx: &mut Cx, popup_item: PopupItem) {
         let mut view = View::new_from_ptr(cx, self.content);
-        let mut background_color = COLOR_ACTIVE_PRIMARY;
+        let mut background_color = COLOR_WHITE;
         view.label(id!(popup_label))
             .set_text(cx, &popup_item.message);
         for (view, (popup_kind, color)) in view.view_set(ICON_SET).iter().zip(POPUP_KINDS) {
@@ -494,7 +494,7 @@ impl RobrixPopupNotification {
             }
         }
         // Apply popup item kind-specific styling
-        if background_color != COLOR_ACTIVE_PRIMARY {
+        if background_color != COLOR_WHITE {
             view.apply_over(
                 cx,
                 live! {
@@ -503,7 +503,7 @@ impl RobrixPopupNotification {
                             main_content = {
                                 popup_label = {
                                     draw_text: {
-                                        color: (COLOR_ACTIVE_PRIMARY),
+                                        color: (COLOR_WHITE),
                                     }
                                 }
                             }
@@ -511,7 +511,7 @@ impl RobrixPopupNotification {
                             close_button_view = {
                                 close_button = {
                                     draw_icon: {
-                                        color: (COLOR_ACTIVE_PRIMARY),
+                                        color: (COLOR_WHITE),
                                     }
                                 }
                             }
@@ -520,7 +520,7 @@ impl RobrixPopupNotification {
                         close_button_view = {
                             close_button = {
                                 draw_icon: {
-                                    color: (COLOR_ACTIVE_PRIMARY),
+                                    color: (COLOR_WHITE),
                                 }
                             }
                         }

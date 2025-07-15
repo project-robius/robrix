@@ -44,7 +44,7 @@ live_design! {
             align: { x: 0.5, y: 0.5 }
             show_bg: true,
             draw_bg: {
-                instance background_color: (COLOR_AVATAR_BG)
+                uniform background_color: (COLOR_AVATAR_BG)
 
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -148,7 +148,7 @@ impl Avatar {
     pub fn show_text<T: AsRef<str>>(
         &mut self,
         cx: &mut Cx,
-        bg_color: Option<Vec3>,
+        bg_color: Option<Vec4>,
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
@@ -357,7 +357,7 @@ impl AvatarRef {
     pub fn show_text<T: AsRef<str>>(
         &self,
         cx: &mut Cx,
-        bg_color: Option<Vec3>,
+        bg_color: Option<Vec4>,
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
