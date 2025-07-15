@@ -1,4 +1,3 @@
-#![allow(clippy::question_mark)]
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
@@ -991,9 +990,7 @@ impl RoomsListRef {
 
     /// See [`RoomsList::get_room_avatar()`].
     pub fn get_room_avatar(&self, room_id: &OwnedRoomId) -> Option<RoomPreviewAvatar> {
-        let Some(inner) = self.borrow() else {
-            return None;
-        };
+        let inner = self.borrow()?;
         inner.get_room_avatar(room_id)
     }
 }

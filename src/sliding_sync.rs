@@ -1975,7 +1975,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         .remove(&room_id);
 
     log!("Adding new joined room {room_id}. Replaces tombstoned room: {tombstoned_room_replaced_by_this_room:?}");
-    
+
     ALL_JOINED_ROOMS.lock().unwrap().insert(
         room_id.clone(),
         JoinedRoomDetails {
