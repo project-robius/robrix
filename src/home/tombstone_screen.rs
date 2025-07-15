@@ -331,8 +331,8 @@ impl TombstoneScreen {
         let Some(avatar_preview) = rooms_list_ref.get_room_avatar(&room_id) else {
             return;
         };
-        if let Ok(guard) = crate::sliding_sync::ALL_JOINED_ROOMS.lock() {
-            for (inner_room_id, room_info) in (*guard).iter() {
+        if let Ok(all_joined_rooms_guard) = crate::sliding_sync::ALL_JOINED_ROOMS.lock() {
+            for (inner_room_id, room_info) in (*all_joined_rooms_guard).iter() {
                 room_info
                     .replaces_tombstoned_room
                     .clone()
@@ -342,20 +342,21 @@ impl TombstoneScreen {
                         replacement_room_name = room_info.room_name.clone();
                     });
             }
-            // Search for a replacement room ID in the TOBTOMBSTONED_ROOMS map if not found in ALL_JOINED_ROOMS.
-            // This happens when the replacement room id is not one of the user's joined rooms.
-            if replacement_room_id.is_none() {
-                if let Ok(guard) = crate::sliding_sync::TOMBSTONED_ROOMS.lock() {
-                    for (new_room_id, old_room_id) in (*guard).iter() {
-                        if old_room_id == &room_id {
-                            replacement_room_id = Some(new_room_id.clone());
-                            break; // Stop searching once we find a replacement
-                        }
+        }
+        
+        // Search for a replacement room ID in the TOMBSTONED_ROOMS map if not found in ALL_JOINED_ROOMS.
+        // This happens when the replacement room id is not one of the user's joined rooms.
+        if replacement_room_id.is_none() {
+            if let Ok(tombstoned_rooms_guard) = crate::sliding_sync::TOMBSTONED_ROOMS.lock() {
+                for (new_room_id, old_room_id) in (*tombstoned_rooms_guard).iter() {
+                    if old_room_id == &room_id {
+                        replacement_room_id = Some(new_room_id.clone());
+                        break; // Stop searching once we find a replacement
                     }
                 }
-                if replacement_room_id.is_none() {
-                    return;
-                }
+            }
+            if replacement_room_id.is_none() {
+                return;
             }
         }
         let replacement_avatar_preview = replacement_room_id
@@ -374,8 +375,8 @@ impl TombstoneScreen {
         };
         let mut replacement_room_replacement_room_name = None;
         let successor_room_info = replacement_room_id.as_ref().map(|successor_id| {
-            if let Ok(guard) = crate::sliding_sync::ALL_JOINED_ROOMS.lock() {
-                if let Some(replacement_room) = guard.get(successor_id) {
+            if let Ok(all_joined_rooms_guard) = crate::sliding_sync::ALL_JOINED_ROOMS.lock() {
+                if let Some(replacement_room) = all_joined_rooms_guard.get(successor_id) {
                     replacement_room_replacement_room_name = replacement_room.room_name.clone();
                 }
             }
