@@ -333,14 +333,15 @@ impl TombstoneScreen {
         };
         if let Ok(all_joined_rooms_guard) = crate::sliding_sync::ALL_JOINED_ROOMS.lock() {
             for (inner_room_id, room_info) in (*all_joined_rooms_guard).iter() {
-                room_info
+                if room_info
                     .replaces_tombstoned_room
                     .clone()
                     .is_some_and(|replaces| replaces == *room_id)
-                    .then(|| {
-                        replacement_room_id = Some(inner_room_id.clone());
-                        replacement_room_name = room_info.room_name.clone();
-                    });
+                {
+                    replacement_room_id = Some(inner_room_id.clone());
+                    replacement_room_name = room_info.room_name.clone();
+                    break;
+                }
             }
         }
         
