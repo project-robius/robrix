@@ -210,6 +210,11 @@ impl Widget for TombstoneScreen {
                     self.set_displayed_tombstone(cx, room_id.clone(), self.room_name.clone());
                 }
             }
+            // Try to set displayed tombstone details when all rooms are loaded, but successor room id cannot be found.
+            if let (true, None, Some(room_id)) = (self.all_rooms_loaded, &self.successor_room_id, &self.room_id) {
+                self.set_displayed_tombstone(cx, room_id.clone(), self.room_name.clone());
+                return;
+            }
         }
         // Handle button clicks to join successor room or stay in current room
         if let Event::Actions(actions) = event {
