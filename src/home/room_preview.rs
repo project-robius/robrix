@@ -2,14 +2,13 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    shared::{
+    room::RoomPreviewAvatar, shared::{
         avatar::AvatarWidgetExt,
         html_or_plaintext::HtmlOrPlaintextWidgetExt, unread_badge::UnreadBadgeWidgetExt as _,
-    },
-    utils::{self, relative_format},
+    }, utils::{self, relative_format}
 };
 
-use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListScopeProps};
+use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListScopeProps};
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -282,7 +281,7 @@ impl RoomPreviewContent {
             self.view.label(id!(room_name)).set_text(cx, name);
         }
         if let Some((ts, msg)) = room_info.latest.as_ref() {
-            if let Some(human_readable_date) = relative_format(ts) {
+            if let Some(human_readable_date) = relative_format(*ts) {
                 self.view
                     .label(id!(timestamp))
                     .set_text(cx, &human_readable_date);
@@ -321,7 +320,7 @@ impl RoomPreviewContent {
 
         match room_info.room_avatar {
             RoomPreviewAvatar::Text(ref text) => {
-                self.view.avatar(id!(avatar)).show_text(cx, None, text);
+                self.view.avatar(id!(avatar)).show_text(cx, None, None, text);
             }
             RoomPreviewAvatar::Image(ref img_bytes) => {
                 let _ = self.view.avatar(id!(avatar)).show_image(
@@ -339,7 +338,7 @@ impl RoomPreviewContent {
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
     }
 
-    /// Populates the widgets common to both invited and joined room previews. 
+    /// Populates the widgets common to both invited and joined room previews.
     pub fn draw_common(
         &mut self,
         cx: &mut Cx,
@@ -348,7 +347,7 @@ impl RoomPreviewContent {
     ) {
         match room_avatar {
             RoomPreviewAvatar::Text(ref text) => {
-                self.view.avatar(id!(avatar)).show_text(cx, None, text);
+                self.view.avatar(id!(avatar)).show_text(cx, None, None, text);
             }
             RoomPreviewAvatar::Image(ref img_bytes) => {
                 let _ = self.view.avatar(id!(avatar)).show_image(

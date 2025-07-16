@@ -9,6 +9,8 @@
 
 use makepad_widgets::*;
 
+use crate::home::rooms_list::RoomsListWidgetExt;
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -20,7 +22,7 @@ live_design! {
 
     use crate::home::rooms_list::RoomsList;
 
-    pub RoomsSideBar = <AdaptiveView> {
+    pub RoomsSideBar = {{RoomsSideBar}}<AdaptiveView> {
         Desktop = <View> {
             padding: {top: 20, left: 10, right: 10}
             flow: Down, spacing: 10
@@ -80,5 +82,35 @@ live_design! {
                 rooms_list = <RoomsList> {}
             }
         }
+    }
+}
+
+/// A simple wrapper around `AdaptiveView` that contains several global singleton widgets.
+///
+/// * In the mobile view, it serves as the root view of the StackNavigation,
+///   showing the title label, the search bar, and the RoomsList.
+/// * In the desktop view, it is a permanent tab in the dock,
+///   showing only the title label and the RoomsList
+///   (because the search bar is at the top of the HomeScreen).
+#[derive(Live, Widget)]
+pub struct RoomsSideBar {
+    #[deref] view: AdaptiveView,
+}
+
+impl LiveHook for RoomsSideBar {
+    fn after_new_from_doc(&mut self, cx: &mut Cx) {
+        // Here we set the global singleton for the RoomsList widget,
+        // which is used to access the list of rooms from anywhere in the app.
+        Cx::set_global(cx, self.view.rooms_list(id!(rooms_list)));
+    }
+}
+
+impl Widget for RoomsSideBar {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
     }
 }

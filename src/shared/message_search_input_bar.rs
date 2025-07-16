@@ -7,6 +7,8 @@
 
 use makepad_widgets::*;
 
+use crate::shared::popup_list::PopupItem;
+
 use super::popup_list::enqueue_popup_notification;
 live_design! {
     use link::theme::*;
@@ -132,7 +134,10 @@ impl WidgetMatchEvent for MessageSearchInputBar {
         if let Some(keywords) = input.changed(actions) {
             if keywords.len() > 50 {
                 // Limit search term to up to 50 characters, because the search result widget keeps a clone of the search term.
-                enqueue_popup_notification("Search is limited to 50 characters".to_string());
+                enqueue_popup_notification(PopupItem {
+                    message: "Search is limited to 50 characters".to_string(),
+                    auto_dismissal_duration: None,
+                });
                 input.set_text(cx, "");
                 return;
             }

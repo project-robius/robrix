@@ -6,7 +6,7 @@ use matrix_sdk::ruma::{events::{room::message::{FormattedBody, MessageType, Rela
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use rangemap::RangeSet;
 
-use crate::{app::AppState, home::{room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_text_message_content, ItemDrawnStatus}, rooms_list::RoomsListRef}, media_cache::MediaCache, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, popup_list::enqueue_popup_notification, text_or_image::TextOrImageWidgetRefExt, timestamp::TimestampWidgetRefExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
+use crate::{app::AppState, home::{room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_text_message_content, ItemDrawnStatus}, rooms_list::RoomsListRef}, media_cache::MediaCache, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, popup_list::{enqueue_popup_notification, PopupItem}, text_or_image::TextOrImageWidgetRefExt, timestamp::TimestampWidgetRefExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
 
 
 live_design! {
@@ -740,7 +740,10 @@ pub fn handle_search_input(
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
                 let is_encrypted = rooms_list_ref.is_room_encrypted(room_id);
                 if is_encrypted && !criteria.include_all_rooms {
-                    enqueue_popup_notification(String::from("Searching for encrypted messages is not supported yet. You may want to try searching all rooms instead."));
+                    enqueue_popup_notification(PopupItem {
+                        message: String::from("Searching for encrypted messages is not supported yet. You may want to try searching all rooms instead."),
+                        auto_dismissal_duration: None
+                    });
                     return;
                 }
                 room_screen.search_result(id!(search_result_plane)).display_top_space(cx);
@@ -878,12 +881,12 @@ pub fn populate_message_search_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                let image_info = Some((image.info.clone().map(|info| *info),
-                image.source.clone()));
+
                 let is_image_fully_drawn = populate_image_message_content(
                     cx,
                     &item.text_or_image(id!(content.message)),
-                    image_info,
+                    image.info.clone(),
+                    image.source.clone(),
                     message.body(),
                     media_cache,
                 );
@@ -961,7 +964,7 @@ pub fn populate_message_search_view(
     }
 
     // Set the timestamp.
-    if let Some(dt) = unix_time_millis_to_datetime(&ts_millis) {
+    if let Some(dt) = unix_time_millis_to_datetime(ts_millis) {
         item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
     } else {
         item.label(id!(profile.timestamp))

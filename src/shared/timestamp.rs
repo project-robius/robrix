@@ -15,19 +15,9 @@ live_design! {
 
     pub Timestamp = {{Timestamp}} {
         width: Fit, height: Fit
-        flow: Down,
-        align: {x: 0.5}
+        flow: Right,
+
         ts_label = <Label> {
-            width: Fit, height: Fit
-            flow: Right, // do not wrap
-            padding: 0,
-            
-            draw_text: {
-                text_style: <TIMESTAMP_TEXT_STYLE> {},
-                color: (TIMESTAMP_TEXT_COLOR)
-            }
-        }
-        date_label = <Label> {
             width: Fit, height: Fit
             flow: Right, // do not wrap
             padding: 0,
@@ -95,20 +85,6 @@ impl Timestamp {
             cx,
             &dt.format(locale_fmt_en_us).to_string()
         );
-        let date_fmt = "%d/%m/%Y";
-        self.label(id!(date_label)).set_text(
-            cx,
-            &dt.format(date_fmt).to_string()
-        );
-        self.dt = dt;
-    }
-    pub fn set_time(&mut self, cx: &mut Cx, dt: DateTime<Local>) {
-        // TODO: use pure_rust_locales crate to format the time based on the chosen Locale.
-        let locale_fmt_en_us = "%-I:%M %P";
-        self.label(id!(ts_label)).set_text(
-            cx,
-            &dt.format(locale_fmt_en_us).to_string()
-        );
         self.dt = dt;
     }
 }
@@ -117,11 +93,6 @@ impl TimestampRef {
     pub fn set_date_time(&self, cx: &mut Cx, dt: DateTime<Local>) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_date_time(cx, dt);
-        }
-    }
-    pub fn set_time(&self, cx: &mut Cx, dt: DateTime<Local>) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.set_time(cx, dt);
         }
     }
 }
