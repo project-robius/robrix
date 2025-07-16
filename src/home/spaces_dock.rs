@@ -1,20 +1,14 @@
 use makepad_widgets::*;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry},
-    login::login_screen::LoginAction,
-    profile::{
+    avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache,
-    },
-    shared::{
+    }, settings::SettingsAction, shared::{
         avatar::AvatarWidgetExt,
         callout_tooltip::TooltipAction,
-        popup_list::{enqueue_popup_notification, PopupItem},
         styles::{COLOR_DISABLE_GRAY, COLOR_ROBRIX_PURPLE}, verification_badge::VerificationBadgeWidgetExt,
-    },
-    sliding_sync::current_user_id,
-    utils,
+    }, sliding_sync::current_user_id, utils
 };
 
 live_design! {
@@ -176,7 +170,7 @@ impl Widget for ProfileIcon {
         let area = self.view.area();
         match event.hits(cx, area) {
             Hit::FingerLongPress(_)
-            | Hit::FingerHoverOver(_)
+            | Hit::FingerHoverOver(_) // TODO: remove once CalloutTooltip bug is fixed
             | Hit::FingerHoverIn(_) => {
                 let (verification_str, bg_color) = self.view
                     .verification_badge(id!(verification_badge))
@@ -198,11 +192,8 @@ impl Widget for ProfileIcon {
                 );
             }
             Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => {
-                // TODO: emit action to show profile/settings screen in the parent view.
-                enqueue_popup_notification(PopupItem {
-                    message: String::from("ProfileIcon & Settings screen is not yet implemented."),
-                    auto_dismissal_duration: None,
-                });
+                log!("[ProfileIcon] Clicked profile icon, opening settings screen.");
+                cx.action(SettingsAction::OpenSettings);
             }
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);

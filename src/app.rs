@@ -9,7 +9,37 @@ use std::collections::HashMap;
 use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
-    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{
+        main_desktop_ui::MainDesktopUiAction,
+        new_message_context_menu::NewMessageContextMenuWidgetRefExt,
+        room_screen::MessageAction,
+        rooms_list::RoomsListAction,
+    },
+    join_leave_room_modal::{
+        JoinLeaveRoomModalAction,
+        JoinLeaveRoomModalWidgetRefExt,
+    },
+    login::login_screen::LoginAction,
+    persistent_state::{
+        load_window_state,
+        save_room_panel,
+        save_window_state,
+    },
+    shared::callout_tooltip::{
+        CalloutTooltipOptions,
+        CalloutTooltipWidgetRefExt,
+        TooltipAction,
+    },
+    sliding_sync::current_user_id,
+    utils::{
+        room_name_or_id,
+        OwnedRoomIdRon,
+    },
+    verification::VerificationAction,
+    verification_modal::{
+        VerificationModalAction,
+        VerificationModalWidgetRefExt,
+    },
 };
 use serde::{self, Deserialize, Serialize};
 
@@ -27,83 +57,6 @@ live_design! {
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
 
-
-    APP_TAB_COLOR = #344054
-    APP_TAB_COLOR_HOVER = #636e82
-    APP_TAB_COLOR_ACTIVE = #091
-
-    AppTab = <RadioButton> {
-        width: Fit,
-        height: Fill,
-        flow: Down,
-        align: {x: 0.5, y: 0.5},
-
-        icon_walk: {width: 20, height: 20, margin: 0.0}
-        label_walk: {margin: 0.0}
-
-        draw_bg: {
-            radio_type: Tab,
-
-            // Draws a horizontal line under the tab when selected or hovered.
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                sdf.box(
-                    20.0,
-                    self.rect_size.y - 2.5,
-                    self.rect_size.x - 40,
-                    self.rect_size.y - 4,
-                    0.5
-                );
-                sdf.fill(
-                    mix(
-                        mix(
-                            #0000,
-                            (APP_TAB_COLOR_HOVER),
-                            self.hover
-                        ),
-                        (APP_TAB_COLOR_ACTIVE),
-                        self.active
-                    )
-                );
-                return sdf.result;
-            }
-        }
-
-        draw_text: {
-            color: (APP_TAB_COLOR)
-            color_hover: (APP_TAB_COLOR_HOVER)
-            color_active: (APP_TAB_COLOR_ACTIVE)
-
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        self.color,
-                        self.color_hover,
-                        self.hover
-                    ),
-                    self.color_active,
-                    self.active
-                )
-            }
-        }
-
-        draw_icon: {
-            instance color: (APP_TAB_COLOR)
-            instance color_hover: (APP_TAB_COLOR_HOVER)
-            instance color_active: (APP_TAB_COLOR_ACTIVE)
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        self.color,
-                        self.color_hover,
-                        self.hover
-                    ),
-                    self.color_active,
-                    self.selected
-                )
-            }
-        }
-    }
 
     App = {{App}} {
         ui: <Root>{
@@ -140,10 +93,11 @@ live_design! {
                 body = {
                     padding: 0,
 
-                    // A wrapper view for showing top-level app modals/dialogs/popups
+                    
                     <View> {
                         width: Fill, height: Fill,
                         flow: Overlay,
+
                         home_screen_view = <View> {
                             visible: false
                             home_screen = <HomeScreen> {}
@@ -157,11 +111,10 @@ live_design! {
                             visible: true
                             login_screen = <LoginScreen> {}
                         }
-                        app_tooltip = <CalloutTooltip> {}
                         <PopupList> {}
-
-                        // Context menus should be shown above other UI elements,
-                        // but beneath the verification modal.
+                        
+                        // Context menus should be shown in front of other UI elements,
+                        // but behind the verification modal.
                         new_message_context_menu = <NewMessageContextMenu> { }
 
                         // We want the verification modal to always show up on top of
@@ -171,6 +124,10 @@ live_design! {
                                 verification_modal_inner = <VerificationModal> {}
                             }
                         }
+
+                        // Tooltips must be shown in front of all other UI elements,
+                        // since they can be shown as a hover atop any other widget.
+                        app_tooltip = <CalloutTooltip> {}
                     }
                 } // end of body
             }
@@ -197,6 +154,7 @@ impl LiveRegister for App {
         // then other modules widgets.
         makepad_widgets::live_design(cx);
         crate::shared::live_design(cx);
+        crate::settings::live_design(cx);
         crate::room::live_design(cx);
         crate::join_leave_room_modal::live_design(cx);
         crate::verification_modal::live_design(cx);
@@ -254,10 +212,13 @@ impl MatchEvent for App {
                 continue;
             }
 
+            // Handle the dock UI being restored from persistent storage.
             if let Some(RoomsPanelRestoreAction::RestoreDockFromPersistentState(rooms_panel_state)) = action.downcast_ref() {
                 self.app_state.saved_dock_state = rooms_panel_state.clone();
                 cx.action(MainDesktopUiAction::LoadDockFromAppState);
             }
+
+            // Handle when a user has selected a room in the RoomsList.
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 let display_name = room_name_or_id(selected_room.room_name(), selected_room.room_id());
@@ -277,6 +238,7 @@ impl MatchEvent for App {
                 continue;
             }
 
+            // Handle actions that instruct us to update the top-level app state.
             match action.as_widget_action().cast() {
                 AppStateAction::RoomFocused(selected_room) => {
                     self.app_state.selected_room = Some(selected_room.clone());
@@ -300,6 +262,7 @@ impl MatchEvent for App {
                 _ => {}
             }
 
+            // Handle actions for showing or hiding the tooltip.
             match action.as_widget_action().cast() {
                 TooltipAction::HoverIn {
                     widget_rect,

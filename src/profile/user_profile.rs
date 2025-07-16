@@ -122,6 +122,7 @@ live_design! {
             padding: {left: 10, right: 10}
             spacing: 3
             flow: Down
+
             avatar = <Avatar> {
                 width: 150,
                 height: 150,
@@ -153,7 +154,7 @@ live_design! {
         }
 
         <LineH> { padding: 15 }
-
+        
         membership = <View> {
             width: Fill,
             height: Fit,
@@ -200,8 +201,9 @@ live_design! {
         actions = <View> {
             width: Fill, height: Fit
             flow: Down,
-            spacing: 5,
+            spacing: 10,
             padding: {left: 10., right: 10, bottom: 50}
+
             <Label> {
                 width: Fill, height: Fit
                 draw_text: {
@@ -216,28 +218,42 @@ live_design! {
                 // TODO: support this button. Once this is implemented, uncomment the line in draw_walk()
                 enabled: false,
                 margin: 0,
-                padding: {top: 10, bottom: 10, left: 8, right: 15}
+                padding: {top: 10, bottom: 10, left: 12, right: 15}
+                draw_bg: {
+                    color: (COLOR_ACTIVE_PRIMARY)
+                }
                 draw_icon: {
                     svg_file: (ICON_DOUBLE_CHAT)
+                    color: (COLOR_PRIMARY)
+                }
+                draw_text: {
+                    color: (COLOR_PRIMARY)
+                    text_style: <REGULAR_TEXT> {}
                 }
                 icon_walk: {width: 22, height: 16, margin: {left: -5, right: -3, top: 1, bottom: -1} }
                 text: "Direct Message"
             }
 
             copy_link_to_user_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 8, right: 15}
+                padding: {top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
+                draw_bg: {
+                    color: (COLOR_SECONDARY)
+                }
                 draw_icon: {
                     svg_file: (ICON_COPY)
                 }
-                icon_walk: {width: 16, height: 16, margin: {right: -2} }
+                icon_walk: {width: 16, height: 16, margin: {left: -1, right: -1} }
                 text: "Copy Link to User"
             }
 
             jump_to_read_receipt_button = <RobrixIconButton> {
                 enabled: false, // TODO: support this button
-                padding: {top: 10, bottom: 10, left: 8, right: 15}
+                padding: {top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
+                draw_bg: {
+                    color: (COLOR_SECONDARY)
+                }
                 draw_icon: {
                     svg_file: (ICON_JUMP)
                 }
@@ -246,10 +262,10 @@ live_design! {
             }
 
             ignore_user_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 8, right: 15}
+                padding: {top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
                 draw_icon: {
-                    svg_file: (ICON_BLOCK_USER)
+                    svg_file: (ICON_FORBIDDEN)
                     color: (COLOR_DANGER_RED),
                 }
                 icon_walk: {width: 16, height: 16, margin: {left: -2, right: -0.5} }
@@ -290,18 +306,21 @@ live_design! {
             width: 300,
             height: Fill
             flow: Overlay,
+            align: {x: 1.0}
 
             user_profile_view = <UserProfileView> { }
 
-            // The "X" close button on the top left
+            // The "X" close button on the top right
             close_button = <RobrixIconButton> {
                 width: Fit,
                 height: Fit,
-                align: {x: 0.0, y: 0.0},
                 spacing: 0,
                 margin: 7,
                 padding: 15,
 
+                draw_bg: {
+                    color: (COLOR_SECONDARY)
+                }
                 draw_icon: {
                     svg_file: (ICON_CLOSE),
                     fn get_color(self) -> vec4 {
@@ -652,6 +671,12 @@ impl UserProfileSlidingPane {
         cx.set_key_focus(self.view.area());
         self.animator_play(cx, id!(panel.show));
         self.view(id!(bg_view)).set_visible(cx, true);
+
+        self.view.button(id!(close_button)).reset_hover(cx);
+        self.view.button(id!(direct_message_button)).reset_hover(cx);
+        self.view.button(id!(copy_link_to_user_button)).reset_hover(cx);
+        self.view.button(id!(jump_to_read_receipt_button)).reset_hover(cx);
+        self.view.button(id!(ignore_user_button)).reset_hover(cx);
         self.redraw(cx);
     }
 }

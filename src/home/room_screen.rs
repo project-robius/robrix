@@ -78,7 +78,7 @@ live_design! {
     COLOR_BG = #xfff8ee
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
-    COLOR_PROFILE_CIRCLE = #xfff8ee
+
     TYPING_NOTICE_ANIMATION_DURATION = 0.3
 
     CAN_NOT_SEND_NOTICE = "You don't have permission to post to this room."
@@ -297,18 +297,8 @@ live_design! {
                 margin: {top: 4.5, right: 10}
                 flow: Down,
                 avatar = <Avatar> {
-                    width: 48.,
-                    height: 48.
-                    // draw_bg: {
-                    //     fn pixel(self) -> vec4 {
-                    //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    //         let c = self.rect_size * 0.5;
-                    //         sdf.circle(c.x, c.y, c.x - 2.)
-                    //         sdf.fill_keep(self.get_color());
-                    //         sdf.stroke((COLOR_PROFILE_CIRCLE), 1);
-                    //         return sdf.result
-                    //     }
-                    // }
+                    width: 48,
+                    height: 48,
                 }
                 timestamp = <Timestamp> {
                     margin: { top: 5.9 }
