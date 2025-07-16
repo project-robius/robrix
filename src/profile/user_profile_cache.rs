@@ -265,3 +265,12 @@ pub fn get_user_profile_and_room_member(
         }
     )
 }
+
+/// Clears the user profile cache.
+/// This is useful during shutdown to prevent thread-local destructors
+/// from running after the tokio runtime has been shut down.
+pub fn clear_cache() {
+    USER_PROFILE_CACHE.with_borrow_mut(|cache| {
+        cache.clear();
+    });
+}

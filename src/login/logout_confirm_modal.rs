@@ -122,7 +122,7 @@ pub enum LogoutConfirmModalAction {
 }
 
 /// Actions related to logout process 
-#[derive(Clone, DefaultNone, Debug)]
+#[derive(Clone, DefaultNone)]
 pub enum LogoutAction {
     /// A positive response from the backend Matrix task to the logout.
     LogoutSuccess,
@@ -139,7 +139,29 @@ pub enum LogoutAction {
         /// Indicates which critical component is missing
         missing_component: MissingComponentType,
     },
+    /// Progress update from the logout state machine
+    ProgressUpdate {
+        message: String,
+        percentage: u8,
+    },
     None,
+}
+
+impl std::fmt::Debug for LogoutAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LogoutAction::LogoutSuccess => write!(f, "LogoutSuccess"),
+            LogoutAction::LogoutFailure(msg) => write!(f, "LogoutFailure({})", msg),
+            LogoutAction::CleanAppState { .. } => write!(f, "CleanAppState"),
+            LogoutAction::ApplicationRequiresRestart { missing_component } => {
+                write!(f, "ApplicationRequiresRestart({:?})", missing_component)
+            }
+            LogoutAction::ProgressUpdate { message, percentage } => {
+                write!(f, "ProgressUpdate({}, {}%)", message, percentage)
+            }
+            LogoutAction::None => write!(f, "None"),
+        }
+    }
 }
 
 /// Indicates which critical component is missing after a partial logout,
@@ -198,6 +220,20 @@ impl WidgetMatchEvent for LogoutConfirmModal {
         }
 
         for action in actions {
+            if let Some(LogoutAction::LogoutSuccess) = action.downcast_ref() {
+                // Logout was successful
+                self.final_success = Some(true);
+                self.set_message(cx, "Logout successful!");
+                let confirm_button = self.button(id!(confirm_button));
+                confirm_button.set_text(cx, "Close");
+                confirm_button.set_enabled(cx, true);
+                
+                let cancel_button = self.button(id!(cancel_button));
+                cancel_button.set_visible(cx, false);
+                
+                needs_redraw = true;
+            }
+            
             if let Some(LogoutAction::LogoutFailure(error)) = action.downcast_ref() {
                 if LOGOUT_POINT_OF_NO_RETURN.load(Ordering::Acquire) {
                     self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
@@ -260,6 +296,15 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                 cancel_button.set_enabled(cx, true);
                 
                 self.final_success = Some(false);
+                needs_redraw = true;
+            }
+
+            if let Some(LogoutAction::ProgressUpdate { message, percentage }) = action.downcast_ref() {
+                // Just update the message text to show progress
+                self.set_message(cx, &format!("{} ({}%)", message, percentage));
+                // Disable buttons during logout
+                self.button(id!(confirm_button)).set_enabled(cx, false);
+                self.button(id!(cancel_button)).set_enabled(cx, false);
                 needs_redraw = true;
             }
 

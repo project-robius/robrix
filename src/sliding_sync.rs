@@ -5,7 +5,7 @@ use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
-use makepad_widgets::{error, log, makepad_futures::channel::oneshot, warning, Cx, SignalToUI};
+use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
@@ -29,8 +29,8 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, op
 use std::io;
 use crate::{
     app::RoomsPanelRestoreAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomAction, LeaveRoomAction}, main_desktop_ui::MainDesktopUiAction, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}
-    }, login::{login_screen::LoginAction, logout_confirm_modal::{LogoutAction, MissingComponentType}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_latest_user_id, load_rooms_panel_state, ClientSessionPersisted}, profile::{
+        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}
+    }, login::{login_screen::LoginAction, logout_state_machine::logout_with_state_machine}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -442,16 +442,20 @@ async fn async_worker(
             }
 
             MatrixRequest::Logout { is_desktop } => {
+                log!("Received MatrixRequest::Logout, is_desktop={}", is_desktop);
                 let _logout_task = Handle::current().spawn(async move {
-                    match logout_and_refresh(is_desktop).await {
+                    log!("Starting logout task");
+                    // Use the state machine implementation
+                    match logout_with_state_machine(is_desktop).await {
                         Ok(()) => {
-                            log!("need to relogin");
+                            log!("Logout completed successfully via state machine");
                         },
                         Err(e) => {
-                            error!("Logout and refresh failed: {e:?}");
-                            enqueue_popup_notification(PopupItem { message: format!("Logout failed: {e}"), auto_dismissal_duration: None });
+                            error!("Logout failed: {e:?}");
+                            // Error handling is done within the state machine
                         }
                     }
+                    log!("Logout task finished");
                 });
             }
 
@@ -1157,11 +1161,11 @@ async fn async_worker(
 
 
 /// The single global Tokio runtime that is used by all async tasks.
-static TOKIO_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
+pub(crate) static TOKIO_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
-static REQUEST_SENDER: Mutex<Option<UnboundedSender<MatrixRequest>>> = Mutex::new(None);
+pub(crate) static REQUEST_SENDER: Mutex<Option<UnboundedSender<MatrixRequest>>> = Mutex::new(None);
 
 /// A client object that is proactively created during initialization
 /// in order to speed up the client-building process when the user logs in.
@@ -1231,14 +1235,24 @@ pub fn start_matrix_tokio() -> Result<()> {
                 result = &mut worker_join_handle => {
                     match result {
                         Ok(Ok(())) => {
-                            error!("BUG: async worker task ended unexpectedly!");
+                            // Check if this is due to logout
+                            if LOGOUT_IN_PROGRESS.load(Ordering::Acquire) {
+                                log!("async worker task ended due to logout");
+                            } else {
+                                error!("BUG: async worker task ended unexpectedly!");
+                            }
                         }
                         Ok(Err(e)) => {
-                            error!("Error: async worker task ended:\n\t{e:?}");
-                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                status: e.to_string(),
-                            });
-                            enqueue_popup_notification(PopupItem { message: format!("Rooms list update error: {e}"), auto_dismissal_duration: None });
+                            // Check if this is due to logout
+                            if LOGOUT_IN_PROGRESS.load(Ordering::Acquire) {
+                                log!("async worker task ended with error due to logout: {e:?}");
+                            } else {
+                                error!("Error: async worker task ended:\n\t{e:?}");
+                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                    status: e.to_string(),
+                                });
+                                enqueue_popup_notification(PopupItem { message: format!("Rooms list update error: {e}"), auto_dismissal_duration: None });
+                            }
                         },
                         Err(e) => {
                             error!("BUG: failed to join async worker task: {e:?}");
@@ -1260,7 +1274,7 @@ pub type TimelineRequestSender = watch::Sender<Vec<BackwardsPaginateUntilEventRe
 
 
 /// Backend-specific details about a joined room that our client currently knows about.
-struct JoinedRoomDetails {
+pub(crate) struct JoinedRoomDetails {
     #[allow(unused)]
     room_id: OwnedRoomId,
     /// A reference to this room's timeline of events.
@@ -1304,16 +1318,16 @@ impl Drop for JoinedRoomDetails {
 
 
 /// Information about all joined rooms that our client currently know about.
-static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
+pub(crate) static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
 
 /// Information about all of the rooms that have been tombstoned.
 ///
 /// The map key is the **NEW** replacement room ID, and the value is the **OLD** tombstoned room ID.
 /// This allows us to quickly query if a newly-encountered room is a replacement for an old tombstoned room.
-static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
+pub(crate) static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
-static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
+pub(crate) static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
 
 pub fn get_client() -> Option<Client> {
     CLIENT.lock().unwrap().clone()
@@ -1328,7 +1342,8 @@ pub fn current_user_id() -> Option<OwnedUserId> {
 
 /// The singleton sync service.
 /// sync_service if build from the client, and is used to sync the client with the server.
-static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
+pub(crate) static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
+
 
 /// Get a clone of the sync service, if available.
 pub fn get_sync_service() -> Option<Arc<SyncService>> {
@@ -1338,7 +1353,7 @@ pub fn get_sync_service() -> Option<Arc<SyncService>> {
 /// The list of users that the current user has chosen to ignore.
 /// Ideally we shouldn't have to maintain this list ourselves,
 /// but the Matrix SDK doesn't currently properly maintain the list of ignored users.
-static IGNORED_USERS: Mutex<BTreeSet<OwnedUserId>> = Mutex::new(BTreeSet::new());
+pub(crate) static IGNORED_USERS: Mutex<BTreeSet<OwnedUserId>> = Mutex::new(BTreeSet::new());
 
 /// Returns a deep clone of the current list of ignored users.
 pub fn get_ignored_users() -> BTreeSet<OwnedUserId> {
@@ -2915,180 +2930,10 @@ impl UserPowerLevels {
 /// where aborting the logout operation is no longer safe.
 pub static LOGOUT_POINT_OF_NO_RETURN: AtomicBool = AtomicBool::new(false);
 
-/// Logs out the current user and prepares the application for a new login session.
-///
-/// Performs server-side logout, cleans up client state, closes all tabs, 
-/// and restarts the Matrix runtime. Reports success or failure via LoginAction.
-///
-/// # Parameters
-/// - `is_desktop` - Boolean indicating if the current UI mode is desktop (true) or mobile (false).
-/// 
-/// # Returns
-/// - `Ok(())` - Logout succeeded (possibly with cleanup warnings)
-/// - `Err(...)` - Logout failed with detailed error
-async fn logout_and_refresh(is_desktop :bool) -> Result<()> {
-    // Reset the point of no return flag at the start of logout process
-    LOGOUT_POINT_OF_NO_RETURN.store(false, Ordering::Relaxed);
+/// Global atomic flag indicating if logout is in progress
+pub static LOGOUT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
-    // Collect all errors encountered during the logout process
-    let mut errors = Vec::new();
-    log!("Starting logout process...");
-    // Check for client existence - this could be None if a previous logout attempt 
-    // reached point of no return and cleaned up resources( CLIENT.lock().unwrap().take(); ) but the app wasn't restarted
-    let Some(client) = get_client() else {
-        let error_msg = "Logout failed: No active client found";
-        log!("Error: {}", error_msg);
-        Cx::post_action(LogoutAction::ApplicationRequiresRestart { missing_component: MissingComponentType::ClientMissing });
-        return Err(anyhow::anyhow!(error_msg));
-    };
-
-    if  client.access_token().is_none() {
-        let error_msg = "Client has no access token, skipping server-side logout";
-        log!("Error: {}", error_msg);
-        Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
-        return Err(anyhow::anyhow!(error_msg));
-    }
-
-    // Similar to client check above, sync_service could be None if previous logout 
-    // partially succeeded but the app wasn't restarted afterward
-    let Some(sync_service) = get_sync_service() else {
-        let error_msg = "Logout failed: No active sync_service found";
-        log!("Error: {}", error_msg);
-        Cx::post_action(LogoutAction::ApplicationRequiresRestart { missing_component: MissingComponentType::SyncServiceMissing });
-        return Err(anyhow::anyhow!(error_msg)); 
-    };
-    sync_service.stop().await;
-
-    log!("Performing server-side logout...");
-    match client.matrix_auth().logout().await {
-        Ok(_) => {
-            LOGOUT_POINT_OF_NO_RETURN.store(true, Ordering::Relaxed);
-            log!("Deleting latest user ID file...");
-            // We delete latest_user_id after reaching LOGOUT_POINT_OF_NO_RETURN:
-            // 1. To prevent auto-login with invalid session on next start
-            // 2. While keeping session file intact for potential future login
-            if let Err(e) = delete_latest_user_id().await {
-                errors.push(e.to_string());
-            }
-            log!("Server-side logout successful.") 
-        },
-        Err(e) => {
-            if e.to_string().contains("M_UNKNOWN_TOKEN") {
-                LOGOUT_POINT_OF_NO_RETURN.store(true, Ordering::Relaxed);
-                log!("Deleting latest user ID file...");
-                // Same delete operation as in the success case above
-                if let Err(e) = delete_latest_user_id().await {
-                    errors.push(e.to_string());
-                }
-                log!("Token already invalidated, considering logout as successful.");
-            } else {
-                // haven't reached point of no return, so restart sync service to allow normal app usage
-                sync_service.start().await; 
-                let error_msg = format!("Server-side logout failed: {}. Please try again later", e);
-                log!("Error :{}", error_msg);
-                Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
-                return Err(anyhow::anyhow!(error_msg)); 
-            }
-        },
-    }
-
-    // Desktop UI has tabs that must be properly closed, while mobile UI has no tabs concept.
-    if is_desktop {
-        log!("Requesting to close all tabs in desktop");
-        let (tx, rx)  = oneshot::channel::<bool>();
-        Cx::post_action(MainDesktopUiAction::CloseAllTabs { on_close_all: tx });
-        match tokio::time::timeout(tokio::time::Duration::from_secs(5), rx).await {
-            Ok(Ok(_)) => {
-                log!("Received signal that the MainDesktopUI successfully closed all tabs");
-            },
-            Ok(Err(e)) => {
-                // Channel error but not timeout
-                let error_msg = format!("Close all tabs failed: {e}");
-                log!("Error: {}", error_msg);
-                Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
-                return Err(anyhow::anyhow!(error_msg));
-            },
-            Err(_) => {
-                let error_msg = "Timed out waiting for desktop tabs to close after 5 seconds";
-                log!("Error: {}", error_msg);
-                Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
-                return Err(anyhow::anyhow!(error_msg));
-            }
-        }
-
-    } 
-
-    // Clean up tabs state both in mobile and desktop mode
-    // This prevents crashes when switching back to desktop mode after login.
-    let (tx, rx)  = oneshot::channel::<bool>();
-    Cx::post_action(LogoutAction::CleanAppState {on_clean_appstate: tx});
-    match tokio::time::timeout(tokio::time::Duration::from_secs(5), rx).await {
-        Ok(Ok(_)) => {
-            log!("Received signal that Appstate were cleaned up");
-        },
-        Ok(Err(e)) => {
-            // Channel error but not timeout
-            let error_msg = format!("Appstate cleanup failed: {e}");
-            Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
-            return Err(anyhow::anyhow!(error_msg));
-        },
-        Err(_) => {
-            let error_msg = "Timed out waiting for Appstate cleanup after 5 seconds";
-            log!("Error: {}", error_msg);
-            Cx::post_action(LogoutAction::LogoutFailure(error_msg.to_string()));
-            return Err(anyhow::anyhow!(error_msg));
-        }
-    }
-
-    // Clean up client state and caches
-    log!("Cleaning up client state and caches...");
-    CLIENT.lock().unwrap().take(); 
-    SYNC_SERVICE.lock().unwrap().take();
-    TOMBSTONED_ROOMS.lock().unwrap().clear();
-    IGNORED_USERS.lock().unwrap().clear();
-    ALL_JOINED_ROOMS.lock().unwrap().clear();
-    // Note: Taking REQUEST_SENDER closes the channel sender, causing the async_worker task to exit its loop
-    // This triggers the "async_worker task ended unexpectedly" error in the monitor task, but this is expected during logout
-    REQUEST_SENDER.lock().unwrap().take();
-    log!("Client state and caches cleared after successful server logout.");
-
-    // Note:: This will cause a panic in deadpool-runtime when shutting down the tokio runtime
-    // The dependency chain is: matrix-sdk -> matrix-sdk-sqlite -> rusqlite -> deadpool-sqlite -> deadpool-runtime.
-    // because Matrix SDK uses deadpool-sqlite internally and doesn't provide a way to
-    // gracefully close these connections. When we have upgraded to a newer version of Matrix SDK 
-    // that fixes this, we can remove this note.
-    shutdown_background_tasks().await;
-    // Restart the Matrix tokio runtime
-    // This is a critical step; failure might prevent future logins
-    log!("Restarting Matrix tokio runtime...");
-    if start_matrix_tokio().is_err() {
-        // Send failure notification and return immediately, as the runtime is fundamental
-        let final_error_msg = String::from("Logout succeeded, but Robrix could not re-connect to the Matrix backend. Please exit and restart Robrix");
-        Cx::post_action(LogoutAction::LogoutFailure(final_error_msg.clone()));
-        return Err(anyhow::anyhow!(final_error_msg));
-    }
-    log!("Matrix tokio runtime restarted successfully.");
-
-    // --- Final result handling ---
-    if errors.is_empty() {
-        // Complete success
-        log!("Logout process completed successfully.");
-        Cx::post_action(LogoutAction::LogoutSuccess);
-        Ok(())
-    } else {
-        // Partial success (server logout ok, but cleanup errors)
-        let warning_msg = format!(
-            "Logout completed, but some cleanup operations failed: {}",
-            errors.join("; ")
-        );
-        log!("Warning: {}", warning_msg);
-        Cx::post_action(LogoutAction::LogoutSuccess); 
-        Ok(())
-    }
-
-}
-
-async fn shutdown_background_tasks() {
+pub async fn shutdown_background_tasks() {
     let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
     if let Some(existing_rt) = rt_guard.take() {
         existing_rt.shutdown_background();

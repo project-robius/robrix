@@ -5,11 +5,11 @@
 // Ignore clippy warnings in `DeRon` macro derive bodies.
 #![allow(clippy::question_mark)]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::atomic::Ordering};
 use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
-    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::{login_screen::LoginAction, logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}}, persistent_state::{load_window_state, save_room_panel, save_window_state}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::{login_screen::LoginAction, logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}}, persistent_state::{load_window_state, save_room_panel, save_window_state}, profile::user_profile_cache::clear_cache, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::{current_user_id, CLIENT, LOGOUT_IN_PROGRESS, REQUEST_SENDER, SYNC_SERVICE, TOKIO_RUNTIME}, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 use serde::{self, Deserialize, Serialize};
 
@@ -264,6 +264,8 @@ impl MatchEvent for App {
             }
 
             if let Some(LogoutAction::CleanAppState { on_clean_appstate: on_clean_resources }) = action.downcast_ref() {
+                // Clear user profile cache to prevent thread-local destructor issues
+                clear_cache();
                 // Reset saved dock state to prevent crashes when switching back to desktop mode
                 self.app_state.saved_dock_state = Default::default();
                 on_clean_resources.clone().send(true).unwrap();
@@ -420,6 +422,8 @@ impl MatchEvent for App {
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         if let Event::Shutdown = event {
+            log!("Handling shutdown event, cleaning up resources...");
+
             let window_ref = self.ui.window(id!(main_window));
             if let Err(e) = save_window_state(window_ref, cx) {
                 error!("Failed to save window state. Error details: {}", e);
@@ -430,6 +434,9 @@ impl AppMain for App {
                     error!("Failed to save room panel. Error details: {}", e);
                 }
             }
+
+            // Clean up Matrix SDK resources to avoid deadpool panic
+            self.cleanup_before_shutdown();
         }
         
         // Forward events to the MatchEvent trait implementation.
@@ -472,6 +479,51 @@ impl AppMain for App {
 }
 
 impl App {
+
+    /// Clean up resources before shutdown to avoid deadpool panic
+    fn cleanup_before_shutdown(&mut self) {
+        
+        log!("Starting shutdown cleanup...");
+        
+        // Clear user profile cache first to prevent thread-local destructor issues
+        // This must be done before leaking the tokio runtime
+        clear_cache();
+        log!("Cleared user profile cache");
+        
+        // Set logout in progress to suppress error messages
+        LOGOUT_IN_PROGRESS.store(true, Ordering::Relaxed);
+        
+        // Immediately take and leak all resources to prevent any destructors from running
+        // This is a controlled leak at shutdown to avoid the deadpool panic
+        
+        // Take the runtime first and leak it
+        if let Some(runtime) = TOKIO_RUNTIME.lock().unwrap().take() {
+            std::mem::forget(runtime);
+            log!("Leaked tokio runtime to prevent destructor");
+        }
+        
+        // Take and leak the client
+        if let Some(client) = CLIENT.lock().unwrap().take() {
+            std::mem::forget(client);
+            log!("Leaked client to prevent destructor");
+        }
+        
+        // Take and leak the sync service
+        if let Some(sync_service) = SYNC_SERVICE.lock().unwrap().take() {
+            std::mem::forget(sync_service);
+            log!("Leaked sync service to prevent destructor");
+        }
+        
+        // Take and leak the request sender
+        if let Some(sender) = REQUEST_SENDER.lock().unwrap().take() {
+            std::mem::forget(sender);
+            log!("Leaked request sender to prevent destructor");
+        }
+        
+        // Don't clear any collections or caches as they might contain references
+        // to Matrix SDK objects that would trigger the deadpool panic
+        log!("Shutdown cleanup completed - all resources leaked to prevent panics");
+    }
    
     fn update_login_visibility(&self, cx: &mut Cx) {
         let show_login = !self.app_state.logged_in;
