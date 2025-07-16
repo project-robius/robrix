@@ -314,8 +314,9 @@ impl Widget for SearchScreen {
 }
 impl WidgetMatchEvent for SearchScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, scope: &mut Scope) {
+        //let search_result = self.view.search_result(id!(search_result_plane));
         for action in actions.iter() {
-            handle_search_input(self, cx, action, scope);
+            //handle_search_input(self, cx, action, scope);
             if let Some(SearchResultAction::Ok(SearchResultReceived {
                 items,
                 profile_infos,
@@ -405,7 +406,7 @@ pub struct SearchResult {
     pub result_count: u32,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct Criteria {
     pub search_term: String,
     pub include_all_rooms: bool,
@@ -694,7 +695,7 @@ pub fn search_result_draw_walk(
 ///
 /// See `MessageSearchAction` for the possible actions.
 pub fn handle_search_input(
-    room_screen: &mut View,
+    search_result_ref: &mut SearchResultRef,
     cx: &mut Cx,
     action: &Action,
     scope: &mut Scope,
@@ -703,15 +704,14 @@ pub fn handle_search_input(
     match widget_action.cast() {
         MessageSearchAction::Changed(search_term) => {
             if search_term.is_empty() {
-                room_screen
-                    .view(id!(search_timeline))
-                    .set_visible(cx, false);
-                room_screen
-                    .search_result(id!(search_result_plane))
+                // room_screen
+                //     .view(id!(search_timeline))
+                //     .set_visible(cx, false);
+                search_result_ref
                     .reset(cx);
-                room_screen
-                    .search_result(id!(search_result_plane))
-                    .set_visible(cx, false);
+                // room_screen
+                //     .search_result(id!(search_result_plane))
+                //     .set_visible(cx, false);
                 //room_screen.search_state = SearchState::default();
                 // Abort previous inflight search request.
                 submit_async_request(MatrixRequest::SearchMessages {
@@ -727,15 +727,13 @@ pub fn handle_search_input(
                 let app_state = scope.data.get::<AppState>().unwrap();
                 app_state.selected_room.clone()
             } {
-                let mut criteria = room_screen
-                    .search_result(id!(search_result_plane))
+                let mut criteria = search_result_ref
                     .get_search_criteria();
                 criteria.search_term = search_term;
                 criteria.include_all_rooms = false;
-                room_screen
-                    .search_result(id!(search_result_plane))
+                search_result_ref
                     .set_search_criteria(cx, criteria.clone());
-                room_screen.view(id!(search_timeline)).set_visible(cx, false);
+                //room_screen.view(id!(search_timeline)).set_visible(cx, false);
                 let room_id = selected_room.room_id();
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
                 let is_encrypted = rooms_list_ref.is_room_encrypted(room_id);
@@ -746,7 +744,7 @@ pub fn handle_search_input(
                     });
                     return;
                 }
-                room_screen.search_result(id!(search_result_plane)).display_top_space(cx);
+                search_result_ref.display_top_space(cx);
                 submit_async_request(MatrixRequest::SearchMessages {
                     room_id: Some(room_id.to_owned()),
                     include_all_rooms: criteria.include_all_rooms,
@@ -761,30 +759,26 @@ pub fn handle_search_input(
                 let app_state = scope.data.get::<AppState>().unwrap();
                 app_state.selected_room.clone()
             } {
-                let mut criteria = room_screen
-                    .search_result(id!(search_result_plane))
+                let mut criteria = search_result_ref
                     .get_search_criteria();
                 // if search_term == criteria.search_term && !search_term.is_empty() {
                 //     return;
                 // }
                 println!("criteria.search_term: {:#?}, search_term: {:#?}", criteria.search_term, search_term);
                 criteria.search_term = search_term.clone();
-                room_screen
-                    .search_result(id!(search_result_plane))
+                search_result_ref
                     .set_search_criteria(cx, criteria);
                 
             }
             cx.action(RightPanelAction::OpenMessageSearchResult);
         }
         MessageSearchAction::Clear => {
-            room_screen
-                .view(id!(search_timeline))
-                .set_visible(cx, false);
-            room_screen
-                .search_result(id!(search_result_plane))
+            // room_screen
+            //     .view(id!(search_timeline))
+            //     .set_visible(cx, false);
+            search_result_ref
                 .reset(cx);
-            room_screen
-                .search_result(id!(search_result_plane))
+            search_result_ref
                 .set_visible(cx, false);
             //room_screen.search_state = SearchState::default();
         }

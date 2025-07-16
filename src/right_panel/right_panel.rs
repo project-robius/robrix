@@ -1,6 +1,8 @@
 use makepad_widgets::*;
 
 use crate::right_panel::search_message::handle_search_input;
+use crate::right_panel::search_message::SearchResultWidgetExt;
+use crate::right_panel::search_message::Criteria;
 
 live_design! {
     use link::theme::*;
@@ -9,8 +11,10 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::message_search_input_bar::*;
+    use crate::right_panel::search_message::SearchResult;
+
     pub RightPanel = {{RightPanel}} {
-        width: 200, height: Fill,
+        width: 400, height: Fill,
         flow: Down,
         right_panel_header = <View> {
             height: 100,
@@ -36,7 +40,6 @@ live_design! {
                 // debug: true
                 //padding: {left: 20.0, right: 20.0}
                 <Label> { text: "nav1 root"}
-                
             }
 
             search_result_view = <StackNavigationView> {
@@ -46,8 +49,20 @@ live_design! {
                 padding: {left: 20.0, right: 20.0}
                 draw_bg: {color: #x0}
                 flow: Down
-                body = { <Label> {
-                    text: "nav1 view1"}
+                body = {
+                    search_result_plane = <SearchResult> {}
+                    <Label> {
+                        text: "nav1 view1"
+                    }
+                }
+                header = {
+                    content = {
+                        title_container = {
+                            title = {
+                                text: "Search Results"
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -72,15 +87,24 @@ impl Widget for RightPanel {
 
 impl WidgetMatchEvent for RightPanel {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+        let mut search_result = self.view.search_result(id!(search_result_plane));
+        let c = Criteria {
+            search_term: "Search term".to_string(),
+            include_all_rooms: true,
+            is_encrypted: true,
+        };
+        search_result.set_search_criteria(cx, c);
+        let c = search_result.get_search_criteria();
+        println!("c {:?}",c);
         for action in actions.iter() {
-            println!("handle_search_input");
-            handle_search_input(&mut self.view, cx, action, scope);
+            handle_search_input(&mut search_result, cx, action, scope);
         }
     }
 }
 
 impl RightPanelRef {
     pub fn open(&self, cx: &mut Cx, view_id: LiveId) {
+        
         if let Some(mut inner) = self.borrow_mut() {
             inner.view.stack_navigation(id!(nav1)).push(cx, view_id);
         }
