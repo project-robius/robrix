@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
-    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, right_panel::right_panel::{set_global_right_panel, RightPanelWidgetRefExt}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 use serde::{self, Deserialize, Serialize};
 
@@ -224,6 +224,7 @@ impl MatchEvent for App {
 
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
+        set_global_right_panel(cx, self.ui.right_panel(id!(right_panel)));
         if let Err(e) = load_window_state(self.ui.window(id!(main_window)), cx) {
             error!("Failed to load window state: {}", e);
         }
@@ -272,7 +273,7 @@ impl MatchEvent for App {
                 cx.widget_action(
                     self.ui.widget_uid(),
                     &Scope::default().path,
-                    StackNavigationAction::NavigateTo(live_id!(main_content_view))
+                    StackNavigationAction::Push(live_id!(main_content_view))
                 );
                 self.ui.view(id!(message_search_input_view)).set_visible(cx, true);
                 self.ui.redraw(cx);
@@ -401,6 +402,7 @@ impl MatchEvent for App {
                     self.ui.view(id!(message_search_input_view)).set_visible(cx, false);
                 }
             }
+            crate::right_panel::right_panel::right_panel_handler(cx, &self.ui, action);
         }
     }
 }
@@ -424,7 +426,26 @@ impl AppMain for App {
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
+        
+        if let Event::KeyUp(key) = event {
+            match key.key_code {
+                KeyCode::ArrowRight => {
+                    self.ui.stack_navigation(id!(nav1)).push(cx,live_id!(search_result_view));
+                }
+                KeyCode::ArrowLeft => {
+                    self.ui.stack_navigation(id!(nav1)).pop(cx);
+                }
 
+                KeyCode::KeyD => {
+                    self.ui.stack_navigation(id!(nav2)).push(cx,live_id!(nav2_view1));
+                }
+
+                KeyCode::KeyA => {
+                    self.ui.stack_navigation(id!(nav2)).pop(cx);
+                },
+                _ => {}
+            }
+        }
         /*
          * TODO: I'd like for this to work, but it doesn't behave as expected.
          *       The context menu fails to draw properly when a draw event is passed to it.

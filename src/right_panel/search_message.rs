@@ -6,7 +6,7 @@ use matrix_sdk::ruma::{events::{room::message::{FormattedBody, MessageType, Rela
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use rangemap::RangeSet;
 
-use crate::{app::AppState, home::{room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_text_message_content, ItemDrawnStatus}, rooms_list::RoomsListRef}, media_cache::MediaCache, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, popup_list::{enqueue_popup_notification, PopupItem}, text_or_image::TextOrImageWidgetRefExt, timestamp::TimestampWidgetRefExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
+use crate::{app::AppState, home::{room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_text_message_content, ItemDrawnStatus}, rooms_list::RoomsListRef}, media_cache::MediaCache, right_panel::right_panel::{get_global_right_panel, RightPanelAction}, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, popup_list::{enqueue_popup_notification, PopupItem}, text_or_image::TextOrImageWidgetRefExt, timestamp::TimestampWidgetRefExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
 
 
 live_design! {
@@ -694,7 +694,7 @@ pub fn search_result_draw_walk(
 ///
 /// See `MessageSearchAction` for the possible actions.
 pub fn handle_search_input(
-    room_screen: &mut SearchScreen,
+    room_screen: &mut View,
     cx: &mut Cx,
     action: &Action,
     scope: &mut Scope,
@@ -712,7 +712,7 @@ pub fn handle_search_input(
                 room_screen
                     .search_result(id!(search_result_plane))
                     .set_visible(cx, false);
-                room_screen.search_state = SearchState::default();
+                //room_screen.search_state = SearchState::default();
                 // Abort previous inflight search request.
                 submit_async_request(MatrixRequest::SearchMessages {
                     room_id: None,
@@ -772,8 +772,9 @@ pub fn handle_search_input(
                 room_screen
                     .search_result(id!(search_result_plane))
                     .set_search_criteria(cx, criteria);
-
+                
             }
+            get_global_right_panel(cx).open(cx, live_id!(search_result_view));
         }
         MessageSearchAction::Clear => {
             room_screen
@@ -785,7 +786,7 @@ pub fn handle_search_input(
             room_screen
                 .search_result(id!(search_result_plane))
                 .set_visible(cx, false);
-            room_screen.search_state = SearchState::default();
+            //room_screen.search_state = SearchState::default();
         }
         _ => {}
     }
