@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
-    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, right_panel::right_panel::{set_global_right_panel, RightPanelWidgetRefExt}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, right_panel::right_panel::RightPanelWidgetRefExt, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 use serde::{self, Deserialize, Serialize};
 
@@ -224,7 +224,6 @@ impl MatchEvent for App {
 
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
-        set_global_right_panel(cx, self.ui.right_panel(id!(right_panel)));
         if let Err(e) = load_window_state(self.ui.window(id!(main_window)), cx) {
             error!("Failed to load window state: {}", e);
         }

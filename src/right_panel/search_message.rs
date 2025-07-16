@@ -6,7 +6,7 @@ use matrix_sdk::ruma::{events::{room::message::{FormattedBody, MessageType, Rela
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use rangemap::RangeSet;
 
-use crate::{app::AppState, home::{room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_text_message_content, ItemDrawnStatus}, rooms_list::RoomsListRef}, media_cache::MediaCache, right_panel::right_panel::{get_global_right_panel, RightPanelAction}, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, popup_list::{enqueue_popup_notification, PopupItem}, text_or_image::TextOrImageWidgetRefExt, timestamp::TimestampWidgetRefExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
+use crate::{app::AppState, home::{room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_text_message_content, ItemDrawnStatus}, rooms_list::RoomsListRef}, media_cache::MediaCache, right_panel::right_panel::{RightPanelAction}, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, popup_list::{enqueue_popup_notification, PopupItem}, text_or_image::TextOrImageWidgetRefExt, timestamp::TimestampWidgetRefExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
 
 
 live_design! {
@@ -774,7 +774,7 @@ pub fn handle_search_input(
                     .set_search_criteria(cx, criteria);
                 
             }
-            get_global_right_panel(cx).open(cx, live_id!(search_result_view));
+            cx.action(RightPanelAction::OpenMessageSearchResult);
         }
         MessageSearchAction::Clear => {
             room_screen

@@ -88,8 +88,8 @@ impl RightPanelRef {
 }
 
 pub fn right_panel_handler(cx: &mut Cx, widget_ref: &WidgetRef, action: &Action) {
-    match action.as_widget_action().cast() {
-        RightPanelAction::OpenMessageSearchResult => {
+    match action.downcast_ref() {
+        Some(RightPanelAction::OpenMessageSearchResult) => {
             widget_ref.stack_navigation(id!(nav1)).push(cx,live_id!(search_result_view));
         },
         _ => {}
@@ -100,12 +100,4 @@ pub fn right_panel_handler(cx: &mut Cx, widget_ref: &WidgetRef, action: &Action)
 pub enum RightPanelAction {
     OpenMessageSearchResult,
     None
-}
-
-pub fn get_global_right_panel(cx: &mut Cx) -> RightPanelRef {
-    RightPanelRef::
-}
-
-pub fn set_global_right_panel(cx: &mut Cx, right_panel: RightPanelRef) {
-    cx.set_global(right_panel);
 }
