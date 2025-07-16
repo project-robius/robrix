@@ -40,6 +40,7 @@ live_design! {
             spacing: 10,
 
             settings_header_title = <TitleLabel> {
+                margin: {top: 4} // line up with the close button
                 text: "All Settings"
                 draw_text: {
                     text_style: {font_size: 18},

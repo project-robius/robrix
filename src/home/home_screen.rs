@@ -54,9 +54,9 @@ live_design! {
                         <MainDesktopUI> {}
                     }
 
-                    // <CachedWidget> {
+                    <CachedWidget> {
                         settings_screen = <SettingsScreen> {}
-                    // }
+                    }
                 }
             }
 
@@ -84,9 +84,9 @@ live_design! {
 
                                 sidebar = <RoomsSideBar> {}
 
-                                // <CachedWidget> {
+                                <CachedWidget> {
                                     settings_screen = <SettingsScreen> {}
-                                // }
+                                }
                             }
 
                             // At the bottom of the root view, show the spaces dock.
