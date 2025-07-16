@@ -7,9 +7,9 @@
 
 use std::collections::HashMap;
 use makepad_widgets::{makepad_micro_serde::*, *};
-use matrix_sdk::ruma::{OwnedRoomId, RoomId};
+use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomId, RoomId};
 use crate::{
-    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, image_viewer_modal::{set_global_image_viewer_modal, ImageViewerModalWidgetRefExt}}, sliding_sync::current_user_id, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 use serde::{self, Deserialize, Serialize};
 
@@ -26,7 +26,7 @@ live_design! {
     use crate::shared::popup_list::PopupList;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
-
+    use crate::shared::image_viewer_modal::ImageViewerModal;
 
     APP_TAB_COLOR = #344054
     APP_TAB_COLOR_HOVER = #636e82
@@ -145,7 +145,7 @@ live_design! {
                         width: Fill, height: Fill,
                         flow: Overlay,
                         home_screen_view = <View> {
-                            visible: false
+                            visible: true
                             home_screen = <HomeScreen> {}
                         }
                         join_leave_modal = <Modal> {
@@ -154,7 +154,7 @@ live_design! {
                             }
                         }
                         login_screen_view = <View> {
-                            visible: true
+                            visible: false
                             login_screen = <LoginScreen> {}
                         }
                         app_tooltip = <CalloutTooltip> {}
@@ -171,6 +171,8 @@ live_design! {
                                 verification_modal_inner = <VerificationModal> {}
                             }
                         }
+                        
+                        image_viewer_modal = <ImageViewerModal> {}
                     }
                 } // end of body
             }
@@ -220,7 +222,8 @@ impl MatchEvent for App {
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
         self.update_login_visibility(cx);
-
+        set_global_image_viewer_modal(cx, self.ui.image_viewer_modal(id!(image_viewer_modal)));
+        //self.ui.image_viewer_modal(id!(image_viewer_modal)).open(cx, None);
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
         if let Err(e) = load_window_state(self.ui.window(id!(main_window)), cx) {
@@ -362,6 +365,12 @@ impl MatchEvent for App {
                 continue;
             }
 
+            match action.as_widget_action().cast() {
+                crate::shared::image_viewer_modal::ImageViewerAction::Clicked(mxc_uri) => {
+                    self.ui.image_viewer_modal(id!(image_viewer_modal)).open(cx, None);
+                }
+                _ => {}
+            }
             // // message source modal handling.
             // match action.as_widget_action().cast() {
             //     MessageAction::MessageSourceModalOpen { room_id: _, event_id: _, original_json: _ } => {

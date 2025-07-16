@@ -4,6 +4,9 @@
 //! or to display an error message if the image fails to load, etc.
 
 use makepad_widgets::*;
+use matrix_sdk::ruma::{owned_mxc_uri, OwnedMxcUri};
+
+use crate::shared::image_viewer_modal::{get_global_image_viewer_modal, ImageViewerAction};
 
 live_design! {
     use link::theme::*;
@@ -34,7 +37,7 @@ live_design! {
         }
         image_view = <View> {
             visible: false,
-            cursor: Default, // Use `Hand` once we support clicking on the image
+            cursor: Hand,
             width: Fill, height: Fit,
             image = <Image> {
                 width: Fill, height: Fit,
@@ -56,10 +59,32 @@ pub struct TextOrImage {
     #[rust] status: TextOrImageStatus,
     // #[rust(TextOrImageStatus::Text)] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
+    #[rust] image_click_handler: Option<Box<dyn Fn(&mut Cx) + Send + Sync>>,
 }
 
 impl Widget for TextOrImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // We handle hit events if the status is `Image`.
+        if let TextOrImageStatus::Image(mxc_uri) = &self.status {
+            let image_area = self.view.image(id!(image_view.image)).area();
+            match event.hits(cx, image_area) {
+                Hit::FingerDown(_) => {
+                    cx.set_key_focus(image_area);
+                }
+                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                    // We run the check to see if the original image was already fetched or not.
+                    //
+                    // If `image_value` is `None`, it can tell that the image has not been fetched,
+                    // user actually clicks the blurhash,
+                    // so we do nothing this condition.
+                    //cx.action(ImageViewerAction::Clicked(mxc_uri.clone()));
+                    println!("clicked");
+                    let image_viewer_modal = get_global_image_viewer_modal(cx);
+                    image_viewer_modal.open(cx, Some(mxc_uri.clone()));
+                }
+                _ => { },
+            }
+        }
         self.view.handle_event(cx, event, scope);
     }
 
@@ -89,13 +114,13 @@ impl TextOrImage {
     ///   * If successful, the `image_set_function` should return the size of the image
     ///     in pixels as a tuple, `(width, height)`.
     ///   * If `image_set_function` returns an error, no change is made to this `TextOrImage`.
-    pub fn show_image<F, E>(&mut self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
+    pub fn show_image<F, E>(&mut self, cx: &mut Cx, owned_mxc_uri: OwnedMxcUri, image_set_function: F) -> Result<(), E>
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
         let image_ref = self.view.image(id!(image_view.image));
         match image_set_function(cx, image_ref) {
             Ok(size_in_pixels) => {
-                self.status = TextOrImageStatus::Image;
+                self.status = TextOrImageStatus::Image(owned_mxc_uri);
                 self.size_in_pixels = size_in_pixels;
                 self.view(id!(image_view)).set_visible(cx, true);
                 self.view(id!(text_view)).set_visible(cx, false);
@@ -110,7 +135,15 @@ impl TextOrImage {
 
     /// Returns whether this `TextOrImage` is currently displaying an image or text.
     pub fn status(&self) -> TextOrImageStatus {
-        self.status
+        self.status.clone()
+    }
+
+    /// Sets a click handler for the image. The handler will be called when the image is clicked.
+    pub fn set_image_click_handler<F>(&mut self, _cx: &mut Cx, handler: F)
+    where
+        F: Fn(&mut Cx) + Send + Sync + 'static,
+    {
+        self.image_click_handler = Some(Box::new(handler));
     }
 }
 
@@ -123,11 +156,11 @@ impl TextOrImageRef {
     }
 
     /// See [TextOrImage::show_image()].
-    pub fn show_image<F, E>(&self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
+    pub fn show_image<F, E>(&self, cx: &mut Cx, owned_mxc_uri: OwnedMxcUri, image_set_function: F) -> Result<(), E>
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_image(cx, image_set_function)
+            inner.show_image(cx, owned_mxc_uri, image_set_function)
         } else {
             Ok(())
         }
@@ -141,12 +174,22 @@ impl TextOrImageRef {
             TextOrImageStatus::Text
         }
     }
+
+    /// See [TextOrImage::set_image_click_handler()].
+    pub fn set_image_click_handler<F>(&self, cx: &mut Cx, handler: F)
+    where
+        F: Fn(&mut Cx) + Send + Sync + 'static,
+    {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_image_click_handler(cx, handler);
+        }
+    }
 }
 
 /// Whether a `TextOrImage` instance is currently displaying text or an image.
-#[derive(Debug, Default, Copy, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub enum TextOrImageStatus {
     #[default]
     Text,
-    Image,
+    Image(OwnedMxcUri),
 }

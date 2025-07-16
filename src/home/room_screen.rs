@@ -19,11 +19,11 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::RoomsPanelRestoreAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{MediaCacheEntry, get_media_cache}, profile::{
+    app::RoomsPanelRestoreAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{get_media_cache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem}, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer_modal::{set_global_image_viewer_modal, ImageViewerAction, ImageViewerModalRef, ImageViewerModalWidgetExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem}, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -70,7 +70,8 @@ live_design! {
     use crate::room::room_input_bar::*;
     use crate::home::room_read_receipt::*;
     use crate::rooms_list::*;
-
+    use crate::shared::image_viewer_modal::ImageViewerModal;
+    
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
@@ -759,10 +760,10 @@ live_design! {
             // The user profile sliding pane should be displayed on top of other "static" subviews
             // (on top of all other views that are always visible).
             user_profile_sliding_pane = <UserProfileSlidingPane> { }
-
+            image_viewer_modal = <ImageViewerModal> {}
             // The loading pane appears while the user is waiting for something in the room screen
             // to finish loading, e.g., when loading an older replied-to message.
-            loading_pane = <LoadingPane> { }
+            //loading_pane = <LoadingPane> { }
 
 
             /*
@@ -876,6 +877,7 @@ impl Widget for RoomScreen {
             //       and wrap it in a `if let Event::Signal` conditional.
             user_profile_cache::process_user_profile_updates(cx);
             avatar_cache::process_avatar_updates(cx);
+
         }
 
         if let Event::Actions(actions) = event {
@@ -985,6 +987,12 @@ impl Widget for RoomScreen {
                         );
                     }
                 }
+                if let Some(crate::shared::image_viewer_modal::ImageViewerAction::Test) = action.downcast_ref() {
+                    println!("test");
+                    self.view.image_viewer_modal(id!(image_viewer_modal)).open(cx, None);
+                }
+                
+            
             }
 
             /*
@@ -1196,6 +1204,8 @@ impl Widget for RoomScreen {
             // Forward the event to the inner timeline view, but capture any actions it produces
             // such that we can handle the ones relevant to only THIS RoomScreen widget right here and now,
             // ensuring they are not mistakenly handled by other RoomScreen widget instances.
+            self.view.handle_event(cx, event, &mut room_scope);
+            return;
             let mut actions_generated_within_this_room_screen = cx.capture_actions(|cx|
                 self.view.handle_event(cx, event, &mut room_scope)
             );
@@ -3546,7 +3556,7 @@ fn populate_image_message_content(
     let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
         match get_media_cache().lock().unwrap().try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
-                let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                let show_image_result = text_or_image_ref.show_image(cx, mxc_uri.clone(),|cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
@@ -3554,6 +3564,13 @@ fn populate_image_message_content(
                     let err_str = format!("{body}\n\nFailed to display image: {e:?}");
                     error!("{err_str}");
                     text_or_image_ref.show_text(cx, &err_str);
+                } else {
+                    // Add click handler for the image
+                    let mxc_uri_clone = mxc_uri.clone();
+                    // text_or_image_ref.set_image_click_handler(cx, move |cx| {
+                    //     let image_viewer_modal = cx.get_global::<ImageViewerModalRef>();
+                    //     image_viewer_modal.open(cx, mxc_uri_clone.clone());
+                    // });
                 }
 
                 // We're done drawing the image, so mark it as fully drawn.
@@ -3561,7 +3578,7 @@ fn populate_image_message_content(
             }
             (MediaCacheEntry::Requested, _media_format) => {
                 if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
-                    let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                    let show_image_result = text_or_image_ref.show_image(cx, mxc_uri.clone(), |cx, img| {
                         let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else { return Err(image_cache::ImageError::EmptyData)};
                         if let Ok(data) = blurhash::decode(blurhash, width, height, 1.0) {
                             ImageBuffer::new(&data, width as usize, height as usize).map(|img_buff| {
@@ -3577,6 +3594,13 @@ fn populate_image_message_content(
                         let err_str = format!("{body}\n\nFailed to display image: {e:?}");
                         error!("{err_str}");
                         text_or_image_ref.show_text(cx, &err_str);
+                    } else {
+                        // Add click handler for the blurhash image
+                        let mxc_uri_clone = mxc_uri.clone();
+                        // text_or_image_ref.set_image_click_handler(cx, move |cx| {
+                        //     let image_viewer_modal = cx.get_global::<ImageViewerModalRef>();
+                        //     image_viewer_modal.open(cx, mxc_uri_clone.clone());
+                        // });
                     }
                 }
                 fully_drawn = false;
@@ -4245,8 +4269,12 @@ impl Widget for Message {
         // clickable or otherwise interactive.
         match event.hits(cx, self.view(id!(replied_to_message)).area()) {
             Hit::FingerDown(fe) => {
-                cx.set_key_focus(self.view(id!(replied_to_message)).area());
+                // cx.set_key_focus(self.view(id!(replied_to_message)).area());
+                // println!("Opening context menu for replied-to message preview");
+                //self.view.image_viewer_modal(id!(image_viewer_modal)).open(cx, None);
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
+                    println!("Opening context menu for replied-to message preview");
+                    self.view.image_viewer_modal(id!(image_viewer_modal)).open(cx, None);
                     cx.widget_action(
                         details.room_screen_widget_uid,
                         &scope.path,
@@ -4255,6 +4283,7 @@ impl Widget for Message {
                             abs_pos: fe.abs,
                         }
                     );
+                    
                 }
             }
             Hit::FingerLongPress(lp) => {
@@ -4293,8 +4322,11 @@ impl Widget for Message {
         match event.hits(cx, message_view_area) {
             Hit::FingerDown(fe) => {
                 cx.set_key_focus(message_view_area);
+                
                 // A right click means we should display the context menu.
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
+                    println!("Opening context menu for replied-to message preview");
+                cx.action(ImageViewerAction::Test);
                     cx.widget_action(
                         details.room_screen_widget_uid,
                         &scope.path,
