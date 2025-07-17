@@ -92,12 +92,14 @@ live_design! {
             }
 
             <Home> {}
-            
+
             <LineH> { margin: {left: 15, right: 15} }
 
             <Filler> {}
-            
-            <ProfileIcon> {}
+
+            <CachedWidget> {
+                profile_icon = <ProfileIcon> {}
+            }
         }
 
         // TODO: make this horizontally scrollable via touch
@@ -114,10 +116,12 @@ live_design! {
             <Filler> {}
 
             <Home> {}
-            
+
             <Filler> {}
-            
-            <ProfileIcon> {}
+
+            <CachedWidget> {
+                profile_icon = <ProfileIcon> {}
+            }
 
             <Filler> {}
         }

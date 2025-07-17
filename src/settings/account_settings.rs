@@ -219,8 +219,6 @@ live_design! {
             }
 
             logout_button = <RobrixIconButton> {
-                // TODO: enable this once logout is implemented; see PR #432
-                enabled: false,
                 padding: {top: 10, bottom: 10, left: 12, right: 15}
                 margin: {left: 5}
                 draw_bg: {
@@ -300,7 +298,8 @@ impl MatchEvent for AccountSettings {
         }
 
         if let Some(new_name) = display_name_input.changed(actions) {
-            let enable_buttons = new_name.as_str() == own_profile.username.as_deref().unwrap_or("");
+            let enable_buttons = new_name.as_str() != own_profile.username.as_deref().unwrap_or("");
+            log!("Display name changed to: {}, buttons enabled? {}", new_name, enable_buttons);
             accept_display_name_button.set_enabled(cx, enable_buttons);
             cancel_display_name_button.set_enabled(cx, enable_buttons);
         }

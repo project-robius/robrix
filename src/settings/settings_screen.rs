@@ -131,11 +131,14 @@ impl Widget for SettingsScreen {
 impl SettingsScreen {
     /// Shows the settings screen by making it visible and initializing its content.
     pub fn show(&mut self, cx: &mut Cx) {
-        self.view.button(id!(close_button)).reset_hover(cx);
-        let profile = get_own_profile(cx).unwrap(); // TODO: fix
+        let Some(profile) = get_own_profile(cx) else {
+            error!("BUG: failed to get own profile for settings screen.");
+            return;
+        };
         self.view.account_settings(id!(account_settings)).show(cx, profile);
-        cx.set_key_focus(self.view.area());
+        self.view.button(id!(close_button)).reset_hover(cx);
         self.view.set_visible(cx, true);
+        cx.set_key_focus(self.view.area());
         self.redraw(cx);
     }
 
