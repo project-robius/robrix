@@ -56,10 +56,6 @@ live_design! {
         }
     }
 
-    Separator = <LineH> {
-        margin: {left: 15, right: 15}
-    }
-
     Home = <RoundedView> {
         width: Fit, height: Fit
         padding: {top: 8, left: 12, right: 12, bottom: 8}
@@ -97,14 +93,14 @@ live_design! {
 
             <Home> {}
             
-            <Separator> {}
+            <LineH> { margin: {left: 15, right: 15} }
 
             <Filler> {}
             
             <ProfileIcon> {}
         }
 
-        // TODO: make this horizontally scrollable
+        // TODO: make this horizontally scrollable via touch
         Mobile = {
             flow: Right
             align: {x: 0.5, y: 0.5}
@@ -135,7 +131,7 @@ pub struct ProfileIcon {
 }
 
 impl LiveHook for ProfileIcon {
-    fn after_apply_from_doc(&mut self, cx: &mut Cx) {
+    fn after_update_from_doc(&mut self, cx: &mut Cx) {
         if self.own_profile.is_none() {
             self.own_profile = get_own_profile(cx);
         }
@@ -148,9 +144,13 @@ impl Widget for ProfileIcon {
         if let Event::Signal = event {
             user_profile_cache::process_user_profile_updates(cx);
             avatar_cache::process_avatar_updates(cx);
-            self.own_profile = get_own_profile(cx);
-            if self.own_profile.is_some() {
-                self.view.redraw(cx);
+
+            // Refetch our profile if we don't have it yet, or if we're waiting for an avatar image.
+            if self.own_profile.as_ref().is_none_or(|p| p.avatar_state.uri().is_some()) {
+                self.own_profile = get_own_profile(cx);
+                if self.own_profile.is_some() {
+                    self.view.redraw(cx);
+                }
             }
         }
 
@@ -161,7 +161,6 @@ impl Widget for ProfileIcon {
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
-                    log!("[ProfileIcon] Login successful, calling get_own_profile().");
                     self.own_profile = get_own_profile(cx);
                     self.view.redraw(cx);
                 }
@@ -193,7 +192,6 @@ impl Widget for ProfileIcon {
                 );
             }
             Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => {
-                log!("[ProfileIcon] Clicked profile icon, opening settings screen.");
                 cx.action(SettingsAction::OpenSettings);
             }
             Hit::FingerHoverOut(_) => {
@@ -206,7 +204,7 @@ impl Widget for ProfileIcon {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let our_own_avatar = self.view.avatar(id!(avatar));
+        let our_own_avatar = self.view.avatar(id!(our_own_avatar));
         let Some(own_profile) = self.own_profile.as_ref() else {
             // If we don't have a profile, default to an unknown avatar.
             our_own_avatar.show_text(
@@ -260,10 +258,6 @@ pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
                 }
             }
         }
-    }
-
-    if let Some(ref profile) = own_profile {
-        log!("get_own_profile() got profile: {:?}", profile);
     }
 
     own_profile

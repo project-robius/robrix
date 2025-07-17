@@ -342,7 +342,7 @@ impl AccountSettings {
             return;
         };
 
-        let our_own_avatar = self.view.avatar(id!(avatar));
+        let our_own_avatar = self.view.avatar(id!(our_own_avatar));
         let mut drew_avatar = false;
         if let Some(avatar_img_data) = own_profile.avatar_state.data() {
             drew_avatar = our_own_avatar.show_image(

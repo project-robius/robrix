@@ -8,8 +8,7 @@ use crate::{
 use super::user_profile_cache::{self, get_user_profile_and_room_member};
 
 /// The currently-known state of a user's avatar.
-#[derive(Clone, Debug)]
-#[allow(unused)]
+#[derive(Clone)]
 pub enum AvatarState {
     /// It isn't yet known if this user has an avatar.
     Unknown,
@@ -19,6 +18,17 @@ pub enum AvatarState {
     Loaded(Arc<[u8]>),
     /// This user does have an avatar, but we failed to fetch it.
     Failed,
+}
+impl std::fmt::Debug for AvatarState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AvatarState::Unknown        => write!(f, "Unknown"),
+            AvatarState::Known(Some(_)) => write!(f, "Known(Some)"),
+            AvatarState::Known(None)    => write!(f, "Known(None)"),
+            AvatarState::Loaded(data)   => write!(f, "Loaded({} bytes)", data.len()),
+            AvatarState::Failed         => write!(f, "Failed"),
+        }
+    }
 }
 impl AvatarState {
     /// Returns the avatar data, if in the `Loaded` state.
