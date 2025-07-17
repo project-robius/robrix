@@ -35,19 +35,32 @@ live_design! {
         draw_bg: {
             color: (COLOR_PRIMARY_DARKER),
         }
-
-        restore_status_label = <Label> {
-            width: Fill, height: Fit,
-            align: {x: 0.5, y: 0},
-            padding: {left: 5.0, right: 0.0}
-            flow: RightWrap,
-            margin: 0,
-            draw_text: {
-                color: (TYPING_NOTICE_TEXT_COLOR),
-                text_style: <REGULAR_TEXT>{font_size: 11}
-                wrap: Word,
+        restore_status_view = <View> {
+            width: Fill, height: Fill,
+            flow: Down,
+            align: {x: 0.5, y: 0.5},                
+            restore_status_spinner = <LoadingSpinner> {
+                width: 50,
+                height: 50,
+                visible: true,
+                draw_bg: {
+                    color: (COLOR_SELECT_TEXT)
+                    border_size: 3.0,
+                }
             }
-            text: ""
+            restore_status_label = <Label> {
+                width: Fill, height: Fit,
+                align: {x: 0.5, y: 0.0},
+                padding: {left: 5.0, right: 0.0}
+                margin: {top: 10.0},
+                flow: RightWrap,
+                draw_text: {
+                    color: (TYPING_NOTICE_TEXT_COLOR),
+                    text_style: <REGULAR_TEXT>{font_size: 11}
+                    wrap: Word,
+                }
+                text: "",
+            }
         }
 
         // This view is only shown if `inviter` is Some.
@@ -413,7 +426,8 @@ impl Widget for InviteScreen {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if !self.is_loaded {
             // only draw the loading status label if the room is not loaded yet.
-            return self.view.label(id!(restore_status_label)).draw(cx, scope);
+            //return self.view.label(id!(restore_status_label)).draw(cx, scope);
+            return self.view(id!(restore_status_spinner)).draw(cx, scope);
         }
         let Some(info) = self.info.as_ref() else {
             // If we don't have any info, just return.

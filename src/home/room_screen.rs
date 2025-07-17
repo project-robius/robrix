@@ -602,20 +602,35 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-
-            restore_status_label = <Label> {
-                width: Fill, height: Fit,
-                align: {x: 0.5, y: 0.0},
-                padding: {left: 5.0, right: 0.0}
-                margin: 0,
-                flow: RightWrap,
-                draw_text: {
-                    color: (TYPING_NOTICE_TEXT_COLOR),
-                    text_style: <REGULAR_TEXT>{font_size: 11}
-                    wrap: Word,
+            
+            restore_status_view = <View> {
+                width: Fill, height: Fill,
+                flow: Down,
+                align: {x: 0.5, y: 0.5},
+                restore_status_spinner = <LoadingSpinner> {
+                    width: 50,
+                    height: 50,
+                    visible: true,
+                    draw_bg: {
+                        color: (COLOR_SELECT_TEXT)
+                        border_size: 3.0,
+                    }
                 }
-                text: "",
+                restore_status_label = <Label> {
+                    width: Fill, height: Fit,
+                    align: {x: 0.5, y: 0.0},
+                    padding: {left: 5.0, right: 0.0}
+                    margin: {top: 10.0},
+                    flow: RightWrap,
+                    draw_text: {
+                        color: (TYPING_NOTICE_TEXT_COLOR),
+                        text_style: <REGULAR_TEXT>{font_size: 11}
+                        wrap: Word,
+                    }
+                    text: "",
+                }
             }
+            
 
             keyboard_view = <KeyboardView> {
                 width: Fill, height: Fill,
@@ -1263,19 +1278,20 @@ impl Widget for RoomScreen {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // If the room isn't loaded yet, we show the restore status label only.
         if !self.is_loaded {
-            let mut restore_status_label = self.view.label(id!(restore_status_label));
-            let status_text = if self.all_rooms_loaded {
+            let restore_status_label = self.view.label(id!(restore_status_label));
+            let status_text: String = if self.all_rooms_loaded {
+                self.view.view(id!(restore_status_spinner)).set_visible(cx, false);
                 format!(
                     "Room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
                         You may close this screen.",
                     self.room_name
                 )
             } else {
-                String::from("[Placeholder for Loading Spinner]\n\
-                    Waiting for this room to be loaded from the homeserver")
+                self.view.view(id!(restore_status_spinner)).set_visible(cx, true);
+                String::from("Waiting for this room to be loaded from the homeserver")
             };
             restore_status_label.set_text(cx, &status_text);
-            return restore_status_label.draw(cx, scope);
+            return self.view.view(id!(restore_status_view)).draw(cx, scope);
         }
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
