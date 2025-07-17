@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem}}, sliding_sync::{submit_async_request, MatrixRequest}, utils};
+use crate::{app::RoomsPanelRestoreAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem}}, sliding_sync::{submit_async_request, MatrixRequest}, utils};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -29,57 +29,88 @@ live_design! {
         flow: Down,
         align: {x: 0.5, y: 0}
         padding: {left: 20, right: 20, top: 50}
-        spacing: 30,
+        spacing: 0,
 
         show_bg: true,
         draw_bg: {
-            color: (COLOR_PRIMARY),
+            color: (COLOR_PRIMARY_DARKER),
         }
 
+        restore_status_label = <Label> {
+            width: Fill, height: Fit,
+            align: {x: 0.5, y: 0},
+            padding: {left: 5.0, right: 0.0}
+            flow: RightWrap,
+            margin: 0,
+            draw_text: {
+                color: (TYPING_NOTICE_TEXT_COLOR),
+                text_style: <REGULAR_TEXT>{font_size: 11}
+                wrap: Word,
+            }
+            text: ""
+        }
+
+        // This view is only shown if `inviter` is Some.
         inviter_view = <View> {
             width: Fill, height: Fit
             align: {x: 0.5, y: 0}
-            spacing: 15,
+            spacing: 10,
             flow: Down,
 
-            <View> {
-                width: Fill, height: Fit
-                align: {x: 0.5, y: 0}
-                spacing: 10
-                inviter_avatar = <Avatar> {
-                    width: 30,
-                    height: 30,
-        
-                    text_view = { text = { draw_text: {
-                        text_style: <TITLE_TEXT>{ font_size: 10.0 }
-                    }}}
-                }
 
-                inviter_name = <Label> {
-                    margin: {top: 2}
-                    padding: 0,
-                    text: ""
-                    draw_text: {
-                        text_style: <TITLE_TEXT>{
-                            font_size: 15,
-                        },
-                        color: #000
-                    }
+            inviter_avatar = <Avatar> {
+                width: 30,
+                height: 30,
+                text_view = { text = { draw_text: {
+                    text_style: <TITLE_TEXT>{ font_size: 10.0 }
+                }}}
+            }
+
+
+            inviter_name = <Label> {
+                width: Fill, height: Fit,
+                align: {x: 0.5, y: 0},
+                margin: {top: 2}
+                padding: 0,
+                flow: RightWrap,
+                text: ""
+                draw_text: {
+                    text_style: <TITLE_TEXT>{
+                        font_size: 15,
+                    },
+                    color: #000
+                    wrap: Word
                 }
             }
 
             inviter_user_id = <Label> {
+                width: Fill, height: Fit,
+                align: {x: 0.5, y: 0},
+                margin: {top: -3},
+                flow: RightWrap,
                 text: ""
                 draw_text: {
                     text_style: <TITLE_TEXT>{
                         font_size: 10,
                     },
                     color: #888
+                    wrap: Word,
+                }
+            }
+
+            <LineH> {
+                width: 240,
+                draw_bg: {
+                    color: (COLOR_DIVIDER),
                 }
             }
         }
 
         invite_message = <Label> {
+            margin: {top: 15, bottom: 15},
+            width: Fill, height: Fit,
+            align: {x: 0.5, y: 0},
+            flow: RightWrap,
             text: "",
             draw_text: {
                 text_style: <REGULAR_TEXT>{
@@ -94,7 +125,7 @@ live_design! {
             width: Fill, height: Fit
             align: {x: 0.5, y: 0}
             spacing: 10,
-            flow: Right,
+            flow: Down,
 
             room_avatar = <Avatar> {
                 width: 40,
@@ -106,12 +137,17 @@ live_design! {
             }
 
             room_name = <Label> {
+                width: Fill, height: Fit,
+                align: {x: 0.5, y: 0},
                 text: ""
+                // margin: {top: 3}
+                flow: RightWrap,
                 draw_text: {
                     text_style: <TITLE_TEXT>{
                         font_size: 18,
                     },
                     color: #000
+                    wrap: Word,
                 }
             }
         }
@@ -164,7 +200,20 @@ live_design! {
             }
         }
 
-        filler = <View> {
+        completion_label = <Label> {
+            width: Fill, height: Fit,
+            align: {x: 0.5, y: 0},
+            margin: {top: 10, bottom: 10},
+            flow: RightWrap,
+            draw_text: {
+                color: (COLOR_ACCEPT_GREEN),
+                text_style: <THEME_FONT_BOLD>{font_size: 12}
+                wrap: Word,
+            }
+            text: ""
+        }
+
+        <View> {
             width: Fill, height: 30,
         }
     }
@@ -223,16 +272,59 @@ pub struct InviteScreen {
     /// This is used to prevent showing multiple popup notifications
     /// (one from the JoinLeaveRoomModal, and one from this invite screen).
     #[rust] has_shown_confirmation: bool,
+    /// The ID of the room that has been invited.
+    /// This is used to wait for RoomsPanel
+    #[rust] room_id: Option<OwnedRoomId>,
+    #[rust] room_name: Option<String>,
+    #[rust] is_loaded: bool,
+    #[rust] all_rooms_loaded: bool,
 }
 
 impl Widget for InviteScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Currently, a Signal event is only used to tell this widget
+        // to check if the room has been loaded from the homeserver yet.
+        if let Event::Signal = event {
+            if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
+                let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                let restore_status_label = self.view.label(id!(restore_status_label));
+                if !rooms_list_ref.is_room_loaded(room_id) {
+                    let status_text = if rooms_list_ref.all_known_rooms_loaded() {
+                        self.all_rooms_loaded = true;
+                        format!(
+                            "An invite to room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
+                             You may close this screen.",
+                            self.room_name.as_deref().unwrap_or_else(|| room_id.as_str())
+                        )
+                    } else {
+                        String::from("[Placeholder for Loading Spinner]\n\
+                         Waiting for this room to be loaded from the homeserver")
+                    };
+                    restore_status_label.set_text(cx, &status_text);
+                    return;
+                } else {
+                    self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
+                }
+            }
+        }
+
         self.view.handle_event(cx, event, scope);
 
         let orig_state = self.invite_state;
 
         // Handle button clicks to accept or decline the invite
         if let Event::Actions(actions) = event {
+            // First, we quickly loop over the actions up front to handle the case
+            // where this room was restored and has now been successfully loaded from the homeserver.
+            for action in actions {
+                if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
+                    if self.room_id.as_ref().is_some_and(|inner_room_id| inner_room_id == room_id) {
+                        self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
+                        break;
+                    }
+                }
+            }
+
             let Some(info) = self.info.as_ref() else { return; };
             if let Some(modifiers) = self.view.button(id!(cancel_button)).clicked_modifiers(actions) {
                 self.invite_state = InviteState::WaitingForLeaveResult;
@@ -319,11 +411,15 @@ impl Widget for InviteScreen {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if !self.is_loaded {
+            // only draw the loading status label if the room is not loaded yet.
+            return self.view.label(id!(restore_status_label)).draw(cx, scope);
+        }
         let Some(info) = self.info.as_ref() else {
             // If we don't have any info, just return.
             return self.view.draw_walk(cx, scope, walk);
         };
-        
+
         // First, populate the inviter info, if we have it.
         let inviter_view = self.view.view(id!(inviter_view));
         let (is_visible, invite_text) = if let Some(inviter) = info.inviter.as_ref() {
@@ -339,6 +435,7 @@ impl Widget for InviteScreen {
             if !drew_avatar {
                 inviter_avatar.show_text(
                     cx,
+                    None,
                     None, // don't make this avatar clickable.
                     inviter.display_name.as_deref().unwrap_or_else(|| inviter.user_id.as_str()),
                 );
@@ -353,7 +450,7 @@ impl Widget for InviteScreen {
             }
             else {
                 // If we only have a user ID, show it in the user_name field,
-                // and hide the user ID field. 
+                // and hide the user ID field.
                 inviter_name.set_text(cx, inviter.user_id.as_str());
                 inviter_user_id.set_visible(cx, false);
             }
@@ -372,6 +469,7 @@ impl Widget for InviteScreen {
             RoomPreviewAvatar::Text(text) => {
                 room_avatar.show_text(
                     cx,
+                    None,
                     None, // don't make this avatar clickable.
                     text,
                 );
@@ -418,10 +516,12 @@ impl Widget for InviteScreen {
                 accept_button.set_text(cx, "Joined!");
             }
             InviteState::RoomLeft => {
-                cancel_button.set_enabled(cx, false);
-                accept_button.set_enabled(cx, false);
-                cancel_button.set_text(cx, "Rejected!");
-                accept_button.set_text(cx, "Join Room");
+                cancel_button.set_visible(cx, false);
+                accept_button.set_visible(cx, false);
+                self.view.label(id!(completion_label)).set_text(
+                    cx,
+                    "Invite successfully rejected. You may close this invite.",
+                );
             }
         }
 
@@ -431,7 +531,9 @@ impl Widget for InviteScreen {
 
 impl InviteScreen {
     /// Sets the ID of the invited room that will be displayed by this screen.
-    pub fn set_displayed_invite(&mut self, cx: &mut Cx, room_id: OwnedRoomId) {
+    pub fn set_displayed_invite<S: Into<Option<String>>>(&mut self, cx: &mut Cx, room_id: OwnedRoomId, room_name: S) {
+        self.room_id = Some(room_id.clone());
+        self.room_name = room_name.into();
         if let Some(invite) = super::rooms_list::get_invited_rooms(cx)
             .borrow()
             .get(&room_id)
@@ -446,6 +548,11 @@ impl InviteScreen {
             });
             self.invite_state = invite.invite_state;
             self.has_shown_confirmation = false;
+            self.is_loaded = true;
+            self.all_rooms_loaded = true;
+            self.view
+                .label(id!(restore_status_label))
+                .set_text(cx, "");
             self.redraw(cx);
         }
     }
@@ -453,9 +560,9 @@ impl InviteScreen {
 
 impl InviteScreenRef {
     /// See [`InviteScreen::set_displayed_invite()`].
-    pub fn set_displayed_invite(&self, cx: &mut Cx, room_id: OwnedRoomId) {
+    pub fn set_displayed_invite<S: Into<Option<String>>>(&self, cx: &mut Cx, room_id: OwnedRoomId, room_name: S) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_displayed_invite(cx, room_id);
+            inner.set_displayed_invite(cx, room_id, room_name);
         }
     }
 }
