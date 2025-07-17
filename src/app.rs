@@ -129,7 +129,7 @@ live_design! {
                         // However, the DesktopButton widget doesn't support drawing a background color yet,
                         // so these colors are the colors of the icon itself, not the background highlight.
                         // When it supports that, we will keep the icon color always black,
-                        // and change the background color instss'sbssed on the above colors.
+                        // and change the background color instead bssed on instead e colors
                         min   = { draw_bg: {color: #0, color_hover: #9, color_down: #3} }
                         max   = { draw_bg: {color: #0, color_hover: #9, color_down: #3} }
                         close = { draw_bg: {color: #0, color_hover: #E81123, color_down: #FF0015} }
@@ -175,8 +175,6 @@ live_design! {
 
                     // Logout confirmation modal 
                     logout_confirm_modal = <Modal> {
-                        // align: {x: 0.5, y: 0.5} 
-                        // width: Fill, height: Fill 
                         content: {
                             logout_confirm_modal_inner = <LogoutConfirmModal> {}
                         }

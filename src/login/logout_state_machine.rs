@@ -1,3 +1,87 @@
+//! Logout State Machine Implementation
+//!
+//! This module implements a robust logout process using a state machine pattern to ensure
+//! reliable session termination and proper resource cleanup.
+//!
+//! ## Design Rationale
+//!
+//! The logout process is complex and error-prone due to:
+//! - Network operations that can fail or timeout
+//! - Resource cleanup that must happen in specific order
+//! - UI synchronization across desktop tabs
+//! - Matrix SDK objects that can panic during destruction
+//! - Need for progress feedback and cancellation support
+//!
+//! ## State Flow
+//!
+//! ```
+//! Idle (0%) → PreChecking (10%) → StoppingSyncService (20%) → LoggingOutFromServer (30%)
+//!     ↓                                                                    ↓
+//!   Failed ←─────────────────────────────────────────────────────── PointOfNoReturn (50%) ⚠️
+//!                                                                           ↓
+//!                                                                   ClosingTabs (60%) [Desktop Only]
+//!                                                                           ↓
+//!                                                                   CleaningAppState (70%)
+//!                                                                           ↓
+//!                                                                   ShuttingDownTasks (80%)
+//!                                                                           ↓
+//!                                                                   RestartingRuntime (90%)
+//!                                                                           ↓
+//!                                                                     Completed (100%)
+//!                                                                           ↓
+//!                                                                        Failed
+//! ```
+//!
+//! ## Critical Design Points
+//!
+//! ### Point of No Return (50% completion)
+//! Once server logout succeeds or token is invalidated, the session becomes partially
+//! destroyed. Any subsequent failures require app restart because:
+//! - Server-side session is already terminated
+//! - Local token has been invalidated
+//! - Partial cleanup state cannot be safely recovered
+//!
+//! ### Resource Management Strategy
+//! - **During logout**: Resources are properly dropped to prevent memory leaks on re-login
+//! - **On app exit**: Resources are intentionally leaked to avoid deadpool panic
+//! - **Cleanup order**: Dependencies cleared before their dependencies (e.g., cache before runtime)
+//!
+//! ### Error Recovery Model
+//! - **Before PointOfNoReturn**: Recoverable errors restart sync service, user can retry
+//! - **After PointOfNoReturn**: All errors become unrecoverable, require app restart
+//! - **Special case**: M_UNKNOWN_TOKEN treated as success (token already invalid)
+//!
+//! ### Async Coordination
+//! Uses oneshot channels for UI synchronization:
+//! - `ClosingTabs`: Wait for desktop tabs to close (5s timeout)
+//! - `CleaningAppState`: Wait for UI state cleanup (5s timeout)
+//! - All operations have timeout protection to prevent hanging
+//!
+//! ### Progress Feedback
+//! Each state maps to specific completion percentage (10%, 20%, 30%...100%)
+//! enabling precise progress bar updates and user feedback.
+//!
+//! ## State Machine Execution Flow
+//!
+//! 1. **PreChecking**: Validate CLIENT, SYNC_SERVICE, and access_token existence
+//! 2. **StoppingSyncService**: Stop sync service to prevent new data
+//! 3. **LoggingOutFromServer**: Call `client.matrix_auth().logout()` (60s timeout)
+//! 4. **PointOfNoReturn**: Set global flags, delete saved user ID
+//! 5. **ClosingTabs**: Close desktop tabs via `MainDesktopUiAction::CloseAllTabs`
+//! 6. **CleaningAppState**: Clear global resources and notify UI cleanup
+//! 7. **ShuttingDownTasks**: Call `shutdown_background_tasks()`
+//! 8. **RestartingRuntime**: Call `start_matrix_tokio()` for next login
+//! 9. **Completed**: Send `LogoutAction::LogoutSuccess`
+//!
+//! ## Usage
+//!
+//! ```rust
+//! let result = logout_with_state_machine(is_desktop).await;
+//! ```
+//!
+//! Progress updates are sent via `LogoutAction::ProgressUpdate` for UI feedback.
+//! Errors are classified as `Recoverable` or `Unrecoverable` for appropriate handling.
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
