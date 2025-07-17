@@ -241,7 +241,9 @@ impl LogoutStateMachine {
                     50
                 ).await?;
                 
-                // Delete latest user ID after successful logout
+                // We delete latest_user_id after reaching LOGOUT_POINT_OF_NO_RETURN:
+                // 1. To prevent auto-login with invalid session on next start
+                // 2. While keeping session file intact for potential future login
                 if let Err(e) = delete_latest_user_id().await {
                     log!("Warning: Failed to delete latest user ID: {}", e);
                 }
@@ -258,7 +260,7 @@ impl LogoutStateMachine {
                         50
                     ).await?;
                     
-                    // Delete latest user ID
+                    // Same delete operation as in the success case above
                     if let Err(e) = delete_latest_user_id().await {
                         log!("Warning: Failed to delete latest user ID: {}", e);
                     }
