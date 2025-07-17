@@ -36,7 +36,7 @@ live_design! {
         align: { x: 0.5, y: 0.5 }
         cursor: Hand,
 
-        avatar = <Avatar> {
+        our_own_avatar = <Avatar> {
             width: 45, height: 45
             // If no avatar picture, use white text on a dark background.
             text_view = {
@@ -134,11 +134,10 @@ pub struct ProfileIcon {
     #[rust] own_profile: Option<UserProfile>,
 }
 
-
 impl LiveHook for ProfileIcon {
     fn after_apply_from_doc(&mut self, cx: &mut Cx) {
         if self.own_profile.is_none() {
-            self.get_own_profile(cx);
+            self.own_profile = get_own_profile(cx);
         }
     }
 }
@@ -149,8 +148,9 @@ impl Widget for ProfileIcon {
         if let Event::Signal = event {
             user_profile_cache::process_user_profile_updates(cx);
             avatar_cache::process_avatar_updates(cx);
-            if self.own_profile.is_none() {
-                self.get_own_profile(cx);
+            self.own_profile = get_own_profile(cx);
+            if self.own_profile.is_some() {
+                self.view.redraw(cx);
             }
         }
 
@@ -162,7 +162,8 @@ impl Widget for ProfileIcon {
             for action in actions {
                 if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                     log!("[ProfileIcon] Login successful, calling get_own_profile().");
-                    self.get_own_profile(cx);
+                    self.own_profile = get_own_profile(cx);
+                    self.view.redraw(cx);
                 }
             }
         }
@@ -205,10 +206,10 @@ impl Widget for ProfileIcon {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let avatar = self.view.avatar(id!(avatar));
+        let our_own_avatar = self.view.avatar(id!(avatar));
         let Some(own_profile) = self.own_profile.as_ref() else {
             // If we don't have a profile, default to an unknown avatar.
-            avatar.show_text(
+            our_own_avatar.show_text(
                 cx,
                 Some(COLOR_DISABLE_GRAY),
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
@@ -219,14 +220,14 @@ impl Widget for ProfileIcon {
 
         let mut drew_avatar = false;
         if let Some(avatar_img_data) = own_profile.avatar_state.data() {
-            drew_avatar = avatar.show_image(
+            drew_avatar = our_own_avatar.show_image(
                 cx,
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
                 |cx, img| utils::load_png_or_jpg(&img, cx, avatar_img_data),
             ).is_ok();
         }
         if !drew_avatar {
-            self.view.avatar(id!(avatar)).show_text(
+            our_own_avatar.show_text(
                 cx,
                 Some(COLOR_ROBRIX_PURPLE),
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
@@ -238,33 +239,32 @@ impl Widget for ProfileIcon {
     }
 }
 
-
-impl ProfileIcon {
-    /// Re-obtains the current user's profile and avatar, if available.
-    fn get_own_profile(&mut self, cx: &mut Cx) {
-        let mut needs_redraw = false;
-        if let Some(own_user_id) = current_user_id() {
-            let avatar_uri_to_fetch = user_profile_cache::with_user_profile(cx, own_user_id, true, |new_profile, _rooms| {
-                needs_redraw = self.own_profile.as_ref().is_none_or(
-                    |p| p.displayable_name() != new_profile.displayable_name()
-                );
+/// Returns the current user's profile and avatar, if available.
+pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
+    let mut own_profile = None;
+    if let Some(own_user_id) = current_user_id() {
+        let avatar_uri_to_fetch = user_profile_cache::with_user_profile(
+            cx,
+            own_user_id,
+            true,
+            |new_profile, _rooms| {
                 let avatar_uri_to_fetch = new_profile.avatar_state.uri().cloned();
-                self.own_profile = Some(new_profile.clone());
+                own_profile = Some(new_profile.clone());
                 avatar_uri_to_fetch
-            });
-            if let Some(Some(avatar_uri)) = avatar_uri_to_fetch {
-                if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, avatar_uri) {
-                    if let Some(own_profile) = self.own_profile.as_mut() {
-                        own_profile.avatar_state = AvatarState::Loaded(data);
-                        needs_redraw = true;
-                    }
+            },
+        );
+        if let Some(Some(avatar_uri)) = avatar_uri_to_fetch {
+            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, avatar_uri) {
+                if let Some(p) = own_profile.as_mut() {
+                    p.avatar_state = AvatarState::Loaded(data);
                 }
             }
-            log!("[ProfileIcon] Updated own profile: {:?}", self.own_profile);
-        }
-
-        if needs_redraw {
-            self.view.redraw(cx);
         }
     }
+
+    if let Some(ref profile) = own_profile {
+        log!("get_own_profile() got profile: {:?}", profile);
+    }
+
+    own_profile
 }

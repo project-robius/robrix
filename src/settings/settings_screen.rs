@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::settings::{account_settings::AccountSettingsWidgetExt, SettingsAction};
+use crate::{home::spaces_dock::get_own_profile, settings::{account_settings::AccountSettingsWidgetExt, SettingsAction}};
 
 live_design! {
     use link::theme::*;
@@ -120,10 +120,8 @@ impl Widget for SettingsScreen {
         if close_pane {
             log!("[SettingsScreen] Closing settings screen.");
             cx.action(SettingsAction::CloseSettings);
-            return;
         }
     }
-
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
@@ -134,7 +132,8 @@ impl SettingsScreen {
     /// Shows the settings screen by making it visible and initializing its content.
     pub fn show(&mut self, cx: &mut Cx) {
         self.view.button(id!(close_button)).reset_hover(cx);
-        self.view.account_settings(id!(account_settings)).show(cx);
+        let profile = get_own_profile(cx).unwrap(); // TODO: fix
+        self.view.account_settings(id!(account_settings)).show(cx, profile);
         cx.set_key_focus(self.view.area());
         self.view.set_visible(cx, true);
         self.redraw(cx);
