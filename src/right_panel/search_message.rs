@@ -6,7 +6,7 @@ use matrix_sdk::ruma::{events::{room::message::{FormattedBody, MessageType, Rela
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use rangemap::RangeSet;
 
-use crate::{app::AppState, home::{room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_text_message_content, ItemDrawnStatus}, rooms_list::RoomsListRef}, media_cache::MediaCache, right_panel::right_panel::{RightPanelAction}, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, popup_list::{enqueue_popup_notification, PopupItem}, text_or_image::TextOrImageWidgetRefExt, timestamp::TimestampWidgetRefExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
+use crate::{app::AppState, home::{room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_text_message_content, ItemDrawnStatus}, rooms_list::RoomsListRef}, media_cache::MediaCache, right_panel::RightPanelAction, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::MessageSearchAction, popup_list::{enqueue_popup_notification, PopupItem}, text_or_image::TextOrImageWidgetRefExt, timestamp::TimestampWidgetRefExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
 
 
 live_design! {
@@ -114,8 +114,7 @@ live_design! {
                 summary_label = <Markdown> {
                     margin: {left: 10, top:0},
                     align: {x: 0.3, y: 0.5}  // Align to top-right
-                    width: Fill,
-                    height: Fill,
+                    height: Fit,
                     padding: 5,
                     font_color: (MESSAGE_TEXT_COLOR),
                     font_size: (MESSAGE_FONT_SIZE),
@@ -235,28 +234,14 @@ live_design! {
             width: Fill,
             height: Fill,
             flow: Down,
-            message_search_input_view = <View> {
-                width: Fill, height: Fit,
-                visible: true,
-                <CachedWidget> {
-                    message_search_input_bar = <MessageSearchInputBar> {
-                        width: Fill,
-                    }
-                }
+            search_result_plane = <SearchResult> {
+                width: Fill,
+                height: Fit,
+                visible: true
             }
-            <View> {
+            search_timeline = <TimelineSearch> {
                 width: Fill,
                 height: Fill,
-                flow: Overlay,
-                search_timeline = <TimelineSearch> {
-                    width: Fill,
-                    height: Fill,
-                }
-                search_result_plane = <SearchResult> {
-                    width: Fill,
-                    height: Fill,
-                    visible: true
-                }
             }
         }
     }
@@ -316,7 +301,7 @@ impl WidgetMatchEvent for SearchScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, scope: &mut Scope) {
         //let search_result = self.view.search_result(id!(search_result_plane));
         for action in actions.iter() {
-            //handle_search_input(self, cx, action, scope);
+            handle_search_input(self, cx, action, scope);
             if let Some(SearchResultAction::Ok(SearchResultReceived {
                 items,
                 profile_infos,
@@ -695,7 +680,7 @@ pub fn search_result_draw_walk(
 ///
 /// See `MessageSearchAction` for the possible actions.
 pub fn handle_search_input(
-    search_result_ref: &mut SearchResultRef,
+    search_screen: &mut SearchScreen,
     cx: &mut Cx,
     action: &Action,
     scope: &mut Scope,
@@ -704,15 +689,9 @@ pub fn handle_search_input(
     match widget_action.cast() {
         MessageSearchAction::Changed(search_term) => {
             if search_term.is_empty() {
-                // room_screen
-                //     .view(id!(search_timeline))
-                //     .set_visible(cx, false);
-                search_result_ref
+                search_screen.search_result(id!(search_result_plane))
                     .reset(cx);
-                // room_screen
-                //     .search_result(id!(search_result_plane))
-                //     .set_visible(cx, false);
-                //room_screen.search_state = SearchState::default();
+                search_screen.search_state = SearchState::default();
                 // Abort previous inflight search request.
                 submit_async_request(MatrixRequest::SearchMessages {
                     room_id: None,
@@ -727,13 +706,12 @@ pub fn handle_search_input(
                 let app_state = scope.data.get::<AppState>().unwrap();
                 app_state.selected_room.clone()
             } {
-                let mut criteria = search_result_ref
+                let mut criteria = search_screen.search_result(id!(search_result_plane))
                     .get_search_criteria();
                 criteria.search_term = search_term;
                 criteria.include_all_rooms = false;
-                search_result_ref
+                search_screen.search_result(id!(search_result_plane))
                     .set_search_criteria(cx, criteria.clone());
-                //room_screen.view(id!(search_timeline)).set_visible(cx, false);
                 let room_id = selected_room.room_id();
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
                 let is_encrypted = rooms_list_ref.is_room_encrypted(room_id);
@@ -744,7 +722,7 @@ pub fn handle_search_input(
                     });
                     return;
                 }
-                search_result_ref.display_top_space(cx);
+                search_screen.search_result(id!(search_result_plane)).display_top_space(cx);
                 submit_async_request(MatrixRequest::SearchMessages {
                     room_id: Some(room_id.to_owned()),
                     include_all_rooms: criteria.include_all_rooms,
@@ -759,28 +737,23 @@ pub fn handle_search_input(
                 let app_state = scope.data.get::<AppState>().unwrap();
                 app_state.selected_room.clone()
             } {
-                let mut criteria = search_result_ref
+                let mut criteria = search_screen.search_result(id!(search_result_plane))
                     .get_search_criteria();
                 // if search_term == criteria.search_term && !search_term.is_empty() {
                 //     return;
                 // }
-                println!("criteria.search_term: {:#?}, search_term: {:#?}", criteria.search_term, search_term);
                 criteria.search_term = search_term.clone();
-                search_result_ref
+                search_screen.search_result(id!(search_result_plane))
                     .set_search_criteria(cx, criteria);
-                
             }
             cx.action(RightPanelAction::OpenMessageSearchResult);
         }
         MessageSearchAction::Clear => {
-            // room_screen
-            //     .view(id!(search_timeline))
-            //     .set_visible(cx, false);
-            search_result_ref
+            search_screen.search_result(id!(search_result_plane))
                 .reset(cx);
-            search_result_ref
+            search_screen.search_result(id!(search_result_plane))
                 .set_visible(cx, false);
-            //room_screen.search_state = SearchState::default();
+            search_screen.search_state = SearchState::default();
         }
         _ => {}
     }

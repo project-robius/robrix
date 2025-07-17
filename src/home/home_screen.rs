@@ -12,7 +12,7 @@ live_design! {
     use crate::shared::room_filter_input_bar::RoomFilterInputBar;
     use crate::shared::message_search_input_bar::MessageSearchInputBar;
     use crate::home::main_desktop_ui::MainDesktopUI;
-    use crate::right_panel::right_panel::RightPanel;
+    use crate::right_panel::RightPanel;
 
     NavigationWrapper = {{NavigationWrapper}} {
         view_stack = <StackNavigation> {}
