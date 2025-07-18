@@ -87,10 +87,6 @@ live_design! {
 
     CAN_NOT_SEND_NOTICE = "You don't have permission to post to this room."
 
-    FillerY = <View> {width: Fill}
-
-    FillerX = <View> {height: Fill}
-
     REACTION_TEXT_COLOR = #4c00b0
 
     // The content of a reply preview, which shows a small preview
@@ -622,7 +618,7 @@ live_design! {
                     text_style: <REGULAR_TEXT>{font_size: 11}
                     wrap: Word,
                 }
-                text: "Waiting for this room to be loaded from the homeserver",
+                text: "",
             }
 
             keyboard_view = <KeyboardView> {
@@ -1159,7 +1155,7 @@ impl Widget for RoomScreen {
         let room_props = if let Some(tl) = self.tl_state.as_ref() {
             let room_id = tl.room_id.clone();
             let room_members = tl.room_members.clone();
-            
+
             // Fetch room data once to avoid duplicate expensive lookups
             let (room_display_name, room_avatar_url) = get_client()
                 .and_then(|client| client.get_room(&room_id))
@@ -1168,7 +1164,7 @@ impl Widget for RoomScreen {
                     room.avatar_url()
                 ))
                 .unwrap_or((None, None));
-            
+
             RoomScreenProps {
                 room_id,
                 room_members,
@@ -2387,22 +2383,30 @@ impl RoomScreen {
         // Hide the typing notice view initially.
         self.view(id!(typing_notice)).set_visible(cx, false);
         // If the room is loaded, we need to get a few key states:
-        // 1. Subscribe to typing notices again, now that the room is being shown.
-        // 2. Subscribe to our own user's read receipts so that we can update the
-        //    read marker and properly send read receipts while scrolling through the timeline.
-        // 3. Get the current user's power levels for this room so that we can
+        // 1. Get the current user's power levels for this room so that we can
         //    show/hide UI elements based on the user's permissions.
+        // 2. Get the list of members in this room (from the SDK's local cache).
+        // 3. Subscribe to our own user's read receipts so that we can update the
+        //    read marker and properly send read receipts while scrolling through the timeline. 
+        // 4. Subscribe to typing notices again, now that the room is being shown.
         if self.is_loaded {
+            submit_async_request(MatrixRequest::GetRoomPowerLevels {
+                room_id: room_id.clone(),
+            });
+            submit_async_request(MatrixRequest::GetRoomMembers {
+                room_id: room_id.clone(),
+                memberships: matrix_sdk::RoomMemberships::JOIN,
+                // Fetch from the local cache, as we already requested to sync
+                // the room members from the homeserver above.
+                local_only: true,
+            }); 
             submit_async_request(MatrixRequest::SubscribeToTypingNotices {
                 room_id: room_id.clone(),
                 subscribe: true,
             });
             submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
-                room_id: room_id.clone(),
-                subscribe: true,
-            });
-            submit_async_request(MatrixRequest::GetRoomPowerLevels {
                 room_id,
+                subscribe: true,
             });
         }
 
