@@ -16,7 +16,7 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState
 };
 use matrix_sdk_ui::{
-    room_list_service::RoomListLoadingState, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RoomExt, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::{RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RoomExt, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
@@ -25,11 +25,16 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
+
+/// Duration for sync indicator delay before showing
+const SYNC_INDICATOR_DELAY: Duration = Duration::from_millis(500);
+/// Duration for sync indicator delay before hiding
+const SYNC_INDICATOR_HIDE_DELAY: Duration = Duration::from_millis(1000);
 use std::io;
 use crate::{
     app::RoomsPanelRestoreAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}
+        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction, 
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -1522,6 +1527,7 @@ async fn async_main_loop(
     // Attempt to load the previously-saved rooms panel state.
     // Include this after re-login. 
     handle_load_rooms_panel_state(logged_in_user_id.to_owned());
+    handle_sync_indicator_subscriber(&sync_service);
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
     let room_list_service = sync_service.room_list_service();
@@ -2102,6 +2108,26 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
                     ss.start().await;
                 }
             }
+        }
+    });
+}
+
+fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
+    let sync_indicator_stream = sync_service.room_list_service()
+        .sync_indicator(
+            SYNC_INDICATOR_DELAY, 
+            SYNC_INDICATOR_HIDE_DELAY
+        );
+    
+    Handle::current().spawn(async move {
+       let mut sync_indicator_stream = std::pin::pin!(sync_indicator_stream);
+
+        while let Some(indicator) = sync_indicator_stream.next().await {
+            let is_syncing = match indicator {
+                SyncIndicator::Show => true,
+                SyncIndicator::Hide => false,
+            };
+            Cx::post_action(RoomsListHeaderAction::SetSyncStatus(is_syncing));
         }
     });
 }
