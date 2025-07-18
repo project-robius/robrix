@@ -21,42 +21,41 @@ live_design! {
             padding: 0.0
             root_view = <View> {
                 padding: 0.0,
-                back_button = <RobrixIconButton> {
-                    width: 250,
-                    height: 40
-                    padding: 10
-                    margin: {top: 5, bottom: 10}
-                    align: {x: 0.5, y: 0.5}
-                    draw_bg: {
-                        color: (COLOR_ACTIVE_PRIMARY)
-                    }
-                    draw_text: {
-                        color: (COLOR_PRIMARY)
-                        text_style: <REGULAR_TEXT> {}
-                    }
-                    text: "Back"
-                }
             }
 
             search_result_view = <StackNavigationView> {
                 full_screen: false
                 width: Fill, height: Fill
                 padding: 0,
-                draw_bg: {color: #x0}
+                draw_bg: {
+                    color: (COLOR_SECONDARY)
+                }
                 flow: Down
                 body = {
                     margin: {top: 0.0 },
                     search_screen = <SearchScreen> {}
                 }
                 header = {
+                    padding: {bottom: 10., top: 10.}
                     content = {
                         title_container = {
                             title = {
+                                draw_text: {
+                                    wrap: Ellipsis,
+                                    text_style: { font_size: 10. }
+                                    color: #B,
+                                }
                                 text: "Search Results"
                             }
                         }
                     }
                 }
+            }
+            nav1_view2 = <StackNavigationView> {
+                full_screen: false
+                padding: {left: 100.0, right: 100.0}
+                draw_bg: {color: #x0}
+                body = { <Label> { text: "nav2 view1"}}
             }
         }
     }
@@ -84,10 +83,24 @@ impl WidgetMatchEvent for RightPanel {
             self.view.set_visible(cx, true);
         }
         for action in actions.iter() {
-            if let MessageSearchAction::Click(_) = action.as_widget_action().cast() {
-                self.view.set_visible(cx, true);
-                self.view.stack_navigation(id!(nav1)).push(cx,live_id!(search_result_view));
+            match action.as_widget_action().cast() {
+                MessageSearchAction::Click(_) => {
+                    self.view.set_visible(cx, true);
+                    self.view.stack_navigation(id!(nav1)).push(cx,live_id!(search_result_view));
+                }
+                MessageSearchAction::Changed(search_term) => {
+                    if !search_term.is_empty() {
+                        self.view.set_visible(cx, true);
+                        self.view.stack_navigation(id!(nav1)).push(cx,live_id!(search_result_view));
+                    } else {
+                        self.view.set_visible(cx, false);
+                    }
+                }
+                _ => {
+
+                }
             }
+            
             if let StackNavigationTransitionAction::HideEnd(_) = action.as_widget_action().cast() {
                 self.view.set_visible(cx, false);
             }
@@ -96,16 +109,10 @@ impl WidgetMatchEvent for RightPanel {
     }
 }
 
-impl RightPanelRef {
-    pub fn open(&self, cx: &mut Cx, view_id: LiveId) {
-        if let Some(inner) = self.borrow() {
-            inner.view.stack_navigation(id!(nav1)).push(cx, view_id);
-        }
-    }
-}
-
+/// Actions for the RightPanel widget
 #[derive(DefaultNone, Clone, Debug)]
 pub enum RightPanelAction {
-    OpenMessageSearchResult,
+    /// Open the search result in the right panel
+    OpenSearchModule,
     None
 }

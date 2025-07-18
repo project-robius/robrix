@@ -45,6 +45,7 @@ live_design! {
                             width: 300
                         }
                     }
+                    
                     message_search_input_view = <View> {
                         width: Fill, height: Fit,
                         visible: true,
@@ -60,7 +61,6 @@ live_design! {
                 <View> {
                     width: Fill, height: Fill
                     flow: Right
-                    debug: true
                     <MainDesktopUI> {}
                     <RightPanel> {}
                 }

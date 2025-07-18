@@ -270,7 +270,7 @@ pub struct SearchScreen {
 }
 
 impl Widget for SearchScreen {
-    // Handle events and actions for the SearchScreen widget and its inner Timeline view.
+    /// Handles events and actions for the SearchScreen widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
@@ -281,7 +281,6 @@ impl Widget for SearchScreen {
 }
 impl WidgetMatchEvent for SearchScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, scope: &mut Scope) {
-        //let search_result = self.view.search_result(id!(search_result_plane));
         for action in actions.iter() {
             handle_search_input(self, cx, action, scope);
             if let Some(SearchResultAction::Ok(SearchResultReceived {
@@ -306,6 +305,7 @@ impl WidgetMatchEvent for SearchScreen {
                 self.view
                     .search_result(id!(search_result_plane))
                     .set_search_criteria(cx, criteria);
+                // Result count may include contextual message which we are not displaying here.
                 self.view
                     .search_result(id!(search_result_plane))
                     .set_result_count(cx, *count);
@@ -369,6 +369,9 @@ pub struct SearchResult {
     pub view: View,
     #[rust]
     pub search_criteria: Criteria,
+    /// The number of search results.
+    /// 
+    /// This number includes the contextual messages which are not displayed.
     #[rust]
     pub result_count: u32,
 }
@@ -381,12 +384,11 @@ pub struct Criteria {
 }
 
 impl Widget for SearchResult {
-    // Handle events and actions for the SearchResult widget and its inner Timeline view.
+    /// Handles events and actions for the SearchResult widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if !self.visible {
             return;
         }
-        //self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -396,28 +398,7 @@ impl Widget for SearchResult {
         self.view.draw_walk(cx, scope, walk)
     }
 }
-// impl MatchEvent for SearchResult {
-//     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-//         for action in actions {
-//             if let MessageSearchAction::Changed(search_term) = action.as_widget_action().cast() {
-//                 if search_term.is_empty() {
-//                     cx.widget_action(
-//                         self.widget_uid(),
-//                         &Scope::empty().path,
-//                         MessageSearchAction::Clear,
-//                     );
-//                     submit_async_request(MatrixRequest::SearchMessages {
-//                         room_id: None,
-//                         include_all_rooms: false,
-//                         search_term: "".to_string(),
-//                         next_batch: None,
-//                         abort_previous_search: true
-//                     });
-//                 }
-//             }
-//         }
-//     }
-// }
+
 impl SearchResult {
     /// Display search summary.
     ///
@@ -434,6 +415,11 @@ impl SearchResult {
         );
         self.view.view(id!(loading_view)).set_visible(cx, false);
     }
+    /// Sets the search criteria for the SearchResult widget.
+    ///
+    /// This function is used to display the search criteria in the top-right of the room screen.
+    /// It is typically used when a new search is initiated.
+    ///
     fn set_search_criteria(&mut self, cx: &mut Cx, search_criteria: Criteria) {
         self.view.markdown(id!(summary_label)).set_text(
             cx,
@@ -508,58 +494,57 @@ impl SearchResultRef {
     }
 }
 
-/// This is a specialized version of `RoomScreen::draw_walk()` that is specific to rendering the timeline of a search result.
+
+/// Handles events and actions for the SearchResult widget and its inner message view.
 ///
-/// It takes a `RoomScreen` widget and iterates through the `PortalList` widget inside it. For each item in the list, it checks if the item is a `DateDivider`, `ContextEvent` or `Event` and renders it accordingly.
-///
-/// The rendering of the timeline items is done by calling `populate_message_view()` for messages and `populate_small_state_event()` for state events.
-///
-/// This function is used in the `RoomScreen` widget's `draw_walk()` method when the timeline is being rendered as a search result.
+/// This function is used to display the search result summary in the right panel.
+/// It is typically used when a new search is initiated or search results are being cleared.
+/// 
 pub fn search_result_draw_walk(
-    room_screen: &mut SearchScreen,
+    search_screen: &mut SearchScreen,
     cx: &mut Cx2d,
     scope: &mut Scope,
     walk: Walk,
 ) -> DrawStep {
-    while let Some(subview) = room_screen.view.draw_walk(cx, scope, walk).step() {
+    while let Some(subview) = search_screen.view.draw_walk(cx, scope, walk).step() {
         // We only care about drawing the portal list.
         let portal_list_ref = subview.as_portal_list();
         let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
-            error!("!!! RoomScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
+            error!("!!! SearchScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
             continue;
         };
-        let tl_items = &room_screen.search_state.items;
-        // Set the portal list's range based on the number of timeline items.
+        let tl_items = &search_screen.search_state.items;
+        // Set the portal list's range based on the number of searched items.
         let last_item_id = tl_items.len();
         let list = list_ref.deref_mut();
         list.set_item_range(cx, 0, last_item_id);
 
         while let Some(item_id) = list.next_visible_item(cx) {
-            if item_id == 0 && room_screen.search_state.next_batch_token.is_none() && last_item_id > 0 {
-                WidgetRef::new_from_ptr(cx, room_screen.no_more_template)
+            if item_id == 0 && search_screen.search_state.next_batch_token.is_none() && last_item_id > 0 {
+                WidgetRef::new_from_ptr(cx, search_screen.no_more_template)
                     .as_label()
                     .draw_all(cx, &mut Scope::empty());
             }
             let item = {
                 let tl_idx = item_id;
-                let Some(timeline_item) = tl_items.get(tl_idx) else {
+                let Some(search_item) = tl_items.get(tl_idx) else {
                     // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                     // but we can always safely fill the item with an empty widget that takes up no space.
                     list.item(cx, item_id, live_id!(Empty));
                     continue;
                 };
                 let item_drawn_status = ItemDrawnStatus {
-                    content_drawn: room_screen
+                    content_drawn: search_screen
                         .search_state
                         .content_drawn_since_last_update
                         .contains(&tl_idx),
-                    profile_drawn: room_screen
+                    profile_drawn: search_screen
                         .search_state
                         .profile_drawn_since_last_update
                         .contains(&tl_idx),
                 };
                 let (item, item_new_draw_status) = {
-                    let current_item = timeline_item;
+                    let current_item = search_item;
 
                     match &current_item {
                         SearchResultItem::Event(event) => match &**event {
@@ -578,7 +563,7 @@ pub fn search_result_draw_walk(
 
                                         if let MessageType::Text(text) = &mut message.msgtype {
                                             if let Some(ref mut formatted) = text.formatted {
-                                                for highlight in room_screen
+                                                for highlight in search_screen
                                                     .search_state
                                                     .highlighted_strings
                                                     .iter()
@@ -590,7 +575,7 @@ pub fn search_result_draw_walk(
                                                 }
                                             } else {
                                                 let mut formatted_string = text.body.clone();
-                                                for highlight in room_screen
+                                                for highlight in search_screen
                                                     .search_state
                                                     .highlighted_strings
                                                     .iter()
@@ -611,7 +596,7 @@ pub fn search_result_draw_walk(
                                             item_id,
                                             event,
                                             &message,
-                                            &room_screen.search_state.profile_infos,
+                                            &search_screen.search_state.profile_infos,
                                             &mut media_cache,
                                             item_drawn_status,
                                         )
@@ -642,13 +627,13 @@ pub fn search_result_draw_walk(
                     }
                 };
                 if item_new_draw_status.content_drawn {
-                    room_screen
+                    search_screen
                         .search_state
                         .content_drawn_since_last_update
                         .insert(tl_idx..tl_idx + 1);
                 }
                 if item_new_draw_status.profile_drawn {
-                    room_screen
+                    search_screen
                         .search_state
                         .profile_drawn_since_last_update
                         .insert(tl_idx..tl_idx + 1);
@@ -661,7 +646,7 @@ pub fn search_result_draw_walk(
     DrawStep::done()
 }
 
-/// Handles any search-related actions received by this RoomScreen.
+/// Handles any search-related actions received by this SearchScreen.
 ///
 /// See `MessageSearchAction` for the possible actions.
 pub fn handle_search_input(
@@ -724,14 +709,11 @@ pub fn handle_search_input(
             } {
                 let mut criteria = search_screen.search_result(id!(search_result_plane))
                     .get_search_criteria();
-                // if search_term == criteria.search_term && !search_term.is_empty() {
-                //     return;
-                // }
                 criteria.search_term = search_term.clone();
                 search_screen.search_result(id!(search_result_plane))
                     .set_search_criteria(cx, criteria);
             }
-            cx.action(RightPanelAction::OpenMessageSearchResult);
+            cx.action(RightPanelAction::OpenSearchModule);
         }
         MessageSearchAction::Clear => {
             search_screen.search_result(id!(search_result_plane))
@@ -744,15 +726,24 @@ pub fn handle_search_input(
     }
 }
 
+/// Sends a backwards pagination request if the user is scrolling up and is approaching the top of the timeline
+/// in the search result.
+///
+/// Returns immediately if the timeline is fully paginated.
+///
+/// Otherwise, if the user is scrolling up and is approaching the top of the timeline,
+/// this function sends a backwards pagination request for the search result.
+/// The request is sent with the `next_batch` token from the last search result received.
+/// The `last_scrolled_index` is updated to the current first visible item in the timeline.
 pub fn send_pagination_request_based_on_scroll_pos_for_search_result(
-    room_screen: &mut SearchScreen,
+    search_screen: &mut SearchScreen,
     cx: &mut Cx,
     room_id: &RoomId,
     actions: &ActionsBuf,
     portal_list: &PortalListRef,
     search_result_plane: &SearchResultRef
 ) {
-    let search_state = &mut room_screen.search_state;
+    let search_state = &mut search_screen.search_state;
     if search_state.fully_paginated { return };
 
     if !portal_list.scrolled(actions) { return };
@@ -774,7 +765,7 @@ pub fn send_pagination_request_based_on_scroll_pos_for_search_result(
             });
         }
     }
-    room_screen.search_state.last_scrolled_index = first_index;
+    search_screen.search_state.last_scrolled_index = first_index;
 }
 
 /// Search result as timeline item
@@ -925,6 +916,7 @@ pub fn populate_message_search_view(
     }
     (item, new_drawn_status)
 }
+
 fn truncate_to_50(s: &str) -> String {
     let n = 10;
     if s.chars().count() > n {
