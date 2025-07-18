@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{app::RoomsPanelRestoreAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem}}, sliding_sync::{submit_async_request, MatrixRequest}, utils};
+use crate::{app::RoomsPanelRestoreAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem}}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -288,7 +288,7 @@ pub struct InviteScreen {
     /// The ID of the room that has been invited.
     /// This is used to wait for RoomsPanel
     #[rust] room_id: Option<OwnedRoomId>,
-    #[rust] room_name: Option<String>,
+    #[rust] room_name: String,
     #[rust] is_loaded: bool,
     #[rust] all_rooms_loaded: bool,
 }
@@ -307,7 +307,7 @@ impl Widget for InviteScreen {
                         format!(
                             "An invite to room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
                              You may close this screen.",
-                            self.room_name.as_deref().unwrap_or_else(|| room_id.as_str())
+                            self.room_name
                         )
                     } else {
                         String::from("[Placeholder for Loading Spinner]\n\
@@ -425,8 +425,20 @@ impl Widget for InviteScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if !self.is_loaded {
-            // only draw the restore status view if the room is not loaded yet.
-            return self.view(id!(restore_status_view)).draw(cx, scope);
+            let restore_status_label = self.view.label(id!(restore_status_label));
+            let status_text: String = if self.all_rooms_loaded {
+                self.view.view(id!(restore_status_spinner)).set_visible(cx, false);
+                format!(
+                    "Room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
+                        You may close this screen.",
+                    self.room_name
+                )
+            } else {
+                self.view.view(id!(restore_status_spinner)).set_visible(cx, true);
+                String::from("Waiting for this room to be loaded from the homeserver")
+            };
+            restore_status_label.set_text(cx, &status_text);
+            return self.view.view(id!(restore_status_view)).draw(cx, scope);
         }
         let Some(info) = self.info.as_ref() else {
             // If we don't have any info, just return.
@@ -546,7 +558,8 @@ impl InviteScreen {
     /// Sets the ID of the invited room that will be displayed by this screen.
     pub fn set_displayed_invite<S: Into<Option<String>>>(&mut self, cx: &mut Cx, room_id: OwnedRoomId, room_name: S) {
         self.room_id = Some(room_id.clone());
-        self.room_name = room_name.into();
+        self.room_name = room_name_or_id(room_name.into(), &room_id);
+
         if let Some(invite) = super::rooms_list::get_invited_rooms(cx)
             .borrow()
             .get(&room_id)
