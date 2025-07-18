@@ -199,6 +199,8 @@ impl LiveRegister for App {
         crate::shared::live_design(cx);
         crate::room::live_design(cx);
         crate::join_leave_room_modal::live_design(cx);
+        crate::right_panel::live_design(cx);
+        crate::right_panel::search_message::live_design(cx);
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
@@ -271,8 +273,9 @@ impl MatchEvent for App {
                 cx.widget_action(
                     self.ui.widget_uid(),
                     &Scope::default().path,
-                    StackNavigationAction::NavigateTo(live_id!(main_content_view))
+                    StackNavigationAction::Push(live_id!(main_content_view))
                 );
+                self.ui.view(id!(message_search_input_view)).set_visible(cx, true);
                 self.ui.redraw(cx);
                 continue;
             }
@@ -373,6 +376,33 @@ impl MatchEvent for App {
             //     }
             //     _ => {}
             // }
+            match action.as_widget_action().cast() {
+                crate::shared::message_search_input_bar::MessageSearchAction::Click(_) => {
+                    // there is apply error in desktop view
+                    self.ui
+                        .view(id!(main_content_view.header.content.message_search_input_mobile_view))
+                        .apply_over(cx, live!{
+                            width: 220
+                        });
+                }
+                crate::shared::message_search_input_bar::MessageSearchAction::Clear => {
+                    self.ui
+                        .view(id!(main_content_view.header.content.message_search_input_mobile_view))
+                        .apply_over(cx, live!{
+                            width: 150
+                        });
+                }
+                _ => {}
+            }
+            
+            // Monitor for DockSave action which will be triggered by selection of the room for setting the visibility of the message search input.
+            if let Some(MainDesktopUiAction::SaveDockIntoAppState) = action.downcast_ref() {
+                if self.app_state.selected_room.is_some() {
+                    self.ui.view(id!(message_search_input_view)).set_visible(cx, true);
+                } else {
+                    self.ui.view(id!(message_search_input_view)).set_visible(cx, false);
+                }
+            }
         }
     }
 }
@@ -396,7 +426,26 @@ impl AppMain for App {
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
+        
+        if let Event::KeyUp(key) = event {
+            match key.key_code {
+                KeyCode::ArrowRight => {
+                    self.ui.stack_navigation(id!(nav1)).push(cx,live_id!(search_result_view));
+                }
+                KeyCode::ArrowLeft => {
+                    self.ui.stack_navigation(id!(nav1)).pop(cx);
+                }
 
+                KeyCode::KeyD => {
+                    self.ui.stack_navigation(id!(nav2)).push(cx,live_id!(nav2_view1));
+                }
+
+                KeyCode::KeyA => {
+                    self.ui.stack_navigation(id!(nav2)).pop(cx);
+                },
+                _ => {}
+            }
+        }
         /*
          * TODO: I'd like for this to work, but it doesn't behave as expected.
          *       The context menu fails to draw properly when a draw event is passed to it.
@@ -445,7 +494,7 @@ impl App {
 }
 
 /// State that is shared across different parts of the Robrix app.
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct AppState {
     /// The currently-selected room, which is highlighted (selected) in the RoomsList
     /// and considered "active" in the main rooms screen.
@@ -458,6 +507,10 @@ pub struct AppState {
     pub saved_dock_state: SavedDockState,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
+    /// The current window geometry.
+    pub window_geom: Option<event::WindowGeom>,
+    /// Whether the right panel is currently open.
+    pub right_panel_open: bool,
 }
 
 /// A saved instance of the state of the main desktop UI's dock.

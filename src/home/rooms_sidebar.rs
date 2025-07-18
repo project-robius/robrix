@@ -72,6 +72,7 @@ live_design! {
             }
             <CachedWidget> {
                 <RoomFilterInputBar> {
+                    width: Fill,
                     draw_bg: {
                         border_size: 1.0,
                     }

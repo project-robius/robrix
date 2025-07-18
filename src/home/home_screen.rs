@@ -10,7 +10,9 @@ live_design! {
     use crate::home::spaces_dock::SpacesDock;
     use crate::shared::styles::*;
     use crate::shared::room_filter_input_bar::RoomFilterInputBar;
+    use crate::shared::message_search_input_bar::MessageSearchInputBar;
     use crate::home::main_desktop_ui::MainDesktopUI;
+    use crate::right_panel::RightPanel;
 
     NavigationWrapper = {{NavigationWrapper}} {
         view_stack = <StackNavigation> {}
@@ -32,12 +34,36 @@ live_design! {
 
             <View> {
                 flow: Down
-                width: Fill, height: Fill
-
-                <CachedWidget> {
-                    <RoomFilterInputBar> {}
+                width: Fill, height: Fill,
+                spacing: 2,
+                <View> {
+                    flow: Overlay,
+                    width: Fill,
+                    height: Fit,
+                    <CachedWidget> {
+                        <RoomFilterInputBar> {
+                            width: 300
+                        }
+                    }
+                    
+                    message_search_input_view = <View> {
+                        width: Fill, height: Fit,
+                        visible: true,
+                        align: {x: 1.0},
+                        <CachedWidget> {
+                            message_search_input_bar = <MessageSearchInputBar> {
+                                width: 300,
+                            }
+                        }
+                    }
+                    
                 }
-                <MainDesktopUI> {}
+                <View> {
+                    width: Fill, height: Fill
+                    flow: Right
+                    <MainDesktopUI> {}
+                    <RightPanel> {}
+                }
             }
         }
 
@@ -72,6 +98,21 @@ live_design! {
                                     title = {
                                         draw_text: {
                                             color: (ROOM_NAME_TEXT_COLOR)
+                                        }
+                                    }
+                                }
+                                <View> {
+                                    height: Fit,
+                                    width: Fill,
+                                    align: {x: 1.0 }
+                                    message_search_input_mobile_view = <View> {
+                                        height: Fit,
+                                        width: 150,
+                                        align: {x: 1.0 }
+                                        <CachedWidget> {
+                                            message_search_input_bar = <MessageSearchInputBar> {
+                                                width: 300
+                                            }
                                         }
                                     }
                                 }
