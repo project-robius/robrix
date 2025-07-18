@@ -57,14 +57,13 @@ live_design! {
                     }
                     
                 }
-                // <View> {
-                //     width: Fill, height: Fill
-                //     flow: Right
-                //     debug: true
-                //     <MainDesktopUI> {}
-                //     //right_panel = <RightPanel> {}
-                // }
-                <MainDesktopUI> {}
+                <View> {
+                    width: Fill, height: Fill
+                    flow: Right
+                    debug: true
+                    <MainDesktopUI> {}
+                    <RightPanel> {}
+                }
             }
         }
 
