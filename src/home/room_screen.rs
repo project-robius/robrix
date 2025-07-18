@@ -46,8 +46,9 @@ const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
 /// from getting into a long-running loop if an event cannot be found quickly.
 const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 
-/// The width of a blurhash image to be capped for decode.
-const BLURIMAGE_WIDTH_CAP: u32 = 500;
+/// The max size (width or height) of a blurhash image to decode.
+const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
+
 
 live_design! {
     use link::theme::*;
@@ -3565,23 +3566,33 @@ fn populate_image_message_content(
                 fully_drawn = true;
             }
             (MediaCacheEntry::Requested, _media_format) => {
+                // If the image is being fetched, we try to show its blurhash.
                 if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
                     let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
-                        let (Ok(width), Ok(height)) = (width.try_into() , height.try_into()) else { return Err(image_cache::ImageError::EmptyData)};
-                        let width: u32 = width;
-                        let height: u32 = height;
-                        if width == 0 { error!("Failed to get aspect ratio by dividing 0 for its width."); return Err(image_cache::ImageError::EmptyData); }
-                        let aspect_ratio: f32 = height as f32 / width as f32;
-                        if aspect_ratio <= 0.0 || !aspect_ratio.is_finite() {
+                        let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else {
+                            return Err(image_cache::ImageError::EmptyData)
+                        };
+                        let (width, height): (u32, u32) = (width, height);
+                        if width == 0 || height == 0 {
+                            warning!("Image had an invalid aspect ratio (width or height of 0).");
                             return Err(image_cache::ImageError::EmptyData);
                         }
-                        let capped_width = width.max(BLURIMAGE_WIDTH_CAP) as f32;
-                        let capped_height = capped_width * aspect_ratio;
-                        let final_width = capped_width.floor() as u32;
-                        let final_height = capped_height.floor() as u32;
-                        match blurhash::decode(blurhash, final_width, final_height, 1.0) {
+                        let aspect_ratio: f32 = width as f32 / height as f32;
+                        // Cap the blurhash to a max size of 500 pixels in each dimension
+                        // because the `blurhash::decode()` function can be rather expensive.
+                        let (mut capped_width, mut capped_height) = (width, height);
+                        if capped_height > BLURHASH_IMAGE_MAX_SIZE {
+                            capped_height = BLURHASH_IMAGE_MAX_SIZE;
+                            capped_width = (capped_height as f32 * aspect_ratio).floor() as u32;
+                        }
+                        if capped_width > BLURHASH_IMAGE_MAX_SIZE {
+                            capped_width = BLURHASH_IMAGE_MAX_SIZE;
+                            capped_height = (capped_width as f32 / aspect_ratio).floor() as u32;
+                        }
+
+                        match blurhash::decode(blurhash, capped_width, capped_height, 1.0) {
                             Ok(data) => {
-                                ImageBuffer::new(&data, final_width as usize, final_height as usize).map(|img_buff| {
+                                ImageBuffer::new(&data, capped_width as usize, capped_height as usize).map(|img_buff| {
                                     let texture = Some(img_buff.into_new_texture(cx));
                                     img.set_texture(cx, texture);
                                     img.size_in_pixels(cx).unwrap_or_default()
