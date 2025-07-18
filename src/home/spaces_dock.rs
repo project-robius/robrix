@@ -10,7 +10,7 @@ use crate::{
     shared::{
         avatar::AvatarWidgetExt,
         callout_tooltip::TooltipAction,
-        popup_list::{enqueue_popup_notification, PopupItem},
+        popup_list::{enqueue_popup_notification, PopupItem, PopupKind},
         styles::{COLOR_DISABLE_GRAY, COLOR_ROBRIX_PURPLE}, verification_badge::VerificationBadgeWidgetExt,
     },
     sliding_sync::current_user_id,
@@ -202,6 +202,7 @@ impl Widget for ProfileIcon {
                 enqueue_popup_notification(PopupItem {
                     message: String::from("ProfileIcon & Settings screen is not yet implemented."),
                     auto_dismissal_duration: None,
+                    kind: PopupKind::Warning
                 });
             }
             Hit::FingerHoverOut(_) => {
