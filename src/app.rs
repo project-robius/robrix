@@ -394,6 +394,7 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
+            
             // Monitor for DockSave action which will be triggered by selection of the room for setting the visibility of the message search input.
             if let Some(MainDesktopUiAction::SaveDockIntoAppState) = action.downcast_ref() {
                 if self.app_state.selected_room.is_some() {
@@ -402,7 +403,6 @@ impl MatchEvent for App {
                     self.ui.view(id!(message_search_input_view)).set_visible(cx, false);
                 }
             }
-            crate::right_panel::right_panel_handler(cx, &self.ui, action);
         }
     }
 }

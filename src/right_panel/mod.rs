@@ -11,24 +11,31 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::message_search_input_bar::*;
     use crate::right_panel::search_message::*;
+    use crate::shared::icon_button::RobrixIconButton;
     pub RightPanel = {{RightPanel}} {
         width: 400, height: Fill,
         flow: Down,
-        right_panel_header = <View> {
-            height: Fit,
-            flow: Down,
-            padding: 10,
-            spacing: 0,
-            <MessageSearchInputBar> {
-                width: Fill,
-            }
-        }
-        
+        visible: false
         nav1 = <StackNavigation> {
             width: Fill, height: Fill
             padding: 0.0
             root_view = <View> {
-                padding: 0.0
+                padding: 0.0,
+                back_button = <RobrixIconButton> {
+                    width: 250,
+                    height: 40
+                    padding: 10
+                    margin: {top: 5, bottom: 10}
+                    align: {x: 0.5, y: 0.5}
+                    draw_bg: {
+                        color: (COLOR_ACTIVE_PRIMARY)
+                    }
+                    draw_text: {
+                        color: (COLOR_PRIMARY)
+                        text_style: <REGULAR_TEXT> {}
+                    }
+                    text: "Back"
+                }
             }
 
             search_result_view = <StackNavigationView> {
@@ -72,22 +79,28 @@ impl Widget for RightPanel {
 }
 
 impl WidgetMatchEvent for RightPanel {
-    fn handle_actions(&mut self, _cx: &mut Cx, _actions: &Actions, _scope: &mut Scope) {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
+        if self.view.button(id!(back_button)).clicked(actions) {
+            self.view.set_visible(cx, true);
+        }
+        for action in actions.iter() {
+            if let MessageSearchAction::Click(_) = action.as_widget_action().cast() {
+                self.view.set_visible(cx, true);
+                self.view.stack_navigation(id!(nav1)).push(cx,live_id!(search_result_view));
+            }
+            if let StackNavigationTransitionAction::HideEnd(_) = action.as_widget_action().cast() {
+                self.view.set_visible(cx, false);
+            }
+        }
+        
     }
 }
 
 impl RightPanelRef {
     pub fn open(&self, cx: &mut Cx, view_id: LiveId) {
-        
         if let Some(inner) = self.borrow() {
             inner.view.stack_navigation(id!(nav1)).push(cx, view_id);
         }
-    }
-}
-
-pub fn right_panel_handler(cx: &mut Cx, widget_ref: &WidgetRef, action: &Action) {
-    if let MessageSearchAction::Click(_) = action.as_widget_action().cast() {
-        widget_ref.stack_navigation(id!(nav1)).push(cx,live_id!(search_result_view));
     }
 }
 

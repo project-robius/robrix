@@ -15,7 +15,6 @@ live_design! {
     use crate::home::welcome_screen::WelcomeScreen;
     use crate::home::room_screen::RoomScreen;
     use crate::home::invite_screen::InviteScreen;
-    use crate::home::search_screen::SearchScreen;
 
     pub MainDesktopUI = {{MainDesktopUI}} {
         dock = <Dock> {
@@ -28,13 +27,7 @@ live_design! {
                 axis: Horizontal,
                 align: FromA(300.0),
                 a: rooms_sidebar_tab,
-                b: split1,
-            }
-            split1 = Splitter {
-                axis: Horizontal,
-                align: Weighted(0.8),
-                a: main,
-                b: search
+                b: main
             }
 
             // This is a "fixed" tab with no header that cannot be closed.
@@ -51,26 +44,11 @@ live_design! {
                 template: PermanentTab
             }
 
-            search = Tab {
-                name: "Search"
-                kind: search_screen
-                template: PermanentTab
-            }
             // Below are the templates of widgets that can be created within dock tabs.
             rooms_sidebar = <RoomsSideBar> {}
             welcome_screen = <WelcomeScreen> {}
             room_screen = <RoomScreen> {}
             invite_screen = <InviteScreen> {}
-            search_screen = <SearchScreen> {}
-            // search_screen = <Label> {
-            //     width: Fill,
-            //     draw_text: {
-            //         text_style: <USERNAME_TEXT_STYLE> {},
-            //         color: #222,
-            //         wrap: Ellipsis,
-            //     }
-            //     text: "search screen"
-            // }
         }
     }
 }

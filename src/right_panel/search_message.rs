@@ -136,24 +136,6 @@ live_design! {
                     }
                     text: "Search All Rooms"
                 }
-                cancel_button = <RobrixIconButton> {
-                    width: Fit,
-                    height: Fit,
-                    padding: 10,
-                    spacing: 0,
-                    margin: {left: 0, right: 10, top: -2},
-
-                    draw_bg: {
-                        border_color: (COLOR_DANGER_RED),
-                        color: #fff0f0 // light red
-                        border_radius: 5
-                    }
-                    draw_icon: {
-                        svg_file: (ICON_CLOSE),
-                        color: (COLOR_DANGER_RED)
-                    }
-                    icon_walk: {width: 16, height: 16, margin: 0}
-                }
             }
             top_space = <TopSpace> {
                 visible: false
@@ -404,7 +386,7 @@ impl Widget for SearchResult {
         if !self.visible {
             return;
         }
-        self.match_event(cx, event);
+        //self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -414,25 +396,28 @@ impl Widget for SearchResult {
         self.view.draw_walk(cx, scope, walk)
     }
 }
-impl MatchEvent for SearchResult {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let cancel_button_clicked = self.view.button(id!(cancel_button)).clicked(actions);
-        if cancel_button_clicked {
-            cx.widget_action(
-                self.widget_uid(),
-                &Scope::empty().path,
-                MessageSearchAction::Clear,
-            );
-            submit_async_request(MatrixRequest::SearchMessages {
-                room_id: None,
-                include_all_rooms: false,
-                search_term: "".to_string(),
-                next_batch: None,
-                abort_previous_search: true
-            });
-        }
-    }
-}
+// impl MatchEvent for SearchResult {
+//     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+//         for action in actions {
+//             if let MessageSearchAction::Changed(search_term) = action.as_widget_action().cast() {
+//                 if search_term.is_empty() {
+//                     cx.widget_action(
+//                         self.widget_uid(),
+//                         &Scope::empty().path,
+//                         MessageSearchAction::Clear,
+//                     );
+//                     submit_async_request(MatrixRequest::SearchMessages {
+//                         room_id: None,
+//                         include_all_rooms: false,
+//                         search_term: "".to_string(),
+//                         next_batch: None,
+//                         abort_previous_search: true
+//                     });
+//                 }
+//             }
+//         }
+//     }
+// }
 impl SearchResult {
     /// Display search summary.
     ///
