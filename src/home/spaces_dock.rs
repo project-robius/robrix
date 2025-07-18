@@ -26,10 +26,6 @@ live_design! {
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
 
-    Filler = <View> {
-        height: Fill, width: Fill
-    }
-
     ProfileIcon = {{ProfileIcon}} {
         flow: Overlay
         width: (SPACES_DOCK_SIZE - 6), height: (SPACES_DOCK_SIZE - 6)
@@ -91,15 +87,15 @@ live_design! {
                 color: (COLOR_SECONDARY)
             }
 
-            <Home> {}
-
-            <LineH> { margin: {left: 15, right: 15} }
-
-            <Filler> {}
-
             <CachedWidget> {
                 profile_icon = <ProfileIcon> {}
             }
+
+            <LineH> { margin: {left: 15, right: 15} }
+
+            <Home> {}
+
+            <Filler> {}
         }
 
         // TODO: make this horizontally scrollable via touch
@@ -115,22 +111,26 @@ live_design! {
 
             <Filler> {}
 
-            <Home> {}
-
-            <Filler> {}
-
             <CachedWidget> {
                 profile_icon = <ProfileIcon> {}
             }
+
+            <Filler> {}
+
+            <Home> {}
 
             <Filler> {}
         }
     }
 }
 
+/// The icon in the SpacesDock that show the user's avatar.
+///
+/// Clicking on this icon will open the settings screen.
 #[derive(Live, Widget)]
 pub struct ProfileIcon {
     #[deref] view: View,
+    #[rust] is_selected: bool,
     #[rust] own_profile: Option<UserProfile>,
 }
 
@@ -168,6 +168,11 @@ impl Widget for ProfileIcon {
                     self.own_profile = get_own_profile(cx);
                     self.view.redraw(cx);
                 }
+
+                if let Some(SettingsAction::CloseSettings) = action.downcast_ref() {
+                    self.is_selected = false;
+                    self.view.redraw(cx);
+                }
             }
         }
 
@@ -197,6 +202,10 @@ impl Widget for ProfileIcon {
             }
             Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => {
                 cx.action(SettingsAction::OpenSettings);
+                self.is_selected = true;
+                // TODO: actually use the `is_selected` state by showing a
+                //       blue border around the avatar icon (like the `Home` view above).
+                self.view.redraw(cx);
             }
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);

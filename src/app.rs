@@ -93,7 +93,6 @@ live_design! {
                 body = {
                     padding: 0,
 
-                    
                     <View> {
                         width: Fill, height: Fill,
                         flow: Overlay,
@@ -342,6 +341,10 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // if let Event::WindowGeomChange(geom) = event {
+        //     log!("App::handle_event(): Window geometry changed: {:?}", geom);
+        // }
+
         if let Event::Shutdown = event {
             let window_ref = self.ui.window(id!(main_window));
             if let Err(e) = save_window_state(window_ref, cx) {

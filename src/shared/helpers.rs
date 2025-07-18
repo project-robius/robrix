@@ -38,6 +38,7 @@ live_design! {
         draw_bg: {color: (COLOR_DIVIDER_DARK)}
     }
 
+    pub Filler  = <View> { width: Fill, height: Fill }
     pub FillerX = <View> { width: Fill, height: Fit }
-    pub FillerY = <View> { width: Fit, height: Fill }
+    pub FillerY = <View> { width: Fit,  height: Fill }
 }

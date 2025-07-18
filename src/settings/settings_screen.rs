@@ -18,10 +18,9 @@ live_design! {
         // The settings screen is invisible by default;
         // its parent widget (the HomeScreen) directly sets it to visible
         // upon receiving a `SettingsAction::OpenSettings`/`CloseSettings` action.
-        visible: false,
+        // visible: false,
         width: Fill,
         height: Fill,
-        align: {x: 0.5, y: 0},
         padding: {top: 5, left: 15, right: 15, bottom: 15},
         spacing: 10,
         flow: Down,
@@ -137,14 +136,8 @@ impl SettingsScreen {
         };
         self.view.account_settings(id!(account_settings)).show(cx, profile);
         self.view.button(id!(close_button)).reset_hover(cx);
-        self.view.set_visible(cx, true);
+        // self.view.set_visible(cx, true);
         cx.set_key_focus(self.view.area());
-        self.redraw(cx);
-    }
-
-    /// Hides the settings screen by making it invisible.
-    pub fn hide(&mut self, cx: &mut Cx) {
-        self.view.set_visible(cx, false);
         self.redraw(cx);
     }
 }
@@ -154,11 +147,5 @@ impl SettingsScreenRef {
     pub fn show(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.show(cx)
-    }
-
-    /// See [`SettingsScreen::hide()`].
-    pub fn hide(&self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.hide(cx);
     }
 }

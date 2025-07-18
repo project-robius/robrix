@@ -36,15 +36,19 @@ live_design! {
                 margin: 0,
 
                 // On the left, show the spaces sidebar.
-                spaces = <SpacesDock> {}
+                <CachedWidget> {
+                    spaces_dock = <SpacesDock> {}
+                }
 
-                // To the right of that, show a view that contains the main desktop UI
-                // with the settings screen able to be overlaid in front of it.
-                <View> {
+                // To the right of that, we use the PageFlip widget to show either
+                // the main desktop UI or the settings screen.
+                home_screen_page_flip = <PageFlip> {
                     width: Fill, height: Fill
-                    flow: Overlay,
 
-                    <View> {
+                    lazy_init: true,
+                    active_page: main_page
+
+                    main_page = <View> {
                         width: Fill, height: Fill
                         flow: Down
 
@@ -54,8 +58,12 @@ live_design! {
                         <MainDesktopUI> {}
                     }
 
-                    <CachedWidget> {
-                        settings_screen = <SettingsScreen> {}
+                    settings_page = <View> {
+                        width: Fill, height: Fill
+
+                        <CachedWidget> {
+                            settings_screen = <SettingsScreen> {}
+                        }
                     }
                 }
             }
@@ -76,21 +84,34 @@ live_design! {
                             flow: Down
                             width: Fill, height: Fill
 
-                            // At the top of the root view, show the main list of rooms.
-                            // We use an overlay view to allow the Settings screen to display in front of it.
-                            <View> {
+                            // At the top of the root view, we use the PageFlip widget to show either
+                            // the main list of rooms or the settings screen.
+                            home_screen_page_flip = <PageFlip> {
                                 width: Fill, height: Fill
-                                flow: Overlay
 
-                                sidebar = <RoomsSideBar> {}
+                                lazy_init: true,
+                                active_page: main_page
 
-                                <CachedWidget> {
-                                    settings_screen = <SettingsScreen> {}
+                                main_page = <View> {
+                                    width: Fill, height: Fill
+                                    flow: Down
+
+                                    <RoomsSideBar> {}
+                                }
+
+                                settings_page = <View> {
+                                    width: Fill, height: Fill
+
+                                    <CachedWidget> {
+                                        settings_screen = <SettingsScreen> {}
+                                    }
                                 }
                             }
 
                             // At the bottom of the root view, show the spaces dock.
-                            spaces = <SpacesDock> {}
+                            <CachedWidget> {
+                                spaces_dock = <SpacesDock> {}
+                            }
                         }
 
                         main_content_view = <StackNavigationView> {
@@ -121,38 +142,74 @@ live_design! {
 }
 
 
+/// Which space is currently selected in the SpacesDock.
+#[derive(Clone, Debug, Default)]
+pub enum SelectedSpace {
+    #[default]
+    Home,
+    Settings,
+    // Once we support spaces and shortcut buttons (like directs only, etc),
+    // we can add them here.
+}
+
+
 #[derive(Live, LiveHook, Widget)]
 pub struct HomeScreen {
     #[deref] view: View,
+
+    #[rust] selection: SelectedSpace,
+    #[rust] previous_selection: SelectedSpace,
 }
 
 impl Widget for HomeScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.match_event(cx, event);
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                // Handle the settings screen being opened or closed.
+                match action.downcast_ref() {
+                    Some(SettingsAction::OpenSettings) => {
+                        if !matches!(self.selection, SelectedSpace::Settings) {
+                            self.previous_selection = self.selection.clone();
+                            self.selection = SelectedSpace::Settings;
+                            self.update_active_page_from_selection(cx);
+                            self.view.settings_screen(id!(settings_screen)).show(cx);
+                            self.view.redraw(cx);
+                        }
+                    }
+                    Some(SettingsAction::CloseSettings) => {
+                        self.selection = self.previous_selection.clone();
+                        self.update_active_page_from_selection(cx);
+                        self.view.redraw(cx);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         self.view.handle_event(cx, event, scope);  
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Note: We need to update the active page before drawing,
+        // because if we switched between Desktop and Mobile views,
+        // the PageFlip widget will have been reset to its default,
+        // so we must re-set it to the correct page based on `self.selection`.
+        self.update_active_page_from_selection(cx);
         self.view.draw_walk(cx, scope, walk)
     }
 }
 
-impl MatchEvent for HomeScreen {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        for action in actions {
-            // Handle the settings screen being opened or closed.
-            match action.downcast_ref() {
-                Some(SettingsAction::OpenSettings) => {
-                    self.view.settings_screen(id!(settings_screen)).show(cx);
-                    self.view.redraw(cx);
-                }
-                Some(SettingsAction::CloseSettings) => {
-                    self.view.settings_screen(id!(settings_screen)).hide(cx);
-                    self.view.redraw(cx);
-                }
-                _ => {}
-            }
-        }
+impl HomeScreen {
+    fn update_active_page_from_selection(&mut self, cx: &mut Cx) {
+        self.view
+            .page_flip(id!(home_screen_page_flip))
+            .set_active_page(
+                cx,
+                match self.selection {
+                    SelectedSpace::Settings => live_id!(settings_page),
+                    SelectedSpace::Home => live_id!(main_page),
+                },
+            );
     }
 }
 
