@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{app::RoomsPanelRestoreAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem}}, sliding_sync::{submit_async_request, MatrixRequest}, utils};
+use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem}}, sliding_sync::{submit_async_request, MatrixRequest}, utils};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -317,7 +317,7 @@ impl Widget for InviteScreen {
             // First, we quickly loop over the actions up front to handle the case
             // where this room was restored and has now been successfully loaded from the homeserver.
             for action in actions {
-                if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
+                if let Some(AppStateAction::RoomLoadedSuccessfully(room_id)) = action.downcast_ref() {
                     if self.room_id.as_ref().is_some_and(|inner_room_id| inner_room_id == room_id) {
                         self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
                         break;
