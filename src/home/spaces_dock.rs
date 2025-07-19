@@ -3,7 +3,7 @@ use makepad_widgets::*;
 use crate::{
     avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, profile::{
         user_profile::{AvatarState, UserProfile},
-        user_profile_cache,
+        user_profile_cache::{self, UserProfileUpdate},
     }, settings::SettingsAction, shared::{
         avatar::AvatarWidgetExt,
         callout_tooltip::TooltipAction,
@@ -264,12 +264,21 @@ pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
                 avatar_uri_to_fetch
             },
         );
+        // If we have an avatar URI to fetch, try to fetch it.
+        let mut new_profile_with_avatar = None;
         if let Some(Some(avatar_uri)) = avatar_uri_to_fetch {
             if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, avatar_uri) {
                 if let Some(p) = own_profile.as_mut() {
                     p.avatar_state = AvatarState::Loaded(data);
+                    new_profile_with_avatar = Some(p.clone());
                 }
             }
+        }
+        // Update the user profile cache if we got new avatar data.
+        if let Some(new_profile) = new_profile_with_avatar {
+            user_profile_cache::enqueue_user_profile_update(
+                UserProfileUpdate::UserProfileOnly(new_profile)
+            );
         }
     }
 
