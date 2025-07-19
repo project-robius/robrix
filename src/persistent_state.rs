@@ -239,11 +239,11 @@ pub fn save_app_state(
         persistent_state_dir(&user_id).join(LATEST_APP_STATE_FILE_NAME),
         app_state.serialize_ron(),
     )?;
-    for (tab_id, room) in &app_state.dock_state.open_rooms {
+    for (tab_id, room) in &app_state.save_dock_state.open_rooms {
         match room {
             SelectedRoom::JoinedRoom { room_id, .. }
             | SelectedRoom::InvitedRoom { room_id, .. } => {
-                if !app_state.dock_state.dock_items.contains_key(tab_id) {
+                if !app_state.save_dock_state.dock_items.contains_key(tab_id) {
                     error!("Room id: {} already in dock state", room_id);
                 }
             }

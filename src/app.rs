@@ -453,14 +453,14 @@ pub struct AppState {
     /// and considered "active" in the main rooms screen.
     pub selected_room: Option<SelectedRoom>,
     /// The state of the main desktop UI's dock required to display the dock tabs.
-    pub dock_state: DockState,
+    pub save_dock_state: SavedDockState,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
 }
 
 /// The state of the main desktop UI's dock required to display the dock tabs.
 #[derive(Clone, Default, Debug, DeRon, SerRon)]
-pub struct DockState {
+pub struct SavedDockState {
     /// All items contained in the dock, keyed by their LiveId.
     pub dock_items: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by the LiveId of their tab.
