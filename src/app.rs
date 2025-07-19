@@ -389,7 +389,7 @@ impl AppMain for App {
             if let Some(user_id) = current_user_id() {
                 let app_state = self.app_state.clone();
                 if let Err(e) = save_app_state(app_state, user_id) {
-                    error!("Failed to save room panel. Error details: {}", e);
+                    error!("Failed to save app state. Error details: {}", e);
                 }
             }
         }
@@ -453,7 +453,7 @@ pub struct AppState {
     /// and considered "active" in the main rooms screen.
     pub selected_room: Option<SelectedRoom>,
     /// The state of the main desktop UI's dock required to display the dock tabs.
-    pub save_dock_state: SavedDockState,
+    pub saved_dock_state: SavedDockState,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
 }

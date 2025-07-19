@@ -2073,8 +2073,8 @@ fn handle_load_app_state(user_id: OwnedUserId) {
     Handle::current().spawn(async move {
         match load_app_state(&user_id).await {
             Ok(app_state) => {
-                if !app_state.save_dock_state.open_rooms.is_empty()
-                    && !app_state.save_dock_state.dock_items.is_empty()
+                if !app_state.saved_dock_state.open_rooms.is_empty()
+                    && !app_state.saved_dock_state.dock_items.is_empty()
                 {
                     log!("Loaded room panel state from app data directory. Restoring now...");
                     Cx::post_action(AppStateAction::RestoreAppStateFromPersistentState(app_state));
