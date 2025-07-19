@@ -89,6 +89,7 @@ live_design! {
                 width: Fit,
                 height: Fill,
                 flow: Down
+
                 // The "X" close button on the top right
                 close_button = <RobrixIconButton> {
                     width: Fit,
@@ -96,6 +97,10 @@ live_design! {
                     padding: 4
                     spacing: 0,
                     align: {x: 0.5, y: 0.5}
+
+                    draw_bg: {
+                        color: (COLOR_SECONDARY)
+                    }
                     draw_icon: {
                         svg_file: (ICON_CLOSE),
                         fn get_color(self) -> vec4 {
@@ -104,6 +109,7 @@ live_design! {
                     }
                     icon_walk: {width: 12, height: 12}
                 }
+
                 progress_bar = <View> {
                     width: Fill,
                     height: Fill,

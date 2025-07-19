@@ -16,7 +16,7 @@ pub mod login;
 /// Core UI content: the main home screen (rooms list), room screen.
 pub mod home;
 /// User profile info and a user profile sliding pane.
-mod profile;
+pub mod profile;
 /// A modal/dialog popup for interactive verification of users/devices.
 mod verification_modal;
 /// A modal/dialog popup for joining/leaving rooms, including confirming invite accept/reject.

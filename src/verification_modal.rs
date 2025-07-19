@@ -72,7 +72,7 @@ live_design! {
                         align: {x: 0.5, y: 0.5}
                         padding: 15,
                         draw_icon: {
-                            svg_file: (ICON_BLOCK_USER)
+                            svg_file: (ICON_FORBIDDEN)
                             color: (COLOR_DANGER_RED),
                         }
                         icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
