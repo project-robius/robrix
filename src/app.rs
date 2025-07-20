@@ -208,10 +208,13 @@ impl LiveRegister for App {
 
 impl LiveHook for App {
     fn after_update_from_doc(&mut self, cx: &mut Cx) {
+        self.update_login_visibility(cx);
+    }
+
+    fn after_new_from_doc(&mut self, cx: &mut Cx) {
         // Here we set the global singleton for the PopupList widget,
         // which is used to access PopupList Widget from anywhere in the app.
         crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
-        self.update_login_visibility(cx);
     }
 }
 
@@ -221,7 +224,6 @@ impl MatchEvent for App {
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
-        crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
         self.update_login_visibility(cx);
 
         log!("App::handle_startup(): starting matrix sdk loop");

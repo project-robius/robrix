@@ -11,7 +11,6 @@ live_design! {
     pub ICON_CLOSE        = dep("crate://self/resources/icons/close.svg")
     pub ICON_COPY         = dep("crate://self/resources/icons/copy.svg")
     pub ICON_EDIT         = dep("crate://self/resources/icons/edit.svg")
-    pub ICON_FAT_CROSS    = dep("crate://self/resources/icons/fat_cross.svg")
     pub ICON_HTML_FILE    = dep("crate://self/resources/icons/html_file.svg")
     pub ICON_INFO         = dep("crate://self/resources/icons/info.svg")
     pub ICON_JUMP         = dep("crate://self/resources/icons/go_back.svg")
@@ -236,6 +235,6 @@ pub const COLOR_DISABLE_GRAY:        Vec4 = vec4(0.7, 0.7, 0.7, 1.0); // #B3B3B3
 pub const COLOR_ROBRIX_PURPLE:       Vec4 = vec4(0.341, 0.176, 0.8, 1.0); // #572DCC
 pub const COLOR_DANGER_RED:          Vec4 = vec4(0.863, 0.0, 0.02, 1.0); // #DC0005
 pub const COLOR_UNKNOWN_ROOM_AVATAR: Vec4 = vec4(1.0, 0.431, 0.0, 1.0); // #FF6e00
-pub const COLOR_WARNING_ORANGE:      Vec4 = vec4(0.988, 0.859, 0.01, 1.0); // #fcdb03
+pub const COLOR_WARNING_YELLOW:      Vec4 = vec4(0.988, 0.859, 0.01, 1.0); // #fcdb03
 pub const COLOR_INFO_BLUE:           Vec4 = vec4(0.05, 0.53, 0.996, 1.0);  // #0f88fe
 pub const COLOR_WHITE:               Vec4 = vec4(1.0, 1.0, 1.0, 1.0);  // #FFFFFF

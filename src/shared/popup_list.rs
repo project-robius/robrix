@@ -8,7 +8,7 @@ const POPUP_KINDS: [(PopupKind, Vec4); 4] = [
     (PopupKind::Error, COLOR_DANGER_RED),
     (PopupKind::Info, COLOR_INFO_BLUE),
     (PopupKind::Success, COLOR_ACCEPT_GREEN),
-    (PopupKind::Warning, COLOR_WARNING_ORANGE),
+    (PopupKind::Warning, COLOR_WARNING_YELLOW),
 ];
 const ICON_SET: &[&[LiveId]] = ids!(error_icon, info_icon, success_icon, warning_icon,);
 
@@ -23,7 +23,7 @@ pub fn enqueue_popup_notification(mut popup_item: PopupItem) {
     popup_item.auto_dismissal_duration = popup_item
         .auto_dismissal_duration
         .map(|duration| duration.min(3. * 60.));
-    POPUP_NOTIFICATION.push(popup_item);
+    POPUP_NOTIFICATION.push(popup_item.clone());
     SignalToUI::set_ui_signal();
 }
 
@@ -85,7 +85,7 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::icon_button::RobrixIconButton;
-    CHECK_ICON = <View> {
+    CheckIcon = <View> {
         width: Fill,
         height: Fit,
         visible: false,
@@ -97,16 +97,16 @@ live_design! {
             icon_walk: { width: 22, height: 22 }
         }
     }
-    CROSS_ICON = <CHECK_ICON> {
+    CROSS_ICON = <CheckIcon> {
         <Icon> {
             draw_icon: {
-                svg_file: (ICON_FAT_CROSS),
+                svg_file: (ICON_CLOSE),
                 color: #ffffff,
             }
             icon_walk: { width: 22, height: 22 }
         }
     }
-    INFO_ICON = <CHECK_ICON> {
+    INFO_ICON = <CheckIcon> {
         <Icon> {
             draw_icon: {
                 svg_file: (ICON_INFO),
@@ -115,7 +115,7 @@ live_design! {
             icon_walk: { width: 22, height: 22 }
         }
     }
-    WARNING_ICON = <CHECK_ICON> {
+    WARNING_ICON = <CheckIcon> {
         <Icon> {
             draw_icon: {
                 svg_file: (ICON_WARNING),
@@ -194,7 +194,7 @@ live_design! {
         height: Fit,
         align: { x: 0.5, y: 0.5 }
         padding: 0
-        success_icon = <CHECK_ICON> {}
+        success_icon = <CheckIcon> {}
         error_icon = <CROSS_ICON> {}
         info_icon = <INFO_ICON> {}
         warning_icon = <WARNING_ICON> {}
@@ -215,7 +215,7 @@ live_design! {
                 instance color: #FEFEFE00
             }
             draw_icon: {
-                svg_file: (ICON_FAT_CROSS),
+                svg_file: (ICON_CLOSE),
                 color: (COLOR_TEXT_IDLE),
             }
             icon_walk: {width: 12, height: 12}
@@ -482,19 +482,19 @@ impl RobrixPopupNotification {
     /// New popup will be displayed below the previous ones.
     pub fn push(&mut self, cx: &mut Cx, popup_item: PopupItem) {
         let mut view = View::new_from_ptr(cx, self.content);
-        let mut background_color = COLOR_WHITE;
+        let mut background_color = None;
         view.label(id!(popup_label))
             .set_text(cx, &popup_item.message);
         for (view, (popup_kind, color)) in view.view_set(ICON_SET).iter().zip(POPUP_KINDS) {
             if popup_item.kind == popup_kind {
                 view.set_visible(cx, true);
-                background_color = color;
+                background_color = Some(color);
             } else {
                 view.set_visible(cx, false);
             }
         }
         // Apply popup item kind-specific styling
-        if background_color != COLOR_WHITE {
+        if let Some(background_color) = background_color {
             view.apply_over(
                 cx,
                 live! {
