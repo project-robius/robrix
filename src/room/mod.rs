@@ -4,9 +4,11 @@ use matrix_sdk::ruma::OwnedRoomId;
 
 pub mod room_input_bar;
 pub mod room_display_filter;
+pub mod link_preview_card;
 
 pub fn live_design(cx: &mut Cx) {
-    room_input_bar::live_design(cx)
+    room_input_bar::live_design(cx);
+    link_preview_card::live_design(cx);
 }
 
 /// Basic details about a room, used for displaying a preview of it.

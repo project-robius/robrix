@@ -3,7 +3,7 @@
 use makepad_widgets::{makepad_html::HtmlDoc, *};
 use matrix_sdk::{ruma::{matrix_uri::MatrixId, OwnedMxcUri}, OwnedServerName};
 
-use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils};
+use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, room::link_preview_card::LinkPreviewCardWidgetExt, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils};
 
 use super::avatar::AvatarWidgetExt;
 
@@ -17,6 +17,7 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::avatar::Avatar;
+    use crate::room::link_preview_card::LinkPreviewCard;
 
     BaseLinkPill = <RoundedView> {
         width: Fit, height: Fit,
@@ -55,8 +56,8 @@ live_design! {
     // A RobrixHtmlLink is either a regular Html link (default) or a Matrix link.
     // The Matrix link is a pill-shaped widget with an avatar and a title.
     pub RobrixHtmlLink = {{RobrixHtmlLink}} {
-        width: Fit, height: Fit,
-        flow: RightWrap, // ensure the link text can wrap
+        width: Fill, height: Fit,
+        flow: Down,
         align: { y: 0.5 },
         cursor: Hand,
 
@@ -77,6 +78,13 @@ live_design! {
             width: Fit, height: Fit,
 
             matrix_link = <MatrixLinkPill> { }
+        }
+
+        link_preview_card_view = <LinkPreviewCard> {
+            visible: false
+            width: Fill, height: Fit,
+            align: { y: 0.5 },
+            margin: { top: 10, bottom: 10 },
         }
     }
 
@@ -262,6 +270,11 @@ impl RobrixHtmlLink {
         let mut html_link = self.html_link(id!(html_link));
         html_link.set_url(&self.url);
         html_link.set_text(cx, self.text.as_ref());
+
+        if let Some(mut link_preview_card) = self.link_preview_card(id!(link_preview_card_view)).borrow_mut() {
+            link_preview_card.populate_link_preview_card(cx, self.url.clone());
+        }
+        self.link_preview_card(id!(link_preview_card_view)).set_visible(cx, true);
     }
 }
 

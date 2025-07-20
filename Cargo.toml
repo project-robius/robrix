@@ -53,6 +53,7 @@ bytesize = "2.0"
 bitflags = "2.6.0"
 indexmap = "2.6.0"
 blurhash = { version = "0.2.3", default-features = false }
+url-preview = "0.4.1"
 
 [features]
 default = []
