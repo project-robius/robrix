@@ -426,26 +426,7 @@ impl AppMain for App {
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
-        
-        if let Event::KeyUp(key) = event {
-            match key.key_code {
-                KeyCode::ArrowRight => {
-                    self.ui.stack_navigation(id!(nav1)).push(cx,live_id!(search_result_view));
-                }
-                KeyCode::ArrowLeft => {
-                    self.ui.stack_navigation(id!(nav1)).pop(cx);
-                }
 
-                KeyCode::KeyD => {
-                    self.ui.stack_navigation(id!(nav2)).push(cx,live_id!(nav2_view1));
-                }
-
-                KeyCode::KeyA => {
-                    self.ui.stack_navigation(id!(nav2)).pop(cx);
-                },
-                _ => {}
-            }
-        }
         /*
          * TODO: I'd like for this to work, but it doesn't behave as expected.
          *       The context menu fails to draw properly when a draw event is passed to it.
@@ -507,8 +488,6 @@ pub struct AppState {
     pub saved_dock_state: SavedDockState,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
-    /// The current window geometry.
-    pub window_geom: Option<event::WindowGeom>,
     /// Whether the right panel is currently open.
     pub right_panel_open: bool,
 }
