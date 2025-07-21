@@ -30,12 +30,11 @@ live_design! {
                 text_style: <TITLE_TEXT>{}
             }
         },
-        <FillerX> {}
         loading_spinner = <LoadingSpinner> {
             width: 20,
             height: Fill,
             draw_bg: {
-                color: (COLOR_SELECT_TEXT)
+                color: (COLOR_ACTIVE_PRIMARY)
                 border_size: 3.0,
             }
         }

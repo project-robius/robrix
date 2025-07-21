@@ -15,7 +15,7 @@ live_design! {
             height: 50,
             visible: true,
             draw_bg: {
-                color: (COLOR_SELECT_TEXT)
+                color: (COLOR_ACTIVE_PRIMARY)
                 border_size: 3.0,
             }
         }

@@ -28,9 +28,9 @@ use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
 
 /// Duration for sync indicator delay before showing
-const SYNC_INDICATOR_DELAY: Duration = Duration::from_millis(500);
+const SYNC_INDICATOR_DELAY: Duration = Duration::from_millis(100);
 /// Duration for sync indicator delay before hiding
-const SYNC_INDICATOR_HIDE_DELAY: Duration = Duration::from_millis(1000);
+const SYNC_INDICATOR_HIDE_DELAY: Duration = Duration::from_millis(200);
 use std::io;
 use crate::{
     app::RoomsPanelRestoreAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
