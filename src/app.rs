@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
-    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_app_state, save_window_state}, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::current_user_id, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 use serde::{self, Deserialize, Serialize};
 
@@ -254,10 +254,14 @@ impl MatchEvent for App {
                 continue;
             }
 
-            if let Some(RoomsPanelRestoreAction::RestoreDockFromPersistentState(rooms_panel_state)) = action.downcast_ref() {
-                self.app_state.saved_dock_state = rooms_panel_state.clone();
+            if let Some(AppStateAction::RestoreAppStateFromPersistentState(app_state)) = action.downcast_ref() {
+                // Ignore the `logged_in` state that was stored persistently.
+                let logged_in_actual = self.app_state.logged_in;
+                self.app_state = app_state.clone();
+                self.app_state.logged_in = logged_in_actual;
                 cx.action(MainDesktopUiAction::LoadDockFromAppState);
             }
+
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 let display_name = room_name_or_id(selected_room.room_name(), selected_room.room_id());
@@ -385,9 +389,9 @@ impl AppMain for App {
                 error!("Failed to save window state. Error details: {}", e);
             }
             if let Some(user_id) = current_user_id() {
-                let rooms_panel = self.app_state.saved_dock_state.clone();
-                if let Err(e) = save_room_panel(rooms_panel, user_id) {
-                    error!("Failed to save room panel. Error details: {}", e);
+                let app_state = self.app_state.clone();
+                if let Err(e) = save_app_state(app_state, user_id) {
+                    error!("Failed to save app state. Error details: {}", e);
                 }
             }
         }
@@ -444,23 +448,20 @@ impl App {
     }
 }
 
-/// State that is shared across different parts of the Robrix app.
-#[derive(Default, Debug)]
+/// App-wide state that is stored persistently across multiple app runs
+/// and shared/updated across various parts of the app.
+#[derive(Clone, Default, Debug, DeRon, SerRon)]
 pub struct AppState {
     /// The currently-selected room, which is highlighted (selected) in the RoomsList
     /// and considered "active" in the main rooms screen.
     pub selected_room: Option<SelectedRoom>,
-    /// The saved state of the dock.
-    /// This is cloned from the main desktop UI's dock and saved here
-    /// when transitioning from the desktop view to mobile view,
-    /// and then restored from here back to the main desktop UI's dock
-    /// when transitioning from the mobile view back to the desktop view.
+    /// A saved "snapshot" of the dock's UI state.
     pub saved_dock_state: SavedDockState,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
 }
 
-/// A saved instance of the state of the main desktop UI's dock.
+/// A snapshot of the main dock: all state needed to restore the dock tabs/layout.
 #[derive(Clone, Default, Debug, DeRon, SerRon)]
 pub struct SavedDockState {
     /// All items contained in the dock, keyed by their LiveId.
@@ -529,7 +530,7 @@ impl PartialEq for SelectedRoom {
 }
 impl Eq for SelectedRoom {}
 
-/// Actions sent to the top-level App in order to update its [`AppState`].
+/// Actions sent to the top-level App in order to update / restore its [`AppState`].
 #[derive(Clone, Debug, DefaultNone)]
 pub enum AppStateAction {
     /// The given room was focused (selected).
@@ -539,25 +540,13 @@ pub enum AppStateAction {
     /// The given room has successfully been upgraded from being displayed
     /// as an InviteScreen to a RoomScreen.
     UpgradedInviteToJoinedRoom(OwnedRoomId),
-    None,
-}
-
-/// Action related to restoring the main dock and RoomScreen widgets from storage.
-#[derive(Debug, DefaultNone)]
-pub enum RoomsPanelRestoreAction {
-    /// The previously-saved state of the rooms panel & dock was loaded from storage
-    /// and is now ready to be restored to the dock UI widget.
-    ///
-    /// This will be handled by the top-level App and by each RoomScreen.
-    ///
-    /// Note: there is no SaveDockToPersistentState variant.
-    /// The dock state is saved to persistent in the Event::Shutdown handler directly.
-    RestoreDockFromPersistentState(SavedDockState),
+    /// The app state was restored from persistent storage.
+    RestoreAppStateFromPersistentState(AppState),
     /// The given room was successfully loaded from the homeserver
     /// and is now known to our client.
     ///
     /// The RoomScreen for this room can now fully display the room's timeline.
-    Success(OwnedRoomId),
+    RoomLoadedSuccessfully(OwnedRoomId),
     None,
 }
 
