@@ -446,19 +446,20 @@ impl App {
     }
 }
 
-/// State that is shared across different parts of the Robrix app.
+/// App-wide state that is stored persistently across multiple app runs
+/// and shared/updated across various parts of the app.
 #[derive(Clone, Default, Debug, DeRon, SerRon)]
 pub struct AppState {
     /// The currently-selected room, which is highlighted (selected) in the RoomsList
     /// and considered "active" in the main rooms screen.
     pub selected_room: Option<SelectedRoom>,
-    /// The state of the main desktop UI's dock required to display the dock tabs.
+    /// A saved "snapshot" of the dock's UI state.
     pub saved_dock_state: SavedDockState,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
 }
 
-/// The state of the main desktop UI's dock required to display the dock tabs.
+/// A snapshot of the main dock: all state needed to restore the dock tabs/layout.
 #[derive(Clone, Default, Debug, DeRon, SerRon)]
 pub struct SavedDockState {
     /// All items contained in the dock, keyed by their LiveId.
