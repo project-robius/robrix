@@ -556,6 +556,7 @@ impl InviteScreen {
                 .set_text(cx, "");
             self.redraw(cx);
         }
+        self.view.view(id!(restore_status_view)).set_visible(cx, !self.is_loaded);
     }
 }
 

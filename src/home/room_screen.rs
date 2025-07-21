@@ -1252,7 +1252,7 @@ impl Widget for RoomScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // If the room isn't loaded yet, we show the restore status label only.
-        //if !self.is_loaded {
+        if !self.is_loaded {
             let restore_status_label = self.view.label(id!(restore_status_label));
             let status_text: String = if self.all_rooms_loaded {
                 self.view.view(id!(restore_status_spinner)).set_visible(cx, false);
@@ -1267,7 +1267,7 @@ impl Widget for RoomScreen {
             };
             restore_status_label.set_text(cx, &status_text);
             return self.view.view(id!(restore_status_view)).draw(cx, scope);
-        //}
+        }
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
@@ -2346,6 +2346,7 @@ impl RoomScreen {
 
         if self.is_loaded {
             self.view.label(id!(restore_status_label)).set_text(cx, "");
+            self.view.view(id!(restore_status_view)).set_visible(cx, false);
         }
 
         // Kick off a back pagination request if it's the first time loading this room,
