@@ -96,7 +96,7 @@ impl Widget for MainDesktopUI {
         // When changing from mobile to Desktop, we need to restore the app state.
         if !self.drawn_previously {
             let app_state = scope.data.get_mut::<AppState>().unwrap();
-            if !app_state.dock_state.open_rooms.is_empty() {
+            if !app_state.saved_dock_state.open_rooms.is_empty() {
                 cx.action(MainDesktopUiAction::LoadDockFromAppState);
             }
             self.drawn_previously = true;
@@ -346,16 +346,16 @@ impl WidgetMatchEvent for MainDesktopUI {
                 Some(MainDesktopUiAction::LoadDockFromAppState) => {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
                     let dock = self.view.dock(id!(dock));
-                    self.room_order = app_state.dock_state.room_order.clone();
-                    self.open_rooms = app_state.dock_state.open_rooms.clone();
-                    if app_state.dock_state.dock_items.is_empty() {
+                    self.room_order = app_state.saved_dock_state.room_order.clone();
+                    self.open_rooms = app_state.saved_dock_state.open_rooms.clone();
+                    if app_state.saved_dock_state.dock_items.is_empty() {
                         return;
                     }
 
                     if let Some(mut dock) = dock.borrow_mut() {
-                        dock.load_state(cx, app_state.dock_state.dock_items.clone());
+                        dock.load_state(cx, app_state.saved_dock_state.dock_items.clone());
                         for (head_live_id, (_, widget)) in dock.items().iter() {
-                            match app_state.dock_state.open_rooms.get(head_live_id) {
+                            match app_state.saved_dock_state.open_rooms.get(head_live_id) {
                                 Some(SelectedRoom::JoinedRoom { room_id, room_name }) => {
                                     widget.as_room_screen().set_displayed_room(
                                         cx,
@@ -388,10 +388,10 @@ impl WidgetMatchEvent for MainDesktopUI {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
                     let dock = self.view.dock(id!(dock));
                     if let Some(dock_items) = dock.clone_state() {
-                        app_state.dock_state.dock_items = dock_items;
+                        app_state.saved_dock_state.dock_items = dock_items;
                     }
-                    app_state.dock_state.open_rooms = self.open_rooms.clone();
-                    app_state.dock_state.room_order = self.room_order.clone();
+                    app_state.saved_dock_state.open_rooms = self.open_rooms.clone();
+                    app_state.saved_dock_state.room_order = self.room_order.clone();
                 }
                 _ => {}
             }
