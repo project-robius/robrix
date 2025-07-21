@@ -1226,19 +1226,18 @@ async fn async_worker(
                             }));
                         }
                         Err(e) => {
-                            if let Some(room_id) = room_id {
-                                error!("Failed to search message in {room_id}; error: {e:?}");
+                            let context = if let Some(room_id) = room_id {
+                                format!("Failed to search messages in room {room_id}")
                             } else {
-                                error!("Failed to search message in all rooms; error: {e:?}");
-                            }
-                            enqueue_popup_notification(PopupItem{
-                                message: format!(
-                                    "Failed to search message. Error: {e}"
-                                ),
+                                "Failed to search messages in all rooms".to_string()
+                            };
+                            error!("{context}: {e:?}");
+
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("{context}. Please try again."),
                                 auto_dismissal_duration: None
                             });
                         }
-                        
                     }
                 });
                 search_task_abort_handler = Some(handle.abort_handle());
@@ -1967,10 +1966,8 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
 async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListService) -> Result<()> {
     let room_id = room.room_id().to_owned();
     // We must call `display_name()` here to calculate and cache the room's name.
-    let room_name = room.display_name().await.map(|n| n.to_string()).ok();
-    
-    //let is_room_encrypted = room.is_encrypted().await.unwrap_or(false);
-    let is_room_encrypted = false;
+    let room_name = room.display_name().await.map(|n| n.to_string()).ok();    
+    let is_room_encrypted = room.encryption_state().is_encrypted();
     let is_direct = room.is_direct().await.unwrap_or(false);
 
     match room.state() {

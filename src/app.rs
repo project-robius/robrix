@@ -380,14 +380,14 @@ impl MatchEvent for App {
                 crate::shared::message_search_input_bar::MessageSearchAction::Click(_) => {
                     // there is apply error in desktop view
                     self.ui
-                        .view(id!(main_content_view.header.content.message_search_input_mobile_view))
+                        .view(id!(main_content_view.header.content.mobile_message_search_input_view))
                         .apply_over(cx, live!{
                             width: 220
                         });
                 }
                 crate::shared::message_search_input_bar::MessageSearchAction::Clear => {
                     self.ui
-                        .view(id!(main_content_view.header.content.message_search_input_mobile_view))
+                        .view(id!(main_content_view.header.content.mobile_message_search_input_view))
                         .apply_over(cx, live!{
                             width: 150
                         });

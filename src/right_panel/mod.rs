@@ -1,5 +1,5 @@
 use makepad_widgets::*;
-
+/// Handles search functionality in the right panel
 pub mod search_message;
 use crate::shared::message_search_input_bar::MessageSearchAction;
 

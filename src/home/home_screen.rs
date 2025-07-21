@@ -105,7 +105,7 @@ live_design! {
                                     height: Fit,
                                     width: Fill,
                                     align: {x: 1.0 }
-                                    message_search_input_mobile_view = <View> {
+                                    mobile_message_search_input_view = <View> {
                                         height: Fit,
                                         width: 150,
                                         align: {x: 1.0 }

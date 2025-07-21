@@ -72,13 +72,13 @@ live_design! {
     }
 }
 
-/// A text input (with a search icon and cancel button) used to filter the rooms list.
-///
-/// See the module-level docs for more detail.
+/// Widget for searching messages across rooms
 #[derive(Live, LiveHook, Widget)]
 pub struct MessageSearchInputBar {
     #[deref] view: View,
+    /// Debounce timer to prevent excessive search requests when typing
     #[rust] debounce_timer: Timer,
+    /// The current search term entered by the user
     #[rust] search_term: String,
 }
 
