@@ -255,11 +255,13 @@ impl MatchEvent for App {
             }
 
             if let Some(AppStateAction::RestoreAppStateFromPersistentState(app_state)) = action.downcast_ref() {
-                let previous_logged_in = self.app_state.logged_in;
+                // Ignore the `logged_in` state that was stored persistently.
+                let logged_in_actual = self.app_state.logged_in;
                 self.app_state = app_state.clone();
-                self.app_state.logged_in = previous_logged_in;
+                self.app_state.logged_in = logged_in_actual;
                 cx.action(MainDesktopUiAction::LoadDockFromAppState);
             }
+
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 let display_name = room_name_or_id(selected_room.room_name(), selected_room.room_id());
