@@ -70,6 +70,7 @@ live_design! {
     use crate::room::room_input_bar::*;
     use crate::home::room_read_receipt::*;
     use crate::rooms_list::*;
+    use crate::shared::restore_status_view::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -603,33 +604,7 @@ live_design! {
                 color: (COLOR_PRIMARY_DARKER)
             }
             
-            restore_status_view = <View> {
-                width: Fill, height: Fill,
-                flow: Down,
-                align: {x: 0.5, y: 0.5},
-                restore_status_spinner = <LoadingSpinner> {
-                    width: 50,
-                    height: 50,
-                    visible: true,
-                    draw_bg: {
-                        color: (COLOR_SELECT_TEXT)
-                        border_size: 3.0,
-                    }
-                }
-                restore_status_label = <Label> {
-                    width: Fill, height: Fit,
-                    align: {x: 0.5, y: 0.0},
-                    padding: {left: 5.0, right: 0.0}
-                    margin: {top: 10.0},
-                    flow: RightWrap,
-                    draw_text: {
-                        color: (TYPING_NOTICE_TEXT_COLOR),
-                        text_style: <REGULAR_TEXT>{font_size: 11}
-                        wrap: Word,
-                    }
-                    text: "",
-                }
-            }
+            restore_status_view = <RestoreStatusView> {}
             
 
             keyboard_view = <KeyboardView> {
@@ -1277,7 +1252,7 @@ impl Widget for RoomScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // If the room isn't loaded yet, we show the restore status label only.
-        if !self.is_loaded {
+        //if !self.is_loaded {
             let restore_status_label = self.view.label(id!(restore_status_label));
             let status_text: String = if self.all_rooms_loaded {
                 self.view.view(id!(restore_status_spinner)).set_visible(cx, false);
@@ -1292,7 +1267,7 @@ impl Widget for RoomScreen {
             };
             restore_status_label.set_text(cx, &status_text);
             return self.view.view(id!(restore_status_view)).draw(cx, scope);
-        }
+        //}
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.

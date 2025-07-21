@@ -22,6 +22,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
+    use crate::shared::restore_status_view::*;
 
     pub InviteScreen = {{InviteScreen}}<ScrollXYView> {
         width: Fill,
@@ -35,33 +36,7 @@ live_design! {
         draw_bg: {
             color: (COLOR_PRIMARY_DARKER),
         }
-        restore_status_view = <View> {
-            width: Fill, height: Fill,
-            flow: Down,
-            align: {x: 0.5, y: 0.5},                
-            restore_status_spinner = <LoadingSpinner> {
-                width: 50,
-                height: 50,
-                visible: true,
-                draw_bg: {
-                    color: (COLOR_SELECT_TEXT)
-                    border_size: 3.0,
-                }
-            }
-            restore_status_label = <Label> {
-                width: Fill, height: Fit,
-                align: {x: 0.5, y: 0.0},
-                padding: {left: 5.0, right: 0.0}
-                margin: {top: 10.0},
-                flow: RightWrap,
-                draw_text: {
-                    color: (TYPING_NOTICE_TEXT_COLOR),
-                    text_style: <REGULAR_TEXT>{font_size: 11}
-                    wrap: Word,
-                }
-                text: "",
-            }
-        }
+        restore_status_view = <RestoreStatusView> {}
 
         // This view is only shown if `inviter` is Some.
         inviter_view = <View> {
