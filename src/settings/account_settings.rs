@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::{profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem}, styles::COLOR_ROBRIX_PURPLE}, utils};
+use crate::{profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem}, styles::*}, utils};
 
 live_design! {
     use link::theme::*;
@@ -80,15 +80,15 @@ live_design! {
                     padding: {top: 10, bottom: 10, left: 12, right: 15}
                     margin: 0,
                     draw_bg: {
-                        color: #fff0f0 // light red
-                        border_color: (COLOR_DANGER_RED)
+                        color: (COLOR_BG_DANGER_RED)
+                        border_color: (COLOR_FG_DANGER_RED)
                     }
                     draw_icon: {
                         svg_file: (ICON_TRASH),
-                        color: (COLOR_DANGER_RED),
+                        color: (COLOR_FG_DANGER_RED),
                     }
                     draw_text: {
-                        color: (COLOR_DANGER_RED),
+                        color: (COLOR_FG_DANGER_RED),
                     }
                     icon_walk: { width: 16, height: 16 }
                     text: "Delete Avatar"
@@ -107,7 +107,7 @@ live_design! {
             draw_text: {
                 wrap: Word,
             }
-            empty_text: "Add a new display name..."
+            empty_text: "Add a display name..."
         }
 
         <View> {
@@ -116,40 +116,47 @@ live_design! {
             align: {y: 0.5},
             spacing: 10
 
+            // These buttons are disabled by default, and enabled when the user
+            // changes the `display_name_input` text.
             accept_display_name_button = <RobrixIconButton> {
+                enabled: false,
                 width: Fit, height: Fit,
                 padding: 10,
                 margin: {left: 5},
 
                 draw_bg: {
-                    border_color: (COLOR_ACCEPT_GREEN),
-                    color: #f0fff0 // light green
+                    border_color: (COLOR_FG_DISABLED),
+                    color: (COLOR_BG_DISABLED),
                     border_radius: 5
                 }
                 draw_icon: {
                     svg_file: (ICON_CHECKMARK)
-                    color: (COLOR_ACCEPT_GREEN),
-                }
-                draw_text: {
-                    color: (COLOR_ACCEPT_GREEN),
+                    color: (COLOR_FG_DISABLED),
                 }
                 icon_walk: {width: 16, height: 16, margin: 0}
+                draw_text: {
+                    color: (COLOR_FG_DISABLED),
+                }
                 text: "Save Name"
             }
 
             cancel_display_name_button = <RobrixIconButton> {
+                enabled: false,
                 width: Fit, height: Fit,
                 padding: 10,
                 margin: {left: 5},
 
                 draw_bg: {
-                    color: (COLOR_SECONDARY)
+                    color: (COLOR_BG_DISABLED)
                 }
                 draw_icon: {
                     svg_file: (ICON_FORBIDDEN),
-                    color: (COLOR_TEXT)
+                    color: (COLOR_FG_DISABLED)
                 }
                 icon_walk: {width: 16, height: 16, margin: 0}
+                draw_text: {
+                    color: (COLOR_FG_DISABLED),
+                }
                 text: "Cancel"
             }
         }
@@ -222,15 +229,15 @@ live_design! {
                 padding: {top: 10, bottom: 10, left: 12, right: 15}
                 margin: {left: 5}
                 draw_bg: {
-                    color: #fff0f0 // light red
-                    border_color: (COLOR_DANGER_RED)
+                    color: (COLOR_BG_DANGER_RED)
+                    border_color: (COLOR_FG_DANGER_RED)
                 }
                 draw_icon: {
                     svg_file: (ICON_LOGOUT),
-                    color: (COLOR_DANGER_RED),
+                    color: (COLOR_FG_DANGER_RED),
                 }
                 draw_text: {
-                    color: (COLOR_DANGER_RED),
+                    color: (COLOR_FG_DANGER_RED),
                 }
                 icon_walk: { width: 16, height: 16, margin: {right: -2} }
                 text: "Log out"
@@ -278,30 +285,65 @@ impl MatchEvent for AccountSettings {
             });
         }
 
-        if self.view.button(id!(accept_display_name_button)).clicked(actions) {
+        let accept_display_name_button = self.view.button(id!(accept_display_name_button));
+        let cancel_display_name_button = self.view.button(id!(cancel_display_name_button));
+        let display_name_input = self.view.text_input(id!(display_name_input));
+        let enable_buttons = |cx: &mut Cx, enable: bool| {
+            accept_display_name_button.set_enabled(cx, enable);
+            cancel_display_name_button.set_enabled(cx, enable);
+            let (accept_button_fg_color, accept_button_bg_color) = if enable {
+                (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
+            } else {
+                (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+            };
+            let (cancel_button_fg_color, cancel_button_bg_color) = if enable {
+                (COLOR_FG_DANGER_RED, COLOR_BG_DANGER_RED)
+            } else {
+                (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+            };
+            accept_display_name_button.apply_over(cx, live!(
+                draw_bg: {
+                    color: (accept_button_bg_color),
+                    border_color: (accept_button_fg_color),
+                },
+                draw_text: {
+                    color: (accept_button_fg_color),
+                },
+                draw_icon: {
+                    color: (accept_button_fg_color),
+                }
+            ));
+            cancel_display_name_button.apply_over(cx, live!(
+                draw_bg: {
+                    color: (cancel_button_bg_color),
+                    border_color: (cancel_button_fg_color),
+                },
+                draw_text: {
+                    color: (cancel_button_fg_color),
+                },
+                draw_icon: {
+                    color: (cancel_button_fg_color),
+                }
+            ));
+        };
+
+        if let Some(new_name) = display_name_input.changed(actions) {
+            let should_enable = new_name.as_str() != own_profile.username.as_deref().unwrap_or("");
+            enable_buttons(cx, should_enable);
+        }
+
+        if cancel_display_name_button.clicked(actions) {
+            // Reset the display name input and disable the name change buttons.
+            display_name_input.set_text(cx, own_profile.username.as_deref().unwrap_or(""));
+            enable_buttons(cx, false);
+        }
+
+        if accept_display_name_button.clicked(actions) {
             // TODO: support changing the display name.
             enqueue_popup_notification(PopupItem {
                 message: String::from("Display name change is not yet implemented."),
                 auto_dismissal_duration: Some(4.0),
             });
-        }
-
-        let display_name_input = self.view.text_input(id!(display_name_input));
-        let accept_display_name_button = self.view.button(id!(accept_display_name_button));
-        let cancel_display_name_button = self.view.button(id!(cancel_display_name_button));
-
-        if cancel_display_name_button.clicked(actions) {
-            // Reset the display name input and disable the name change buttons.
-            display_name_input.set_text(cx, own_profile.username.as_deref().unwrap_or(""));
-            accept_display_name_button.set_enabled(cx, false);
-            cancel_display_name_button.set_enabled(cx, false);
-        }
-
-        if let Some(new_name) = display_name_input.changed(actions) {
-            let enable_buttons = new_name.as_str() != own_profile.username.as_deref().unwrap_or("");
-            log!("Display name changed to: {}, buttons enabled? {}", new_name, enable_buttons);
-            accept_display_name_button.set_enabled(cx, enable_buttons);
-            cancel_display_name_button.set_enabled(cx, enable_buttons);
         }
 
         if self.view.button(id!(copy_user_id_button)).clicked(actions) {
@@ -368,7 +410,7 @@ impl AccountSettings {
     }
 
     /// Show and initializes the account settings within the SettingsScreen.
-    pub fn show(&mut self, cx: &mut Cx, own_profile: UserProfile) {
+    pub fn populate(&mut self, cx: &mut Cx, own_profile: UserProfile) {
         self.own_profile = Some(own_profile);
         self.populate_from_profile(cx);
 
@@ -379,13 +421,14 @@ impl AccountSettings {
         self.view.button(id!(copy_user_id_button)).reset_hover(cx);
         self.view.button(id!(manage_account_button)).reset_hover(cx);
         self.view.button(id!(logout_button)).reset_hover(cx);
+        self.view.redraw(cx);
     }
 }
 
 impl AccountSettingsRef {
     /// See [`AccountSettings::show()`].
-    pub fn show(&self, cx: &mut Cx, own_profile: UserProfile) {
+    pub fn populate(&self, cx: &mut Cx, own_profile: UserProfile) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show(cx, own_profile);
+        inner.populate(cx, own_profile);
     }
 }

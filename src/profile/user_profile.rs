@@ -276,17 +276,17 @@ live_design! {
                 margin: 0,
                 draw_icon: {
                     svg_file: (ICON_FORBIDDEN)
-                    color: (COLOR_DANGER_RED),
+                    color: (COLOR_FG_DANGER_RED),
                 }
                 icon_walk: {width: 16, height: 16, margin: {left: -2, right: -0.5} }
 
                 draw_bg: {
-                    border_color: (COLOR_DANGER_RED),
-                    color: #fff0f0
+                    border_color: (COLOR_FG_DANGER_RED),
+                    color: (COLOR_BG_DANGER_RED)
                 }
                 text: "Ignore (Block) User"
                 draw_text:{
-                    color: (COLOR_DANGER_RED),
+                    color: (COLOR_FG_DANGER_RED),
                 }
             }
         }

@@ -7,7 +7,8 @@ use crate::{
     }, settings::SettingsAction, shared::{
         avatar::AvatarWidgetExt,
         callout_tooltip::TooltipAction,
-        styles::{COLOR_DISABLE_GRAY, COLOR_ROBRIX_PURPLE}, verification_badge::VerificationBadgeWidgetExt,
+        styles::*,
+        verification_badge::VerificationBadgeWidgetExt,
     }, sliding_sync::current_user_id, utils
 };
 
@@ -37,7 +38,7 @@ live_design! {
             // If no avatar picture, use white text on a dark background.
             text_view = {
                 draw_bg: {
-                    background_color: (COLOR_DISABLE_GRAY),
+                    background_color: (COLOR_FG_DISABLED),
                 }
                 text = { draw_text: {
                     text_style: { font_size: 16.0 },
@@ -222,7 +223,7 @@ impl Widget for ProfileIcon {
             // If we don't have a profile, default to an unknown avatar.
             our_own_avatar.show_text(
                 cx,
-                Some(COLOR_DISABLE_GRAY),
+                Some(COLOR_FG_DISABLED),
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
                 "",
             );

@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{home::spaces_dock::get_own_profile, settings::{account_settings::AccountSettingsWidgetExt, SettingsAction}};
+use crate::{home::spaces_dock::get_own_profile, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, SettingsAction}};
 
 live_design! {
     use link::theme::*;
@@ -15,10 +15,6 @@ live_design! {
 
     // The main, top-level settings screen widget.
     pub SettingsScreen = {{SettingsScreen}} {
-        // The settings screen is invisible by default;
-        // its parent widget (the HomeScreen) directly sets it to visible
-        // upon receiving a `SettingsAction::OpenSettings`/`CloseSettings` action.
-        // visible: false,
         width: Fill,
         height: Fill,
         padding: {top: 5, left: 15, right: 15, bottom: 15},
@@ -117,7 +113,6 @@ impl Widget for SettingsScreen {
             }
         };
         if close_pane {
-            log!("[SettingsScreen] Closing settings screen.");
             cx.action(SettingsAction::CloseSettings);
         }
     }
@@ -128,24 +123,23 @@ impl Widget for SettingsScreen {
 }
 
 impl SettingsScreen {
-    /// Shows the settings screen by making it visible and initializing its content.
-    pub fn show(&mut self, cx: &mut Cx) {
-        let Some(profile) = get_own_profile(cx) else {
+    /// Fetches the current user's profile and uses it to populate the settings screen.
+    pub fn populate(&mut self, cx: &mut Cx, own_profile: Option<UserProfile>) {
+        let Some(profile) = own_profile.or_else(|| get_own_profile(cx)) else {
             error!("BUG: failed to get own profile for settings screen.");
             return;
         };
-        self.view.account_settings(id!(account_settings)).show(cx, profile);
+        self.view.account_settings(id!(account_settings)).populate(cx, profile);
         self.view.button(id!(close_button)).reset_hover(cx);
-        // self.view.set_visible(cx, true);
         cx.set_key_focus(self.view.area());
         self.redraw(cx);
     }
 }
 
 impl SettingsScreenRef {
-    /// See [`SettingsScreen::show()`].
-    pub fn show(&self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show(cx)
+    /// See [`SettingsScreen::populate()`].
+    pub fn populate(&self, cx: &mut Cx, own_profile: Option<UserProfile>) {
+        let Some(mut inner) = self.borrow_mut() else { return; };
+        inner.populate(cx, own_profile);
     }
 }

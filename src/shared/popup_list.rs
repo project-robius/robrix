@@ -118,7 +118,7 @@ live_design! {
                         instance border_radius: 2.,
                         instance border_size: 1.0,
                         instance progress_bar_color: (COLOR_AVATAR_BG_IDLE),
-                        instance progress_bar_background_color: (COLOR_DISABLE_GRAY),
+                        instance progress_bar_background_color: (COLOR_FG_DISABLED),
                         instance display_progress_bar: 1.0 // TODO: this is the only thing that should be an `instance`
                         uniform anim_time: 0.0,
                         uniform anim_duration: 2.0,

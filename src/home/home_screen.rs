@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::settings::{settings_screen::SettingsScreenWidgetExt, SettingsAction};
+use crate::settings::{settings_screen::SettingsScreenWidgetRefExt, SettingsAction};
 
 live_design! {
     use link::theme::*;
@@ -171,9 +171,14 @@ impl Widget for HomeScreen {
                         if !matches!(self.selection, SelectedSpace::Settings) {
                             self.previous_selection = self.selection.clone();
                             self.selection = SelectedSpace::Settings;
-                            self.update_active_page_from_selection(cx);
-                            self.view.settings_screen(id!(settings_screen)).show(cx);
-                            self.view.redraw(cx);
+                            if let Some(settings_page) = self.update_active_page_from_selection(cx) {
+                                settings_page
+                                    .settings_screen(id!(settings_screen))
+                                    .populate(cx, None);
+                                self.view.redraw(cx);
+                            } else {
+                                error!("BUG: failed to set active page to show settings screen.");
+                            }
                         }
                     }
                     Some(SettingsAction::CloseSettings) => {
@@ -200,7 +205,7 @@ impl Widget for HomeScreen {
 }
 
 impl HomeScreen {
-    fn update_active_page_from_selection(&mut self, cx: &mut Cx) {
+    fn update_active_page_from_selection(&mut self, cx: &mut Cx) -> Option<WidgetRef> {
         self.view
             .page_flip(id!(home_screen_page_flip))
             .set_active_page(
@@ -209,7 +214,7 @@ impl HomeScreen {
                     SelectedSpace::Settings => live_id!(settings_page),
                     SelectedSpace::Home => live_id!(main_page),
                 },
-            );
+            )
     }
 }
 

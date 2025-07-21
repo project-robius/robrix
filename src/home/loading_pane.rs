@@ -86,17 +86,17 @@ live_design! {
                         padding: 15
                         // draw_icon: {
                         //     svg_file: (ICON_FORBIDDEN)
-                        //     color: (COLOR_DANGER_RED),
+                        //     color: (COLOR_FG_DANGER_RED),
                         // }
                         icon_walk: {width: 0, height: 0 }
 
                         draw_bg: {
-                            border_color: (COLOR_DANGER_RED),
-                            color: #fff0f0 // light red
+                            border_color: (COLOR_FG_DANGER_RED),
+                            color: (COLOR_BG_DANGER_RED)
                         }
                         text: "Cancel"
                         draw_text:{
-                            color: (COLOR_DANGER_RED),
+                            color: (COLOR_FG_DANGER_RED),
                         }
                     }
                 }
