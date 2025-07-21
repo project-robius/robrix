@@ -33,7 +33,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, room::{link_preview_card::LinkPreviewCardState, RoomPreviewAvatar}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, room::{link_preview_card::{LinkPreviewCardState, LinkPreviewData}, RoomPreviewAvatar}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -1135,15 +1135,47 @@ async fn async_worker(
                 });
             },
             MatrixRequest::GetLinkPreviewDetails { url } => {
+                let Some(client) = CLIENT.get() else { continue };
                 let _fetch_link_preview_task = Handle::current().spawn(async move {
-                    log!("Fetching link preview for URL: {url}");
                     match URL_PREVIEW_SERVICE.get_or_init(|| {
                         url_preview::PreviewService::new()
                     }).generate_preview(&url).await {
                         Ok(preview) => {
+                            let image = if let Some(preview_image_url) = &preview.image_url {
+                                match client.http_client()
+                                    .get(preview_image_url)
+                                    .send()
+                                    .await
+                                    .map_err(|e| {
+                                        error!("Failed to fetch link preview image: {e}");
+                                        e
+                                }) {
+                                    Ok(response) => {
+                                        let raw_data = response.bytes().await.unwrap().to_vec();
+                                        match imghdr::from_bytes(&raw_data) {
+                                            Some(imghdr::Type::Png) | Some(imghdr::Type::Jpeg) => Some(Arc::new(raw_data)),
+                                            _ => None
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to fetch link preview image: {e}");
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            };
                             Cx::post_action(LinkPreviewCardState::Loaded {
                                 url: url.clone(),
-                                preview: Some(preview),
+                                preview: Some(LinkPreviewData {
+                                    title: preview.title,
+                                    description: preview.description,
+                                    url: url.clone(),
+                                    image_url: preview.image_url,
+                                    raw_image: image,
+                                    favicon: preview.favicon,
+                                    site_name: preview.site_name,
+                                }),
                             });
                         }
                         Err(e) => {

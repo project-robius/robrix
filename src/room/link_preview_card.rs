@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use makepad_widgets::*;
 
-use crate::sliding_sync::{submit_async_request, MatrixRequest};
+use crate::{sliding_sync::{submit_async_request, MatrixRequest}, utils};
 
 live_design! {
     use link::theme::*;
@@ -8,8 +10,6 @@ live_design! {
     use link::widgets::*;
 
     use crate::shared::styles::*;
-
-    IMG_APP_LOGO = dep("crate://self/resources/robrix_logo_alpha.png")
 
     pub LinkPreviewCard = {{LinkPreviewCard}}<RoundedView> {
         width: Fill, height: Fit,
@@ -19,10 +19,12 @@ live_design! {
           border_radius: 3.0
         }
 
-        image = <Image> {
-          visible: false,
-          fit: Smallest,
-          source: (IMG_APP_LOGO),
+        link_preview_image_view = <View> {
+            visible: false,
+            width: Fit, height: Fit,
+            image = <Image> {
+                fit: Stretch
+            }
         }
 
         link_preview_info_view = <View> {
@@ -53,12 +55,23 @@ live_design! {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct LinkPreviewData {
+    pub url: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub image_url: Option<String>,
+    pub raw_image: Option<Arc<Vec<u8>>>,
+    pub favicon: Option<String>,
+    pub site_name: Option<String>,
+}
+
 #[derive(Clone, Debug, DefaultNone)]
 pub enum LinkPreviewCardState {
     Requested,
     Loaded {
         url: String,
-        preview: Option<url_preview::Preview>,
+        preview: Option<LinkPreviewData>,
     },
     None,
 }
@@ -102,8 +115,12 @@ impl LinkPreviewCard {
         if self.url == *url {
           if let Some(preview) = preview {
             let link_preview_info = self.view(id!(link_preview_info_view));
-            let image = self.image(id!(image));
-            image.set_visible(cx, true);
+            let image = self.image(id!(link_preview_image_view.image));
+
+            if let Some(raw_image) = &preview.raw_image {
+                let _ = utils::load_png_or_jpg(&image, cx, raw_image.as_ref()).map(|()| image.size_in_pixels(cx).unwrap_or_default());
+                self.view(id!(link_preview_image_view)).set_visible(cx, true);
+            };
 
             link_preview_info.set_visible(cx, true);
             link_preview_info.label(id!(title)).set_text(cx, preview.title.as_deref().unwrap_or(""));
