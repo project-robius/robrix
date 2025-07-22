@@ -65,13 +65,13 @@ live_design! {
                 margin: {left: 5, right: 5},
 
                 draw_bg: {
-                    border_color: (COLOR_DANGER_RED),
-                    color: #fff0f0 // light red
+                    border_color: (COLOR_FG_DANGER_RED),
+                    color: (COLOR_BG_DANGER_RED)
                     border_radius: 5
                 }
                 draw_icon: {
                     svg_file: (ICON_CLOSE),
-                    color: (COLOR_DANGER_RED)
+                    color: (COLOR_FG_DANGER_RED)
                 }
                 icon_walk: {width: 16, height: 16, margin: 0}
             }
@@ -84,13 +84,13 @@ live_design! {
                 margin: {left: 5, right: 5},
 
                 draw_bg: {
-                    border_color: (COLOR_ACCEPT_GREEN),
-                    color: #f0fff0 // light green
+                    border_color: (COLOR_FG_ACCEPT_GREEN),
+                    color: (COLOR_BG_ACCEPT_GREEN)
                     border_radius: 5
                 }
                 draw_icon: {
                     svg_file: (ICON_CHECKMARK)
-                    color: (COLOR_ACCEPT_GREEN),
+                    color: (COLOR_FG_ACCEPT_GREEN),
                 }
                 icon_walk: {width: 16, height: 16, margin: 0}
             }

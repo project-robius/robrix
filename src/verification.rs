@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use futures_util::StreamExt;
-use makepad_widgets::{log, warning, ActionDefaultRef, Cx, DefaultNone};
+use makepad_widgets::{log, ActionDefaultRef, Cx, DefaultNone};
 use matrix_sdk::{
     crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString}, encryption::{verification::{
         SasState, SasVerification, Verification, VerificationRequest,
@@ -43,9 +43,9 @@ pub fn add_verification_event_handlers_and_sync_client(client: Client) {
                 Handle::current().spawn(request_verification_handler(client, request));
             }
             else {
-                warning!("Skipping invalid verification request from {}, transaction ID: {}\n   Content: {:?}",
-                    ev.sender, ev.content.transaction_id, ev.content,
-                );
+                // warning!("Skipping invalid verification request from {}, transaction ID: {}\n   Content: {:?}",
+                //     ev.sender, ev.content.transaction_id, ev.content,
+                // );
             }
         },
     );
@@ -61,9 +61,9 @@ pub fn add_verification_event_handlers_and_sync_client(client: Client) {
                     Handle::current().spawn(request_verification_handler(client, request));
                 }
                 else {
-                    warning!("Skipping invalid verification request from {}, event ID: {}\n   Content: {:?}",
-                        ev.sender, ev.event_id, ev.content,
-                    );
+                    // warning!("Skipping invalid verification request from {}, event ID: {}\n   Content: {:?}",
+                    //     ev.sender, ev.event_id, ev.content,
+                    // );
                 }
             }
         }

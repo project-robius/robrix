@@ -2,7 +2,7 @@
 //! Supports user mention autocomplete, avatar display, and desktop/mobile layouts
 
 use makepad_widgets::*;
-use crate::shared::styles::{COLOR_ACCEPT_GREEN, COLOR_DISABLE_GRAY};
+use crate::shared::styles::*;
 
 live_design! {
     use link::theme::*;
@@ -48,13 +48,17 @@ live_design! {
         }
 
         send_message_button = <RobrixIconButton> {
-            enabled: false, // is enabled when text is inputted
+            // Disabled by default; enabled when text is inputted
+            enabled: false,
             spacing: 0,
             draw_icon: {
                 svg_file: (ICO_SEND),
-                color: (COLOR_DISABLE_GRAY),
+                color: (COLOR_FG_DISABLED),
             }
             icon_walk: {width: Fit, height: 21},
+            draw_bg: {
+                color: (COLOR_BG_DISABLED),
+            }
         }
     }
 }
@@ -81,16 +85,19 @@ impl RoomInputBar {
     /// Sets the send_message_button to be enabled and green, or disabled and gray.
     fn enable_send_message_button(&mut self, cx: &mut Cx, enable: bool) {
         let send_message_button = self.view.button(id!(send_message_button));
-        let new_color = if enable {
-            COLOR_ACCEPT_GREEN
+        let (fg_color, bg_color) = if enable {
+            (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
         } else {
-            COLOR_DISABLE_GRAY
+            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
         };
         send_message_button.apply_over(cx, live! {
             enabled: (enable),
             draw_icon: {
-                color: (new_color),
-                color_hover: (new_color),
+                color: (fg_color),
+                // color_hover: (fg_color),
+            }
+            draw_bg: {
+                color: (bg_color),
             }
         });
     }

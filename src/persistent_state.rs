@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use tokio::{fs, io};
 
 use crate::{
-    app::{SavedDockState, SelectedRoom, WindowGeomState},
+    app::{AppState, SelectedRoom, WindowGeomState},
     app_data_dir,
     login::login_screen::LoginAction,
 };
@@ -104,7 +104,7 @@ pub fn session_file_path(user_id: &UserId) -> PathBuf {
 
 const LATEST_USER_ID_FILE_NAME: &str = "latest_user_id.txt";
 
-const LATEST_DOCK_STATE_FILE_NAME: &str = "latest_dock_state.ron";
+const LATEST_APP_STATE_FILE_NAME: &str = "latest_app_state.ron";
 
 const WINDOW_GEOM_STATE_FILE_NAME: &str = "window_geom_state.json";
 
@@ -230,25 +230,26 @@ pub async fn save_session(
     Ok(())
 }
 
-/// Save the current display state of the room panel to persistent storage.
-pub fn save_room_panel(
-    rooms_panel_state: SavedDockState,
+/// Save the current app state to persistent storage.
+pub fn save_app_state(
+    app_state: AppState,
     user_id: OwnedUserId,
 ) -> anyhow::Result<()> {
     std::fs::write(
-        persistent_state_dir(&user_id).join(LATEST_DOCK_STATE_FILE_NAME),
-        rooms_panel_state.serialize_ron(),
+        persistent_state_dir(&user_id).join(LATEST_APP_STATE_FILE_NAME),
+        app_state.serialize_ron(),
     )?;
-    for (tab_id, room) in &rooms_panel_state.open_rooms {
+    for (tab_id, room) in &app_state.saved_dock_state.open_rooms {
         match room {
             SelectedRoom::JoinedRoom { room_id, .. }
             | SelectedRoom::InvitedRoom { room_id, .. } => {
-                if !rooms_panel_state.dock_items.contains_key(tab_id) {
+                if !app_state.saved_dock_state.dock_items.contains_key(tab_id) {
                     error!("Room id: {} already in dock state", room_id);
                 }
             }
         }
     }
+    log!("Successfully saved app state to persistent storage.");
     Ok(())
 }
 
@@ -269,14 +270,14 @@ pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Loads the rooms panel's state from persistent storage.
-pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<SavedDockState> {
-    let content = match tokio::fs::read_to_string(persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME)).await {
+/// Loads the App state from persistent storage.
+pub async fn load_app_state(user_id: &UserId) -> anyhow::Result<AppState> {
+    let content = match tokio::fs::read_to_string(persistent_state_dir(user_id).join(LATEST_APP_STATE_FILE_NAME)).await {
         Ok(file) => file,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(SavedDockState::default()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(AppState::default()),
         Err(e) => return Err(e.into())
     };
-    SavedDockState::deserialize_ron(&content)
+    AppState::deserialize_ron(&content)
         .map_err(|er| anyhow::Error::msg(er.msg))
 }
 
