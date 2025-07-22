@@ -11,8 +11,9 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::room_filter_input_bar::RoomFilterInputBar;
     use crate::shared::message_search_input_bar::MessageSearchInputBar;
+    use crate::shared::icon_button::RobrixIconButton;
     use crate::home::main_desktop_ui::MainDesktopUI;
-    use crate::right_panel::RightPanel;
+    use crate::right_panel::*;
 
     NavigationWrapper = {{NavigationWrapper}} {
         view_stack = <StackNavigation> {}
@@ -120,6 +121,36 @@ live_design! {
                         }
                         body = {
                             main_content = <MainMobileUI> {}
+                        }
+                    }
+                    search_result_view = <SearchResultView> {
+                        flow: Overlay
+                        header = {
+                            height: 50.0,
+                            margin: { top: 30.0 },
+                            content = {
+                                flow: Right,
+                                title_container = {
+                                    width: 0
+                                }
+                                button_container = <View> {
+                                    align: { y: 0.5 }
+                                    left_button = <RobrixIconButton> {
+                                        draw_icon: {
+                                            color: #666;
+                                        }
+                                        text: "Back"
+                                    }
+                                }
+                                <CachedWidget> {
+                                    message_search_input_bar = <MessageSearchInputBar> {
+                                        width: 300
+                                    }
+                                }
+                            }
+                        }
+                        body = {
+                            margin: { top: 80.0 },
                         }
                     }
                 }

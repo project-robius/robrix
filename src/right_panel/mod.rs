@@ -12,45 +12,46 @@ live_design! {
     use crate::shared::message_search_input_bar::*;
     use crate::right_panel::search_message::*;
     use crate::shared::icon_button::RobrixIconButton;
+    pub SearchResultView = <StackNavigationView> {
+        full_screen: false
+        width: Fill, height: Fill
+        padding: 0,
+        draw_bg: {
+            color: (COLOR_SECONDARY)
+        }
+        flow: Down
+        body = {
+            margin: {top: 0.0 },
+            search_screen = <SearchScreen> {}
+        }
+        header = {
+            height: 30.0,
+            padding: {bottom: 10., top: 10.}
+            content = {
+                title_container = {
+                    title = {
+                        draw_text: {
+                            wrap: Ellipsis,
+                            text_style: { font_size: 10. }
+                            color: #B,
+                        }
+                        text: "Search Results"
+                    }
+                }
+            }
+        }
+    }
     pub RightPanel = {{RightPanel}} {
         width: 400, height: Fill,
         flow: Down,
         visible: false
-        nav1 = <StackNavigation> {
+        view_stack = <StackNavigation> {
             width: Fill, height: Fill
             padding: 0.0
             root_view = <View> {
                 padding: 0.0,
             }
-
-            search_result_view = <StackNavigationView> {
-                full_screen: false
-                width: Fill, height: Fill
-                padding: 0,
-                draw_bg: {
-                    color: (COLOR_SECONDARY)
-                }
-                flow: Down
-                body = {
-                    margin: {top: 0.0 },
-                    search_screen = <SearchScreen> {}
-                }
-                header = {
-                    padding: {bottom: 10., top: 10.}
-                    content = {
-                        title_container = {
-                            title = {
-                                draw_text: {
-                                    wrap: Ellipsis,
-                                    text_style: { font_size: 10. }
-                                    color: #B,
-                                }
-                                text: "Search Results"
-                            }
-                        }
-                    }
-                }
-            }
+            search_result_view = <SearchResultView> {}
         }
     }
 }
@@ -82,17 +83,17 @@ impl WidgetMatchEvent for RightPanel {
             match action.as_widget_action().cast() {
                 MessageSearchAction::Click(_) => {
                     self.view.set_visible(cx, true);
-                    self.view.stack_navigation(id!(nav1)).pop_to_root(cx);
+                    self.view.stack_navigation(id!(view_stack)).pop_to_root(cx);
                     self.view
-                        .stack_navigation(id!(nav1))
+                        .stack_navigation(id!(view_stack))
                         .push(cx, live_id!(search_result_view));
                 }
                 MessageSearchAction::Changed(search_term) => {
                     if !search_term.is_empty() {
                         self.view.set_visible(cx, true);
-                        self.view.stack_navigation(id!(nav1)).pop_to_root(cx);
+                        self.view.stack_navigation(id!(view_stack)).pop_to_root(cx);
                         self.view
-                            .stack_navigation(id!(nav1))
+                            .stack_navigation(id!(view_stack))
                             .push(cx, live_id!(search_result_view));
                     } else {
                         self.view.set_visible(cx, false);
@@ -102,7 +103,7 @@ impl WidgetMatchEvent for RightPanel {
             }
 
             if let StackNavigationTransitionAction::HideEnd(_) = action.as_widget_action().cast() {
-                if !self.view.stack_navigation(id!(nav1)).can_pop() {
+                if !self.view.stack_navigation(id!(view_stack)).can_pop() {
                     self.view.set_visible(cx, false);
                 }
             }

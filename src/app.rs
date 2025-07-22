@@ -273,7 +273,8 @@ impl MatchEvent for App {
                 cx.widget_action(
                     self.ui.widget_uid(),
                     &Scope::default().path,
-                    StackNavigationAction::Push(live_id!(main_content_view))
+                    //StackNavigationAction::Push(live_id!(main_content_view))
+                    StackNavigationAction::Push(live_id!(search_result_view))
                 );
                 self.ui.view(id!(message_search_input_view)).set_visible(cx, true);
                 self.ui.redraw(cx);
@@ -384,6 +385,14 @@ impl MatchEvent for App {
                         .apply_over(cx, live!{
                             width: 220
                         });
+                    // self.ui
+                    //     .stack_navigation(id!(view_stack))
+                    //     .push(cx, live_id!(search_result_view));
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        &Scope::default().path,
+                        StackNavigationAction::Push(live_id!(search_result_view))
+                    );
                 }
                 crate::shared::message_search_input_bar::MessageSearchAction::Clear => {
                     self.ui

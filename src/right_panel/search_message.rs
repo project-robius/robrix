@@ -18,18 +18,15 @@ use crate::{
     app::AppState,
     home::{
         room_screen::{
-            populate_audio_message_content, populate_file_message_content,
-            populate_image_message_content, populate_text_message_content, ItemDrawnStatus,
+            populate_text_message_content, ItemDrawnStatus,
         },
         rooms_list::RoomsListRef,
     },
-    media_cache::MediaCache,
     shared::{
         avatar::AvatarWidgetRefExt,
         html_or_plaintext::HtmlOrPlaintextWidgetRefExt,
         message_search_input_bar::MessageSearchAction,
         popup_list::{enqueue_popup_notification, PopupItem},
-        text_or_image::TextOrImageWidgetRefExt,
         timestamp::TimestampWidgetRefExt,
     },
     sliding_sync::{submit_async_request, MatrixRequest},
@@ -196,7 +193,7 @@ live_design! {
             }
         }
     }
-    pub TimelineSearch = <View> {
+    pub SearchedMessages = <View> {
         width: Fill,
         height: Fill,
         align: {x: 0.5, y: 0.0} // center horizontally, align to top vertically
@@ -248,7 +245,7 @@ live_design! {
                 height: Fit,
                 visible: true
             }
-            search_timeline = <TimelineSearch> {
+            searched_messages = <SearchedMessages> {
                 width: Fill,
                 height: Fill,
             }
@@ -326,6 +323,8 @@ impl WidgetMatchEvent for SearchScreen {
                 self.view
                     .search_result(id!(search_result_plane))
                     .hide_top_space(cx);
+                // Re-enable the search all rooms button when results are received
+                self.view.button(id!(search_all_rooms_button)).set_enabled(cx, true);
                 let mut criteria = self
                     .view
                     .search_result(id!(search_result_plane))
@@ -338,18 +337,18 @@ impl WidgetMatchEvent for SearchScreen {
                 criteria.search_term = search_term.clone();
                 self.view
                     .search_result(id!(search_result_plane))
-                    .set_search_criteria(cx, criteria);
+                    .set_search_criteria(cx, scope, criteria);
                 // Result count may include contextual message which we are not displaying here.
                 self.view
                     .search_result(id!(search_result_plane))
                     .set_result_count(cx, *count);
-                self.view.view(id!(search_timeline)).set_visible(cx, true);
+                self.view.view(id!(searched_messages)).set_visible(cx, true);
                 self.search_state.content_drawn_since_last_update.clear();
                 self.search_state.profile_drawn_since_last_update.clear();
                 for item in items {
                     self.search_state.items.push_front(item.clone());
                 }
-                let search_portal_list = self.portal_list(id!(search_timeline.list));
+                let search_portal_list = self.portal_list(id!(searched_messages.list));
                 if let Some(mut search_portal_list) = search_portal_list.borrow_mut() {
                     search_portal_list.set_item_range(cx, 0, self.search_state.items.len());
                 }
@@ -365,13 +364,15 @@ impl WidgetMatchEvent for SearchScreen {
                 .button(id!(search_all_rooms_button))
                 .clicked(actions)
             {
+                // Disable the button during search
+                self.view.button(id!(search_all_rooms_button)).set_enabled(cx, false);
                 let mut criteria = self
                     .search_result(id!(search_result_plane))
                     .get_search_criteria();
                 self.search_result(id!(search_result_plane)).reset(cx);
                 criteria.include_all_rooms = true;
                 self.search_result(id!(search_result_plane))
-                    .set_search_criteria(cx, criteria.clone());
+                    .set_search_criteria(cx, scope, criteria.clone());
                 self.search_state = SearchState::default();
                 submit_async_request(MatrixRequest::SearchMessages {
                     room_id: None,
@@ -413,6 +414,8 @@ pub struct SearchResult {
     /// This number includes the contextual messages which are not displayed.
     #[rust]
     pub result_count: u32,
+    #[rust]
+    pub room_name: Option<String>
 }
 
 #[derive(Clone, Default, Debug)]
@@ -445,12 +448,19 @@ impl SearchResult {
     /// in the top-right of the room screen.
     fn set_result_count(&mut self, cx: &mut Cx, search_result_count: u32) {
         self.result_count = search_result_count;
+        let location_text = if self.search_criteria.include_all_rooms {
+            "in all rooms".to_string()
+        } else {
+            self.room_name.clone().unwrap_or_default()
+        };
+        
         self.view.markdown(id!(summary_label)).set_text(
             cx,
             &format!(
-                "{} results for **'{}'**",
+                "{} results for **'{}'** {}",
                 self.result_count,
-                truncate_to_50(&self.search_criteria.search_term)
+                truncate_to_50(&self.search_criteria.search_term),
+                location_text
             ),
         );
         self.view.view(id!(loading_view)).set_visible(cx, false);
@@ -460,12 +470,23 @@ impl SearchResult {
     /// This function is used to display the search criteria in the top-right of the room screen.
     /// It is typically used when a new search is initiated.
     ///
-    fn set_search_criteria(&mut self, cx: &mut Cx, search_criteria: Criteria) {
+    fn set_search_criteria(&mut self, cx: &mut Cx, scope: &mut Scope, search_criteria: Criteria) {
+        self.room_name = scope.data.get::<AppState>().and_then(|f|f.selected_room.as_ref().and_then(|f|f.room_name().cloned()));
+        let location_text = if search_criteria.include_all_rooms {
+            "in all rooms".to_string()
+        } else {
+            if let Some(room_name) = &self.room_name {
+                format!("in {}", room_name.clone())
+            } else {
+                "".to_string()
+            }
+        };
         self.view.markdown(id!(summary_label)).set_text(
             cx,
             &format!(
-                "Searching for **'{}'**",
-                truncate_to_50(&search_criteria.search_term)
+                "Searching for **'{}'** {}",
+                truncate_to_50(&search_criteria.search_term),
+                location_text
             ),
         );
         self.search_criteria = search_criteria;
@@ -501,11 +522,11 @@ impl SearchResultRef {
         inner.set_result_count(cx, search_result_count);
     }
     /// See [`SearchResult::set_search_criteria()`].
-    pub fn set_search_criteria(&self, cx: &mut Cx, search_criteria: Criteria) {
+    pub fn set_search_criteria(&self, cx: &mut Cx, scope: &mut Scope, search_criteria: Criteria) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.set_search_criteria(cx, search_criteria);
+        inner.set_search_criteria(cx, scope, search_criteria);
     }
     /// See [`SearchResult::reset()`].
     pub fn reset(&self, cx: &mut Cx) {
@@ -636,7 +657,6 @@ pub fn search_result_draw_walk(
                                                     Some(FormattedBody::html(formatted_string));
                                             }
                                         }
-                                        let mut media_cache = MediaCache::new(None);
                                         populate_message_search_view(
                                             cx,
                                             list,
@@ -644,7 +664,6 @@ pub fn search_result_draw_walk(
                                             event,
                                             &message,
                                             &search_screen.search_state.profile_infos,
-                                            &mut media_cache,
                                             item_drawn_status,
                                         )
                                     }
@@ -731,7 +750,7 @@ pub fn handle_search_input(
                 criteria.include_all_rooms = false;
                 search_screen
                     .search_result(id!(search_result_plane))
-                    .set_search_criteria(cx, criteria.clone());
+                    .set_search_criteria(cx, scope, criteria.clone());
                 let room_id = selected_room.room_id();
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
                 let is_encrypted = rooms_list_ref.is_room_encrypted(room_id);
@@ -745,6 +764,8 @@ pub fn handle_search_input(
                 search_screen
                     .search_result(id!(search_result_plane))
                     .display_top_space(cx);
+                // Disable the search all rooms button during search
+                search_screen.view.button(id!(search_all_rooms_button)).set_enabled(cx, false);
                 submit_async_request(MatrixRequest::SearchMessages {
                     room_id: Some(room_id.to_owned()),
                     include_all_rooms: criteria.include_all_rooms,
@@ -755,18 +776,13 @@ pub fn handle_search_input(
             }
         }
         MessageSearchAction::Click(search_term) => {
-            if let Some(_selected_room) = {
-                let app_state = scope.data.get::<AppState>().unwrap();
-                app_state.selected_room.clone()
-            } {
-                let mut criteria = search_screen
-                    .search_result(id!(search_result_plane))
-                    .get_search_criteria();
-                criteria.search_term = search_term.clone();
-                search_screen
-                    .search_result(id!(search_result_plane))
-                    .set_search_criteria(cx, criteria);
-            }
+            let mut criteria = search_screen
+                .search_result(id!(search_result_plane))
+                .get_search_criteria();
+            criteria.search_term = search_term.clone();
+            search_screen
+                .search_result(id!(search_result_plane))
+                .set_search_criteria(cx, scope, criteria);
         }
         MessageSearchAction::Clear => {
             search_screen
@@ -775,6 +791,8 @@ pub fn handle_search_input(
             search_screen
                 .search_result(id!(search_result_plane))
                 .set_visible(cx, false);
+            // Re-enable the search all rooms button when search is cleared
+            search_screen.view.button(id!(search_all_rooms_button)).set_enabled(cx, true);
             search_screen.search_state = SearchState::default();
         }
         _ => {}
@@ -843,7 +861,6 @@ pub fn populate_message_search_view(
     event_tl_item: &AnyTimelineEvent,
     message: &RoomMessageEventContent,
     user_profiles: &BTreeMap<OwnedUserId, TimelineDetails<Profile>>,
-    media_cache: &mut MediaCache,
     item_drawn_status: ItemDrawnStatus,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
@@ -879,64 +896,9 @@ pub fn populate_message_search_view(
                 (item, false)
             }
         }
-        _mtype @ MessageType::Image(image) => {
-            let template = live_id!(ImageMessage);
-            let (item, existed) = list.item_with_existed(cx, item_id, template);
-
-            if existed && item_drawn_status.content_drawn {
-                (item, true)
-            } else {
-                let is_image_fully_drawn = populate_image_message_content(
-                    cx,
-                    &item.text_or_image(id!(content.message)),
-                    image.info.clone(),
-                    image.source.clone(),
-                    message.body(),
-                    media_cache,
-                );
-                new_drawn_status.content_drawn = is_image_fully_drawn;
-                (item, false)
-            }
-        }
-        MessageType::File(file_content) => {
-            let template = live_id!(MessageCard);
-            let (item, existed) = list.item_with_existed(cx, item_id, template);
-            if existed && item_drawn_status.content_drawn {
-                (item, true)
-            } else {
-                new_drawn_status.content_drawn = populate_file_message_content(
-                    cx,
-                    &item.html_or_plaintext(id!(content.message)),
-                    file_content,
-                );
-                (item, false)
-            }
-        }
-        MessageType::Audio(audio) => {
-            let template = live_id!(MessageCard);
-            let (item, existed) = list.item_with_existed(cx, item_id, template);
-            if existed && item_drawn_status.content_drawn {
-                (item, true)
-            } else {
-                new_drawn_status.content_drawn = populate_audio_message_content(
-                    cx,
-                    &item.html_or_plaintext(id!(content.message)),
-                    audio,
-                );
-                (item, false)
-            }
-        }
-        other => {
-            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(MessageCard));
-            if existed && item_drawn_status.content_drawn {
-                (item, true)
-            } else {
-                let kind = other.msgtype();
-                item.label(id!(content.message))
-                    .set_text(cx, &format!("[Unsupported ({kind})] {}", message.body()));
-                new_drawn_status.content_drawn = true;
-                (item, false)
-            }
+        _ => {
+            let item = list.item(cx, item_id, live_id!(Empty));
+            (item, false)
         }
     };
 
@@ -966,9 +928,9 @@ pub fn populate_message_search_view(
         return (item, new_drawn_status);
     }
 
-    // Set the timestamp.
+    // Set the timestamp with date and time format.
     if let Some(dt) = unix_time_millis_to_datetime(ts_millis) {
-        item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
+        item.timestamp(id!(profile.timestamp)).set_date_time_with_format(cx, dt, "%F\n%H:%M");
     } else {
         item.label(id!(profile.timestamp))
             .set_text(cx, &format!("{}", ts_millis.get()));
