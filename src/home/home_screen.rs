@@ -54,11 +54,32 @@ live_design! {
                     main_page = <View> {
                         width: Fill, height: Fill
                         flow: Down
-
-                        <CachedWidget> {
-                            room_filter_input_bar = <RoomFilterInputBar> {}
+                        <View> {
+                            width: Fill, height: Fit
+                            flow: Right,
+                            <CachedWidget> {
+                                room_filter_input_bar = <RoomFilterInputBar> {
+                                    align: {x: 0.0 }
+                                }
+                            }
+                            message_search_input_view = <View> {
+                                width: Fill, height: Fit,
+                                visible: true,
+                                align: {x: 1.0},
+                                <CachedWidget> {
+                                    message_search_input_bar = <MessageSearchInputBar> {
+                                        width: 300,
+                                    }
+                                }
+                            }
                         }
-                        <MainDesktopUI> {}
+                        
+                        <View> {
+                            width: Fill, height: Fill
+                            flow: Right
+                            <MainDesktopUI> {}
+                            <RightPanel> {}
+                        }
                     }
 
                     settings_page = <View> {
@@ -131,10 +152,54 @@ live_design! {
                                             }
                                         }
                                     }
+                                    <View> {
+                                        height: Fit,
+                                        width: Fill,
+                                        align: {x: 1.0 }
+                                        mobile_message_search_input_view = <View> {
+                                            height: Fit,
+                                            width: 140,
+                                            <CachedWidget> {
+                                                message_search_input_bar = <MessageSearchInputBar> {
+                                                    width: 300
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                             body = {
                                 main_content = <MainMobileUI> {}
+                            }
+                        }
+                        search_result_view = <SearchResultView> {
+                            flow: Overlay
+                            header = {
+                                height: 50.0,
+                                margin: { top: 30.0 },
+                                content = {
+                                    flow: Right,
+                                    title_container = {
+                                        width: 0
+                                    }
+                                    button_container = <View> {
+                                        align: { y: 0.5 }
+                                        left_button = <RobrixIconButton> {
+                                            draw_icon: {
+                                                color: #666;
+                                            }
+                                            text: "Back"
+                                        }
+                                    }
+                                    <CachedWidget> {
+                                        message_search_input_bar = <MessageSearchInputBar> {
+                                            width: 300
+                                        }
+                                    }
+                                }
+                            }
+                            body = {
+                                margin: { top: 80.0 },
                             }
                         }
                     }

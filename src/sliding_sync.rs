@@ -33,7 +33,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_app_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, right_panel::search_message::{SearchResultAction, SearchResultItem, SearchResultReceived}, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -1197,16 +1197,16 @@ async fn async_worker(
                                     });
                                 }
                                 let room_id = event.room_id().to_owned();
-                                items.push(crate::right_panel::search_message::SearchResultItem::Event(Box::new(event)));
+                                items.push(SearchResultItem::Event(Box::new(event)));
                                 if include_all_rooms {
                                     if let Some(ref mut last_room_id) = last_room_id {
                                         if last_room_id != &room_id {
                                             *last_room_id = room_id.clone();
-                                            items.push(crate::right_panel::search_message::SearchResultItem::RoomHeader(room_id));
+                                            items.push(SearchResultItem::RoomHeader(room_id));
                                         }
                                     } else {
                                         last_room_id = Some(room_id.clone());
-                                        items.push(crate::right_panel::search_message::SearchResultItem::RoomHeader(room_id));
+                                        items.push(SearchResultItem::RoomHeader(room_id));
                                     }
                                 }
                             }
@@ -1216,7 +1216,7 @@ async fn async_worker(
                                 .and_then(|f| f.to_string().parse().ok())
                                 .unwrap_or(0);
                             let highlights = result.room_events.highlights;
-                            Cx::post_action(crate::right_panel::search_message::SearchResultAction::Ok(crate::right_panel::search_message::SearchResultReceived {
+                            Cx::post_action(SearchResultAction::Ok(SearchResultReceived {
                                 items,
                                 count,
                                 highlights,
@@ -1966,7 +1966,7 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
 async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListService) -> Result<()> {
     let room_id = room.room_id().to_owned();
     // We must call `display_name()` here to calculate and cache the room's name.
-    let room_name = room.display_name().await.map(|n| n.to_string()).ok();    
+    let room_name = room.display_name().await.map(|n| n.to_string()).ok();
     let is_room_encrypted = room.encryption_state().is_encrypted();
     let is_direct = room.is_direct().await.unwrap_or(false);
 

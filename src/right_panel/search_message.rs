@@ -17,9 +17,7 @@ use rangemap::RangeSet;
 use crate::{
     app::AppState,
     home::{
-        room_screen::{
-            populate_text_message_content, ItemDrawnStatus,
-        },
+        room_screen::{populate_text_message_content, ItemDrawnStatus},
         rooms_list::RoomsListRef,
     },
     shared::{
@@ -209,7 +207,6 @@ live_design! {
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
             Message = <Message> {}
             MessageCard = <MessageCard> {}
-            ImageMessage = <ImageMessage> {}
             Empty = <Empty> {}
             RoomHeader = <Label> {
                 margin: {left: 10},
@@ -221,17 +218,6 @@ live_design! {
                 }
                 text: "??"
             }
-            NoMoreMessages = <Label> {
-                margin: {left: 10, top: 30},
-                draw_text: {
-                    text_style: <REGULAR_TEXT> {
-                        font_size: 16.5,
-                    },
-                    color: #000,
-                }
-                text: "??"
-            }
-
         }
     }
 
@@ -249,6 +235,16 @@ live_design! {
                 width: Fill,
                 height: Fill,
             }
+        }
+        no_more_template: <Label> {
+            margin: {left: 10, top: 30},
+            draw_text: {
+                text_style: <REGULAR_TEXT> {
+                    font_size: 16.5,
+                },
+                color: #000,
+            }
+            text: "No More"
         }
     }
 }
@@ -278,6 +274,8 @@ pub struct SearchState {
     pub last_scrolled_index: usize,
     /// Token to be use for pagination of earlier search results.
     pub next_batch_token: Option<String>,
+    /// The search term for the last search request.
+    pub prev_search_term: Option<String>,
 }
 
 /// The main widget that displays a single Matrix room.
@@ -320,11 +318,18 @@ impl WidgetMatchEvent for SearchScreen {
                 next_batch,
             })) = action.downcast_ref()
             {
+                if let Some(prev_search_term) = self.search_state.prev_search_term.clone() {
+                    if prev_search_term != *search_term {
+                        self.search_state = SearchState::default();
+                    }
+                }
                 self.view
                     .search_result(id!(search_result_plane))
                     .hide_top_space(cx);
                 // Re-enable the search all rooms button when results are received
-                self.view.button(id!(search_all_rooms_button)).set_enabled(cx, true);
+                self.view
+                    .button(id!(search_all_rooms_button))
+                    .set_enabled(cx, true);
                 let mut criteria = self
                     .view
                     .search_result(id!(search_result_plane))
@@ -357,6 +362,7 @@ impl WidgetMatchEvent for SearchScreen {
                 search_portal_list.set_tail_range(true);
                 self.search_state.highlighted_strings = highlights.to_vec();
                 self.search_state.next_batch_token = next_batch.to_owned();
+                self.search_state.prev_search_term = Some(search_term.clone());
                 self.redraw(cx);
             }
             if self
@@ -365,7 +371,9 @@ impl WidgetMatchEvent for SearchScreen {
                 .clicked(actions)
             {
                 // Disable the button during search
-                self.view.button(id!(search_all_rooms_button)).set_enabled(cx, false);
+                self.view
+                    .button(id!(search_all_rooms_button))
+                    .set_enabled(cx, false);
                 let mut criteria = self
                     .search_result(id!(search_result_plane))
                     .get_search_criteria();
@@ -415,7 +423,7 @@ pub struct SearchResult {
     #[rust]
     pub result_count: u32,
     #[rust]
-    pub room_name: Option<String>
+    pub room_name: Option<String>,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -453,7 +461,7 @@ impl SearchResult {
         } else {
             self.room_name.clone().unwrap_or_default()
         };
-        
+
         self.view.markdown(id!(summary_label)).set_text(
             cx,
             &format!(
@@ -471,7 +479,11 @@ impl SearchResult {
     /// It is typically used when a new search is initiated.
     ///
     fn set_search_criteria(&mut self, cx: &mut Cx, scope: &mut Scope, search_criteria: Criteria) {
-        self.room_name = scope.data.get::<AppState>().and_then(|f|f.selected_room.as_ref().and_then(|f|f.room_name().cloned()));
+        self.room_name = scope.data.get::<AppState>().and_then(|f| {
+            f.selected_room
+                .as_ref()
+                .and_then(|f| f.room_name().cloned())
+        });
         let location_text = if search_criteria.include_all_rooms {
             "in all rooms".to_string()
         } else {
@@ -712,7 +724,7 @@ pub fn search_result_draw_walk(
     DrawStep::done()
 }
 
-/// Handles any search-related actions received by this SearchScreen.
+/// Handles any search input related actions received by this SearchScreen.
 ///
 /// See `MessageSearchAction` for the possible actions.
 pub fn handle_search_input(
@@ -733,7 +745,7 @@ pub fn handle_search_input(
                 submit_async_request(MatrixRequest::SearchMessages {
                     room_id: None,
                     include_all_rooms: false,
-                    search_term: "".to_string(),
+                    search_term: String::default(),
                     next_batch: None,
                     abort_previous_search: true,
                 });
@@ -765,7 +777,10 @@ pub fn handle_search_input(
                     .search_result(id!(search_result_plane))
                     .display_top_space(cx);
                 // Disable the search all rooms button during search
-                search_screen.view.button(id!(search_all_rooms_button)).set_enabled(cx, false);
+                search_screen
+                    .view
+                    .button(id!(search_all_rooms_button))
+                    .set_enabled(cx, false);
                 submit_async_request(MatrixRequest::SearchMessages {
                     room_id: Some(room_id.to_owned()),
                     include_all_rooms: criteria.include_all_rooms,
@@ -792,7 +807,10 @@ pub fn handle_search_input(
                 .search_result(id!(search_result_plane))
                 .set_visible(cx, false);
             // Re-enable the search all rooms button when search is cleared
-            search_screen.view.button(id!(search_all_rooms_button)).set_enabled(cx, true);
+            search_screen
+                .view
+                .button(id!(search_all_rooms_button))
+                .set_enabled(cx, true);
             search_screen.search_state = SearchState::default();
         }
         _ => {}
@@ -930,7 +948,8 @@ pub fn populate_message_search_view(
 
     // Set the timestamp with date and time format.
     if let Some(dt) = unix_time_millis_to_datetime(ts_millis) {
-        item.timestamp(id!(profile.timestamp)).set_date_time_with_format(cx, dt, "%F\n%H:%M");
+        item.timestamp(id!(profile.timestamp))
+            .set_date_time_with_format(cx, dt, "%F\n%H:%M");
     } else {
         item.label(id!(profile.timestamp))
             .set_text(cx, &format!("{}", ts_millis.get()));

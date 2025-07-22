@@ -25,11 +25,11 @@ use crate::{
         save_app_state,
         save_window_state,
     },
-    shared::callout_tooltip::{
+    shared::{callout_tooltip::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    },
+    }, message_search_input_bar::MessageSearchAction},
     sliding_sync::current_user_id,
     utils::{
         room_name_or_id,
@@ -234,8 +234,7 @@ impl MatchEvent for App {
                 cx.widget_action(
                     self.ui.widget_uid(),
                     &Scope::default().path,
-                    //StackNavigationAction::Push(live_id!(main_content_view))
-                    StackNavigationAction::Push(live_id!(search_result_view))
+                    StackNavigationAction::Push(live_id!(main_content_view))
                 );
                 self.ui.view(id!(message_search_input_view)).set_visible(cx, true);
                 self.ui.redraw(cx);
@@ -340,31 +339,12 @@ impl MatchEvent for App {
             //     }
             //     _ => {}
             // }
-            match action.as_widget_action().cast() {
-                crate::shared::message_search_input_bar::MessageSearchAction::Click(_) => {
-                    // there is apply error in desktop view
-                    self.ui
-                        .view(id!(main_content_view.header.content.mobile_message_search_input_view))
-                        .apply_over(cx, live!{
-                            width: 220
-                        });
-                    // self.ui
-                    //     .stack_navigation(id!(view_stack))
-                    //     .push(cx, live_id!(search_result_view));
-                    cx.widget_action(
-                        self.ui.widget_uid(),
-                        &Scope::default().path,
-                        StackNavigationAction::Push(live_id!(search_result_view))
-                    );
-                }
-                crate::shared::message_search_input_bar::MessageSearchAction::Clear => {
-                    self.ui
-                        .view(id!(main_content_view.header.content.mobile_message_search_input_view))
-                        .apply_over(cx, live!{
-                            width: 150
-                        });
-                }
-                _ => {}
+            if let MessageSearchAction::Click(_) = action.as_widget_action().cast() {
+                cx.widget_action(
+                    self.ui.widget_uid(),
+                    &Scope::default().path,
+                    StackNavigationAction::Push(live_id!(search_result_view))
+                );
             }
             
             // Monitor for DockSave action which will be triggered by selection of the room for setting the visibility of the message search input.
@@ -461,8 +441,6 @@ pub struct AppState {
     pub saved_dock_state: SavedDockState,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
-    /// Whether the right panel is currently open.
-    pub right_panel_open: bool,
 }
 
 /// A snapshot of the main dock: all state needed to restore the dock tabs/layout.
