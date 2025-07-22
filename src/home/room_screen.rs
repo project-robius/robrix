@@ -22,7 +22,7 @@ use crate::{
     app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
-    }, shared::{
+    }, room::link_preview_card::{populate_link_preview_card_content, LinkPreviewCardWidgetRefExt}, shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem}, styles::COLOR_FG_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
@@ -72,6 +72,7 @@ live_design! {
     use crate::home::loading_pane::*;
     use crate::home::location_preview::*;
     use crate::room::room_input_bar::*;
+    use crate::room::link_preview_card::*;
     use crate::home::room_read_receipt::*;
     use crate::rooms_list::*;
 
@@ -333,6 +334,11 @@ live_design! {
                 }
 
                 message = <HtmlOrPlaintext> { }
+
+                link_preview_card = <LinkPreviewCard> {
+                    visible: false,
+                    margin: { top: 10.0, bottom: 10.0 }
+                }
 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
@@ -3052,6 +3058,11 @@ fn populate_message_view(
                             &item.html_or_plaintext(id!(content.message)),
                             body,
                             formatted.as_ref(),
+                        );
+                        populate_link_preview_card_content(
+                            cx,
+                            &mut item.link_preview_card(id!(content.link_preview_card)),
+                            body
                         );
                         new_drawn_status.content_drawn = true;
                         (item, false)

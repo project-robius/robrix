@@ -1171,10 +1171,7 @@ async fn async_worker(
                                     title: preview.title,
                                     description: preview.description,
                                     url: url.clone(),
-                                    image_url: preview.image_url,
                                     raw_image: image,
-                                    favicon: preview.favicon,
-                                    site_name: preview.site_name,
                                 }),
                             });
                         }
