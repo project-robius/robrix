@@ -99,35 +99,30 @@ impl Widget for LinkPreviewCard {
           }
       }
 
-      match event.hits(cx, self.view.area()) {
-        Hit::FingerUp(fue) => {
-          if fue.is_primary_hit() && fue.was_tap() {
-            if let Err(e) = robius_open::Uri::new(&self.url).open() {
-                error!("Failed to open URL {:?}. Error: {:?}", self.url, e);
-            }
+      if let Hit::FingerUp(fue) = event.hits(cx, self.view.area()) {
+        if fue.is_primary_hit() && fue.was_tap() {
+          if let Err(e) = robius_open::Uri::new(&self.url).open() {
+            error!("Failed to open URL {:?}. Error: {:?}", self.url, e);
           }
         }
-        _ => {}
       }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
       match &self.state {
-          LinkPreviewCardState::Loaded { preview, .. } => {
-              if let Some(preview) = preview {
-                let link_preview_info = self.view(id!(link_preview_info_view));
-                let link_thumbnail_preview_view = self.view(id!(link_thumbnail_preview_view));
+          LinkPreviewCardState::Loaded { preview: Some(preview), .. } => {
+              let link_preview_info = self.view(id!(link_preview_info_view));
+              let link_thumbnail_preview_view = self.view(id!(link_thumbnail_preview_view));
 
-                if let Some(raw_image) = &preview.raw_image {
-                    let image = self.image(id!(link_thumbnail_preview_view.image));
-                    let _ = utils::load_png_or_jpg(&image, cx, &raw_image);
-                    link_thumbnail_preview_view.set_visible(cx, true);
-                }
+              if let Some(raw_image) = &preview.raw_image {
+                  let image = self.image(id!(link_thumbnail_preview_view.image));
+                  let _ = utils::load_png_or_jpg(&image, cx, raw_image);
+                  link_thumbnail_preview_view.set_visible(cx, true);
+              }
 
-                link_preview_info.set_visible(cx, true);
-                link_preview_info.label(id!(title)).set_text(cx, preview.title.as_deref().unwrap_or(""));
-                link_preview_info.label(id!(description)).set_text(cx, preview.description.as_deref().unwrap_or(""));
-              };
+              link_preview_info.set_visible(cx, true);
+              link_preview_info.label(id!(title)).set_text(cx, preview.title.as_deref().unwrap_or(""));
+              link_preview_info.label(id!(description)).set_text(cx, preview.description.as_deref().unwrap_or(""));
           }
           LinkPreviewCardState::None => {
               // If no state is set, we can request the preview
@@ -206,7 +201,7 @@ pub fn extract_links(
 
         if text.get(..start).is_some_and(|before| {
             let lower = before.to_ascii_lowercase();
-            lower.rfind("href=").map_or(false, |i| {
+            lower.rfind("href=").is_some_and(|i| {
                 lower[i..].starts_with("href=\"") || lower[i..].starts_with("href='")
             })
         }) {
