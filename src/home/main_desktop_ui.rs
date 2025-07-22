@@ -78,7 +78,7 @@ pub struct MainDesktopUI {
 
     /// Boolean to indicate if we've drawn the MainDesktopUi previously in the desktop view.
     ///
-    /// When switching mobile view to desktop, we need to restore the rooms panel state.
+    /// When switching mobile view to desktop, we need to restore the app state.
     /// If false, this widget emits an action to load the dock from the saved dock state.
     /// If true, this widget proceeds to draw the desktop UI as normal.
     #[rust]
@@ -92,7 +92,7 @@ impl Widget for MainDesktopUI {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // When changing from mobile to Desktop, we need to restore the rooms panel state.
+        // When changing from mobile to Desktop, we need to restore the app state.
         if !self.drawn_previously {
             let app_state = scope.data.get_mut::<AppState>().unwrap();
             if !app_state.saved_dock_state.open_rooms.is_empty() {
