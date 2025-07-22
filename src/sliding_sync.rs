@@ -1149,6 +1149,8 @@ async fn async_worker(
                 next_batch,
                 abort_previous_search,
             } => {
+                log!("MatrixRequest::SearchMessages - room_id: {:?}, search_term: '{}', include_all_rooms: {}, next_batch: {:?}, abort_previous_search: {}",
+                    room_id, search_term, include_all_rooms, next_batch, abort_previous_search);
                 if abort_previous_search {
                     if let Some(abort_handler) = search_task_abort_handler.take() {
                         abort_handler.abort();
