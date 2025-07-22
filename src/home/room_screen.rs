@@ -382,6 +382,10 @@ live_design! {
                 padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
+                link_preview_card = <LinkPreviewCard> {
+                    visible: false,
+                    margin: { top: 10.0, bottom: 10.0 }
+                }
                 <View> {
                     width: Fill,
                     height: Fit
