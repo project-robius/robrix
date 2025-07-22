@@ -66,6 +66,8 @@ live_design! {
 
         draw_bg: {
             instance color: (COLOR_PRIMARY)
+            // We set a mid-gray hover color, which gets mixed with the bg color itself
+            // in order to create a "lightening" effect upon hover.
             instance color_hover: #A
             instance border_size: 0.0
             instance border_color: #D0D5DD
