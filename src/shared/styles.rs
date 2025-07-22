@@ -5,20 +5,23 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
-    pub ICON_ADD_REACTION = dep("crate://self/resources/icons/add_reaction.svg")
-    pub ICON_BLOCK_USER   = dep("crate://self/resources/icons/forbidden.svg")
-    pub ICON_CHECKMARK    = dep("crate://self/resources/icons/checkmark.svg")
-    pub ICON_CLOSE        = dep("crate://self/resources/icons/close.svg")
-    pub ICON_COPY         = dep("crate://self/resources/icons/copy.svg")
-    pub ICON_EDIT         = dep("crate://self/resources/icons/edit.svg")
-    pub ICON_HTML_FILE    = dep("crate://self/resources/icons/html_file.svg")
-    pub ICON_JUMP         = dep("crate://self/resources/icons/go_back.svg")
-    pub ICON_LINK         = dep("crate://self/resources/icons/link.svg")
-    pub ICON_PIN          = dep("crate://self/resources/icons/pin.svg")
-    pub ICON_REPLY        = dep("crate://self/resources/icons/reply.svg")
-    pub ICON_SEND         = dep("crate://self/resources/icon_send.svg")
-    pub ICON_TRASH        = dep("crate://self/resources/icons/trash.svg")
-    pub ICON_VIEW_SOURCE  = dep("crate://self/resources/icons/view_source.svg")
+    pub ICON_ADD_REACTION    = dep("crate://self/resources/icons/add_reaction.svg")
+    pub ICON_FORBIDDEN       = dep("crate://self/resources/icons/forbidden.svg")
+    pub ICON_CHECKMARK       = dep("crate://self/resources/icons/checkmark.svg")
+    pub ICON_CLOSE           = dep("crate://self/resources/icons/close.svg")
+    pub ICON_COPY            = dep("crate://self/resources/icons/copy.svg")
+    pub ICON_EDIT            = dep("crate://self/resources/icons/edit.svg")
+    pub ICON_EXTERNAL_LINK   = dep("crate://self/resources/icons/external_link.svg")
+    pub ICON_HTML_FILE       = dep("crate://self/resources/icons/html_file.svg")
+    pub ICON_JUMP            = dep("crate://self/resources/icons/go_back.svg")
+    pub ICON_LOGOUT          = dep("crate://self/resources/icons/logout.svg")
+    pub ICON_LINK            = dep("crate://self/resources/icons/link.svg")
+    pub ICON_PIN             = dep("crate://self/resources/icons/pin.svg")
+    pub ICON_REPLY           = dep("crate://self/resources/icons/reply.svg")
+    pub ICON_SEND            = dep("crate://self/resources/icon_send.svg")
+    pub ICON_TRASH           = dep("crate://self/resources/icons/trash.svg")
+    pub ICON_UPLOAD          = dep("crate://self/resources/icons/upload.svg")
+    pub ICON_VIEW_SOURCE     = dep("crate://self/resources/icons/view_source.svg")
 
     pub TITLE_TEXT = <THEME_FONT_REGULAR>{
         font_size: (13),
@@ -73,13 +76,15 @@ live_design! {
     pub COLOR_ROBRIX_PURPLE = #572DCC; // the purple color from the Robrix logo
     pub COLOR_META = #xccc
 
-    pub COLOR_PROFILE_CIRCLE = #xfff8ee
-    pub COLOR_DIVIDER = #x00000018
-    pub COLOR_DIVIDER_DARK = #x00000044
+    pub COLOR_DIVIDER = #00000018
+    pub COLOR_DIVIDER_DARK = #00000044
 
-    pub COLOR_ACCEPT_GREEN = #138808
-    pub COLOR_DANGER_RED = #DC0005
-    pub COLOR_DISABLE_GRAY = #B3B3B3
+    pub COLOR_FG_ACCEPT_GREEN = #138808
+    pub COLOR_BG_ACCEPT_GREEN = #F0FFF0
+    pub COLOR_FG_DANGER_RED = #DC0005
+    pub COLOR_BG_DANGER_RED = #FFF0F0
+    pub COLOR_FG_DISABLED = #B3B3B3
+    pub COLOR_BG_DISABLED = #E0E0E0
 
     pub COLOR_SELECT_TEXT = #A6CDFE
 
@@ -95,7 +100,6 @@ live_design! {
     pub COLOR_AVATAR_BG_IDLE = #d8d8d8
 
     pub COLOR_UNREAD_MESSAGE_BADGE = (COLOR_AVATAR_BG)
-    pub COLOR_TOOLTIP_BG = (COLOR_SECONDARY)
 
     pub COLOR_TEXT_IDLE = #d8d8d8
     pub COLOR_TEXT = #1C274C
@@ -156,21 +160,21 @@ live_design! {
             color_focus: (COLOR_PRIMARY)
             color_down: (COLOR_PRIMARY)
             color_empty: (COLOR_PRIMARY)
-            color_disabled: (COLOR_PRIMARY)
+            color_disabled: (COLOR_BG_DISABLED)
 
             border_color_1: (COLOR_PRIMARY)
             border_color_1_hover: (COLOR_PRIMARY)
             border_color_1_focus: (COLOR_PRIMARY)
             border_color_1_down: (COLOR_PRIMARY)
             border_color_1_empty: (COLOR_PRIMARY)
-            border_color_1_disabled: (COLOR_PRIMARY)
+            border_color_1_disabled: (COLOR_FG_DISABLED)
 
             border_color_2: (COLOR_PRIMARY)
             border_color_2_hover: (COLOR_PRIMARY)
             border_color_2_focus: (COLOR_PRIMARY)
             border_color_2_down: (COLOR_PRIMARY)
             border_color_2_empty: (COLOR_PRIMARY)
-            border_color_2_disabled: (COLOR_PRIMARY)
+            border_color_2_disabled: (COLOR_FG_DISABLED)
         }
 
         draw_selection: {
@@ -194,7 +198,7 @@ live_design! {
             uniform color_hover: (MESSAGE_TEXT_COLOR),
             uniform color_focus: (MESSAGE_TEXT_COLOR),
             uniform color_down: (MESSAGE_TEXT_COLOR),
-            uniform color_disabled: (MESSAGE_TEXT_COLOR),
+            uniform color_disabled: (COLOR_FG_DISABLED),
             uniform color_empty: #B,
             uniform color_empty_hover: #B,
             uniform color_empty_focus: #B,
@@ -227,8 +231,11 @@ live_design! {
     }
 }
 
-pub const COLOR_ACCEPT_GREEN:        Vec4 = vec4(0.074, 0.533, 0.031, 1.0); // #138808
-pub const COLOR_DISABLE_GRAY:        Vec4 = vec4(0.7, 0.7, 0.7, 1.0); // #B3B3B3
+pub const COLOR_FG_ACCEPT_GREEN:     Vec4 = vec4(0.074, 0.533, 0.031, 1.0); // #138808
+pub const COLOR_BG_ACCEPT_GREEN:     Vec4 = vec4(0.941, 1.0, 0.941, 1.0); // #F0FFF0
+pub const COLOR_FG_DISABLED:         Vec4 = vec4(0.7, 0.7, 0.7, 1.0); // #B3B3B3
+pub const COLOR_BG_DISABLED:         Vec4 = vec4(0.878, 0.878, 0.878, 1.0); // #E0E0E0
+pub const COLOR_FG_DANGER_RED:       Vec4 = vec4(0.863, 0.0, 0.02, 1.0); // #DC0005
+pub const COLOR_BG_DANGER_RED:       Vec4 = vec4(1.0, 0.941, 0.941, 1.0); // #FFF0F0
 pub const COLOR_ROBRIX_PURPLE:       Vec4 = vec4(0.341, 0.176, 0.8, 1.0); // #572DCC
-pub const COLOR_DANGER_RED:          Vec4 = vec4(0.863, 0.0, 0.02, 1.0); // #DC0005
 pub const COLOR_UNKNOWN_ROOM_AVATAR: Vec4 = vec4(1.0, 0.431, 0.0, 1.0); // #FF6e00

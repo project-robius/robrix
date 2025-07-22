@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{app::RoomsPanelRestoreAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem}}, sliding_sync::{submit_async_request, MatrixRequest}, utils};
+use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem}}, sliding_sync::{submit_async_request, MatrixRequest}, utils};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -165,18 +165,18 @@ live_design! {
                 align: {x: 0.5, y: 0.5}
                 padding: 15,
                 draw_icon: {
-                    svg_file: (ICON_BLOCK_USER)
-                    color: (COLOR_DANGER_RED),
+                    svg_file: (ICON_FORBIDDEN)
+                    color: (COLOR_FG_DANGER_RED),
                 }
                 icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
 
                 draw_bg: {
-                    border_color: (COLOR_DANGER_RED),
-                    color: #fff0f0 // light red
+                    border_color: (COLOR_FG_DANGER_RED),
+                    color: (COLOR_BG_DANGER_RED)
                 }
                 text: "Reject Invite"
                 draw_text:{
-                    color: (COLOR_DANGER_RED),
+                    color: (COLOR_FG_DANGER_RED),
                 }
             }
 
@@ -185,17 +185,17 @@ live_design! {
                 padding: 15,
                 draw_icon: {
                     svg_file: (ICON_CHECKMARK)
-                    color: (COLOR_ACCEPT_GREEN),
+                    color: (COLOR_FG_ACCEPT_GREEN),
                 }
                 icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
 
                 draw_bg: {
-                    border_color: (COLOR_ACCEPT_GREEN),
-                    color: #f0fff0 // light green
+                    border_color: (COLOR_FG_ACCEPT_GREEN),
+                    color: (COLOR_BG_ACCEPT_GREEN)
                 }
                 text: "Join Room"
                 draw_text:{
-                    color: (COLOR_ACCEPT_GREEN),
+                    color: (COLOR_FG_ACCEPT_GREEN),
                 }
             }
         }
@@ -206,7 +206,7 @@ live_design! {
             margin: {top: 10, bottom: 10},
             flow: RightWrap,
             draw_text: {
-                color: (COLOR_ACCEPT_GREEN),
+                color: (COLOR_FG_ACCEPT_GREEN),
                 text_style: <THEME_FONT_BOLD>{font_size: 12}
                 wrap: Word,
             }
@@ -317,7 +317,7 @@ impl Widget for InviteScreen {
             // First, we quickly loop over the actions up front to handle the case
             // where this room was restored and has now been successfully loaded from the homeserver.
             for action in actions {
-                if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
+                if let Some(AppStateAction::RoomLoadedSuccessfully(room_id)) = action.downcast_ref() {
                     if self.room_id.as_ref().is_some_and(|inner_room_id| inner_room_id == room_id) {
                         self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
                         break;

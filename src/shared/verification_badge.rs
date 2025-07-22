@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::encryption::VerificationState;
 
 use crate::{
-    shared::styles::{COLOR_ACCEPT_GREEN, COLOR_DANGER_RED},
+    shared::styles::{COLOR_FG_ACCEPT_GREEN, COLOR_FG_DANGER_RED},
     sliding_sync::get_client,
     verification::VerificationStateAction,
 };
@@ -32,7 +32,7 @@ live_design! {
             draw_icon: {
                 svg_file: (VERIFICATION_YES),
                 fn get_color(self) -> vec4 {
-                    return (COLOR_ACCEPT_GREEN);
+                    return (COLOR_FG_ACCEPT_GREEN);
                 }
             }
         }
@@ -45,7 +45,7 @@ live_design! {
             draw_icon: {
                 svg_file: (VERIFICATION_NO),
                 fn get_color(self) -> vec4 {
-                    return (COLOR_DANGER_RED);
+                    return (COLOR_FG_DANGER_RED);
                 }
             }
         }
@@ -138,12 +138,12 @@ impl VerificationBadgeRef {
         match self.borrow().map(|v| v.verification_state) {
             Some(VerificationState::Verified) => (
                 "This device is fully verified.",
-                Some(COLOR_ACCEPT_GREEN),
+                Some(COLOR_FG_ACCEPT_GREEN),
             ),
             Some(VerificationState::Unverified) => (
                 "This device is unverified. To view your encrypted message history,\
                 please verify Robrix from another client.",
-                Some(COLOR_DANGER_RED),
+                Some(COLOR_FG_DANGER_RED),
             ),
             _ => (
                 "Verification state is unknown.",

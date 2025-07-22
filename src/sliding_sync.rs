@@ -28,9 +28,9 @@ use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use crate::{
-    app::RoomsPanelRestoreAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
+    app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_rooms_panel_state, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_app_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, room::{link_preview_card::{LinkPreviewCardState, LinkPreviewData}, RoomPreviewAvatar}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -1578,9 +1578,9 @@ async fn async_main_loop(
         .build()
         .await?;
 
-    // Attempt to load the previously-saved rooms panel state.
-    // Include this after re-login. 
-    handle_load_rooms_panel_state(logged_in_user_id.to_owned());
+    // Attempt to load the previously-saved app state.
+    // Include this after re-login.
+    handle_load_app_state(logged_in_user_id.to_owned());
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
     let room_list_service = sync_service.room_list_service();
@@ -1977,7 +1977,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
                 is_selected: false,
                 is_direct,
             }));
-            Cx::post_action(RoomsPanelRestoreAction::Success(room_id));
+            Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_id));
             return Ok(());
         }
         RoomState::Joined => { } // Fall through to adding the joined room below.
@@ -2065,7 +2065,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         is_direct,
     }));
 
-    Cx::post_action(RoomsPanelRestoreAction::Success(room_id));
+    Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_id));
     spawn_fetch_room_avatar(room.clone());
 
     Ok(())
@@ -2123,20 +2123,20 @@ fn handle_ignore_user_list_subscriber(client: Client) {
     });
 }
 
-/// Asynchronously loads and restores the rooms panel state from persistent storage for the given user.
+/// Asynchronously loads and restores the app state from persistent storage for the given user.
 ///
-/// If the loaded state contains open rooms and dock state, it logs a message and posts an action
-/// to restore the rooms panel state in the UI. If loading fails, it enqueues a notification
+/// If the loaded dock state contains open rooms and dock items, it logs a message and posts an action
+/// to restore the app state in the UI. If loading fails, it enqueues a notification
 /// with the error message.
-fn handle_load_rooms_panel_state(user_id: OwnedUserId) {
+fn handle_load_app_state(user_id: OwnedUserId) {
     Handle::current().spawn(async move {
-        match load_rooms_panel_state(&user_id).await {
-            Ok(rooms_panel_state) => {
-                if !rooms_panel_state.open_rooms.is_empty()
-                    && !rooms_panel_state.dock_items.is_empty()
+        match load_app_state(&user_id).await {
+            Ok(app_state) => {
+                if !app_state.saved_dock_state.open_rooms.is_empty()
+                    && !app_state.saved_dock_state.dock_items.is_empty()
                 {
                     log!("Loaded room panel state from app data directory. Restoring now...");
-                    Cx::post_action(RoomsPanelRestoreAction::RestoreDockFromPersistentState(rooms_panel_state));
+                    Cx::post_action(AppStateAction::RestoreAppStateFromPersistentState(app_state));
                 }
             }
             Err(_e) => {
