@@ -12,6 +12,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::icon_button::*;
     use crate::settings::account_settings::AccountSettings;
+    use crate::settings::tsp_settings::TspSettings;
 
     // The main, top-level settings screen widget.
     pub SettingsScreen = {{SettingsScreen}} {
@@ -72,6 +73,13 @@ live_design! {
 
             // The account settings section.
             account_settings = <AccountSettings> {}
+
+            <LineH> { width: 400, padding: 10, margin: {top: 20, bottom: 5} }
+
+            // The TSP wallet settings section.
+            tsp_settings = <TspSettings> {}
+
+            <LineH> { width: 400, padding: 10, margin: {top: 20, bottom: 5} }
 
             // Add other settings sections here as needed.
             // Don't forget to add a `show()` fn to those settings sections
