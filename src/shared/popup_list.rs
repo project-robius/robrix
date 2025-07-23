@@ -5,9 +5,9 @@ use crate::shared::styles::*;
 
 static POPUP_NOTIFICATION: SegQueue<PopupItem> = SegQueue::new();
 const POPUP_KINDS: [(PopupKind, Vec4); 4] = [
-    (PopupKind::Error, COLOR_DANGER_RED),
+    (PopupKind::Error, COLOR_FG_DANGER_RED),
     (PopupKind::Info, COLOR_INFO_BLUE),
-    (PopupKind::Success, COLOR_ACCEPT_GREEN),
+    (PopupKind::Success, COLOR_FG_ACCEPT_GREEN),
     (PopupKind::Warning, COLOR_WARNING_YELLOW),
 ];
 const ICON_SET: &[&[LiveId]] = ids!(error_icon, info_icon, success_icon, warning_icon,);
@@ -210,7 +210,7 @@ live_design! {
             spacing: 0,
             align: { x: 0.5, y: 0.5 }
             draw_bg: {
-                instance color: #FEFEFE00
+                color: (COLOR_TRANSPARENT)
             }
             draw_icon: {
                 svg_file: (ICON_CLOSE),

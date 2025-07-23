@@ -33,6 +33,7 @@ live_design! {
             color: (COLOR_PRIMARY)
         }
     }
+
     SsoImage = <Image> {
         width: 30, height: 30,
         draw_bg:{

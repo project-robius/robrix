@@ -37,6 +37,7 @@ live_design! {
                     draw_text: {
                         text_style: <TITLE_TEXT>{font_size: 13},
                         color: #000
+                        wrap: Word
                     }
                 }
             }
@@ -69,18 +70,18 @@ live_design! {
                         align: {x: 0.5, y: 0.5}
                         padding: 15,
                         draw_icon: {
-                            svg_file: (ICON_BLOCK_USER)
-                            color: (COLOR_DANGER_RED),
+                            svg_file: (ICON_FORBIDDEN)
+                            color: (COLOR_FG_DANGER_RED),
                         }
                         icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
         
                         draw_bg: {
-                            border_color: (COLOR_DANGER_RED),
-                            color: #fff0f0 // light red
+                            border_color: (COLOR_FG_DANGER_RED),
+                            color: (COLOR_BG_DANGER_RED)
                         }
                         text: "Cancel"
                         draw_text:{
-                            color: (COLOR_DANGER_RED),
+                            color: (COLOR_FG_DANGER_RED),
                         }
                     }
 
@@ -90,17 +91,17 @@ live_design! {
                         padding: 15,
                         draw_icon: {
                             svg_file: (ICON_CHECKMARK)
-                            color: (COLOR_ACCEPT_GREEN),
+                            color: (COLOR_FG_ACCEPT_GREEN),
                         }
                         icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
 
                         draw_bg: {
-                            border_color: (COLOR_ACCEPT_GREEN),
-                            color: #f0fff0 // light green
+                            border_color: (COLOR_FG_ACCEPT_GREEN),
+                            color: (COLOR_BG_ACCEPT_GREEN)
                         }
                         text: "Yes"
                         draw_text:{
-                            color: (COLOR_ACCEPT_GREEN),
+                            color: (COLOR_FG_ACCEPT_GREEN),
                         }
                     }
                 }
