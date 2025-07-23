@@ -9,7 +9,7 @@ use matrix_sdk::ruma::{
         },
         AnyMessageLikeEventContent, AnyTimelineEvent,
     },
-    OwnedRoomId, OwnedUserId,
+    OwnedEventId, OwnedRoomId, OwnedUserId,
 };
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use rangemap::RangeSet;
@@ -17,7 +17,7 @@ use rangemap::RangeSet;
 use crate::{
     app::AppState,
     home::{
-        room_screen::{populate_text_message_content, ItemDrawnStatus},
+        room_screen::{populate_text_message_content, ItemDrawnStatus, MessageAction},
         rooms_list::RoomsListRef,
     },
     shared::{
@@ -246,6 +246,33 @@ live_design! {
             }
             text: "No More"
         }
+        
+        search_context_menu = <RoundedView> {
+            visible: false,
+            flow: Down
+            width: 180,
+            height: Fit,
+            padding: 8
+            spacing: 0,
+            align: {x: 0, y: 0}
+
+            show_bg: true
+            draw_bg: {
+                color: #fff
+                border_radius: 5.0
+                border_size: 0.5
+                border_color: #888
+            }
+
+            go_to_message_button = <RobrixIconButton> {
+                height: 35
+                width: Fill,
+                margin: 0,
+                icon_walk: {width: 16, height: 16, margin: {right: 3}}
+                draw_icon: { svg_file: dep("crate://self/resources/icons/jump.svg") }
+                text: "Go to Message"
+            }
+        }
     }
 }
 
@@ -354,10 +381,65 @@ impl SearchScreen {
     }
 }
 
+/// Action for search message interactions
+#[derive(Clone, DefaultNone, Debug)]
+pub enum SearchMessageAction {
+    ScrollToMessage {
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
+    },
+    None,
+}
+
 impl WidgetMatchEvent for SearchScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         for action in actions.iter() {
             handle_search_input(self, cx, action, scope);
+            
+            // Handle search message actions
+            if let Some(search_action) = action.downcast_ref::<SearchMessageAction>() {
+                match search_action {
+                    SearchMessageAction::ScrollToMessage { room_id, event_id } => {
+                        // Trigger the MessageAction::ScrollToMessage to navigate to the main timeline
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &scope.path,
+                            MessageAction::ScrollToMessage {
+                                room_id: room_id.clone(),
+                                event_id: event_id.clone(),
+                            }
+                        );
+                    }
+                    SearchMessageAction::None => {}
+                }
+            }
+            
+            // Intercept OpenMessageContextMenu actions from search messages and convert them to scroll actions
+            if let Some(msg_action) = action.downcast_ref::<MessageAction>() {
+                if let MessageAction::OpenMessageContextMenu { details, abs_pos: _ } = msg_action {
+                    // Check if this message is from a search result by looking up the event_id
+                    if let Some(event_id) = &details.event_id {
+                        // Find this event in our search results
+                        for search_item in &self.search_state.items {
+                            if let SearchResultItem::Event(search_event) = search_item {
+                                if search_event.event_id() == event_id {
+                                    // This is a search result message, trigger scroll action instead of context menu
+                                    cx.widget_action(
+                                        self.widget_uid(),
+                                        &scope.path,
+                                        MessageAction::ScrollToMessage {
+                                            room_id: search_event.room_id().to_owned(),
+                                            event_id: event_id.to_owned(),
+                                        }
+                                    );
+                                    // Continue to prevent the original context menu from showing
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             if let Some(SearchResultAction::Ok(SearchResultReceived {
                 items,
                 profile_infos,

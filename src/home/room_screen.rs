@@ -2140,6 +2140,63 @@ impl RoomScreen {
                     }
                     self.redraw(cx);
                 }
+                MessageAction::ScrollToMessage { room_id, event_id } => {
+                    // Check if this is the correct room
+                    let Some(tl) = self.tl_state.as_mut() else { continue };
+                    if tl.room_id != room_id {
+                        // This message is for a different room, ignore it
+                        continue;
+                    }
+
+                    // Search through the timeline to find the message with the given event_id
+                    let mut num_items_searched = 0;
+                    let target_msg_tl_index = tl.items
+                        .focus()
+                        .into_iter()
+                        .position(|item| {
+                            num_items_searched += 1;
+                            item.as_event()
+                                .and_then(|e| e.event_id())
+                                .is_some_and(|ev_id| ev_id == &event_id)
+                        });
+
+                    if let Some(index) = target_msg_tl_index {
+                        // Message found in current timeline - scroll to it
+                        let speed = 50.0;
+                        portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
+                        // start highlight animation.
+                        tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
+                            item_id: index
+                        };
+                    } else {
+                        // Message not found - trigger backwards pagination to find it
+                        loading_pane.set_state(
+                            cx,
+                            LoadingPaneState::BackwardsPaginateUntilEvent {
+                                target_event_id: event_id.clone(),
+                                events_paginated: 0,
+                                request_sender: tl.request_sender.clone(),
+                            },
+                        );
+                        loading_pane.show(cx);
+
+                        tl.request_sender.send_if_modified(|requests| {
+                            if let Some(existing) = requests.iter_mut().find(|r| r.room_id == tl.room_id) {
+                                // Re-use existing request
+                                existing.target_event_id = event_id.clone();
+                            } else {
+                                requests.push(BackwardsPaginateUntilEventRequest {
+                                    room_id: tl.room_id.clone(),
+                                    target_event_id: event_id.clone(),
+                                    starting_index: 0, // Search from the beginning since we don't know where it is
+                                    current_tl_len: tl.items.len(),
+                                });
+                            }
+                            true
+                        });
+                    }
+                    self.redraw(cx);
+                }
                 MessageAction::Redact { details, reason } => {
                     let Some(tl) = self.tl_state.as_mut() else { return };
                     let mut success = false;
@@ -4224,6 +4281,12 @@ pub enum MessageAction {
 
     /// The message at the given item index in the timeline should be highlighted.
     HighlightMessage(usize),
+    /// Scroll to a message in the main room timeline with the given event_id.
+    /// Used when navigating from search results to the original message in the timeline.
+    ScrollToMessage {
+        room_id: matrix_sdk::ruma::OwnedRoomId,
+        event_id: matrix_sdk::ruma::OwnedEventId,
+    },
     /// The user requested that we show a context menu with actions
     /// that can be performed on a given message.
     OpenMessageContextMenu {
@@ -4285,6 +4348,7 @@ impl Widget for Message {
                 }
             }
             Hit::FingerLongPress(lp) => {
+                println!("Hit::FingerLongPress");
                 cx.widget_action(
                     details.room_screen_widget_uid,
                     &scope.path,
@@ -4333,6 +4397,7 @@ impl Widget for Message {
                 }
             }
             Hit::FingerLongPress(lp) => {
+                println!("Hit::FingerLongPress");
                 cx.widget_action(
                     details.room_screen_widget_uid,
                     &scope.path,
