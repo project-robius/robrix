@@ -1813,7 +1813,7 @@ impl RoomScreen {
                 }
                 MatrixId::Room(room_id) => {
                     if self.room_id.as_ref() == Some(room_id) {
-                        enqueue_popup_notification(PopupItem { 
+                        enqueue_popup_notification(PopupItem {
                             message: "You are already viewing that room.".into(),
                             kind: PopupKind::Error,
                             auto_dismissal_duration: None
@@ -1916,7 +1916,7 @@ impl RoomScreen {
                         }
                     }
                     if !success {
-                        enqueue_popup_notification(PopupItem { 
+                        enqueue_popup_notification(PopupItem {
                             message: "Couldn't find message in timeline to react to.".to_string(),
                             kind: PopupKind::Error,
                             auto_dismissal_duration: None
