@@ -13,6 +13,7 @@ pub mod room_preview;
 pub mod room_screen;
 pub mod room_read_receipt;
 pub mod rooms_list;
+pub mod rooms_list_header;
 pub mod rooms_sidebar;
 pub mod spaces_dock;
 pub mod welcome_screen;
@@ -24,6 +25,7 @@ pub fn live_design(cx: &mut Cx) {
     loading_pane::live_design(cx);
     location_preview::live_design(cx);
     rooms_list::live_design(cx);
+    rooms_list_header::live_design(cx);
     room_preview::live_design(cx);
     edited_indicator::live_design(cx);
     editing_pane::live_design(cx);
