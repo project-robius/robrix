@@ -1,7 +1,7 @@
 use std::{borrow::Cow, fmt::Display, ops::Deref, str::{Chars, FromStr}, time::SystemTime};
 
 use unicode_segmentation::UnicodeSegmentation;
-use chrono::{DateTime, Duration, Local, TimeZone};
+use chrono::{DateTime, Local, TimeZone};
 use makepad_widgets::{image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, *};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
@@ -158,48 +158,18 @@ pub fn room_name_or_id(
     )
 }
 
-/// Formats a given Unix timestamp in milliseconds into a relative human-readable date.
+/// Formats a given Unix timestamp in milliseconds into a date and time string.
 ///
-/// # Cases:
-/// - **Less than 60 seconds ago**: Returns `"Just now"`.
-/// - **Less than 60 minutes ago**: Returns `"X minutes ago"`, where X is the number of minutes.
-/// - **Same day**: Returns `"HH:MM"` (current time format for today).
-/// - **Yesterday**: Returns `"Yesterday at HH:MM"` for messages from the previous day.
-/// - **Within the past week**: Returns the name of the day (e.g., "Tuesday").
-/// - **Older than a week**: Returns `"DD/MM/YY"` as the absolute date.
+/// Returns the timestamp in "YYYY-MM-DD HH:MM" format.
 ///
 /// # Arguments:
 /// - `millis`: The Unix timestamp in milliseconds to format.
 ///
 /// # Returns:
-/// - `Option<String>` representing the human-readable time or `None` if formatting fails.
+/// - `Option<String>` representing the formatted date and time or `None` if formatting fails.
 pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
     let datetime = unix_time_millis_to_datetime(millis)?;
-
-    // Calculate the time difference between now and the given timestamp
-    let now = Local::now();
-    let duration = now - datetime;
-
-    // Handle different time ranges and format accordingly
-    if duration < Duration::seconds(60) {
-        Some("Now".to_string())
-    } else if duration < Duration::minutes(60) {
-        let minutes_text = if duration.num_minutes() == 1 { "min" } else { "mins" };
-        Some(format!("{} {} ago", duration.num_minutes(), minutes_text))
-    } else if duration < Duration::hours(24) && now.date_naive() == datetime.date_naive() {
-        Some(format!("{}", datetime.format("%H:%M"))) // "HH:MM" format for today
-    } else if duration < Duration::hours(48) {
-        if let Some(yesterday) = now.date_naive().succ_opt() {
-            if yesterday == datetime.date_naive() {
-                return Some(format!("Yesterday at {}", datetime.format("%H:%M")));
-            }
-        }
-        Some(format!("{}", datetime.format("%A"))) // Fallback to day of the week if not yesterday
-    } else if duration < Duration::weeks(1) {
-        Some(format!("{}", datetime.format("%A"))) // Day of the week (e.g., "Tuesday")
-    } else {
-        Some(format!("{}", datetime.format("%F"))) // "YYYY-MM-DD" format for older messages
-    }
+    Some(format!("{}", datetime.format("%F %H:%M")))
 }
 
 /// Returns the first "letter" (Unicode grapheme) of given user name,

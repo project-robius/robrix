@@ -25,11 +25,11 @@ use crate::{
         save_app_state,
         save_window_state,
     },
-    shared::callout_tooltip::{
+    shared::{callout_tooltip::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    },
+    }, message_search_input_bar::MessageSearchAction},
     sliding_sync::current_user_id,
     utils::{
         room_name_or_id,
@@ -156,6 +156,8 @@ impl LiveRegister for App {
         crate::settings::live_design(cx);
         crate::room::live_design(cx);
         crate::join_leave_room_modal::live_design(cx);
+        crate::right_panel::live_design(cx);
+        crate::right_panel::search_message::live_design(cx);
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
@@ -232,8 +234,9 @@ impl MatchEvent for App {
                 cx.widget_action(
                     self.ui.widget_uid(),
                     &Scope::default().path,
-                    StackNavigationAction::NavigateTo(live_id!(main_content_view))
+                    StackNavigationAction::Push(live_id!(main_content_view))
                 );
+                self.ui.view(id!(message_search_input_view)).set_visible(cx, true);
                 self.ui.redraw(cx);
                 continue;
             }
@@ -336,6 +339,22 @@ impl MatchEvent for App {
             //     }
             //     _ => {}
             // }
+            if let MessageSearchAction::Click(_) = action.as_widget_action().cast() {
+                cx.widget_action(
+                    self.ui.widget_uid(),
+                    &Scope::default().path,
+                    StackNavigationAction::Push(live_id!(search_result_view))
+                );
+            }
+            
+            // Monitor for DockSave action which will be triggered by selection of the room for setting the visibility of the message search input.
+            if let Some(MainDesktopUiAction::SaveDockIntoAppState) = action.downcast_ref() {
+                if self.app_state.selected_room.is_some() {
+                    self.ui.view(id!(message_search_input_view)).set_visible(cx, true);
+                } else {
+                    self.ui.view(id!(message_search_input_view)).set_visible(cx, false);
+                }
+            }
         }
     }
 }

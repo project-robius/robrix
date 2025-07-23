@@ -87,12 +87,26 @@ impl Timestamp {
         );
         self.dt = dt;
     }
+
+    pub fn set_date_time_with_format(&mut self, cx: &mut Cx, dt: DateTime<Local>, format: &str) {
+        self.label(id!(ts_label)).set_text(
+            cx,
+            &dt.format(format).to_string()
+        );
+        self.dt = dt;
+    }
 }
 
 impl TimestampRef {
     pub fn set_date_time(&self, cx: &mut Cx, dt: DateTime<Local>) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_date_time(cx, dt);
+        }
+    }
+
+    pub fn set_date_time_with_format(&self, cx: &mut Cx, dt: DateTime<Local>, format: &str) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_date_time_with_format(cx, dt, format);
         }
     }
 }

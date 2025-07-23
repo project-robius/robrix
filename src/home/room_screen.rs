@@ -199,10 +199,10 @@ live_design! {
 
 
     // An empty view that takes up no space in the portal list.
-    Empty = <View> { }
+    pub Empty = <View> { }
 
     // The view used for each text-based message event in a room's timeline.
-    Message = {{Message}} {
+    pub Message = {{Message}} {
         width: Fill,
         height: Fit,
         margin: 0.0
@@ -388,7 +388,7 @@ live_design! {
 
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
-    ImageMessage = <Message> {
+    pub ImageMessage = <Message> {
         body = {
             content = {
                 width: Fill,
@@ -2140,6 +2140,63 @@ impl RoomScreen {
                     }
                     self.redraw(cx);
                 }
+                MessageAction::ScrollToMessage { room_id, event_id } => {
+                    // Check if this is the correct room
+                    let Some(tl) = self.tl_state.as_mut() else { continue };
+                    if tl.room_id != room_id {
+                        // This message is for a different room, ignore it
+                        continue;
+                    }
+
+                    // Search through the timeline to find the message with the given event_id
+                    let mut num_items_searched = 0;
+                    let target_msg_tl_index = tl.items
+                        .focus()
+                        .into_iter()
+                        .position(|item| {
+                            num_items_searched += 1;
+                            item.as_event()
+                                .and_then(|e| e.event_id())
+                                .is_some_and(|ev_id| ev_id == &event_id)
+                        });
+
+                    if let Some(index) = target_msg_tl_index {
+                        // Message found in current timeline - scroll to it
+                        let speed = 50.0;
+                        portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
+                        // start highlight animation.
+                        tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
+                            item_id: index
+                        };
+                    } else {
+                        // Message not found - trigger backwards pagination to find it
+                        loading_pane.set_state(
+                            cx,
+                            LoadingPaneState::BackwardsPaginateUntilEvent {
+                                target_event_id: event_id.clone(),
+                                events_paginated: 0,
+                                request_sender: tl.request_sender.clone(),
+                            },
+                        );
+                        loading_pane.show(cx);
+
+                        tl.request_sender.send_if_modified(|requests| {
+                            if let Some(existing) = requests.iter_mut().find(|r| r.room_id == tl.room_id) {
+                                // Re-use existing request
+                                existing.target_event_id = event_id.clone();
+                            } else {
+                                requests.push(BackwardsPaginateUntilEventRequest {
+                                    room_id: tl.room_id.clone(),
+                                    target_event_id: event_id.clone(),
+                                    starting_index: 0, // Search from the beginning since we don't know where it is
+                                    current_tl_len: tl.items.len(),
+                                });
+                            }
+                            true
+                        });
+                    }
+                    self.redraw(cx);
+                }
                 MessageAction::Redact { details, reason } => {
                     let Some(tl) = self.tl_state.as_mut() else { return };
                     let mut success = false;
@@ -2965,22 +3022,22 @@ fn find_new_item_matching_current_item(
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct ItemDrawnStatus {
+pub struct ItemDrawnStatus {
     /// Whether the profile info (avatar and displayable username) were drawn for this item.
-    profile_drawn: bool,
+    pub profile_drawn: bool,
     /// Whether the content of the item was drawn (e.g., the message text, image, video, sticker, etc).
-    content_drawn: bool,
+    pub content_drawn: bool,
 }
 impl ItemDrawnStatus {
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `false`.
-    const fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             profile_drawn: false,
             content_drawn: false,
         }
     }
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `true`.
-    const fn both_drawn() -> Self {
+    pub const fn both_drawn() -> Self {
         Self {
             profile_drawn: true,
             content_drawn: true,
@@ -3485,7 +3542,7 @@ fn populate_message_view(
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
-fn populate_text_message_content(
+pub fn populate_text_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     body: &str,
@@ -3515,7 +3572,7 @@ fn populate_text_message_content(
 /// Draws the given image message's content into the `message_content_widget`.
 ///
 /// Returns whether the image message content was fully drawn.
-fn populate_image_message_content(
+pub fn populate_image_message_content(
     cx: &mut Cx2d,
     text_or_image_ref: &TextOrImageRef,
     image_info_source: Option<Box<ImageInfo>>,
@@ -3653,7 +3710,7 @@ fn populate_image_message_content(
 /// Draws a file message's content into the given `message_content_widget`.
 ///
 /// Returns whether the file message content was fully drawn.
-fn populate_file_message_content(
+pub fn populate_file_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     file_content: &FileMessageEventContent,
@@ -3683,7 +3740,7 @@ fn populate_file_message_content(
 /// Draws an audio message's content into the given `message_content_widget`.
 ///
 /// Returns whether the audio message content was fully drawn.
-fn populate_audio_message_content(
+pub fn populate_audio_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     audio: &AudioMessageEventContent,
@@ -4224,6 +4281,12 @@ pub enum MessageAction {
 
     /// The message at the given item index in the timeline should be highlighted.
     HighlightMessage(usize),
+    /// Scroll to a message in the main room timeline with the given event_id.
+    /// Used when navigating from search results to the original message in the timeline.
+    ScrollToMessage {
+        room_id: matrix_sdk::ruma::OwnedRoomId,
+        event_id: matrix_sdk::ruma::OwnedEventId,
+    },
     /// The user requested that we show a context menu with actions
     /// that can be performed on a given message.
     OpenMessageContextMenu {
@@ -4285,6 +4348,7 @@ impl Widget for Message {
                 }
             }
             Hit::FingerLongPress(lp) => {
+                println!("Hit::FingerLongPress");
                 cx.widget_action(
                     details.room_screen_widget_uid,
                     &scope.path,
@@ -4333,6 +4397,7 @@ impl Widget for Message {
                 }
             }
             Hit::FingerLongPress(lp) => {
+                println!("Hit::FingerLongPress");
                 cx.widget_action(
                     details.room_screen_widget_uid,
                     &scope.path,
