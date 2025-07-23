@@ -9,7 +9,7 @@ use matrix_sdk::ruma::{
         },
         AnyMessageLikeEventContent, AnyTimelineEvent,
     },
-    OwnedRoomId, OwnedUserId, RoomId,
+    OwnedRoomId, OwnedUserId,
 };
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use rangemap::RangeSet;
