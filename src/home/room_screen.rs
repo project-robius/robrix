@@ -19,11 +19,11 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::RoomsPanelRestoreAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem}, restore_status_view::RestoreStatusViewWidgetExt, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem}, restore_status_view::RestoreStatusViewWidgetExt, styles::COLOR_FG_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -83,7 +83,7 @@ live_design! {
     COLOR_BG = #xfff8ee
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
-    COLOR_PROFILE_CIRCLE = #xfff8ee
+
     TYPING_NOTICE_ANIMATION_DURATION = 0.3
 
     CAN_NOT_SEND_NOTICE = "You don't have permission to post to this room."
@@ -302,18 +302,8 @@ live_design! {
                 margin: {top: 4.5, right: 10}
                 flow: Down,
                 avatar = <Avatar> {
-                    width: 48.,
-                    height: 48.
-                    // draw_bg: {
-                    //     fn pixel(self) -> vec4 {
-                    //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    //         let c = self.rect_size * 0.5;
-                    //         sdf.circle(c.x, c.y, c.x - 2.)
-                    //         sdf.fill_keep(self.get_color());
-                    //         sdf.stroke((COLOR_PROFILE_CIRCLE), 1);
-                    //         return sdf.result
-                    //     }
-                    // }
+                    width: 48,
+                    height: 48,
                 }
                 timestamp = <Timestamp> {
                     margin: { top: 5.9 }
@@ -686,13 +676,13 @@ live_design! {
                             margin: {left: 5, right: 5},
 
                             draw_bg: {
-                                border_color: (COLOR_DANGER_RED),
-                                color: #fff0f0 // light red
+                                border_color: (COLOR_FG_DANGER_RED),
+                                color: (COLOR_BG_DANGER_RED)
                                 border_radius: 5
                             }
                             draw_icon: {
                                 svg_file: (ICON_CLOSE),
-                                color: (COLOR_DANGER_RED)
+                                color: (COLOR_FG_DANGER_RED)
                             }
                             icon_walk: {width: 16, height: 16, margin: 0}
                         }
@@ -936,12 +926,13 @@ impl Widget for RoomScreen {
 
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
-            let message_input = self.room_input_bar(id!(input_bar)).mentionable_text_input(id!(message_input));
+            let room_input_bar = self.view.room_input_bar(id!(input_bar));
+            let message_input = room_input_bar.mentionable_text_input(id!(message_input));
             let text_input = message_input.text_input_ref();
 
             for action in actions {
                 // Handle actions related to restoring the previously-saved state of rooms.
-                if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
+                if let Some(AppStateAction::RoomLoadedSuccessfully(room_id)) = action.downcast_ref() {
                     if self.room_id.as_ref().is_some_and(|r| r == room_id) {
                         // `set_displayed_room()` does nothing if the room_id is unchanged, so we clear it first.
                         self.room_id = None;
@@ -1051,7 +1042,6 @@ impl Widget for RoomScreen {
             {
                 let entered_text = message_input.text().trim().to_string();
                 if !entered_text.is_empty() {
-                    let room_input_bar = self.view.room_input_bar(id!(input_bar));
                     let room_id = self.room_id.clone().unwrap();
 
                     // Create message with mentions using the unified API
@@ -1069,13 +1059,15 @@ impl Widget for RoomScreen {
                     self.clear_replying_to(cx);
                     message_input.set_text(cx, "");
                     room_input_bar.enable_send_message_button(cx, false);
-
                 }
             }
 
+            let is_message_input_empty = message_input.text().is_empty();
+            room_input_bar.enable_send_message_button(cx, !is_message_input_empty);
+
             // Handle the user pressing the up arrow in an empty message input box
             // to edit their latest sent message.
-            if message_input.text().is_empty() {
+            if is_message_input_empty {
                 if let Some(KeyEvent {
                     key_code: KeyCode::ArrowUp,
                     modifiers: KeyModifiers { shift: false, control: false, alt: false, logo: false },
@@ -3090,11 +3082,11 @@ fn populate_message_view(
                         html_or_plaintext_ref.apply_over(cx, live!(
                             html_view = {
                                 html = {
-                                    font_color: (COLOR_DANGER_RED),
-                                    draw_normal:      { color: (COLOR_DANGER_RED), }
-                                    draw_italic:      { color: (COLOR_DANGER_RED), }
-                                    draw_bold:        { color: (COLOR_DANGER_RED), }
-                                    draw_bold_italic: { color: (COLOR_DANGER_RED), }
+                                    font_color: (COLOR_FG_DANGER_RED),
+                                    draw_normal:      { color: (COLOR_FG_DANGER_RED), }
+                                    draw_italic:      { color: (COLOR_FG_DANGER_RED), }
+                                    draw_bold:        { color: (COLOR_FG_DANGER_RED), }
+                                    draw_bold_italic: { color: (COLOR_FG_DANGER_RED), }
                                 }
                             }
                         ));
@@ -3424,11 +3416,11 @@ fn populate_message_view(
         else {
             // Server notices are drawn with a red color avatar background and username.
             let avatar = item.avatar(id!(profile.avatar));
-            avatar.show_text(cx, Some(COLOR_DANGER_RED), None, "⚠");
+            avatar.show_text(cx, Some(COLOR_FG_DANGER_RED), None, "⚠");
             username_label.set_text(cx, "Server notice");
             username_label.apply_over(cx, live!(
                 draw_text: {
-                    color: (COLOR_DANGER_RED),
+                    color: (COLOR_FG_DANGER_RED),
                 }
             ));
             new_drawn_status.profile_drawn = true;

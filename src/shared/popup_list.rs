@@ -89,6 +89,7 @@ live_design! {
                 width: Fit,
                 height: Fill,
                 flow: Down
+
                 // The "X" close button on the top right
                 close_button = <RobrixIconButton> {
                     width: Fit,
@@ -96,6 +97,10 @@ live_design! {
                     padding: 4
                     spacing: 0,
                     align: {x: 0.5, y: 0.5}
+
+                    draw_bg: {
+                        color: (COLOR_SECONDARY)
+                    }
                     draw_icon: {
                         svg_file: (ICON_CLOSE),
                         fn get_color(self) -> vec4 {
@@ -104,6 +109,7 @@ live_design! {
                     }
                     icon_walk: {width: 12, height: 12}
                 }
+
                 progress_bar = <View> {
                     width: Fill,
                     height: Fill,
@@ -112,7 +118,7 @@ live_design! {
                         instance border_radius: 2.,
                         instance border_size: 1.0,
                         instance progress_bar_color: (COLOR_AVATAR_BG_IDLE),
-                        instance progress_bar_background_color: (COLOR_DISABLE_GRAY),
+                        instance progress_bar_background_color: (COLOR_FG_DISABLED),
                         instance display_progress_bar: 1.0 // TODO: this is the only thing that should be an `instance`
                         uniform anim_time: 0.0,
                         uniform anim_duration: 2.0,

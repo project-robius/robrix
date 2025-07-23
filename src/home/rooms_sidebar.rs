@@ -62,7 +62,7 @@ live_design! {
                 rooms_list_header = <RoomsListHeader> {}
             }
             <CachedWidget> {
-                <RoomFilterInputBar> {
+                room_filter_input_bar = <RoomFilterInputBar> {
                     draw_bg: {
                         border_size: 1.0,
                     }
