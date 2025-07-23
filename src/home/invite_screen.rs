@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{app::RoomsPanelRestoreAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem}}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
+use crate::{app::RoomsPanelRestoreAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -275,20 +275,10 @@ impl Widget for InviteScreen {
         if let Event::Signal = event {
             if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
-                let restore_status_label = self.view.label(id!(restore_status_label));
                 if !rooms_list_ref.is_room_loaded(room_id) {
-                    let status_text = if rooms_list_ref.all_known_rooms_loaded() {
-                        self.all_rooms_loaded = true;
-                        format!(
-                            "An invite to room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
-                             You may close this screen.",
-                            self.room_name
-                        )
-                    } else {
-                        String::from("[Placeholder for Loading Spinner]\n\
-                         Waiting for this room to be loaded from the homeserver")
-                    };
-                    restore_status_label.set_text(cx, &status_text);
+                    self.all_rooms_loaded = rooms_list_ref.all_known_rooms_loaded();
+                    let restore_status_view = self.view.restore_status_view(id!(restore_status_view));
+                    restore_status_view.set_content(cx, self.all_rooms_loaded, &self.room_name);
                     return;
                 } else {
                     self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
@@ -400,20 +390,9 @@ impl Widget for InviteScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if !self.is_loaded {
-            let restore_status_label = self.view.label(id!(restore_status_label));
-            let status_text: String = if self.all_rooms_loaded {
-                self.view.view(id!(restore_status_spinner)).set_visible(cx, false);
-                format!(
-                    "Room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
-                        You may close this screen.",
-                    self.room_name
-                )
-            } else {
-                self.view.view(id!(restore_status_spinner)).set_visible(cx, true);
-                String::from("Waiting for this room to be loaded from the homeserver")
-            };
-            restore_status_label.set_text(cx, &status_text);
-            return self.view.view(id!(restore_status_view)).draw(cx, scope);
+            let mut restore_status_view = self.view.restore_status_view(id!(restore_status_view));
+            restore_status_view.set_content(cx, self.all_rooms_loaded, &self.room_name);
+            return restore_status_view.draw(cx, scope);
         }
         let Some(info) = self.info.as_ref() else {
             // If we don't have any info, just return.
@@ -551,12 +530,9 @@ impl InviteScreen {
             self.has_shown_confirmation = false;
             self.is_loaded = true;
             self.all_rooms_loaded = true;
-            self.view
-                .label(id!(restore_status_label))
-                .set_text(cx, "");
             self.redraw(cx);
         }
-        self.view.view(id!(restore_status_view)).set_visible(cx, !self.is_loaded);
+        self.view.restore_status_view(id!(restore_status_view)).set_visible(cx, !self.is_loaded);
     }
 }
 

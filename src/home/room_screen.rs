@@ -23,7 +23,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem}, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem}, restore_status_view::RestoreStatusViewWidgetExt, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -1257,20 +1257,9 @@ impl Widget for RoomScreen {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // If the room isn't loaded yet, we show the restore status label only.
         if !self.is_loaded {
-            let restore_status_label = self.view.label(id!(restore_status_label));
-            let status_text: String = if self.all_rooms_loaded {
-                self.view.view(id!(restore_status_spinner)).set_visible(cx, false);
-                format!(
-                    "Room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
-                        You may close this screen.",
-                    self.room_name
-                )
-            } else {
-                self.view.view(id!(restore_status_spinner)).set_visible(cx, true);
-                String::from("Waiting for this room to be loaded from the homeserver")
-            };
-            restore_status_label.set_text(cx, &status_text);
-            return self.view.view(id!(restore_status_view)).draw(cx, scope);
+            let mut restore_status_view = self.view.restore_status_view(id!(restore_status_view));
+            restore_status_view.set_content(cx, self.all_rooms_loaded, &self.room_name);
+            return restore_status_view.draw(cx, scope);
         }
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
@@ -2348,10 +2337,7 @@ impl RoomScreen {
             self.is_loaded = is_loaded_now;
         }
 
-        if self.is_loaded {
-            self.view.label(id!(restore_status_label)).set_text(cx, "");
-            self.view.view(id!(restore_status_view)).set_visible(cx, false);
-        }
+        self.view.restore_status_view(id!(restore_status_view)).set_visible(cx, !self.is_loaded);
 
         // Kick off a back pagination request if it's the first time loading this room,
         // because we want to show the user some messages as soon as possible

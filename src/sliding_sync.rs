@@ -27,10 +27,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
 
-/// Duration for sync indicator delay before showing
-const SYNC_INDICATOR_DELAY: Duration = Duration::from_millis(100);
-/// Duration for sync indicator delay before hiding
-const SYNC_INDICATOR_HIDE_DELAY: Duration = Duration::from_millis(200);
+
 use std::io;
 use crate::{
     app::RoomsPanelRestoreAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -2113,6 +2110,10 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
 }
 
 fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
+    /// Duration for sync indicator delay before showing
+    const SYNC_INDICATOR_DELAY: Duration = Duration::from_millis(100);
+    /// Duration for sync indicator delay before hiding
+    const SYNC_INDICATOR_HIDE_DELAY: Duration = Duration::from_millis(200);
     let sync_indicator_stream = sync_service.room_list_service()
         .sync_indicator(
             SYNC_INDICATOR_DELAY, 
