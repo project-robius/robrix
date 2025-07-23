@@ -23,7 +23,7 @@ pub fn enqueue_popup_notification(mut popup_item: PopupItem) {
     popup_item.auto_dismissal_duration = popup_item
         .auto_dismissal_duration
         .map(|duration| duration.min(3. * 60.));
-    POPUP_NOTIFICATION.push(popup_item.clone());
+    POPUP_NOTIFICATION.push(popup_item);
     SignalToUI::set_ui_signal();
 }
 
@@ -86,8 +86,8 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::icon_button::RobrixIconButton;
     CheckIcon = <View> {
-        width: Fill,
-        height: Fit,
+        width: 28,
+        height: 28,
         visible: false,
         <Icon> {
             draw_icon: {
@@ -97,25 +97,25 @@ live_design! {
             icon_walk: { width: 22, height: 22 }
         }
     }
-    CROSS_ICON = <CheckIcon> {
+    ForbiddenIcon = <CheckIcon> {
         <Icon> {
             draw_icon: {
-                svg_file: (ICON_CLOSE),
+                svg_file: (ICON_FORBIDDEN),
                 color: #ffffff,
             }
             icon_walk: { width: 22, height: 22 }
         }
     }
-    INFO_ICON = <CheckIcon> {
+    InfoIcon = <CheckIcon> {
         <Icon> {
             draw_icon: {
                 svg_file: (ICON_INFO),
-                color: (COLOR_SELECT_TEXT),
+                color: #ffffff,
             }
             icon_walk: { width: 22, height: 22 }
         }
     }
-    WARNING_ICON = <CheckIcon> {
+    WarningIcon = <CheckIcon> {
         <Icon> {
             draw_icon: {
                 svg_file: (ICON_WARNING),
@@ -124,7 +124,7 @@ live_design! {
             icon_walk: { width: 22, height: 22 }
         }
     }
-    PROGRESS_BAR = <View> {
+    ProgressBar = <View> {
         width: Fill,
         height: 10,
         show_bg: true,
@@ -174,7 +174,7 @@ live_design! {
             }
         }
     }
-    MAIN_CONTENT = <View> {
+    MainContent = <View> {
         width: Fill,
         height: Fit,
         align: { x: 0.0, y: 0.5 }
@@ -189,17 +189,15 @@ live_design! {
             }
         }
     }
-    LEFT_SIDE_VIEW = <View> {
-        width: 25,
+    LeftSideView = <View> {
+        width: Fit,
         height: Fit,
-        align: { x: 0.5, y: 0.5 }
-        padding: 0
         success_icon = <CheckIcon> {}
-        error_icon = <CROSS_ICON> {}
-        info_icon = <INFO_ICON> {}
-        warning_icon = <WARNING_ICON> {}
+        error_icon = <ForbiddenIcon> {}
+        info_icon = <InfoIcon> {}
+        warning_icon = <WarningIcon> {}
     }
-    CLOSE_BUTTON_VIEW = <View> {
+    CloseButtonView = <View> {
         width: Fill,
         height: Fit,
         flow: Down,
@@ -262,7 +260,7 @@ live_design! {
             height: Fit,
             flow: Down
             //Right side view with close button
-            close_button_view = <CLOSE_BUTTON_VIEW> {}
+            close_button_view = <CloseButtonView> {}
             padding: { right: 2, top: 2}
             inner = <View> {
                 width: Fill,
@@ -273,14 +271,14 @@ live_design! {
                     y: 0.5,
                 }
                 // Left side with icon for popup kind.
-                <LEFT_SIDE_VIEW> {
+                <LeftSideView> {
                     // To offset the height of the close button_view.
                     margin: {top: -12,}
                 }
                 // Main content area
-                main_content = <MAIN_CONTENT> {}
+                main_content = <MainContent> {}
             }
-            progress_bar = <PROGRESS_BAR> {}
+            progress_bar = <ProgressBar> {}
         }
 
         animator: {
@@ -338,7 +336,7 @@ live_design! {
             spacing: 0,
             align: { x: 0.0, y: 0.5 }
             // Left side with for popup kind.
-            <LEFT_SIDE_VIEW> {
+            <LeftSideView> {
                 height: Fit,
                 margin: {left: 10 }
                 spacing: 0,
@@ -348,13 +346,13 @@ live_design! {
                 height: Fit,
                 padding: 0,
                 flow: Down,
-                close_button_view = <CLOSE_BUTTON_VIEW> {}
+                close_button_view = <CloseButtonView> {}
                 // Main content area
-                main_content = <MAIN_CONTENT> {
+                main_content = <MainContent> {
                     padding: {left: 0}
                 }
             }
-            progress_bar = <PROGRESS_BAR> {
+            progress_bar = <ProgressBar> {
                 width: 10,
                 height: Fill,
                 draw_bg: {

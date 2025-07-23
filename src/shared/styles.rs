@@ -11,6 +11,7 @@ live_design! {
     pub ICON_CLOSE        = dep("crate://self/resources/icons/close.svg")
     pub ICON_COPY         = dep("crate://self/resources/icons/copy.svg")
     pub ICON_EDIT         = dep("crate://self/resources/icons/edit.svg")
+    pub ICON_FORBIDDEN    = dep("crate://self/resources/icons/forbidden.svg")
     pub ICON_HTML_FILE    = dep("crate://self/resources/icons/html_file.svg")
     pub ICON_INFO         = dep("crate://self/resources/icons/info.svg")
     pub ICON_JUMP         = dep("crate://self/resources/icons/go_back.svg")
@@ -21,6 +22,7 @@ live_design! {
     pub ICON_TRASH        = dep("crate://self/resources/icons/trash.svg")
     pub ICON_VIEW_SOURCE  = dep("crate://self/resources/icons/view_source.svg")
     pub ICON_WARNING      = dep("crate://self/resources/icons/warning-bold.svg")
+    
 
     pub TITLE_TEXT = <THEME_FONT_REGULAR>{
         font_size: (13),
