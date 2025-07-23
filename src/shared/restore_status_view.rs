@@ -98,3 +98,4 @@ impl RestoreStatusViewRef {
         restore_status_label.set_text(cx, &status_text);
     }
 }
+
