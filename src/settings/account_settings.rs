@@ -12,16 +12,6 @@ live_design! {
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
 
-    SubsectionLabel = <Label> {
-        width: Fill, height: Fit
-        margin: {top: 5},
-        flow: Right,
-        draw_text: {
-            color: (COLOR_TEXT),
-            text_style: <USERNAME_TEXT_STYLE>{ font_size: 11 },
-        }
-    }
-
     // The view containing all user account-related settings.
     pub AccountSettings = {{AccountSettings}} {
         width: Fill, height: Fit
