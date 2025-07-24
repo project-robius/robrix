@@ -2,11 +2,14 @@ use makepad_widgets::Cx;
 
 pub mod settings_screen;
 pub mod account_settings;
-pub mod tsp_settings;
+
+/// A wrapper that shows the TSP settings screen if the `tsp` feature is enabled,
+/// otherwise it shows a message indicating that TSP is not available.
+pub mod tsp_settings_wrapper;
 
 pub fn live_design(cx: &mut Cx) {
     account_settings::live_design(cx);
-    tsp_settings::live_design(cx);
+    tsp_settings_wrapper::live_design(cx);
     settings_screen::live_design(cx);
 }
 

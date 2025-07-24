@@ -30,7 +30,7 @@ use std::io;
 use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_app_state, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, load_app_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -168,7 +168,7 @@ async fn login(
                 let status = format!("Logged in as {}.\n → Loading rooms...", cli.user_id);
                 // enqueue_popup_notification(status.clone());
                 enqueue_rooms_list_update(RoomsListUpdate::Status { status });
-                if let Err(e) = persistent_state::save_session(&client, client_session).await {
+                if let Err(e) = persistence::save_session(&client, client_session).await {
                     let err_msg = format!("Failed to save session state to storage: {e}");
                     error!("{err_msg}");
                     enqueue_popup_notification(PopupItem { message: err_msg, auto_dismissal_duration: None });
@@ -183,7 +183,7 @@ async fn login(
         }
 
         LoginRequest::LoginBySSOSuccess(client, client_session) => {
-            if let Err(e) = persistent_state::save_session(&client, client_session).await {
+            if let Err(e) = persistence::save_session(&client, client_session).await {
                 error!("Failed to save session state to storage: {e:?}");
             }
             Ok((client, None))
@@ -1403,7 +1403,7 @@ async fn async_main_loop(
 ) -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let most_recent_user_id = persistent_state::most_recent_user_id();
+    let most_recent_user_id = persistence::most_recent_user_id();
     log!("Most recent user ID: {most_recent_user_id:?}");
     let cli_parse_result = Cli::try_parse();
     let cli_has_valid_username_password = cli_parse_result.as_ref()
@@ -1428,7 +1428,7 @@ async fn async_main_loop(
         log!("Trying to restore session for user: {:?}",
             specified_username.as_ref().or(most_recent_user_id.as_ref())
         );
-        match persistent_state::restore_session(specified_username).await {
+        match persistence::restore_session(specified_username).await {
             Ok(session) => Some(session),
             Err(e) => {
                 let status_err = "Could not restore previous user session.\n\nPlease login again.";

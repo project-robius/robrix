@@ -12,7 +12,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::icon_button::*;
     use crate::settings::account_settings::AccountSettings;
-    use crate::settings::tsp_settings::TspSettings;
+    use crate::settings::tsp_settings_wrapper::TspSettingsWrapper;
 
     // The main, top-level settings screen widget.
     pub SettingsScreen = {{SettingsScreen}} {
@@ -77,7 +77,7 @@ live_design! {
             <LineH> { width: 400, padding: 10, margin: {top: 20, bottom: 5} }
 
             // The TSP wallet settings section.
-            tsp_settings = <TspSettings> {}
+            tsp_settings_wrapper = <TspSettingsWrapper> {}
 
             <LineH> { width: 400, padding: 10, margin: {top: 20, bottom: 5} }
 

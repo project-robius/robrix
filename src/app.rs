@@ -20,7 +20,7 @@ use crate::{
         JoinLeaveRoomModalWidgetRefExt,
     },
     login::login_screen::LoginAction,
-    persistent_state::{
+    persistence::{
         load_window_state,
         save_app_state,
         save_window_state,
@@ -153,6 +153,8 @@ impl LiveRegister for App {
         // then other modules widgets.
         makepad_widgets::live_design(cx);
         crate::shared::live_design(cx);
+        #[cfg(feature = "tsp")]
+        crate::tsp::live_design(cx);
         crate::settings::live_design(cx);
         crate::room::live_design(cx);
         crate::join_leave_room_modal::live_design(cx);

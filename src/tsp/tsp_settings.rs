@@ -29,7 +29,7 @@ live_design! {
         }
     }
 
-    // The view containing all user account-related settings.
+    // The view containing all TSP-related settings.
     pub TspSettings = {{TspSettings}} {
         width: Fill, height: Fit
         flow: Down
@@ -93,7 +93,7 @@ live_design! {
     }
 }
 
-/// The view containing all user account-related settings.
+/// The view containing all TSP-related settings.
 #[derive(Live, LiveHook, Widget)]
 pub struct TspSettings {
     #[deref] view: View,

@@ -61,13 +61,15 @@ quinn = { version = "0.11.8", default-features = false }
 
 [features]
 default = []
-## Hides the command prompt console on Windows.
-hide_windows_console = []
 ## Enables experimental support for using TSP wallets.
 tsp = ["dep:tsp_sdk"]
 
+## Hides the command prompt console on Windows.
+hide_windows_console = []
+
 ## Logs all diffs received by the Matrix RoomListService.
 log_room_list_diffs = []
+
 ## Logs all diffs to all room timelines.
 log_timeline_diffs = []
 
