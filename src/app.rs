@@ -557,7 +557,7 @@ impl App {
     /// 6. Stability: Eliminates race conditions between Matrix cleanup and tokio shutdown
     ///
     /// This approach ensures stable user experience while working within Matrix SDK constraints.
-     /// NOTE: This strategy should be revisited when Matrix SDK provides proper cleanup APIs.
+    /// NOTE: This strategy should be revisited when Matrix SDK provides proper cleanup APIs.
     fn cleanup_before_shutdown(&mut self) {
         
         log!("Starting shutdown cleanup...");
