@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::{btree_map::Entry, BTreeMap}, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::{Cx, SignalToUI};
-use matrix_sdk::ruma::{MxcUri, OwnedMxcUri};
+use matrix_sdk::ruma::OwnedMxcUri;
 
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
@@ -81,19 +81,4 @@ pub fn get_or_fetch_avatar(
         });
         AvatarCacheEntry::Requested
     })
-}
-
-/// Returns the avatar for the given user ID, if it exists.
-///
-/// This function requires passing in a reference to `Cx`,
-/// which isn't used, but acts as a guarantee that this function
-/// must only be called by the main UI thread.
-#[allow(unused)]
-pub fn get_avatar(_cx: &mut Cx, mxc_uri: &MxcUri) -> Option<Arc<[u8]>> {
-    AVATAR_NEW_CACHE.with_borrow(|cache|
-        match cache.get(mxc_uri) {
-            Some(AvatarCacheEntry::Loaded(data)) => Some(data.clone()),
-            _ => None,
-        }
-    )
 }
