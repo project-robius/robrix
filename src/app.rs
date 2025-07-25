@@ -9,7 +9,7 @@ use std::{collections::HashMap, sync::atomic::Ordering};
 use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
-    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::{login_screen::LoginAction, logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}}, persistent_state::{load_window_state, save_room_panel, save_window_state}, profile::user_profile_cache::clear_cache, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::{current_user_id, CLIENT, LOGOUT_IN_PROGRESS, REQUEST_SENDER, SYNC_SERVICE, TOKIO_RUNTIME}, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{clean_timeline_states, MessageAction}, rooms_list::{RoomsListAction, clean_all_invited_rooms}}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::{login_screen::LoginAction, logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}}, persistent_state::{load_window_state, save_room_panel, save_window_state}, profile::user_profile_cache::clear_user_profile_caches, shared::callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, sliding_sync::{current_user_id, leak_client, leak_request_sender, leak_runtime, leak_sync_service, LOGOUT_IN_PROGRESS}, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 use serde::{self, Deserialize, Serialize};
 
@@ -129,7 +129,7 @@ live_design! {
                         // However, the DesktopButton widget doesn't support drawing a background color yet,
                         // so these colors are the colors of the icon itself, not the background highlight.
                         // When it supports that, we will keep the icon color always black,
-                        // and change the background color instead bssed on instead e colors
+                        // and change the background color instead based on the above colors.
                         min   = { draw_bg: {color: #0, color_hover: #9, color_down: #3} }
                         max   = { draw_bg: {color: #0, color_hover: #9, color_down: #3} }
                         close = { draw_bg: {color: #0, color_hover: #E81123, color_down: #FF0015} }
@@ -262,8 +262,8 @@ impl MatchEvent for App {
             }
 
             if let Some(LogoutAction::CleanAppState { on_clean_appstate: on_clean_resources }) = action.downcast_ref() {
-                // Clear user profile cache to prevent thread-local destructor issues
-                clear_cache();
+                // Clear user profile cache, invired_rooms timeline states to prevent thread-local destructor issues
+                clear_all_caches();
                 // Reset saved dock state to prevent crashes when switching back to desktop mode
                 self.app_state.saved_dock_state = Default::default();
                 on_clean_resources.clone().send(true).unwrap();
@@ -417,6 +417,28 @@ impl MatchEvent for App {
     }
 }
 
+/// Clears all thread-local UI caches (user profiles, invited rooms, and timeline states).
+/// 
+/// This function serves two distinct purposes depending on when it's called:
+/// 
+/// 1. **During logout**: Clears cached data to provide a clean state for the next login session.
+///    In this case, the thread-local variables themselves are not destroyed, only their contents are cleared.
+/// 
+/// 2. **During app shutdown**: Prevents crashes by proactively clearing Matrix SDK objects before 
+///    the tokio runtime is shut down. When the program exits, thread-local destructors run automatically.
+///    If the caches still contain Matrix SDK objects (UserProfile, RoomMember, InvitedRoomInfo, 
+///    TimelineUiState, etc.), their destructors may attempt to access the tokio runtime for cleanup, 
+///    but the runtime has already been leaked/shutdown, causing deadpool panics or other async-related crashes.
+///    
+///    By clearing all caches before runtime shutdown, we ensure that Matrix SDK objects are properly
+///    destroyed while the runtime is still available, leaving only empty collections for the 
+///    thread-local destructors to handle safely.
+fn clear_all_caches() {
+    clear_user_profile_caches();
+    clean_all_invited_rooms();
+    clean_timeline_states();
+}
+
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         if let Event::Shutdown = event {
@@ -478,14 +500,71 @@ impl AppMain for App {
 
 impl App {
 
-    /// Clean up resources before shutdown to avoid deadpool panic
+    /// Resource Management During Logout and Shutdown
+    ///
+    /// Robrix handles two distinct termination scenarios:
+    /// 1. Logout: Controlled cleanup where users can log back in
+    /// 2. App Shutdown: Final termination where we must prevent crashes about deadpool-runtime in matrix-sdk
+    ///
+    /// THE CORE PROBLEM: Dependency Chain and Deadpool Management
+    /// The Matrix SDK creates a complex dependency chain:
+    /// matrix-sdk → matrix-sdk-sqlite → rusqlite → deadpool-sqlite → deadpool-runtime
+    ///
+    /// Key Issues:
+    /// - Matrix SDK provides NO public API to handle deadpool cleanup before tokio runtime shutdown
+    /// - When CLIENT.lock().unwrap().take() starts destruction, cleanup happens asynchronously
+    /// - Race condition: tokio runtime may shut down before deadpool connections close properly
+    ///
+    /// INVESTIGATION METHODOLOGY:
+    /// We used multiple debugging approaches to track deadpool-runtime crashes:
+    ///
+    /// 1. Tokio Console Integration:
+    ///    - Monitored async task lifecycle during shutdown
+    ///    - Tracked connection pool states
+    ///    - Identified timing issues between client destruction and runtime shutdown
+    ///
+    /// 2. Matrix SDK Patching:
+    ///    - Forked matrix-sdk repository with custom instrumentation
+    ///    - Added logging to sqlite store destruction path
+    ///    - Patched deadpool integration points to expose internal state
+    ///    - Created custom builds to trace deadpool cleanup sequences
+    ///
+    /// 3. Cargo.lock Analysis:
+    ///    - Analyzed dependency versions for deadpool-runtime compatibility
+    ///    - Verified tokio runtime and deadpool version alignment
+    ///
+    /// SOLUTION STRATEGY:
+    ///
+    /// For Logout: Controlled cleanup with timing coordination
+    /// - Use clean_app_state() → shutdown_background_tasks() state transition
+    /// - Extend timing between client.take() and shutdown_background() 
+    /// - Allow Matrix SDK internal cleanup to complete before runtime shutdown
+    ///
+    /// For App Shutdown: Controlled leak strategy
+    /// - Clean what we can control (UI caches, collections)
+    /// - Proactively leak resources we cannot safely handle:
+    ///   * leak_runtime()
+    ///   * leak_client() 
+    ///   * leak_sync_service()
+    ///   * leak_request_sender()
+    ///
+    /// RATIONALE FOR CONTROLLED LEAKING:
+    /// 1. Upstream Limitation: Matrix SDK has no deadpool coordination API
+    /// 2. Crash Prevention: Better to leak at shutdown than crash with confusing traces
+    /// 3. User Experience: Prevents users thinking Robrix is buggy 
+    /// 4. Pragmatic Solution: Works around dependency limitation we cannot control
+    /// 5. Memory Impact: Leaking at shutdown has no practical impact (process terminating)
+    /// 6. Stability: Eliminates race conditions between Matrix cleanup and tokio shutdown
+    ///
+    /// This approach ensures stable user experience while working within Matrix SDK constraints.
+     /// NOTE: This strategy should be revisited when Matrix SDK provides proper cleanup APIs.
     fn cleanup_before_shutdown(&mut self) {
         
         log!("Starting shutdown cleanup...");
         
         // Clear user profile cache first to prevent thread-local destructor issues
         // This must be done before leaking the tokio runtime
-        clear_cache();
+        clear_all_caches();
         log!("Cleared user profile cache");
         
         // Set logout in progress to suppress error messages
@@ -495,28 +574,16 @@ impl App {
         // This is a controlled leak at shutdown to avoid the deadpool panic
         
         // Take the runtime first and leak it
-        if let Some(runtime) = TOKIO_RUNTIME.lock().unwrap().take() {
-            std::mem::forget(runtime);
-            log!("Leaked tokio runtime to prevent destructor");
-        }
+        leak_runtime(); 
         
         // Take and leak the client
-        if let Some(client) = CLIENT.lock().unwrap().take() {
-            std::mem::forget(client);
-            log!("Leaked client to prevent destructor");
-        }
+        leak_client(); 
         
         // Take and leak the sync service
-        if let Some(sync_service) = SYNC_SERVICE.lock().unwrap().take() {
-            std::mem::forget(sync_service);
-            log!("Leaked sync service to prevent destructor");
-        }
+        leak_sync_service();
         
         // Take and leak the request sender
-        if let Some(sender) = REQUEST_SENDER.lock().unwrap().take() {
-            std::mem::forget(sender);
-            log!("Leaked request sender to prevent destructor");
-        }
+        leak_request_sender();
         
         // Don't clear any collections or caches as they might contain references
         // to Matrix SDK objects that would trigger the deadpool panic

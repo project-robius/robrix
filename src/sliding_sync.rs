@@ -1,11 +1,11 @@
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use bitflags::bitflags;
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
-use makepad_widgets::{error, log, warning, Cx, SignalToUI};
+use makepad_widgets::{error, log, makepad_futures::channel::oneshot, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
@@ -30,7 +30,7 @@ use std::io;
 use crate::{
     app::RoomsPanelRestoreAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}
-    }, login::{login_screen::LoginAction, logout_state_machine::logout_with_state_machine}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_rooms_panel_state, ClientSessionPersisted}, profile::{
+    }, login::{login_screen::LoginAction, logout_confirm_modal::LogoutAction, logout_state_machine::{logout_with_state_machine, LogoutConfig}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -1161,11 +1161,11 @@ async fn async_worker(
 
 
 /// The single global Tokio runtime that is used by all async tasks.
-pub(crate) static TOKIO_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
+static TOKIO_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
-pub(crate) static REQUEST_SENDER: Mutex<Option<UnboundedSender<MatrixRequest>>> = Mutex::new(None);
+static REQUEST_SENDER: Mutex<Option<UnboundedSender<MatrixRequest>>> = Mutex::new(None);
 
 /// A client object that is proactively created during initialization
 /// in order to speed up the client-building process when the user logs in.
@@ -1318,16 +1318,16 @@ impl Drop for JoinedRoomDetails {
 
 
 /// Information about all joined rooms that our client currently know about.
-pub(crate) static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
+static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
 
 /// Information about all of the rooms that have been tombstoned.
 ///
 /// The map key is the **NEW** replacement room ID, and the value is the **OLD** tombstoned room ID.
 /// This allows us to quickly query if a newly-encountered room is a replacement for an old tombstoned room.
-pub(crate) static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
+static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
-pub(crate) static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
+static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
 
 pub fn get_client() -> Option<Client> {
     CLIENT.lock().unwrap().clone()
@@ -1342,7 +1342,7 @@ pub fn current_user_id() -> Option<OwnedUserId> {
 
 /// The singleton sync service.
 /// sync_service if build from the client, and is used to sync the client with the server.
-pub(crate) static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
+static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
 
 
 /// Get a clone of the sync service, if available.
@@ -2938,4 +2938,62 @@ pub async fn shutdown_background_tasks() {
     if let Some(existing_rt) = rt_guard.take() {
         existing_rt.shutdown_background();
     }
+}
+
+pub fn leak_runtime() {
+    if let Some(runtime) = TOKIO_RUNTIME.lock().unwrap().take() {
+        std::mem::forget(runtime);
+        log!("Leaked tokio runtime to prevent destructor");
+    } 
+}
+
+pub fn leak_client() {
+    if let Some(client) = CLIENT.lock().unwrap().take() {
+        std::mem::forget(client);
+        log!("Leaked client to prevent destructor");
+    } 
+}
+
+pub fn leak_sync_service() {
+    if let Some(sync_service) = SYNC_SERVICE.lock().unwrap().take() {
+        std::mem::forget(sync_service);
+        log!("Leaked sync service to prevent destructor");
+    } 
+}
+
+pub fn leak_request_sender() {
+    if let Some(sender) = REQUEST_SENDER.lock().unwrap().take() {
+        std::mem::forget(sender);
+        log!("Leaked request sender to prevent destructor");
+    } 
+}
+
+pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
+        // Clear resources normally, allowing them to be properly dropped
+        // This prevents memory leaks when users logout and login again without closing the app
+        CLIENT.lock().unwrap().take();
+        log!("Client cleared during logout");
+        
+        SYNC_SERVICE.lock().unwrap().take();
+        log!("Sync service cleared during logout");
+        
+        REQUEST_SENDER.lock().unwrap().take();
+        log!("Request sender cleared during logout");
+        
+        // Only clear collections that don't contain Matrix SDK objects
+        TOMBSTONED_ROOMS.lock().unwrap().clear();
+        IGNORED_USERS.lock().unwrap().clear();
+        ALL_JOINED_ROOMS.lock().unwrap().clear();
+        
+        let (tx, rx) = oneshot::channel::<bool>();
+        Cx::post_action(LogoutAction::CleanAppState { on_clean_appstate: tx });
+        
+        match tokio::time::timeout(config.app_state_cleanup_timeout, rx).await {
+            Ok(Ok(_)) => {
+                log!("Received signal that app state was cleaned successfully");
+                Ok(())
+            }
+            Ok(Err(e)) => Err(anyhow!("Failed to clean app state: {}", e)),
+            Err(_) => Err(anyhow!("Timed out waiting for app state cleanup")),
+        }
 }

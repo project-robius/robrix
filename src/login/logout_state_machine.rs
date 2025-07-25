@@ -89,11 +89,12 @@ use tokio::sync::Mutex;
 use anyhow::{anyhow, Result};
 use makepad_widgets::{Cx, log, makepad_futures::channel::oneshot};
 
+use crate::sliding_sync::clean_app_state;
 use crate::{
     home::main_desktop_ui::MainDesktopUiAction,
     persistent_state::delete_latest_user_id,
-    sliding_sync::{get_client, get_sync_service, CLIENT, SYNC_SERVICE, TOMBSTONED_ROOMS, 
-                   IGNORED_USERS, ALL_JOINED_ROOMS, REQUEST_SENDER, LOGOUT_POINT_OF_NO_RETURN,
+    sliding_sync::{get_client, get_sync_service, 
+                   LOGOUT_POINT_OF_NO_RETURN,
                    LOGOUT_IN_PROGRESS, shutdown_background_tasks, start_matrix_tokio},
 };
 use super::logout_confirm_modal::{LogoutAction, MissingComponentType};
@@ -394,7 +395,10 @@ impl LogoutStateMachine {
             70
         ).await?;
         
-        if let Err(e) = self.clean_app_state().await {
+        // All static resources (CLIENT, SYNC_SERVICE, etc.) are defined in the sliding_sync module,
+        // so the state machine delegates the cleanup operation to sliding_sync's clean_app_state function
+        // rather than accessing these static variables directly from outside the module.
+        if let Err(e) = clean_app_state(&self.config).await {
             let error = LogoutError::Unrecoverable(UnrecoverableError::PostPointOfNoReturnFailure(e.to_string()));
             self.transition_to(
                 LogoutState::Failed(error.clone()),
@@ -511,36 +515,6 @@ impl LogoutStateMachine {
             }
             Ok(Err(e)) => Err(anyhow!("Failed to close all tabs: {}", e)),
             Err(_) => Err(anyhow!("Timed out waiting for tabs to close")),
-        }
-    }
-    
-    async fn clean_app_state(&self) -> Result<()> {
-        // Clear resources normally, allowing them to be properly dropped
-        // This prevents memory leaks when users logout and login again without closing the app
-        CLIENT.lock().unwrap().take();
-        log!("Client cleared during logout");
-        
-        SYNC_SERVICE.lock().unwrap().take();
-        log!("Sync service cleared during logout");
-        
-        REQUEST_SENDER.lock().unwrap().take();
-        log!("Request sender cleared during logout");
-        
-        // Only clear collections that don't contain Matrix SDK objects
-        TOMBSTONED_ROOMS.lock().unwrap().clear();
-        IGNORED_USERS.lock().unwrap().clear();
-        ALL_JOINED_ROOMS.lock().unwrap().clear();
-        
-        let (tx, rx) = oneshot::channel::<bool>();
-        Cx::post_action(LogoutAction::CleanAppState { on_clean_appstate: tx });
-        
-        match tokio::time::timeout(self.config.app_state_cleanup_timeout, rx).await {
-            Ok(Ok(_)) => {
-                log!("Received signal that app state was cleaned successfully");
-                Ok(())
-            }
-            Ok(Err(e)) => Err(anyhow!("Failed to clean app state: {}", e)),
-            Err(_) => Err(anyhow!("Timed out waiting for app state cleanup")),
         }
     }
     

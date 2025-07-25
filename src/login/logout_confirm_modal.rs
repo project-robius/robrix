@@ -329,9 +329,11 @@ impl LogoutConfirmModal {
         self.final_success = None;
         self.set_message(cx, "Are you sure you want to logout?");
         confirm_button.set_enabled(cx, true);
+        confirm_button.reset_hover(cx);
         confirm_button.set_text(cx, "Confirm");
         cancel_button.set_visible(cx, true);
         cancel_button.set_enabled(cx, true);
+        confirm_button.reset_hover(cx);        
         self.redraw(cx);
     }
 
