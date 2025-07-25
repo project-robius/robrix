@@ -106,25 +106,16 @@ macOS, Windows, Linux, Android, and iOS.
 icons = ["./packaging/robrix_logo_alpha.png"]
 out_dir = "./dist"
 
-## The below command primarily uses cargo-metadata to determine the path of the `makepad_widgets` crate on the host build system,
-## and copies the `makepad-widgets/resources` directory to the `./dist/resources/makepad_widgets` directory.
-## We also copy the Robrix project's `resources/` directory to the `./dist/resources/robrix` directory.
-##
-## This is necessary because the `cargo packager` command only supports defining resources at a known path
-## (see the below `resources = [...]` block below),
-## so we need to copy the resources to a known fixed (static) path before packaging,
-## such that cargo-packager can locate them and include them in the final package.
-before-packaging-command = """
-robius-packaging-commands before-packaging \
-    --force-makepad \
-    --binary-name robrix \
-    --path-to-binary ./target/release/robrix
-"""
-
-
 ## See the above paragraph comments for more info on how we create/populate the below `src` directories.
 resources = [
+    # Makepad resources
     { src = "./dist/resources/makepad_widgets", target = "makepad_widgets" },
+    { src = "./dist/resources/makepad_fonts_chinese_bold", target = "makepad_fonts_chinese_bold" },
+    { src = "./dist/resources/makepad_fonts_chinese_bold_2", target = "makepad_fonts_chinese_bold_2" },
+    { src = "./dist/resources/makepad_fonts_chinese_regular", target = "makepad_fonts_chinese_regular" },
+    { src = "./dist/resources/makepad_fonts_chinese_regular_2", target = "makepad_fonts_chinese_regular_2" },
+    { src = "./dist/resources/makepad_fonts_emoji", target = "makepad_fonts_emoji" },
+    # Robrix resources
     { src = "./dist/resources/robrix", target = "robrix" },
 ]
 
@@ -159,7 +150,7 @@ minimum_system_version = "11.0"
 frameworks = [ ]
 info_plist_path = "./packaging/Info.plist"
 entitlements = "./packaging/Entitlements.plist"
-signing_identity = "Developer ID Application: AppChef Inc. (SFVQ5V48GD)"
+signing_identity = "-"
 
 
 ## Configuration for `cargo packager`'s generation of a macOS `.dmg`.
