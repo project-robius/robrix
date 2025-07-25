@@ -430,9 +430,17 @@ impl MatchEvent for App {
 ///    TimelineUiState, etc.), their destructors may attempt to access the tokio runtime for cleanup, 
 ///    but the runtime has already been leaked/shutdown, causing deadpool panics or other async-related crashes.
 ///    
+///    **Why this is critical**: Thread-local destructors run AFTER our controlled shutdown sequence.
+///    Without clearing these caches, Matrix SDK objects would be destroyed during thread-local cleanup,
+///    triggering the same deadpool-runtime dependency chain that we're trying to avoid:
+///    matrix-sdk → matrix-sdk-sqlite → rusqlite → deadpool-sqlite → deadpool-runtime
+///    
 ///    By clearing all caches before runtime shutdown, we ensure that Matrix SDK objects are properly
 ///    destroyed while the runtime is still available, leaving only empty collections for the 
 ///    thread-local destructors to handle safely.
+///    
+///    **Investigation findings**: Using tokio-console and Matrix SDK patches, we confirmed that
+///    thread-local destructors containing Matrix SDK objects were the source of post-shutdown crashes.
 fn clear_all_caches() {
     clear_user_profile_caches();
     clean_all_invited_rooms();
