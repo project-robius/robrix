@@ -8,8 +8,7 @@ use matrix_sdk::ruma::{
             FormattedBody, MessageType, Relation, RoomMessageEventContent, TextMessageEventContent,
         },
         AnyMessageLikeEventContent, AnyTimelineEvent,
-    },
-    OwnedRoomId, OwnedUserId, RoomId,
+    }, OwnedEventId, OwnedRoomId, OwnedUserId
 };
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use rangemap::RangeSet;
@@ -17,7 +16,7 @@ use rangemap::RangeSet;
 use crate::{
     app::AppState,
     home::{
-        room_screen::{populate_text_message_content, ItemDrawnStatus},
+        room_screen::{populate_text_message_content, ItemDrawnStatus, MessageWidgetRefExt},
         rooms_list::RoomsListRef,
     },
     shared::{
@@ -246,6 +245,33 @@ live_design! {
             }
             text: "No More"
         }
+        
+        search_context_menu = <RoundedView> {
+            visible: false,
+            flow: Down
+            width: 180,
+            height: Fit,
+            padding: 8
+            spacing: 0,
+            align: {x: 0, y: 0}
+
+            show_bg: true
+            draw_bg: {
+                color: #fff
+                border_radius: 5.0
+                border_size: 0.5
+                border_color: #888
+            }
+
+            go_to_message_button = <RobrixIconButton> {
+                height: 35
+                width: Fill,
+                margin: 0,
+                icon_walk: {width: 16, height: 16, margin: {right: 3}}
+                draw_icon: { svg_file: dep("crate://self/resources/icons/jump.svg") }
+                text: "Go to Message"
+            }
+        }
     }
 }
 
@@ -299,12 +325,71 @@ impl Widget for SearchScreen {
     /// Handles events and actions for the SearchScreen widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+        
+        // Handle pagination when user scrolls to the top
+        if let Event::Actions(actions) = event {
+            let search_portal_list = self.portal_list(id!(searched_messages.list));
+            self.send_pagination_request_based_on_scroll_pos(cx, actions, &search_portal_list, scope);
+        }
+        
         self.widget_match_event(cx, event, scope);
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         search_result_draw_walk(self, cx, scope, walk)
     }
 }
+impl SearchScreen {
+    /// Sends a backwards pagination request if the user is scrolling up and is approaching the top of the search results.
+    /// Similar to room_screen.rs pagination logic.
+    /// The request is sent with the `next_batch` token from the last search result received.
+    fn send_pagination_request_based_on_scroll_pos(
+        &mut self,
+        cx: &mut Cx,
+        actions: &ActionsBuf,
+        portal_list: &PortalListRef,
+        _scope: &mut Scope,
+    ) {
+        if self.search_state.fully_paginated { return };
+        if !portal_list.scrolled(actions) { return };
+
+        let first_index = portal_list.first_id();
+        if first_index == 0 && self.search_state.last_scrolled_index > 0 {
+            if let Some(next_batch_token) = &self.search_state.next_batch_token.clone() {
+                log!("Scrolled up from item {} --> 0, sending search pagination request with next_batch: {}",
+                    self.search_state.last_scrolled_index, next_batch_token
+                );
+                
+                let criteria = self.view
+                    .search_result(id!(search_result_plane))
+                    .get_search_criteria();
+                    
+                self.view
+                    .search_result(id!(search_result_plane))
+                    .display_top_space(cx);
+                
+                submit_async_request(MatrixRequest::SearchMessages {
+                    room_id: self.room_id.clone(),
+                    include_all_rooms: criteria.include_all_rooms,
+                    search_term: criteria.search_term.clone(),
+                    next_batch: Some(next_batch_token.clone()),
+                    abort_previous_search: false,
+                });
+            }
+        }
+        self.search_state.last_scrolled_index = first_index;
+    }
+}
+
+/// Action for search message interactions
+#[derive(Clone, DefaultNone, Debug)]
+pub enum SearchMessageAction {
+    ScrollToMessage {
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
+    },
+    None,
+}
+
 impl WidgetMatchEvent for SearchScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         for action in actions.iter() {
@@ -318,6 +403,14 @@ impl WidgetMatchEvent for SearchScreen {
                 next_batch,
             })) = action.downcast_ref()
             {
+                let mut criteria = self
+                    .view
+                    .search_result(id!(search_result_plane))
+                    .get_search_criteria();
+                // If the search input text has changed, reset the search state and wait for new search results.
+                if criteria.search_term != *search_term {
+                    self.search_state = SearchState::default();
+                }
                 if let Some(prev_search_term) = self.search_state.prev_search_term.clone() {
                     if prev_search_term != *search_term {
                         self.search_state = SearchState::default();
@@ -330,13 +423,6 @@ impl WidgetMatchEvent for SearchScreen {
                 self.view
                     .button(id!(search_all_rooms_button))
                     .set_enabled(cx, true);
-                let mut criteria = self
-                    .view
-                    .search_result(id!(search_result_plane))
-                    .get_search_criteria();
-                if criteria.search_term != *search_term {
-                    self.search_state.items = Vector::new();
-                }
                 self.search_state.profile_infos = profile_infos.clone();
                 cx.action(MessageSearchAction::SetText(search_term.clone()));
                 criteria.search_term = search_term.clone();
@@ -677,6 +763,7 @@ pub fn search_result_draw_walk(
                                             &message,
                                             &search_screen.search_state.profile_infos,
                                             item_drawn_status,
+                                            search_screen.widget_uid()
                                         )
                                     }
                                     _ => {
@@ -817,52 +904,6 @@ pub fn handle_search_input(
     }
 }
 
-/// Sends a backwards pagination request if the user is scrolling up and is approaching the top of the timeline
-/// in the search result.
-///
-/// Returns immediately if the timeline is fully paginated.
-///
-/// Otherwise, if the user is scrolling up and is approaching the top of the timeline,
-/// this function sends a backwards pagination request for the search result.
-/// The request is sent with the `next_batch` token from the last search result received.
-/// The `last_scrolled_index` is updated to the current first visible item in the timeline.
-pub fn send_pagination_request_based_on_scroll_pos_for_search_result(
-    search_screen: &mut SearchScreen,
-    cx: &mut Cx,
-    room_id: &RoomId,
-    actions: &ActionsBuf,
-    portal_list: &PortalListRef,
-    search_result_plane: &SearchResultRef,
-) {
-    let search_state = &mut search_screen.search_state;
-    if search_state.fully_paginated {
-        return;
-    };
-
-    if !portal_list.scrolled(actions) {
-        return;
-    };
-
-    let first_index = portal_list.first_id();
-    if first_index == 0 && search_state.last_scrolled_index > 0 {
-        if let Some(next_batch_token) = &search_state.next_batch_token.take() {
-            log!("Scrolled up from item {} --> 0, sending search request for room {} with backward_pagination_batch {:?}",
-                search_state.last_scrolled_index, room_id, next_batch_token
-            );
-            search_result_plane.display_top_space(cx);
-            let criteria = search_result_plane.get_search_criteria();
-            submit_async_request(MatrixRequest::SearchMessages {
-                room_id: Some(room_id.into()),
-                include_all_rooms: criteria.include_all_rooms,
-                search_term: criteria.search_term.clone(),
-                next_batch: Some(next_batch_token.clone()),
-                abort_previous_search: false,
-            });
-        }
-    }
-    search_screen.search_state.last_scrolled_index = first_index;
-}
-
 /// Search result as timeline item
 #[derive(Clone, Debug)]
 pub enum SearchResultItem {
@@ -880,6 +921,7 @@ pub fn populate_message_search_view(
     message: &RoomMessageEventContent,
     user_profiles: &BTreeMap<OwnedUserId, TimelineDetails<Profile>>,
     item_drawn_status: ItemDrawnStatus,
+    search_widget_uid: WidgetUid,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let ts_millis = event_tl_item.origin_server_ts();
@@ -954,6 +996,8 @@ pub fn populate_message_search_view(
         item.label(id!(profile.timestamp))
             .set_text(cx, &format!("{}", ts_millis.get()));
     }
+    item.as_message().set_jump_option(cx, Some((event_tl_item.room_id().to_owned(), event_tl_item.event_id().to_owned())));
+    item.as_message().set_room_screen_widget_uid(Some(search_widget_uid));
     (item, new_drawn_status)
 }
 
