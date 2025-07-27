@@ -2,70 +2,65 @@
 
 name: Robrix Release CI
 
-# macOS (Apple Silicon only: M1 and up) (aarch64 only)
-# Windows 10 and 11 (x86_64 only)
-
-# Linux: Ubuntu 20.04 (x86_64 only; aarch64 is supported but not packaged yet)
-# Android, aarch64 only
-# iOS
-
-
 # ! To avoid duplicate releases, they should be triggered by unique git tags.
 # ! Not triggered by workflow_dispatch
 on:
   push:
-    branches:
-      - main
-    paths:
-        - packaging/**
-        - resources/**
-        - src/**
-        - .github/**
-        - .cargo/**
-        - Cargo.lock
-        - Cargo.toml
-        - rust-toolchain.toml
-        # Ignore files
-        - '!**/*.md'
-        - '!LICENSE-MIT'
     tags:
       - 'v*.*.*'    # Release Version Tags
       - 'v*.*.*-*'  # Pre-release Version Tags
-  workflow_dispatch:
-    inputs:
-      build_ubuntu:
-        description: 'Build Robrix for Ubuntu'
-        required: false
-        default: 'true'
-      build_macos:
-        description: 'Build Robrix for macOS'
-        required: false
-        default: 'true'
-      build_windows:
-        description: 'Build Robrix for Windows'
-        required: false
-        default: 'true'
-      build_android:
-        description: 'Build Robrix for Android'
-        required: false
-        default: 'false'
-      build_ios:
-        description: 'Build Robrix for iOS'
-        required: false
-        default: 'false'
-      release_tags:
-        description: 'Release Tags'
-        required: false
+
+env:
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: short
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  release_for_linux:
-    name: Release Robrix for Linux (ubuntu-22.04)
-    runs-on: ubuntu-22.04
-    if: ${{ github.event.inputs.build_ubuntu == 'true' }}
+  check_tag_version:
+    name: Check Release Tag and Cargo.toml Version Consistency
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Check tag and Cargo.toml version
+        run: |
+          TAG_REF="${GITHUB_REF##*/}"
+          echo "Current tag: $TAG_REF"
+          CARGO_MANIFEST_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "Cargo.toml Robrix version: $CARGO_MANIFEST_VERSION"
+          if [[ "$TAG_REF" != "v$CARGO_MANIFEST_VERSION" ]]; then
+            echo "Error: Tag '$TAG_REF' does not match Cargo.toml version '$CARGO_MANIFEST_VERSION'."
+            echo "Please create a tag that matches the Cargo.toml version."
+            exit 1
+          else
+            echo "Tag and Cargo.toml version are consistent."
+          fi
+
+  release_robrix_for_desktop:
+    name: Release Robrix for Desktop (${{ matrix.os }})
+    needs: check_tag_version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+          - os: macos-14 # Apple Silicon Macs (M1/M2/M3/M4 chips)
+            arch: aarch64
+          - os: macos-13 # Intel Macs (x86_64 architecture)
+            arch: x86_64
+          - os: windows-2022
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux necessary dependencies
+        if: matrix.os == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -81,7 +76,7 @@ jobs:
             libasound2-dev \
             libpulse-dev
 
-      - name: Install Stable Rust
+      - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-packager
@@ -97,225 +92,65 @@ jobs:
           cargo packager --release
           ls ./dist
 
-      - name: Upload Dist
-        env:
-          GITHUB_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
+      - name: Set Version
         run: |
-          cd ./dist
-          gh release upload ${{ github.event.inputs.release_tags }} robrix_*.deb --clobber
-          gh release upload ${{ github.event.inputs.release_tags }} robrix_*.tar.gz --clobber
-          gh release upload ${{ github.event.inputs.release_tags }} robrix_*.AppImage --clobber
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            pwsh -Command "
+              \$content = Get-Content -Path 'Cargo.toml';
+              foreach (\$line in \$content) {
+                if (\$line -match '^version\s*=\s*\"(.*)\"') {
+                  'VERSION=' + \$matches[1] | Out-File -FilePath \$env:GITHUB_ENV -Append;
+                  break;
+                }
+              }"
+          else
+            VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+            echo "VERSION=$VERSION" >> $GITHUB_ENV
+          fi
+        shell: bash
 
-  release_for_macos:
-    name: Release Robrix for macOS (${{ matrix.arch }})
-    runs-on: ${{ matrix.os }}
-    if: ${{ github.event.inputs.build_macos == 'true' }}
-    strategy:
-      matrix:
-        include:
-          # Apple Silicon Macs (M1/M2/M3/M4 chips)
-          - os: macos-14
-            arch: arm64
-          # Intel Macs (x86_64 architecture)
-          - os: macos-13
-            arch: x86_64
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust-stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-packager
+      - name: Set Artifact and Upload Paths
+        shell: bash
         run: |
-          cargo +stable install --force --locked cargo-packager
+          VERSION=${{ env.VERSION }}
+          OS=${{ matrix.os }}
+          ARCH=${{ matrix.arch }}
 
-      - name: Install robius-packaging-commands
-        run: |
-          cargo install --version 0.2.0 --locked --git https://github.com/project-robius/robius-packaging-commands.git robius-packaging-commands
+          if [[ "$OS" == "macos-14" ]]; then
+            FILE="robrix-${VERSION}-macOS-${ARCH}.dmg"
+            mv ./dist/Robrix_${VERSION}_aarch64.dmg ./dist/$FILE
+            echo "RELEASE_FILE=$FILE" >> $GITHUB_ENV
+            echo "UPLOAD_FILES=./dist/$FILE" >> $GITHUB_ENV
 
-      - name: Build
-        run: |
-          cargo packager --release
-          ls ./dist
+          elif [[ "$OS" == "macos-13" ]]; then
+            FILE="robrix-${VERSION}-macOS-${ARCH}.dmg"
+            mv ./dist/Robrix_${VERSION}_x64.dmg ./dist/$FILE
+            echo "RELEASE_FILE=$FILE" >> $GITHUB_ENV
+            echo "UPLOAD_FILES=./dist/$FILE" >> $GITHUB_ENV
 
-      - name: Upload Dist
-        env:
-          GITHUB_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
-        run: |
-          cd ./dist
-          gh release upload ${{ github.event.inputs.release_tags }} Robrix_*.dmg --clobber
+          elif [[ "$OS" == "windows-2022" ]]; then
+            FILE="robrix-${VERSION}-windows-${ARCH}-setup.exe"
+            mv ./dist/robrix_${VERSION}_x64-setup.exe ./dist/$FILE
+            echo "RELEASE_FILE=$FILE" >> $GITHUB_ENV
+            echo "UPLOAD_FILES=./dist/$FILE" >> $GITHUB_ENV
 
-  release_for_windows:
-    name: Release Robrix for Windows
-    runs-on: windows-2022
-    if: ${{ github.event.inputs.build_windows == 'true' }}
+          elif [[ "$OS" == "ubuntu-22.04" ]]; then
+            {
+              echo "DEB=robrix_${VERSION}_amd64.deb"
+              echo "APPIMAGE=robrix_${VERSION}_x86_64.AppImage"
+              echo "TAR=robrix_${VERSION}_x86_64.tar.gz"
+              echo "UPLOAD_FILES<<EOF"
+              echo "./dist/robrix_${VERSION}_amd64.deb"
+              echo "./dist/robrix_${VERSION}_x86_64.AppImage"
+              echo "./dist/robrix_${VERSION}_x86_64.tar.gz"
+              echo "EOF"
+            } >> $GITHUB_ENV
+          fi
 
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust-stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-packager
-        run: |
-          cargo +stable install --force --locked cargo-packager
-
-      - name: Install robius-packaging-commands
-        run: |
-          cargo install --version 0.2.0 --locked --git https://github.com/project-robius/robius-packaging-commands.git robius-packaging-commands
-
-      - name: Build
-        run: |
-          cargo packager --release --formats nsis
-          ls ./dist
-
-      - name: Upload Dist
-        env:
-          GITHUB_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
-        run: |
-          cd dist/
-          $file=Get-ChildItem -Filter *.exe
-          gh release upload ${{ github.event.inputs.release_tags }} $file.name --clobber
-
-  release_for_android:
-    name: Release Robrix for Android (Linux Host, aarch64 only)
-    runs-on: ${{ matrix.os }}
-    if: ${{ github.event.inputs.build_android == 'true' }}
-    strategy:
-      matrix:
-        os: [ubuntu-22.04]
-        rust: [1.85]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Upload Release Artifacts
+        uses: softprops/action-gh-release@v2
         with:
-          toolchain: ${{ matrix.rust }}
-          targets: aarch64-linux-android
-
-      - name: Install cargo-makepad
-        run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
-
-      - name: Install Android toolchain
-        run: |
-          cargo makepad android install-toolchain
-
-      - name: Build Android APK
-        run: |
-          cargo makepad android build -p robrix --release
-
-      - name: Find and rename APK
-        run: |
-          # Find the generated APK file
-          APK_PATH=$(find target -name "*.apk" -type f | head -1)
-          if [ -z "$APK_PATH" ]; then
-            echo "No APK file found!"
-            exit 1
-          fi
-
-          # Create dist directory if it doesn't exist
-          mkdir -p dist/
-
-          # Extract version from tag or use default
-          VERSION=${GITHUB_REF#refs/tags/}
-          if [[ ! "$VERSION" =~ ^v[0-9] ]]; then
-            VERSION="dev"
-          fi
-
-          # Copy and rename APK
-          cp "$APK_PATH" "dist/robrix-${VERSION}.apk"
-          echo "APK created: dist/robrix-${VERSION}.apk"
-          ls -la dist/
-
-      - name: Upload Android APK
-        env:
-          GITHUB_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
-        run: |
-          cd dist/
-          RELEASE_TAG="v0.0.1-pre-alpha-3"
-          gh release upload "$RELEASE_TAG" robrix-*.apk --clobber
-
-  release_for_ios:
-    name: Release Robrix for iOS (macOS Host, aarch64 only)
-    runs-on: macos-14
-    if: ${{ github.event.inputs.build_ios == 'true' }}
-    strategy:
-      matrix:
-        rust: [1.85]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ matrix.rust }}
-          targets: aarch64-apple-ios-sim
-
-      - name: Install cargo-makepad
-        run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
-
-      - name: Install iOS toolchain
-        run: |
-          cargo makepad apple ios install-toolchain
-
-      - name: Build iOS Simulator App
-        run: |
-          # Install iOS targets
-          rustup target add aarch64-apple-ios
-
-          # Build the iOS simulator and device targets
-          cargo makepad apple ios \
-          --org=rs.robius \
-          --app=robrix \
-          run-sim -p robrix --release
-
-      - name: Create iOS App Bundle
-        run: |
-          # Find the generated app bundle
-          APP_PATH=$(find target -name "*.app" -type d | head -1)
-          if [ -z "$APP_PATH" ]; then
-            echo "No .app bundle found!"
-            exit 1
-          fi
-
-          # Create dist directory if it doesn't exist
-          mkdir -p dist/
-
-          # Extract version from tag or use default
-          VERSION=${GITHUB_REF#refs/tags/}
-          if [[ ! "$VERSION" =~ ^v[0-9] ]]; then
-            VERSION="dev"
-          fi
-
-          # Create zip file for iOS simulator
-          cd "$(dirname "$APP_PATH")"
-          APP_NAME=$(basename "$APP_PATH")
-          ZIP_NAME="robrix-${VERSION}-iOS-sim.zip"
-
-          zip -r "$ZIP_NAME" "$APP_NAME"
-          mv "$ZIP_NAME" "$GITHUB_WORKSPACE/dist/"
-
-          echo "iOS App Bundle created: dist/$ZIP_NAME"
-          ls -la "$GITHUB_WORKSPACE/dist/"
-
-      - name: Upload iOS App Bundle
-        env:
-          GITHUB_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
-        run: |
-          cd dist/
-          RELEASE_TAG="v0.0.1-pre-alpha-3"
-          gh release upload "$RELEASE_TAG" robrix-*-iOS-sim.zip --clobber
-
-env:
-  CARGO_INCREMENTAL: 0
-  RUST_BACKTRACE: short
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
+          tag_name: v${{ env.VERSION }}
+          name: "Robrix v${{ env.VERSION }}"
+          token: ${{ secrets.ROBRIX_RELEASE }}
+          files: ${{ env.UPLOAD_FILES }}
