@@ -1,14 +1,10 @@
-//! RestoreStatusView - A loading status indicator for room restoration operations.
+//! A loading indicator showing the status of room restoration operations.
 //!
-//! This module provides a UI component that displays progress feedback during room
-//! restoration operations in the Robrix Matrix client. It shows a loading spinner
-//! and contextual status messages while the client attempts to load room data
-//! from the Matrix homeserver.
-//!
-//! ## Purpose
-//!
-//! The RestoreStatusView is displayed when:
-//! - A user navigates to a room that hasn't been fully loaded yet.
+//! This shows a loading spinner and short status label to inform the user
+//! that a room they were viewing previously has not yet been received
+//! from the Matrix homeserver, or that all rooms have been received but that
+//! the current room no longer exists.
+
 use makepad_widgets::*;
 
 live_design! {
@@ -21,6 +17,7 @@ live_design! {
         width: Fill, height: Fill,
         flow: Down,
         align: {x: 0.5, y: 0.5},
+
         restore_status_spinner = <LoadingSpinner> {
             width: 50,
             height: 50,
@@ -30,6 +27,7 @@ live_design! {
                 border_size: 3.0,
             }
         }
+
         restore_status_label = <Label> {
             width: Fill, height: Fit,
             align: {x: 0.5, y: 0.0},
@@ -69,8 +67,8 @@ impl Widget for RestoreStatusView {
 impl RestoreStatusViewRef {
     /// Sets whether the restore status view is visible or not.
     ///
-    /// When the view is not visible, the label is cleared of any text.
-    /// When the view becomes visible, it is the caller's responsibility to set the correct text.
+    /// When the view is not visible, the label is cleared of any text content.
+    /// When the view becomes visible, you must call [`Self::set_content()`] again.
     pub fn set_visible(&self, cx: &mut Cx, visible: bool) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.visible = visible;
@@ -80,34 +78,35 @@ impl RestoreStatusViewRef {
             }
         }
     }
-    
+
     /// Sets the text displayed in the restore status view based on the given parameters.
     ///
     /// If `all_rooms_loaded` is true, the text will be a message indicating that the room
     /// was not found in the homeserver's list of all rooms, and that the user can close
-    /// the screen.
+    /// the parent room view.
     ///
     /// If `all_rooms_loaded` is false, the text will be a message indicating that the room
     /// is still being loaded from the homeserver.
     ///
     /// The `room_name` parameter is used to fill in the room name in the error message.
     pub fn set_content(&self, cx: &mut Cx, all_rooms_loaded: bool, room_name: &str) {
-        let Some(inner) = self.borrow() else { return };
+        let Some(inner) = self.borrow() else { return };      
+        let restore_status_spinner = inner.view.view(id!(restore_status_spinner));
         let restore_status_label = inner.view.label(id!(restore_status_label));
-        
-        let status_text: String = if all_rooms_loaded {
-            inner.view.view(id!(restore_status_spinner)).set_visible(cx, false);
-            format!(
-                "Room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
-                    You may close this screen.",
-                room_name
-            )
+        if all_rooms_loaded {
+            restore_status_spinner.set_visible(cx, false);
+            restore_status_label.set_text(
+                cx,
+                format!("Room \"{room_name}\" was not found in the homeserver's list\
+                    of all rooms.\n\nYou may close this screen.")
+            );
         } else {
-            inner.view.view(id!(restore_status_spinner)).set_visible(cx, true);
-            String::from("Waiting for this room to be loaded from the homeserver")
-        };
-        
-        restore_status_label.set_text(cx, &status_text);
+            restore_status_spinner.set_visible(cx, true);
+            restore_status_label.set_text(
+                cx,
+                "Waiting for this room to be loaded from the homeserver",
+            );
+        }
     }
 }
 
