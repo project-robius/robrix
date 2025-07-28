@@ -2971,31 +2971,31 @@ pub fn leak_request_sender() {
 }
 
 pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
-        // Clear resources normally, allowing them to be properly dropped
-        // This prevents memory leaks when users logout and login again without closing the app
-        CLIENT.lock().unwrap().take();
-        log!("Client cleared during logout");
-        
-        SYNC_SERVICE.lock().unwrap().take();
-        log!("Sync service cleared during logout");
-        
-        REQUEST_SENDER.lock().unwrap().take();
-        log!("Request sender cleared during logout");
-        
-        // Only clear collections that don't contain Matrix SDK objects
-        TOMBSTONED_ROOMS.lock().unwrap().clear();
-        IGNORED_USERS.lock().unwrap().clear();
-        ALL_JOINED_ROOMS.lock().unwrap().clear();
-        
-        let (tx, rx) = oneshot::channel::<bool>();
-        Cx::post_action(LogoutAction::CleanAppState { on_clean_appstate: tx });
-        
-        match tokio::time::timeout(config.app_state_cleanup_timeout, rx).await {
-            Ok(Ok(_)) => {
-                log!("Received signal that app state was cleaned successfully");
-                Ok(())
-            }
-            Ok(Err(e)) => Err(anyhow!("Failed to clean app state: {}", e)),
-            Err(_) => Err(anyhow!("Timed out waiting for app state cleanup")),
+    // Clear resources normally, allowing them to be properly dropped
+    // This prevents memory leaks when users logout and login again without closing the app
+    CLIENT.lock().unwrap().take();
+    log!("Client cleared during logout");
+    
+    SYNC_SERVICE.lock().unwrap().take();
+    log!("Sync service cleared during logout");
+    
+    REQUEST_SENDER.lock().unwrap().take();
+    log!("Request sender cleared during logout");
+    
+    // Only clear collections that don't contain Matrix SDK objects
+    TOMBSTONED_ROOMS.lock().unwrap().clear();
+    IGNORED_USERS.lock().unwrap().clear();
+    ALL_JOINED_ROOMS.lock().unwrap().clear();
+    
+    let (tx, rx) = oneshot::channel::<bool>();
+    Cx::post_action(LogoutAction::CleanAppState { on_clean_appstate: tx });
+    
+    match tokio::time::timeout(config.app_state_cleanup_timeout, rx).await {
+        Ok(Ok(_)) => {
+            log!("Received signal that app state was cleaned successfully");
+            Ok(())
         }
+        Ok(Err(e)) => Err(anyhow!("Failed to clean app state: {}", e)),
+        Err(_) => Err(anyhow!("Timed out waiting for app state cleanup")),
+    }
 }
