@@ -1,0 +1,156 @@
+# Robrix Release CI Workflow
+
+name: Robrix Release CI
+
+# ! To avoid duplicate releases, they should be triggered by unique git tags.
+# ! Not triggered by workflow_dispatch
+on:
+  push:
+    tags:
+      - 'v*.*.*'    # Release Version Tags
+      - 'v*.*.*-*'  # Pre-release Version Tags
+
+env:
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: short
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check_tag_version:
+    name: Check Release Tag and Cargo.toml Version Consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag and Cargo.toml version
+        run: |
+          TAG_REF="${GITHUB_REF##*/}"
+          echo "Current tag: $TAG_REF"
+          CARGO_MANIFEST_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "Cargo.toml Robrix version: $CARGO_MANIFEST_VERSION"
+          if [[ "$TAG_REF" != "v$CARGO_MANIFEST_VERSION" ]]; then
+            echo "Error: Tag '$TAG_REF' does not match Cargo.toml version '$CARGO_MANIFEST_VERSION'."
+            echo "Please create a tag that matches the Cargo.toml version."
+            exit 1
+          else
+            echo "Tag and Cargo.toml version are consistent."
+          fi
+
+  release_robrix_for_desktop:
+    name: Release Robrix for Desktop (${{ matrix.os }})
+    needs: check_tag_version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+          - os: macos-14 # Apple Silicon Macs (M1/M2/M3/M4 chips)
+            arch: aarch64
+          - os: macos-13 # Intel Macs (x86_64 architecture)
+            arch: x86_64
+          - os: windows-2022
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux necessary dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libssl-dev \
+            libsqlite3-dev \
+            pkg-config \
+            llvm \
+            clang \
+            libclang-dev \
+            binfmt-support \
+            libxcursor-dev \
+            libx11-dev \
+            libasound2-dev \
+            libpulse-dev
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-packager
+        run: |
+          cargo +stable install --force --locked cargo-packager
+
+      - name: Install robius-packaging-commands
+        run: |
+          cargo install --version 0.2.0 --locked --git https://github.com/project-robius/robius-packaging-commands.git robius-packaging-commands
+
+      - name: Build
+        run: |
+          cargo packager --release
+          ls ./dist
+
+      - name: Set Version
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            pwsh -Command "
+              \$content = Get-Content -Path 'Cargo.toml';
+              foreach (\$line in \$content) {
+                if (\$line -match '^version\s*=\s*\"(.*)\"') {
+                  'VERSION=' + \$matches[1] | Out-File -FilePath \$env:GITHUB_ENV -Append;
+                  break;
+                }
+              }"
+          else
+            VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+            echo "VERSION=$VERSION" >> $GITHUB_ENV
+          fi
+        shell: bash
+
+      - name: Set Artifact and Upload Paths
+        shell: bash
+        run: |
+          VERSION=${{ env.VERSION }}
+          OS=${{ matrix.os }}
+          ARCH=${{ matrix.arch }}
+
+          if [[ "$OS" == "macos-14" ]]; then
+            FILE="robrix-${VERSION}-macOS-${ARCH}.dmg"
+            mv ./dist/Robrix_${VERSION}_aarch64.dmg ./dist/$FILE
+            echo "RELEASE_FILE=$FILE" >> $GITHUB_ENV
+            echo "UPLOAD_FILES=./dist/$FILE" >> $GITHUB_ENV
+
+          elif [[ "$OS" == "macos-13" ]]; then
+            FILE="robrix-${VERSION}-macOS-${ARCH}.dmg"
+            mv ./dist/Robrix_${VERSION}_x64.dmg ./dist/$FILE
+            echo "RELEASE_FILE=$FILE" >> $GITHUB_ENV
+            echo "UPLOAD_FILES=./dist/$FILE" >> $GITHUB_ENV
+
+          elif [[ "$OS" == "windows-2022" ]]; then
+            FILE="robrix-${VERSION}-windows-${ARCH}-setup.exe"
+            mv ./dist/robrix_${VERSION}_x64-setup.exe ./dist/$FILE
+            echo "RELEASE_FILE=$FILE" >> $GITHUB_ENV
+            echo "UPLOAD_FILES=./dist/$FILE" >> $GITHUB_ENV
+
+          elif [[ "$OS" == "ubuntu-22.04" ]]; then
+            {
+              echo "DEB=robrix_${VERSION}_amd64.deb"
+              echo "APPIMAGE=robrix_${VERSION}_x86_64.AppImage"
+              echo "TAR=robrix_${VERSION}_x86_64.tar.gz"
+              echo "UPLOAD_FILES<<EOF"
+              echo "./dist/robrix_${VERSION}_amd64.deb"
+              echo "./dist/robrix_${VERSION}_x86_64.AppImage"
+              echo "./dist/robrix_${VERSION}_x86_64.tar.gz"
+              echo "EOF"
+            } >> $GITHUB_ENV
+          fi
+
+      - name: Upload Release Artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: "Robrix v${{ env.VERSION }}"
+          token: ${{ secrets.ROBRIX_RELEASE }}
+          files: ${{ env.UPLOAD_FILES }}
