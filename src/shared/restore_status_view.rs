@@ -1,3 +1,14 @@
+//! RestoreStatusView - A loading status indicator for room restoration operations.
+//!
+//! This module provides a UI component that displays progress feedback during room
+//! restoration operations in the Robrix Matrix client. It shows a loading spinner
+//! and contextual status messages while the client attempts to load room data
+//! from the Matrix homeserver.
+//!
+//! ## Purpose
+//!
+//! The RestoreStatusView is displayed when:
+//! - A user navigates to a room that hasn't been fully loaded yet.
 use makepad_widgets::*;
 
 live_design! {
@@ -32,6 +43,7 @@ live_design! {
     }
 }
 
+/// A view that displays a spinner and a label to indicate that a restore operation is in progress for a room.
 #[derive(Live, LiveHook, Widget)]
 pub struct RestoreStatusView {
     #[deref] view: View,
