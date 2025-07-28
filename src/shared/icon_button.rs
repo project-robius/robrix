@@ -110,5 +110,6 @@ live_design! {
                 return self.color;
             }
         }
+        text: ""
     }
 }
