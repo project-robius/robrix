@@ -277,8 +277,7 @@ impl Widget for InviteScreen {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
                 if !rooms_list_ref.is_room_loaded(room_id) {
                     self.all_rooms_loaded = rooms_list_ref.all_known_rooms_loaded();
-                    let restore_status_view = self.view.restore_status_view(id!(restore_status_view));
-                    restore_status_view.set_content(cx, self.all_rooms_loaded, &self.room_name);
+                    self.redraw(cx);
                     return;
                 } else {
                     self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
