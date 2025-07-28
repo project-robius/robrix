@@ -22,7 +22,7 @@ live_design! {
         flow: Down
         body = {
             margin: {top: 0.0 },
-            search_screen = <SearchScreen> {}
+            <SearchResults> {}
         }
         header = {
             height: 30.0,

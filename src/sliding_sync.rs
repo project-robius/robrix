@@ -392,9 +392,9 @@ pub enum MatrixRequest {
     },
     /// General Matrix Search API with given categories
     SearchMessages {
-        /// The room to search for message.
+        /// The room_id to search for messages.
         room_id: Option<OwnedRoomId>,
-        /// Filter criteria for searching message.
+        /// Filter criteria for searching messages.
         include_all_rooms: bool,
         /// Text in the search bar.
         search_term: String,
@@ -1218,7 +1218,7 @@ async fn async_worker(
                                 .and_then(|f| f.to_string().parse().ok())
                                 .unwrap_or(0);
                             let highlights = result.room_events.highlights;
-                            Cx::post_action(SearchResultAction::Ok(SearchResultReceived {
+                            Cx::post_action(SearchResultAction::Received(SearchResultReceived {
                                 items,
                                 count,
                                 highlights,

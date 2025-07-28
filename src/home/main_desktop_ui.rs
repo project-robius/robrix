@@ -381,8 +381,19 @@ impl WidgetMatchEvent for MainDesktopUI {
 
                     if let Some(ref selected_room) = &app_state.selected_room {
                         self.focus_or_create_tab(cx, selected_room.clone());
-                        // Call DockSave action to display the search message input box if there is open room.
-                        cx.action(MainDesktopUiAction::SaveDockIntoAppState);
+                        // Call DockSave action to display the search message input box if there is an opened room.
+                        cx.widget_action(
+                            self.widget_uid(), 
+                            &HeapLiveIdPath::default(), 
+                            AppStateAction::RoomFocused(selected_room.clone())
+                        );
+                    } else {
+                        // If there is no selected room, focus on the home tab.
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &HeapLiveIdPath::default(),
+                            AppStateAction::FocusNone,
+                        );
                     }
                     self.view.redraw(cx);
                 }

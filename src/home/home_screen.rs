@@ -64,7 +64,7 @@ live_design! {
                             }
                             message_search_input_view = <View> {
                                 width: Fill, height: Fit,
-                                visible: true,
+                                visible: false,
                                 align: {x: 1.0},
                                 <CachedWidget> {
                                     message_search_input_bar = <MessageSearchInputBar> {
@@ -159,6 +159,7 @@ live_design! {
                                         mobile_message_search_input_view = <View> {
                                             height: Fit,
                                             width: 140,
+                                            visible: false,
                                             <CachedWidget> {
                                                 message_search_input_bar = <MessageSearchInputBar> {
                                                     width: 300

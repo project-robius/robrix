@@ -8,7 +8,7 @@ use matrix_sdk::ruma::{
             FormattedBody, MessageType, Relation, RoomMessageEventContent, TextMessageEventContent,
         },
         AnyMessageLikeEventContent, AnyTimelineEvent,
-    }, OwnedEventId, OwnedRoomId, OwnedUserId
+    }, OwnedRoomId, OwnedUserId
 };
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use rangemap::RangeSet;
@@ -103,7 +103,7 @@ live_design! {
         }
         icon_walk: {width: 16, height: 16}
     }
-    pub SearchResult = {{SearchResult}} {
+    pub SearchResultSummary = {{SearchResultSummary}} {
         width: Fill,
         height: Fill,
         show_bg: false,
@@ -220,12 +220,12 @@ live_design! {
         }
     }
 
-    pub SearchScreen = {{SearchScreen}} {
+    pub SearchResults = {{SearchResults}} {
         <View> {
             width: Fill,
             height: Fill,
             flow: Down,
-            search_result_plane = <SearchResult> {
+            search_result_plane = <SearchResultSummary> {
                 width: Fill,
                 height: Fit,
                 visible: true
@@ -245,7 +245,7 @@ live_design! {
             }
             text: "No More"
         }
-        
+
         search_context_menu = <RoundedView> {
             visible: false,
             flow: Down
@@ -283,6 +283,7 @@ const SEARCH_HIGHLIGHT: Vec3 = Vec3 {
 };
 
 /// States that are necessary to display search results.
+/// Contains all the data needed to render the search UI and manage pagination.
 #[derive(Default)]
 pub struct SearchState {
     /// The list of events in the search results.
@@ -298,15 +299,15 @@ pub struct SearchState {
     pub fully_paginated: bool,
     /// The index of the timeline item that was most recently scrolled up past it.
     pub last_scrolled_index: usize,
-    /// Token to be use for pagination of earlier search results.
+    /// Token to be used for pagination of earlier search results.
     pub next_batch_token: Option<String>,
     /// The search term for the last search request.
     pub prev_search_term: Option<String>,
 }
 
-/// The main widget that displays a single Matrix room.
+/// The main widget that displays a list of search results.
 #[derive(Live, LiveHook, Widget)]
-pub struct SearchScreen {
+pub struct SearchResults {
     #[deref]
     pub view: View,
     #[layout]
@@ -321,8 +322,8 @@ pub struct SearchScreen {
     pub room_id: Option<OwnedRoomId>,
 }
 
-impl Widget for SearchScreen {
-    /// Handles events and actions for the SearchScreen widget and its inner Timeline view.
+impl Widget for SearchResults {
+    /// Handles events and actions for the SearchResults widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         
@@ -335,10 +336,133 @@ impl Widget for SearchScreen {
         self.widget_match_event(cx, event, scope);
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        search_result_draw_walk(self, cx, scope, walk)
+        let tl_items = &self.search_state.items;
+        while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
+            // We only care about drawing the portal list.
+            let portal_list_ref = subview.as_portal_list();
+            let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
+                error!("!!! SearchResults::draw_walk(): BUG: expected a PortalList widget, but got something else");
+                continue;
+            };
+            // Set the portal list's range based on the number of searched items.
+            let last_item_id = tl_items.len();
+            let list = list_ref.deref_mut();
+            list.set_item_range(cx, 0, last_item_id);
+
+            while let Some(item_id) = list.next_visible_item(cx) {
+                if item_id == 0
+                    && self.search_state.next_batch_token.is_none()
+                    && last_item_id > 0
+                {
+                    WidgetRef::new_from_ptr(cx, self.no_more_template)
+                        .as_label()
+                        .draw_all(cx, &mut Scope::empty());
+                }
+                let item = {
+                    let tl_idx = item_id;
+                    let Some(search_item) = tl_items.get(tl_idx) else {
+                        // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
+                        // but we can always safely fill the item with an empty widget that takes up no space.
+                        list.item(cx, item_id, live_id!(Empty));
+                        continue;
+                    };
+                    let item_drawn_status = ItemDrawnStatus {
+                        content_drawn: self.search_state
+                            .content_drawn_since_last_update
+                            .contains(&tl_idx),
+                        profile_drawn: self.search_state
+                            .profile_drawn_since_last_update
+                            .contains(&tl_idx),
+                    };
+                    
+                    let (item, item_new_draw_status) = match search_item {
+                        SearchResultItem::Event(event) => {
+                            if let AnyTimelineEvent::MessageLike(msg) = &**event {
+                                let mut content = msg.original_content();
+                                if let Some(replace) = msg.relations().replace {
+                                    content = replace.original_content();
+                                }
+                                if let Some(AnyMessageLikeEventContent::RoomMessage(message)) = content {
+                                    // We clone the message here so we can inject HTML `<code>` tags
+                                    // for highlighting without modifying the original data in the timeline.
+                                    let mut message = message.clone();
+                                    if let Some(Relation::Replacement(replace)) = &message.relates_to {
+                                        let new_content = &replace.new_content;
+                                        message.msgtype = new_content.msgtype.clone();
+                                    }
+
+                                    if let MessageType::Text(text) = &mut message.msgtype {
+                                        if let Some(ref mut formatted) = text.formatted {
+                                            for highlight in &self.search_state.highlighted_strings {
+                                                formatted.body = formatted.body.replace(
+                                                    highlight,
+                                                    &format!("<code>{}</code>", highlight),
+                                                );
+                                            }
+                                        } else {
+                                            let mut formatted_string = text.body.clone();
+                                            for highlight in &self.search_state.highlighted_strings {
+                                                formatted_string = formatted_string.replace(
+                                                    highlight,
+                                                    &format!("<code>{}</code>", highlight),
+                                                );
+                                            }
+                                            text.formatted = Some(FormattedBody::html(formatted_string));
+                                        }
+                                    }
+                                    populate_message_search_view(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        event,
+                                        &message,
+                                        &self.search_state.profile_infos,
+                                        item_drawn_status,
+                                        self.widget_uid()
+                                    )
+                                } else {
+                                    // Not a room message, draw empty
+                                    list.item(cx, item_id, live_id!(Empty))
+                                        .draw_all(cx, &mut Scope::empty());
+                                    continue;
+                                }
+                            } else {
+                                // Not a message-like event, draw empty
+                                list.item(cx, item_id, live_id!(Empty))
+                                    .draw_all(cx, &mut Scope::empty());
+                                continue;
+                            }
+                        },
+                        SearchResultItem::RoomHeader(room_id) => {
+                            let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                            let room_name = rooms_list_ref
+                                .get_room_name(room_id)
+                                .unwrap_or(room_id.to_string());
+                            let item = list.item(cx, item_id, live_id!(RoomHeader));
+                            item.set_text(cx, &format!("Room {}", room_name));
+                            (item, ItemDrawnStatus::both_drawn())
+                        }
+                    };
+                    
+                    if item_new_draw_status.content_drawn {
+                        self.search_state
+                            .content_drawn_since_last_update
+                            .insert(tl_idx..tl_idx + 1);
+                    }
+                    if item_new_draw_status.profile_drawn {
+                        self.search_state
+                            .profile_drawn_since_last_update
+                            .insert(tl_idx..tl_idx + 1);
+                    }
+                    item
+                };
+                item.draw_all(cx, &mut Scope::empty());
+            }
+        }
+        DrawStep::done()
     }
 }
-impl SearchScreen {
+impl SearchResults {
     /// Sends a backwards pagination request if the user is scrolling up and is approaching the top of the search results.
     /// Similar to room_screen.rs pagination logic.
     /// The request is sent with the `next_batch` token from the last search result received.
@@ -360,11 +484,11 @@ impl SearchScreen {
                 );
                 
                 let criteria = self.view
-                    .search_result(id!(search_result_plane))
+                    .search_result_summary(id!(search_result_plane))
                     .get_search_criteria();
                     
                 self.view
-                    .search_result(id!(search_result_plane))
+                    .search_result_summary(id!(search_result_plane))
                     .display_top_space(cx);
                 
                 submit_async_request(MatrixRequest::SearchMessages {
@@ -380,77 +504,168 @@ impl SearchScreen {
     }
 }
 
-/// Action for search message interactions
-#[derive(Clone, DefaultNone, Debug)]
-pub enum SearchMessageAction {
-    ScrollToMessage {
-        room_id: OwnedRoomId,
-        event_id: OwnedEventId,
-    },
-    None,
-}
 
-impl WidgetMatchEvent for SearchScreen {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-        for action in actions.iter() {
-            handle_search_input(self, cx, action, scope);
-            if let Some(SearchResultAction::Ok(SearchResultReceived {
-                items,
-                profile_infos,
-                search_term,
-                count,
-                highlights,
-                next_batch,
-            })) = action.downcast_ref()
-            {
-                let mut criteria = self
-                    .view
-                    .search_result(id!(search_result_plane))
-                    .get_search_criteria();
-                // If the search input text has changed, reset the search state and wait for new search results.
-                if criteria.search_term != *search_term {
+impl SearchResults {
+    /// Processes a new batch of search results and updates the UI and state.
+    fn process_search_results(
+        &mut self,
+        cx: &mut Cx,
+        scope: &mut Scope,
+        results: &SearchResultReceived,
+    ) {
+        let mut criteria = self
+            .view
+            .search_result_summary(id!(search_result_plane))
+            .get_search_criteria();
+
+        // If the search input text has changed, reset everything.
+        if criteria.search_term != results.search_term
+            || self.search_state.prev_search_term.as_ref().is_some_and(|p| p != &results.search_term)
+        {
+            self.search_state = SearchState::default();
+        }
+
+        self.view
+            .search_result_summary(id!(search_result_plane))
+            .hide_top_space(cx);
+        // Re-enable the search all rooms button when results are received
+        self.view
+            .button(id!(search_all_rooms_button))
+            .set_enabled(cx, true);
+
+        self.search_state.profile_infos = results.profile_infos.clone();
+
+        // Update the search bar and summary widget
+        cx.action(MessageSearchAction::SetText(results.search_term.clone()));
+        criteria.search_term = results.search_term.clone();
+        self.view
+            .search_result_summary(id!(search_result_plane))
+            .set_search_criteria(cx, scope, criteria);
+        // Result count may include contextual message which we are not displaying here.
+        self.view
+            .search_result_summary(id!(search_result_plane))
+            .set_result_count(cx, results.count);
+        
+        self.view.view(id!(searched_messages)).set_visible(cx, true);
+        
+        // Clear draw caches
+        self.search_state.content_drawn_since_last_update.clear();
+        self.search_state.profile_drawn_since_last_update.clear();
+
+        // Prepend new items (since pagination goes backwards)
+        for item in results.items.iter().rev() {
+            self.search_state.items.push_front(item.clone());
+        }
+
+        let search_portal_list = self.portal_list(id!(searched_messages.list));
+        if let Some(mut search_portal_list) = search_portal_list.borrow_mut() {
+            search_portal_list.set_item_range(cx, 0, self.search_state.items.len());
+        }
+        
+        search_portal_list
+            .set_first_id_and_scroll(self.search_state.items.len().saturating_sub(1), 0.0);
+        search_portal_list.set_tail_range(true);
+
+        self.search_state.highlighted_strings = results.highlights.to_vec();
+        self.search_state.next_batch_token = results.next_batch.clone();
+        self.search_state.prev_search_term = Some(results.search_term.clone());
+
+        self.redraw(cx);
+    }
+
+    /// Handles actions from the MessageSearchInputBar.
+    fn handle_search_bar_action(
+        &mut self,
+        cx: &mut Cx,
+        scope: &mut Scope,
+        action: &Action,
+    ) {
+        match action.as_widget_action().cast() {
+            MessageSearchAction::Changed(search_term) => {
+                println!("search_term: {}", search_term);
+                if search_term.is_empty() {
+                    self.search_result_summary(id!(search_result_plane))
+                        .reset(cx);
                     self.search_state = SearchState::default();
+                    // Abort previous inflight search request.
+                    submit_async_request(MatrixRequest::SearchMessages {
+                        room_id: None,
+                        include_all_rooms: false,
+                        search_term: String::default(),
+                        next_batch: None,
+                        abort_previous_search: true,
+                    });
+                    return;
                 }
-                if let Some(prev_search_term) = self.search_state.prev_search_term.clone() {
-                    if prev_search_term != *search_term {
-                        self.search_state = SearchState::default();
+                if let Some(selected_room) = {
+                    let app_state = scope.data.get::<AppState>().unwrap();
+                    app_state.selected_room.clone()
+                } {
+                    let mut criteria = self
+                        .search_result_summary(id!(search_result_plane))
+                        .get_search_criteria();
+                    criteria.search_term = search_term.clone();
+                    criteria.include_all_rooms = false;
+                    self.search_result_summary(id!(search_result_plane))
+                        .set_search_criteria(cx, scope, criteria.clone());
+                    let room_id = selected_room.room_id();
+                    let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                    let is_encrypted = rooms_list_ref.is_room_encrypted(room_id);
+                    if is_encrypted && !criteria.include_all_rooms {
+                        enqueue_popup_notification(PopupItem {
+                            message: String::from("Searching for encrypted messages is not supported yet. You may want to try searching all rooms instead."),
+                            auto_dismissal_duration: None,
+                            kind: PopupKind::Info
+                        });
+                        return;
                     }
+                    self.search_result_summary(id!(search_result_plane))
+                        .display_top_space(cx);
+                    // Disable the search all rooms button during search
+                    self.view
+                        .button(id!(search_all_rooms_button))
+                        .set_enabled(cx, false);
+                    submit_async_request(MatrixRequest::SearchMessages {
+                        room_id: Some(room_id.to_owned()),
+                        include_all_rooms: criteria.include_all_rooms,
+                        search_term: criteria.search_term.clone(),
+                        next_batch: None,
+                        abort_previous_search: true,
+                    });
                 }
-                self.view
-                    .search_result(id!(search_result_plane))
-                    .hide_top_space(cx);
-                // Re-enable the search all rooms button when results are received
+            }
+            MessageSearchAction::Click(search_term) => {
+                let mut criteria = self
+                    .search_result_summary(id!(search_result_plane))
+                    .get_search_criteria();
+                criteria.search_term = search_term.clone();
+                self.search_result_summary(id!(search_result_plane))
+                    .set_search_criteria(cx, scope, criteria);
+            }
+            MessageSearchAction::Clear => {
+                self.search_result_summary(id!(search_result_plane))
+                    .reset(cx);
+                self.search_result_summary(id!(search_result_plane))
+                    .set_visible(cx, false);
+                // Re-enable the search all rooms button when search is cleared
                 self.view
                     .button(id!(search_all_rooms_button))
                     .set_enabled(cx, true);
-                self.search_state.profile_infos = profile_infos.clone();
-                cx.action(MessageSearchAction::SetText(search_term.clone()));
-                criteria.search_term = search_term.clone();
-                self.view
-                    .search_result(id!(search_result_plane))
-                    .set_search_criteria(cx, scope, criteria);
-                // Result count may include contextual message which we are not displaying here.
-                self.view
-                    .search_result(id!(search_result_plane))
-                    .set_result_count(cx, *count);
-                self.view.view(id!(searched_messages)).set_visible(cx, true);
-                self.search_state.content_drawn_since_last_update.clear();
-                self.search_state.profile_drawn_since_last_update.clear();
-                for item in items {
-                    self.search_state.items.push_front(item.clone());
-                }
-                let search_portal_list = self.portal_list(id!(searched_messages.list));
-                if let Some(mut search_portal_list) = search_portal_list.borrow_mut() {
-                    search_portal_list.set_item_range(cx, 0, self.search_state.items.len());
-                }
-                search_portal_list
-                    .set_first_id_and_scroll(self.search_state.items.len().saturating_sub(1), 0.0);
-                search_portal_list.set_tail_range(true);
-                self.search_state.highlighted_strings = highlights.to_vec();
-                self.search_state.next_batch_token = next_batch.to_owned();
-                self.search_state.prev_search_term = Some(search_term.clone());
-                self.redraw(cx);
+                self.search_state = SearchState::default();
             }
+            _ => {}
+        }
+    }
+}
+
+impl WidgetMatchEvent for SearchResults {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+        for action in actions.iter() {
+            self.handle_search_bar_action(cx, scope, &action);
+            if let Some(SearchResultAction::Received(results)) = action.downcast_ref() {
+                self.process_search_results(cx, scope, results);
+            }
+            
             if self
                 .view
                 .button(id!(search_all_rooms_button))
@@ -461,11 +676,11 @@ impl WidgetMatchEvent for SearchScreen {
                     .button(id!(search_all_rooms_button))
                     .set_enabled(cx, false);
                 let mut criteria = self
-                    .search_result(id!(search_result_plane))
+                    .search_result_summary(id!(search_result_plane))
                     .get_search_criteria();
-                self.search_result(id!(search_result_plane)).reset(cx);
+                self.search_result_summary(id!(search_result_plane)).reset(cx);
                 criteria.include_all_rooms = true;
-                self.search_result(id!(search_result_plane))
+                self.search_result_summary(id!(search_result_plane))
                     .set_search_criteria(cx, scope, criteria.clone());
                 self.search_state = SearchState::default();
                 submit_async_request(MatrixRequest::SearchMessages {
@@ -480,12 +695,15 @@ impl WidgetMatchEvent for SearchScreen {
     }
 }
 
+/// Actions related to search result processing.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum SearchResultAction {
-    Ok(SearchResultReceived),
+    /// Search results have been received from the Matrix server.
+    Received(SearchResultReceived),
     None,
 }
 
+/// Data structure containing search results received from the Matrix server.
 #[derive(Default, Debug, Clone)]
 pub struct SearchResultReceived {
     pub items: Vec<SearchResultItem>,
@@ -498,7 +716,7 @@ pub struct SearchResultReceived {
 
 // The widget that displays an overlay of the summary for search results.
 #[derive(Live, LiveHook, Widget)]
-pub struct SearchResult {
+pub struct SearchResultSummary {
     #[deref]
     pub view: View,
     #[rust]
@@ -519,8 +737,8 @@ pub struct Criteria {
     pub is_encrypted: bool,
 }
 
-impl Widget for SearchResult {
-    /// Handles events and actions for the SearchResult widget and its inner Timeline view.
+impl Widget for SearchResultSummary {
+    /// Handles events and actions for the SearchResultSummary widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if !self.visible {
             return;
@@ -535,7 +753,7 @@ impl Widget for SearchResult {
     }
 }
 
-impl SearchResult {
+impl SearchResultSummary {
     /// Display search summary.
     ///
     /// This is used to display the number of search results and the search criteria
@@ -559,7 +777,7 @@ impl SearchResult {
         );
         self.view.view(id!(loading_view)).set_visible(cx, false);
     }
-    /// Sets the search criteria for the SearchResult widget.
+    /// Sets the search criteria for the SearchResultSummary widget.
     ///
     /// This function is used to display the search criteria in the top-right of the room screen.
     /// It is typically used when a new search is initiated.
@@ -611,43 +829,43 @@ impl SearchResult {
         self.view.view(id!(top_space)).set_visible(cx, false);
     }
 }
-impl SearchResultRef {
-    /// See [`SearchResult::set_result_count()`].
+impl SearchResultSummaryRef {
+    /// See [`SearchResultSummary::set_result_count()`].
     pub fn set_result_count(&mut self, cx: &mut Cx, search_result_count: u32) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
         inner.set_result_count(cx, search_result_count);
     }
-    /// See [`SearchResult::set_search_criteria()`].
+    /// See [`SearchResultSummary::set_search_criteria()`].
     pub fn set_search_criteria(&self, cx: &mut Cx, scope: &mut Scope, search_criteria: Criteria) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
         inner.set_search_criteria(cx, scope, search_criteria);
     }
-    /// See [`SearchResult::reset()`].
+    /// See [`SearchResultSummary::reset()`].
     pub fn reset(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
         inner.reset(cx);
     }
-    /// See [`SearchResult::display_top_space()`].
+    /// See [`SearchResultSummary::display_top_space()`].
     pub fn display_top_space(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
         inner.display_top_space(cx);
     }
-    /// See [`SearchResult::hide_top_space()`].
+    /// See [`SearchResultSummary::hide_top_space()`].
     pub fn hide_top_space(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
         inner.hide_top_space(cx);
     }
-    /// See [`SearchResult::get_search_criteria()`].
+    /// See [`SearchResultSummary::get_search_criteria()`].
     pub fn get_search_criteria(&self) -> Criteria {
         let Some(inner) = self.borrow() else {
             return Criteria::default();
@@ -656,254 +874,6 @@ impl SearchResultRef {
     }
 }
 
-/// Handles events and actions for the SearchResult widget and its inner message view.
-///
-/// This function is used to display the search result summary in the right panel.
-/// It is typically used when a new search is initiated or search results are being cleared.
-///
-pub fn search_result_draw_walk(
-    search_screen: &mut SearchScreen,
-    cx: &mut Cx2d,
-    scope: &mut Scope,
-    walk: Walk,
-) -> DrawStep {
-    while let Some(subview) = search_screen.view.draw_walk(cx, scope, walk).step() {
-        // We only care about drawing the portal list.
-        let portal_list_ref = subview.as_portal_list();
-        let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
-            error!("!!! SearchScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
-            continue;
-        };
-        let tl_items = &search_screen.search_state.items;
-        // Set the portal list's range based on the number of searched items.
-        let last_item_id = tl_items.len();
-        let list = list_ref.deref_mut();
-        list.set_item_range(cx, 0, last_item_id);
-
-        while let Some(item_id) = list.next_visible_item(cx) {
-            if item_id == 0
-                && search_screen.search_state.next_batch_token.is_none()
-                && last_item_id > 0
-            {
-                WidgetRef::new_from_ptr(cx, search_screen.no_more_template)
-                    .as_label()
-                    .draw_all(cx, &mut Scope::empty());
-            }
-            let item = {
-                let tl_idx = item_id;
-                let Some(search_item) = tl_items.get(tl_idx) else {
-                    // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
-                    // but we can always safely fill the item with an empty widget that takes up no space.
-                    list.item(cx, item_id, live_id!(Empty));
-                    continue;
-                };
-                let item_drawn_status = ItemDrawnStatus {
-                    content_drawn: search_screen
-                        .search_state
-                        .content_drawn_since_last_update
-                        .contains(&tl_idx),
-                    profile_drawn: search_screen
-                        .search_state
-                        .profile_drawn_since_last_update
-                        .contains(&tl_idx),
-                };
-                let (item, item_new_draw_status) = {
-                    let current_item = search_item;
-
-                    match &current_item {
-                        SearchResultItem::Event(event) => match &**event {
-                            AnyTimelineEvent::MessageLike(msg) => {
-                                let mut content = msg.original_content();
-                                if let Some(replace) = msg.relations().replace {
-                                    content = replace.original_content();
-                                }
-                                match content {
-                                    Some(AnyMessageLikeEventContent::RoomMessage(message)) => {
-                                        let mut message = message.clone();
-                                        if let Some(Relation::Replacement(replace)) =
-                                            &message.relates_to
-                                        {
-                                            let new_content = &replace.new_content;
-                                            message.msgtype = new_content.msgtype.clone();
-                                        }
-
-                                        if let MessageType::Text(text) = &mut message.msgtype {
-                                            if let Some(ref mut formatted) = text.formatted {
-                                                for highlight in search_screen
-                                                    .search_state
-                                                    .highlighted_strings
-                                                    .iter()
-                                                {
-                                                    formatted.body = formatted.body.replace(
-                                                        highlight,
-                                                        &format!("<code>{}</code>", highlight),
-                                                    );
-                                                }
-                                            } else {
-                                                let mut formatted_string = text.body.clone();
-                                                for highlight in search_screen
-                                                    .search_state
-                                                    .highlighted_strings
-                                                    .iter()
-                                                {
-                                                    formatted_string = formatted_string.replace(
-                                                        highlight,
-                                                        &format!("<code>{}</code>", highlight),
-                                                    );
-                                                }
-                                                text.formatted =
-                                                    Some(FormattedBody::html(formatted_string));
-                                            }
-                                        }
-                                        populate_message_search_view(
-                                            cx,
-                                            list,
-                                            item_id,
-                                            event,
-                                            &message,
-                                            &search_screen.search_state.profile_infos,
-                                            item_drawn_status,
-                                            search_screen.widget_uid()
-                                        )
-                                    }
-                                    _ => {
-                                        list.item(cx, item_id, live_id!(Empty))
-                                            .draw_all(cx, &mut Scope::empty());
-                                        continue;
-                                    }
-                                }
-                            }
-                            _ => {
-                                list.item(cx, item_id, live_id!(Empty))
-                                    .draw_all(cx, &mut Scope::empty());
-                                continue;
-                            }
-                        },
-
-                        SearchResultItem::RoomHeader(room_id) => {
-                            let rooms_list_ref = cx.get_global::<RoomsListRef>();
-                            let room_name = rooms_list_ref
-                                .get_room_name(room_id)
-                                .unwrap_or(room_id.to_string());
-                            let item = list.item(cx, item_id, live_id!(RoomHeader));
-                            item.set_text(cx, &format!("Room {}", room_name));
-                            (item, ItemDrawnStatus::both_drawn())
-                        }
-                    }
-                };
-                if item_new_draw_status.content_drawn {
-                    search_screen
-                        .search_state
-                        .content_drawn_since_last_update
-                        .insert(tl_idx..tl_idx + 1);
-                }
-                if item_new_draw_status.profile_drawn {
-                    search_screen
-                        .search_state
-                        .profile_drawn_since_last_update
-                        .insert(tl_idx..tl_idx + 1);
-                }
-                item
-            };
-            item.draw_all(cx, &mut Scope::empty());
-        }
-    }
-    DrawStep::done()
-}
-
-/// Handles any search input related actions received by this SearchScreen.
-///
-/// See `MessageSearchAction` for the possible actions.
-pub fn handle_search_input(
-    search_screen: &mut SearchScreen,
-    cx: &mut Cx,
-    action: &Action,
-    scope: &mut Scope,
-) {
-    let widget_action = action.as_widget_action();
-    match widget_action.cast() {
-        MessageSearchAction::Changed(search_term) => {
-            if search_term.is_empty() {
-                search_screen
-                    .search_result(id!(search_result_plane))
-                    .reset(cx);
-                search_screen.search_state = SearchState::default();
-                // Abort previous inflight search request.
-                submit_async_request(MatrixRequest::SearchMessages {
-                    room_id: None,
-                    include_all_rooms: false,
-                    search_term: String::default(),
-                    next_batch: None,
-                    abort_previous_search: true,
-                });
-                return;
-            }
-            if let Some(selected_room) = {
-                let app_state = scope.data.get::<AppState>().unwrap();
-                app_state.selected_room.clone()
-            } {
-                let mut criteria = search_screen
-                    .search_result(id!(search_result_plane))
-                    .get_search_criteria();
-                criteria.search_term = search_term;
-                criteria.include_all_rooms = false;
-                search_screen
-                    .search_result(id!(search_result_plane))
-                    .set_search_criteria(cx, scope, criteria.clone());
-                let room_id = selected_room.room_id();
-                let rooms_list_ref = cx.get_global::<RoomsListRef>();
-                let is_encrypted = rooms_list_ref.is_room_encrypted(room_id);
-                if is_encrypted && !criteria.include_all_rooms {
-                    enqueue_popup_notification(PopupItem {
-                        message: String::from("Searching for encrypted messages is not supported yet. You may want to try searching all rooms instead."),
-                        auto_dismissal_duration: None,
-                        kind: PopupKind::Info
-                    });
-                    return;
-                }
-                search_screen
-                    .search_result(id!(search_result_plane))
-                    .display_top_space(cx);
-                // Disable the search all rooms button during search
-                search_screen
-                    .view
-                    .button(id!(search_all_rooms_button))
-                    .set_enabled(cx, false);
-                submit_async_request(MatrixRequest::SearchMessages {
-                    room_id: Some(room_id.to_owned()),
-                    include_all_rooms: criteria.include_all_rooms,
-                    search_term: criteria.search_term.clone(),
-                    next_batch: None,
-                    abort_previous_search: true,
-                });
-            }
-        }
-        MessageSearchAction::Click(search_term) => {
-            let mut criteria = search_screen
-                .search_result(id!(search_result_plane))
-                .get_search_criteria();
-            criteria.search_term = search_term.clone();
-            search_screen
-                .search_result(id!(search_result_plane))
-                .set_search_criteria(cx, scope, criteria);
-        }
-        MessageSearchAction::Clear => {
-            search_screen
-                .search_result(id!(search_result_plane))
-                .reset(cx);
-            search_screen
-                .search_result(id!(search_result_plane))
-                .set_visible(cx, false);
-            // Re-enable the search all rooms button when search is cleared
-            search_screen
-                .view
-                .button(id!(search_all_rooms_button))
-                .set_enabled(cx, true);
-            search_screen.search_state = SearchState::default();
-        }
-        _ => {}
-    }
-}
 
 /// Search result as timeline item
 #[derive(Clone, Debug)]
@@ -1002,8 +972,10 @@ pub fn populate_message_search_view(
     (item, new_drawn_status)
 }
 
+/// Truncates a string to 50 characters and appends ".." if longer.
+/// Used for displaying search terms in the UI summary.
 fn truncate_to_50(s: &str) -> String {
-    let n = 10;
+    let n = 50;
     if s.chars().count() > n {
         let mut string: String = s.chars().take(n).collect();
         string.push_str("..");

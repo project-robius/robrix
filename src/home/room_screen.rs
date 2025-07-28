@@ -1017,7 +1017,7 @@ impl Widget for RoomScreen {
                                 num_items_searched += 1;
                                 item.as_event()
                                     .and_then(|e| e.event_id())
-                                    .is_some_and(|ev_id| ev_id == &event_id)
+                                    .is_some_and(|ev_id| ev_id == event_id)
                             });
 
                         if let Some(index) = target_msg_tl_index {
@@ -4439,6 +4439,17 @@ impl Widget for Message {
                         }
                     );
                 }
+                // Event Hits is not captured when Message is in a stack navigation. Hence, cannot implement jump when clicking the message.
+                // if let (Some(widget_uid), Some((room_id, event_id))) = (self.room_screen_widget_uid, &self.jump_option) {
+                //     cx.widget_action(
+                //         widget_uid,
+                //         &scope.path,
+                //         MessageAction::ScrollToMessage {
+                //             room_id: room_id.clone(),
+                //             event_id: event_id.clone(),
+                //         }
+                //     );
+                // }
             }
             Hit::FingerLongPress(lp) => {
                 cx.widget_action(
@@ -4500,6 +4511,18 @@ impl Message {
         self.jump_option = jump_option;
         self.view.view(id!(jump_button_view))
             .set_visible(cx, is_visible);
+        
+        // Event Hit is not captured when Message is in a stack navigation. Hence, cannot implement jump when clicking the message.
+        // Add a pointer to hand cursor when jump option is available.
+        // if is_visible {
+        //     self.view.apply_over(cx, live! {
+        //         cursor: Hand
+        //     });
+        // } else {
+        //     self.view.apply_over(cx, live! {
+        //         cursor: Default
+        //     });
+        // }
     }
 
     fn set_room_screen_widget_uid(&mut self, room_screen_widget_uid: Option<WidgetUid>) {

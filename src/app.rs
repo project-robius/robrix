@@ -250,10 +250,12 @@ impl MatchEvent for App {
             match action.as_widget_action().cast() {
                 AppStateAction::RoomFocused(selected_room) => {
                     self.app_state.selected_room = Some(selected_room.clone());
+                    self.ui.view(id!(message_search_input_view)).set_visible(cx, true);
                     continue;
                 }
                 AppStateAction::FocusNone => {
                     self.app_state.selected_room = None;
+                    self.ui.view(id!(message_search_input_view)).set_visible(cx, false);
                     continue;
                 }
                 AppStateAction::UpgradedInviteToJoinedRoom(room_id) => {
@@ -350,15 +352,6 @@ impl MatchEvent for App {
                     &Scope::default().path,
                     StackNavigationAction::Push(live_id!(search_result_view))
                 );
-            }
-            
-            // Monitor for DockSave action which will be triggered by selection of the room for setting the visibility of the message search input.
-            if let Some(MainDesktopUiAction::SaveDockIntoAppState) = action.downcast_ref() {
-                if self.app_state.selected_room.is_some() {
-                    self.ui.view(id!(message_search_input_view)).set_visible(cx, true);
-                } else {
-                    self.ui.view(id!(message_search_input_view)).set_visible(cx, false);
-                }
             }
         }
     }
