@@ -13,6 +13,7 @@ live_design! {
     pub ICON_EDIT            = dep("crate://self/resources/icons/edit.svg")
     pub ICON_EXTERNAL_LINK   = dep("crate://self/resources/icons/external_link.svg")
     pub ICON_HTML_FILE       = dep("crate://self/resources/icons/html_file.svg")
+    pub ICON_INFO            = dep("crate://self/resources/icons/info.svg")
     pub ICON_JUMP            = dep("crate://self/resources/icons/go_back.svg")
     pub ICON_LOGOUT          = dep("crate://self/resources/icons/logout.svg")
     pub ICON_LINK            = dep("crate://self/resources/icons/link.svg")
@@ -22,6 +23,7 @@ live_design! {
     pub ICON_TRASH           = dep("crate://self/resources/icons/trash.svg")
     pub ICON_UPLOAD          = dep("crate://self/resources/icons/upload.svg")
     pub ICON_VIEW_SOURCE     = dep("crate://self/resources/icons/view_source.svg")
+    pub ICON_WARNING         = dep("crate://self/resources/icons/warning.svg")
 
     pub TITLE_TEXT = <THEME_FONT_REGULAR>{
         font_size: (13),
@@ -105,6 +107,8 @@ live_design! {
     pub COLOR_TEXT = #1C274C
     pub COLOR_TEXT_INPUT_IDLE = #d8d8d8
 
+    pub COLOR_TRANSPARENT = #00000000
+    pub COLOR_WARNING = #fcdb03
     // An icon that can be rotated at a custom angle.
     pub IconRotated = <Icon> {
         draw_icon: {
@@ -239,3 +243,6 @@ pub const COLOR_FG_DANGER_RED:       Vec4 = vec4(0.863, 0.0, 0.02, 1.0); // #DC0
 pub const COLOR_BG_DANGER_RED:       Vec4 = vec4(1.0, 0.941, 0.941, 1.0); // #FFF0F0
 pub const COLOR_ROBRIX_PURPLE:       Vec4 = vec4(0.341, 0.176, 0.8, 1.0); // #572DCC
 pub const COLOR_UNKNOWN_ROOM_AVATAR: Vec4 = vec4(1.0, 0.431, 0.0, 1.0); // #FF6e00
+pub const COLOR_WARNING_YELLOW:      Vec4 = vec4(0.988, 0.859, 0.01, 1.0); // #fcdb03
+pub const COLOR_INFO_BLUE:           Vec4 = vec4(0.05, 0.53, 0.996, 1.0);  // #0f88fe
+pub const COLOR_WHITE:               Vec4 = vec4(1.0, 1.0, 1.0, 1.0);  // #FFFFFF

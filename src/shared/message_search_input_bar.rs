@@ -7,7 +7,7 @@
 
 use makepad_widgets::*;
 
-use crate::shared::popup_list::PopupItem;
+use crate::shared::popup_list::{PopupItem, PopupKind};
 
 use super::popup_list::enqueue_popup_notification;
 live_design! {
@@ -137,6 +137,7 @@ impl WidgetMatchEvent for MessageSearchInputBar {
                 enqueue_popup_notification(PopupItem {
                     message: "Search is limited to 50 characters".to_string(),
                     auto_dismissal_duration: None,
+                    kind: PopupKind::Warning,
                 });
                 input.set_text(cx, "");
                 return;

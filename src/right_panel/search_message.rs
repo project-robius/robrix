@@ -23,7 +23,7 @@ use crate::{
         avatar::AvatarWidgetRefExt,
         html_or_plaintext::HtmlOrPlaintextWidgetRefExt,
         message_search_input_bar::MessageSearchAction,
-        popup_list::{enqueue_popup_notification, PopupItem},
+        popup_list::{enqueue_popup_notification, PopupItem, PopupKind},
         timestamp::TimestampWidgetRefExt,
     },
     sliding_sync::{submit_async_request, MatrixRequest},
@@ -856,7 +856,8 @@ pub fn handle_search_input(
                 if is_encrypted && !criteria.include_all_rooms {
                     enqueue_popup_notification(PopupItem {
                         message: String::from("Searching for encrypted messages is not supported yet. You may want to try searching all rooms instead."),
-                        auto_dismissal_duration: None
+                        auto_dismissal_duration: None,
+                        kind: PopupKind::Info
                     });
                     return;
                 }

@@ -23,7 +23,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem}, styles::COLOR_FG_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::COLOR_FG_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -1089,6 +1089,7 @@ impl Widget for RoomScreen {
                     error!("Failed to initialize location subscriber");
                     enqueue_popup_notification(PopupItem {
                         message: String::from("Failed to initialize location services."),
+                        kind: PopupKind::Error,
                         auto_dismissal_duration: None
                     });
                 }
@@ -1171,7 +1172,7 @@ impl Widget for RoomScreen {
                         let room_id = tl.room_id.clone();
                         self.show_editing_pane(cx, latest_sent_msg, room_id);
                     } else {
-                        enqueue_popup_notification(PopupItem { message: "No recent message available to edit.".to_string(), auto_dismissal_duration: Some(3.0) });
+                        enqueue_popup_notification(PopupItem { message: "No recent message available to edit.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: Some(3.0) });
                     }
                 }
             }
@@ -1726,6 +1727,7 @@ impl RoomScreen {
                     error!("Pagination error ({direction}) in room {}: {error:?}", tl.room_id);
                     enqueue_popup_notification(PopupItem {
                         message: format!("Error loading earlier messages in \"{}\": {error}", self.room_name),
+                        kind: PopupKind::Error,
                         auto_dismissal_duration: None,
                     });
                     done_loading = true;
@@ -1890,6 +1892,7 @@ impl RoomScreen {
                     if self.room_id.as_ref() == Some(room_id) {
                         enqueue_popup_notification(PopupItem {
                             message: "You are already viewing that room.".into(),
+                            kind: PopupKind::Error,
                             auto_dismissal_duration: None
                         });
                         return true;
@@ -1935,6 +1938,7 @@ impl RoomScreen {
                     error!("Failed to open URL {:?}. Error: {:?}", url, e);
                     enqueue_popup_notification(PopupItem {
                         message: format!("Could not open URL: {url}"),
+                        kind: PopupKind::Error,
                         auto_dismissal_duration: None
                     });
                 }
@@ -1949,6 +1953,7 @@ impl RoomScreen {
                     error!("Failed to open URL {:?}. Error: {:?}", url, e);
                     enqueue_popup_notification(PopupItem {
                         message: format!("Could not open URL: {url}"),
+                        kind: PopupKind::Error,
                         auto_dismissal_duration: None
                     });
                 }
@@ -1990,6 +1995,7 @@ impl RoomScreen {
                     if !success {
                         enqueue_popup_notification(PopupItem {
                             message: "Couldn't find message in timeline to react to.".to_string(),
+                            kind: PopupKind::Error,
                             auto_dismissal_duration: None
                         });
                         error!("MessageAction::React: couldn't find event [{}] {:?} to react to in room {}",
@@ -2011,7 +2017,7 @@ impl RoomScreen {
                         self.show_replying_to(cx, (event_tl_item, replied_to_info));
                     }
                     if !success {
-                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to reply to.".to_string(), auto_dismissal_duration: None });
+                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to reply to.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
                         error!("MessageAction::Reply: couldn't find event [{}] {:?} to reply to in room {:?}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -2028,7 +2034,7 @@ impl RoomScreen {
                         self.show_editing_pane(cx, event_tl_item, tl.room_id.clone());
                     }
                     else {
-                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to edit.".to_string(), auto_dismissal_duration: None });
+                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to edit.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
                         error!("MessageAction::Edit: couldn't find event [{}] {:?} to edit in room {:?}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -2038,11 +2044,11 @@ impl RoomScreen {
                 }
                 MessageAction::Pin(_details) => {
                     // TODO
-                    enqueue_popup_notification(PopupItem { message: "Pinning messages is not yet implemented.".to_string(), auto_dismissal_duration: None });
+                    enqueue_popup_notification(PopupItem { message: "Pinning messages is not yet implemented.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
                 }
                 MessageAction::Unpin(_details) => {
                     // TODO
-                    enqueue_popup_notification(PopupItem { message: "Unpinning messages is not yet implemented.".to_string(), auto_dismissal_duration: None });
+                    enqueue_popup_notification(PopupItem { message: "Unpinning messages is not yet implemented.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
                 }
                 MessageAction::CopyText(details) => {
                     let Some(tl) = self.tl_state.as_mut() else { return };
@@ -2053,7 +2059,7 @@ impl RoomScreen {
                         cx.copy_to_clipboard(&text);
                     }
                     else {
-                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to copy text from.".to_string(), auto_dismissal_duration: None});
+                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to copy text from.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None});
                         error!("MessageAction::CopyText: couldn't find event [{}] {:?} to copy text from in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -2090,7 +2096,7 @@ impl RoomScreen {
                         }
                     }
                     if !success {
-                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to copy HTML from.".to_string(), auto_dismissal_duration: None });
+                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to copy HTML from.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
                         error!("MessageAction::CopyHtml: couldn't find event [{}] {:?} to copy HTML from in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -2104,7 +2110,7 @@ impl RoomScreen {
                         let matrix_to_uri = tl.room_id.matrix_to_event_uri(event_id);
                         cx.copy_to_clipboard(&matrix_to_uri.to_string());
                     } else {
-                        enqueue_popup_notification(PopupItem { message: "Couldn't create permalink to message.".to_string(), auto_dismissal_duration: None });
+                        enqueue_popup_notification(PopupItem { message: "Couldn't create permalink to message.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
                         error!("MessageAction::CopyLink: no `event_id`: [{}] {:?} in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -2113,7 +2119,7 @@ impl RoomScreen {
                     }
                 }
                 MessageAction::ViewSource(_details) => {
-                    enqueue_popup_notification(PopupItem { message: "Viewing an event's source is not yet implemented.".to_string(), auto_dismissal_duration: None });
+                    enqueue_popup_notification(PopupItem { message: "Viewing an event's source is not yet implemented.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
                     // TODO: re-use Franco's implementation below:
 
                     // let Some(tl) = self.tl_state.as_mut() else { continue };
@@ -2235,7 +2241,7 @@ impl RoomScreen {
                         }
                     }
                     if !success {
-                        enqueue_popup_notification(PopupItem { message: "Couldn't find message in timeline to delete.".to_string(), auto_dismissal_duration: None });
+                        enqueue_popup_notification(PopupItem { message: "Couldn't find message in timeline to delete.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
                         error!("MessageAction::Redact: couldn't find event [{}] {:?} to react to in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
