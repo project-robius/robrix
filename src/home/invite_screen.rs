@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
+use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -337,7 +337,7 @@ impl Widget for InviteScreen {
                     Some(JoinRoomAction::Joined { room_id }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingForJoinedRoom;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification(PopupItem{ message: "Successfully joined room.".into(), auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem{ message: "Successfully joined room.".into(), kind: PopupKind::Success, auto_dismissal_duration: None });
                         }
                         continue;
                     }
@@ -345,7 +345,7 @@ impl Widget for InviteScreen {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
                             let msg = utils::stringify_join_leave_error(error, info.room_name.as_deref(), true, true);
-                            enqueue_popup_notification(PopupItem { message: msg, auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem { message: msg, kind: PopupKind::Error, auto_dismissal_duration: None });
                         }
                         continue;
                     }
@@ -356,14 +356,14 @@ impl Widget for InviteScreen {
                     Some(LeaveRoomAction::Left { room_id }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::RoomLeft;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification(PopupItem { message: "Successfully rejected invite.".into(), auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem { message: "Successfully rejected invite.".into(), kind: PopupKind::Success, auto_dismissal_duration: None });
                         }
                         continue;
                     }
                     Some(LeaveRoomAction::Failed { room_id, error }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification(PopupItem { message: format!("Failed to reject invite: {error}"), auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem { message: format!("Failed to reject invite: {error}"), kind: PopupKind::Error, auto_dismissal_duration: None });
                         }
                         continue;
                     }
