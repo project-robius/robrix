@@ -36,6 +36,12 @@ use crate::{
     }, right_panel::search_message::{SearchResultAction, SearchResultItem, SearchResultReceived}, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
+/// Maximum length for search terms to prevent overly long queries
+const MAX_SEARCH_TERM_LENGTH: usize = 500;
+
+/// Minimum length for search terms to ensure meaningful searches
+const MIN_SEARCH_TERM_LENGTH: usize = 2;
+
 #[derive(Parser, Debug, Default)]
 struct Cli {
     /// The user ID to login with.
@@ -1159,6 +1165,28 @@ async fn async_worker(
                 if search_term.is_empty() {
                     continue;
                 }
+                
+                // Validate search term length
+                if search_term.len() < MIN_SEARCH_TERM_LENGTH {
+                    log!("Search term too short: '{}' (minimum {} characters)", search_term, MIN_SEARCH_TERM_LENGTH);
+                    enqueue_popup_notification(PopupItem {
+                        message: format!("Search term must be at least {} characters long", MIN_SEARCH_TERM_LENGTH),
+                        auto_dismissal_duration: Some(3.0),
+                        kind: PopupKind::Info,
+                    });
+                    continue;
+                }
+                
+                if search_term.len() > MAX_SEARCH_TERM_LENGTH {
+                    log!("Search term too long: '{}' (maximum {} characters)", search_term, MAX_SEARCH_TERM_LENGTH);
+                    enqueue_popup_notification(PopupItem {
+                        message: format!("Search term cannot exceed {} characters", MAX_SEARCH_TERM_LENGTH),
+                        auto_dismissal_duration: Some(3.0),
+                        kind: PopupKind::Warning,
+                    });
+                    continue;
+                }
+                
                 let client = CLIENT.get().unwrap();
                 let mut search_categories = matrix_sdk::ruma::api::client::search::search_events::v3::Categories::new();
                 let mut room_filter = matrix_sdk::ruma::api::client::filter::RoomEventFilter::empty();
@@ -1222,7 +1250,7 @@ async fn async_worker(
                                 items,
                                 count,
                                 highlights,
-                                search_term: search_term.clone(),
+                                search_term: search_term,
                                 profile_infos,
                                 next_batch,
                             }));
