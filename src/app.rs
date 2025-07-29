@@ -269,7 +269,7 @@ impl MatchEvent for App {
                 cx.widget_action(
                     self.ui.widget_uid(),
                     &Scope::default().path,
-                    StackNavigationAction::NavigateTo(live_id!(main_content_view))
+                    StackNavigationAction::Push(live_id!(main_content_view))
                 );
                 self.ui.redraw(cx);
                 continue;
