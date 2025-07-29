@@ -1209,8 +1209,9 @@ async fn async_worker(
                                 response.search_categories.room_events.next_batch.clone();
                             let mut last_room_id = None;
                             let result = response.search_categories;
-                            let mut items = vec![];
+                            let mut items = Vector::new();
                             let mut profile_infos = BTreeMap::new();
+                            let highlights = result.room_events.highlights;
                             for item in result.room_events.results.iter() {
                                 let Some(event) =
                                     item.result.as_ref().and_then(|f| f.deserialize().ok())
@@ -1227,16 +1228,35 @@ async fn async_worker(
                                     });
                                 }
                                 let room_id = event.room_id().to_owned();
-                                items.push(SearchResultItem::Event(Box::new(event)));
+                                let mut message_option = None;
+                                if let matrix_sdk::ruma::events::AnyTimelineEvent::MessageLike(msg) = &event {
+                                    let mut content = msg.original_content();
+                                    if let Some(replace) = msg.relations().replace {
+                                        content = replace.original_content();
+                                    }
+                                    if let Some(matrix_sdk::ruma::events::AnyMessageLikeEventContent::RoomMessage(mut message)) = content {
+                                        // We clone the message here so we can inject HTML `<code>` tags
+                                        // for highlighting without modifying the original data in the timeline.
+                                        
+                                        if let Some(matrix_sdk::ruma::events::room::message::Relation::Replacement(replace)) = &message.relates_to {
+                                            let new_content = &replace.new_content;
+                                            message.msgtype = new_content.msgtype.clone();
+                                        }
+                                        crate::right_panel::search_message::format_message_content(&mut message, &highlights);
+                                        message_option = Some(message);
+                                    }
+                                }
+                                items.push_back(SearchResultItem::Event{ event:
+                                    Box::new(event), formatted_content: message_option});
                                 if include_all_rooms {
                                     if let Some(ref mut last_room_id) = last_room_id {
                                         if last_room_id != &room_id {
                                             *last_room_id = room_id.clone();
-                                            items.push(SearchResultItem::RoomHeader(room_id));
+                                            items.push_back(SearchResultItem::RoomHeader(room_id));
                                         }
                                     } else {
                                         last_room_id = Some(room_id.clone());
-                                        items.push(SearchResultItem::RoomHeader(room_id));
+                                        items.push_back(SearchResultItem::RoomHeader(room_id));
                                     }
                                 }
                             }
@@ -1245,11 +1265,10 @@ async fn async_worker(
                                 .count
                                 .and_then(|f| f.to_string().parse().ok())
                                 .unwrap_or(0);
-                            let highlights = result.room_events.highlights;
+                            
                             Cx::post_action(SearchResultAction::Received(SearchResultReceived {
                                 items,
                                 count,
-                                highlights,
                                 search_term: search_term,
                                 profile_infos,
                                 next_batch,

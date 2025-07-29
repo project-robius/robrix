@@ -4343,7 +4343,7 @@ pub struct Message {
 
     #[rust] details: Option<MessageDetails>,
     #[rust] jump_option: Option<(OwnedRoomId, OwnedEventId)>,
-    #[rust] pub room_screen_widget_uid: Option<WidgetUid>,
+    #[rust] room_screen_widget_uid: Option<WidgetUid>,
 }
 
 impl Widget for Message {

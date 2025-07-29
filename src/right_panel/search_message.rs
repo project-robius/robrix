@@ -1,13 +1,13 @@
-use std::{collections::BTreeMap, ops::DerefMut};
+use std::{borrow::Cow, collections::BTreeMap, ops::DerefMut};
 
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{
     events::{
         room::message::{
-            FormattedBody, MessageType, Relation, RoomMessageEventContent, TextMessageEventContent,
+            FormattedBody, MessageType, RoomMessageEventContent, TextMessageEventContent,
         },
-        AnyMessageLikeEventContent, AnyTimelineEvent,
+        AnyTimelineEvent,
     }, OwnedRoomId, OwnedUserId
 };
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
@@ -275,51 +275,77 @@ live_design! {
     }
 }
 
-//Yellow
+/// Yellow color.
 const SEARCH_HIGHLIGHT: Vec3 = Vec3 {
     x: 1.0,
     y: 0.87,
     z: 0.127,
 };
 
+/// Precompute formatted message content with highlights to avoid repeated string operations during rendering.
+pub fn format_message_content(
+    message: &mut RoomMessageEventContent,
+    highlights: &[String],
+) {
+    if let MessageType::Text(text) = &mut message.msgtype {
+        let formatted = if let Some(ref mut formatted) = text.formatted {
+            let mut body = formatted.body.clone();
+            for highlight in highlights {
+                body = body.replace(
+                    highlight,
+                    &format!("<code>{}</code>", highlight),
+                );
+            }
+            body
+        } else {
+            let mut formatted_string = text.body.clone();
+            for highlight in highlights {
+                formatted_string = formatted_string.replace(
+                    highlight,
+                    &format!("<code>{}</code>", highlight),
+                );
+            }
+            formatted_string
+        };
+        text.formatted = Some(FormattedBody::html(formatted));
+    }
+}
+
 /// States that are necessary to display search results.
 /// Contains all the data needed to render the search UI and manage pagination.
 #[derive(Default)]
-pub struct SearchState {
+struct SearchState {
     /// The list of events in the search results.
-    pub items: Vector<SearchResultItem>,
-    /// The list of strings that should be highlighted in the search results.
-    pub highlighted_strings: Vec<String>,
+    items: Vector<SearchResultItem>,
     /// See [`TimelineUiState.content_drawn_since_last_update`].
-    pub content_drawn_since_last_update: RangeSet<usize>,
+    content_drawn_since_last_update: RangeSet<usize>,
     /// Same as `content_drawn_since_last_update`, but for the event **profiles** (avatar, username).
-    pub profile_drawn_since_last_update: RangeSet<usize>,
+    profile_drawn_since_last_update: RangeSet<usize>,
     /// All profile infos for the search results.
-    pub profile_infos: BTreeMap<OwnedUserId, TimelineDetails<Profile>>,
-    pub fully_paginated: bool,
+    profile_infos: BTreeMap<OwnedUserId, TimelineDetails<Profile>>,
     /// The index of the timeline item that was most recently scrolled up past it.
-    pub last_scrolled_index: usize,
+    last_scrolled_index: usize,
     /// Token to be used for pagination of earlier search results.
-    pub next_batch_token: Option<String>,
+    next_batch_token: Option<String>,
     /// The search term for the last search request.
-    pub prev_search_term: Option<String>,
+    prev_search_term: Option<String>,
 }
 
 /// The main widget that displays a list of search results.
 #[derive(Live, LiveHook, Widget)]
-pub struct SearchResults {
+struct SearchResults {
     #[deref]
-    pub view: View,
+    view: View,
     #[layout]
     layout: Layout,
     #[walk]
     walk: Walk,
     #[rust]
-    pub search_state: SearchState,
+    search_state: SearchState,
     #[live]
-    pub no_more_template: Option<LivePtr>,
+    no_more_template: Option<LivePtr>,
     #[rust]
-    pub room_id: Option<OwnedRoomId>,
+    room_id: Option<OwnedRoomId>,
 }
 
 impl Widget for SearchResults {
@@ -375,74 +401,15 @@ impl Widget for SearchResults {
                             .contains(&tl_idx),
                     };
                     
-                    let (item, item_new_draw_status) = match search_item {
-                        SearchResultItem::Event(event) => {
-                            if let AnyTimelineEvent::MessageLike(msg) = &**event {
-                                let mut content = msg.original_content();
-                                if let Some(replace) = msg.relations().replace {
-                                    content = replace.original_content();
-                                }
-                                if let Some(AnyMessageLikeEventContent::RoomMessage(message)) = content {
-                                    // We clone the message here so we can inject HTML `<code>` tags
-                                    // for highlighting without modifying the original data in the timeline.
-                                    let mut message = message.clone();
-                                    if let Some(Relation::Replacement(replace)) = &message.relates_to {
-                                        let new_content = &replace.new_content;
-                                        message.msgtype = new_content.msgtype.clone();
-                                    }
-
-                                    if let MessageType::Text(text) = &mut message.msgtype {
-                                        if let Some(ref mut formatted) = text.formatted {
-                                            for highlight in &self.search_state.highlighted_strings {
-                                                formatted.body = formatted.body.replace(
-                                                    highlight,
-                                                    &format!("<code>{}</code>", highlight),
-                                                );
-                                            }
-                                        } else {
-                                            let mut formatted_string = text.body.clone();
-                                            for highlight in &self.search_state.highlighted_strings {
-                                                formatted_string = formatted_string.replace(
-                                                    highlight,
-                                                    &format!("<code>{}</code>", highlight),
-                                                );
-                                            }
-                                            text.formatted = Some(FormattedBody::html(formatted_string));
-                                        }
-                                    }
-                                    populate_message_search_view(
-                                        cx,
-                                        list,
-                                        item_id,
-                                        event,
-                                        &message,
-                                        &self.search_state.profile_infos,
-                                        item_drawn_status,
-                                        self.widget_uid()
-                                    )
-                                } else {
-                                    // Not a room message, draw empty
-                                    list.item(cx, item_id, live_id!(Empty))
-                                        .draw_all(cx, &mut Scope::empty());
-                                    continue;
-                                }
-                            } else {
-                                // Not a message-like event, draw empty
-                                list.item(cx, item_id, live_id!(Empty))
-                                    .draw_all(cx, &mut Scope::empty());
-                                continue;
-                            }
-                        },
-                        SearchResultItem::RoomHeader(room_id) => {
-                            let rooms_list_ref = cx.get_global::<RoomsListRef>();
-                            let room_name = rooms_list_ref
-                                .get_room_name(room_id)
-                                .unwrap_or(room_id.to_string());
-                            let item = list.item(cx, item_id, live_id!(RoomHeader));
-                            item.set_text(cx, &format!("Room {}", room_name));
-                            (item, ItemDrawnStatus::both_drawn())
-                        }
-                    };
+                    let (item, item_new_draw_status) = populate_message_search_view(
+                        cx,
+                        list,
+                        item_id,
+                        search_item,
+                        &self.search_state.profile_infos,
+                        item_drawn_status,
+                        self.widget_uid()
+                    );
                     
                     if item_new_draw_status.content_drawn {
                         self.search_state
@@ -473,7 +440,6 @@ impl SearchResults {
         portal_list: &PortalListRef,
         _scope: &mut Scope,
     ) {
-        if self.search_state.fully_paginated { return };
         if !portal_list.scrolled(actions) { return };
 
         let first_index = portal_list.first_id();
@@ -507,13 +473,14 @@ impl SearchResults {
 
 impl SearchResults {
     /// Processes a new batch of search results and updates the UI and state.
+    /// Optimized to take ownership of results to avoid clones.
     fn process_search_results(
         &mut self,
         cx: &mut Cx,
         scope: &mut Scope,
-        results: &SearchResultReceived,
+        results: SearchResultReceived,
     ) {
-        let mut criteria = self
+        let criteria = self
             .view
             .search_result_summary(id!(search_result_plane))
             .get_search_criteria();
@@ -533,15 +500,14 @@ impl SearchResults {
             .button(id!(search_all_rooms_button))
             .set_enabled(cx, true);
 
-        self.search_state.profile_infos = results.profile_infos.clone();
+        // Take ownership of profile infos instead of cloning
+        self.search_state.profile_infos = results.profile_infos;
 
         // Update the search bar and summary widget
         cx.action(MessageSearchAction::SetText(results.search_term.clone()));
-        criteria.search_term = results.search_term.clone();
         self.view
             .search_result_summary(id!(search_result_plane))
             .set_search_criteria(cx, scope, criteria);
-        // Result count may include contextual message which we are not displaying here.
         self.view
             .search_result_summary(id!(search_result_plane))
             .set_result_count(cx, results.count);
@@ -552,10 +518,8 @@ impl SearchResults {
         self.search_state.content_drawn_since_last_update.clear();
         self.search_state.profile_drawn_since_last_update.clear();
 
-        // Prepend new items (since pagination goes backwards)
-        for item in results.items.iter().rev() {
-            self.search_state.items.push_front(item.clone());
-        }
+        // Append new items efficiently using Vector::append
+        self.search_state.items.append(results.items);
 
         let search_portal_list = self.portal_list(id!(searched_messages.list));
         if let Some(mut search_portal_list) = search_portal_list.borrow_mut() {
@@ -566,9 +530,8 @@ impl SearchResults {
             .set_first_id_and_scroll(self.search_state.items.len().saturating_sub(1), 0.0);
         search_portal_list.set_tail_range(true);
 
-        self.search_state.highlighted_strings = results.highlights.to_vec();
-        self.search_state.next_batch_token = results.next_batch.clone();
-        self.search_state.prev_search_term = Some(results.search_term.clone());
+        self.search_state.next_batch_token = results.next_batch;
+        self.search_state.prev_search_term = Some(results.search_term);
 
         self.redraw(cx);
     }
@@ -582,7 +545,6 @@ impl SearchResults {
     ) {
         match action.as_widget_action().cast() {
             MessageSearchAction::Changed(search_term) => {
-                println!("search_term: {}", search_term);
                 if search_term.is_empty() {
                     self.search_result_summary(id!(search_result_plane))
                         .reset(cx);
@@ -662,8 +624,8 @@ impl WidgetMatchEvent for SearchResults {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         for action in actions.iter() {
             self.handle_search_bar_action(cx, scope, &action);
-            if let Some(SearchResultAction::Received(results)) = action.downcast_ref() {
-                self.process_search_results(cx, scope, results);
+            if let Some(SearchResultAction::Received(results)) = action.downcast_ref::<SearchResultAction>() {
+                self.process_search_results(cx, scope, results.clone());
             }
             
             if self
@@ -703,13 +665,24 @@ pub enum SearchResultAction {
     None,
 }
 
+impl Default for SearchResultReceived {
+    fn default() -> Self {
+        Self {
+            items: Vector::new(),
+            profile_infos: BTreeMap::new(),
+            count: 0,
+            search_term: String::new(),
+            next_batch: None,
+        }
+    }
+}
+
 /// Data structure containing search results received from the Matrix server.
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct SearchResultReceived {
-    pub items: Vec<SearchResultItem>,
+    pub items: Vector<SearchResultItem>,
     pub profile_infos: BTreeMap<OwnedUserId, TimelineDetails<Profile>>,
     pub count: u32,
-    pub highlights: Vec<String>,
     pub search_term: String,
     pub next_batch: Option<String>,
 }
@@ -758,12 +731,17 @@ impl SearchResultSummary {
     ///
     /// This is used to display the number of search results and the search criteria
     /// in the top-right of the room screen.
+    /// Optimized to avoid unnecessary string operations.
     fn set_result_count(&mut self, cx: &mut Cx, search_result_count: u32) {
+        if self.result_count == search_result_count {
+            return;
+        }
+        
         self.result_count = search_result_count;
         let location_text = if self.search_criteria.include_all_rooms {
-            "in all rooms".to_string()
+            Cow::Borrowed("in all rooms")
         } else {
-            self.room_name.clone().unwrap_or_default()
+            Cow::Owned(format!("in {}", self.room_name.as_deref().unwrap_or_default()))
         };
 
         self.view.markdown(id!(summary_label)).set_text(
@@ -878,8 +856,11 @@ impl SearchResultSummaryRef {
 /// Search result as timeline item
 #[derive(Clone, Debug)]
 pub enum SearchResultItem {
-    /// The event that matches the search criteria.
-    Event(Box<AnyTimelineEvent>),
+    /// The event that matches the search criteria with precomputed formatted content.
+    Event {
+        event: Box<AnyTimelineEvent>,
+        formatted_content: Option<RoomMessageEventContent>,
+    },
     /// The room id used for displaying room header for all searched messages in a screen.
     RoomHeader(OwnedRoomId),
 }
@@ -888,49 +869,67 @@ pub fn populate_message_search_view(
     cx: &mut Cx2d,
     list: &mut PortalList,
     item_id: usize,
-    event_tl_item: &AnyTimelineEvent,
-    message: &RoomMessageEventContent,
+    search_item: &SearchResultItem,
     user_profiles: &BTreeMap<OwnedUserId, TimelineDetails<Profile>>,
     item_drawn_status: ItemDrawnStatus,
     search_widget_uid: WidgetUid,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
-    let ts_millis = event_tl_item.origin_server_ts();
+    
+    let (event, formatted_content) = match search_item {
+        SearchResultItem::Event { event, formatted_content } => (event, formatted_content),
+        SearchResultItem::RoomHeader(room_id) => {
+            // Handle room header case
+            let rooms_list_ref = cx.get_global::<RoomsListRef>();
+            let room_name = rooms_list_ref
+                .get_room_name(room_id)
+                .unwrap_or(room_id.to_string());
+            let item = list.item(cx, item_id, live_id!(RoomHeader));
+            item.set_text(cx, &format!("Room {}", room_name));
+            return (item, ItemDrawnStatus::both_drawn());
+        }
+    };
 
-    // Sometimes we need to call this up-front, so we save the result in this variable
-    // to avoid having to call it twice.
-    let (item, used_cached_item) = match &message.msgtype {
-        MessageType::Text(TextMessageEventContent {
-            body, formatted, ..
-        }) => {
-            let template = live_id!(MessageCard);
-            let (item, existed) = list.item_with_existed(cx, item_id, template);
-            if existed && item_drawn_status.content_drawn {
-                (item, true)
-            } else {
-                let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
-                html_or_plaintext_ref.apply_over(
-                    cx,
-                    live!(
-                        html_view = {
-                            html = {
-                                font_color: (vec3(0.0,0.0,0.0)),
-                                draw_block: {
-                                    code_color: (SEARCH_HIGHLIGHT)
+    let ts_millis = event.origin_server_ts();
+
+    // Use precomputed formatted content
+    let (item, used_cached_item) = if let Some(content) = formatted_content {
+        match &content.msgtype {
+            MessageType::Text(TextMessageEventContent {
+                body, formatted, ..
+            }) => {
+                let template = live_id!(MessageCard);
+                let (item, existed) = list.item_with_existed(cx, item_id, template);
+                if existed && item_drawn_status.content_drawn {
+                    (item, true)
+                } else {
+                    let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
+                    html_or_plaintext_ref.apply_over(
+                        cx,
+                        live!(
+                            html_view = {
+                                html = {
+                                    font_color: (vec3(0.0,0.0,0.0)),
+                                    draw_block: {
+                                        code_color: (SEARCH_HIGHLIGHT)
+                                    }
                                 }
                             }
-                        }
-                    ),
-                );
-                populate_text_message_content(cx, &html_or_plaintext_ref, body, formatted.as_ref());
-                new_drawn_status.content_drawn = true;
+                        ),
+                    );
+                    populate_text_message_content(cx, &html_or_plaintext_ref, body, formatted.as_ref());
+                    new_drawn_status.content_drawn = true;
+                    (item, false)
+                }
+            }
+            _ => {
+                let item = list.item(cx, item_id, live_id!(Empty));
                 (item, false)
             }
         }
-        _ => {
-            let item = list.item(cx, item_id, live_id!(Empty));
-            (item, false)
-        }
+    } else {
+        let item = list.item(cx, item_id, live_id!(Empty));
+        (item, false)
     };
 
     // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
@@ -945,10 +944,10 @@ pub fn populate_message_search_view(
             .avatar(id!(profile.avatar))
             .set_avatar_and_get_username(
                 cx,
-                event_tl_item.room_id(),
-                event_tl_item.sender(),
-                user_profiles.get(event_tl_item.sender()),
-                Some(event_tl_item.event_id()),
+                event.room_id(),
+                event.sender(),
+                user_profiles.get(event.sender()),
+                Some(event.event_id()),
             );
         username_label.set_text(cx, &username);
         new_drawn_status.profile_drawn = profile_drawn;
@@ -967,20 +966,18 @@ pub fn populate_message_search_view(
         item.label(id!(profile.timestamp))
             .set_text(cx, &format!("{}", ts_millis.get()));
     }
-    item.as_message().set_jump_option(cx, Some((event_tl_item.room_id().to_owned(), event_tl_item.event_id().to_owned())));
+    item.as_message().set_jump_option(cx, Some((event.room_id().to_owned(), event.event_id().to_owned())));
     item.as_message().set_room_screen_widget_uid(Some(search_widget_uid));
     (item, new_drawn_status)
 }
 
 /// Truncates a string to 50 characters and appends ".." if longer.
 /// Used for displaying search terms in the UI summary.
-fn truncate_to_50(s: &str) -> String {
-    let n = 50;
-    if s.chars().count() > n {
-        let mut string: String = s.chars().take(n).collect();
-        string.push_str("..");
-        string
+/// Uses Cow for efficient string handling to avoid unnecessary allocations.
+fn truncate_to_50(s: &str) -> Cow<str> {
+    if s.len() <= 50 {
+        Cow::Borrowed(s)
     } else {
-        s.to_string()
+        Cow::Owned(format!("{}..", &s[..48]))
     }
 }
