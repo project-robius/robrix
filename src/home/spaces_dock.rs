@@ -97,7 +97,7 @@ live_design! {
             draw_icon: {
                 svg_file: (ICON_LOGOUT),
                 color: #444444
-                color_hover: (COLOR_DANGER_RED)
+                color_hover: (COLOR_FG_DANGER_RED)
                 fn get_color(self) -> vec4 {
                     return mix(
                         self.color,
