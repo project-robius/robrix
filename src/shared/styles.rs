@@ -166,19 +166,7 @@ live_design! {
             color_empty: (COLOR_PRIMARY)
             color_disabled: (COLOR_BG_DISABLED)
 
-            border_color_1: (COLOR_PRIMARY)
-            border_color_1_hover: (COLOR_PRIMARY)
-            border_color_1_focus: (COLOR_PRIMARY)
-            border_color_1_down: (COLOR_PRIMARY)
-            border_color_1_empty: (COLOR_PRIMARY)
-            border_color_1_disabled: (COLOR_FG_DISABLED)
-
-            border_color_2: (COLOR_PRIMARY)
-            border_color_2_hover: (COLOR_PRIMARY)
-            border_color_2_focus: (COLOR_PRIMARY)
-            border_color_2_down: (COLOR_PRIMARY)
-            border_color_2_empty: (COLOR_PRIMARY)
-            border_color_2_disabled: (COLOR_FG_DISABLED)
+            border_color: (COLOR_PRIMARY)
         }
 
         draw_selection: {
