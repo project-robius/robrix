@@ -349,8 +349,6 @@ pub struct MentionableTextInput {
     #[rust] accumulated_results: Vec<(String, RoomMember)>,
     /// Last search text to avoid duplicate searches
     #[rust] last_search_text: Option<String>,
-    /// Frame counter for debouncing
-    #[rust] search_debounce_frames: u32,
     /// Flag to indicate if we've already retried search after members loaded
     #[rust] has_retried_after_member_load: bool,
 }
@@ -371,11 +369,6 @@ impl Widget for MentionableTextInput {
         if self.is_searching && self.search_receiver.is_some() {
             match event {
                 Event::NextFrame(_) => {
-                    // Decrement debounce counter
-                    // if self.search_debounce_frames > 0 {
-                    //     self.search_debounce_frames -= 1;
-                    // }
-                    
                     self.check_search_channel(cx, scope);
                     cx.new_next_frame();
                 }
@@ -761,7 +754,6 @@ impl MentionableTextInput {
             if is_new_search {
                 // This is a new @ mention, reset everything
                 self.last_search_text = None;
-                // self.search_debounce_frames = 0;
                 self.has_retried_after_member_load = false;
             } else {
                 // User is editing existing mention, don't reset search state
@@ -869,46 +861,47 @@ impl MentionableTextInput {
                     let room_props = scope.props.get::<RoomScreenProps>()
                         .expect("RoomScreenProps should be available in scope");
                     
-                    if matches!(&room_props.room_members, Some(members) if !members.is_empty()) 
-                        && !self.has_retried_after_member_load {
-                        // Members have been loaded, restart the search (only once)
-                        self.members_loading = false;
-                        self.has_retried_after_member_load = true;
-                        
-                        // Get current search text and restart search
-                        if let Some(trigger_pos) = self.current_mention_start_index {
-                            let text_input_ref = self.cmd_text_input.text_input_ref();
-                            let text = text_input_ref.text();
-                            let cursor_pos = text_input_ref.borrow().map_or(0, |p| p.cursor().index);
+                    if let Some(cached_members) = &room_props.room_members {
+                        if !cached_members.is_empty() && !self.has_retried_after_member_load {
+                            // Members have been loaded, restart the search (only once)
+                            self.members_loading = false;
+                            self.has_retried_after_member_load = true;
                             
-                            let search_text = utils::safe_substring_by_byte_indices(
-                                &text,
-                                trigger_pos + 1,
-                                cursor_pos
-                            );
-                            
-                            
-                            // Create a new channel and submit search request directly
-                            let (sender, receiver) = std::sync::mpsc::channel();
-                            self.search_receiver = Some(receiver);
-                            
-                            // Clear accumulated results for new search
-                            self.accumulated_results.clear();
-                            
-                            let is_desktop = cx.display_context.is_desktop();
-                            let max_visible_items = if is_desktop { 10 } else { 5 };
-                            
-                            // Submit the search request with cached members
-                            submit_async_request(MatrixRequest::SearchRoomMembers {
-                                room_id: room_props.room_id.clone(),
-                                search_text: search_text.to_string(),
-                                sender,
-                                max_results: max_visible_items * SEARCH_BUFFER_MULTIPLIER,
-                                cached_members: room_props.room_members.clone(),
-                            });
-                            
-                            // Request next frame to check the channel
-                            cx.new_next_frame();
+                            // Get current search text and restart search
+                            if let Some(trigger_pos) = self.current_mention_start_index {
+                                let text_input_ref = self.cmd_text_input.text_input_ref();
+                                let text = text_input_ref.text();
+                                let cursor_pos = text_input_ref.borrow().map_or(0, |p| p.cursor().index);
+                                
+                                let search_text = utils::safe_substring_by_byte_indices(
+                                    &text,
+                                    trigger_pos + 1,
+                                    cursor_pos
+                                );
+                                
+                                
+                                // Create a new channel and submit search request directly
+                                let (sender, receiver) = std::sync::mpsc::channel();
+                                self.search_receiver = Some(receiver);
+                                
+                                // Clear accumulated results for new search
+                                self.accumulated_results.clear();
+                                
+                                let is_desktop = cx.display_context.is_desktop();
+                                let max_visible_items = if is_desktop { 10 } else { 5 };
+                                
+                                // Submit the search request with cached members
+                                submit_async_request(MatrixRequest::SearchRoomMembers {
+                                    room_id: room_props.room_id.clone(),
+                                    search_text: search_text.to_string(),
+                                    sender,
+                                    max_results: max_visible_items * SEARCH_BUFFER_MULTIPLIER,
+                                    cached_members: cached_members.clone(),
+                                });
+                                
+                                // Request next frame to check the channel
+                                cx.new_next_frame();
+                            }
                         }
                     } else if !matches!(&room_props.room_members, Some(members) if !members.is_empty()) {
                         // Still no members, keep showing loading
@@ -956,25 +949,8 @@ impl MentionableTextInput {
 
     /// Updates the mention suggestion list based on search
     fn update_user_list(&mut self, cx: &mut Cx, search_text: &str, scope: &mut Scope) {
-        
-        // Check if this is a duplicate search or if we're still debouncing
-        // if let Some(ref last_text) = self.last_search_text {
-        //     if last_text == search_text && self.search_receiver.is_some() {
-        //         // Already searching for this text, skip
-        //         log!("Skipping duplicate search for: '{}'", search_text);
-        //         return;
-        //     }
-        // }
-        
-        // Skip if we're still debouncing (within 2 frames of last update)
-        // if self.search_debounce_frames > 0 {
-        //     return;
-        // }
-        
-        
-        // Update last search text and reset debounce counter
+        // Update last search text
         self.last_search_text = Some(search_text.to_string());
-        // self.search_debounce_frames = 1; // Wait 1 frame before allowing next search
         
         // Check if we're in searching mode first
         if !self.is_searching {
@@ -1016,24 +992,28 @@ impl MentionableTextInput {
             // Don't request members here - room_screen already handles this
         }
 
-        // Create a new channel for this search
-        let (sender, receiver) = std::sync::mpsc::channel();
-        self.search_receiver = Some(receiver);
+        // Only submit search request if we have cached members
+        if let Some(cached_members) = &room_props.room_members {
+            // Create a new channel for this search
+            let (sender, receiver) = std::sync::mpsc::channel();
+            self.search_receiver = Some(receiver);
 
-        // Submit background search request
-        submit_async_request(MatrixRequest::SearchRoomMembers {
-            room_id: room_props.room_id.clone(),
-            search_text: search_text.to_string(),
-            sender,
-            max_results: max_visible_items * SEARCH_BUFFER_MULTIPLIER,
-            cached_members: room_props.room_members.clone(),
-        });
-        
-        // Request next frame to continue checking the channel
-        cx.new_next_frame();
-        
-        // Try to check immediately for faster response
-        self.check_search_channel(cx, scope);
+            // Submit background search request
+            submit_async_request(MatrixRequest::SearchRoomMembers {
+                room_id: room_props.room_id.clone(),
+                search_text: search_text.to_string(),
+                sender,
+                max_results: max_visible_items * SEARCH_BUFFER_MULTIPLIER,
+                cached_members: cached_members.clone(),
+            });
+            
+            // Request next frame to continue checking the channel
+            cx.new_next_frame();
+            
+            // Try to check immediately for faster response
+            self.check_search_channel(cx, scope);
+        }
+        // If no cached members, the loading indicator is already shown
     }
 
     /// Detects valid mention trigger positions in text

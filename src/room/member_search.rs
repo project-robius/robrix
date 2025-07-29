@@ -6,7 +6,6 @@
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
 use matrix_sdk::room::RoomMember;
-use matrix_sdk::ruma::OwnedRoomId;
 use unicode_segmentation::UnicodeSegmentation;
 use crate::shared::mentionable_text_input::SearchResult;
 use crate::sliding_sync::current_user_id;
@@ -16,7 +15,6 @@ pub fn search_room_members_streaming(
     members: Arc<Vec<RoomMember>>,
     search_text: String,
     max_results: usize,
-    room_id: OwnedRoomId,
     sender: Sender<SearchResult>,
 ) {
     // Get current user ID to filter out self-mentions
@@ -260,43 +258,6 @@ fn user_matches_search(member: &RoomMember, search_text: &str) -> bool {
     false
 }
 
-/// Check if search text appears at a word boundary
-fn is_word_boundary_match(text: &str, search_text: &str, case_insensitive: bool) -> bool {
-    let text_graphemes: Vec<&str> = text.graphemes(true).collect();
-    let search_graphemes: Vec<&str> = search_text.graphemes(true).collect();
-    
-    if search_graphemes.is_empty() || text_graphemes.len() < search_graphemes.len() {
-        return false;
-    }
-    
-    // Check each possible position
-    for i in 0..=(text_graphemes.len() - search_graphemes.len()) {
-        // Must be at start or after a space/punctuation
-        let at_word_start = i == 0 || 
-            text_graphemes[i - 1] == " " || 
-            !text_graphemes[i - 1].chars().all(|c| c.is_alphanumeric());
-        
-        if at_word_start {
-            // Check if all graphemes match
-            let matches = search_graphemes.iter()
-                .enumerate()
-                .all(|(j, search_g)| {
-                    let text_g = text_graphemes[i + j];
-                    if case_insensitive && text_g.chars().all(|c| c.is_ascii()) && search_g.chars().all(|c| c.is_ascii()) {
-                        text_g.to_lowercase() == search_g.to_lowercase()
-                    } else {
-                        text_g == *search_g
-                    }
-                });
-            
-            if matches {
-                return true;
-            }
-        }
-    }
-    
-    false
-}
 
 /// Helper function to determine match priority for sorting
 /// Lower values = higher priority (better matches shown first)

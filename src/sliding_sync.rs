@@ -275,7 +275,7 @@ pub enum MatrixRequest {
         search_text: String,
         sender: std::sync::mpsc::Sender<crate::shared::mentionable_text_input::SearchResult>,
         max_results: usize,
-        cached_members: Option<Arc<Vec<RoomMember>>>,
+        cached_members: Arc<Vec<RoomMember>>,
     },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
@@ -660,19 +660,12 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::SearchRoomMembers { room_id, search_text, sender, max_results, cached_members } => {
-                // Only proceed if we have cached members
-                if let Some(members) = cached_members {
-                    // Directly spawn blocking task for search
-                    let _search_task = tokio::task::spawn_blocking(move || {
-                        // Perform streaming search
-                        search_room_members_streaming(members, search_text, max_results, room_id, sender);
-                    });
-                } else {
-                    // Don't send anything - let the UI handle the loading state
-                    // The sender will be dropped when it goes out of scope,
-                    // which the UI can detect to know the search was cancelled
-                }
+            MatrixRequest::SearchRoomMembers { room_id: _, search_text, sender, max_results, cached_members } => {
+                // Directly spawn blocking task for search
+                let _search_task = tokio::task::spawn_blocking(move || {
+                    // Perform streaming search
+                    search_room_members_streaming(cached_members, search_text, max_results, sender);
+                });
             }
 
             MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
