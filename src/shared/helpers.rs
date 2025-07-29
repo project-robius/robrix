@@ -24,7 +24,7 @@ live_design! {
         flow: Right,
         draw_text: {
             color: (COLOR_TEXT),
-            text_style: <THEME_FONT_BOLD>{ font_size: 11 },
+            text_style: <THEME_FONT_BOLD>{ font_size: 13 },
         }
     }
 

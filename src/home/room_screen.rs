@@ -1283,7 +1283,7 @@ impl Widget for RoomScreen {
         let room_screen_widget_uid = self.widget_uid();
 
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
-            // We only care about drawing the portal list.
+            // Here, we only need to handle drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
             let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
                 error!("!!! RoomScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");

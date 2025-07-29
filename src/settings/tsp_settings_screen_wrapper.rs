@@ -12,7 +12,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
 
-    pub TspSettingsWrapper = <View> {
+    pub TspSettingsScreenWrapper = <View> {
         width: Fill, height: Fit
         flow: Down
         align: {x: 0}
@@ -43,9 +43,18 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
-    use crate::tsp::tsp_settings::TspSettings;
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::tsp::tsp_settings_screen::TspSettingsScreen;
 
-    pub TspSettingsWrapper = <View> {
-        <TspSettings> { }
+    pub TspSettingsScreenWrapper = <View> {
+        width: Fill, height: Fit
+        flow: Down
+
+        <TitleLabel> {
+            text: "TSP Wallet Settings"
+        }
+
+        tsp_settings_screen = <TspSettingsScreen> { }
     }
 }

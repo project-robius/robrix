@@ -21,11 +21,11 @@ use matrix_sdk_ui::{
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
 use std::io;
 use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -1151,7 +1151,31 @@ static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
     || Arc::new(Notify::new())
 );
 
-pub fn start_matrix_tokio() -> Result<()> {
+/// Blocks the current thread until the given future completes.
+///
+/// ## Warning
+/// This should be used with caution, especially on the main UI thread,
+/// as blocking a thread prevents it from handling other events or running other tasks.
+pub fn block_on_async_with_timeout<T>(
+    timeout: Option<Duration>,
+    async_future: impl Future<Output = T>,
+) -> Result<T, Elapsed> {
+    let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
+    if let Some(timeout) = timeout {
+        rt.block_on(async {
+            tokio::time::timeout(timeout, async_future).await
+        })
+    } else {
+        Ok(rt.block_on(async_future))
+    }
+}
+
+
+/// The primary initialization routine for starting the Matrix client sync
+/// and the async tokio runtime.
+///
+/// Returns a reference to the Tokio runtime that is used to run async background tasks.
+pub fn start_matrix_tokio() -> Result<&'static tokio::runtime::Runtime> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
     let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
 
@@ -1224,7 +1248,7 @@ pub fn start_matrix_tokio() -> Result<()> {
         }
     });
 
-    Ok(())
+    Ok(rt)
 }
 
 

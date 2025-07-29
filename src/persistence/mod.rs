@@ -10,6 +10,6 @@ pub use app_state::*;
 
 /// For persisting state related to TSP wallets and identities.
 #[cfg(feature = "tsp")]
-pub mod tsp;
+pub mod tsp_state;
 #[cfg(feature = "tsp")]
-pub use tsp::*;
+pub use tsp_state::*;

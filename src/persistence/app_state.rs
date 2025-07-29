@@ -1,13 +1,24 @@
 use makepad_widgets::{makepad_micro_serde::{DeRon, SerRon}, *};
-
+use serde::{self, Deserialize, Serialize};
 use matrix_sdk::ruma::{OwnedUserId, UserId};
-use crate::{app::{AppState, SelectedRoom, WindowGeomState}, app_data_dir, persistence::persistent_state_dir};
+use crate::{app::{AppState, SelectedRoom}, app_data_dir, persistence::persistent_state_dir};
 
 
 const LATEST_APP_STATE_FILE_NAME: &str = "latest_app_state.ron";
 
 const WINDOW_GEOM_STATE_FILE_NAME: &str = "window_geom_state.json";
 
+
+/// Persistable state of the window's size, position, and fullscreen status.
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WindowGeomState {
+    /// A tuple containing the window's width and height.
+    pub inner_size: (f64, f64),
+    /// A tuple containing the window's x and y position.
+    pub position: (f64, f64),
+    /// Maximise fullscreen if true.
+    pub is_fullscreen: bool,
+}
 
 
 /// Save the current app state to persistent storage.
