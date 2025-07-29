@@ -8,15 +8,15 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
-        api::client::receipt::create_receipt::v3::ReceiptType, events::{
+        api::client::{self, receipt::create_receipt::v3::ReceiptType}, events::{
             receipt::ReceiptThread, room::{
-                message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
-            }, FullStateEventContent, MessageLikeEventType, StateEventType
+                message::{Relation, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
+            }, AnyMessageLikeEventContent, AnyTimelineEvent, FullStateEventContent, MessageLikeEventType, StateEventType
         }, matrix_uri::MatrixId, uint, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState
 };
 use matrix_sdk_ui::{
-    room_list_service::{RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RoomExt, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::{RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, Profile, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
@@ -1188,19 +1188,19 @@ async fn async_worker(
                 }
                 
                 let client = CLIENT.get().unwrap();
-                let mut search_categories = matrix_sdk::ruma::api::client::search::search_events::v3::Categories::new();
-                let mut room_filter = matrix_sdk::ruma::api::client::filter::RoomEventFilter::empty();
+                let mut search_categories = client::search::search_events::v3::Categories::new();
+                let mut room_filter = client::filter::RoomEventFilter::empty();
                 room_filter.rooms = room_id.clone().map(|room_id| vec![room_id.to_owned()]);
-                let mut criteria = matrix_sdk::ruma::api::client::search::search_events::v3::Criteria::new(search_term.clone());
+                let mut criteria = client::search::search_events::v3::Criteria::new(search_term.clone());
                 criteria.filter = room_filter;
-                criteria.order_by = Some(matrix_sdk::ruma::api::client::search::search_events::v3::OrderBy::Recent);
-                criteria.event_context = matrix_sdk::ruma::api::client::search::search_events::v3::EventContext::new();
+                criteria.order_by = Some(client::search::search_events::v3::OrderBy::Recent);
+                criteria.event_context = client::search::search_events::v3::EventContext::new();
                 criteria.event_context.after_limit = uint!(0);
                 criteria.event_context.before_limit = uint!(0);
                 criteria.event_context.include_profile = true;
 
                 search_categories.room_events = Some(criteria);
-                let mut req = matrix_sdk::ruma::api::client::search::search_events::v3::Request::new(search_categories);
+                let mut req = client::search::search_events::v3::Request::new(search_categories);
                 req.next_batch = next_batch.clone();
                 let handle = Handle::current().spawn(async move {
                     match client.send(req).await {
@@ -1212,6 +1212,11 @@ async fn async_worker(
                             let mut items = Vector::new();
                             let mut profile_infos = BTreeMap::new();
                             let highlights = result.room_events.highlights;
+                            if highlights.is_empty() {
+                                log!("No highlights found in search results for term '{search_term}'");
+                            } else {
+                                log!("Found {} highlights in search results for term '{search_term}'", highlights.len());
+                            }
                             for item in result.room_events.results.iter() {
                                 let Some(event) =
                                     item.result.as_ref().and_then(|f| f.deserialize().ok())
@@ -1220,7 +1225,7 @@ async fn async_worker(
                                 };
                                 for (user_id, profile) in item.context.profile_info.iter() {
                                     profile_infos.entry(user_id.clone()).or_insert_with(|| {
-                                        matrix_sdk_ui::timeline::TimelineDetails::Ready(matrix_sdk_ui::timeline::Profile {
+                                        TimelineDetails::Ready(Profile {
                                             display_name: profile.displayname.clone(),
                                             display_name_ambiguous: false,
                                             avatar_url: profile.avatar_url.clone(),
@@ -1229,16 +1234,16 @@ async fn async_worker(
                                 }
                                 let room_id = event.room_id().to_owned();
                                 let mut message_option = None;
-                                if let matrix_sdk::ruma::events::AnyTimelineEvent::MessageLike(msg) = &event {
+                                if let AnyTimelineEvent::MessageLike(msg) = &event {
                                     let mut content = msg.original_content();
                                     if let Some(replace) = msg.relations().replace {
                                         content = replace.original_content();
                                     }
-                                    if let Some(matrix_sdk::ruma::events::AnyMessageLikeEventContent::RoomMessage(mut message)) = content {
+                                    if let Some(AnyMessageLikeEventContent::RoomMessage(mut message)) = content {
                                         // We clone the message here so we can inject HTML `<code>` tags
                                         // for highlighting without modifying the original data in the timeline.
                                         
-                                        if let Some(matrix_sdk::ruma::events::room::message::Relation::Replacement(replace)) = &message.relates_to {
+                                        if let Some(Relation::Replacement(replace)) = &message.relates_to {
                                             let new_content = &replace.new_content;
                                             message.msgtype = new_content.msgtype.clone();
                                         }
@@ -1247,7 +1252,8 @@ async fn async_worker(
                                     }
                                 }
                                 items.push_back(SearchResultItem::Event{ event:
-                                    Box::new(event), formatted_content: message_option});
+                                    Box::new(event), formatted_content: Box::new(message_option)}
+                                );
                                 if include_all_rooms {
                                     if let Some(ref mut last_room_id) = last_room_id {
                                         if last_room_id != &room_id {
@@ -1269,7 +1275,7 @@ async fn async_worker(
                             Cx::post_action(SearchResultAction::Received(SearchResultReceived {
                                 items,
                                 count,
-                                search_term: search_term,
+                                search_term,
                                 profile_infos,
                                 next_batch,
                             }));
@@ -1281,7 +1287,7 @@ async fn async_worker(
                                 "Failed to search messages in all rooms".to_string()
                             };
                             error!("{context}: {e:?}");
-
+                            Cx::post_action(SearchResultAction::ErrorWithNextBatchToken(next_batch.clone()));
                             enqueue_popup_notification(PopupItem {
                                 message: format!("{context}. Please try again."),
                                 auto_dismissal_duration: None,

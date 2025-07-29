@@ -19,7 +19,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppState, AppStateAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::{RoomsListRef, RoomsListAction}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -4313,6 +4313,19 @@ pub enum MessageAction {
     None,
 }
 
+/// Contains the information needed to jump to a specific message.
+/// Used primarily for search results to allow navigation to the original message location.
+#[derive(Clone, Debug)]
+pub struct JumpOption {
+    /// The room ID where the target message is located.
+    pub room_id: OwnedRoomId,
+    /// The event ID of the target message.
+    pub event_id: OwnedEventId,
+    /// Whether this jump is from a search across all rooms.
+    /// When true, the jump may need to switch to a different room first.
+    pub from_all_rooms_search: bool,
+}
+
 /// A widget representing a single message of any kind within a room timeline.
 #[derive(Live, LiveHook, Widget)]
 pub struct Message {
@@ -4320,7 +4333,9 @@ pub struct Message {
     #[animator] animator: Animator,
 
     #[rust] details: Option<MessageDetails>,
-    #[rust] jump_option: Option<(OwnedRoomId, OwnedEventId)>,
+    /// The jump option required for searched messages.
+    /// Contains the room ID, event ID for the message, and whether it's from an all-rooms search.
+    #[rust] jump_option: Option<JumpOption>,
     #[rust] room_screen_widget_uid: Option<WidgetUid>,
 }
 
@@ -4336,15 +4351,43 @@ impl Widget for Message {
             self.animator_play(cx, id!(highlight.off));
         }
         if let Event::Actions(actions) = event {
-            if let (Some(widget_uid), Some((room_id, event_id))) = (self.room_screen_widget_uid, &self.jump_option) {
+            if let (Some(widget_uid), Some(jump_option)) = (self.room_screen_widget_uid, &self.jump_option) {
+                
                 if self.view.button(id!(jump_button_view.jump_button)).clicked(actions) {
-                    // If the jump button was clicked, scroll to the message in the roomscreen.
+                    if jump_option.from_all_rooms_search {
+                        if let Some(selected_room) = {
+                            let app_state = scope.data.get::<AppState>().unwrap();
+                            app_state.selected_room.clone()
+                        } {
+                            // If room_id is not the selected room, select the room and open its dock tab
+                            if selected_room.room_id() != &jump_option.room_id {
+                                let room_name: Option<String> = {
+                                    let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                                    rooms_list_ref.get_room_name(&jump_option.room_id)
+                                };
+                                
+                                let target_selected_room = SelectedRoom::JoinedRoom {
+                                    room_id: jump_option.room_id.clone().into(),
+                                    room_name,
+                                };
+                                
+                                // Dispatch action to select the room and open its dock tab
+                                cx.widget_action(
+                                    self.widget_uid(),
+                                    &scope.path,
+                                    RoomsListAction::Selected(target_selected_room)
+                                );
+                            }
+                        }
+                    }
+                    
+                    // Always scroll to the message after room selection (if needed)
                     cx.widget_action(
                         widget_uid,
                         &scope.path,
                         MessageAction::ScrollToMessage {
-                            room_id: room_id.clone(),
-                            event_id: event_id.clone(),
+                            room_id: jump_option.room_id.clone(),
+                            event_id: jump_option.event_id.clone(),
                         }
                     );
                 }
@@ -4484,7 +4527,7 @@ impl Message {
         self.details = Some(details);
     }
 
-    fn set_jump_option(&mut self, cx: &mut Cx, jump_option: Option<(OwnedRoomId, OwnedEventId)>) {
+    fn set_jump_option(&mut self, cx: &mut Cx, jump_option: Option<JumpOption>) {
         let is_visible = jump_option.is_some();
         self.jump_option = jump_option;
         self.view.view(id!(jump_button_view))
@@ -4514,7 +4557,7 @@ impl MessageRef {
         inner.set_data(details);
     }
 
-    pub fn set_jump_option(&self, cx: &mut Cx, jump_option: Option<(OwnedRoomId, OwnedEventId)>) {
+    pub fn set_jump_option(&self, cx: &mut Cx, jump_option: Option<JumpOption>) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_jump_option(cx, jump_option);
     }
