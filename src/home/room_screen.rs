@@ -2314,7 +2314,7 @@ impl RoomScreen {
                 // This doesn't mean that the user can actually perform all actions;
                 // the power levels will be updated from the homeserver once the room is opened.
                 user_power: UserPowerLevels::all(),
-                // Room members start as None and get populated when fetched from the server
+                // Room members start as NotLoaded and get populated when fetched from the server
                 room_members: None,
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
