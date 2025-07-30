@@ -107,17 +107,17 @@ live_design! {
                         spacing: 0,
                         draw_icon: {
                             svg_file: (ICON_SEND)
-                            color: (COLOR_ACCEPT_GREEN),
+                            color: (COLOR_FG_ACCEPT_GREEN),
                         }
                         icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
 
                         draw_bg: {
-                            border_color: (COLOR_ACCEPT_GREEN),
-                            color: #f0fff0 // light green
+                            border_color: (COLOR_FG_ACCEPT_GREEN),
+                            color: (COLOR_BG_ACCEPT_GREEN)
                         }
                         text: ""
                         draw_text:{
-                            color: (COLOR_ACCEPT_GREEN),
+                            color: (COLOR_FG_ACCEPT_GREEN),
                         }
                     }
                 }
@@ -184,17 +184,17 @@ live_design! {
             // report_button = <ContextMenuButton> {
             //     draw_icon: {
             //         svg_file: (ICON_TRASH) // TODO: ICON_REPORT/WARNING/FLAG
-            //         color: (COLOR_DANGER_RED),
+            //         color: (COLOR_FG_DANGER_RED),
             //     }
             //     icon_walk: { margin: {left: -2, right: 3} }
             //
             //     draw_bg: {
-            //         border_color: (COLOR_DANGER_RED),
-            //         color: #fff0f0
+            //         border_color: (COLOR_FG_DANGER_RED),
+            //         color: (COLOR_BG_DANGER_RED)
             //     }
             //     text: "Report"
             //     draw_text:{
-            //         color: (COLOR_DANGER_RED),
+            //         color: (COLOR_FG_DANGER_RED),
             //     }
             // }
 
@@ -206,15 +206,15 @@ live_design! {
             delete_button = <ContextMenuButton> {
                 draw_icon: {
                     svg_file: (ICON_TRASH)
-                    color: (COLOR_DANGER_RED),
+                    color: (COLOR_FG_DANGER_RED),
                 }
                 draw_bg: {
-                    border_color: (COLOR_DANGER_RED),
-                    color: #fff0f0
+                    border_color: (COLOR_FG_DANGER_RED),
+                    color: (COLOR_BG_DANGER_RED)
                 }
                 text: "Delete"
                 draw_text:{
-                    color: (COLOR_DANGER_RED),
+                    color: (COLOR_FG_DANGER_RED),
                 }
             }
         }
