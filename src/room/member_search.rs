@@ -156,9 +156,7 @@ pub fn search_room_members_streaming(
             is_complete: true,
             search_text,
         };
-        if sender.send(completion_result).is_err() {
-            return;
-        }
+        let _ = sender.send(completion_result);
     }
     
 }
@@ -182,7 +180,7 @@ fn grapheme_starts_with(haystack: &str, needle: &str, case_insensitive: bool) ->
         let h_grapheme = haystack_graphemes[i];
         let n_grapheme = needle_graphemes[i];
         
-        let grapheme_matches = if case_insensitive && h_grapheme.chars().all(|c| c.is_ascii()) && n_grapheme.chars().all(|c| c.is_ascii()) {
+        let grapheme_matches = if case_insensitive && h_grapheme.is_ascii() && n_grapheme.is_ascii() {
             h_grapheme.to_lowercase() == n_grapheme.to_lowercase()
         } else {
             h_grapheme == n_grapheme
@@ -204,7 +202,7 @@ fn user_matches_search(member: &RoomMember, search_text: &str) -> bool {
     }
     
     // Determine if we should do case-insensitive search (only for pure ASCII text)
-    let case_insensitive = search_text.chars().all(|c| c.is_ascii());
+    let case_insensitive = search_text.is_ascii();
     
     // For ASCII searches, use simple string operations which are much faster
     if case_insensitive {
@@ -270,7 +268,7 @@ fn get_match_priority(member: &RoomMember, search_text: &str) -> u8 {
     let localpart = member.user_id().localpart();
     
     // Determine if we should do case-insensitive comparison
-    let case_insensitive = search_text.chars().all(|c| c.is_ascii());
+    let case_insensitive = search_text.is_ascii();
 
     // Priority 0: Exact case-sensitive match (highest priority)
     if display_name == search_text || localpart == search_text {

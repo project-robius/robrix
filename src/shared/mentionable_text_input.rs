@@ -367,12 +367,9 @@ impl Widget for MentionableTextInput {
 
         // Check search channel on every frame if we're searching
         if self.is_searching && self.search_receiver.is_some() {
-            match event {
-                Event::NextFrame(_) => {
-                    self.check_search_channel(cx, scope);
-                    cx.new_next_frame();
-                }
-                _ => {}
+            if let Event::NextFrame(_) = event {
+                self.check_search_channel(cx, scope);
+                cx.new_next_frame();
             }
         }
 
@@ -759,7 +756,7 @@ impl MentionableTextInput {
                 // User is editing existing mention, don't reset search state
                 // This allows smooth deletion/modification of search text
                 // But clear last_search_text if the new text is different to trigger search
-                if self.last_search_text.as_ref().map_or(true, |last| last != &search_text) {
+                if self.last_search_text.as_ref() != Some(&search_text) {
                     self.last_search_text = None;
                 }
             }
@@ -1142,8 +1139,8 @@ impl MentionableTextInput {
     }
 
     /// Sort search results by match quality
-    fn sort_search_results(&self, results: &mut Vec<(String, RoomMember)>, search_text: &str) {
-        let case_insensitive = search_text.chars().all(|c| c.is_ascii());
+    fn sort_search_results(&self, results: &mut [(String, RoomMember)], search_text: &str) {
+        let case_insensitive = search_text.is_ascii();
         let search_lower = if case_insensitive { search_text.to_lowercase() } else { search_text.to_string() };
         
         results.sort_by(|a, b| {
