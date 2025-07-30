@@ -33,6 +33,12 @@ pub fn get_invited_rooms(_cx: &mut Cx) -> Rc<RefCell<HashMap<OwnedRoomId, Invite
     ALL_INVITED_ROOMS.with(Rc::clone)
 }
 
+pub fn clean_all_invited_rooms() {
+    ALL_INVITED_ROOMS.with(|rooms| {
+       rooms.borrow_mut().clear();
+    });
+}
+
 
 live_design! {
     use link::theme::*;

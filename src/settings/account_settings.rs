@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::{profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, utils};
+use crate::{login::logout_confirm_modal::LogoutConfirmModalAction, profile::user_profile::UserProfile, settings::SettingsAction, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, utils};
 
 live_design! {
     use link::theme::*;
@@ -369,12 +369,7 @@ impl MatchEvent for AccountSettings {
         }
 
         if self.view.button(id!(logout_button)).clicked(actions) {
-            // TODO: support logging out the user.
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Logout is not yet implemented."),
-                auto_dismissal_duration: Some(4.0),
-                kind: PopupKind::Warning
-            });
+            cx.action(LogoutConfirmModalAction::Open);
         }
     }
 }

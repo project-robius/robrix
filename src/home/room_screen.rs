@@ -4378,3 +4378,10 @@ impl MessageRef {
         inner.set_data(details);
     }
 }
+
+pub fn clean_timeline_states() {
+    // Clear timeline states cache
+    TIMELINE_STATES.with_borrow_mut(|states| {
+        states.clear();
+    });
+}
