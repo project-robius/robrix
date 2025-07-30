@@ -33,7 +33,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_app_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, room::{RoomPreviewAvatar, member_search::search_room_members_streaming}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, room::{RoomPreviewAvatar, member_search::search_room_members_streaming}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem,PopupKind}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -2131,10 +2131,10 @@ fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
     const SYNC_INDICATOR_HIDE_DELAY: Duration = Duration::from_millis(200);
     let sync_indicator_stream = sync_service.room_list_service()
         .sync_indicator(
-            SYNC_INDICATOR_DELAY, 
+            SYNC_INDICATOR_DELAY,
             SYNC_INDICATOR_HIDE_DELAY
         );
-    
+
     Handle::current().spawn(async move {
        let mut sync_indicator_stream = std::pin::pin!(sync_indicator_stream);
 
