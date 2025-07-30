@@ -532,34 +532,34 @@ impl App {
     /// NOTE: This strategy should be revisited when Matrix SDK provides proper cleanup APIs.
     fn cleanup_before_shutdown(&mut self) {
         
-        log!("Starting shutdown cleanup...");
+        // log!("Starting shutdown cleanup...");
         
-        // Clear user profile cache first to prevent thread-local destructor issues
-        // This must be done before leaking the tokio runtime
-        clear_all_caches();
-        log!("Cleared user profile cache");
+        // // Clear user profile cache first to prevent thread-local destructor issues
+        // // This must be done before leaking the tokio runtime
+        // clear_all_caches();
+        // log!("Cleared user profile cache");
         
-        // Set logout in progress to suppress error messages
-        LOGOUT_IN_PROGRESS.store(true, Ordering::Relaxed);
+        // // Set logout in progress to suppress error messages
+        // LOGOUT_IN_PROGRESS.store(true, Ordering::Relaxed);
         
-        // Immediately take and leak all resources to prevent any destructors from running
-        // This is a controlled leak at shutdown to avoid the deadpool panic
+        // // Immediately take and leak all resources to prevent any destructors from running
+        // // This is a controlled leak at shutdown to avoid the deadpool panic
         
-        // Take the runtime first and leak it
-        leak_runtime(); 
+        // // Take the runtime first and leak it
+        // leak_runtime(); 
         
-        // Take and leak the client
-        leak_client(); 
+        // // Take and leak the client
+        // leak_client(); 
         
-        // Take and leak the sync service
-        leak_sync_service();
+        // // Take and leak the sync service
+        // leak_sync_service();
         
-        // Take and leak the request sender
-        leak_request_sender();
+        // // Take and leak the request sender
+        // leak_request_sender();
         
-        // Don't clear any collections or caches as they might contain references
-        // to Matrix SDK objects that would trigger the deadpool panic
-        log!("Shutdown cleanup completed - all resources leaked to prevent panics");
+        // // Don't clear any collections or caches as they might contain references
+        // // to Matrix SDK objects that would trigger the deadpool panic
+        // log!("Shutdown cleanup completed - all resources leaked to prevent panics");
     }
    
     fn update_login_visibility(&self, cx: &mut Cx) {
