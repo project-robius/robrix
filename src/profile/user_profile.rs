@@ -2,14 +2,13 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}, sync::Arc};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedMxcUri, OwnedRoomId, OwnedUserId}};
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, shared::avatar::AvatarWidgetExt, sliding_sync::{current_user_id, is_user_ignored, submit_async_request, MatrixRequest}, utils
+    avatar_cache::{self, AvatarCacheEntry}, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}}, sliding_sync::{current_user_id, is_user_ignored, submit_async_request, MatrixRequest}, utils
 };
 
 use super::user_profile_cache::{self, get_user_profile_and_room_member};
 
 /// The currently-known state of a user's avatar.
-#[derive(Clone, Debug)]
-#[allow(unused)]
+#[derive(Clone)]
 pub enum AvatarState {
     /// It isn't yet known if this user has an avatar.
     Unknown,
@@ -19,6 +18,17 @@ pub enum AvatarState {
     Loaded(Arc<[u8]>),
     /// This user does have an avatar, but we failed to fetch it.
     Failed,
+}
+impl std::fmt::Debug for AvatarState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AvatarState::Unknown        => write!(f, "Unknown"),
+            AvatarState::Known(Some(_)) => write!(f, "Known(Some)"),
+            AvatarState::Known(None)    => write!(f, "Known(None)"),
+            AvatarState::Loaded(data)   => write!(f, "Loaded({} bytes)", data.len()),
+            AvatarState::Failed         => write!(f, "Failed"),
+        }
+    }
 }
 impl AvatarState {
     /// Returns the avatar data, if in the `Loaded` state.
@@ -122,6 +132,7 @@ live_design! {
             padding: {left: 10, right: 10}
             spacing: 3
             flow: Down
+
             avatar = <Avatar> {
                 width: 150,
                 height: 150,
@@ -153,7 +164,7 @@ live_design! {
         }
 
         <LineH> { padding: 15 }
-
+        
         membership = <View> {
             width: Fill,
             height: Fit,
@@ -200,8 +211,9 @@ live_design! {
         actions = <View> {
             width: Fill, height: Fit
             flow: Down,
-            spacing: 5,
+            spacing: 10,
             padding: {left: 10., right: 10, bottom: 50}
+
             <Label> {
                 width: Fill, height: Fit
                 draw_text: {
@@ -216,28 +228,42 @@ live_design! {
                 // TODO: support this button. Once this is implemented, uncomment the line in draw_walk()
                 enabled: false,
                 margin: 0,
-                padding: {top: 10, bottom: 10, left: 8, right: 15}
+                padding: {top: 10, bottom: 10, left: 12, right: 15}
+                draw_bg: {
+                    color: (COLOR_ACTIVE_PRIMARY)
+                }
                 draw_icon: {
                     svg_file: (ICON_DOUBLE_CHAT)
+                    color: (COLOR_PRIMARY)
+                }
+                draw_text: {
+                    color: (COLOR_PRIMARY)
+                    text_style: <REGULAR_TEXT> {}
                 }
                 icon_walk: {width: 22, height: 16, margin: {left: -5, right: -3, top: 1, bottom: -1} }
                 text: "Direct Message"
             }
 
             copy_link_to_user_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 8, right: 15}
+                padding: {top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
+                draw_bg: {
+                    color: (COLOR_SECONDARY)
+                }
                 draw_icon: {
                     svg_file: (ICON_COPY)
                 }
-                icon_walk: {width: 16, height: 16, margin: {right: -2} }
+                icon_walk: {width: 16, height: 16, margin: {left: -1, right: -1} }
                 text: "Copy Link to User"
             }
 
             jump_to_read_receipt_button = <RobrixIconButton> {
                 enabled: false, // TODO: support this button
-                padding: {top: 10, bottom: 10, left: 8, right: 15}
+                padding: {top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
+                draw_bg: {
+                    color: (COLOR_SECONDARY)
+                }
                 draw_icon: {
                     svg_file: (ICON_JUMP)
                 }
@@ -246,21 +272,21 @@ live_design! {
             }
 
             ignore_user_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 8, right: 15}
+                padding: {top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
                 draw_icon: {
-                    svg_file: (ICON_BLOCK_USER)
-                    color: (COLOR_DANGER_RED),
+                    svg_file: (ICON_FORBIDDEN)
+                    color: (COLOR_FG_DANGER_RED),
                 }
                 icon_walk: {width: 16, height: 16, margin: {left: -2, right: -0.5} }
 
                 draw_bg: {
-                    border_color: (COLOR_DANGER_RED),
-                    color: #fff0f0
+                    border_color: (COLOR_FG_DANGER_RED),
+                    color: (COLOR_BG_DANGER_RED)
                 }
                 text: "Ignore (Block) User"
                 draw_text:{
-                    color: (COLOR_DANGER_RED),
+                    color: (COLOR_FG_DANGER_RED),
                 }
             }
         }
@@ -290,18 +316,21 @@ live_design! {
             width: 300,
             height: Fill
             flow: Overlay,
+            align: {x: 1.0}
 
             user_profile_view = <UserProfileView> { }
 
-            // The "X" close button on the top left
+            // The "X" close button on the top right
             close_button = <RobrixIconButton> {
                 width: Fit,
                 height: Fit,
-                align: {x: 0.0, y: 0.0},
                 spacing: 0,
                 margin: 7,
                 padding: 15,
 
+                draw_bg: {
+                    color: (COLOR_SECONDARY)
+                }
                 draw_icon: {
                     svg_file: (ICON_CLOSE),
                     fn get_color(self) -> vec4 {
@@ -518,8 +547,11 @@ impl Widget for UserProfileSlidingPane {
             if self.button(id!(copy_link_to_user_button)).clicked(actions) {
                 let matrix_to_uri = info.user_id.matrix_to_uri().to_string();
                 cx.copy_to_clipboard(&matrix_to_uri);
-                // TODO: show a toast message instead of a log message
-                log!("Copied user ID to clipboard: {matrix_to_uri}");
+                enqueue_popup_notification(PopupItem {
+                    message: String::from("Copied User ID to the clipboard."),
+                    auto_dismissal_duration: Some(3.0),
+                    kind: PopupKind::Success
+                });
             }
 
             // TODO: implement the third button: `jump_to_read_receipt_button`,
@@ -652,6 +684,12 @@ impl UserProfileSlidingPane {
         cx.set_key_focus(self.view.area());
         self.animator_play(cx, id!(panel.show));
         self.view(id!(bg_view)).set_visible(cx, true);
+
+        self.view.button(id!(close_button)).reset_hover(cx);
+        self.view.button(id!(direct_message_button)).reset_hover(cx);
+        self.view.button(id!(copy_link_to_user_button)).reset_hover(cx);
+        self.view.button(id!(jump_to_read_receipt_button)).reset_hover(cx);
+        self.view.button(id!(ignore_user_button)).reset_hover(cx);
         self.redraw(cx);
     }
 }

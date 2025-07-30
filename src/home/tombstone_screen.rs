@@ -9,7 +9,7 @@ use matrix_sdk::ruma::OwnedRoomId;
 use std::ops::Deref;
 
 use crate::{
-    app::{RoomsPanelRestoreAction, SelectedRoom},
+    app::{AppStateAction, SelectedRoom},
     home::{
         invite_screen::InviteScreenWidgetExt, room_screen::RoomScreenWidgetExt, rooms_list::RoomsListRef,
     },
@@ -17,7 +17,7 @@ use crate::{
     room::{room_input_bar::RoomInputBarWidgetRefExt, BasicRoomDetails, RoomPreviewAvatar},
     shared::{
         avatar::AvatarWidgetExt,
-        popup_list::{enqueue_popup_notification, PopupItem},
+        popup_list::{enqueue_popup_notification, PopupItem, PopupKind},
     },
     sliding_sync::avatar_from_room_name,
     utils::{self, OwnedRoomIdRon},
@@ -227,7 +227,7 @@ impl Widget for TombstoneScreen {
             }
 
             for action in actions {
-                if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
+                if let Some(AppStateAction::RoomLoadedSuccessfully(room_id)) = action.downcast_ref() {
                     if self.room_id.as_ref().is_some_and(|r| r == room_id) {
                         self.set_displayed_tombstone(cx, room_id.clone(), self.room_name.clone());
                         return;
@@ -255,6 +255,7 @@ impl Widget for TombstoneScreen {
                         if !self.has_shown_confirmation {
                             enqueue_popup_notification(PopupItem {
                                 message: "Successfully joined successor room.".into(),
+                                kind: PopupKind::Success,
                                 auto_dismissal_duration: None,
                             });
                         }
@@ -300,6 +301,7 @@ impl Widget for TombstoneScreen {
                             );
                             enqueue_popup_notification(PopupItem {
                                 message: msg,
+                                kind: PopupKind::Error,
                                 auto_dismissal_duration: None,
                             });
                         }
