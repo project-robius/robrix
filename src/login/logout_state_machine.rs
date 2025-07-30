@@ -89,6 +89,7 @@ use tokio::sync::Mutex;
 use anyhow::{anyhow, Result};
 use makepad_widgets::{Cx, log, makepad_futures::channel::oneshot};
 
+use crate::settings::SettingsAction;
 use crate::sliding_sync::clean_app_state;
 use crate::{
     home::main_desktop_ui::MainDesktopUiAction,
@@ -442,10 +443,12 @@ impl LogoutStateMachine {
             "Logout completed successfully".to_string(),
             100
         ).await?;
-        
+
+        // CloseSetting after logout
+        Cx::post_action(SettingsAction::CloseSettings);
+
         // Reset logout in progress flag
         LOGOUT_IN_PROGRESS.store(false, Ordering::Relaxed);
-        
         Cx::post_action(LogoutAction::LogoutSuccess);
         Ok(())
     }

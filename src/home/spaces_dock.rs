@@ -1,7 +1,7 @@
 use makepad_widgets::*;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, login::{login_screen::LoginAction, logout_confirm_modal::LogoutConfirmModalAction}, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{self, UserProfileUpdate},
     }, settings::SettingsAction, shared::{
@@ -20,18 +20,12 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::verification_badge::*;
-    use crate::login::logout_confirm_modal::LogoutConfirmModal;
     use crate::shared::avatar::*;
 
     SPACES_DOCK_SIZE = 68
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
-    ICON_LOGOUT = dep("crate://self/resources/icons/logout.svg")
-
-    Filler = <View> {
-        height: Fill, width: Fill
-    }
 
     ProfileIcon = {{ProfileIcon}} {
         flow: Overlay
@@ -82,35 +76,6 @@ live_design! {
         }
     }
 
-    LogoutButton= {{LogoutButton}} {
-        width: Fit, height: Fit
-        padding: {top: 8, left: 12, right: 12, bottom: 8}
-        align: {x: 0.5, y: 0.5}
-        logout_button = <Button> {
-            draw_bg: {
-                fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    return sdf.result
-                }
-            }
-
-            draw_icon: {
-                svg_file: (ICON_LOGOUT),
-                color: #444444
-                color_hover: (COLOR_FG_DANGER_RED)
-                fn get_color(self) -> vec4 {
-                    return mix(
-                        self.color,
-                        self.color_hover,
-                        self.hover
-                    );
-                }
-            }
-
-            icon_walk: {width: 25, height: Fit}
-        }
-    }
-
     pub SpacesDock = <AdaptiveView> {
         // TODO: make this vertically scrollable
         Desktop = {
@@ -132,9 +97,6 @@ live_design! {
             <Home> {}
 
             <Filler> {}
-
-            <LogoutButton> {}
-            
         }
 
         // TODO: make this horizontally scrollable via touch
@@ -155,8 +117,6 @@ live_design! {
             }
 
             <Filler> {}
-
-            <LogoutButton> {}
 
             <Home> {}
 
@@ -324,42 +284,4 @@ pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
     }
 
     own_profile
-}
-
-
-#[derive(Live, LiveHook, Widget)]
-pub struct LogoutButton{
-    #[deref] view: View,
-    /// Whether a LogoutConfirmModal dialog has been displayed.
-    /// This prevents showing multiple modal dialogs if the user
-    /// clicks the logout button repeatedly.
-    #[rust(false)] has_shown_modal: bool,
-}
-
-impl Widget for LogoutButton{
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope);
-        self.widget_match_event(cx, event, scope);
-    }
-
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk)
-    }
-}
-
-impl WidgetMatchEvent for LogoutButton {
-    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
-        let button = self.button(id!(logout_button));
-        
-        if button.clicked(actions) && !self.has_shown_modal {
-            self.has_shown_modal = true;
-            cx.action(LogoutConfirmModalAction::Open);
-        }
-        
-        for action in actions.iter() {
-            if let Some(LogoutConfirmModalAction::Close { .. }) = action.downcast_ref::<LogoutConfirmModalAction>() {
-                self.has_shown_modal = false;
-            }
-        }
-    }
 }
