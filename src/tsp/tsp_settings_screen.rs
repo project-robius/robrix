@@ -50,6 +50,7 @@ live_design! {
                 width: Fit, height: Fit
                 margin: {left: 20}
                 <Label> {
+                    margin: {top: 2.9}
                     width: Fit, height: Fit
                     flow: Right,
                     draw_text: {
@@ -72,7 +73,6 @@ live_design! {
                 }
                 draw_text: {
                     color: (COLOR_FG_DISABLED)
-                    text_style: <REGULAR_TEXT> {}
                 }
                 icon_walk: {width: 16, height: 16}
                 text: "Set As Default"
@@ -311,9 +311,10 @@ impl Widget for TspSettingsScreen {
                         cx,
                         &wallet.path,
                     );
+                    let is_not_found = matches!(status, WalletStatus::NotFound);
                     wallet_entry.label(id!(not_found_label_view)).set_visible(
                         cx,
-                        matches!(status, WalletStatus::NotFound),
+                        is_not_found,
                     );
                     let set_default_wallet_button = wallet_entry.button(id!(set_default_wallet_button));
                     if is_default {
@@ -339,6 +340,12 @@ impl Widget for TspSettingsScreen {
                             draw_icon: { color: (fg_color) },
                             text: "Set As Default"
                         ));
+                    }
+
+                    if is_not_found {
+                        set_default_wallet_button.set_visible(cx, false);
+                        wallet_entry.button(id!(remove_wallet_button)).set_visible(cx, false);
+                        wallet_entry.button(id!(delete_wallet_button)).set_visible(cx, false);
                     }
 
                     wallet_entry
