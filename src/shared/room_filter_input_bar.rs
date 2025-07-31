@@ -57,9 +57,12 @@ live_design! {
 
         clear_button = <RobrixIconButton> {
             visible: false,
-            padding: {top: 7, bottom: 7, left: 10, right: 10},
+            padding: {top: 6, bottom: 6, left: 9, right: 9},
             spacing: 0,
             align: {x: 0.5, y: 0.5}
+            draw_bg: {
+                color: (COLOR_SECONDARY)
+            }
             draw_icon: {
                 svg_file: (ICON_CLOSE),
                 color: (COLOR_TEXT_INPUT_IDLE)
@@ -104,6 +107,7 @@ impl WidgetMatchEvent for RoomFilterInputBar {
         // Handle user changing the input text
         if let Some(keywords) = input.changed(actions) {
             clear_button.set_visible(cx, !keywords.is_empty());
+            clear_button.reset_hover(cx);
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
