@@ -218,11 +218,20 @@ fn user_matches_search(member: &RoomMember, search_text: &str) -> bool {
             if display_lower.contains(&format!(" {}", search_lower)) {
                 return true;
             }
+            // Check if search text appears anywhere in display name
+            if display_lower.contains(&search_lower) {
+                return true;
+            }
         }
         
         // Check localpart
         let localpart = member.user_id().localpart();
-        if localpart.to_lowercase().starts_with(&search_lower) {
+        let localpart_lower = localpart.to_lowercase();
+        if localpart_lower.starts_with(&search_lower) {
+            return true;
+        }
+        // Check if search text appears anywhere in localpart
+        if localpart_lower.contains(&search_lower) {
             return true;
         }
     } else {
@@ -237,6 +246,10 @@ fn user_matches_search(member: &RoomMember, search_text: &str) -> bool {
             if display_name.contains(&format!(" {}", search_text)) {
                 return true;
             }
+            // Check if search text appears anywhere in display name
+            if display_name.contains(search_text) {
+                return true;
+            }
             // Only fall back to grapheme search for complex cases
             // (e.g., when search text has combining characters or emojis)
             if search_text.graphemes(true).count() != search_text.chars().count() {
@@ -246,9 +259,13 @@ fn user_matches_search(member: &RoomMember, search_text: &str) -> bool {
             }
         }
         
-        // Check localpart - simple starts_with is sufficient
+        // Check localpart
         let localpart = member.user_id().localpart();
         if localpart.starts_with(search_text) {
+            return true;
+        }
+        // Check if search text appears anywhere in localpart
+        if localpart.contains(search_text) {
             return true;
         }
     }
@@ -306,6 +323,28 @@ fn get_match_priority(member: &RoomMember, search_text: &str) -> u8 {
         return 5;
     }
 
-    // Priority 6: Other matches (shouldn't happen with optimized search)
-    6
+    // Priority 6: Display name contains search text anywhere (substring match)
+    if case_insensitive {
+        if display_name.to_lowercase().contains(&search_text.to_lowercase()) {
+            return 6;
+        }
+    } else {
+        if display_name.contains(search_text) {
+            return 6;
+        }
+    }
+
+    // Priority 7: Localpart contains search text anywhere (substring match)
+    if case_insensitive {
+        if localpart.to_lowercase().contains(&search_text.to_lowercase()) {
+            return 7;
+        }
+    } else {
+        if localpart.contains(search_text) {
+            return 7;
+        }
+    }
+
+    // Priority 8: Other matches (shouldn't happen with optimized search)
+    8
 }
