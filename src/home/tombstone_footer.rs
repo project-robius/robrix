@@ -44,7 +44,7 @@ live_design! {
             height: Fit
             spacing: 0,
             flow: Down,
-            <Label> {
+            replacement_reason = <Label> {
                 width: Fill, height: Fit,
                 align: {x: 0.0, y: 0},
                 padding: {left: 5.0, right: 0.0}
@@ -225,6 +225,11 @@ impl TombstoneFooter {
                     })
                     .ok();
             }
+        }
+        if let Some(successor_reason) = &successor_reason {
+            self.view
+                .label(id!(replacement_reason))
+                .set_text(cx, successor_reason);
         }
         if let Some(successor_room_name) = &successor_room_name {
             self.view
