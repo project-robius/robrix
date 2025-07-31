@@ -1261,7 +1261,8 @@ pub struct JoinedRoomDetails {
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
     /// The ID of the old tombstoned room that this room has replaced, if any.
-    pub replaces_tombstoned_room: Option<OwnedRoomId>,
+    /// Includes the successor reason.
+    pub replaces_tombstoned_room: Option<(OwnedRoomId, Option<String>)>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
@@ -1285,7 +1286,7 @@ pub static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = M
 ///
 /// The map key is the **NEW** replacement room ID, and the value is the **OLD** tombstoned room ID.
 /// This allows us to quickly query if a newly-encountered room is a replacement for an old tombstoned room.
-pub static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
+pub static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, (OwnedRoomId, Option<String>)>> = Mutex::new(BTreeMap::new());
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: OnceLock<Client> = OnceLock::new();
@@ -1939,13 +1940,13 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         // to indicate that it replaces this tombstoned room.
         let replacement_room_id = tombstoned_info.room_id;
         if let Some(room_info) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&replacement_room_id) {
-            room_info.replaces_tombstoned_room = Some(room_id.clone());
+            room_info.replaces_tombstoned_room = Some((room_id.clone(), tombstoned_info.reason));
         }
         // But if we don't know about the replacement room yet, we need to save this tombstoned room
         // in a separate list so that the replacement room we will discover in the future
         // can know which old tombstoned room it replaces (see the bottom of this function).
         else {
-            TOMBSTONED_ROOMS.lock().unwrap().insert(replacement_room_id, room_id.clone());
+            TOMBSTONED_ROOMS.lock().unwrap().insert(replacement_room_id, (room_id.clone(), tombstoned_info.reason));
         }
     }
 
@@ -2243,7 +2244,6 @@ async fn timeline_subscriber_handler(
     let mut target_event_id = None;
     // the timeline index and event ID of the target event, if it has been found.
     let mut found_target_event_id: Option<(usize, OwnedEventId)> = None;
-
     loop { tokio::select! {
         // we must check for new requests before handling new timeline updates.
         biased;
@@ -2561,6 +2561,25 @@ fn update_latest_event(
                         }
                     }
                 }
+                // Check for room tombstone changes.
+                AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content, prev_content: _ }) => {
+                    if let Some(room_info) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&content.replacement_room) {
+                        room_info.replaces_tombstoned_room = Some((room_id.clone(), Some(content.body.clone())));
+                    } else {
+                        TOMBSTONED_ROOMS.lock().unwrap().insert(content.replacement_room.clone(), (room_id.clone(), Some(content.body.clone())));
+                    }
+                    enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room_id.clone() });
+                    if let Some(sender) = timeline_update_sender {
+                        match sender.send(TimelineUpdate::IsTombstoned) {
+                            Ok(_) => {
+                                SignalToUI::set_ui_signal();
+                            }
+                            Err(e) => {
+                                error!("Failed to send the new Tombstone event: {e}");
+                            }
+                        }
+                    }
+                }
                 _ => { }
             }
         }
@@ -2574,6 +2593,7 @@ fn update_latest_event(
                 }
             }
         }
+        
         _ => { }
     }
 

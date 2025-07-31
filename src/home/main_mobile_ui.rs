@@ -4,7 +4,7 @@ use crate::{
     app::{AppState, AppStateAction, SelectedRoom}, home::{room_screen::RoomScreenWidgetExt, rooms_list::RoomsListAction}
 };
 
-use super::{invite_screen::InviteScreenWidgetExt, tombstone_screen::TombstoneScreenWidgetExt};
+use super::invite_screen::InviteScreenWidgetExt;
 
 live_design! {
     use link::theme::*;
@@ -15,7 +15,6 @@ live_design! {
     use crate::home::welcome_screen::WelcomeScreen;
     use crate::home::room_screen::RoomScreen;
     use crate::home::invite_screen::InviteScreen;
-    use crate::home::tombstone_screen::TombstoneScreen;
 
     pub MainMobileUI = {{MainMobileUI}} {
         width: Fill, height: Fill
@@ -37,11 +36,6 @@ live_design! {
             align: {x: 0.5, y: 0.5}
             width: Fill, height: Fill
             invite_screen = <InviteScreen> {}
-        }
-        tombstone_view = <View> {
-            align: {x: 0.5, y: 0.5}
-            width: Fill, height: Fill
-            tombstone_screen = <TombstoneScreen> {}
         }
     }
 }
@@ -72,7 +66,7 @@ impl Widget for MainMobileUI {
                         );
                     }
                     RoomsListAction::Close(_selected_room) => {
-
+                        
                     }
                     RoomsListAction::None => {}
                 }
@@ -85,14 +79,12 @@ impl Widget for MainMobileUI {
         let show_welcome: bool;
         let show_room: bool;
         let show_invite: bool;
-        let show_tombstone: bool;
 
         match app_state.selected_room.as_ref() {
             Some(SelectedRoom::JoinedRoom { room_id, room_name }) => {
                 show_welcome = false;
                 show_room = true;
                 show_invite = false;
-                show_tombstone = false;
                 // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
                 self.view
                     .room_screen(id!(room_screen))
@@ -102,36 +94,20 @@ impl Widget for MainMobileUI {
                 show_welcome = false;
                 show_room = false;
                 show_invite = true;
-                show_tombstone = false;
                 self.view
                     .invite_screen(id!(invite_screen))
                     .set_displayed_invite(cx, room_id.clone().into(), room_name.clone());
-            }
-            Some(SelectedRoom::TombstoneRoom { room_id, room_name}) => {
-                show_welcome = false;
-                show_room = false;
-                show_invite = false;
-                show_tombstone = true;
-                self.view
-                    .tombstone_screen(id!(tombstone_screen))
-                    .set_displayed_tombstone(
-                        cx, 
-                        room_id.clone().into(),
-                        room_name.clone(),
-                    );
             }
             None => {
                 show_welcome = true;
                 show_room = false;
                 show_invite = false;
-                show_tombstone = false;
             }
         }
 
         self.view.view(id!(welcome)).set_visible(cx, show_welcome);
         self.view.view(id!(room_view)).set_visible(cx, show_room);
         self.view.view(id!(invite_view)).set_visible(cx, show_invite);
-        self.view.view(id!(tombstone_view)).set_visible(cx, show_tombstone);
         self.view.draw_walk(cx, scope, walk)
     }
 }
