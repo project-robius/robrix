@@ -2,7 +2,7 @@ use std::ops::DerefMut;
 
 use makepad_widgets::*;
 
-use crate::{shared::{popup_list::{enqueue_popup_notification, PopupItem}, styles::COLOR_BG_ACCEPT_GREEN}, tsp::{tsp_state_ref, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
+use crate::{shared::{popup_list::{enqueue_popup_notification, PopupItem}, styles::*}, tsp::{create_wallet_modal::CreateWalletModalAction, tsp_state_ref, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
 live_design! {
     use link::theme::*;
@@ -14,38 +14,41 @@ live_design! {
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
 
+    // An entry in the list of wallets.
     WalletEntry = <View> {
-        flow: Down,
-
-        wallet_name = <Label> {
-            width: Fill, height: Fit
-            flow: RightWrap,
-            draw_text: {
-                wrap: Word,
-                color: (MESSAGE_TEXT_COLOR),
-                text_style: <THEME_FONT_BOLD>{ font_size: 12 },
-            }
-            text: "[Wallet Name]" // TODO: remove
-        }
-
-        wallet_path = <Label> {
-            width: Fill, height: Fit
-            flow: RightWrap,
-            draw_text: {
-                wrap: Word,
-                color: (MESSAGE_TEXT_COLOR),
-                text_style: <THEME_FONT_REGULAR>{ font_size: 11 },
-            }
-            text: "[Wallet Path/URL]" // TODO: remove
-        }
+        width: Fill, height: Fit
+        flow: Down
 
         <View> {
             width: Fill, height: Fit
             flow: RightWrap,
-            align: {y: 0.5},
-            spacing: 10
+            padding: 10
 
-            not_found_label = <View> {
+            wallet_name = <Label> {
+                width: Fit, height: Fit
+                flow: Right,
+                margin: {top: 2.4, left: 0}
+                draw_text: {
+                    color: (MESSAGE_TEXT_COLOR),
+                    text_style: <THEME_FONT_BOLD>{ font_size: 12 },
+                }
+                text: "[Wallet Name]"
+            }
+
+            wallet_path = <Label> {
+                width: Fit, height: Fit
+                flow: Right,
+                margin: {top: 2.9, left: 8, bottom: 2}
+                draw_text: {
+                    color: (MESSAGE_TEXT_COLOR),
+                    text_style: <THEME_FONT_REGULAR>{ font_size: 11 },
+                }
+                text: "[Wallet Path/URL]"
+            }
+
+            not_found_label_view = <View> {
+                width: Fit, height: Fit
+                margin: {left: 20}
                 <Label> {
                     width: Fit, height: Fit
                     flow: Right,
@@ -59,16 +62,16 @@ live_design! {
 
             set_default_wallet_button = <RobrixIconButton> {
                 padding: {top: 10, bottom: 10, left: 12, right: 15}
-                margin: 0,
+                margin: {left: 20}
                 draw_bg: {
                     color: (COLOR_ACTIVE_PRIMARY)
                 }
                 draw_icon: {
                     svg_file: (ICON_CHECKMARK)
-                    color: (COLOR_PRIMARY)
+                    color: (COLOR_FG_DISABLED)
                 }
                 draw_text: {
-                    color: (COLOR_PRIMARY)
+                    color: (COLOR_FG_DISABLED)
                     text_style: <REGULAR_TEXT> {}
                 }
                 icon_walk: {width: 16, height: 16}
@@ -77,7 +80,25 @@ live_design! {
 
             remove_wallet_button = <RobrixIconButton> {
                 padding: {top: 10, bottom: 10, left: 12, right: 15}
-                margin: 0,
+                margin: {left: 20}
+                draw_bg: {
+                    color: (COLOR_BG_DANGER_RED)
+                    border_color: (COLOR_FG_DANGER_RED)
+                }
+                draw_icon: {
+                    svg_file: (ICON_CLOSE),
+                    color: (COLOR_FG_DANGER_RED),
+                }
+                draw_text: {
+                    color: (COLOR_FG_DANGER_RED),
+                }
+                icon_walk: { width: 16, height: 16 }
+                text: "Remove From List"
+            }
+
+            delete_wallet_button = <RobrixIconButton> {
+                padding: {top: 10, bottom: 10, left: 12, right: 15}
+                margin: {left: 20}
                 draw_bg: {
                     color: (COLOR_BG_DANGER_RED)
                     border_color: (COLOR_FG_DANGER_RED)
@@ -90,11 +111,11 @@ live_design! {
                     color: (COLOR_FG_DANGER_RED),
                 }
                 icon_walk: { width: 16, height: 16 }
-                text: "Remove From List"
+                text: "Delete Wallet"
             }
         }
 
-        <LineH> { padding: 10 }
+        <LineH> { padding: 10, margin: {left: 5, right: 5} }
     }
 
     // The view containing all TSP-related settings.
@@ -121,22 +142,33 @@ live_design! {
             }
         }
 
-        wallet_list = <PortalList> {
-            width: Fill,
-            height: 300,
-            spacing: 0.0
-            flow: Down,
+        <RoundedView> {
+            width: Fill, height: Fit
+            margin: 5,
 
-            wallet_entry = <WalletEntry> { }
-            empty = <View> { }
-            bottom_filler = <View> {
+            show_bg: true,
+            draw_bg: {
+                color: #F6F8F9,
+                border_radius: 4.0,
+            }
+
+            wallet_list = <PortalList> {
                 width: Fill,
-                height: 100.0,
+                height: 300,
+                spacing: 0.0
+                flow: Down,
+
+                wallet_entry = <WalletEntry> { }
+                empty = <View> { }
+                bottom_filler = <View> {
+                    width: Fill,
+                    height: 100.0,
+                }
             }
         }
 
         <View> {
-            // margin: {top: 20},
+            margin: {top: 5},
             width: Fill, height: Fit
             flow: RightWrap,
             align: {y: 0.5},
@@ -238,19 +270,14 @@ impl Widget for TspSettingsScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        log!("Before refresh_wallets(): {:?}", self.wallets);
         if self.wallets.is_none() {
             // If we don't have any wallets, load them from the TSP state.
             self.refresh_wallets();
+            log!("Wallets were refreshed: {:?}", self.wallets);
         }
-        log!("After refresh_wallets(): {:?}", self.wallets);
         // If we don't have any wallets, show the "no wallets" label.
         let is_wallets_empty = self.wallets.as_ref().is_none_or(|w| w.is_empty());
-        log!("is_wallets_empty: {}", is_wallets_empty);
-        self.view.view(id!(no_wallets_label)).set_visible(
-            cx,
-            is_wallets_empty,
-        );
+        self.view.view(id!(no_wallets_label)).set_visible(cx, is_wallets_empty);
 
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // Here, we only need to handle drawing the portal list.
@@ -263,7 +290,6 @@ impl Widget for TspSettingsScreen {
                 return DrawStep::done();
             };
             let portal_list_height = if is_wallets_empty { 0.0 } else { 300.0 };
-            log!("Setting portal list height to: {}", portal_list_height);
             // Hide the list if there are no wallets
             list_ref.apply_over(cx, live!(
                 height: (portal_list_height),
@@ -277,20 +303,21 @@ impl Widget for TspSettingsScreen {
             while let Some(item_id) = list.next_visible_item(cx) {
                 let item = if let Some((wallet, is_default, status)) = wallets.get(item_id) {
                     let wallet_entry = list.item(cx, item_id, live_id!(wallet_entry));
-                    self.view.label(id!(wallet_name)).set_text(
+                    wallet_entry.label(id!(wallet_name)).set_text(
                         cx,
                         &wallet.wallet_name,
                     );
-                    self.view.label(id!(wallet_path)).set_text(
+                    wallet_entry.label(id!(wallet_path)).set_text(
                         cx,
                         &wallet.path,
                     );
-                    self.view.label(id!(not_found_label)).set_visible(
+                    wallet_entry.label(id!(not_found_label_view)).set_visible(
                         cx,
                         matches!(status, WalletStatus::NotFound),
                     );
-                    let set_default_wallet_button = self.view.button(id!(set_default_wallet_button));
+                    let set_default_wallet_button = wallet_entry.button(id!(set_default_wallet_button));
                     if is_default {
+                        log!("Drawing wallet {item_id} as default");
                         set_default_wallet_button.apply_over(cx, live!(
                             enabled: false,
                             draw_bg: { color: (COLOR_BG_ACCEPT_GREEN) },
@@ -299,11 +326,21 @@ impl Widget for TspSettingsScreen {
                             text: "Selected As Default"
                         ));
                     } else {
-                        set_default_wallet_button.set_enabled(
-                            cx,
-                            matches!(status, WalletStatus::Opened),
-                        );
+                        let (enable, fg_color) = if matches!(status, WalletStatus::Opened) {
+                            (true, COLOR_PRIMARY)
+                        } else {
+                            (false, COLOR_FG_DISABLED)
+                        };
+                        log!("Drawing non-default wallet {item_id}, enabled? {enable}, fg_color: {fg_color}");
+                        set_default_wallet_button.apply_over(cx, live!(
+                            enabled: (enable),
+                            icon_walk: { width: 16, height: 16},
+                            draw_text: { color: (fg_color) },
+                            draw_icon: { color: (fg_color) },
+                            text: "Set As Default"
+                        ));
                     }
+
                     wallet_entry
                 } else {
                     list.item(cx, item_id, live_id!(bottom_filler))
@@ -320,7 +357,7 @@ impl MatchEvent for TspSettingsScreen {
         for action in actions {
             match action.downcast_ref() {
                 // Add the new wallet to the list of drawn wallets.
-                Some(TspWalletAction::WalletAdded { metadata, is_default }) => {
+                Some(TspWalletAction::CreateWalletSuccess { metadata, is_default }) => {
                     let wallets = self.wallets.get_or_insert_default();
                     if *is_default {
                         wallets.active_wallet = Some(metadata.clone());
@@ -358,17 +395,15 @@ impl MatchEvent for TspSettingsScreen {
                     }
                     self.view.redraw(cx);
                 }
-                None => { }
+
+                Some(TspWalletAction::CreateWalletError { .. })
+                | None => { }
             }
         }
 
 
         if self.view.button(id!(create_wallet_button)).clicked(actions) {
-            // TODO: support creating a new wallet.
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Creating a new wallet is not yet implemented."),
-                auto_dismissal_duration: Some(4.0),
-            });
+            cx.action(CreateWalletModalAction::Open);
         }
 
         if self.view.button(id!(import_wallet_button)).clicked(actions) {

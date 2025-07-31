@@ -233,11 +233,14 @@ live_design! {
     }
 }
 
-pub const COLOR_FG_ACCEPT_GREEN:     Vec4 = vec4(0.074, 0.533, 0.031, 1.0); // #138808
-pub const COLOR_BG_ACCEPT_GREEN:     Vec4 = vec4(0.941, 1.0, 0.941, 1.0); // #F0FFF0
-pub const COLOR_FG_DISABLED:         Vec4 = vec4(0.7, 0.7, 0.7, 1.0); // #B3B3B3
-pub const COLOR_BG_DISABLED:         Vec4 = vec4(0.878, 0.878, 0.878, 1.0); // #E0E0E0
-pub const COLOR_FG_DANGER_RED:       Vec4 = vec4(0.863, 0.0, 0.02, 1.0); // #DC0005
-pub const COLOR_BG_DANGER_RED:       Vec4 = vec4(1.0, 0.941, 0.941, 1.0); // #FFF0F0
-pub const COLOR_ROBRIX_PURPLE:       Vec4 = vec4(0.341, 0.176, 0.8, 1.0); // #572DCC
-pub const COLOR_UNKNOWN_ROOM_AVATAR: Vec4 = vec4(1.0, 0.431, 0.0, 1.0); // #FF6e00
+pub const COLOR_PRIMARY:               Vec4 = vec4(1.0, 1.0, 1.0, 1.0); // #FFFFFF
+pub const COLOR_ACTIVE_PRIMARY:        Vec4 = vec4(0.059, 0.533, 0.996, 1.0); // #0F88FE
+pub const COLOR_ACTIVE_PRIMARY_DARKER: Vec4 = vec4(0.063, 0.435, 0.682, 1.0); // #106FCC
+pub const COLOR_FG_ACCEPT_GREEN:       Vec4 = vec4(0.074, 0.533, 0.031, 1.0); // #138808
+pub const COLOR_BG_ACCEPT_GREEN:       Vec4 = vec4(0.941, 1.0, 0.941, 1.0); // #F0FFF0
+pub const COLOR_FG_DISABLED:           Vec4 = vec4(0.7, 0.7, 0.7, 1.0); // #B3B3B3
+pub const COLOR_BG_DISABLED:           Vec4 = vec4(0.878, 0.878, 0.878, 1.0); // #E0E0E0
+pub const COLOR_FG_DANGER_RED:         Vec4 = vec4(0.863, 0.0, 0.02, 1.0); // #DC0005
+pub const COLOR_BG_DANGER_RED:         Vec4 = vec4(1.0, 0.941, 0.941, 1.0); // #FFF0F0
+pub const COLOR_ROBRIX_PURPLE:         Vec4 = vec4(0.341, 0.176, 0.8, 1.0); // #572DCC
+pub const COLOR_UNKNOWN_ROOM_AVATAR:   Vec4 = vec4(1.0, 0.431, 0.0, 1.0); // #FF6e00

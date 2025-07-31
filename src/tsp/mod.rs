@@ -1,20 +1,34 @@
-use std::{ops::Deref, sync::Mutex};
+use std::{ops::Deref, sync::{Arc, Mutex, OnceLock}};
 
 use anyhow::anyhow;
 use makepad_widgets::{makepad_micro_serde::*, *};
 use quinn::rustls::crypto::{CryptoProvider, aws_lc_rs};
+use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
 use tsp_sdk::{AskarSecureStorage, AsyncSecureStore, SecureStorage};
 
-use crate::persistence;
+use crate::{persistence, shared::popup_list::{enqueue_popup_notification, PopupItem}};
 
 pub mod tsp_settings_screen;
 
-// pub mod create_wallet_modal;
+pub mod create_wallet_modal;
 
 pub fn live_design(cx: &mut Cx) {
-    // create_wallet_modal::live_design(cx);
+    create_wallet_modal::live_design(cx);
     tsp_settings_screen::live_design(cx);
 }
+
+/// The sender used by [`submit_tsp_request()`] to send TSP requests to the async worker thread.
+/// Currently there is only one, but it can be cloned if we need more concurrent senders.
+static TSP_REQUEST_SENDER: OnceLock<UnboundedSender<TspRequest>> = OnceLock::new();
+
+/// Submits a TSP request to the worker thread to be executed asynchronously.
+pub fn submit_tsp_request(req: TspRequest) -> anyhow::Result<()> {
+    TSP_REQUEST_SENDER.get()
+        .ok_or(anyhow!("TSP request sender was not initialized."))?
+        .send(req)
+        .map_err(|_| anyhow!("TSP async worker task receiver has died!"))
+}
+
 
 /// The global singleton TSP state, storing all known TSP wallets.
 static TSP_STATE: Mutex<TspState> = Mutex::new(TspState::new());
@@ -60,9 +74,13 @@ impl TspState {
                 self.other_wallets.push(TspWalletEntry::NotFound(wallet_metadata));
             }
         }
-
         if saved_state.default_wallet.is_some() && self.current_wallet.is_none() {
             error!("BUG: saved TSP state had a default wallet, but it wasn't opened successfully.");
+        }
+        match self.current_wallet.is_some() as usize + self.other_wallets.len() {
+            0 => log!("Restored no TSP wallets from saved TSP state."),
+            1 => log!("Restored 1 TSP wallet from saved state."),
+            n => log!("Restored {n} TSP wallets from saved state."),
         }
         Ok(())
     }
@@ -165,7 +183,7 @@ impl std::fmt::Debug for TspWalletMetadata {
         f.debug_struct("TspWalletMetadata")
             .field("wallet_name", &self.wallet_name)
             .field("path", &self.path)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 impl PartialEq for TspWalletMetadata {
@@ -203,11 +221,77 @@ pub struct SavedTspState {
 }
 
 
-pub fn tsp_init(rt: &tokio::runtime::Runtime) -> anyhow::Result<()> {
+pub fn tsp_init(rt: Arc<tokio::runtime::Runtime>) -> anyhow::Result<()> {
     CryptoProvider::install_default(aws_lc_rs::default_provider())
         .map_err(|_| anyhow!("BUG: default CryptoProvider was already set."))?;
 
-    rt.spawn(inner_tsp_init());
+    // Create a channel to be used between UI thread(s) and the TSP async worker thread.
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<TspRequest>();
+    TSP_REQUEST_SENDER.set(sender).expect("BUG: TSP_REQUEST_SENDER already set!");
+
+    let rt2 = rt.clone();
+    // Start a high-level async task that will start and monitor all other tasks.
+    let _monitor = rt.spawn(async move {
+        // First, run the inner TSP initialization logic to load prior TSP state.
+        match inner_tsp_init().await {
+            Ok(()) => log!("TSP state initialized successfully."),
+            Err(e) => {
+                error!("Failed to initialize TSP state: {e:?}");
+                enqueue_popup_notification(PopupItem {
+                    message: format!(
+                        "Failed to initialize TSP state.\
+                        Your TSP wallets may not be fully available. Error: {e}",
+                    ),
+                    auto_dismissal_duration: None,
+                });
+                return;
+            }
+        }
+
+        // Spawn the actual async worker thread.
+        let mut tsp_worker_join_handle = rt2.spawn(async_tsp_worker(receiver));
+
+        // TODO: start the main loop that drives the TSP SDK's receiver handler,
+        //       e.g., to process incoming requests from other TSP instances.
+        // let mut main_loop_join_handle = rt2.spawn(async_main_loop(...));
+
+        #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
+        loop {
+            tokio::select! {
+                // result = &mut main_loop_join_handle => {
+                //     match result {
+                //         Ok(Ok(())) => {
+                //             error!("BUG: main async loop task ended unexpectedly!");
+                //         }
+                //         Ok(Err(e)) => {
+                //             error!("Error: main async loop task ended:\n\t{e:?}");
+                //             enqueue_popup_notification(PopupItem { message: format!("Rooms list update error: {e}"), auto_dismissal_duration: None });
+                //         },
+                //         Err(e) => {
+                //             error!("BUG: failed to join main async loop task: {e:?}");
+                //         }
+                //     }
+                //     break;
+                // }
+                result = &mut tsp_worker_join_handle => {
+                    match result {
+                        Ok(Ok(())) => {
+                            error!("BUG: async_tsp_worker task ended unexpectedly!");
+                        }
+                        Ok(Err(e)) => {
+                            error!("Error: async TSP worker task ended:\n\t{e:?}");
+                            enqueue_popup_notification(PopupItem { message: format!("TSP background worker error: {e}"), auto_dismissal_duration: None });
+                        },
+                        Err(e) => {
+                            error!("BUG: failed to join async_tsp_worker task: {e:?}");
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    });
+
     Ok(())
 }
 
@@ -223,15 +307,109 @@ async fn inner_tsp_init() -> anyhow::Result<()> {
 
 
 /// Actions related to TSP wallets.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum TspWalletAction {
-    /// A wallet was created or imported successfully.
-    WalletAdded {
+    /// A wallet was created successfully.
+    CreateWalletSuccess {
         metadata: TspWalletMetadata,
         is_default: bool,
+    },
+    /// Failed to create a wallet.
+    CreateWalletError {
+        metadata: TspWalletMetadata,
+        error: tsp_sdk::Error,
     },
     /// A wallet was deleted successfully.
     WalletDeleted(TspWalletMetadata),
     /// The default wallet was set to the given wallet.
     DefaultWalletSet(TspWalletMetadata),
+}
+
+/// Requests that can be sent to the TSP async worker thread.
+pub enum TspRequest {
+    /// Request to create a new TSP wallet.
+    CreateWallet {
+        metadata: TspWalletMetadata,
+    },
+    /// Request to open an existing TSP wallet.
+    OpenWallet {
+        metadata: TspWalletMetadata,
+    },
+    /// Request to delete a TSP wallet.
+    DeleteWallet(TspWalletMetadata),
+}
+
+/// The entry point for an async worker thread that processes TSP-related async tasks.
+///
+/// All this task does is wait for [`TspRequests`] from other threads
+/// and then executes them within an async runtime context.
+async fn async_tsp_worker(
+    mut request_receiver: UnboundedReceiver<TspRequest>,
+) -> anyhow::Result<()> {
+    log!("Started async_tsp_worker task.");
+
+    while let Some(request) = request_receiver.recv().await {
+        match request {
+            TspRequest::CreateWallet { metadata } => {
+                log!("Received TspRequest::CreateWallet({metadata:?})");
+                Handle::current().spawn(async move {
+                    match AskarSecureStorage::new(&metadata.path, metadata.password.as_bytes()).await {
+                        Ok(vault) => {
+                            log!("Successfully created new wallet: {metadata:?}");
+                            let db = AsyncSecureStore::new();
+                            let mut tsp_state = tsp_state_ref().lock().unwrap();
+                            let opened_wallet = OpenedTspWallet {
+                                vault,
+                                db,
+                                metadata: metadata.clone(),
+                            };
+                            let is_default: bool;
+                            if tsp_state.current_wallet.is_none() {
+                                tsp_state.current_wallet = Some(opened_wallet);
+                                is_default = true;
+                            } else {
+                                tsp_state.other_wallets.push(TspWalletEntry::Opened(opened_wallet));
+                                is_default = false;
+                            }
+                            Cx::post_action(
+                                TspWalletAction::CreateWalletSuccess {
+                                    metadata,
+                                    is_default,
+                                }
+                            );
+                        }
+                        Err(error) => {
+                            error!("Failed to create new wallet: {error:?}");
+                            Cx::post_action(
+                                TspWalletAction::CreateWalletError {
+                                    metadata: metadata.clone(),
+                                    error,
+                                }
+                            );
+                        }
+                    }
+                });
+            }
+            TspRequest::OpenWallet { metadata } => {
+                log!("Received TspRequest::OpenWallet({metadata:?})");
+                // Handle wallet opening
+            }
+            TspRequest::DeleteWallet(metadata) => {
+                log!("Received TspRequest::DeleteWallet({metadata:?})");
+                // Handle wallet deletion
+            }
+        }
+    }
+    error!("async_tsp_worker task ended unexpectedly");
+    anyhow::bail!("async_tsp_worker task ended unexpectedly")
+}
+
+
+/// Generate the default wallet SQLite path based on the wallet name.
+pub fn wallet_path_from_name(name: &str) -> String {
+    format!(
+        "sqlite://{}.sqlite",
+        sanitize_filename::sanitize(name)
+            .replace(char::is_whitespace, "_"),
+    )
 }

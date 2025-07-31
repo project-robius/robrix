@@ -111,7 +111,7 @@ live_design! {
                         // but behind the verification modal.
                         new_message_context_menu = <NewMessageContextMenu> { }
 
-                        // We want the verification modal to always show up on top of
+                        // We want the verification modal to always show up in front of
                         // all other elements when an incoming verification request is received.
                         verification_modal = <Modal> {
                             content: {
@@ -369,7 +369,7 @@ impl AppMain for App {
                         async move {
                             match tsp_state.close_and_serialize().await {
                                 Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
-                                    Ok(_) => log!("Successfully saved TSP wallet state to persistent storage."),
+                                    Ok(_) => { }
                                     Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
                                 }
                                 Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),

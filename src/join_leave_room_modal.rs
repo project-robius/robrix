@@ -1,3 +1,7 @@
+//! A modal dialog for joining or leaving rooms in Matrix.
+//!
+//! Also used as a confirmation dialog for accepting or rejecting room invites.
+
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 

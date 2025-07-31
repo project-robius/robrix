@@ -1,4 +1,4 @@
-use makepad_widgets::*;
+use makepad_widgets::{text::selection::Cursor, *};
 
 use crate::{profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem}, styles::*}, utils};
 
@@ -91,9 +91,34 @@ live_design! {
         }
 
         display_name_input = <RobrixTextInput> {
+            margin: {top: 3, left: 5, right: 5, bottom: 8},
             padding: 10,
-            width: Fit, height: Fit
-            flow: Right,
+            width: 216, height: Fit
+            flow: RightWrap,
+            draw_bg: {
+                color: (COLOR_SECONDARY)
+                border_radius: 2.0
+                border_size: 1.0
+
+                // TODO: determine these other colors below
+                color_hover: (COLOR_PRIMARY)
+                color_focus: (COLOR_PRIMARY)
+                color_down: (COLOR_PRIMARY)
+                color_empty: (COLOR_SECONDARY)
+                color_disabled: (COLOR_BG_DISABLED)
+
+                border_color_1: (COLOR_SECONDARY)
+                border_color_1_hover: (COLOR_ACTIVE_PRIMARY)
+                border_color_1_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
+                border_color_1_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+                border_color_1_disabled: (COLOR_FG_DISABLED)
+
+                border_color_2: (COLOR_SECONDARY)
+                border_color_2_hover: (COLOR_ACTIVE_PRIMARY)
+                border_color_2_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
+                border_color_2_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+                border_color_2_disabled: (COLOR_FG_DISABLED)
+            }
             draw_text: {
                 wrap: Word,
             }
@@ -324,7 +349,9 @@ impl MatchEvent for AccountSettings {
 
         if cancel_display_name_button.clicked(actions) {
             // Reset the display name input and disable the name change buttons.
-            display_name_input.set_text(cx, own_profile.username.as_deref().unwrap_or(""));
+            let new_text = own_profile.username.as_deref().unwrap_or("");
+            display_name_input.set_text(cx, new_text);
+            display_name_input.set_cursor(cx, Cursor { index: new_text.len(), prefer_next_row: false }, false);
             enable_buttons(cx, false);
         }
 
