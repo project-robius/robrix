@@ -975,7 +975,7 @@ pub enum SearchResultItem {
     RoomHeader(OwnedRoomId),
 }
 
-pub fn populate_message_search_view(
+fn populate_message_search_view(
     cx: &mut Cx2d,
     list: &mut PortalList,
     item_id: usize,

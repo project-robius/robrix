@@ -381,7 +381,7 @@ impl WidgetMatchEvent for MainDesktopUI {
 
                     if let Some(ref selected_room) = &app_state.selected_room {
                         self.focus_or_create_tab(cx, selected_room.clone());
-                        // Call DockSave action to display the search message input box if there is an opened room.
+                        // Call DockSave action to display the search message input box when a room is open.
                         cx.widget_action(
                             self.widget_uid(), 
                             &HeapLiveIdPath::default(), 

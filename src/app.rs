@@ -25,11 +25,14 @@ use crate::{
         save_app_state,
         save_window_state,
     },
-    shared::{callout_tooltip::{
-        CalloutTooltipOptions,
-        CalloutTooltipWidgetRefExt,
-        TooltipAction,
-    }, message_search_input_bar::MessageSearchAction},
+    shared::{
+      callout_tooltip::{
+          CalloutTooltipOptions,
+          CalloutTooltipWidgetRefExt,
+          TooltipAction,
+      },
+      message_search_input_bar::MessageSearchAction,
+    },
     sliding_sync::current_user_id,
     utils::{
         room_name_or_id,
