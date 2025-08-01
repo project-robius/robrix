@@ -941,25 +941,17 @@ impl MentionableTextInput {
 
     /// Updates the mention suggestion list based on search
     fn update_user_list(&mut self, cx: &mut Cx, search_text: &str, scope: &mut Scope) {
-        self.update_user_list_internal(cx, search_text, scope, false);
-    }
-
-    /// Internal implementation of update_user_list with force flag
-    fn update_user_list_internal(&mut self, cx: &mut Cx, search_text: &str, scope: &mut Scope, force: bool) {
         // Check if we're in searching mode first
         if !self.is_searching {
             // Not in searching mode, returning
             return;
         }
 
-        // Skip if search text hasn't changed (simple debounce) - unless forced
-        if !force && self.last_search_text.as_deref() == Some(search_text) {
-            // Don't log this - it happens too frequently
+        // Skip if search text hasn't changed (simple debounce)
+        if self.last_search_text.as_deref() == Some(search_text) {
             return;
         }
 
-        // log!("update_user_list: updating search from '{:?}' to '{}'", self.last_search_text, search_text);
-        // Update last search text
         self.last_search_text = Some(search_text.to_string());
 
         // 1. Get Props from Scope
