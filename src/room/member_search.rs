@@ -201,8 +201,6 @@ pub fn search_room_members_streaming(
     }
 }
 
-
-
 /// Helper function to check if a string starts with another string based on graphemes
 fn grapheme_starts_with(haystack: &str, needle: &str, case_insensitive: bool) -> bool {
     if needle.is_empty() {
