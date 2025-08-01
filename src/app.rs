@@ -25,10 +25,13 @@ use crate::{
         save_app_state,
         save_window_state,
     },
-    shared::callout_tooltip::{
-        CalloutTooltipOptions,
-        CalloutTooltipWidgetRefExt,
-        TooltipAction,
+    shared::{
+      callout_tooltip::{
+          CalloutTooltipOptions,
+          CalloutTooltipWidgetRefExt,
+          TooltipAction,
+      },
+      message_search_input_bar::MessageSearchAction,
     },
     sliding_sync::current_user_id,
     utils::{
@@ -156,6 +159,8 @@ impl LiveRegister for App {
         crate::settings::live_design(cx);
         crate::room::live_design(cx);
         crate::join_leave_room_modal::live_design(cx);
+        crate::right_panel::live_design(cx);
+        crate::right_panel::search_message::live_design(cx);
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
@@ -239,6 +244,7 @@ impl MatchEvent for App {
                     &Scope::default().path,
                     StackNavigationAction::Push(live_id!(main_content_view))
                 );
+                self.ui.view(id!(message_search_input_view)).set_visible(cx, true);
                 self.ui.redraw(cx);
                 continue;
             }
@@ -247,10 +253,12 @@ impl MatchEvent for App {
             match action.as_widget_action().cast() {
                 AppStateAction::RoomFocused(selected_room) => {
                     self.app_state.selected_room = Some(selected_room.clone());
+                    self.ui.view(id!(message_search_input_view)).set_visible(cx, true);
                     continue;
                 }
                 AppStateAction::FocusNone => {
                     self.app_state.selected_room = None;
+                    self.ui.view(id!(message_search_input_view)).set_visible(cx, false);
                     continue;
                 }
                 AppStateAction::UpgradedInviteToJoinedRoom(room_id) => {
@@ -341,6 +349,13 @@ impl MatchEvent for App {
             //     }
             //     _ => {}
             // }
+            if let MessageSearchAction::Click(_) = action.as_widget_action().cast() {
+                cx.widget_action(
+                    self.ui.widget_uid(),
+                    &Scope::default().path,
+                    StackNavigationAction::Push(live_id!(search_result_view))
+                );
+            }
         }
     }
 }

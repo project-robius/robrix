@@ -19,7 +19,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppState, AppStateAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::{RoomsListRef, RoomsListAction}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -200,10 +200,10 @@ live_design! {
 
 
     // An empty view that takes up no space in the portal list.
-    Empty = <View> { }
+    pub Empty = <View> { }
 
     // The view used for each text-based message event in a room's timeline.
-    Message = {{Message}} {
+    pub Message = {{Message}} {
         width: Fill,
         height: Fit,
         margin: 0.0
@@ -331,6 +331,26 @@ live_design! {
                         }
                         text: "<Username not available>"
                     }
+                    jump_button_view = <View> {
+                        visible: false,
+                        width: Fit,
+                        height: Fit,
+                        jump_button = <Button> {
+                            width: Fit,
+                            draw_bg: {
+                                color_hover: (COLOR_FG_DISABLED)
+                            }
+                            draw_text: {
+                                text_style: <REGULAR_TEXT>{
+                                    font_size: 9,
+                                },
+                                color: (COLOR_TEXT),
+                                color_hover: (COLOR_TEXT_IDLE),
+                                color_focus: (COLOR_TEXT),
+                            }
+                            text: "Jump"
+                        }
+                    }
                 }
 
                 message = <HtmlOrPlaintext> { }
@@ -389,7 +409,7 @@ live_design! {
 
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
-    ImageMessage = <Message> {
+    pub ImageMessage = <Message> {
         body = {
             content = {
                 width: Fill,
@@ -970,6 +990,64 @@ impl Widget for RoomScreen {
                         );
                     }
                 }
+                if let MessageAction::ScrollToMessage { room_id, event_id } = action.as_widget_action().cast() {
+                    if self.room_id.as_ref().is_some_and(|r| r == &room_id) {
+                        // Check if this is the correct room
+                        let Some(tl) = self.tl_state.as_mut() else { continue };
+                        if tl.room_id != room_id {
+                            // This message is for a different room, ignore it
+                            continue;
+                        }
+                        // Search through the timeline to find the message with the given event_id
+                        let mut num_items_searched = 0;
+                        let target_msg_tl_index = tl.items
+                            .focus()
+                            .into_iter()
+                            .position(|item| {
+                                num_items_searched += 1;
+                                item.as_event()
+                                    .and_then(|e| e.event_id())
+                                    .is_some_and(|ev_id| ev_id == event_id)
+                            });
+
+                        if let Some(index) = target_msg_tl_index {
+                            // Message found in current timeline - scroll to it
+                            let speed = 50.0;
+                            portal_list.smooth_scroll_to(cx, index.saturating_sub(2), speed, None);
+                            // start highlight animation.
+                            tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
+                                item_id: index
+                            };
+                        } else {
+                            // Message not found - trigger backwards pagination to find it
+                            loading_pane.set_state(
+                                cx,
+                                LoadingPaneState::BackwardsPaginateUntilEvent {
+                                    target_event_id: event_id.clone(),
+                                    events_paginated: 0,
+                                    request_sender: tl.request_sender.clone(),
+                                },
+                            );
+                            loading_pane.show(cx);
+
+                            tl.request_sender.send_if_modified(|requests| {
+                                if let Some(existing) = requests.iter_mut().find(|r| r.room_id == tl.room_id) {
+                                    // Re-use existing request
+                                    existing.target_event_id = event_id.clone();
+                                } else {
+                                    requests.push(BackwardsPaginateUntilEventRequest {
+                                        room_id: tl.room_id.clone(),
+                                        target_event_id: event_id.clone(),
+                                        starting_index: 0, // Search from the beginning since we don't know where it is
+                                        current_tl_len: tl.items.len(),
+                                    });
+                                }
+                                true
+                            });
+                        }
+                        self.redraw(cx);
+                    }
+                }
             }
 
             /*
@@ -1260,10 +1338,9 @@ impl Widget for RoomScreen {
             return DrawStep::done();
         }
 
-
         let room_screen_widget_uid = self.widget_uid();
-
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
+            
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
             let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
@@ -2126,6 +2203,7 @@ impl RoomScreen {
                     }
                     self.redraw(cx);
                 }
+               
                 MessageAction::Redact { details, reason } => {
                     let Some(tl) = self.tl_state.as_mut() else { return };
                     let mut success = false;
@@ -2165,6 +2243,7 @@ impl RoomScreen {
                 // This isn't yet handled, as we need to completely redesign it.
                 MessageAction::ActionBarClose => { }
                 MessageAction::None => { }
+                _ => {}
             }
         }
     }
@@ -2949,22 +3028,22 @@ fn find_new_item_matching_current_item(
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct ItemDrawnStatus {
+pub struct ItemDrawnStatus {
     /// Whether the profile info (avatar and displayable username) were drawn for this item.
-    profile_drawn: bool,
+    pub profile_drawn: bool,
     /// Whether the content of the item was drawn (e.g., the message text, image, video, sticker, etc).
-    content_drawn: bool,
+    pub content_drawn: bool,
 }
 impl ItemDrawnStatus {
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `false`.
-    const fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             profile_drawn: false,
             content_drawn: false,
         }
     }
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `true`.
-    const fn both_drawn() -> Self {
+    pub const fn both_drawn() -> Self {
         Self {
             profile_drawn: true,
             content_drawn: true,
@@ -3469,7 +3548,7 @@ fn populate_message_view(
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
-fn populate_text_message_content(
+pub fn populate_text_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     body: &str,
@@ -3499,7 +3578,7 @@ fn populate_text_message_content(
 /// Draws the given image message's content into the `message_content_widget`.
 ///
 /// Returns whether the image message content was fully drawn.
-fn populate_image_message_content(
+pub fn populate_image_message_content(
     cx: &mut Cx2d,
     text_or_image_ref: &TextOrImageRef,
     image_info_source: Option<Box<ImageInfo>>,
@@ -3637,7 +3716,7 @@ fn populate_image_message_content(
 /// Draws a file message's content into the given `message_content_widget`.
 ///
 /// Returns whether the file message content was fully drawn.
-fn populate_file_message_content(
+pub fn populate_file_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     file_content: &FileMessageEventContent,
@@ -3667,7 +3746,7 @@ fn populate_file_message_content(
 /// Draws an audio message's content into the given `message_content_widget`.
 ///
 /// Returns whether the audio message content was fully drawn.
-fn populate_audio_message_content(
+pub fn populate_audio_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     audio: &AudioMessageEventContent,
@@ -4208,6 +4287,12 @@ pub enum MessageAction {
 
     /// The message at the given item index in the timeline should be highlighted.
     HighlightMessage(usize),
+    /// Scroll to a message in the main room timeline with the given event_id.
+    /// Used when navigating from search results to the original message in the timeline.
+    ScrollToMessage {
+        room_id: matrix_sdk::ruma::OwnedRoomId,
+        event_id: matrix_sdk::ruma::OwnedEventId,
+    },
     /// The user requested that we show a context menu with actions
     /// that can be performed on a given message.
     OpenMessageContextMenu {
@@ -4228,6 +4313,19 @@ pub enum MessageAction {
     None,
 }
 
+/// Contains the information needed to jump to a specific message.
+/// Used primarily for search results to allow navigation to the original message location.
+#[derive(Clone, Debug)]
+pub struct JumpOption {
+    /// The room ID where the target message is located.
+    pub room_id: OwnedRoomId,
+    /// The event ID of the target message.
+    pub event_id: OwnedEventId,
+    /// Whether this jump is from a search across all rooms.
+    /// When true, the jump may need to switch to a different room first.
+    pub from_all_rooms_search: bool,
+}
+
 /// A widget representing a single message of any kind within a room timeline.
 #[derive(Live, LiveHook, Widget)]
 pub struct Message {
@@ -4235,6 +4333,10 @@ pub struct Message {
     #[animator] animator: Animator,
 
     #[rust] details: Option<MessageDetails>,
+    /// The jump option required for searched messages.
+    /// Contains the room ID, event ID for the message, and whether it's from an all-rooms search.
+    #[rust] jump_option: Option<JumpOption>,
+    #[rust] room_screen_widget_uid: Option<WidgetUid>,
 }
 
 impl Widget for Message {
@@ -4248,7 +4350,50 @@ impl Widget for Message {
         {
             self.animator_play(cx, id!(highlight.off));
         }
-
+        if let Event::Actions(actions) = event {
+            if let (Some(widget_uid), Some(jump_option)) = (self.room_screen_widget_uid, &self.jump_option) {
+                
+                if self.view.button(id!(jump_button_view.jump_button)).clicked(actions) {
+                    if jump_option.from_all_rooms_search {
+                        if let Some(selected_room) = {
+                            let app_state = scope.data.get::<AppState>().unwrap();
+                            app_state.selected_room.clone()
+                        } {
+                            // If room_id is not the selected room, select the room and open its dock tab
+                            if selected_room.room_id() != &jump_option.room_id {
+                                let room_name: Option<String> = {
+                                    let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                                    rooms_list_ref.get_room_name(&jump_option.room_id)
+                                };
+                                
+                                let target_selected_room = SelectedRoom::JoinedRoom {
+                                    room_id: jump_option.room_id.clone().into(),
+                                    room_name,
+                                };
+                                
+                                // Dispatch action to select the room and open its dock tab
+                                cx.widget_action(
+                                    self.widget_uid(),
+                                    &scope.path,
+                                    RoomsListAction::Selected(target_selected_room)
+                                );
+                            }
+                        }
+                    }
+                    
+                    // Always scroll to the message after room selection (if needed)
+                    cx.widget_action(
+                        widget_uid,
+                        &scope.path,
+                        MessageAction::ScrollToMessage {
+                            room_id: jump_option.room_id.clone(),
+                            event_id: jump_option.event_id.clone(),
+                        }
+                    );
+                }
+            }
+        }
+        self.view.handle_event(cx, event, scope);
         let Some(details) = self.details.clone() else { return };
 
         // We first handle a click on the replied-to message preview, if present,
@@ -4297,7 +4442,7 @@ impl Widget for Message {
         // This ensures that events like right-clicking/long-pressing a reaction button
         // or a link within a message will be treated as an action upon that child view
         // rather than an action upon the message itself.
-        self.view.handle_event(cx, event, scope);
+        
 
         // Finally, handle any hits on the rest of the message body itself.
         let message_view_area = self.view.area();
@@ -4315,6 +4460,17 @@ impl Widget for Message {
                         }
                     );
                 }
+                // Event Hits is not captured when Message is in a stack navigation. Hence, cannot implement jump when clicking the message.
+                // if let (Some(widget_uid), Some((room_id, event_id))) = (self.room_screen_widget_uid, &self.jump_option) {
+                //     cx.widget_action(
+                //         widget_uid,
+                //         &scope.path,
+                //         MessageAction::ScrollToMessage {
+                //             room_id: room_id.clone(),
+                //             event_id: event_id.clone(),
+                //         }
+                //     );
+                // }
             }
             Hit::FingerLongPress(lp) => {
                 cx.widget_action(
@@ -4370,11 +4526,44 @@ impl Message {
     fn set_data(&mut self, details: MessageDetails) {
         self.details = Some(details);
     }
+
+    fn set_jump_option(&mut self, cx: &mut Cx, jump_option: Option<JumpOption>) {
+        let is_visible = jump_option.is_some();
+        self.jump_option = jump_option;
+        self.view.view(id!(jump_button_view))
+            .set_visible(cx, is_visible);
+        
+        // Event Hit is not captured when Message is in a stack navigation. Hence, cannot implement jump when clicking the message.
+        // Add a pointer to hand cursor when jump option is available.
+        // if is_visible {
+        //     self.view.apply_over(cx, live! {
+        //         cursor: Hand
+        //     });
+        // } else {
+        //     self.view.apply_over(cx, live! {
+        //         cursor: Default
+        //     });
+        // }
+    }
+
+    fn set_room_screen_widget_uid(&mut self, room_screen_widget_uid: Option<WidgetUid>) {
+        self.room_screen_widget_uid = room_screen_widget_uid;
+    }
 }
 
 impl MessageRef {
     fn set_data(&self, details: MessageDetails) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_data(details);
+    }
+
+    pub fn set_jump_option(&self, cx: &mut Cx, jump_option: Option<JumpOption>) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_jump_option(cx, jump_option);
+    }
+
+    pub fn set_room_screen_widget_uid(&self, room_screen_widget_uid: Option<WidgetUid>) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_room_screen_widget_uid(room_screen_widget_uid);
     }
 }
