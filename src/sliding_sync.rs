@@ -640,8 +640,7 @@ async fn async_worker(
                 let _get_members_task = Handle::current().spawn(async move {
                     let room = timeline.room();
 
-                    let send_update = |members: Vec<matrix_sdk::room::RoomMember>, source: &str| {
-                        log!("{} {} members for room {}", source, members.len(), room_id);
+                    let send_update = |members: Vec<matrix_sdk::room::RoomMember>, _source: &str| {
                         sender.send(TimelineUpdate::RoomMembersListFetched {
                             members
                         }).unwrap();

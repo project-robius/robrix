@@ -10,7 +10,6 @@ use crate::utils;
 
 use makepad_widgets::{text::selection::Cursor, log, *};
 use matrix_sdk::ruma::{events::{room::message::RoomMessageEventContent, Mentions}, OwnedRoomId, OwnedUserId};
-use matrix_sdk::room::RoomMember;
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_segmentation::UnicodeSegmentation;
 use crate::home::room_screen::RoomScreenProps;
@@ -22,7 +21,7 @@ use std::sync::mpsc::Receiver;
 /// Result type for member search channel communication
 #[derive(Debug, Clone)]
 pub struct SearchResult {
-    pub results: Vec<(String, RoomMember)>,
+    pub results: Vec<(String, usize)>,  // (display_name, index in members vec)
     pub is_complete: bool,
     pub search_text: String,
 }
@@ -311,6 +310,10 @@ pub enum MentionableTextInputAction {
         room_id: OwnedRoomId,
         can_notify_room: bool,
     },
+    /// Notifies the MentionableTextInput that room members have been loaded.
+    RoomMembersLoaded {
+        room_id: OwnedRoomId,
+    },
 }
 
 /// Widget that extends CommandTextInput with @mention capabilities
@@ -346,11 +349,9 @@ pub struct MentionableTextInput {
     /// Channel receiver for search results from background thread
     #[rust] search_receiver: Option<Receiver<SearchResult>>,
     /// Accumulated search results for streaming
-    #[rust] accumulated_results: Vec<(String, RoomMember)>,
+    #[rust] accumulated_results: Vec<(String, usize)>,
     /// Last search text to avoid duplicate searches
     #[rust] last_search_text: Option<String>,
-    /// Flag to indicate if we've already retried search after members loaded
-    #[rust] has_retried_after_member_load: bool,
 }
 
 
@@ -365,19 +366,30 @@ impl Widget for MentionableTextInput {
             .room_id
             .clone();
 
+
         // Check search channel on every frame if we're searching
         if self.is_searching && self.search_receiver.is_some() {
             if let Event::NextFrame(_) = event {
-                self.check_search_channel(cx, scope);
-                cx.new_next_frame();
+                // Only continue requesting frames if we're still waiting for results
+                if self.check_search_channel(cx, scope) {
+                    cx.new_next_frame();
+                }
             }
         }
+
 
         if let Event::Actions(actions) = event {
             let text_input_ref = self.cmd_text_input.text_input_ref();
             let text_input_uid = text_input_ref.widget_uid();
             let text_input_area = text_input_ref.area();
             let has_focus = cx.has_key_focus(text_input_area);
+
+            // Handle ESC key to close mention popup
+            if self.is_searching && text_input_ref.escaped(actions) {
+                self.close_mention_popup(cx);
+                self.redraw(cx);
+                return; // Don't process other actions after ESC
+            }
 
             // Handle item selection from mention popup
             if let Some(selected) = self.cmd_text_input.item_selected(actions) {
@@ -387,8 +399,11 @@ impl Widget for MentionableTextInput {
             // Handle build items request
             if self.cmd_text_input.should_build_items(actions) {
                 if has_focus {
-                    let search_text = self.cmd_text_input.search_text();
-                    self.update_user_list(cx, &search_text, scope);
+                    // Only update if we're still searching
+                    if self.is_searching {
+                        let search_text = self.cmd_text_input.search_text();
+                        self.update_user_list(cx, &search_text, scope);
+                    }
                 } else if self.cmd_text_input.view(id!(popup)).visible() {
                     self.close_mention_popup(cx);
                 }
@@ -424,6 +439,20 @@ impl Widget for MentionableTextInput {
                                 } else {
                                     self.cmd_text_input.redraw(cx);
                                 }
+                            }
+                        }
+                        MentionableTextInputAction::RoomMembersLoaded { room_id } => {
+                            if &scope_room_id != room_id {
+                                continue;
+                            }
+
+                            // If we're searching and haven't shown results yet (empty search), force update
+                            if self.is_searching && self.last_search_text == Some("".to_string()) {
+                                // Members loaded while searching with empty text, force update
+                                let search_text = self.cmd_text_input.search_text();
+                                // Clear last_search_text to force update
+                                self.last_search_text = None;
+                                self.update_user_list(cx, &search_text, scope);
                             }
                         }
                     }
@@ -548,15 +577,25 @@ impl MentionableTextInput {
     fn add_user_mention_items(
         &mut self,
         cx: &mut Cx,
-        matched_members: Vec<(String, RoomMember)>,
+        matched_members: Vec<(String, usize)>,
         user_items_limit: usize,
         is_desktop: bool,
+        room_props: &RoomScreenProps,
     ) -> usize {
         let mut items_added = 0;
 
-        for (index, (display_name, member)) in matched_members.into_iter().take(user_items_limit).enumerate() {
-            let Some(user_list_item_ptr) = self.user_list_item else { 
-                log!("user_list_item_ptr is None!");
+        // Get the actual members vec from room_props
+        let Some(members) = &room_props.room_members else {
+            return 0;
+        };
+
+        for (index, (display_name, member_idx)) in matched_members.into_iter().take(user_items_limit).enumerate() {
+            // Get the actual member from the index
+            let Some(member) = members.get(member_idx) else {
+                continue;
+            };
+            let Some(user_list_item_ptr) = self.user_list_item else {
+                // user_list_item_ptr is None
                 continue;
             };
             let item = WidgetRef::new_from_ptr(cx, Some(user_list_item_ptr));
@@ -741,17 +780,16 @@ impl MentionableTextInput {
                 trigger_pos + 1,
                 cursor_pos
             );
-            
+
             // Check if this is a continuation of existing search or a new one
             let is_new_search = self.current_mention_start_index != Some(trigger_pos);
-            
+
             self.current_mention_start_index = Some(trigger_pos);
             self.is_searching = true;
-            
+
             if is_new_search {
                 // This is a new @ mention, reset everything
                 self.last_search_text = None;
-                self.has_retried_after_member_load = false;
             } else {
                 // User is editing existing mention, don't reset search state
                 // This allows smooth deletion/modification of search text
@@ -769,10 +807,10 @@ impl MentionableTextInput {
             self.update_user_list(cx, &search_text, scope);
 
             popup.set_visible(cx, true);
-            
+
             // Immediately check for results instead of waiting for next frame
             self.check_search_channel(cx, scope);
-            
+
             // Only redraw if check_search_channel didn't update UI
             if self.accumulated_results.is_empty() && !self.members_loading {
                 cx.redraw_all();
@@ -783,11 +821,12 @@ impl MentionableTextInput {
     }
 
     /// Check the search channel for new results
-    fn check_search_channel(&mut self, cx: &mut Cx, scope: &mut Scope) {
+    /// Returns true if we should continue checking for more results
+    fn check_search_channel(&mut self, cx: &mut Cx, scope: &mut Scope) -> bool {
         if !self.is_searching {
-            return;
+            return false;
         }
-        
+
         // Try to receive all available results
         let mut is_complete = false;
         let mut search_text = String::new();
@@ -798,10 +837,11 @@ impl MentionableTextInput {
         // Process all available results from the channel
         if let Some(receiver) = &self.search_receiver {
             while let Ok(result) = receiver.try_recv() {
+                // Received search result
                 any_results = true;
                 search_text = result.search_text.clone();
                 is_complete = result.is_complete;
-                
+
                 // Collect results
                 if !result.results.is_empty() {
                     new_results.extend(result.results);
@@ -809,41 +849,36 @@ impl MentionableTextInput {
                 }
             }
         } else {
-            return;
+            // Don't log this - it happens too frequently
+            return false;
         }
-        
+
         // Add new results to accumulated results
         if !new_results.is_empty() {
             self.accumulated_results.extend(new_results);
         }
-        
+
         // Update UI immediately if we got new results
         if should_update_ui && !self.accumulated_results.is_empty() {
-            // Deduplicate based on user ID
-            let mut seen_ids = std::collections::HashSet::new();
-            self.accumulated_results.retain(|(_, member)| {
-                seen_ids.insert(member.user_id().to_owned())
-            });
-            
+            // Received search results, updating UI...
             // Hide loading and show results immediately
             self.members_loading = false;
-            
-            // Sort accumulated results by match quality
-            let mut results = self.accumulated_results.clone();
-            self.sort_search_results(&mut results, &search_text);
-            
-            self.update_ui_with_results(cx, scope, &results, &search_text);
-            // redraw_all already called in update_ui_with_results
+
+            // Results are already sorted in member_search.rs and indices are unique
+            let results = self.accumulated_results.clone();
+            self.update_ui_with_results(cx, scope, results, &search_text);
         }
 
 
-        // Handle completion or empty results
-        if is_complete && self.accumulated_results.is_empty() {
-            // Search is complete but no results
+        // Handle completion
+        if is_complete {
+            // Search is complete, clear loading state regardless of results
             self.members_loading = false;
-            let results = self.accumulated_results.clone();
-            self.update_ui_with_results(cx, scope, &results, &search_text);
-            // redraw_all already called in update_ui_with_results
+            if self.accumulated_results.is_empty() {
+                // No user results, but still update UI (may show @room)
+                self.update_ui_with_results(cx, scope, Vec::new(), &search_text);
+                // redraw_all already called in update_ui_with_results
+            }
         } else if !any_results {
             // No results received yet - check if channel is still open
             let disconnected = if let Some(receiver) = &self.search_receiver {
@@ -851,70 +886,30 @@ impl MentionableTextInput {
             } else {
                 false
             };
-            
+
             if disconnected {
-                    // Channel was closed - likely because no cached members
-                    // Check if members have been loaded since we started searching
-                    let room_props = scope.props.get::<RoomScreenProps>()
-                        .expect("RoomScreenProps should be available in scope");
-                    
-                    if let Some(cached_members) = &room_props.room_members {
-                        if !cached_members.is_empty() && !self.has_retried_after_member_load {
-                            // Members have been loaded, restart the search (only once)
-                            self.members_loading = false;
-                            self.has_retried_after_member_load = true;
-                            
-                            // Get current search text and restart search
-                            if let Some(trigger_pos) = self.current_mention_start_index {
-                                let text_input_ref = self.cmd_text_input.text_input_ref();
-                                let text = text_input_ref.text();
-                                let cursor_pos = text_input_ref.borrow().map_or(0, |p| p.cursor().index);
-                                
-                                let search_text = utils::safe_substring_by_byte_indices(
-                                    &text,
-                                    trigger_pos + 1,
-                                    cursor_pos
-                                );
-                                
-                                
-                                // Create a new channel and submit search request directly
-                                let (sender, receiver) = std::sync::mpsc::channel();
-                                self.search_receiver = Some(receiver);
-                                
-                                // Clear accumulated results for new search
-                                self.accumulated_results.clear();
-                                
-                                let is_desktop = cx.display_context.is_desktop();
-                                let max_visible_items = if is_desktop { 10 } else { 5 };
-                                
-                                // Submit the search request with cached members
-                                submit_async_request(MatrixRequest::SearchRoomMembers {
-                                    room_id: room_props.room_id.clone(),
-                                    search_text: search_text.to_string(),
-                                    sender,
-                                    max_results: max_visible_items * SEARCH_BUFFER_MULTIPLIER,
-                                    cached_members: cached_members.clone(),
-                                });
-                                
-                                // Request next frame to check the channel
-                                cx.new_next_frame();
-                            }
-                        }
-                    } else if !matches!(&room_props.room_members, Some(members) if !members.is_empty()) {
-                        // Still no members, keep showing loading
-                        // Don't set members_loading = false here
-                    } else {
-                        // Members are loaded but we've already retried, stop the search
-                        self.search_receiver = None;
-                        self.members_loading = false;
+                // Channel was closed - search completed or failed
+                // Clear the receiver to stop checking
+                self.search_receiver = None;
+
+                // If we still have loading indicator, clear it
+                if self.members_loading {
+                    self.members_loading = false;
+                    // If no results were shown, show empty state
+                    if self.accumulated_results.is_empty() {
+                        self.update_ui_with_results(cx, scope, Vec::new(), "");
                     }
+                }
             }
         }
+
+        // Return whether we should continue checking for results
+        !is_complete && self.search_receiver.is_some()
     }
 
     /// Common UI update logic for both streaming and non-streaming results
-    fn update_ui_with_results(&mut self, cx: &mut Cx, scope: &mut Scope, results: &[(String, RoomMember)], search_text: &str) {
-        
+    fn update_ui_with_results(&mut self, cx: &mut Cx, scope: &mut Scope, results: Vec<(String, usize)>, search_text: &str) {
+
         // Clear old list items
         self.cmd_text_input.clear_items();
 
@@ -934,32 +929,42 @@ impl MentionableTextInput {
 
         // Add user mention items
         let user_items_limit = max_visible_items.saturating_sub(has_room_item as usize);
-        let user_items_added = self.add_user_mention_items(cx, results.to_vec(), user_items_limit, is_desktop);
+        let user_items_added = self.add_user_mention_items(cx, results, user_items_limit, is_desktop, room_props);
         items_added += user_items_added;
 
         // Update popup visibility based on whether we have items
         self.update_popup_visibility(cx, items_added > 0);
-        
+
         // Force immediate redraw to ensure UI updates are visible
         cx.redraw_all();
     }
 
     /// Updates the mention suggestion list based on search
     fn update_user_list(&mut self, cx: &mut Cx, search_text: &str, scope: &mut Scope) {
-        // Update last search text
-        self.last_search_text = Some(search_text.to_string());
-        
+        self.update_user_list_internal(cx, search_text, scope, false);
+    }
+
+    /// Internal implementation of update_user_list with force flag
+    fn update_user_list_internal(&mut self, cx: &mut Cx, search_text: &str, scope: &mut Scope, force: bool) {
         // Check if we're in searching mode first
         if !self.is_searching {
+            // Not in searching mode, returning
             return;
         }
-        
+
+        // Skip if search text hasn't changed (simple debounce) - unless forced
+        if !force && self.last_search_text.as_deref() == Some(search_text) {
+            // Don't log this - it happens too frequently
+            return;
+        }
+
+        // log!("update_user_list: updating search from '{:?}' to '{}'", self.last_search_text, search_text);
+        // Update last search text
+        self.last_search_text = Some(search_text.to_string());
+
         // 1. Get Props from Scope
         let room_props = scope.props.get::<RoomScreenProps>()
             .expect("RoomScreenProps should be available in scope for MentionableTextInput");
-
-        // Clear old list items, prepare to populate new list
-        self.cmd_text_input.clear_items();
 
         let is_desktop = cx.display_context.is_desktop();
         let max_visible_items = if is_desktop { 10 } else { 5 };
@@ -972,30 +977,35 @@ impl MentionableTextInput {
 
         // Check if we have cached members
         let has_members = matches!(&room_props.room_members, Some(members) if !members.is_empty());
-        
+
         if has_members {
-            // If we have cached members, we'll get results quickly from the background thread
-            // Show popup header while waiting for results
-            self.members_loading = false; // We have members, no need to show loading
+            // Clear loading state since we have cached members
+            // Search results will come quickly from the background thread
+            self.members_loading = false;
+
             let popup = self.cmd_text_input.view(id!(popup));
             let header_view = self.cmd_text_input.view(id!(popup.header_view));
             header_view.set_visible(cx, true);
             popup.set_visible(cx, true);
             self.cmd_text_input.text_input_ref().set_key_focus(cx);
         } else {
-            // No cached members, set loading state
+            // No cached members, set loading state and show loading indicator
             self.members_loading = true;
+            // Clear old items before showing loading indicator
+            self.cmd_text_input.clear_items();
             self.show_loading_indicator(cx);
-            // Don't request members here - room_screen already handles this
+            // Request next frame to check when members are loaded
+            cx.new_next_frame();
         }
 
         // Only submit search request if we have cached members
         if let Some(cached_members) = &room_props.room_members {
+            // log!("Submitting search request for '{}' with {} cached members", search_text, cached_members.len());
             // Create a new channel for this search
             let (sender, receiver) = std::sync::mpsc::channel();
             self.search_receiver = Some(receiver);
 
-            // Submit background search request
+            // Submit background search request - even for empty search text we want to show users
             submit_async_request(MatrixRequest::SearchRoomMembers {
                 room_id: room_props.room_id.clone(),
                 search_text: search_text.to_string(),
@@ -1003,14 +1013,13 @@ impl MentionableTextInput {
                 max_results: max_visible_items * SEARCH_BUFFER_MULTIPLIER,
                 cached_members: cached_members.clone(),
             });
-            
+
             // Request next frame to continue checking the channel
             cx.new_next_frame();
-            
+
             // Try to check immediately for faster response
             self.check_search_channel(cx, scope);
         }
-        // If no cached members, the loading indicator is already shown
     }
 
     /// Detects valid mention trigger positions in text
@@ -1138,81 +1147,19 @@ impl MentionableTextInput {
         }
     }
 
-    /// Sort search results by match quality
-    fn sort_search_results(&self, results: &mut [(String, RoomMember)], search_text: &str) {
-        let case_insensitive = search_text.is_ascii();
-        let search_lower = if case_insensitive { search_text.to_lowercase() } else { search_text.to_string() };
-        
-        results.sort_by(|a, b| {
-            let a_name = &a.0;
-            let b_name = &b.0;
-            let a_localpart = a.1.user_id().localpart();
-            let b_localpart = b.1.user_id().localpart();
-            
-            let a_name_lower = if case_insensitive { a_name.to_lowercase() } else { a_name.clone() };
-            let b_name_lower = if case_insensitive { b_name.to_lowercase() } else { b_name.clone() };
-            
-            // Priority 1: Exact match (display name)
-            let a_exact = a_name_lower == search_lower;
-            let b_exact = b_name_lower == search_lower;
-            if a_exact != b_exact {
-                return if a_exact { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
-            }
-            
-            // Priority 2: Starts with (display name)
-            let a_starts = a_name_lower.starts_with(&search_lower);
-            let b_starts = b_name_lower.starts_with(&search_lower);
-            if a_starts != b_starts {
-                return if a_starts { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
-            }
-            
-            // Priority 3: Starts with (localpart)
-            let a_local_starts = a_localpart.to_lowercase().starts_with(&search_lower);
-            let b_local_starts = b_localpart.to_lowercase().starts_with(&search_lower);
-            if a_local_starts != b_local_starts {
-                return if a_local_starts { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
-            }
-            
-            // Priority 4: Contains at word boundary (display name)
-            let a_word_boundary = self.contains_at_word_boundary(&a_name_lower, &search_lower);
-            let b_word_boundary = self.contains_at_word_boundary(&b_name_lower, &search_lower);
-            if a_word_boundary != b_word_boundary {
-                return if a_word_boundary { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
-            }
-            
-            // Priority 5: Alphabetical order as tie-breaker
-            a_name_lower.cmp(&b_name_lower)
-        });
-    }
-    
-    /// Check if a string contains another at a word boundary
-    fn contains_at_word_boundary(&self, text: &str, search: &str) -> bool {
-        if let Some(pos) = text.find(search) {
-            // Check if it's at the start of a word
-            if pos == 0 {
-                return true;
-            }
-            // Check if preceded by space or non-alphanumeric
-            if let Some(prev_char) = text.chars().nth(pos - 1) {
-                return !prev_char.is_alphanumeric();
-            }
-        }
-        false
-    }
-    
+
     /// Cleanup helper for closing mention popup
     fn close_mention_popup(&mut self, cx: &mut Cx) {
         self.current_mention_start_index = None;
         self.is_searching = false;
         self.members_loading = false; // Reset loading state when closing popup
-        self.has_retried_after_member_load = false; // Reset retry flag
 
         // Cancel any ongoing search by dropping the receiver
         self.search_receiver = None;
 
         // Clear accumulated results
         self.accumulated_results.clear();
-        
+
         // Reset last search text to allow new searches
         self.last_search_text = None;
 
