@@ -65,6 +65,9 @@ impl Widget for MainMobileUI {
                             AppStateAction::UpgradedInviteToJoinedRoom(room_id),
                         );
                     }
+                    RoomsListAction::Close(_selected_room) => {
+                        
+                    }
                     RoomsListAction::None => {}
                 }
             }
