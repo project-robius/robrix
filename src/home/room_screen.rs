@@ -1349,8 +1349,6 @@ impl Widget for RoomScreen {
                         GroupingAction::ExtendGroup(group) => {
                             // Only show as group if it meets minimum size requirements
                             if !group.meets_minimum_size(&tl_state.events_grouped_state.config) {
-                                log!("Group {} with {} items doesn't meet minimum size, showing individual event", 
-                                     group.get_group_id(), group.items_count);
                                 match timeline_item.kind() {
                                     TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
                                         TimelineItemContent::MsgLike(msg_like_content) => match &msg_like_content.kind {
@@ -1454,8 +1452,6 @@ impl Widget for RoomScreen {
 
                                 if is_expanded {
                                     if is_first_in_group {
-                                        // Show the group header with collapse button for first item
-                                        log!("Group {} is expanded, showing group header with collapse button", group.get_group_id());
                                         populate_grouped_small_state_event(
                                             cx,
                                             list,
@@ -1566,8 +1562,6 @@ impl Widget for RoomScreen {
                                         }
                                     }
                                 } else if is_first_in_group {
-                                    // Group is collapsed, show group summary for first item
-                                    log!("Group {} is collapsed, showing group summary with {} items", group.get_group_id(), group.items_count);
                                     populate_grouped_small_state_event(
                                         cx,
                                         list,
@@ -4484,14 +4478,6 @@ fn populate_grouped_small_state_event(
     _item_drawn_status: ItemDrawnStatus,
     tl_items: &imbl::Vector<std::sync::Arc<matrix_sdk_ui::timeline::TimelineItem>>,
 ) -> (WidgetRef, ItemDrawnStatus) {
-    // Ensure the group is finalized and meets minimum size requirements
-    if !group.is_finalized() {
-        log!("Warning: Attempting to render non-finalized group {}", group.get_group_id());
-    }
-    if !group.meets_minimum_size(&events_grouped_state.config) {
-        log!("Warning: Rendering group {} that doesn't meet minimum size ({})", group.get_group_id(), group.get_items_count());
-    }
-
     let item = list.item(cx, item_id, live_id!(GroupedSmallStateEvent));
     // When the group is expanded, the first item shows the GroupedSmallStateEvent component
     // and the remaining items show the actual events, so subtract 1 from the total count
@@ -4517,29 +4503,24 @@ fn populate_grouped_small_state_event(
     };
 
     item.label(id!(summary_text)).set_text(cx, &summary_text);
-    
-    // Set the group_id on the widget for event handling
-    log!("Creating grouped small state event for group_id: {}", group.get_group_id());
-    
+
     let button = item.button(id!(collapse_button));
     let is_expanded = events_grouped_state.is_group_expanded(group.get_group_id());
     let button_text = if is_expanded { "collapse" } else { "expand" };
     button.set_text(cx, button_text);
-    
+
     // Register the widget's UID to the group_id mapping
     let widget_uid = item.widget_uid().0;
     let group_id = group.get_group_id().to_string();
-    
+
     // Check if this widget was already registered to a different group
     if let Some(existing_group_id) = events_grouped_state.get_group_id_for_widget(widget_uid) {
         if existing_group_id != &group_id {
-            log!("Warning: Widget UID {} was previously registered to group {}, now registering to {}", 
-                 widget_uid, existing_group_id, group_id);
+            log!("Warning: Widget UID {} was previously registered to group {}, now registering to {}", widget_uid, existing_group_id, group_id);
         }
     }
-    
+
     events_grouped_state.register_widget_to_group(widget_uid, group_id.clone());
-    log!("Registered widget UID {} to group {}", widget_uid, group_id);
 
     (item, ItemDrawnStatus::both_drawn())
 }
