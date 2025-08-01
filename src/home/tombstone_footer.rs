@@ -42,14 +42,11 @@ live_design! {
         flow: Overlay
         <View> {
             height: Fit
-            spacing: 0,
             flow: Down,
             replacement_reason = <Label> {
                 width: Fill, height: Fit,
-                align: {x: 0.0, y: 0},
-                padding: {left: 5.0, right: 0.0}
+                padding: 5
                 flow: RightWrap,
-                margin: 0,
                 draw_text: {
                     color: (TYPING_NOTICE_TEXT_COLOR),
                     text_style: <REGULAR_TEXT>{font_size: 11}
@@ -61,7 +58,7 @@ live_design! {
                 width: Fill, height: Fit,
                 align: {y: 0.5}
                 join_successor_button = <RobrixIconButton> {
-                    align: {x: 0.0, y: 0.5}
+                    align: {y: 0.5}
                     padding: 15,
                     draw_icon: {
                         svg_file: (ICON_TOMBSTONE)
@@ -87,14 +84,12 @@ live_design! {
                 }
                 successor_room_name = <Label> {
                     width: Fill, height: Fit,
-                    margin: {top: 5}
                     flow: RightWrap,
-                    text: ""
                     draw_text: {
                         text_style: <TITLE_TEXT>{
                             font_size: 12,
                         },
-                        color: #000
+                        color: (COLOR_TEXT)
                         wrap: Word,
                     }
                 }
@@ -112,23 +107,15 @@ pub struct TimelineTombstone {
     pub successor_reason: String,
 }
 
-/// The information about a tombstoned room and its successor.
-#[derive(Clone, Debug)]
-pub struct TombstoneDetails {
-    /// The information about the successor room required to join the room.
-    pub successor_room_info: Option<BasicRoomDetails>,
-    /// The reason why the room was tombstoned
-    pub successor_reason: String,
-}
-
 /// A view that shows information about a tombstoned room and its successor.
 #[derive(Live, LiveHook, Widget)]
 pub struct TombstoneFooter {
     #[deref]
     view: View,
     #[live(false)] visible: bool,
+    /// The details of the successor room
     #[rust]
-    info: Option<TombstoneDetails>,
+    successor_info: Option<BasicRoomDetails>,
     /// The ID of the current tombstoned room
     #[rust]
     room_id: Option<OwnedRoomId>,
@@ -243,10 +230,7 @@ impl TombstoneFooter {
                 room_avatar: successor_avatar_preview,
             }
         });
-        self.info = Some(TombstoneDetails {
-            successor_room_info,
-            successor_reason: successor_reason.unwrap_or_default()
-        });
+        self.successor_info = successor_room_info;
 
     }
 
@@ -256,44 +240,43 @@ impl TombstoneFooter {
     /// close the tombstone room and show the successor room in the room list.
     ///
     fn navigate_to_successor_room(&mut self, cx: &mut Cx, scope: &mut Scope) {
-        let Some(info) = self.info.as_ref() else {
+        let Some(success_room_detail) = self.successor_info.as_ref() else {
             return;
         };
-        if let Some(successor_info) = info.successor_room_info.as_ref() {
-            let Some(room_id) = self.room_id.as_ref() else {
-                return;
-            };
-            // Check if successor room is loaded, if not show join modal
-            let rooms_list_ref = cx.get_global::<RoomsListRef>();
-            if !rooms_list_ref.is_room_loaded(&successor_info.room_id) {
-                // Show join room modal for the successor room
-                cx.action(JoinLeaveRoomModalAction::Open(
-                    JoinLeaveModalKind::JoinRoom(successor_info.clone()),
-                ));
-                return;
-            }
-            
-            let new_selected_room = SelectedRoom::JoinedRoom {
-                room_id: OwnedRoomIdRon(successor_info.room_id.clone()),
-                room_name: successor_info.room_name.clone(),
-            };
-            
-            // Close the current tombstoned room and navigate to the successor room
-            cx.widget_action(
-                self.widget_uid(),
-                &scope.path,
-                RoomsListAction::Close(SelectedRoom::JoinedRoom {
-                    room_id: OwnedRoomIdRon(room_id.clone()),
-                    room_name: self.room_name.clone(),
-                }),
-            );
-            // BUG: This opens the correct tab, but it does not select the room preview in the room list.
-            cx.widget_action(
-                self.widget_uid(),
-                &scope.path,
-                RoomsListAction::Selected(new_selected_room),
-            );
+        
+        let Some(room_id) = self.room_id.as_ref() else {
+            return;
+        };
+        // Check if successor room is loaded, if not show join modal
+        let rooms_list_ref = cx.get_global::<RoomsListRef>();
+        if !rooms_list_ref.is_room_loaded(&success_room_detail.room_id) {
+            // Show join room modal for the successor room
+            cx.action(JoinLeaveRoomModalAction::Open(
+                JoinLeaveModalKind::JoinRoom(success_room_detail.clone()),
+            ));
+            return;
         }
+        
+        let new_selected_room = SelectedRoom::JoinedRoom {
+            room_id: OwnedRoomIdRon(success_room_detail.room_id.clone()),
+            room_name: success_room_detail.room_name.clone(),
+        };
+        
+        // Close the current tombstoned room and navigate to the successor room
+        cx.widget_action(
+            self.widget_uid(),
+            &scope.path,
+            RoomsListAction::Close(SelectedRoom::JoinedRoom {
+                room_id: OwnedRoomIdRon(room_id.clone()),
+                room_name: self.room_name.clone(),
+            }),
+        );
+        // BUG: This opens the correct tab, but it does not select the room preview in the room list.
+        cx.widget_action(
+            self.widget_uid(),
+            &scope.path,
+            RoomsListAction::Selected(new_selected_room),
+        );
     }
     /// Returns `true` if the room with the given `room_id` is tombstoned (shut down and replaced with a successor room).
     /// Returns `false` if the room is not tombstoned.

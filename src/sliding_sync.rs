@@ -2244,6 +2244,7 @@ async fn timeline_subscriber_handler(
     let mut target_event_id = None;
     // the timeline index and event ID of the target event, if it has been found.
     let mut found_target_event_id: Option<(usize, OwnedEventId)> = None;
+
     loop { tokio::select! {
         // we must check for new requests before handling new timeline updates.
         biased;
@@ -2593,7 +2594,6 @@ fn update_latest_event(
                 }
             }
         }
-        
         _ => { }
     }
 
