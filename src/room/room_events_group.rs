@@ -217,12 +217,7 @@ impl EventsGroupedState {
             }
         }
 
-        for group in self.active_groups.values() {
-            if group.contains_index(index) {
-                return Some(group);
-            }
-        }
-        None
+        self.active_groups.values().find(|&group| group.contains_index(index))
     }
 
     pub fn toggle_group_expanded(&mut self, group_id: &str) {
@@ -234,8 +229,7 @@ impl EventsGroupedState {
     }
 
     pub fn is_group_expanded(&self, group_id: &str) -> bool {
-        let is_expanded = self.expanded_groups.contains(group_id);
-        is_expanded
+        self.expanded_groups.contains(group_id)
     }
 
     pub fn find_group_by_start_index(&self, start_index: usize) -> Option<&GroupedEventsState> {
@@ -367,7 +361,7 @@ impl GroupedEventsState {
         for i in self.start_index..=self.end_index {
             if let Some(timeline_item) = timeline_items.get(i) {
                 if let Some((user, action)) = self.analyze_timeline_item(timeline_item) {
-                    user_actions.entry(user).or_insert_with(Vec::new).push(action);
+                    user_actions.entry(user).or_default().push(action);
                 }
             }
         }
@@ -444,23 +438,20 @@ impl GroupedEventsState {
     fn get_display_name_from_event(&self, event_item: &matrix_sdk_ui::timeline::EventTimelineItem) -> String {
         let sender = event_item.sender();
         let profile = event_item.sender_profile();
-        
+
         // Try to get display name from profile
-        match profile {
-            matrix_sdk_ui::timeline::TimelineDetails::Ready(profile_data) => {
-                if let Some(display_name) = profile_data.display_name.as_ref() {
-                    return display_name.clone();
-                }
-            },
-            _ => {}
-        }
-        
+        if let matrix_sdk_ui::timeline::TimelineDetails::Ready(profile_data) = profile {
+           if let Some(display_name) = profile_data.display_name.as_ref() {
+               return display_name.clone();
+            }
+         }
+
         // Fall back to extracting username from user ID
         let user_id_str = sender.as_str();
         if let Some(localpart) = user_id_str.strip_prefix('@').and_then(|s| s.split(':').next()) {
             return localpart.to_string();
         }
-        
+
         user_id_str.to_string()
     }
 }
