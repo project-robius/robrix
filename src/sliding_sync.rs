@@ -404,7 +404,7 @@ pub enum MatrixRequest {
 pub fn submit_async_request(req: MatrixRequest) {
     REQUEST_SENDER.get()
         .unwrap() // this is initialized
-        .send(req)
+        .send(BackgroundRequest::Matrix(req))
         .expect("BUG: async worker task receiver has died!");
 }
 
@@ -426,723 +426,741 @@ pub struct LoginByPassword {
 
 /// The entry point for an async worker thread that can run async tasks.
 ///
-/// All this thread does is wait for [`MatrixRequests`] from the main UI-driven non-async thread(s)
+/// All this thread does is wait for [`BackgroundRequests`] from the main UI-driven non-async thread(s)
 /// and then executes them within an async runtime context.
 async fn async_worker(
-    mut request_receiver: UnboundedReceiver<MatrixRequest>,
+    mut request_receiver: UnboundedReceiver<BackgroundRequest>,
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started async_worker task.");
     let mut tasks_list: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
     while let Some(request) = request_receiver.recv().await {
         match request {
-            MatrixRequest::Login(login_request) => {
-                if let Err(e) = login_sender.send(login_request).await {
-                    error!("Error sending login request to login_sender: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(String::from(
-                        "BUG: failed to send login request to async worker thread."
-                    )));
+            // Pure background tasks
+            BackgroundRequest::AsyncJob(async_job_request) => {
+                match async_job_request {
+                    LocalJob::SearchRoomMembers { room_id: _, search_text, sender, max_results, cached_members } => {
+                        // Directly spawn blocking task for search
+                        let _search_task = tokio::task::spawn_blocking(move || {
+                            // Perform streaming search
+                            crate::room::member_search::search_room_members_streaming(cached_members, search_text, max_results, sender);
+                        });
+                    }
                 }
             }
-            MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
-                let (timeline, sender) = {
-                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
-                        log!("Skipping pagination request for not-yet-known room {room_id}");
-                        continue;
-                    };
-
-                    let timeline_ref = room_info.timeline.clone();
-                    let sender = room_info.timeline_update_sender.clone();
-                    (timeline_ref, sender)
-                };
-
-                // Spawn a new async task that will make the actual pagination request.
-                let _paginate_task = Handle::current().spawn(async move {
-                    log!("Starting {direction} pagination request for room {room_id}...");
-                    sender.send(TimelineUpdate::PaginationRunning(direction)).unwrap();
-                    SignalToUI::set_ui_signal();
-
-                    let res = if direction == PaginationDirection::Forwards {
-                        timeline.paginate_forwards(num_events).await
-                    } else {
-                        timeline.paginate_backwards(num_events).await
-                    };
-
-                    match res {
-                        Ok(fully_paginated) => {
-                            log!("Completed {direction} pagination request for room {room_id}, hit {} of timeline? {}",
-                                if direction == PaginationDirection::Forwards { "end" } else { "start" },
-                                if fully_paginated { "yes" } else { "no" },
-                            );
-                            sender.send(TimelineUpdate::PaginationIdle {
-                                fully_paginated,
-                                direction,
-                            }).unwrap();
-                            SignalToUI::set_ui_signal();
-                        }
-                        Err(error) => {
-                            error!("Error sending {direction} pagination request for room {room_id}: {error:?}");
-                            sender.send(TimelineUpdate::PaginationError {
-                                error,
-                                direction,
-                            }).unwrap();
-                            SignalToUI::set_ui_signal();
+            // tasks that involve requests to the matrix server
+            BackgroundRequest::Matrix(matrix_request) => {
+                match matrix_request {
+                    MatrixRequest::Login(login_request) => {
+                        if let Err(e) = login_sender.send(login_request).await {
+                            error!("Error sending login request to login_sender: {e:?}");
+                            Cx::post_action(LoginAction::LoginFailure(String::from(
+                                "BUG: failed to send login request to async worker thread."
+                            )));
                         }
                     }
-                });
-            }
-
-            MatrixRequest::EditMessage { room_id, timeline_event_item_id: timeline_event_id, edited_content } => {
-                let (timeline, sender) = {
-                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
-                        error!("BUG: room info not found for edit request, room {room_id}");
-                        continue;
-                    };
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
-                };
-
-                // Spawn a new async task that will make the actual edit request.
-                let _edit_task = Handle::current().spawn(async move {
-                    log!("Sending request to edit message {timeline_event_id:?} in room {room_id}...");
-                    let result = timeline.edit(&timeline_event_id, edited_content).await;
-                    match result {
-                        Ok(_) => log!("Successfully edited message {timeline_event_id:?} in room {room_id}."),
-                        Err(ref e) => error!("Error editing message {timeline_event_id:?} in room {room_id}: {e:?}"),
-                    }
-                    sender.send(TimelineUpdate::MessageEdited {
-                        timeline_event_id,
-                        result,
-                    }).unwrap();
-                    SignalToUI::set_ui_signal();
-                });
-            }
-
-            MatrixRequest::FetchDetailsForEvent { room_id, event_id } => {
-                let (timeline, sender) = {
-                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
-                        error!("BUG: room info not found for fetch details for event request {room_id}");
-                        continue;
-                    };
-
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
-                };
-
-                // Spawn a new async task that will make the actual fetch request.
-                let _fetch_task = Handle::current().spawn(async move {
-                    // log!("Sending request to fetch details for event {event_id} in room {room_id}...");
-                    let result = timeline.fetch_details_for_event(&event_id).await;
-                    match result {
-                        Ok(_) => {
-                            // log!("Successfully fetched details for event {event_id} in room {room_id}.");
-                        }
-                        Err(ref _e) => {
-                            // error!("Error fetching details for event {event_id} in room {room_id}: {e:?}");
-                        }
-                    }
-                    sender.send(TimelineUpdate::EventDetailsFetched {
-                        event_id,
-                        result,
-                    }).unwrap();
-                    SignalToUI::set_ui_signal();
-                });
-            }
-
-            MatrixRequest::SyncRoomMemberList { room_id } => {
-                let (timeline, sender) = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                        error!("BUG: room info not found for fetch members request {room_id}");
-                        continue;
-                    };
-
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
-                };
-
-                // Spawn a new async task that will make the actual fetch request.
-                let _fetch_task = Handle::current().spawn(async move {
-                    log!("Sending sync room members request for room {room_id}...");
-                    timeline.fetch_members().await;
-                    log!("Completed sync room members request for room {room_id}.");
-                    sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
-                    SignalToUI::set_ui_signal();
-                });
-            }
-
-            MatrixRequest::JoinRoom { room_id } => {
-                let Some(client) = CLIENT.get() else { continue };
-                let _join_room_task = Handle::current().spawn(async move {
-                    log!("Sending request to join room {room_id}...");
-                    let result_action = if let Some(room) = client.get_room(&room_id) {
-                        match room.join().await {
-                            Ok(()) => {
-                                log!("Successfully joined room {room_id}.");
-                                JoinRoomAction::Joined { room_id }
-                            }
-                            Err(e) => {
-                                error!("Error joining room {room_id}: {e:?}");
-                                JoinRoomAction::Failed { room_id, error: e }
-                            }
-                        }
-                    } else {
-                        error!("BUG: client could not get room with ID {room_id}");
-                        JoinRoomAction::Failed {
-                            room_id,
-                            error: matrix_sdk::Error::UnknownError(
-                                String::from("Client couldn't locate room to join it.").into()
-                            ),
-                        }
-                    };
-                    Cx::post_action(result_action);
-                });
-            }
-
-            MatrixRequest::LeaveRoom { room_id } => {
-                let Some(client) = CLIENT.get() else { continue };
-                let _leave_room_task = Handle::current().spawn(async move {
-                    log!("Sending request to leave room {room_id}...");
-                    let result_action = if let Some(room) = client.get_room(&room_id) {
-                        match room.leave().await {
-                            Ok(()) => {
-                                log!("Successfully left room {room_id}.");
-                                LeaveRoomAction::Left { room_id }
-                            }
-                            Err(e) => {
-                                error!("Error leaving room {room_id}: {e:?}");
-                                LeaveRoomAction::Failed { room_id, error: e }
-                            }
-                        }
-                    } else {
-                        error!("BUG: client could not get room with ID {room_id}");
-                        LeaveRoomAction::Failed {
-                            room_id,
-                            error: matrix_sdk::Error::UnknownError(
-                                String::from("Client couldn't locate room to leave it.").into()
-                            ),
-                        }
-                    };
-                    Cx::post_action(result_action);
-                });
-            }
-
-            MatrixRequest::GetRoomMembers { room_id, memberships, local_only } => {
-                let (timeline, sender) = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                        log!("BUG: room info not found for get room members request {room_id}");
-                        continue;
-                    };
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
-                };
-
-                let _get_members_task = Handle::current().spawn(async move {
-                    let room = timeline.room();
-
-                    let send_update = |members: Vec<matrix_sdk::room::RoomMember>, _source: &str| {
-                        sender.send(TimelineUpdate::RoomMembersListFetched {
-                            members
-                        }).unwrap();
-                        SignalToUI::set_ui_signal();
-                    };
-
-                    if local_only {
-                        if let Ok(members) = room.members_no_sync(memberships).await {
-                            send_update(members, "Got");
-                        }
-                    } else {
-                        if let Ok(members) = room.members(memberships).await {
-                            send_update(members, "Successfully fetched");
-                        }
-                    }
-                });
-            }
-
-            MatrixRequest::SearchRoomMembers { room_id: _, search_text, sender, max_results, cached_members } => {
-                // Directly spawn blocking task for search
-                let _search_task = tokio::task::spawn_blocking(move || {
-                    // Perform streaming search
-                    search_room_members_streaming(cached_members, search_text, max_results, sender);
-                });
-            }
-
-            MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
-                let Some(client) = CLIENT.get() else { continue };
-                let _fetch_task = Handle::current().spawn(async move {
-                    // log!("Sending get user profile request: user: {user_id}, \
-                    //     room: {room_id:?}, local_only: {local_only}...",
-                    // );
-
-                    let mut update = None;
-
-                    if let Some(room_id) = room_id.as_ref() {
-                        if let Some(room) = client.get_room(room_id) {
-                            let member = if local_only {
-                                room.get_member_no_sync(&user_id).await
-                            } else {
-                                room.get_member(&user_id).await
-                            };
-                            if let Ok(Some(room_member)) = member {
-                                update = Some(UserProfileUpdate::Full {
-                                    new_profile: UserProfile {
-                                        username: room_member.display_name().map(|u| u.to_owned()),
-                                        user_id: user_id.clone(),
-                                        avatar_state: AvatarState::Known(room_member.avatar_url().map(|u| u.to_owned())),
-                                    },
-                                    room_id: room_id.to_owned(),
-                                    room_member,
-                                });
-                            } else {
-                                log!("User profile request: user {user_id} was not a member of room {room_id}");
-                            }
-                        } else {
-                            log!("User profile request: client could not get room with ID {room_id}");
-                        }
-                    }
-
-                    if !local_only {
-                        if update.is_none() {
-                            if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
-                                update = Some(UserProfileUpdate::UserProfileOnly(
-                                    UserProfile {
-                                        username: response.displayname,
-                                        user_id: user_id.clone(),
-                                        avatar_state: AvatarState::Known(response.avatar_url),
-                                    }
-                                ));
-                            } else {
-                                log!("User profile request: client could not get user with ID {user_id}");
-                            }
-                        }
-
-                        match update.as_mut() {
-                            Some(UserProfileUpdate::Full { new_profile: UserProfile { username, .. }, .. }) if username.is_none() => {
-                                if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
-                                    *username = response.displayname;
-                                }
-                            }
-                            _ => { }
-                        }
-                    }
-
-                    if let Some(upd) = update {
-                        // log!("Successfully completed get user profile request: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
-                        enqueue_user_profile_update(upd);
-                    } else {
-                        log!("Failed to get user profile: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
-                    }
-                });
-            }
-            MatrixRequest::GetNumberUnreadMessages { room_id } => {
-                let (timeline, sender) = {
-                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
-                        log!("Skipping get number of unread messages request for not-yet-known room {room_id}");
-                        continue;
-                    };
-
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
-                };
-                let _get_unreads_task = Handle::current().spawn(async move {
-                    match sender.send(TimelineUpdate::NewUnreadMessagesCount(
-                        UnreadMessageCount::Known(timeline.room().num_unread_messages())
-                    )) {
-                        Ok(_) => SignalToUI::set_ui_signal(),
-                        Err(e) => log!("Failed to send timeline update: {e:?} for GetNumberUnreadMessages request for room {room_id}"),
-                    }
-                    enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
-                        room_id: room_id.clone(),
-                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
-                        unread_mentions:timeline.room().num_unread_mentions(),
-                    });
-                });
-            }
-            MatrixRequest::IgnoreUser { ignore, room_member, room_id } => {
-                let Some(client) = CLIENT.get() else { continue };
-                let _ignore_task = Handle::current().spawn(async move {
-                    let user_id = room_member.user_id();
-                    log!("Sending request to {}ignore user: {user_id}...", if ignore { "" } else { "un" });
-                    let ignore_result = if ignore {
-                        room_member.ignore().await
-                    } else {
-                        room_member.unignore().await
-                    };
-
-                    log!("{} user {user_id} {}",
-                        if ignore { "Ignoring" } else { "Unignoring" },
-                        if ignore_result.is_ok() { "succeeded." } else { "failed." },
-                    );
-
-                    if ignore_result.is_err() {
-                        return;
-                    }
-
-                    // We need to re-acquire the `RoomMember` object now that its state
-                    // has changed, i.e., the user has been (un)ignored.
-                    // We then need to send an update to replace the cached `RoomMember`
-                    // with the now-stale ignored state.
-                    if let Some(room) = client.get_room(&room_id) {
-                        if let Ok(Some(new_room_member)) = room.get_member(user_id).await {
-                            log!("Enqueueing user profile update for user {user_id}, who went from {}ignored to {}ignored.",
-                                if room_member.is_ignored() { "" } else { "un" },
-                                if new_room_member.is_ignored() { "" } else { "un" },
-                            );
-                            enqueue_user_profile_update(UserProfileUpdate::RoomMemberOnly {
-                                room_id: room_id.clone(),
-                                room_member: new_room_member,
-                            });
-                        }
-                    }
-
-                    // After successfully (un)ignoring a user, all timelines are fully cleared by the Matrix SDK.
-                    // Therefore, we need to re-fetch all timelines for all rooms,
-                    // and currently the only way to actually accomplish this is via pagination.
-                    // See: <https://github.com/matrix-org/matrix-rust-sdk/issues/1703#issuecomment-2250297923>
-                    //
-                    // Note that here we only proactively re-paginate the *current* room
-                    // (the one being viewed by the user when this ignore request was issued),
-                    // and all other rooms will be re-paginated in `handle_ignore_user_list_subscriber()`.`
-                    submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                        room_id,
-                        num_events: 50,
-                        direction: PaginationDirection::Backwards,
-                    });
-                });
-            }
-
-            MatrixRequest::SendTypingNotice { room_id, typing } => {
-                let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
-                    error!("BUG: client/room not found for typing notice request {room_id}");
-                    continue;
-                };
-                let _typing_task = Handle::current().spawn(async move {
-                    if let Err(e) = room.typing_notice(typing).await {
-                        error!("Failed to send typing notice to room {room_id}: {e:?}");
-                    }
-                });
-            }
-
-            MatrixRequest::SubscribeToTypingNotices { room_id, subscribe } => {
-                let (room, timeline_update_sender, mut typing_notice_receiver) = {
-                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
-                        log!("BUG: room info not found for subscribe to typing notices request, room {room_id}");
-                        continue;
-                    };
-                    let (room, recv) = if subscribe {
-                        if room_info.typing_notice_subscriber.is_some() {
-                            warning!("Note: room {room_id} is already subscribed to typing notices.");
-                            continue;
-                        } else {
-                            let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
-                                error!("BUG: client/room not found when subscribing to typing notices request, room: {room_id}");
+                    MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
+                        let (timeline, sender) = {
+                            let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                                log!("Skipping pagination request for not-yet-known room {room_id}");
                                 continue;
                             };
-                            let (drop_guard, recv) = room.subscribe_to_typing_notifications();
-                            room_info.typing_notice_subscriber = Some(drop_guard);
-                            (room, recv)
-                        }
-                    } else {
-                        room_info.typing_notice_subscriber.take();
-                        continue;
-                    };
-                    // Here: we don't have an existing subscriber running, so we fall through and start one.
-                    (room, room_info.timeline_update_sender.clone(), recv)
-                };
 
-                let _typing_notices_task = Handle::current().spawn(async move {
-                    while let Ok(user_ids) = typing_notice_receiver.recv().await {
-                        // log!("Received typing notifications for room {room_id}: {user_ids:?}");
-                        let mut users = Vec::with_capacity(user_ids.len());
-                        for user_id in user_ids {
-                            users.push(
-                                room.get_member_no_sync(&user_id)
-                                    .await
-                                    .ok()
-                                    .flatten()
-                                    .and_then(|m| m.display_name().map(|d| d.to_owned()))
-                                    .unwrap_or_else(|| user_id.to_string())
-                            );
-                        }
-                        if let Err(e) = timeline_update_sender.send(TimelineUpdate::TypingUsers { users }) {
-                            error!("Error: timeline update sender couldn't send the list of typing users: {e:?}");
-                        }
-                        SignalToUI::set_ui_signal();
-                    }
-                    // log!("Note: typing notifications recv loop has ended for room {}", room_id);
-                });
-            }
-            MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
-                if !subscribe {
-                    if let Some(task_handler) = tasks_list.remove(&room_id) {
-                        task_handler.abort();
-                    }
-                    continue;
-                }
-                let (timeline, sender) = {
-                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
-                        log!("BUG: room info not found for subscribe to own user read receipts changed request, room {room_id}");
-                        continue;
-                    };
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
-                };
-                let room_id_clone = room_id.clone();
-                let subscribe_own_read_receipt_task = Handle::current().spawn(async move {
-                    let update_receiver = timeline.subscribe_own_user_read_receipts_changed().await;
-                    pin_mut!(update_receiver);
-                    if let Some(client_user_id) = current_user_id() {
-                        if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                            log!("Received own user read receipt for room {room_id_clone}: {receipt:?}, event ID: {event_id:?}");
-                            if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
-                                error!("Failed to get own user read receipt: {e:?}");
-                            }
-                        }
-
-                        while (update_receiver.next().await).is_some() {
-                            if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                                if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
-                                    error!("Failed to get own user read receipt: {e:?}");
-                                }
-                                // When read receipts change (from other devices), update unread count
-                                let unread_count = timeline.room().num_unread_messages();
-                                let unread_mentions = timeline.room().num_unread_mentions();
-                                // Send updated unread count to the UI
-                                if let Err(e) = sender.send(TimelineUpdate::NewUnreadMessagesCount(
-                                    UnreadMessageCount::Known(unread_count)
-                                )) {
-                                    error!("Failed to send unread message count update: {e:?}");
-                                }
-                                // Update the rooms list with new unread counts
-                                enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
-                                    room_id: room_id_clone.clone(),
-                                    count: UnreadMessageCount::Known(unread_count),
-                                    unread_mentions,
-                                });
-                            }
-                        }
-                    }
-                });
-                tasks_list.insert(room_id.clone(), subscribe_own_read_receipt_task);
-            }
-            MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
-                spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
-            }
-            MatrixRequest::ResolveRoomAlias(room_alias) => {
-                let Some(client) = CLIENT.get() else { continue };
-                let _resolve_task = Handle::current().spawn(async move {
-                    log!("Sending resolve room alias request for {room_alias}...");
-                    let res = client.resolve_room_alias(&room_alias).await;
-                    log!("Resolved room alias {room_alias} to: {res:?}");
-                    todo!("Send the resolved room alias back to the UI thread somehow.");
-                });
-            }
-            MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
-                let Some(client) = CLIENT.get() else { continue };
-                let _fetch_task = Handle::current().spawn(async move {
-                    // log!("Sending fetch avatar request for {mxc_uri:?}...");
-                    let media_request = MediaRequestParameters {
-                        source: MediaSource::Plain(mxc_uri.clone()),
-                        format: AVATAR_THUMBNAIL_FORMAT.into(),
-                    };
-                    let res = client.media().get_media_content(&media_request, true).await;
-                    // log!("Fetched avatar for {mxc_uri:?}, succeeded? {}", res.is_ok());
-                    on_fetched(AvatarUpdate { mxc_uri, avatar_data: res.map(|v| v.into()) });
-                });
-            }
-
-            MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
-                let Some(client) = CLIENT.get() else { continue };
-                let media = client.media();
-
-                let _fetch_task = Handle::current().spawn(async move {
-                    // log!("Sending fetch media request for {media_request:?}...");
-                    let res = media.get_media_content(&media_request, true).await;
-                    on_fetched(&destination, media_request, res, update_sender);
-                });
-            }
-
-            MatrixRequest::SendMessage { room_id, message, replied_to } => {
-                let timeline = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                        log!("BUG: room info not found for send message request {room_id}");
-                        continue;
-                    };
-                    room_info.timeline.clone()
-                };
-
-                // Spawn a new async task that will send the actual message.
-                let _send_message_task = Handle::current().spawn(async move {
-                    log!("Sending message to room {room_id}: {message:?}...");
-                    // The message already contains mentions, no need to add them again
-                    if let Some(replied_to_info) = replied_to {
-                        match timeline.send_reply(message.into(), replied_to_info).await {
-                            Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
-                            Err(_e) => {
-                                error!("Failed to send reply message to room {room_id}: {_e:?}");
-                                enqueue_popup_notification(PopupItem { message: format!("Failed to send reply: {_e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
-                            }
-                        }
-                    } else {
-                        match timeline.send(message.into()).await {
-                            Ok(_send_handle) => log!("Sent message to room {room_id}."),
-                            Err(_e) => {
-                                error!("Failed to send message to room {room_id}: {_e:?}");
-                                enqueue_popup_notification(PopupItem { message: format!("Failed to send message: {_e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
-                            }
-                        }
-                    }
-                    SignalToUI::set_ui_signal();
-                });
-            }
-
-            MatrixRequest::ReadReceipt { room_id, event_id } => {
-                let timeline = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                        log!("BUG: room info not found when sending read receipt, room {room_id}, {event_id}");
-                        continue;
-                    };
-                    room_info.timeline.clone()
-                };
-                let _send_rr_task = Handle::current().spawn(async move {
-                    match timeline.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id.clone()).await {
-                        Ok(sent) => log!("{} read receipt to room {room_id} for event {event_id}", if sent { "Sent" } else { "Already sent" }),
-                        Err(_e) => error!("Failed to send read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
-                    }
-                    // Also update the number of unread messages in the room.
-                    enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
-                        room_id: room_id.clone(),
-                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
-                        unread_mentions: timeline.room().num_unread_mentions()
-                    });
-                });
-            },
-
-            MatrixRequest::FullyReadReceipt { room_id, event_id, .. } => {
-                let timeline = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                        log!("BUG: room info not found when sending fully read receipt, room {room_id}, {event_id}");
-                        continue;
-                    };
-                    room_info.timeline.clone()
-                };
-                let _send_frr_task = Handle::current().spawn(async move {
-                    match timeline.send_single_receipt(ReceiptType::FullyRead, ReceiptThread::Unthreaded, event_id.clone()).await {
-                        Ok(sent) => log!("{} fully read receipt to room {room_id} for event {event_id}",
-                            if sent { "Sent" } else { "Already sent" }
-                        ),
-                        Err(_e) => error!("Failed to send fully read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
-                    }
-                    // Also update the number of unread messages in the room.
-                    enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
-                        room_id: room_id.clone(),
-                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
-                        unread_mentions: timeline.room().num_unread_mentions()
-                    });
-                });
-            },
-
-            MatrixRequest::GetRoomPowerLevels { room_id } => {
-                let (timeline, sender) = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                        log!("BUG: room info not found for fetch members request {room_id}");
-                        continue;
-                    };
-
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
-                };
-
-                let Some(user_id) = current_user_id() else { continue };
-
-                let _power_levels_task = Handle::current().spawn(async move {
-                    match timeline.room().power_levels().await {
-                        Ok(power_levels) => {
-                            log!("Successfully fetched power levels for room {room_id}.");
-                            if let Err(e) = sender.send(TimelineUpdate::UserPowerLevels(
-                                UserPowerLevels::from(&power_levels, &user_id),
-                            )) {
-                                error!("Failed to send the result of if user can send message: {e}")
-                            }
-                            SignalToUI::set_ui_signal();
-                        }
-                        Err(e) => {
-                            error!("Failed to fetch power levels for room {room_id}: {e:?}");
-                        }
-                    }
-                });
-            },
-            MatrixRequest::ToggleReaction { room_id, timeline_event_id, reaction } => {
-                let timeline = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                        log!("BUG: room info not found for send toggle reaction {room_id}");
-                        continue;
-                    };
-                    room_info.timeline.clone()
-                };
-
-                let _toggle_reaction_task = Handle::current().spawn(async move {
-                    log!("Toggle Reaction to room {room_id}: ...");
-                    match timeline.toggle_reaction(&timeline_event_id, &reaction).await {
-                        Ok(_send_handle) => {
-                            SignalToUI::set_ui_signal();
-                            log!("Sent toggle reaction to room {room_id} {reaction}.")
-                        },
-                        Err(_e) => error!("Failed to send toggle reaction to room {room_id} {reaction}; error: {_e:?}"),
-                    }
-                });
-            },
-            MatrixRequest::RedactMessage { room_id, timeline_event_id, reason } => {
-                let timeline = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                        log!("BUG: room info not found for redact message {room_id}");
-                        continue;
-                    };
-                    room_info.timeline.clone()
-                };
-
-                let _redact_task = Handle::current().spawn(async move {
-                    match timeline.redact(&timeline_event_id, reason.as_deref()).await {
-                        Ok(()) => log!("Successfully redacted message in room {room_id}."),
-                        Err(e) => {
-                            error!("Failed to redact message in {room_id}; error: {e:?}");
-                            enqueue_popup_notification(PopupItem { message: format!("Failed to redact message. Error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
-                        }
-                    }
-                });
-            },
-            MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
-                let Some(client) = CLIENT.get() else { continue };
-                let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {
-                    let room_or_alias_id: Option<&RoomOrAliasId> = match &matrix_id {
-                        MatrixId::Room(room_id) => Some((&**room_id).into()),
-                        MatrixId::RoomAlias(room_alias_id) => Some((&**room_alias_id).into()),
-                        MatrixId::Event(room_or_alias_id, _event_id) => Some(room_or_alias_id),
-                        _ => {
-                            log!("MatrixLinkRoomPillInfoRequest: Unsupported MatrixId type: {matrix_id:?}");
-                            return;
-                        }
-                    };
-                    if let Some(room_or_alias_id) = room_or_alias_id {
-                        match client.get_room_preview(room_or_alias_id, via).await {
-                            Ok(preview) => Cx::post_action(MatrixLinkPillState::Loaded {
-                                matrix_id: matrix_id.clone(),
-                                name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
-                                avatar_url: preview.avatar_url
-                            }),
-                            Err(_e) => {
-                                log!("Failed to get room link pill info for {room_or_alias_id:?}: {_e:?}");
-                            }
+                            let timeline_ref = room_info.timeline.clone();
+                            let sender = room_info.timeline_update_sender.clone();
+                            (timeline_ref, sender)
                         };
+
+                        // Spawn a new async task that will make the actual pagination request.
+                        let _paginate_task = Handle::current().spawn(async move {
+                            log!("Starting {direction} pagination request for room {room_id}...");
+                            sender.send(TimelineUpdate::PaginationRunning(direction)).unwrap();
+                            SignalToUI::set_ui_signal();
+
+                            let res = if direction == PaginationDirection::Forwards {
+                                timeline.paginate_forwards(num_events).await
+                            } else {
+                                timeline.paginate_backwards(num_events).await
+                            };
+
+                            match res {
+                                Ok(fully_paginated) => {
+                                    log!("Completed {direction} pagination request for room {room_id}, hit {} of timeline? {}",
+                                        if direction == PaginationDirection::Forwards { "end" } else { "start" },
+                                        if fully_paginated { "yes" } else { "no" },
+                                    );
+                                    sender.send(TimelineUpdate::PaginationIdle {
+                                        fully_paginated,
+                                        direction,
+                                    }).unwrap();
+                                    SignalToUI::set_ui_signal();
+                                }
+                                Err(error) => {
+                                    error!("Error sending {direction} pagination request for room {room_id}: {error:?}");
+                                    sender.send(TimelineUpdate::PaginationError {
+                                        error,
+                                        direction,
+                                    }).unwrap();
+                                    SignalToUI::set_ui_signal();
+                                }
+                            }
+                        });
                     }
-                });
+
+                    MatrixRequest::EditMessage { room_id, timeline_event_item_id: timeline_event_id, edited_content } => {
+                        let (timeline, sender) = {
+                            let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                                error!("BUG: room info not found for edit request, room {room_id}");
+                                continue;
+                            };
+                            (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                        };
+
+                        // Spawn a new async task that will make the actual edit request.
+                        let _edit_task = Handle::current().spawn(async move {
+                            log!("Sending request to edit message {timeline_event_id:?} in room {room_id}...");
+                            let result = timeline.edit(&timeline_event_id, edited_content).await;
+                            match result {
+                                Ok(_) => log!("Successfully edited message {timeline_event_id:?} in room {room_id}."),
+                                Err(ref e) => error!("Error editing message {timeline_event_id:?} in room {room_id}: {e:?}"),
+                            }
+                            sender.send(TimelineUpdate::MessageEdited {
+                                timeline_event_id,
+                                result,
+                            }).unwrap();
+                            SignalToUI::set_ui_signal();
+                        });
+                    }
+
+                    MatrixRequest::FetchDetailsForEvent { room_id, event_id } => {
+                        let (timeline, sender) = {
+                            let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                                error!("BUG: room info not found for fetch details for event request {room_id}");
+                                continue;
+                            };
+
+                            (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                        };
+
+                        // Spawn a new async task that will make the actual fetch request.
+                        let _fetch_task = Handle::current().spawn(async move {
+                            // log!("Sending request to fetch details for event {event_id} in room {room_id}...");
+                            let result = timeline.fetch_details_for_event(&event_id).await;
+                            match result {
+                                Ok(_) => {
+                                    // log!("Successfully fetched details for event {event_id} in room {room_id}.");
+                                }
+                                Err(ref _e) => {
+                                    // error!("Error fetching details for event {event_id} in room {room_id}: {e:?}");
+                                }
+                            }
+                            sender.send(TimelineUpdate::EventDetailsFetched {
+                                event_id,
+                                result,
+                            }).unwrap();
+                            SignalToUI::set_ui_signal();
+                        });
+                    }
+
+                    MatrixRequest::SyncRoomMemberList { room_id } => {
+                        let (timeline, sender) = {
+                            let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                                error!("BUG: room info not found for fetch members request {room_id}");
+                                continue;
+                            };
+
+                            (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                        };
+
+                        // Spawn a new async task that will make the actual fetch request.
+                        let _fetch_task = Handle::current().spawn(async move {
+                            log!("Sending sync room members request for room {room_id}...");
+                            timeline.fetch_members().await;
+                            log!("Completed sync room members request for room {room_id}.");
+                            sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
+                            SignalToUI::set_ui_signal();
+                        });
+                    }
+
+                    MatrixRequest::JoinRoom { room_id } => {
+                        let Some(client) = CLIENT.get() else { continue };
+                        let _join_room_task = Handle::current().spawn(async move {
+                            log!("Sending request to join room {room_id}...");
+                            let result_action = if let Some(room) = client.get_room(&room_id) {
+                                match room.join().await {
+                                    Ok(()) => {
+                                        log!("Successfully joined room {room_id}.");
+                                        JoinRoomAction::Joined { room_id }
+                                    }
+                                    Err(e) => {
+                                        error!("Error joining room {room_id}: {e:?}");
+                                        JoinRoomAction::Failed { room_id, error: e }
+                                    }
+                                }
+                            } else {
+                                error!("BUG: client could not get room with ID {room_id}");
+                                JoinRoomAction::Failed {
+                                    room_id,
+                                    error: matrix_sdk::Error::UnknownError(
+                                        String::from("Client couldn't locate room to join it.").into()
+                                    ),
+                                }
+                            };
+                            Cx::post_action(result_action);
+                        });
+                    }
+
+                    MatrixRequest::LeaveRoom { room_id } => {
+                        let Some(client) = CLIENT.get() else { continue };
+                        let _leave_room_task = Handle::current().spawn(async move {
+                            log!("Sending request to leave room {room_id}...");
+                            let result_action = if let Some(room) = client.get_room(&room_id) {
+                                match room.leave().await {
+                                    Ok(()) => {
+                                        log!("Successfully left room {room_id}.");
+                                        LeaveRoomAction::Left { room_id }
+                                    }
+                                    Err(e) => {
+                                        error!("Error leaving room {room_id}: {e:?}");
+                                        LeaveRoomAction::Failed { room_id, error: e }
+                                    }
+                                }
+                            } else {
+                                error!("BUG: client could not get room with ID {room_id}");
+                                LeaveRoomAction::Failed {
+                                    room_id,
+                                    error: matrix_sdk::Error::UnknownError(
+                                        String::from("Client couldn't locate room to leave it.").into()
+                                    ),
+                                }
+                            };
+                            Cx::post_action(result_action);
+                        });
+                    }
+
+                    MatrixRequest::GetRoomMembers { room_id, memberships, local_only } => {
+                        let (timeline, sender) = {
+                            let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                                log!("BUG: room info not found for get room members request {room_id}");
+                                continue;
+                            };
+                            (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                        };
+
+                        let _get_members_task = Handle::current().spawn(async move {
+                            let room = timeline.room();
+
+                            let send_update = |members: Vec<matrix_sdk::room::RoomMember>, _source: &str| {
+                                sender.send(TimelineUpdate::RoomMembersListFetched {
+                                    members
+                                }).unwrap();
+                                SignalToUI::set_ui_signal();
+                            };
+
+                            if local_only {
+                                if let Ok(members) = room.members_no_sync(memberships).await {
+                                    send_update(members, "Got");
+                                }
+                            } else {
+                                if let Ok(members) = room.members(memberships).await {
+                                    send_update(members, "Successfully fetched");
+                                }
+                            }
+                        });
+                    }
+
+                    MatrixRequest::SearchRoomMembers { room_id: _, search_text, sender, max_results, cached_members } => {
+                        // Directly spawn blocking task for search
+                        let _search_task = tokio::task::spawn_blocking(move || {
+                            // Perform streaming search
+                            search_room_members_streaming(cached_members, search_text, max_results, sender);
+                        });
+                    }
+
+                    MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
+                        let Some(client) = CLIENT.get() else { continue };
+                        let _fetch_task = Handle::current().spawn(async move {
+                            // log!("Sending get user profile request: user: {user_id}, \
+                            //     room: {room_id:?}, local_only: {local_only}...",
+                            // );
+
+                            let mut update = None;
+
+                            if let Some(room_id) = room_id.as_ref() {
+                                if let Some(room) = client.get_room(room_id) {
+                                    let member = if local_only {
+                                        room.get_member_no_sync(&user_id).await
+                                    } else {
+                                        room.get_member(&user_id).await
+                                    };
+                                    if let Ok(Some(room_member)) = member {
+                                        update = Some(UserProfileUpdate::Full {
+                                            new_profile: UserProfile {
+                                                username: room_member.display_name().map(|u| u.to_owned()),
+                                                user_id: user_id.clone(),
+                                                avatar_state: AvatarState::Known(room_member.avatar_url().map(|u| u.to_owned())),
+                                            },
+                                            room_id: room_id.to_owned(),
+                                            room_member,
+                                        });
+                                    } else {
+                                        log!("User profile request: user {user_id} was not a member of room {room_id}");
+                                    }
+                                } else {
+                                    log!("User profile request: client could not get room with ID {room_id}");
+                                }
+                            }
+
+                            if !local_only {
+                                if update.is_none() {
+                                    if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
+                                        update = Some(UserProfileUpdate::UserProfileOnly(
+                                            UserProfile {
+                                                username: response.displayname,
+                                                user_id: user_id.clone(),
+                                                avatar_state: AvatarState::Known(response.avatar_url),
+                                            }
+                                        ));
+                                    } else {
+                                        log!("User profile request: client could not get user with ID {user_id}");
+                                    }
+                                }
+
+                                match update.as_mut() {
+                                    Some(UserProfileUpdate::Full { new_profile: UserProfile { username, .. }, .. }) if username.is_none() => {
+                                        if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
+                                            *username = response.displayname;
+                                        }
+                                    }
+                                    _ => { }
+                                }
+                            }
+
+                            if let Some(upd) = update {
+                                // log!("Successfully completed get user profile request: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
+                                enqueue_user_profile_update(upd);
+                            } else {
+                                log!("Failed to get user profile: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
+                            }
+                        });
+                    }
+                    MatrixRequest::GetNumberUnreadMessages { room_id } => {
+                        let (timeline, sender) = {
+                            let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                                log!("Skipping get number of unread messages request for not-yet-known room {room_id}");
+                                continue;
+                            };
+
+                            (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                        };
+                        let _get_unreads_task = Handle::current().spawn(async move {
+                            match sender.send(TimelineUpdate::NewUnreadMessagesCount(
+                                UnreadMessageCount::Known(timeline.room().num_unread_messages())
+                            )) {
+                                Ok(_) => SignalToUI::set_ui_signal(),
+                                Err(e) => log!("Failed to send timeline update: {e:?} for GetNumberUnreadMessages request for room {room_id}"),
+                            }
+                            enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+                                room_id: room_id.clone(),
+                                count: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
+                                unread_mentions:timeline.room().num_unread_mentions(),
+                            });
+                        });
+                    }
+                    MatrixRequest::IgnoreUser { ignore, room_member, room_id } => {
+                        let Some(client) = CLIENT.get() else { continue };
+                        let _ignore_task = Handle::current().spawn(async move {
+                            let user_id = room_member.user_id();
+                            log!("Sending request to {}ignore user: {user_id}...", if ignore { "" } else { "un" });
+                            let ignore_result = if ignore {
+                                room_member.ignore().await
+                            } else {
+                                room_member.unignore().await
+                            };
+
+                            log!("{} user {user_id} {}",
+                                if ignore { "Ignoring" } else { "Unignoring" },
+                                if ignore_result.is_ok() { "succeeded." } else { "failed." },
+                            );
+
+                            if ignore_result.is_err() {
+                                return;
+                            }
+
+                            // We need to re-acquire the `RoomMember` object now that its state
+                            // has changed, i.e., the user has been (un)ignored.
+                            // We then need to send an update to replace the cached `RoomMember`
+                            // with the now-stale ignored state.
+                            if let Some(room) = client.get_room(&room_id) {
+                                if let Ok(Some(new_room_member)) = room.get_member(user_id).await {
+                                    log!("Enqueueing user profile update for user {user_id}, who went from {}ignored to {}ignored.",
+                                        if room_member.is_ignored() { "" } else { "un" },
+                                        if new_room_member.is_ignored() { "" } else { "un" },
+                                    );
+                                    enqueue_user_profile_update(UserProfileUpdate::RoomMemberOnly {
+                                        room_id: room_id.clone(),
+                                        room_member: new_room_member,
+                                    });
+                                }
+                            }
+
+                            // After successfully (un)ignoring a user, all timelines are fully cleared by the Matrix SDK.
+                            // Therefore, we need to re-fetch all timelines for all rooms,
+                            // and currently the only way to actually accomplish this is via pagination.
+                            // See: <https://github.com/matrix-org/matrix-rust-sdk/issues/1703#issuecomment-2250297923>
+                            //
+                            // Note that here we only proactively re-paginate the *current* room
+                            // (the one being viewed by the user when this ignore request was issued),
+                            // and all other rooms will be re-paginated in `handle_ignore_user_list_subscriber()`.`
+                            submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                                room_id,
+                                num_events: 50,
+                                direction: PaginationDirection::Backwards,
+                            });
+                        });
+                    }
+
+                    MatrixRequest::SendTypingNotice { room_id, typing } => {
+                        let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                            error!("BUG: client/room not found for typing notice request {room_id}");
+                            continue;
+                        };
+                        let _typing_task = Handle::current().spawn(async move {
+                            if let Err(e) = room.typing_notice(typing).await {
+                                error!("Failed to send typing notice to room {room_id}: {e:?}");
+                            }
+                        });
+                    }
+
+                    MatrixRequest::SubscribeToTypingNotices { room_id, subscribe } => {
+                        let (room, timeline_update_sender, mut typing_notice_receiver) = {
+                            let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                                log!("BUG: room info not found for subscribe to typing notices request, room {room_id}");
+                                continue;
+                            };
+                            let (room, recv) = if subscribe {
+                                if room_info.typing_notice_subscriber.is_some() {
+                                    warning!("Note: room {room_id} is already subscribed to typing notices.");
+                                    continue;
+                                } else {
+                                    let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                                        error!("BUG: client/room not found when subscribing to typing notices request, room: {room_id}");
+                                        continue;
+                                    };
+                                    let (drop_guard, recv) = room.subscribe_to_typing_notifications();
+                                    room_info.typing_notice_subscriber = Some(drop_guard);
+                                    (room, recv)
+                                }
+                            } else {
+                                room_info.typing_notice_subscriber.take();
+                                continue;
+                            };
+                            // Here: we don't have an existing subscriber running, so we fall through and start one.
+                            (room, room_info.timeline_update_sender.clone(), recv)
+                        };
+
+                        let _typing_notices_task = Handle::current().spawn(async move {
+                            while let Ok(user_ids) = typing_notice_receiver.recv().await {
+                                // log!("Received typing notifications for room {room_id}: {user_ids:?}");
+                                let mut users = Vec::with_capacity(user_ids.len());
+                                for user_id in user_ids {
+                                    users.push(
+                                        room.get_member_no_sync(&user_id)
+                                            .await
+                                            .ok()
+                                            .flatten()
+                                            .and_then(|m| m.display_name().map(|d| d.to_owned()))
+                                            .unwrap_or_else(|| user_id.to_string())
+                                    );
+                                }
+                                if let Err(e) = timeline_update_sender.send(TimelineUpdate::TypingUsers { users }) {
+                                    error!("Error: timeline update sender couldn't send the list of typing users: {e:?}");
+                                }
+                                SignalToUI::set_ui_signal();
+                            }
+                            // log!("Note: typing notifications recv loop has ended for room {}", room_id);
+                        });
+                    }
+                    MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
+                        if !subscribe {
+                            if let Some(task_handler) = tasks_list.remove(&room_id) {
+                                task_handler.abort();
+                            }
+                            continue;
+                        }
+                        let (timeline, sender) = {
+                            let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                                log!("BUG: room info not found for subscribe to own user read receipts changed request, room {room_id}");
+                                continue;
+                            };
+                            (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                        };
+                        let room_id_clone = room_id.clone();
+                        let subscribe_own_read_receipt_task = Handle::current().spawn(async move {
+                            let update_receiver = timeline.subscribe_own_user_read_receipts_changed().await;
+                            pin_mut!(update_receiver);
+                            if let Some(client_user_id) = current_user_id() {
+                                if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
+                                    log!("Received own user read receipt for room {room_id_clone}: {receipt:?}, event ID: {event_id:?}");
+                                    if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
+                                        error!("Failed to get own user read receipt: {e:?}");
+                                    }
+                                }
+
+                                while (update_receiver.next().await).is_some() {
+                                    if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
+                                        if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
+                                            error!("Failed to get own user read receipt: {e:?}");
+                                        }
+                                        // When read receipts change (from other devices), update unread count
+                                        let unread_count = timeline.room().num_unread_messages();
+                                        let unread_mentions = timeline.room().num_unread_mentions();
+                                        // Send updated unread count to the UI
+                                        if let Err(e) = sender.send(TimelineUpdate::NewUnreadMessagesCount(
+                                            UnreadMessageCount::Known(unread_count)
+                                        )) {
+                                            error!("Failed to send unread message count update: {e:?}");
+                                        }
+                                        // Update the rooms list with new unread counts
+                                        enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+                                            room_id: room_id_clone.clone(),
+                                            count: UnreadMessageCount::Known(unread_count),
+                                            unread_mentions,
+                                        });
+                                    }
+                                }
+                            }
+                        });
+                        tasks_list.insert(room_id.clone(), subscribe_own_read_receipt_task);
+                    }
+                    MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
+                        spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
+                    }
+                    MatrixRequest::ResolveRoomAlias(room_alias) => {
+                        let Some(client) = CLIENT.get() else { continue };
+                        let _resolve_task = Handle::current().spawn(async move {
+                            log!("Sending resolve room alias request for {room_alias}...");
+                            let res = client.resolve_room_alias(&room_alias).await;
+                            log!("Resolved room alias {room_alias} to: {res:?}");
+                            todo!("Send the resolved room alias back to the UI thread somehow.");
+                        });
+                    }
+                    MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
+                        let Some(client) = CLIENT.get() else { continue };
+                        let _fetch_task = Handle::current().spawn(async move {
+                            // log!("Sending fetch avatar request for {mxc_uri:?}...");
+                            let media_request = MediaRequestParameters {
+                                source: MediaSource::Plain(mxc_uri.clone()),
+                                format: AVATAR_THUMBNAIL_FORMAT.into(),
+                            };
+                            let res = client.media().get_media_content(&media_request, true).await;
+                            // log!("Fetched avatar for {mxc_uri:?}, succeeded? {}", res.is_ok());
+                            on_fetched(AvatarUpdate { mxc_uri, avatar_data: res.map(|v| v.into()) });
+                        });
+                    }
+
+                    MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
+                        let Some(client) = CLIENT.get() else { continue };
+                        let media = client.media();
+
+                        let _fetch_task = Handle::current().spawn(async move {
+                            // log!("Sending fetch media request for {media_request:?}...");
+                            let res = media.get_media_content(&media_request, true).await;
+                            on_fetched(&destination, media_request, res, update_sender);
+                        });
+                    }
+
+                    MatrixRequest::SendMessage { room_id, message, replied_to } => {
+                        let timeline = {
+                            let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                                log!("BUG: room info not found for send message request {room_id}");
+                                continue;
+                            };
+                            room_info.timeline.clone()
+                        };
+
+                        // Spawn a new async task that will send the actual message.
+                        let _send_message_task = Handle::current().spawn(async move {
+                            log!("Sending message to room {room_id}: {message:?}...");
+                            // The message already contains mentions, no need to add them again
+                            if let Some(replied_to_info) = replied_to {
+                                match timeline.send_reply(message.into(), replied_to_info).await {
+                                    Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
+                                    Err(_e) => {
+                                        error!("Failed to send reply message to room {room_id}: {_e:?}");
+                                        enqueue_popup_notification(PopupItem { message: format!("Failed to send reply: {_e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
+                                    }
+                                }
+                            } else {
+                                match timeline.send(message.into()).await {
+                                    Ok(_send_handle) => log!("Sent message to room {room_id}."),
+                                    Err(_e) => {
+                                        error!("Failed to send message to room {room_id}: {_e:?}");
+                                        enqueue_popup_notification(PopupItem { message: format!("Failed to send message: {_e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
+                                    }
+                                }
+                            }
+                            SignalToUI::set_ui_signal();
+                        });
+                    }
+
+                    MatrixRequest::ReadReceipt { room_id, event_id } => {
+                        let timeline = {
+                            let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                                log!("BUG: room info not found when sending read receipt, room {room_id}, {event_id}");
+                                continue;
+                            };
+                            room_info.timeline.clone()
+                        };
+                        let _send_rr_task = Handle::current().spawn(async move {
+                            match timeline.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id.clone()).await {
+                                Ok(sent) => log!("{} read receipt to room {room_id} for event {event_id}", if sent { "Sent" } else { "Already sent" }),
+                                Err(_e) => error!("Failed to send read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
+                            }
+                            // Also update the number of unread messages in the room.
+                            enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+                                room_id: room_id.clone(),
+                                count: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
+                                unread_mentions: timeline.room().num_unread_mentions()
+                            });
+                        });
+                    },
+
+                    MatrixRequest::FullyReadReceipt { room_id, event_id, .. } => {
+                        let timeline = {
+                            let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                                log!("BUG: room info not found when sending fully read receipt, room {room_id}, {event_id}");
+                                continue;
+                            };
+                            room_info.timeline.clone()
+                        };
+                        let _send_frr_task = Handle::current().spawn(async move {
+                            match timeline.send_single_receipt(ReceiptType::FullyRead, ReceiptThread::Unthreaded, event_id.clone()).await {
+                                Ok(sent) => log!("{} fully read receipt to room {room_id} for event {event_id}",
+                                    if sent { "Sent" } else { "Already sent" }
+                                ),
+                                Err(_e) => error!("Failed to send fully read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
+                            }
+                            // Also update the number of unread messages in the room.
+                            enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+                                room_id: room_id.clone(),
+                                count: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
+                                unread_mentions: timeline.room().num_unread_mentions()
+                            });
+                        });
+                    },
+
+                    MatrixRequest::GetRoomPowerLevels { room_id } => {
+                        let (timeline, sender) = {
+                            let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                                log!("BUG: room info not found for fetch members request {room_id}");
+                                continue;
+                            };
+
+                            (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                        };
+
+                        let Some(user_id) = current_user_id() else { continue };
+
+                        let _power_levels_task = Handle::current().spawn(async move {
+                            match timeline.room().power_levels().await {
+                                Ok(power_levels) => {
+                                    log!("Successfully fetched power levels for room {room_id}.");
+                                    if let Err(e) = sender.send(TimelineUpdate::UserPowerLevels(
+                                        UserPowerLevels::from(&power_levels, &user_id),
+                                    )) {
+                                        error!("Failed to send the result of if user can send message: {e}")
+                                    }
+                                    SignalToUI::set_ui_signal();
+                                }
+                                Err(e) => {
+                                    error!("Failed to fetch power levels for room {room_id}: {e:?}");
+                                }
+                            }
+                        });
+                    },
+                    MatrixRequest::ToggleReaction { room_id, timeline_event_id, reaction } => {
+                        let timeline = {
+                            let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                                log!("BUG: room info not found for send toggle reaction {room_id}");
+                                continue;
+                            };
+                            room_info.timeline.clone()
+                        };
+
+                        let _toggle_reaction_task = Handle::current().spawn(async move {
+                            log!("Toggle Reaction to room {room_id}: ...");
+                            match timeline.toggle_reaction(&timeline_event_id, &reaction).await {
+                                Ok(_send_handle) => {
+                                    SignalToUI::set_ui_signal();
+                                    log!("Sent toggle reaction to room {room_id} {reaction}.")
+                                },
+                                Err(_e) => error!("Failed to send toggle reaction to room {room_id} {reaction}; error: {_e:?}"),
+                            }
+                        });
+                    },
+                    MatrixRequest::RedactMessage { room_id, timeline_event_id, reason } => {
+                        let timeline = {
+                            let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                                log!("BUG: room info not found for redact message {room_id}");
+                                continue;
+                            };
+                            room_info.timeline.clone()
+                        };
+
+                        let _redact_task = Handle::current().spawn(async move {
+                            match timeline.redact(&timeline_event_id, reason.as_deref()).await {
+                                Ok(()) => log!("Successfully redacted message in room {room_id}."),
+                                Err(e) => {
+                                    error!("Failed to redact message in {room_id}; error: {e:?}");
+                                    enqueue_popup_notification(PopupItem { message: format!("Failed to redact message. Error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
+                                }
+                            }
+                        });
+                    },
+                    MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
+                        let Some(client) = CLIENT.get() else { continue };
+                        let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {
+                            let room_or_alias_id: Option<&RoomOrAliasId> = match &matrix_id {
+                                MatrixId::Room(room_id) => Some((&**room_id).into()),
+                                MatrixId::RoomAlias(room_alias_id) => Some((&**room_alias_id).into()),
+                                MatrixId::Event(room_or_alias_id, _event_id) => Some(room_or_alias_id),
+                                _ => {
+                                    log!("MatrixLinkRoomPillInfoRequest: Unsupported MatrixId type: {matrix_id:?}");
+                                    return;
+                                }
+                            };
+                            if let Some(room_or_alias_id) = room_or_alias_id {
+                                match client.get_room_preview(room_or_alias_id, via).await {
+                                    Ok(preview) => Cx::post_action(MatrixLinkPillState::Loaded {
+                                        matrix_id: matrix_id.clone(),
+                                        name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
+                                        avatar_url: preview.avatar_url
+                                    }),
+                                    Err(_e) => {
+                                        log!("Failed to get room link pill info for {room_or_alias_id:?}: {_e:?}");
+                                    }
+                                };
+                            }
+                        });
+                    }
+                }
             }
+
         }
     }
 
@@ -1156,7 +1174,7 @@ static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
-static REQUEST_SENDER: OnceLock<UnboundedSender<MatrixRequest>> = OnceLock::new();
+static REQUEST_SENDER: OnceLock<UnboundedSender<BackgroundRequest>> = OnceLock::new();
 
 /// A client object that is proactively created during initialization
 /// in order to speed up the client-building process when the user logs in.
@@ -1171,7 +1189,7 @@ pub fn start_matrix_tokio() -> Result<()> {
     let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
 
     // Create a channel to be used between UI thread(s) and the async worker thread.
-    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<BackgroundRequest>();
     REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
 
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
@@ -2923,4 +2941,78 @@ impl UserPowerLevels {
     pub fn can_pin(self) -> bool {
         self.contains(UserPowerLevels::RoomPinnedEvents)
     }
+}
+
+/// Top-level request types for the background worker
+///
+/// This enum provides semantic separation between different types of background tasks:
+/// - Matrix requests that involve server communication and API calls
+/// - Local async jobs that are CPU-intensive but don't require server interaction
+///
+/// Both types are processed by the same unified background worker thread (`async_worker`)
+/// using the same `REQUEST_SENDER` channel, but are handled differently based on their nature:
+/// - Matrix requests may involve network I/O, authentication, and server response handling
+/// - AsyncJob requests are executed using `tokio::task::spawn_blocking` to avoid blocking
+///   the async runtime on CPU-intensive operations
+///
+/// This design allows for:
+/// 1. **Unified Infrastructure**: Both request types use the same channel and worker
+/// 2. **Semantic Clarity**: Clear distinction between server-bound vs local operations
+/// 3. **Performance Optimization**: CPU-intensive tasks are offloaded to thread pool
+/// 4. **Extensibility**: Easy to add new types of background operations
+///
+/// # Examples
+///
+/// ```rust
+/// // Matrix server request (e.g., fetching room members from server)
+/// submit_async_request(MatrixRequest::GetRoomMembers { ... });
+///
+/// // Local async job (e.g., searching cached room members)
+/// submit_async_job(LocalJob::SearchRoomMembers { ... });
+/// ```
+pub enum BackgroundRequest {
+    /// Matrix server interaction request
+    ///
+    /// These requests involve communication with the Matrix homeserver and may include:
+    /// - Authentication and session management
+    /// - Room operations (join, leave, get members)
+    /// - Timeline operations (pagination, message editing)
+    /// - Profile and user data fetching
+    ///
+    /// Matrix requests are processed directly in the async context and may involve
+    /// network I/O, retries, and error handling specific to Matrix protocol.
+    Matrix(MatrixRequest),
+
+    /// Local async job (no Matrix server interaction)
+    ///
+    /// These requests are CPU-intensive operations that work with locally cached data:
+    /// - Searching and filtering large datasets
+    /// - Complex computations on room member lists
+    /// - Text processing and matching algorithms
+    /// - Any blocking operation that should not halt the async runtime
+    ///
+    /// AsyncJob requests are executed using `tokio::task::spawn_blocking` to prevent
+    /// blocking the main async runtime, ensuring responsive UI and continued server
+    /// communication while CPU-intensive work proceeds in the background.
+    AsyncJob(LocalJob),
+}
+
+/// Background job requests that don't interact with Matrix API
+pub enum LocalJob {
+    /// Search room members locally
+    SearchRoomMembers {
+        room_id: OwnedRoomId,
+        search_text: String,
+        sender: std::sync::mpsc::Sender<crate::shared::mentionable_text_input::SearchResult>,
+        max_results: usize,
+        cached_members: Arc<Vec<RoomMember>>,
+    },
+}
+
+/// Submit a background job request to be executed asynchronously
+pub fn submit_async_job(req: LocalJob) {
+    REQUEST_SENDER.get()
+        .unwrap()
+        .send(BackgroundRequest::AsyncJob(req))
+        .expect("BUG: async worker task receiver has died!");
 }

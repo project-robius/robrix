@@ -6,6 +6,7 @@ use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::shared::typing_animation::TypingAnimationWidgetRefExt;
 use crate::shared::styles::COLOR_UNKNOWN_ROOM_AVATAR;
 use crate::utils;
+use crate::sliding_sync::submit_async_job;
 
 
 use makepad_widgets::{text::selection::Cursor, log, *};
@@ -13,7 +14,6 @@ use matrix_sdk::ruma::{events::{room::message::RoomMessageEventContent, Mentions
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_segmentation::UnicodeSegmentation;
 use crate::home::room_screen::RoomScreenProps;
-use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
 // Channel types for member search communication
 use std::sync::mpsc::Receiver;
@@ -21,7 +21,7 @@ use std::sync::mpsc::Receiver;
 /// Result type for member search channel communication
 #[derive(Debug, Clone)]
 pub struct SearchResult {
-    pub results: Vec<(String, usize)>,  // (display_name, index in members vec)
+    pub results: Vec<usize>,  // indices in members vec
     pub is_complete: bool,
     pub search_text: String,
 }
@@ -349,7 +349,7 @@ pub struct MentionableTextInput {
     /// Channel receiver for search results from background thread
     #[rust] search_receiver: Option<Receiver<SearchResult>>,
     /// Accumulated search results for streaming
-    #[rust] accumulated_results: Vec<(String, usize)>,
+    #[rust] accumulated_results: Vec<usize>,
     /// Last search text to avoid duplicate searches
     #[rust] last_search_text: Option<String>,
 }
@@ -577,7 +577,7 @@ impl MentionableTextInput {
     fn add_user_mention_items(
         &mut self,
         cx: &mut Cx,
-        matched_members: Vec<(String, usize)>,
+        member_indices: &[usize],
         user_items_limit: usize,
         is_desktop: bool,
         room_props: &RoomScreenProps,
@@ -589,11 +589,16 @@ impl MentionableTextInput {
             return 0;
         };
 
-        for (index, (display_name, member_idx)) in matched_members.into_iter().take(user_items_limit).enumerate() {
+        for (index, &member_idx) in member_indices.iter().take(user_items_limit).enumerate() {
             // Get the actual member from the index
             let Some(member) = members.get(member_idx) else {
                 continue;
             };
+
+            // Get display name from member
+            let display_name = member.display_name()
+                .unwrap_or_else(|| member.user_id().localpart())
+                .to_owned();
             let Some(user_list_item_ptr) = self.user_list_item else {
                 // user_list_item_ptr is None
                 continue;
@@ -865,8 +870,7 @@ impl MentionableTextInput {
             self.members_loading = false;
 
             // Results are already sorted in member_search.rs and indices are unique
-            let results = self.accumulated_results.clone();
-            self.update_ui_with_results(cx, scope, results, &search_text);
+            self.update_ui_with_results(cx, scope, &search_text);
         }
 
 
@@ -876,7 +880,9 @@ impl MentionableTextInput {
             self.members_loading = false;
             if self.accumulated_results.is_empty() {
                 // No user results, but still update UI (may show @room)
-                self.update_ui_with_results(cx, scope, Vec::new(), &search_text);
+                // Clear results before showing empty state
+                self.accumulated_results.clear();
+                self.update_ui_with_results(cx, scope, &search_text);
                 // redraw_all already called in update_ui_with_results
             }
         } else if !any_results {
@@ -897,7 +903,9 @@ impl MentionableTextInput {
                     self.members_loading = false;
                     // If no results were shown, show empty state
                     if self.accumulated_results.is_empty() {
-                        self.update_ui_with_results(cx, scope, Vec::new(), "");
+                        // Clear results before showing empty state
+                        self.accumulated_results.clear();
+                        self.update_ui_with_results(cx, scope, "");
                     }
                 }
             }
@@ -908,7 +916,7 @@ impl MentionableTextInput {
     }
 
     /// Common UI update logic for both streaming and non-streaming results
-    fn update_ui_with_results(&mut self, cx: &mut Cx, scope: &mut Scope, results: Vec<(String, usize)>, search_text: &str) {
+    fn update_ui_with_results(&mut self, cx: &mut Cx, scope: &mut Scope, search_text: &str) {
 
         // Clear old list items
         self.cmd_text_input.clear_items();
@@ -929,7 +937,9 @@ impl MentionableTextInput {
 
         // Add user mention items
         let user_items_limit = max_visible_items.saturating_sub(has_room_item as usize);
-        let user_items_added = self.add_user_mention_items(cx, results, user_items_limit, is_desktop, room_props);
+        // Clone the indices to avoid borrowing issues
+        let member_indices = self.accumulated_results.clone();
+        let user_items_added = self.add_user_mention_items(cx, &member_indices, user_items_limit, is_desktop, room_props);
         items_added += user_items_added;
 
         // Update popup visibility based on whether we have items
@@ -960,6 +970,9 @@ impl MentionableTextInput {
 
         let is_desktop = cx.display_context.is_desktop();
         let max_visible_items = if is_desktop { 10 } else { 5 };
+
+        // Cancel any existing search task
+        // Note: Cancellation happens automatically when receiver is dropped
 
         // Cancel any existing search by dropping the old receiver
         self.search_receiver = None;
@@ -997,12 +1010,14 @@ impl MentionableTextInput {
             let (sender, receiver) = std::sync::mpsc::channel();
             self.search_receiver = Some(receiver);
 
-            // Submit background search request - even for empty search text we want to show users
-            submit_async_request(MatrixRequest::SearchRoomMembers {
+            // Submit search request to background worker
+            let search_text_clone = search_text.to_string();
+            let max_results = max_visible_items * SEARCH_BUFFER_MULTIPLIER;
+            submit_async_job(crate::sliding_sync::LocalJob::SearchRoomMembers {
                 room_id: room_props.room_id.clone(),
-                search_text: search_text.to_string(),
+                search_text: search_text_clone,
                 sender,
-                max_results: max_visible_items * SEARCH_BUFFER_MULTIPLIER,
+                max_results,
                 cached_members: cached_members.clone(),
             });
 
@@ -1146,6 +1161,9 @@ impl MentionableTextInput {
         self.is_searching = false;
         self.members_loading = false; // Reset loading state when closing popup
 
+        // Cancel any ongoing search task
+        // Note: Cancellation happens automatically when receiver is dropped
+
         // Cancel any ongoing search by dropping the receiver
         self.search_receiver = None;
 
@@ -1205,6 +1223,7 @@ impl MentionableTextInput {
 
 
 }
+
 
 impl MentionableTextInputRef {
     pub fn text(&self) -> String {

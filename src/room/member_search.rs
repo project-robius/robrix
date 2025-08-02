@@ -43,11 +43,7 @@ pub fn search_room_members_streaming(
                 }
             }
 
-            let display_name = member.display_name()
-                .map(|d| d.to_owned())
-                .unwrap_or_else(|| member.user_id().to_string());
-
-            all_results.push((display_name, index));
+            all_results.push(index);
 
             // Send in batches
             if all_results.len() >= sent_count + BATCH_SIZE {
@@ -58,7 +54,7 @@ pub fn search_room_members_streaming(
                 sent_count = batch_end;
 
                 let search_result = SearchResult {
-                    results: batch.clone(),
+                    results: batch,
                     is_complete: false,
                     search_text: search_text.clone(),
                 };
@@ -99,7 +95,7 @@ pub fn search_room_members_streaming(
 
     // Use a min-heap to keep only the top max_results
     // We use Reverse to make BinaryHeap work as a min-heap
-    let mut top_matches: BinaryHeap<Reverse<(u8, String, usize)>> = BinaryHeap::with_capacity(max_results);
+    let mut top_matches: BinaryHeap<Reverse<(u8, usize)>> = BinaryHeap::with_capacity(max_results);
 
     // Track if we have enough high-priority matches to stop early
     let mut high_priority_count = 0;
@@ -114,11 +110,6 @@ pub fn search_room_members_streaming(
 
         // Check if this member matches the search text
         if user_matches_search(member, &search_text) {
-            let display_name = member
-                .display_name()
-                .map(|d| d.to_owned())
-                .unwrap_or_else(|| member.user_id().to_string());
-
             let priority = get_match_priority(member, &search_text);
 
             // Count high-priority matches (0-3 are exact or starts-with matches)
@@ -128,12 +119,12 @@ pub fn search_room_members_streaming(
 
             // Add to heap - it automatically maintains top K elements
             if top_matches.len() < max_results {
-                top_matches.push(Reverse((priority, display_name, index)));
-            } else if let Some(&Reverse((worst_priority, _, _))) = top_matches.peek() {
+                top_matches.push(Reverse((priority, index)));
+            } else if let Some(&Reverse((worst_priority, _))) = top_matches.peek() {
                 // Only add if this match is better than the worst in heap
                 if priority < worst_priority {
                     top_matches.pop();
-                    top_matches.push(Reverse((priority, display_name, index)));
+                    top_matches.push(Reverse((priority, index)));
                 }
             }
 
@@ -146,11 +137,11 @@ pub fn search_room_members_streaming(
 
 
     // Extract results from heap and sort them
-    let mut all_matches: Vec<(u8, String, usize)> = top_matches
+    let mut all_matches: Vec<(u8, usize)> = top_matches
         .into_iter()
         .map(|Reverse(item)| item)
         .collect();
-    all_matches.sort_by_key(|(priority, _, _)| *priority);
+    all_matches.sort_by_key(|(priority, _)| *priority);
 
     // Send results in sorted batches
     let mut sent_count = 0;
@@ -159,10 +150,10 @@ pub fn search_room_members_streaming(
     while sent_count < total_results {
         let batch_end = (sent_count + BATCH_SIZE).min(total_results);
 
-        let batch: Vec<(String, usize)> = all_matches
+        let batch: Vec<usize> = all_matches
             .get(sent_count..batch_end)
             .map(|slice| slice.iter()
-                .map(|(_, name, idx)| (name.clone(), *idx))
+                .map(|(_, idx)| *idx)
                 .collect())
             .unwrap_or_else(Vec::new);
 
@@ -175,7 +166,7 @@ pub fn search_room_members_streaming(
 
 
         let search_result = SearchResult {
-            results: batch.clone(),
+            results: batch,
             is_complete: is_last_batch,
             search_text: search_text.clone(),
         };
