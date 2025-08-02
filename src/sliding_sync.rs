@@ -404,7 +404,7 @@ pub enum MatrixRequest {
 pub fn submit_async_request(req: MatrixRequest) {
     REQUEST_SENDER.get()
         .unwrap() // this is initialized
-        .send(BackgroundRequest::Matrix(req))
+        .send(BackgroundRequest::Matrix(Box::new(req)))
         .expect("BUG: async worker task receiver has died!");
 }
 
@@ -450,7 +450,7 @@ async fn async_worker(
             }
             // tasks that involve requests to the matrix server
             BackgroundRequest::Matrix(matrix_request) => {
-                match matrix_request {
+                match *matrix_request {
                     MatrixRequest::Login(login_request) => {
                         if let Err(e) = login_sender.send(login_request).await {
                             error!("Error sending login request to login_sender: {e:?}");
@@ -2983,7 +2983,7 @@ pub enum BackgroundRequest {
     ///
     /// Matrix requests are processed directly in the async context and may involve
     /// network I/O, retries, and error handling specific to Matrix protocol.
-    Matrix(MatrixRequest),
+    Matrix(Box<MatrixRequest>),
 
     /// Local async job (no Matrix server interaction)
     ///
@@ -2996,7 +2996,7 @@ pub enum BackgroundRequest {
     /// AsyncJob requests are executed using `tokio::task::spawn_blocking` to prevent
     /// blocking the main async runtime, ensuring responsive UI and continued server
     /// communication while CPU-intensive work proceeds in the background.
-    /// 
+    ///
     /// Note: We use the existing Tokio runtime rather than `cx.spawn_thread` to maintain
     /// consistency with Matrix SDK operations and enable better coordination between
     /// async tasks (e.g., cancellation, resource sharing, error propagation).
