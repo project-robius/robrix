@@ -2960,6 +2960,8 @@ impl UserPowerLevels {
 /// 2. **Semantic Clarity**: Clear distinction between server-bound vs local operations
 /// 3. **Performance Optimization**: CPU-intensive tasks are offloaded to thread pool
 /// 4. **Extensibility**: Easy to add new types of background operations
+/// 5. **Tokio Integration**: Uses existing Tokio runtime instead of `cx.spawn_thread`
+///    for better async task coordination and resource management
 ///
 /// # Examples
 ///
@@ -2994,6 +2996,10 @@ pub enum BackgroundRequest {
     /// AsyncJob requests are executed using `tokio::task::spawn_blocking` to prevent
     /// blocking the main async runtime, ensuring responsive UI and continued server
     /// communication while CPU-intensive work proceeds in the background.
+    /// 
+    /// Note: We use the existing Tokio runtime rather than `cx.spawn_thread` to maintain
+    /// consistency with Matrix SDK operations and enable better coordination between
+    /// async tasks (e.g., cancellation, resource sharing, error propagation).
     AsyncJob(LocalJob),
 }
 
