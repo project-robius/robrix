@@ -4,6 +4,7 @@ use matrix_sdk::ruma::OwnedRoomId;
 
 pub mod room_input_bar;
 pub mod room_display_filter;
+pub mod member_search;
 
 pub fn live_design(cx: &mut Cx) {
     room_input_bar::live_design(cx)

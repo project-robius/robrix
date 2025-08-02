@@ -597,9 +597,9 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-            
+
             restore_status_view = <RestoreStatusView> {}
-            
+
 
             keyboard_view = <KeyboardView> {
                 width: Fill, height: Fill,
@@ -1660,8 +1660,14 @@ impl RoomScreen {
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
                 TimelineUpdate::RoomMembersListFetched { members } => {
+                    // RoomMembersListFetched: Received members for room
                     // Store room members directly in TimelineUiState
                     tl.room_members = Some(Arc::new(members));
+                    // Notify MentionableTextInput that members are loaded
+                    cx.action(MentionableTextInputAction::RoomMembersLoaded {
+                        room_id: tl.room_id.clone(),
+                    });
+                    // The UI will be redrawn at the end of the update loop if num_updates > 0
                 },
                 TimelineUpdate::MediaFetched => {
                     log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
@@ -2292,7 +2298,7 @@ impl RoomScreen {
                 // This doesn't mean that the user can actually perform all actions;
                 // the power levels will be updated from the homeserver once the room is opened.
                 user_power: UserPowerLevels::all(),
-                // Room members start as None and get populated when fetched from the server
+                // Room members start as NotLoaded and get populated when fetched from the server
                 room_members: None,
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
@@ -2363,7 +2369,7 @@ impl RoomScreen {
         //    show/hide UI elements based on the user's permissions.
         // 2. Get the list of members in this room (from the SDK's local cache).
         // 3. Subscribe to our own user's read receipts so that we can update the
-        //    read marker and properly send read receipts while scrolling through the timeline. 
+        //    read marker and properly send read receipts while scrolling through the timeline.
         // 4. Subscribe to typing notices again, now that the room is being shown.
         if self.is_loaded {
             submit_async_request(MatrixRequest::GetRoomPowerLevels {
@@ -2375,7 +2381,7 @@ impl RoomScreen {
                 // Fetch from the local cache, as we already requested to sync
                 // the room members from the homeserver above.
                 local_only: true,
-            }); 
+            });
             submit_async_request(MatrixRequest::SubscribeToTypingNotices {
                 room_id: room_id.clone(),
                 subscribe: true,
@@ -3581,7 +3587,7 @@ fn populate_image_message_content(
                             Err(e) => {
                                 error!("Failed to decode blurhash {e:?}");
                                 Err(image_cache::ImageError::EmptyData)
-                            }   
+                            }
                         }
                     });
                     if let Err(e) = show_image_result {
