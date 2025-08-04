@@ -2966,34 +2966,6 @@ pub async fn shutdown_background_tasks() {
     }
 }
 
-pub fn leak_runtime() {
-    if let Some(runtime) = TOKIO_RUNTIME.lock().unwrap().take() {
-        std::mem::forget(runtime);
-        log!("Leaked tokio runtime to prevent destructor");
-    } 
-}
-
-pub fn leak_client() {
-    if let Some(client) = CLIENT.lock().unwrap().take() {
-        std::mem::forget(client);
-        log!("Leaked client to prevent destructor");
-    } 
-}
-
-pub fn leak_sync_service() {
-    if let Some(sync_service) = SYNC_SERVICE.lock().unwrap().take() {
-        std::mem::forget(sync_service);
-        log!("Leaked sync service to prevent destructor");
-    } 
-}
-
-pub fn leak_request_sender() {
-    if let Some(sender) = REQUEST_SENDER.lock().unwrap().take() {
-        std::mem::forget(sender);
-        log!("Leaked request sender to prevent destructor");
-    } 
-}
-
 pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
     // Clear resources normally, allowing them to be properly dropped
     // This prevents memory leaks when users logout and login again without closing the app

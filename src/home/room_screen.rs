@@ -4379,7 +4379,8 @@ impl MessageRef {
     }
 }
 
-pub fn clean_timeline_states() {
+/// The `cx` parameter ensures that these thread-local caches are cleared on the main UI thread, 
+pub fn clean_timeline_states(_cx: &mut Cx) {
     // Clear timeline states cache
     TIMELINE_STATES.with_borrow_mut(|states| {
         states.clear();

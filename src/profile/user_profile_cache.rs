@@ -266,23 +266,8 @@ pub fn get_user_profile_and_room_member(
     )
 }
 
-/// Clears all thread-local UI caches (user profiles, invited rooms, and timeline states).
-/// 
-/// This function serves two distinct purposes depending on when it's called:
-/// 
-/// 1. **During logout**: Clears cached data to provide a clean state for the next login session.
-///    In this case, the thread-local variables themselves are not destroyed, only their contents are cleared.
-/// 
-/// 2. **During app shutdown**: Prevents crashes by proactively clearing Matrix SDK objects before 
-///    the tokio runtime is shut down. When the program exits, thread-local destructors run automatically.
-///    If the caches still contain Matrix SDK objects (UserProfile, RoomMember, InvitedRoomInfo, 
-///    TimelineUiState, etc.), their destructors may attempt to access the tokio runtime for cleanup, 
-///    but the runtime has already been leaked/shutdown, causing deadpool panics or other async-related crashes.
-///    
-///    By clearing all caches before runtime shutdown, we ensure that Matrix SDK objects are properly
-///    destroyed while the runtime is still available, leaving only empty collections for the 
-///    thread-local destructors to handle safely.
-pub fn clear_user_profile_caches() {
+/// The `cx` parameter ensures that these thread-local caches are cleared on the main UI thread, 
+pub fn clear_user_profile_caches(_cx: &mut Cx) {
     // Clear user profile cache
     USER_PROFILE_CACHE.with_borrow_mut(|cache| {
         cache.clear();

@@ -5,7 +5,7 @@
 // Ignore clippy warnings in `DeRon` macro derive bodies.
 #![allow(clippy::question_mark)]
 
-use std::{collections::HashMap, sync::atomic::Ordering};
+use std::collections::HashMap;
 use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
@@ -25,7 +25,7 @@ use crate::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, sliding_sync::{current_user_id, leak_client, leak_request_sender, leak_runtime, leak_sync_service, LOGOUT_IN_PROGRESS}, utils::{
+    }, sliding_sync::current_user_id, utils::{
         room_name_or_id,
         OwnedRoomIdRon,
     }, verification::VerificationAction, verification_modal::{
@@ -216,8 +216,8 @@ impl MatchEvent for App {
             }
 
             if let Some(LogoutAction::CleanAppState { on_clean_appstate: on_clean_resources }) = action.downcast_ref() {
-                // Clear user profile cache, invired_rooms timeline states to prevent thread-local destructor issues
-                clear_all_caches();
+                // Clear user profile cache, invired_rooms timeline states 
+                clear_all_caches(cx);
                 // Reset saved dock state to prevent crashes when switching back to desktop mode
                 self.app_state.saved_dock_state = Default::default();
                 on_clean_resources.clone().send(true).unwrap();
@@ -378,33 +378,11 @@ impl MatchEvent for App {
 }
 
 /// Clears all thread-local UI caches (user profiles, invited rooms, and timeline states).
-/// 
-/// This function serves two distinct purposes depending on when it's called:
-/// 
-/// 1. **During logout**: Clears cached data to provide a clean state for the next login session.
-///    In this case, the thread-local variables themselves are not destroyed, only their contents are cleared.
-/// 
-/// 2. **During app shutdown**: Prevents crashes by proactively clearing Matrix SDK objects before 
-///    the tokio runtime is shut down. When the program exits, thread-local destructors run automatically.
-///    If the caches still contain Matrix SDK objects (UserProfile, RoomMember, InvitedRoomInfo, 
-///    TimelineUiState, etc.), their destructors may attempt to access the tokio runtime for cleanup, 
-///    but the runtime has already been leaked/shutdown, causing deadpool panics or other async-related crashes.
-///    
-///    **Why this is critical**: Thread-local destructors run AFTER our controlled shutdown sequence.
-///    Without clearing these caches, Matrix SDK objects would be destroyed during thread-local cleanup,
-///    triggering the same deadpool-runtime dependency chain that we're trying to avoid:
-///    matrix-sdk → matrix-sdk-sqlite → rusqlite → deadpool-sqlite → deadpool-runtime
-///    
-///    By clearing all caches before runtime shutdown, we ensure that Matrix SDK objects are properly
-///    destroyed while the runtime is still available, leaving only empty collections for the 
-///    thread-local destructors to handle safely.
-///    
-///    **Investigation findings**: Using tokio-console and Matrix SDK patches, we confirmed that
-///    thread-local destructors containing Matrix SDK objects were the source of post-shutdown crashes.
-fn clear_all_caches() {
-    clear_user_profile_caches();
-    clean_all_invited_rooms();
-    clean_timeline_states();
+/// The `cx` parameter ensures that these thread-local caches are cleared on the main UI thread, 
+fn clear_all_caches(cx: &mut Cx) {
+    clear_user_profile_caches(cx);
+    clean_all_invited_rooms(cx);
+    clean_timeline_states(cx);
 }
 
 impl AppMain for App {
@@ -427,8 +405,6 @@ impl AppMain for App {
                 }
             }
 
-            // Clean up Matrix SDK resources to avoid deadpool panic
-            self.cleanup_before_shutdown();
         }
         
         // Forward events to the MatchEvent trait implementation.
@@ -472,96 +448,6 @@ impl AppMain for App {
 
 impl App {
 
-    /// Resource Management During Logout and Shutdown
-    ///
-    /// Robrix handles two distinct termination scenarios:
-    /// 1. Logout: Controlled cleanup where users can log back in
-    /// 2. App Shutdown: Final termination where we must prevent crashes about deadpool-runtime in matrix-sdk
-    ///
-    /// THE CORE PROBLEM: Dependency Chain and Deadpool Management
-    /// The Matrix SDK creates a complex dependency chain:
-    /// matrix-sdk → matrix-sdk-sqlite → rusqlite → deadpool-sqlite → deadpool-runtime
-    ///
-    /// Key Issues:
-    /// - Matrix SDK provides NO public API to handle deadpool cleanup before tokio runtime shutdown
-    /// - When CLIENT.lock().unwrap().take() starts destruction, cleanup happens asynchronously
-    /// - Race condition: tokio runtime may shut down before deadpool connections close properly
-    ///
-    /// INVESTIGATION METHODOLOGY:
-    /// We used multiple debugging approaches to track deadpool-runtime crashes:
-    ///
-    /// 1. Tokio Console Integration:
-    ///    - Monitored async task lifecycle during shutdown
-    ///    - Tracked connection pool states
-    ///    - Identified timing issues between client destruction and runtime shutdown
-    ///
-    /// 2. Matrix SDK Patching:
-    ///    - Forked matrix-sdk repository with custom instrumentation
-    ///    - Added logging to sqlite store destruction path
-    ///    - Patched deadpool integration points to expose internal state
-    ///    - Created custom builds to trace deadpool cleanup sequences
-    ///
-    /// 3. Cargo.lock Analysis:
-    ///    - Analyzed dependency versions for deadpool-runtime compatibility
-    ///    - Verified tokio runtime and deadpool version alignment
-    ///
-    /// SOLUTION STRATEGY:
-    ///
-    /// For Logout: Controlled cleanup with timing coordination
-    /// - Use clean_app_state() → shutdown_background_tasks() state transition
-    /// - Extend timing between client.take() and shutdown_background() 
-    /// - Allow Matrix SDK internal cleanup to complete before runtime shutdown
-    ///
-    /// For App Shutdown: Controlled leak strategy
-    /// - Clean what we can control (UI caches, collections)
-    /// - Proactively leak resources we cannot safely handle:
-    ///   * leak_runtime()
-    ///   * leak_client() 
-    ///   * leak_sync_service()
-    ///   * leak_request_sender()
-    ///
-    /// RATIONALE FOR CONTROLLED LEAKING:
-    /// 1. Upstream Limitation: Matrix SDK has no deadpool coordination API
-    /// 2. Crash Prevention: Better to leak at shutdown than crash with confusing traces
-    /// 3. User Experience: Prevents users thinking Robrix is buggy 
-    /// 4. Pragmatic Solution: Works around dependency limitation we cannot control
-    /// 5. Memory Impact: Leaking at shutdown has no practical impact (process terminating)
-    /// 6. Stability: Eliminates race conditions between Matrix cleanup and tokio shutdown
-    ///
-    /// This approach ensures stable user experience while working within Matrix SDK constraints.
-    /// NOTE: This strategy should be revisited when Matrix SDK provides proper cleanup APIs.
-    fn cleanup_before_shutdown(&mut self) {
-        
-        // log!("Starting shutdown cleanup...");
-        
-        // // Clear user profile cache first to prevent thread-local destructor issues
-        // // This must be done before leaking the tokio runtime
-        // clear_all_caches();
-        // log!("Cleared user profile cache");
-        
-        // // Set logout in progress to suppress error messages
-        // LOGOUT_IN_PROGRESS.store(true, Ordering::Relaxed);
-        
-        // // Immediately take and leak all resources to prevent any destructors from running
-        // // This is a controlled leak at shutdown to avoid the deadpool panic
-        
-        // // Take the runtime first and leak it
-        // leak_runtime(); 
-        
-        // // Take and leak the client
-        // leak_client(); 
-        
-        // // Take and leak the sync service
-        // leak_sync_service();
-        
-        // // Take and leak the request sender
-        // leak_request_sender();
-        
-        // // Don't clear any collections or caches as they might contain references
-        // // to Matrix SDK objects that would trigger the deadpool panic
-        // log!("Shutdown cleanup completed - all resources leaked to prevent panics");
-    }
-   
     fn update_login_visibility(&self, cx: &mut Cx) {
         let show_login = !self.app_state.logged_in;
         if !show_login {
