@@ -8,12 +8,14 @@ use tsp_sdk::{AskarSecureStorage, AsyncSecureStore, SecureStorage};
 
 use crate::{persistence, shared::popup_list::{enqueue_popup_notification, PopupItem}};
 
-pub mod tsp_settings_screen;
 
 pub mod create_wallet_modal;
+pub mod tsp_settings_screen;
+pub mod wallet_entry;
 
 pub fn live_design(cx: &mut Cx) {
     create_wallet_modal::live_design(cx);
+    wallet_entry::live_design(cx);
     tsp_settings_screen::live_design(cx);
 }
 
@@ -64,7 +66,7 @@ impl TspState {
         saved_state: SavedTspState,
     ) -> Result<(), tsp_sdk::Error> {
         for (idx, wallet_metadata) in saved_state.wallets.into_iter().enumerate() {
-            if let Ok(opened_wallet) = wallet_metadata.open_wallet().await {
+       if let Ok(opened_wallet) = wallet_metadata.open_wallet().await {
                 if saved_state.default_wallet == Some(idx) {
                     self.current_wallet = Some(opened_wallet);
                 } else {
@@ -102,7 +104,7 @@ impl TspState {
             wallets.push(metadata);
         }
         for entry in self.other_wallets {
-            let metadata = entry.deref().clone();
+            let metadata = entry.metadata().clone();
             if let TspWalletEntry::Opened(opened) = entry {
                 opened.persist_and_close().await?;
             }
@@ -116,7 +118,7 @@ impl TspState {
 }
 
 
-/// A TSP wallet entry known to Robrix.
+/// A TSP wallet entry known to Robrix. Derefs to `TspWalletMetadata`.
 #[derive(Debug)]
 pub enum TspWalletEntry {
     /// A wallet that currently exists and has been opened successfully.
@@ -133,6 +135,15 @@ impl Deref for TspWalletEntry {
         }
     }
 }
+impl TspWalletEntry {
+    pub fn metadata(&self) -> &TspWalletMetadata {
+        match self {
+            TspWalletEntry::Opened(opened) => &opened.metadata,
+            TspWalletEntry::NotFound(metadata) => metadata,
+        }
+    }
+}
+
 
 /// A TSP wallet that exists and is currently opened / ready to use.
 pub struct OpenedTspWallet {
@@ -319,10 +330,12 @@ pub enum TspWalletAction {
         metadata: TspWalletMetadata,
         error: tsp_sdk::Error,
     },
-    /// A wallet was deleted successfully.
-    WalletDeleted(TspWalletMetadata),
-    /// The default wallet was set to the given wallet.
-    DefaultWalletSet(TspWalletMetadata),
+    /// A wallet was removed from the list.
+    WalletRemoved(TspWalletMetadata),
+    /// The default wallet was successfully or unsuccessfully changed.
+    DefaultWalletChanged(Result<TspWalletMetadata, ()>),
+    /// The given wallet was successfully or unsuccessfully opened.
+    WalletOpened(Result<TspWalletMetadata, tsp_sdk::Error>),
 }
 
 /// Requests that can be sent to the TSP async worker thread.
@@ -332,9 +345,15 @@ pub enum TspRequest {
         metadata: TspWalletMetadata,
     },
     /// Request to open an existing TSP wallet.
+    ///
+    /// This does not modify the current active/default wallet.
+    /// If the wallet exists in the list of other wallets, it will be opened in-place,
+    /// otherwise it will be opened and added to the end of the other wallets list.
     OpenWallet {
         metadata: TspWalletMetadata,
     },
+    /// Request to set an existing open wallet as the default.
+    SetDefaultWallet(TspWalletMetadata),
     /// Request to delete a TSP wallet.
     DeleteWallet(TspWalletMetadata),
 }
@@ -348,58 +367,111 @@ async fn async_tsp_worker(
 ) -> anyhow::Result<()> {
     log!("Started async_tsp_worker task.");
 
-    while let Some(request) = request_receiver.recv().await {
-        match request {
-            TspRequest::CreateWallet { metadata } => {
-                log!("Received TspRequest::CreateWallet({metadata:?})");
-                Handle::current().spawn(async move {
-                    match AskarSecureStorage::new(&metadata.path, metadata.password.as_bytes()).await {
-                        Ok(vault) => {
-                            log!("Successfully created new wallet: {metadata:?}");
-                            let db = AsyncSecureStore::new();
-                            let mut tsp_state = tsp_state_ref().lock().unwrap();
-                            let opened_wallet = OpenedTspWallet {
-                                vault,
-                                db,
-                                metadata: metadata.clone(),
-                            };
-                            let is_default: bool;
-                            if tsp_state.current_wallet.is_none() {
-                                tsp_state.current_wallet = Some(opened_wallet);
-                                is_default = true;
-                            } else {
-                                tsp_state.other_wallets.push(TspWalletEntry::Opened(opened_wallet));
-                                is_default = false;
+    while let Some(req) = request_receiver.recv().await { match req {
+        TspRequest::CreateWallet { metadata } => {
+            log!("Received TspRequest::CreateWallet({metadata:?})");
+            Handle::current().spawn(async move {
+                match AskarSecureStorage::new(&metadata.path, metadata.password.as_bytes()).await {
+                    Ok(vault) => {
+                        log!("Successfully created new wallet: {metadata:?}");
+                        let db = AsyncSecureStore::new();
+                        let mut tsp_state = tsp_state_ref().lock().unwrap();
+                        let opened_wallet = OpenedTspWallet {
+                            vault,
+                            db,
+                            metadata: metadata.clone(),
+                        };
+                        let is_default: bool;
+                        if tsp_state.current_wallet.is_none() {
+                            tsp_state.current_wallet = Some(opened_wallet);
+                            is_default = true;
+                        } else {
+                            tsp_state.other_wallets.push(TspWalletEntry::Opened(opened_wallet));
+                            is_default = false;
+                        }
+                        Cx::post_action(
+                            TspWalletAction::CreateWalletSuccess {
+                                metadata,
+                                is_default,
                             }
-                            Cx::post_action(
-                                TspWalletAction::CreateWalletSuccess {
-                                    metadata,
-                                    is_default,
-                                }
-                            );
-                        }
-                        Err(error) => {
-                            error!("Failed to create new wallet: {error:?}");
-                            Cx::post_action(
-                                TspWalletAction::CreateWalletError {
-                                    metadata: metadata.clone(),
-                                    error,
-                                }
-                            );
-                        }
+                        );
                     }
-                });
-            }
-            TspRequest::OpenWallet { metadata } => {
-                log!("Received TspRequest::OpenWallet({metadata:?})");
-                // Handle wallet opening
-            }
-            TspRequest::DeleteWallet(metadata) => {
-                log!("Received TspRequest::DeleteWallet({metadata:?})");
-                // Handle wallet deletion
-            }
+                    Err(error) => {
+                        error!("Failed to create new wallet: {error:?}");
+                        Cx::post_action(
+                            TspWalletAction::CreateWalletError {
+                                metadata: metadata.clone(),
+                                error,
+                            }
+                        );
+                    }
+                }
+            });
         }
-    }
+
+        TspRequest::SetDefaultWallet(metadata) => {
+            log!("Received TspRequest::SetDefaultWallet({metadata:?})");
+            match tsp_state_ref().lock().unwrap().current_wallet.as_ref() {
+                Some(cw) if cw.metadata == metadata => {
+                    log!("Wallet was already set as default: {metadata:?}");
+                    continue;
+                }
+                _ => {}
+            }
+
+            // If the new default wallet exists and is already opened, set it as default.
+            Handle::current().spawn(async move {
+                let mut result = Err(());
+                let mut tsp_state = tsp_state_ref().lock().unwrap();
+                if let Some(existing_opened) = tsp_state.other_wallets.iter()
+                    .position(|w| match w {
+                        TspWalletEntry::Opened(opened) => opened.path == metadata.path,
+                        _ => false,
+                    })
+                    .map(|idx| tsp_state.other_wallets.remove(idx))
+                {
+                    if let TspWalletEntry::Opened(opened) = existing_opened {
+                        if let Some(previous_active) = tsp_state.current_wallet.replace(opened) {
+                            tsp_state.other_wallets.insert(0, TspWalletEntry::Opened(previous_active));
+                        }
+                        result = Ok(metadata);
+                    }
+                }
+                Cx::post_action(TspWalletAction::DefaultWalletChanged(result));
+            });
+        }
+
+        TspRequest::OpenWallet { metadata } => {
+            log!("Received TspRequest::OpenWallet({metadata:?})");
+            Handle::current().spawn(async move {
+                let result = match metadata.open_wallet().await {
+                    Ok(opened_wallet) => {
+                        log!("Successfully opened wallet: {metadata:?}");
+                        let mut tsp_state = tsp_state_ref().lock().unwrap();
+                        // If the newly-opened wallet exists in the other wallets list,
+                        // convert it into an opened wallet in-place.
+                        // Otherwise, add it to the end of the other wallet list
+                        if let Some(w) = tsp_state.other_wallets.iter_mut().find(|w| w.metadata() == &metadata) {
+                            *w = TspWalletEntry::Opened(opened_wallet);
+                        } else {
+                            tsp_state.other_wallets.push(TspWalletEntry::Opened(opened_wallet));
+                        }
+                        Ok(metadata)
+                    }
+                    Err(error) => {
+                        error!("Error opening wallet {metadata:?}: {error:?}");
+                        Err(error)
+                    }
+                };
+                Cx::post_action(TspWalletAction::WalletOpened(result));
+            });
+        }
+
+        TspRequest::DeleteWallet(metadata) => {
+            log!("Received TspRequest::DeleteWallet({metadata:?})");
+            todo!("handle deleting a wallet");
+        }
+    } }
     error!("async_tsp_worker task ended unexpectedly");
     anyhow::bail!("async_tsp_worker task ended unexpectedly")
 }

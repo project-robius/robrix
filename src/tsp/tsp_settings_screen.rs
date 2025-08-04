@@ -2,7 +2,7 @@ use std::ops::DerefMut;
 
 use makepad_widgets::*;
 
-use crate::{shared::{popup_list::{enqueue_popup_notification, PopupItem}, styles::*}, tsp::{create_wallet_modal::CreateWalletModalAction, tsp_state_ref, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
+use crate::{shared::popup_list::{enqueue_popup_notification, PopupItem}, tsp::{create_wallet_modal::CreateWalletModalAction, tsp_state_ref, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
 live_design! {
     use link::theme::*;
@@ -13,110 +13,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
-
-    // An entry in the list of wallets.
-    WalletEntry = <View> {
-        width: Fill, height: Fit
-        flow: Down
-
-        <View> {
-            width: Fill, height: Fit
-            flow: RightWrap,
-            padding: 10
-
-            wallet_name = <Label> {
-                width: Fit, height: Fit
-                flow: Right,
-                margin: {top: 2.4, left: 0}
-                draw_text: {
-                    color: (MESSAGE_TEXT_COLOR),
-                    text_style: <THEME_FONT_BOLD>{ font_size: 12 },
-                }
-                text: "[Wallet Name]"
-            }
-
-            wallet_path = <Label> {
-                width: Fit, height: Fit
-                flow: Right,
-                margin: {top: 2.9, left: 8, bottom: 2}
-                draw_text: {
-                    color: (MESSAGE_TEXT_COLOR),
-                    text_style: <THEME_FONT_REGULAR>{ font_size: 11 },
-                }
-                text: "[Wallet Path/URL]"
-            }
-
-            not_found_label_view = <View> {
-                width: Fit, height: Fit
-                margin: {left: 20}
-                <Label> {
-                    margin: {top: 2.9}
-                    width: Fit, height: Fit
-                    flow: Right,
-                    draw_text: {
-                        color: (COLOR_FG_DANGER_RED),
-                        text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
-                    }
-                    text: "Wallet not found!"
-                }
-            }
-
-            set_default_wallet_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
-                margin: {left: 20}
-                draw_bg: {
-                    color: (COLOR_ACTIVE_PRIMARY)
-                }
-                draw_icon: {
-                    svg_file: (ICON_CHECKMARK)
-                    color: (COLOR_FG_DISABLED)
-                }
-                draw_text: {
-                    color: (COLOR_FG_DISABLED)
-                }
-                icon_walk: {width: 16, height: 16}
-                text: "Set As Default"
-            }
-
-            remove_wallet_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
-                margin: {left: 20}
-                draw_bg: {
-                    color: (COLOR_BG_DANGER_RED)
-                    border_color: (COLOR_FG_DANGER_RED)
-                }
-                draw_icon: {
-                    svg_file: (ICON_CLOSE),
-                    color: (COLOR_FG_DANGER_RED),
-                }
-                draw_text: {
-                    color: (COLOR_FG_DANGER_RED),
-                }
-                icon_walk: { width: 16, height: 16 }
-                text: "Remove From List"
-            }
-
-            delete_wallet_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
-                margin: {left: 20}
-                draw_bg: {
-                    color: (COLOR_BG_DANGER_RED)
-                    border_color: (COLOR_FG_DANGER_RED)
-                }
-                draw_icon: {
-                    svg_file: (ICON_TRASH),
-                    color: (COLOR_FG_DANGER_RED),
-                }
-                draw_text: {
-                    color: (COLOR_FG_DANGER_RED),
-                }
-                icon_walk: { width: 16, height: 16 }
-                text: "Delete Wallet"
-            }
-        }
-
-        <LineH> { padding: 10, margin: {left: 5, right: 5} }
-    }
+    use crate::tsp::wallet_entry::*;
 
     // The view containing all TSP-related settings.
     pub TspSettingsScreen = {{TspSettingsScreen}} {
@@ -154,7 +51,7 @@ live_design! {
 
             wallet_list = <PortalList> {
                 width: Fill,
-                height: 300,
+                height: 200,
                 spacing: 0.0
                 flow: Down,
 
@@ -226,23 +123,38 @@ impl WalletState {
         self.active_wallet.is_none() && self.other_wallets.is_empty()
     }
 
-    fn get(&self, index: usize) -> Option<(&TspWalletMetadata, bool, WalletStatus)> {
+    fn get(&self, index: usize) -> Option<(&TspWalletMetadata, WalletStatusAndDefault)> {
         if let Some(active) = self.active_wallet.as_ref() {
             if index == 0 {
-                Some((active, true, WalletStatus::Opened))
+                Some((active, WalletStatusAndDefault::new(WalletStatus::Opened, true)))
             } else {
-                self.other_wallets.get(index - 1).map(|(m, s)| (m, false, *s))
+                self.other_wallets.get(index - 1).map(|(m, s)|
+                    (m, WalletStatusAndDefault::new(*s, false))
+                )
             }
         } else {
-            self.other_wallets.get(index).map(|(m, s)| (m, false, *s))
+            self.other_wallets.get(index).map(|(m, s)|
+                (m, WalletStatusAndDefault::new(*s, false))
+            )
         }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-enum WalletStatus {
+pub enum WalletStatus {
     Opened,
     NotFound,
+}
+
+#[derive(Clone, Copy)]
+pub struct WalletStatusAndDefault {
+    pub status: WalletStatus,
+    pub is_default: bool,
+}
+impl WalletStatusAndDefault {
+    pub fn new(status: WalletStatus, is_default: bool) -> Self {
+        Self { status, is_default }
+    }
 }
 
 /// The view containing all TSP-related settings.
@@ -254,7 +166,7 @@ pub struct TspSettingsScreen {
     ///
     /// * If `None`, this widget doesn't know about any wallets or is outdated,
     ///   and must retrieve them from the TSP state.
-    /// * If `Some`, the wallets has been loaded and is up-to-date.
+    /// * If `Some`, the wallets has been opened and is up-to-date.
     ///   * This doesn't mean that any wallets actually exist.
     ///
     /// This is sort of a "cache" of the wallets that have been drawn
@@ -289,7 +201,7 @@ impl Widget for TspSettingsScreen {
             let Some(wallets) = self.wallets.as_ref() else {
                 return DrawStep::done();
             };
-            let portal_list_height = if is_wallets_empty { 0.0 } else { 300.0 };
+            let portal_list_height = if is_wallets_empty { 0.0 } else { 200.0 };
             // Hide the list if there are no wallets
             list_ref.apply_over(cx, live!(
                 height: (portal_list_height),
@@ -301,58 +213,17 @@ impl Widget for TspSettingsScreen {
             list.set_item_range(cx, 0, last_item_id);
 
             while let Some(item_id) = list.next_visible_item(cx) {
-                let item = if let Some((wallet, is_default, status)) = wallets.get(item_id) {
-                    let wallet_entry = list.item(cx, item_id, live_id!(wallet_entry));
-                    wallet_entry.label(id!(wallet_name)).set_text(
-                        cx,
-                        &wallet.wallet_name,
-                    );
-                    wallet_entry.label(id!(wallet_path)).set_text(
-                        cx,
-                        &wallet.path,
-                    );
-                    let is_not_found = matches!(status, WalletStatus::NotFound);
-                    wallet_entry.label(id!(not_found_label_view)).set_visible(
-                        cx,
-                        is_not_found,
-                    );
-                    let set_default_wallet_button = wallet_entry.button(id!(set_default_wallet_button));
-                    if is_default {
-                        log!("Drawing wallet {item_id} as default");
-                        set_default_wallet_button.apply_over(cx, live!(
-                            enabled: false,
-                            draw_bg: { color: (COLOR_BG_ACCEPT_GREEN) },
-                            icon_walk: { width: 0, height: 0 },
-                            spacing: 0,
-                            text: "Selected As Default"
-                        ));
-                    } else {
-                        let (enable, fg_color) = if matches!(status, WalletStatus::Opened) {
-                            (true, COLOR_PRIMARY)
-                        } else {
-                            (false, COLOR_FG_DISABLED)
-                        };
-                        log!("Drawing non-default wallet {item_id}, enabled? {enable}, fg_color: {fg_color}");
-                        set_default_wallet_button.apply_over(cx, live!(
-                            enabled: (enable),
-                            icon_walk: { width: 16, height: 16},
-                            draw_text: { color: (fg_color) },
-                            draw_icon: { color: (fg_color) },
-                            text: "Set As Default"
-                        ));
-                    }
-
-                    if is_not_found {
-                        set_default_wallet_button.set_visible(cx, false);
-                        wallet_entry.button(id!(remove_wallet_button)).set_visible(cx, false);
-                        wallet_entry.button(id!(delete_wallet_button)).set_visible(cx, false);
-                    }
-
-                    wallet_entry
+                if let Some((metadata, mut status_and_default)) = wallets.get(item_id) {
+                    let item = list.item(cx, item_id, live_id!(wallet_entry));
+                    // Pass the wallet metadata in through Scope via props,
+                    // and status/is_default via data.
+                    let mut scope = Scope::with_data_props(&mut status_and_default, metadata);
+                    item.draw_all(cx, &mut scope);
                 } else {
                     list.item(cx, item_id, live_id!(bottom_filler))
-                };
-                item.draw_all(cx, scope);
+                        .draw_all(cx, scope);
+                }
+                
             }
         }
         DrawStep::done()
@@ -373,8 +244,9 @@ impl MatchEvent for TspSettingsScreen {
                     }
                     self.view.redraw(cx);
                 }
+
                 // Remove the wallet from the list of drawn wallets.
-                Some(TspWalletAction::WalletDeleted(metadata)) => {
+                Some(TspWalletAction::WalletRemoved(metadata)) => {
                     if let Some(wallets) = &mut self.wallets {
                         // If the wallet was the active one, clear it.
                         if wallets.active_wallet.as_ref() == Some(metadata) {
@@ -392,22 +264,51 @@ impl MatchEvent for TspSettingsScreen {
                         self.refresh_wallets();
                     }
                 }
+
                 // Update the default/active wallet.
-                Some(TspWalletAction::DefaultWalletSet(metadata)) => {
+                Some(TspWalletAction::DefaultWalletChanged(Ok(metadata))) => {
                     let wallets = self.wallets.get_or_insert_default();
-                    wallets.active_wallet = Some(metadata.clone());
-                    // Remove the wallet from the other wallets list if it existed there.
-                    if let Some(pos) = wallets.other_wallets.iter().position(|(w, _)| w == metadata) {
-                        wallets.other_wallets.remove(pos);
+                    let previous_active = wallets.active_wallet.replace(metadata.clone());
+                    // If the newly-default wallet was in the other wallets list, remove it
+                    // and then add the previous active wallet back to that other wallets list.
+                    if let Some(idx_to_remove) = wallets.other_wallets.iter().position(|(w, _)| w == metadata) {
+                        wallets.other_wallets.remove(idx_to_remove);
+                    }
+                    if let Some(previous_active) = previous_active {
+                        wallets.other_wallets.insert(0, (previous_active, WalletStatus::Opened));
                     }
                     self.view.redraw(cx);
                 }
+                Some(TspWalletAction::DefaultWalletChanged(Err(_))) => {
+                    enqueue_popup_notification(PopupItem {
+                        message: String::from("Failed to set default wallet, could not find or open selected wallet."),
+                        auto_dismissal_duration: None,
+                        // PopupKind::Error,
+                    });
+                }
 
-                Some(TspWalletAction::CreateWalletError { .. })
+                // Handle a newly-opened wallet.
+                Some(TspWalletAction::WalletOpened(Ok(metadata))) => {
+                    let wallets = self.wallets.get_or_insert_default();
+                    if let Some((_m, status)) = wallets.other_wallets.iter_mut().find(|(w, _)| w == metadata) {
+                        *status = WalletStatus::Opened;
+                    } else {
+                        wallets.other_wallets.push((metadata.clone(), WalletStatus::Opened));
+                    }
+                    self.view.redraw(cx);
+                }
+                Some(TspWalletAction::WalletOpened(Err(e))) => {
+                    enqueue_popup_notification(PopupItem {
+                        message: format!("Failed to open wallet: {e}"),
+                        auto_dismissal_duration: None,
+                        // PopupKind::Error,
+                    });
+                }
+
+                Some(TspWalletAction::CreateWalletError { .. }) // handled in the CreateWalletModal
                 | None => { }
             }
         }
-
 
         if self.view.button(id!(create_wallet_button)).clicked(actions) {
             cx.action(CreateWalletModalAction::Open);

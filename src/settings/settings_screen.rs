@@ -123,7 +123,7 @@ impl Widget for SettingsScreen {
                 Event::Actions(actions) if self.button(id!(close_button)).clicked(actions)
             )
             || event.back_pressed()
-            || match event.hits_with_capture_overload(cx, area, true) {
+            || match event.hits(cx, area) {
                 Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
                 Hit::FingerDown(_fde) => {
                     cx.set_key_focus(area);
