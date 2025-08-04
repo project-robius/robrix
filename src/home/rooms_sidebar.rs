@@ -21,6 +21,7 @@ live_design! {
     use crate::shared::room_filter_input_bar::RoomFilterInputBar;
 
     use crate::home::rooms_list::RoomsList;
+    use crate::home::rooms_list_header::RoomsListHeader;
 
     pub RoomsSideBar = {{RoomsSideBar}}<AdaptiveView> {
         Desktop = <View> {
@@ -44,13 +45,8 @@ live_design! {
                 }
             }
 
-            sidebar_title = <Label> {
-                flow: Right, // do not wrap
-                text: "All Rooms"
-                draw_text: {
-                    color: #x0
-                    text_style: <TITLE_TEXT>{}
-                }
+            <CachedWidget> {
+                rooms_list_header = <RoomsListHeader> {}
             }
             <CachedWidget> {
                 rooms_list = <RoomsList> {}
@@ -62,13 +58,8 @@ live_design! {
             flow: Down, spacing: 7
             width: Fill, height: Fill
 
-            sidebar_title = <Label> {
-                text: "All Rooms"
-                flow: Right, // do not wrap
-                draw_text: {
-                    color: #x0
-                    text_style: <TITLE_TEXT>{}
-                }
+            <CachedWidget> {
+                rooms_list_header = <RoomsListHeader> {}
             }
             <CachedWidget> {
                 room_filter_input_bar = <RoomFilterInputBar> {
@@ -113,3 +104,4 @@ impl Widget for RoomsSideBar {
         self.view.draw_walk(cx, scope, walk)
     }
 }
+
