@@ -447,7 +447,6 @@ impl AppMain for App {
 }
 
 impl App {
-
     fn update_login_visibility(&self, cx: &mut Cx) {
         let show_login = !self.app_state.logged_in;
         if !show_login {
