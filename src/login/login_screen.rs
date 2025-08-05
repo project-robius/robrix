@@ -465,33 +465,19 @@ impl MatchEvent for LoginScreen {
 /// Actions sent to or from the login screen.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum LoginAction {
-    /// A positive response from the backend Matrix task to the login screen.
+    /// Switch to the register screen with optional server URL
+    SwitchToRegister(String),
+    /// CLI-based auto-login attempt
+    CliAutoLogin { user_id: String, homeserver: Option<String> },
+    /// Login was successful
     LoginSuccess,
-    /// A negative response from the backend Matrix task to the login screen.
+    /// Login failed with an error message
     LoginFailure(String),
-    /// A login-related status message to display to the user.
-    Status {
-        title: String,
-        status: String,
-    },
-    /// The given login info was specified on the command line (CLI),
-    /// and the login process is underway.
-    CliAutoLogin {
-        user_id: String,
-        homeserver: Option<String>,
-    },
-    /// An acknowledgment that is sent from the backend Matrix task to the login screen
-    /// informing it that the SSO login process is either still in flight (`true`) or has finished (`false`).
-    ///
-    /// Note that an inner value of `false` does *not* imply that the login request has
-    /// successfully finished. 
-    /// The login screen can use this to prevent the user from submitting
-    /// additional SSO login requests while a previous request is in flight. 
+    /// A login-related status message to display to the user
+    Status { title: String, status: String },
+    /// SSO login is pending (true) or completed (false)
     SsoPending(bool),
-    /// Set the SSO redirect URL in the LoginScreen.
-    ///
-    /// When an SSO-based login is pendng, pressing the cancel button will send
-    /// an HTTP request to this SSO server URL to gracefully shut it down.
+    /// Set the SSO redirect URL
     SsoSetRedirectUrl(Url),
     None,
 }

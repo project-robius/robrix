@@ -19,7 +19,10 @@ use crate::{
         JoinLeaveRoomModalAction,
         JoinLeaveRoomModalWidgetRefExt,
     },
-    login::login_screen::LoginAction,
+    login::{
+        login_screen::LoginAction, 
+        register_screen::{RegisterAction, RegisterScreenWidgetRefExt}
+    },
     persistent_state::{
         load_window_state,
         save_app_state,
@@ -192,10 +195,32 @@ impl MatchEvent for App {
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
-            if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
-                log!("Received LoginAction::LoginSuccess, hiding login view.");
-                self.app_state.logged_in = true;
-                self.update_login_visibility(cx);
+            match action.downcast_ref() {
+                Some(LoginAction::LoginSuccess) => {
+                    log!("Received LoginAction::LoginSuccess, hiding login view.");
+                    self.app_state.logged_in = true;
+                    self.update_login_visibility(cx);
+                    self.ui.redraw(cx);
+                },
+                Some(LoginAction::SwitchToRegister(server_url)) => {
+                    log!("Switching to register screen");
+                    self.ui.view(id!(login_screen_view)).set_visible(cx, false);
+
+                    if !server_url.is_empty() {
+                        self.ui.register_screen(id!(register_screen_view.register_screen))
+                            .apply_over(cx, live!{ server_url: (server_url) });
+                    }
+
+                    self.ui.view(id!(register_screen_view)).set_visible(cx, true);
+                    self.ui.redraw(cx);
+                },
+                _ => {}
+            }
+
+            if let Some(RegisterAction::SwitchToLogin) = action.downcast_ref() {
+                log!("Switching back to login screen");
+                self.ui.view(id!(register_screen_view)).set_visible(cx, false);
+                self.ui.view(id!(login_screen_view)).set_visible(cx, true);
                 self.ui.redraw(cx);
                 continue;
             }
@@ -412,6 +437,7 @@ impl App {
                 .close(cx);
         }
         self.ui.view(id!(login_screen_view)).set_visible(cx, show_login);
+        self.ui.view(id!(register_screen_view)).set_visible(cx, false); 
         self.ui.view(id!(home_screen_view)).set_visible(cx, !show_login);
     }
 }

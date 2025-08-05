@@ -229,6 +229,8 @@ pub type OnMediaFetchedFn = fn(
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
     Login(LoginRequest),
+    /// Request from the register screen to register a new account with the given credentials.
+    Register(RegisterRequest),
     /// Request to paginate the older (or newer) events of a room's timeline.
     PaginateRoomTimeline {
         room_id: OwnedRoomId,
@@ -414,6 +416,12 @@ pub struct LoginByPassword {
     pub password: String,
     pub homeserver: Option<String>,
 }
+/// Information needed to register a new account on a Matrix homeserver.
+pub struct RegisterRequest {
+    pub username: String,
+    pub password: String,
+    pub homeserver: Option<String>,
+}
 
 
 /// The entry point for an async worker thread that can run async tasks.
@@ -429,12 +437,28 @@ async fn async_worker(
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
-                if let Err(e) = login_sender.send(login_request).await {
+                if let Err(e) = login_sender.clone().send(login_request).await {
                     error!("Error sending login request to login_sender: {e:?}");
                     Cx::post_action(LoginAction::LoginFailure(String::from(
                         "BUG: failed to send login request to async worker thread."
                     )));
                 }
+            }
+            MatrixRequest::Register(register_request) => {
+                let login_sender_clone = login_sender.clone();
+                let _register_task = Handle::current().spawn(async move {
+                    match register_user(register_request).await {
+                        Ok((client, client_session)) => {
+                            if let Err(e) = login_sender_clone.send(LoginRequest::LoginBySSOSuccess(client, client_session)).await {
+                                error!("Error sending register success to login_sender: {e:?}");
+                            }
+                        }
+                        Err(e) => {
+                            error!("Registration failed: {e:?}");
+                            Cx::post_action(LoginAction::LoginFailure(format!("Registration failed: {e}")));
+                        }
+                    }
+                });
             }
             MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
                 let (timeline, sender) = {
@@ -2907,5 +2931,30 @@ impl UserPowerLevels {
     #[doc(alias("unpin"))]
     pub fn can_pin(self) -> bool {
         self.contains(UserPowerLevels::RoomPinnedEvents)
+    }
+}
+
+/// Registers a new user account on the given Matrix homeserver.
+async fn register_user(register_request: RegisterRequest) -> Result<(Client, ClientSessionPersisted)> {
+    let cli = Cli {
+        user_id: register_request.username.clone(),
+        password: register_request.password,
+        homeserver: register_request.homeserver,
+        ..Default::default()
+    };
+    
+    let (client, client_session) = build_client(&cli, app_data_dir()).await?;
+    
+    let register_req = matrix_sdk::ruma::api::client::account::register::v3::Request::new();
+    let _register_result = client
+        .matrix_auth()
+        .register(register_req)
+        .await?;
+    
+    if client.matrix_auth().logged_in() {
+        log!("Registration successful for user: {}", register_request.username);
+        Ok((client, client_session))
+    } else {
+        bail!("Registration completed but user is not logged in")
     }
 }
