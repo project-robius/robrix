@@ -1,10 +1,13 @@
+// Ignore clippy warnings in `DeRon` macro derive bodies.
+#![allow(clippy::question_mark)]
+
 use std::{borrow::Cow, fmt::Display, ops::Deref, str::{Chars, FromStr}, time::SystemTime};
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, *};
+use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, Cx, Event, ImageRef};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
-use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
+use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
@@ -146,6 +149,53 @@ pub fn stringify_join_leave_error(
         error
     ))
 }
+
+/// Returns a string error message for pagination errors,
+/// handling special cases related to common pagination errors, e.g., timeouts.
+pub fn stringify_pagination_error(
+    error: &matrix_sdk_ui::timeline::Error,
+    room_name: &str,
+) -> String {
+    use matrix_sdk::event_cache::{paginator::PaginatorError, EventCacheError};
+    use matrix_sdk_ui::timeline::Error as TimelineError;
+
+    #[allow(clippy::single_match)]
+    let match_paginator_error = |paginator_error: &PaginatorError| {
+        match paginator_error {
+            PaginatorError::SdkError(sdk_error) => match sdk_error.deref() {
+                matrix_sdk::Error::Http(http_error) => match http_error.deref() {
+                    matrix_sdk::HttpError::Reqwest(reqwest_error) if reqwest_error.is_timeout() => {
+                        return Some(format!("Failed to load earlier messages in \"{room_name}\": request timed out."));
+                    }
+                    _ => {}
+                }
+                _ => {}
+            }
+            _ => {}
+        }
+        None
+    };
+
+    match error {
+        TimelineError::PaginationError(PaginationError::NotSupported) => {
+            return format!("Failed to load earlier messages in \"{room_name}\":\
+                pagination is not supported in this timeline focus mode.");
+        }
+        TimelineError::PaginationError(PaginationError::Paginator(paginator_error)) => {
+            if let Some(message) = match_paginator_error(paginator_error) {
+                return message;
+            }
+        }
+        TimelineError::EventCacheError(EventCacheError::BackpaginationError(paginator_error)) => {
+            if let Some(message) = match_paginator_error(paginator_error) {
+                return message;
+            }
+        }
+        _ => {}
+    }
+    format!("Failed to load earlier messages in \"{room_name}\": {error}")
+}
+
 
 /// Returns a string representation of the room name or ID.
 pub fn room_name_or_id(
