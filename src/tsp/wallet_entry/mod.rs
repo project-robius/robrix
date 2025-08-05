@@ -161,7 +161,7 @@ impl Widget for WalletEntry {
             if self.view.button(id!(remove_wallet_button)).clicked(actions) {
                 // TODO: Implement the remove wallet feature.
                 enqueue_popup_notification(PopupItem {
-                    message: format!("Remove wallet feature is not yet implemented."),
+                    message: "Remove wallet feature is not yet implemented.".to_string(),
                     auto_dismissal_duration: None,
                     kind: PopupKind::Warning,
                 });
@@ -169,7 +169,7 @@ impl Widget for WalletEntry {
             if self.view.button(id!(delete_wallet_button)).clicked(actions) {
                 // TODO: Implement the delete wallet feature.
                 enqueue_popup_notification(PopupItem {
-                    message: format!("Delete wallet feature is not yet implemented."),
+                    message: "Delete wallet feature is not yet implemented.".to_string(),
                     auto_dismissal_duration: None,
                     kind: PopupKind::Warning,
                 });

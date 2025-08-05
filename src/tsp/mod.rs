@@ -1,3 +1,6 @@
+// Ignore clippy warnings in `DeRon` macro derive bodies.
+#![allow(clippy::question_mark)]
+
 use std::{ops::Deref, sync::{Arc, Mutex, OnceLock}};
 
 use anyhow::anyhow;
@@ -428,19 +431,18 @@ async fn async_tsp_worker(
             Handle::current().spawn(async move {
                 let mut result = Err(());
                 let mut tsp_state = tsp_state_ref().lock().unwrap();
-                if let Some(existing_opened) = tsp_state.other_wallets.iter()
+                if let Some(TspWalletEntry::Opened(opened)) = tsp_state.other_wallets.iter()
                     .position(|w| match w {
                         TspWalletEntry::Opened(opened) => opened.path == metadata.path,
                         _ => false,
                     })
                     .map(|idx| tsp_state.other_wallets.remove(idx))
                 {
-                    if let TspWalletEntry::Opened(opened) = existing_opened {
-                        if let Some(previous_active) = tsp_state.current_wallet.replace(opened) {
-                            tsp_state.other_wallets.insert(0, TspWalletEntry::Opened(previous_active));
-                        }
-                        result = Ok(metadata);
+                    let prev_opt = tsp_state.current_wallet.replace(opened);
+                    if let Some(previous_active) = prev_opt {
+                        tsp_state.other_wallets.insert(0, TspWalletEntry::Opened(previous_active));
                     }
+                    result = Ok(metadata);
                 }
                 Cx::post_action(TspWalletAction::DefaultWalletChanged(result));
             });

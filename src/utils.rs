@@ -1,3 +1,6 @@
+// Ignore clippy warnings in `DeRon` macro derive bodies.
+#![allow(clippy::question_mark)]
+
 use std::{borrow::Cow, fmt::Display, ops::Deref, str::{Chars, FromStr}, time::SystemTime};
 
 use unicode_segmentation::UnicodeSegmentation;
@@ -156,6 +159,7 @@ pub fn stringify_pagination_error(
     use matrix_sdk::event_cache::{paginator::PaginatorError, EventCacheError};
     use matrix_sdk_ui::timeline::Error as TimelineError;
 
+    #[allow(clippy::single_match)]
     let match_paginator_error = |paginator_error: &PaginatorError| {
         match paginator_error {
             PaginatorError::SdkError(sdk_error) => match sdk_error.deref() {
