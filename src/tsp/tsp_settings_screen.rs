@@ -2,7 +2,7 @@ use std::ops::DerefMut;
 
 use makepad_widgets::*;
 
-use crate::{shared::popup_list::{enqueue_popup_notification, PopupItem}, tsp::{create_wallet_modal::CreateWalletModalAction, tsp_state_ref, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
+use crate::{shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, tsp::{create_wallet_modal::CreateWalletModalAction, tsp_state_ref, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
 live_design! {
     use link::theme::*;
@@ -283,7 +283,7 @@ impl MatchEvent for TspSettingsScreen {
                     enqueue_popup_notification(PopupItem {
                         message: String::from("Failed to set default wallet, could not find or open selected wallet."),
                         auto_dismissal_duration: None,
-                        // PopupKind::Error,
+                        kind: PopupKind::Error,
                     });
                 }
 
@@ -301,7 +301,7 @@ impl MatchEvent for TspSettingsScreen {
                     enqueue_popup_notification(PopupItem {
                         message: format!("Failed to open wallet: {e}"),
                         auto_dismissal_duration: None,
-                        // PopupKind::Error,
+                        kind: PopupKind::Error,
                     });
                 }
 
@@ -319,6 +319,7 @@ impl MatchEvent for TspSettingsScreen {
             enqueue_popup_notification(PopupItem {
                 message: String::from("Importing an existing wallet is not yet implemented."),
                 auto_dismissal_duration: Some(4.0),
+                kind: PopupKind::Warning,
             });
         }
     }

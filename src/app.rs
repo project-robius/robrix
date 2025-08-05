@@ -48,7 +48,7 @@ live_design! {
     use crate::verification_modal::VerificationModal;
     use crate::join_leave_room_modal::JoinLeaveRoomModal;
     use crate::login::login_screen::LoginScreen;
-    use crate::shared::popup_list::PopupList;
+    use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
 
@@ -164,6 +164,12 @@ impl LiveHook for App {
     fn after_update_from_doc(&mut self, cx: &mut Cx) {
         self.update_login_visibility(cx);
     }
+
+    fn after_new_from_doc(&mut self, cx: &mut Cx) {
+        // Here we set the global singleton for the PopupList widget,
+        // which is used to access PopupList Widget from anywhere in the app.
+        crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
+    }
 }
 
 impl MatchEvent for App {
@@ -171,7 +177,7 @@ impl MatchEvent for App {
         // Initialize the project directory here from the main UI thread
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
-        log!("App::Startup: app_data_dir: {:?}", _app_data_dir);
+        log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
         if let Err(e) = persistence::load_window_state(self.ui.window(id!(main_window)), cx) {
             error!("Failed to load window state: {}", e);
@@ -235,7 +241,7 @@ impl MatchEvent for App {
                 cx.widget_action(
                     self.ui.widget_uid(),
                     &Scope::default().path,
-                    StackNavigationAction::NavigateTo(live_id!(main_content_view))
+                    StackNavigationAction::Push(live_id!(main_content_view))
                 );
                 self.ui.redraw(cx);
                 continue;

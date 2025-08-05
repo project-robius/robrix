@@ -1,6 +1,6 @@
 use makepad_widgets::{text::selection::Cursor, *};
 
-use crate::{profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem}, styles::*}, utils};
+use crate::{profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, utils};
 
 live_design! {
     use link::theme::*;
@@ -289,6 +289,7 @@ impl MatchEvent for AccountSettings {
             enqueue_popup_notification(PopupItem {
                 message: String::from("Avatar uploading is not yet implemented."),
                 auto_dismissal_duration: Some(4.0),
+                kind: PopupKind::Warning
             });
         }
 
@@ -297,6 +298,7 @@ impl MatchEvent for AccountSettings {
             enqueue_popup_notification(PopupItem {
                 message: String::from("Avatar deletion is not yet implemented."),
                 auto_dismissal_duration: Some(4.0),
+                kind: PopupKind::Warning,
             });
         }
 
@@ -360,6 +362,7 @@ impl MatchEvent for AccountSettings {
             enqueue_popup_notification(PopupItem {
                 message: String::from("Display name change is not yet implemented."),
                 auto_dismissal_duration: Some(4.0),
+                kind: PopupKind::Warning
             });
         }
 
@@ -368,6 +371,7 @@ impl MatchEvent for AccountSettings {
             enqueue_popup_notification(PopupItem {
                 message: String::from("Copied your User ID to the clipboard."),
                 auto_dismissal_duration: Some(3.0),
+                kind: PopupKind::Success
             });
         }
 
@@ -377,6 +381,7 @@ impl MatchEvent for AccountSettings {
             enqueue_popup_notification(PopupItem {
                 message: String::from("Account management is not yet implemented."),
                 auto_dismissal_duration: Some(4.0),
+                kind: PopupKind::Warning
             });
         }
 
@@ -385,6 +390,7 @@ impl MatchEvent for AccountSettings {
             enqueue_popup_notification(PopupItem {
                 message: String::from("Logout is not yet implemented."),
                 auto_dismissal_duration: Some(4.0),
+                kind: PopupKind::Warning
             });
         }
     }

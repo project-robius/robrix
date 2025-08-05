@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem}}, sliding_sync::{submit_async_request, MatrixRequest}, utils};
+use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -22,6 +22,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
+    use crate::shared::restore_status_view::*;
 
     pub InviteScreen = {{InviteScreen}}<ScrollXYView> {
         width: Fill,
@@ -35,20 +36,7 @@ live_design! {
         draw_bg: {
             color: (COLOR_PRIMARY_DARKER),
         }
-
-        restore_status_label = <Label> {
-            width: Fill, height: Fit,
-            align: {x: 0.5, y: 0},
-            padding: {left: 5.0, right: 0.0}
-            flow: RightWrap,
-            margin: 0,
-            draw_text: {
-                color: (TYPING_NOTICE_TEXT_COLOR),
-                text_style: <REGULAR_TEXT>{font_size: 11}
-                wrap: Word,
-            }
-            text: ""
-        }
+        restore_status_view = <RestoreStatusView> {}
 
         // This view is only shown if `inviter` is Some.
         inviter_view = <View> {
@@ -275,7 +263,7 @@ pub struct InviteScreen {
     /// The ID of the room that has been invited.
     /// This is used to wait for RoomsPanel
     #[rust] room_id: Option<OwnedRoomId>,
-    #[rust] room_name: Option<String>,
+    #[rust] room_name: String,
     #[rust] is_loaded: bool,
     #[rust] all_rooms_loaded: bool,
 }
@@ -287,20 +275,9 @@ impl Widget for InviteScreen {
         if let Event::Signal = event {
             if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
-                let restore_status_label = self.view.label(id!(restore_status_label));
                 if !rooms_list_ref.is_room_loaded(room_id) {
-                    let status_text = if rooms_list_ref.all_known_rooms_loaded() {
-                        self.all_rooms_loaded = true;
-                        format!(
-                            "An invite to room \"{}\" was not found in the homeserver's list of all rooms.\n\n\
-                             You may close this screen.",
-                            self.room_name.as_deref().unwrap_or_else(|| room_id.as_str())
-                        )
-                    } else {
-                        String::from("[Placeholder for Loading Spinner]\n\
-                         Waiting for this room to be loaded from the homeserver")
-                    };
-                    restore_status_label.set_text(cx, &status_text);
+                    self.all_rooms_loaded = rooms_list_ref.all_known_rooms_loaded();
+                    self.redraw(cx);
                     return;
                 } else {
                     self.set_displayed_invite(cx, room_id.clone(), self.room_name.clone());
@@ -360,7 +337,7 @@ impl Widget for InviteScreen {
                     Some(JoinRoomAction::Joined { room_id }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingForJoinedRoom;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification(PopupItem{ message: "Successfully joined room.".into(), auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem{ message: "Successfully joined room.".into(), kind: PopupKind::Success, auto_dismissal_duration: None });
                         }
                         continue;
                     }
@@ -368,7 +345,7 @@ impl Widget for InviteScreen {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
                             let msg = utils::stringify_join_leave_error(error, info.room_name.as_deref(), true, true);
-                            enqueue_popup_notification(PopupItem { message: msg, auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem { message: msg, kind: PopupKind::Error, auto_dismissal_duration: None });
                         }
                         continue;
                     }
@@ -379,14 +356,14 @@ impl Widget for InviteScreen {
                     Some(LeaveRoomAction::Left { room_id }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::RoomLeft;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification(PopupItem { message: "Successfully rejected invite.".into(), auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem { message: "Successfully rejected invite.".into(), kind: PopupKind::Success, auto_dismissal_duration: None });
                         }
                         continue;
                     }
                     Some(LeaveRoomAction::Failed { room_id, error }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification(PopupItem { message: format!("Failed to reject invite: {error}"), auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem { message: format!("Failed to reject invite: {error}"), kind: PopupKind::Error, auto_dismissal_duration: None });
                         }
                         continue;
                     }
@@ -412,8 +389,9 @@ impl Widget for InviteScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if !self.is_loaded {
-            // only draw the loading status label if the room is not loaded yet.
-            return self.view.label(id!(restore_status_label)).draw(cx, scope);
+            let mut restore_status_view = self.view.restore_status_view(id!(restore_status_view));
+            restore_status_view.set_content(cx, self.all_rooms_loaded, &self.room_name);
+            return restore_status_view.draw(cx, scope);
         }
         let Some(info) = self.info.as_ref() else {
             // If we don't have any info, just return.
@@ -533,7 +511,8 @@ impl InviteScreen {
     /// Sets the ID of the invited room that will be displayed by this screen.
     pub fn set_displayed_invite<S: Into<Option<String>>>(&mut self, cx: &mut Cx, room_id: OwnedRoomId, room_name: S) {
         self.room_id = Some(room_id.clone());
-        self.room_name = room_name.into();
+        self.room_name = room_name_or_id(room_name.into(), &room_id);
+
         if let Some(invite) = super::rooms_list::get_invited_rooms(cx)
             .borrow()
             .get(&room_id)
@@ -550,11 +529,9 @@ impl InviteScreen {
             self.has_shown_confirmation = false;
             self.is_loaded = true;
             self.all_rooms_loaded = true;
-            self.view
-                .label(id!(restore_status_label))
-                .set_text(cx, "");
             self.redraw(cx);
         }
+        self.view.restore_status_view(id!(restore_status_view)).set_visible(cx, !self.is_loaded);
     }
 }
 

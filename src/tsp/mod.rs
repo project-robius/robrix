@@ -6,7 +6,7 @@ use quinn::rustls::crypto::{CryptoProvider, aws_lc_rs};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
 use tsp_sdk::{AskarSecureStorage, AsyncSecureStore, SecureStorage};
 
-use crate::{persistence, shared::popup_list::{enqueue_popup_notification, PopupItem}};
+use crate::{persistence, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}};
 
 
 pub mod create_wallet_modal;
@@ -254,6 +254,7 @@ pub fn tsp_init(rt: Arc<tokio::runtime::Runtime>) -> anyhow::Result<()> {
                         Your TSP wallets may not be fully available. Error: {e}",
                     ),
                     auto_dismissal_duration: None,
+                    kind: PopupKind::Error,
                 });
                 return;
             }
@@ -291,7 +292,11 @@ pub fn tsp_init(rt: Arc<tokio::runtime::Runtime>) -> anyhow::Result<()> {
                         }
                         Ok(Err(e)) => {
                             error!("Error: async TSP worker task ended:\n\t{e:?}");
-                            enqueue_popup_notification(PopupItem { message: format!("TSP background worker error: {e}"), auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("TSP background worker error: {e}"),
+                                auto_dismissal_duration: None,
+                                kind: PopupKind::Error
+                            });
                         },
                         Err(e) => {
                             error!("BUG: failed to join async_tsp_worker task: {e:?}");

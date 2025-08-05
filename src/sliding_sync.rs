@@ -16,7 +16,7 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState
 };
 use matrix_sdk_ui::{
-    room_list_service::RoomListLoadingState, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RoomExt, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::{RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RoomExt, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
@@ -28,12 +28,31 @@ use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
 use std::io;
 use crate::{
-    app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, load_app_state, ClientSessionPersisted}, profile::{
+    app::AppStateAction,
+    app_data_dir,
+    avatar_cache::AvatarUpdate,
+    event_preview::text_preview_of_timeline_item,
+    home::{
+        invite_screen::{JoinRoomAction, LeaveRoomAction},
+        room_screen::TimelineUpdate,
+        rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate},
+        rooms_list_header::RoomsListHeaderAction,
+    },
+    login::login_screen::LoginAction,
+    media_cache::{MediaCacheEntry, MediaCacheEntryRef},
+    persistence::{self, load_app_state, ClientSessionPersisted},
+    profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, room::RoomPreviewAvatar, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    },
+    room::RoomPreviewAvatar,
+    shared::{
+        html_or_plaintext::MatrixLinkPillState,
+        jump_to_bottom_button::UnreadMessageCount,
+        popup_list::{enqueue_popup_notification, PopupItem, PopupKind}
+    },
+    utils::{self, AVATAR_THUMBNAIL_FORMAT},
+    verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -171,12 +190,12 @@ async fn login(
                 if let Err(e) = persistence::save_session(&client, client_session).await {
                     let err_msg = format!("Failed to save session state to storage: {e}");
                     error!("{err_msg}");
-                    enqueue_popup_notification(PopupItem { message: err_msg, auto_dismissal_duration: None });
+                    enqueue_popup_notification(PopupItem { message: err_msg, kind: PopupKind::Error, auto_dismissal_duration: None });
                 }
                 Ok((client, None))
             } else {
                 let err_msg = format!("Failed to login as {}: {:?}", cli.user_id, login_result);
-                enqueue_popup_notification(PopupItem { message: err_msg.clone(), auto_dismissal_duration: None });
+                enqueue_popup_notification(PopupItem { message: err_msg.clone(), kind: PopupKind::Error, auto_dismissal_duration: None });
                 enqueue_rooms_list_update(RoomsListUpdate::Status { status: err_msg.clone() });
                 bail!(err_msg);
             }
@@ -967,7 +986,7 @@ async fn async_worker(
                             Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send reply message to room {room_id}: {_e:?}");
-                                enqueue_popup_notification(PopupItem { message: format!("Failed to send reply: {_e}"), auto_dismissal_duration: None });
+                                enqueue_popup_notification(PopupItem { message: format!("Failed to send reply: {_e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
                             }
                         }
                     } else {
@@ -975,7 +994,7 @@ async fn async_worker(
                             Ok(_send_handle) => log!("Sent message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send message to room {room_id}: {_e:?}");
-                                enqueue_popup_notification(PopupItem { message: format!("Failed to send message: {_e}"), auto_dismissal_duration: None });
+                                enqueue_popup_notification(PopupItem { message: format!("Failed to send message: {_e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
                             }
                         }
                     }
@@ -1097,7 +1116,7 @@ async fn async_worker(
                         Ok(()) => log!("Successfully redacted message in room {room_id}."),
                         Err(e) => {
                             error!("Failed to redact message in {room_id}; error: {e:?}");
-                            enqueue_popup_notification(PopupItem { message: format!("Failed to redact message. Error: {e}"), auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem { message: format!("Failed to redact message. Error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
                         }
                     }
                 });
@@ -1218,7 +1237,7 @@ pub fn start_matrix_tokio() -> Result<Arc<tokio::runtime::Runtime>> {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
-                            enqueue_popup_notification(PopupItem { message: format!("Rooms list update error: {e}"), auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem { message: format!("Rooms list update error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
                         },
                         Err(e) => {
                             error!("BUG: failed to join main async loop task: {e:?}");
@@ -1236,7 +1255,7 @@ pub fn start_matrix_tokio() -> Result<Arc<tokio::runtime::Runtime>> {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
-                            enqueue_popup_notification(PopupItem { message: format!("Rooms list update error: {e}"), auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem { message: format!("Rooms list update error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
                         },
                         Err(e) => {
                             error!("BUG: failed to join async worker task: {e:?}");
@@ -1546,6 +1565,7 @@ async fn async_main_loop(
     // Attempt to load the previously-saved app state.
     // Include this after re-login.
     handle_load_app_state(logged_in_user_id.to_owned());
+    handle_sync_indicator_subscriber(&sync_service);
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
     let room_list_service = sync_service.room_list_service();
@@ -2108,6 +2128,7 @@ fn handle_load_app_state(user_id: OwnedUserId) {
                 log!("Failed to restore dock layout from persistent state: {_e}");
                 enqueue_popup_notification(PopupItem {
                     message: String::from("Could not restore the previous dock layout."),
+                    kind: PopupKind::Error,
                     auto_dismissal_duration: None
                 });
             }
@@ -2126,6 +2147,30 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
                     ss.start().await;
                 }
             }
+        }
+    });
+}
+
+fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
+    /// Duration for sync indicator delay before showing
+    const SYNC_INDICATOR_DELAY: Duration = Duration::from_millis(100);
+    /// Duration for sync indicator delay before hiding
+    const SYNC_INDICATOR_HIDE_DELAY: Duration = Duration::from_millis(200);
+    let sync_indicator_stream = sync_service.room_list_service()
+        .sync_indicator(
+            SYNC_INDICATOR_DELAY, 
+            SYNC_INDICATOR_HIDE_DELAY
+        );
+    
+    Handle::current().spawn(async move {
+       let mut sync_indicator_stream = std::pin::pin!(sync_indicator_stream);
+
+        while let Some(indicator) = sync_indicator_stream.next().await {
+            let is_syncing = match indicator {
+                SyncIndicator::Show => true,
+                SyncIndicator::Hide => false,
+            };
+            Cx::post_action(RoomsListHeaderAction::SetSyncStatus(is_syncing));
         }
     });
 }

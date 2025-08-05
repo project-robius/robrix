@@ -1,7 +1,10 @@
 
 use makepad_widgets::*;
 
-use crate::{shared::popup_list::{enqueue_popup_notification, PopupItem}, tsp::{submit_tsp_request, tsp_settings_screen::{WalletStatus, WalletStatusAndDefault}, TspRequest, TspWalletMetadata}};
+use crate::{
+    shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind},
+    tsp::{submit_tsp_request, tsp_settings_screen::{WalletStatus, WalletStatusAndDefault}, TspRequest, TspWalletMetadata}
+};
 
 live_design! {
     use link::theme::*;
@@ -160,6 +163,7 @@ impl Widget for WalletEntry {
                 enqueue_popup_notification(PopupItem {
                     message: format!("Remove wallet feature is not yet implemented."),
                     auto_dismissal_duration: None,
+                    kind: PopupKind::Warning,
                 });
             }
             if self.view.button(id!(delete_wallet_button)).clicked(actions) {
@@ -167,6 +171,7 @@ impl Widget for WalletEntry {
                 enqueue_popup_notification(PopupItem {
                     message: format!("Delete wallet feature is not yet implemented."),
                     auto_dismissal_duration: None,
+                    kind: PopupKind::Warning,
                 });
             }
         }
