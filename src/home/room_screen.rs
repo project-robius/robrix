@@ -6,14 +6,23 @@ use std::{borrow::Cow, cell::RefCell, collections::BTreeMap, ops::{DerefMut, Ran
 use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
-use matrix_sdk::{room::{reply::{EnforceThread, Reply}, RoomMember}, ruma::{
-    events::{receipt::Receipt, room::{
-        message::{
-            AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent
-        }, ImageInfo, MediaSource
+use matrix_sdk::{
+    room::{reply::{EnforceThread, Reply}, RoomMember},
+    ruma::{
+        events::{
+            receipt::Receipt,
+            room::{
+                message::{
+                    AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent
+                },
+                ImageInfo, MediaSource
+            },
+            sticker::{StickerEventContent, StickerMediaSource},
+        },
+        matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
     },
-    sticker::{StickerEventContent, StickerMediaSource}}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
-}, OwnedServerName};
+    OwnedServerName,
+};
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
@@ -1646,9 +1655,9 @@ impl RoomScreen {
                     }
                 }
                 TimelineUpdate::PaginationError { error, direction } => {
-                    error!("Pagination error ({direction}) in room {}: {error:?}", tl.room_id);
+                    error!("Pagination error ({direction}) in room \"{}\", {}: {error:?}", self.room_name, tl.room_id);
                     enqueue_popup_notification(PopupItem {
-                        message: format!("Error loading earlier messages in \"{}\": {error}", self.room_name),
+                        message: utils::stringify_pagination_error(&error, &self.room_name),
                         auto_dismissal_duration: None,
                     });
                     done_loading = true;
