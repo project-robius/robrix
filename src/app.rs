@@ -186,11 +186,11 @@ impl MatchEvent for App {
         self.update_login_visibility(cx);
 
         log!("App::Startup: starting matrix sdk loop");
-        let tokio_rt = crate::sliding_sync::start_matrix_tokio().unwrap();
+        let _tokio_rt = crate::sliding_sync::start_matrix_tokio().unwrap();
 
         #[cfg(feature = "tsp")] {
             log!("App::Startup: initializing TSP (Trust Spanning Protocol) module.");
-            crate::tsp::tsp_init(tokio_rt).unwrap();
+            crate::tsp::tsp_init(_tokio_rt).unwrap();
         }
     }
 
