@@ -1,8 +1,10 @@
 use makepad_widgets::*;
 
 use crate::{
-    app::AppState, home::room_screen::RoomScreenWidgetExt
+    app::{AppState, AppStateAction, SelectedRoom}, home::{room_screen::RoomScreenWidgetExt, rooms_list::RoomsListAction}
 };
+
+use super::invite_screen::InviteScreenWidgetExt;
 
 live_design! {
     use link::theme::*;
@@ -10,8 +12,9 @@ live_design! {
     use link::widgets::*;
 
     use crate::shared::styles::*;
-    use crate::home::room_screen::RoomScreen;
     use crate::home::welcome_screen::WelcomeScreen;
+    use crate::home::room_screen::RoomScreen;
+    use crate::home::invite_screen::InviteScreen;
 
     pub MainMobileUI = {{MainMobileUI}} {
         width: Fill, height: Fill
@@ -22,12 +25,17 @@ live_design! {
         }
         align: {x: 0.0, y: 0.5}
 
-
         welcome = <WelcomeScreen> {}
-        rooms = <View> {
+        // TODO: see if we can remove these wrappers
+        room_view = <View> {
             align: {x: 0.5, y: 0.5}
             width: Fill, height: Fill
             room_screen = <RoomScreen> {}
+        }
+        invite_view = <View> {
+            align: {x: 0.5, y: 0.5}
+            width: Fill, height: Fill
+            invite_screen = <InviteScreen> {}
         }
     }
 }
@@ -41,27 +49,62 @@ pub struct MainMobileUI {
 impl Widget for MainMobileUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                match action.as_widget_action().cast() {
+                    // This is currently handled in the top-level App.
+                    RoomsListAction::Selected(_selected_room) => {}
+                    // Because the MainMobileUI is drawn based on the AppState only,
+                    // all we need to do is update the AppState here.
+                    RoomsListAction::InviteAccepted { room_id, .. } => {
+                        // Emit an action to update the AppState with the new room.
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &scope.path,
+                            AppStateAction::UpgradedInviteToJoinedRoom(room_id),
+                        );
+                    }
+                    RoomsListAction::None => {}
+                }
+            }
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let app_state = scope.data.get::<AppState>().unwrap();
+        let show_welcome: bool;
+        let show_room: bool;
+        let show_invite: bool;
 
-        if let Some(room) = app_state.rooms_panel.selected_room.as_ref() {
-            let displayed_room_name = room.room_name.clone().unwrap_or_else(|| format!("Room ID {}", &room.room_id));
-            
-            // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
-            self.view
-                .room_screen(id!(room_screen))
-                .set_displayed_room(cx, room.room_id.clone(), displayed_room_name);
-
-            self.view.view(id!(welcome)).set_visible(cx, false);
-            self.view.view(id!(rooms)).set_visible(cx, true);
-        } else {
-            self.view.view(id!(welcome)).set_visible(cx, true);
-            self.view.view(id!(rooms)).set_visible(cx, false);
-            return self.view.draw_walk(cx, scope, walk);
+        match app_state.selected_room.as_ref() {
+            Some(SelectedRoom::JoinedRoom { room_id, room_name }) => {
+                show_welcome = false;
+                show_room = true;
+                show_invite = false;
+                // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
+                self.view
+                    .room_screen(id!(room_screen))
+                    .set_displayed_room(cx, room_id.clone().into(), room_name.clone());
+            }
+            Some(SelectedRoom::InvitedRoom { room_id, room_name }) => {
+                show_welcome = false;
+                show_room = false;
+                show_invite = true;
+                self.view
+                    .invite_screen(id!(invite_screen))
+                    .set_displayed_invite(cx, room_id.clone().into(), room_name.clone());
+            }
+            None => {
+                show_welcome = true;
+                show_room = false;
+                show_invite = false;
+            }
         }
 
+        self.view.view(id!(welcome)).set_visible(cx, show_welcome);
+        self.view.view(id!(room_view)).set_visible(cx, show_room);
+        self.view.view(id!(invite_view)).set_visible(cx, show_invite);
         self.view.draw_walk(cx, scope, walk)
     }
 }

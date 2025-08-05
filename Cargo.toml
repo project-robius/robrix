@@ -12,57 +12,74 @@ keywords = ["matrix", "chat", "client", "robrix", "robius"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/project-robius/robrix"
-version = "0.0.1-pre-alpha-2"
+version = "0.0.1-pre-alpha-3"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
 robius-use-makepad = "0.1.1"
-robius-open = "0.1.2"
-## A fork of the `directories` crate that adds support for Android by using our `robius-android-env` crate.
-robius-directories = "5.0.1"
-robius-location = { git = "https://github.com/project-robius/robius-location" }
+robius-open = { git = "https://github.com/project-robius/robius" }
+robius-directories = { git = "https://github.com/project-robius/robius" }
+robius-location = { git = "https://github.com/project-robius/robius" }
+
 
 anyhow = "1.0"
 chrono = "0.4"
 clap = { version = "4.0.16", features = ["derive"] }
 crossbeam-channel = "0.5.10"
 crossbeam-queue = "0.3.8"
-eyeball = { git = "https://github.com/jplatte/eyeball", branch = "main", features = ["tracing"] } # same as matrix-sdk
-eyeball-im = { git = "https://github.com/jplatte/eyeball", branch = "main", features = ["tracing"] } # same as matrix-sdk
+eyeball = { version = "0.8.8", features = ["tracing"] }    # same as matrix-sdk
+eyeball-im = { version = "0.7.0", features = ["tracing"] } # same as matrix-sdk
 futures-util = "0.3"
 htmlize = "1.0.5"
-imbl = { version = "4.0.1", features = ["serde"] }  # same as matrix-sdk-ui
+imbl = { version = "5.0.0", features = ["serde"] }         # same as matrix-sdk-ui
 imghdr = "0.7.0"
 linkify = "0.10.0"
-# matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
-# matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "rustls-tls" ] }
-matrix-sdk = { git = "https://github.com/project-robius/matrix-rust-sdk/", branch = "reduce_log_verbosity_to_trace", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
-matrix-sdk-ui = { git = "https://github.com/project-robius/matrix-rust-sdk/", branch = "reduce_log_verbosity_to_trace", default-features = false, features = [ "rustls-tls" ] }
+matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
+matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "rustls-tls" ] }
 rand = "0.8.5"
 rangemap = "1.5.0"
 serde = "1.0"
 serde_json = "1.0"
-tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.43.1", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = "0.3.17"
 unicode-segmentation = "1.11.0"
 url = "2.5.0"
-emojis = "0.6.1"
-bytesize = "1.3.0"
+bytesize = "2.0"
 bitflags = "2.6.0"
 indexmap = "2.6.0"
 blurhash = { version = "0.2.3", default-features = false }
+
+[features]
+default = []
+## Hides the command prompt console on Windows.
+hide_windows_console = []
+## Logs all diffs received by the Matrix RoomListService.
+log_room_list_diffs = []
+## Logs all diffs to all room timelines.
+log_timeline_diffs = []
 
 [package.metadata.docs.rs]
 all-features = true
 
 
-# Temporarily include all debug info even for release builds.
-[profile.release]
-debug = "full"
+## An optimized profile for development, with full debug info and assertions.
+[profile.debug-opt]
+inherits = "dev"
+opt-level = 3
 
+## An optimized release profile with thin LTO.
+[profile.release-lto]
+inherits = "release"
+lto = "thin"
+
+## Enable full optimizations when building app bundles for distribution.
+[profile.distribution]
+inherits = "release"
+codegen-units = 1
+lto = "fat" 
 
 
 ## Configuration for `cargo packager`
@@ -73,7 +90,7 @@ category = "SocialNetworking"
 authors = ["Project Robius <contact@robius.rs>", "Kevin Boos <kevinaboos@gmail.com>"]
 publisher = "robius"
 license_file = "LICENSE-MIT"
-copyright = "Copyright 2023-2024, Project Robius"
+copyright = "Copyright 2023-202, Project Robius"
 homepage = "https://github.com/project-robius"
 ### Note: there is an 80-character max for each line of the `long_description`.
 long_description = """
@@ -164,8 +181,6 @@ keyword_idents_2024 = "forbid"
 non_ascii_idents = "forbid"
 non_local_definitions = "forbid"
 unsafe_op_in_unsafe_fn = "forbid"
-
-unexpected_cfgs = "warn"
 unnameable_types = "warn"
 unused_import_braces = "warn"
 
@@ -177,3 +192,4 @@ too_many_arguments = "allow"
 blocks_in_conditions = "allow"
 used_underscore_binding = "allow"
 module_name_repetitions = "allow"
+uninlined_format_args = "allow"

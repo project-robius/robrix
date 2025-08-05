@@ -5,20 +5,25 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
-    pub ICON_ADD_REACTION = dep("crate://self/resources/icons/add_reaction.svg")
-    pub ICON_BLOCK_USER   = dep("crate://self/resources/icons/forbidden.svg")
-    pub ICON_CHECKMARK    = dep("crate://self/resources/icons/checkmark.svg")
-    pub ICON_CLOSE        = dep("crate://self/resources/icons/close.svg")
-    pub ICON_COPY         = dep("crate://self/resources/icons/copy.svg")
-    pub ICON_EDIT         = dep("crate://self/resources/icons/edit.svg")
-    pub ICON_HTML_FILE    = dep("crate://self/resources/icons/html_file.svg")
-    pub ICON_JUMP         = dep("crate://self/resources/icons/go_back.svg")
-    pub ICON_LINK         = dep("crate://self/resources/icons/link.svg")
-    pub ICON_PIN          = dep("crate://self/resources/icons/pin.svg")
-    pub ICON_REPLY        = dep("crate://self/resources/icons/reply.svg")
-    pub ICON_SEND         = dep("crate://self/resources/icon_send.svg")
-    pub ICON_TRASH        = dep("crate://self/resources/icons/trash.svg")
-    pub ICON_VIEW_SOURCE  = dep("crate://self/resources/icons/view_source.svg")
+    pub ICON_ADD_REACTION    = dep("crate://self/resources/icons/add_reaction.svg")
+    pub ICON_FORBIDDEN       = dep("crate://self/resources/icons/forbidden.svg")
+    pub ICON_CHECKMARK       = dep("crate://self/resources/icons/checkmark.svg")
+    pub ICON_CLOSE           = dep("crate://self/resources/icons/close.svg")
+    pub ICON_COPY            = dep("crate://self/resources/icons/copy.svg")
+    pub ICON_EDIT            = dep("crate://self/resources/icons/edit.svg")
+    pub ICON_EXTERNAL_LINK   = dep("crate://self/resources/icons/external_link.svg")
+    pub ICON_HTML_FILE       = dep("crate://self/resources/icons/html_file.svg")
+    pub ICON_INFO            = dep("crate://self/resources/icons/info.svg")
+    pub ICON_JUMP            = dep("crate://self/resources/icons/go_back.svg")
+    pub ICON_LOGOUT          = dep("crate://self/resources/icons/logout.svg")
+    pub ICON_LINK            = dep("crate://self/resources/icons/link.svg")
+    pub ICON_PIN             = dep("crate://self/resources/icons/pin.svg")
+    pub ICON_REPLY           = dep("crate://self/resources/icons/reply.svg")
+    pub ICON_SEND            = dep("crate://self/resources/icon_send.svg")
+    pub ICON_TRASH           = dep("crate://self/resources/icons/trash.svg")
+    pub ICON_UPLOAD          = dep("crate://self/resources/icons/upload.svg")
+    pub ICON_VIEW_SOURCE     = dep("crate://self/resources/icons/view_source.svg")
+    pub ICON_WARNING         = dep("crate://self/resources/icons/warning.svg")
 
     pub TITLE_TEXT = <THEME_FONT_REGULAR>{
         font_size: (13),
@@ -45,13 +50,11 @@ live_design! {
     pub MESSAGE_TEXT_COLOR = #x333
     // notices (automated messages from bots) use a lighter color
     pub MESSAGE_NOTICE_TEXT_COLOR = #x888
-    pub MESSAGE_TEXT_LINE_SPACING = 1.35
-    pub MESSAGE_TEXT_HEIGHT_FACTOR = 1.55
+    pub MESSAGE_TEXT_LINE_SPACING = 1.3
     // This font should only be used for plaintext labels. Don't use this for Html content,
     // as the Html widget sets different fonts for different text styles (e.g., bold, italic).
     pub MESSAGE_TEXT_STYLE = <THEME_FONT_REGULAR>{
         font_size: (MESSAGE_FONT_SIZE),
-        height_factor: (MESSAGE_TEXT_HEIGHT_FACTOR),
         line_spacing: (MESSAGE_TEXT_LINE_SPACING),
     }
 
@@ -62,7 +65,6 @@ live_design! {
     pub SMALL_STATE_TEXT_COLOR = #x888
     pub SMALL_STATE_TEXT_STYLE = <THEME_FONT_REGULAR>{
         font_size: (SMALL_STATE_FONT_SIZE),
-        height_factor: 1.3,
     }
 
     pub TIMESTAMP_FONT_SIZE = 8.5
@@ -73,14 +75,21 @@ live_design! {
 
     pub ROOM_NAME_TEXT_COLOR = #x0
 
+    pub COLOR_ROBRIX_PURPLE = #572DCC; // the purple color from the Robrix logo
     pub COLOR_META = #xccc
 
-    pub COLOR_PROFILE_CIRCLE = #xfff8ee
-    pub COLOR_DIVIDER = #x00000018
-    pub COLOR_DIVIDER_DARK = #x00000044
+    pub COLOR_DIVIDER = #00000018
+    pub COLOR_DIVIDER_DARK = #00000044
 
-    pub COLOR_DANGER_RED = #xDC0005
-    pub COLOR_ACCEPT_GREEN = #x138808
+    pub COLOR_FG_ACCEPT_GREEN = #138808
+    pub COLOR_BG_ACCEPT_GREEN = #F0FFF0
+    pub COLOR_FG_DANGER_RED = #DC0005
+    pub COLOR_BG_DANGER_RED = #FFF0F0
+    pub COLOR_FG_DISABLED = #B3B3B3
+    pub COLOR_BG_DISABLED = #E0E0E0
+
+    pub COLOR_SELECT_TEXT = #A6CDFE
+
 
     pub COLOR_PRIMARY = #ffffff
     pub COLOR_PRIMARY_DARKER = #fefefe
@@ -93,101 +102,135 @@ live_design! {
     pub COLOR_AVATAR_BG_IDLE = #d8d8d8
 
     pub COLOR_UNREAD_MESSAGE_BADGE = (COLOR_AVATAR_BG)
-    pub COLOR_TOOLTIP_BG = (COLOR_SECONDARY)
 
     pub COLOR_TEXT_IDLE = #d8d8d8
     pub COLOR_TEXT = #1C274C
-
     pub COLOR_TEXT_INPUT_IDLE = #d8d8d8
 
+    pub COLOR_TRANSPARENT = #00000000
+    pub COLOR_WARNING = #fcdb03
+    // An icon that can be rotated at a custom angle.
+    pub IconRotated = <Icon> {
+        draw_icon: {
+            instance rotation_angle: 0.0,
+
+            // Support rotation of the icon
+            fn clip_and_transform_vertex(self, rect_pos: vec2, rect_size: vec2) -> vec4 {
+                let clipped: vec2 = clamp(
+                    self.geom_pos * rect_size + rect_pos,
+                    self.draw_clip.xy,
+                    self.draw_clip.zw
+                )
+                self.pos = (clipped - rect_pos) / rect_size
+
+                // Calculate the texture coordinates based on the rotation angle
+                let angle_rad = self.rotation_angle * 3.14159265359 / 180.0;
+                let cos_angle = cos(angle_rad);
+                let sin_angle = sin(angle_rad);
+                let rot_matrix = mat2(
+                    cos_angle, -sin_angle,
+                    sin_angle, cos_angle
+                );
+                self.tex_coord1 = mix(
+                    self.icon_t1.xy,
+                    self.icon_t2.xy,
+                    (rot_matrix * (self.pos.xy - vec2(0.5))) + vec2(0.5)
+                );
+
+                return self.camera_projection * (self.camera_view * (self.view_transform * vec4(
+                    clipped.x,
+                    clipped.y,
+                    self.draw_depth + self.draw_zbias,
+                    1.
+                )))
+            }
+        }
+    }
 
     // A text input widget styled for Robrix.
     pub RobrixTextInput = <TextInput> {
         width: Fill, height: Fit,
         margin: 0,
         align: {y: 0.5}
-        empty_message: "Enter text..."
+        empty_text: "Enter text..."
+
         draw_bg: {
             color: (COLOR_PRIMARY)
-            instance border_radius: 2.0
-            instance border_size: 0.0
-            instance border_color: #D0D5DD
-            instance inset: vec4(0.0, 0.0, 0.0, 0.0)
+            border_radius: 2.0
+            border_size: 0.0
 
-            fn get_color(self) -> vec4 {
-                return self.color
-            }
+            // TODO: determine these other colors below
+            color_hover: (COLOR_PRIMARY)
+            color_focus: (COLOR_PRIMARY)
+            color_down: (COLOR_PRIMARY)
+            color_empty: (COLOR_PRIMARY)
+            color_disabled: (COLOR_BG_DISABLED)
 
-            fn get_border_color(self) -> vec4 {
-                return self.border_color
-            }
+            border_color: (COLOR_PRIMARY)
+        }
 
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                sdf.box(
-                    self.inset.x + self.border_size,
-                    self.inset.y + self.border_size,
-                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
-                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
-                    max(1.0, self.border_radius)
-                )
-                sdf.fill_keep(self.get_color())
-                if self.border_size > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_size)
-                }
-                return sdf.result;
-            }
+        draw_selection: {
+            color: (COLOR_SELECT_TEXT)
+            // TODO: determine these other colors below
+            color_hover:  (COLOR_SELECT_TEXT)
+            color_focus:  (COLOR_SELECT_TEXT)
+            color_down:  (COLOR_SELECT_TEXT)
+            color_empty:  (COLOR_SELECT_TEXT)
+            color_disabled: (COLOR_SELECT_TEXT)
+        }
+
+        draw_cursor: {
+            color: (MESSAGE_TEXT_COLOR)
         }
 
         draw_text: {
-            color: (MESSAGE_TEXT_COLOR),
             text_style: <MESSAGE_TEXT_STYLE>{},
+            color: (MESSAGE_TEXT_COLOR),
+            // TODO: determine these colors
+            uniform color_hover: (MESSAGE_TEXT_COLOR),
+            uniform color_focus: (MESSAGE_TEXT_COLOR),
+            uniform color_down: (MESSAGE_TEXT_COLOR),
+            uniform color_disabled: (COLOR_FG_DISABLED),
+            uniform color_empty: #B,
+            uniform color_empty_hover: #B,
+            uniform color_empty_focus: #B,
 
             fn get_color(self) -> vec4 {
-                return mix(
-                    self.color,
-                    #B,
-                    self.is_empty
-                )
-            }
-        }
-
-
-        // TODO find a way to override colors
-        draw_cursor: {
-            instance focus: 0.0
-            uniform border_radius: 0.5
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                sdf.box(
-                    0.,
-                    0.,
-                    self.rect_size.x,
-                    self.rect_size.y,
-                    self.border_radius
-                )
-                sdf.fill(mix(#fff, #bbb, self.focus));
-                return sdf.result
-            }
-        }
-
-        // TODO find a way to override colors
-        draw_highlight: {
-            instance hover: 0.0
-            instance focus: 0.0
-            uniform border_radius: 2.0
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                sdf.box(
-                    0.,
-                    0.,
-                    self.rect_size.x,
-                    self.rect_size.y,
-                    self.border_radius
-                )
-                sdf.fill(mix(#eee, #ddd, self.focus)); // Pad color
-                return sdf.result
+                return
+                    mix(
+                        mix(
+                            mix(
+                                mix(
+                                    self.color,
+                                    mix(
+                                        self.color_hover,
+                                        self.color_down,
+                                        self.down
+                                    ),
+                                    self.hover
+                                ),
+                                self.color_focus,
+                                self.focus
+                            ),
+                            self.color_empty,
+                            self.empty
+                        ),
+                        self.color_disabled,
+                        self.disabled
+                    )
             }
         }
     }
 }
+
+pub const COLOR_FG_ACCEPT_GREEN:     Vec4 = vec4(0.074, 0.533, 0.031, 1.0); // #138808
+pub const COLOR_BG_ACCEPT_GREEN:     Vec4 = vec4(0.941, 1.0, 0.941, 1.0); // #F0FFF0
+pub const COLOR_FG_DISABLED:         Vec4 = vec4(0.7, 0.7, 0.7, 1.0); // #B3B3B3
+pub const COLOR_BG_DISABLED:         Vec4 = vec4(0.878, 0.878, 0.878, 1.0); // #E0E0E0
+pub const COLOR_FG_DANGER_RED:       Vec4 = vec4(0.863, 0.0, 0.02, 1.0); // #DC0005
+pub const COLOR_BG_DANGER_RED:       Vec4 = vec4(1.0, 0.941, 0.941, 1.0); // #FFF0F0
+pub const COLOR_ROBRIX_PURPLE:       Vec4 = vec4(0.341, 0.176, 0.8, 1.0); // #572DCC
+pub const COLOR_UNKNOWN_ROOM_AVATAR: Vec4 = vec4(1.0, 0.431, 0.0, 1.0); // #FF6e00
+pub const COLOR_WARNING_YELLOW:      Vec4 = vec4(0.988, 0.859, 0.01, 1.0); // #fcdb03
+pub const COLOR_INFO_BLUE:           Vec4 = vec4(0.05, 0.53, 0.996, 1.0);  // #0f88fe
+pub const COLOR_WHITE:               Vec4 = vec4(1.0, 1.0, 1.0, 1.0);  // #FFFFFF

@@ -3,7 +3,7 @@ use std::ops::Not;
 use makepad_widgets::*;
 use url::Url;
 
-use crate::sliding_sync::{submit_async_request, LoginByPassword, MatrixRequest, AuthRequest};
+use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
 
@@ -33,6 +33,7 @@ live_design! {
             color: (COLOR_PRIMARY)
         }
     }
+
     SsoImage = <Image> {
         width: 30, height: 30,
         draw_bg:{
@@ -63,7 +64,7 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY)
             }
-
+        
             <RoundedView> {
                 margin: 40
                 width: Fit, height: Fit
@@ -92,7 +93,8 @@ live_design! {
 
                     title = <Label> {
                         width: Fit, height: Fit
-                        margin: { bottom: 10 }
+                        margin: { bottom: 5 }
+                        padding: 0,
                         draw_text: {
                             color: (COLOR_TEXT)
                             text_style: <TITLE_TEXT>{font_size: 16.0}
@@ -101,14 +103,18 @@ live_design! {
                     }
 
                     user_id_input = <RobrixTextInput> {
-                        width: 250, height: 40
-                        empty_message: "User ID"
+                        width: 250, height: Fit
+                        flow: Right, // do not wrap
+                        padding: 10,
+                        empty_text: "User ID"
                     }
 
                     password_input = <RobrixTextInput> {
-                        width: 250, height: 40
-                        empty_message: "Password"
-                        draw_text: { text_style: { is_secret: true } }
+                        width: 250, height: Fit
+                        flow: Right, // do not wrap
+                        padding: 10,
+                        empty_text: "Password"
+                        is_password: true,
                     }
 
                     <View> {
@@ -116,8 +122,10 @@ live_design! {
                         flow: Down,
 
                         homeserver_input = <RobrixTextInput> {
-                            width: Fill, height: 30,
-                            empty_message: "matrix.org"
+                            width: Fill, height: Fit,
+                            flow: Right, // do not wrap
+                            padding: {top: 3, bottom: 3}
+                            empty_text: "matrix.org"
                             draw_text: {
                                 text_style: <TITLE_TEXT>{font_size: 10.0}
                             }
@@ -137,6 +145,7 @@ live_design! {
 
                             <Label> {
                                 width: Fit, height: Fit
+                                padding: 0
                                 draw_text: {
                                     color: #8C8C8C
                                     text_style: <REGULAR_TEXT>{font_size: 9}
@@ -149,7 +158,7 @@ live_design! {
                             }
                         }
                     }
-
+                    
 
                     login_button = <RobrixIconButton> {
                         width: 250,
@@ -173,6 +182,7 @@ live_design! {
                     }
                     <Label> {
                         width: Fit, height: Fit
+                        padding: 0,
                         draw_text: {
                             color: (COLOR_TEXT)
                             text_style: <TITLE_TEXT>{font_size: 11.0}
@@ -231,7 +241,7 @@ live_design! {
 
                         <Label> {
                             width: Fit, height: Fit
-                            padding: {left: 1, right: 1}
+                            padding: {left: 1, right: 1, top: 0, bottom: 0}
                             draw_text: {
                                 color: #x6c6c6c
                                 text_style: <REGULAR_TEXT>{}
@@ -243,7 +253,7 @@ live_design! {
                             draw_bg: { color: #C8C8C8 }
                         }
                     }
-
+                    
                     signup_button = <RobrixIconButton> {
                         width: Fit, height: Fit
                         padding: {left: 15, right: 15, top: 10, bottom: 10}
@@ -275,6 +285,8 @@ live_design! {
         }
     }
 }
+
+static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-for-im/#creating-a-matrix-account";
 
 #[derive(Live, LiveHook, Widget)]
 pub struct LoginScreen {
@@ -309,9 +321,8 @@ impl MatchEvent for LoginScreen {
         let login_status_modal_inner = self.view.login_status_modal(id!(login_status_modal_inner));
 
         if signup_button.clicked(actions) {
-            log!("Sign up button clicked, showing register screen");
-            let server_url = homeserver_input.text();
-            cx.action(LoginAction::SwitchToRegister(server_url.to_string()));
+            log!("Opening URL \"{}\"", MATRIX_SIGN_UP_URL);
+            let _ = robius_open::Uri::new(MATRIX_SIGN_UP_URL).open();
         }
 
         if login_button.clicked(actions)
@@ -334,7 +345,7 @@ impl MatchEvent for LoginScreen {
                 login_status_modal_inner.set_title(cx, "Logging in...");
                 login_status_modal_inner.set_status(cx, "Waiting for a login response...");
                 login_status_modal_inner.button_ref().set_text(cx, "Cancel");
-                submit_async_request(MatrixRequest::Auth(AuthRequest::LoginByPassword(LoginByPassword {
+                submit_async_request(MatrixRequest::Login(LoginRequest::LoginByPassword(LoginByPassword {
                     user_id,
                     password,
                     homeserver: homeserver.is_empty().not().then_some(homeserver),
@@ -343,14 +354,14 @@ impl MatchEvent for LoginScreen {
             login_status_modal.open(cx);
             self.redraw(cx);
         }
-
+        
         let provider_brands = ["apple", "facebook", "github", "gitlab", "google", "twitter"];
         let button_set: &[&[LiveId]] = ids!(
-            apple_button,
-            facebook_button,
-            github_button,
-            gitlab_button,
-            google_button,
+            apple_button, 
+            facebook_button, 
+            github_button, 
+            gitlab_button, 
+            google_button, 
             twitter_button
         );
         for action in actions {
@@ -454,35 +465,19 @@ impl MatchEvent for LoginScreen {
 /// Actions sent to or from the login screen.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum LoginAction {
-    /// A positive response from the backend Matrix task to the login screen.
-    LoginSuccess,
-    /// A negative response from the backend Matrix task to the login screen.
-    LoginFailure(String),
-    /// A login-related status message to display to the user.
-    Status {
-        title: String,
-        status: String,
-    },
-    /// The given login info was specified on the command line (CLI),
-    /// and the login process is underway.
-    CliAutoLogin {
-        user_id: String,
-        homeserver: Option<String>,
-    },
-    /// An acknowledgment that is sent from the backend Matrix task to the login screen
-    /// informing it that the SSO login process is either still in flight (`true`) or has finished (`false`).
-    ///
-    /// Note that an inner value of `false` does *not* imply that the login request has
-    /// successfully finished.
-    /// The login screen can use this to prevent the user from submitting
-    /// additional SSO login requests while a previous request is in flight.
-    SsoPending(bool),
-    /// Set the SSO redirect URL in the LoginScreen.
-    ///
-    /// When an SSO-based login is pendng, pressing the cancel button will send
-    /// an HTTP request to this SSO server URL to gracefully shut it down.
-    SsoSetRedirectUrl(Url),
-    /// Switch to the register screen
+    /// Switch to the register screen with optional server URL
     SwitchToRegister(String),
+    /// CLI-based auto-login attempt
+    CliAutoLogin { user_id: String, homeserver: Option<String> },
+    /// Login was successful
+    LoginSuccess,
+    /// Login failed with an error message
+    LoginFailure(String),
+    /// A login-related status message to display to the user
+    Status { title: String, status: String },
+    /// SSO login is pending (true) or completed (false)
+    SsoPending(bool),
+    /// Set the SSO redirect URL
+    SsoSetRedirectUrl(Url),
     None,
 }

@@ -61,11 +61,13 @@ live_design! {
         width: Fit,
         height: Fit,
         spacing: 10,
-        padding: {top: 10, bottom: 10, left: 8, right: 15}
-        align: {x: 0.0, y: 0.5}
+        padding: 10,
+        align: {x: 0, y: 0.5}
 
         draw_bg: {
             instance color: (COLOR_PRIMARY)
+            // We set a mid-gray hover color, which gets mixed with the bg color itself
+            // in order to create a "lightening" effect upon hover.
             instance color_hover: #A
             instance border_size: 0.0
             instance border_color: #D0D5DD
@@ -95,41 +97,8 @@ live_design! {
         draw_icon: {
             instance color: #000
             instance color_hover: #000
-            uniform rotation_angle: 0.0,
-
             fn get_color(self) -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
-            }
-
-            // Support rotation of the icon
-            fn clip_and_transform_vertex(self, rect_pos: vec2, rect_size: vec2) -> vec4 {
-                let clipped: vec2 = clamp(
-                    self.geom_pos * rect_size + rect_pos,
-                    self.draw_clip.xy,
-                    self.draw_clip.zw
-                )
-                self.pos = (clipped - rect_pos) / rect_size
-
-                // Calculate the texture coordinates based on the rotation angle
-                let angle_rad = self.rotation_angle * 3.14159265359 / 180.0;
-                let cos_angle = cos(angle_rad);
-                let sin_angle = sin(angle_rad);
-                let rot_matrix = mat2(
-                    cos_angle, -sin_angle,
-                    sin_angle, cos_angle
-                );
-                self.tex_coord1 = mix(
-                    self.icon_t1.xy,
-                    self.icon_t2.xy,
-                    (rot_matrix * (self.pos.xy - vec2(0.5))) + vec2(0.5)
-                );
-
-                return self.camera_projection * (self.camera_view * (self.view_transform * vec4(
-                    clipped.x,
-                    clipped.y,
-                    self.draw_depth + self.draw_zbias,
-                    1.
-                )))
             }
         }
         icon_walk: {width: 16, height: 16}
@@ -141,5 +110,6 @@ live_design! {
                 return self.color;
             }
         }
+        text: ""
     }
 }

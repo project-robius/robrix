@@ -7,6 +7,16 @@ live_design! {
 
     use crate::shared::styles::*;
 
+    pub TitleLabel = <Label> {
+        width: Fill, height: Fit
+        flow: RightWrap,
+        draw_text: {
+            text_style: <TITLE_TEXT>{font_size: 15},
+            color: #000
+            wrap: Word
+        }
+    }
+
     // Copied from Moly
     pub FadeView = <CachedView> {
         draw_bg: {
@@ -19,25 +29,16 @@ live_design! {
         }
     }
 
-    pub Divider = <View> {
-        width: Fill, height: Fit
-        flow: Down
-        <RoundedView> {
-            width: Fill,
-            height: 1.,
-            draw_bg: {color: (#ddd)}
-        }
-    }
-
     pub LineH = <RoundedView> {
         width: Fill,
         height: 2.0,
         margin: 0.0,
         padding: 0.0, spacing: 0.0
         show_bg: true
-        draw_bg: {color: (COLOR_DIVIDER)}
+        draw_bg: {color: (COLOR_DIVIDER_DARK)}
     }
 
+    pub Filler  = <View> { width: Fill, height: Fill }
     pub FillerX = <View> { width: Fill, height: Fit }
-    pub FillerY = <View> { width: Fit, height: Fill }
+    pub FillerY = <View> { width: Fit,  height: Fill }
 }

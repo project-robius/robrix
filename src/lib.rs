@@ -3,22 +3,29 @@ use std::{path::Path, sync::OnceLock};
 use robius_directories::ProjectDirs;
 
 pub use makepad_widgets;
+
+/// The top-level main application module.
 pub mod app;
+/// Function for loading and saving persistent application/session state.
 pub mod persistent_state;
+/// The settings screen and settings-related content/widgets.
+pub mod settings;
 
 /// Login screen
 pub mod login;
 /// Core UI content: the main home screen (rooms list), room screen.
 pub mod home;
 /// User profile info and a user profile sliding pane.
-mod profile;
+pub mod profile;
 /// A modal/dialog popup for interactive verification of users/devices.
 mod verification_modal;
+/// A modal/dialog popup for joining/leaving rooms, including confirming invite accept/reject.
+mod join_leave_room_modal;
 /// Shared UI components.
 pub mod shared;
 /// Generating text previews of timeline events/messages.
 mod event_preview;
-mod room;
+pub mod room;
 
 
 // Matrix stuff

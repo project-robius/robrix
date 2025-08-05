@@ -1,9 +1,9 @@
-use std::{borrow::Cow, time::SystemTime};
+use std::{borrow::Cow, fmt::Display, ops::Deref, str::{Chars, FromStr}, time::SystemTime};
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId}};
+use makepad_widgets::{image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, *};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
 
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
@@ -92,9 +92,70 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
 }
 
 
-pub fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
+pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
     let millis: i64 = millis.get().into();
     Local.timestamp_millis_opt(millis).single()
+}
+
+/// Returns a string error message, handling special cases related to joining/leaving rooms.
+pub fn stringify_join_leave_error(
+    error: &matrix_sdk::Error,
+    room_name: Option<&str>,
+    was_join: bool,
+    was_invite: bool,
+) -> String {
+    let room_str = room_name.map_or_else(
+        || String::from("room"),
+        |r| format!("\"{r}\""),
+    );
+    let msg_opt = match error {
+        // The below is a stupid hack to workaround `WrongRoomState` being private.
+        // We get the string representation of the error and then search for the "got" state.
+        matrix_sdk::Error::WrongRoomState(wrs) => {
+            if was_join && wrs.to_string().contains(", got: Joined") {
+                Some(format!("Failed to join {room_str}: it has already been joined."))
+            } else if !was_join && wrs.to_string().contains(", got: Left") {
+                Some(format!("Failed to leave {room_str}: it has already been left."))
+            } else {
+                None
+            }
+        }
+        // Special case for 404 errors, which indicate the room no longer exists.
+        // This avoids the weird "no known servers" error, which is misleading and incorrect.
+        // See: <https://github.com/element-hq/element-web/issues/25627>.
+        matrix_sdk::Error::Http(error)
+            if error.as_client_api_error().is_some_and(|e| e.status_code.as_u16() == 404) =>
+        {
+            Some(format!(
+                "Failed to {} {room_str}: the room no longer exists on the server.{}",
+                if was_join { "join" } else { "leave" },
+                if was_join && was_invite { "\n\nYou may safely reject this invite." } else { "" },
+            ))
+        }
+        _ => None,
+    };
+    msg_opt.unwrap_or_else(|| format!(
+        "Failed to {} {}: {}",
+        match (was_join, was_invite) {
+            (true, true) => "accept invite to",
+            (true, false) => "join",
+            (false, true) => "reject invite to",
+            (false, false) => "leave",
+        },
+        room_str,
+        error
+    ))
+}
+
+/// Returns a string representation of the room name or ID.
+pub fn room_name_or_id(
+    room_name: Option<impl Into<String>>,
+    room_id: impl AsRef<RoomId>,
+) -> String {
+    room_name.map_or_else(
+        || format!("Room ID {}", room_id.as_ref()),
+        |name| name.into(),
+    )
 }
 
 /// Formats a given Unix timestamp in milliseconds into a relative human-readable date.
@@ -112,7 +173,7 @@ pub fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Opti
 ///
 /// # Returns:
 /// - `Option<String>` representing the human-readable time or `None` if formatting fails.
-pub fn relative_format(millis: &MilliSecondsSinceUnixEpoch) -> Option<String> {
+pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
     let datetime = unix_time_millis_to_datetime(millis)?;
 
     // Calculate the time difference between now and the given timestamp
@@ -477,6 +538,63 @@ pub fn build_grapheme_byte_positions(text: &str) -> Vec<usize> {
     }
 
     positions
+}
+
+/// A RON-(de)serializable wrapper around [`OwnedRoomId`].
+#[derive(Clone, Debug)]
+pub struct OwnedRoomIdRon(pub OwnedRoomId);
+impl SerRon for OwnedRoomIdRon {
+    /// Serialize a `OwnedRoomId` to its string form, using ron.
+    fn ser_ron(&self, d: usize, s: &mut SerRonState) {
+        self.0.to_string().ser_ron(d, s);
+    }
+}
+impl DeRon for OwnedRoomIdRon {
+    fn de_ron(s: &mut DeRonState, i: &mut Chars) -> Result<Self, DeRonErr> {
+        OwnedRoomId::from_str(&String::de_ron(s, i)?)
+            .map(OwnedRoomIdRon)
+            .map_err(|e| DeRonErr {
+                msg: e.to_string(),
+                line: s.line,
+                col: s.col,
+            })
+    }
+}
+impl From<OwnedRoomId> for OwnedRoomIdRon {
+    fn from(room_id: OwnedRoomId) -> Self {
+        OwnedRoomIdRon(room_id)
+    }
+}
+impl<'a> From<&'a OwnedRoomIdRon> for &'a OwnedRoomId {
+    fn from(room_id: &'a OwnedRoomIdRon) -> Self {
+        &room_id.0
+    }
+}
+impl From<OwnedRoomIdRon> for OwnedRoomId {
+    fn from(room_id: OwnedRoomIdRon) -> Self {
+        room_id.0
+    }
+}
+impl<'a> From<&'a OwnedRoomIdRon> for &'a RoomId {
+    fn from(room_id: &'a OwnedRoomIdRon) -> Self {
+        &room_id.0
+    }
+}
+impl AsRef<RoomId> for OwnedRoomIdRon {
+    fn as_ref(&self) -> &RoomId {
+        &self.0
+    }
+}
+impl Deref for OwnedRoomIdRon {
+    type Target = OwnedRoomId;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl Display for OwnedRoomIdRon {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 

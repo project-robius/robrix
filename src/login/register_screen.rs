@@ -4,7 +4,7 @@ use std::ops::Not;
 
 use makepad_widgets::*;
 
-use crate::sliding_sync::{submit_async_request, AuthRequest, MatrixRequest, RegisterRequest};
+use crate::sliding_sync::{submit_async_request, MatrixRequest, RegisterRequest};
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
 
@@ -283,11 +283,11 @@ impl MatchEvent for RegisterScreen {
                     .set_text(cx, "Cancel");
                 register_status_modal.open(cx);
 
-                submit_async_request(MatrixRequest::Auth(AuthRequest::RegisterRequest(RegisterRequest {
+                submit_async_request(MatrixRequest::Register(RegisterRequest {
                     username,
                     password,
                     homeserver: homeserver.is_empty().not().then_some(homeserver),
-                })));
+                }));
             }
             self.redraw(cx);
         }
