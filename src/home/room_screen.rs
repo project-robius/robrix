@@ -46,6 +46,11 @@ const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
 /// from getting into a long-running loop if an event cannot be found quickly.
 const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 
+/// The time required to scroll to the targeted message in seconds.
+/// 
+/// This value cannot be zero.
+const SMOOTH_SCROLL_TIME: f64 = 1.0;
+
 /// The max size (width or height) of a blurhash image to decode.
 const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
 
@@ -1011,9 +1016,13 @@ impl Widget for RoomScreen {
                             });
 
                         if let Some(index) = target_msg_tl_index {
-                            // Message found in current timeline - scroll to it
-                            let speed = 50.0;
-                            portal_list.smooth_scroll_to(cx, index.saturating_sub(2), speed, None);
+                            let current_first_index = portal_list.first_id();
+                            portal_list.smooth_scroll_to(
+                                cx,
+                                index.saturating_sub(2),
+                                index.saturating_sub(2).abs_diff(current_first_index) as f64 / SMOOTH_SCROLL_TIME,
+                                None,
+                            );
                             // start highlight animation.
                             tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
                                 item_id: index

@@ -573,9 +573,8 @@ impl SearchResults {
         if let Some(mut search_portal_list) = search_portal_list.borrow_mut() {
             search_portal_list.set_item_range(cx, 0, self.search_state.items.len());
             if self.search_state.prev_search_term.is_none() {
-                // Scroll to the top when searching for the first time.
-                // Such that when user scroll down, pagination can be triggered.
-                
+                // After several testing, multiply the length of the list by 5, will ensure the the portal list is at the top.
+                // This is a hacky way to ensure the portal list is at the top as it is easy to display the bottom of the portal list.
                 search_portal_list.smooth_scroll_to(cx, 0, (self.search_state.items.len() * 5) as f64, None);
             }
         }
