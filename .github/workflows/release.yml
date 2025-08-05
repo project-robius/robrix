@@ -2,18 +2,44 @@
 
 name: Robrix Release CI
 
-# ! To avoid duplicate releases, they should be triggered by unique git tags.
-# ! Not triggered by workflow_dispatch
 on:
   push:
     tags:
       - 'v*.*.*'    # Release Version Tags
       - 'v*.*.*-*'  # Pre-release Version Tags
+  workflow_dispatch:
+    inputs:
+      target_platforms:
+        description: 'Target platforms for the release'
+        required: true
+        type: choice
+        options:
+          - 'All'
+          - 'Linux (Ubuntu 22.04, x86_64)'    # Build for Ubuntu 22.04 (x86_64) Linux
+          - 'MacOS (Apple Silicon)'           # Build for MacOS (aarch64)
+          - 'MacOS (Intel x64)'               # Build only for Intel Macs
+          - 'MacOS (Both architectures)'      # Build for both Intel and Apple Silicon Macs
+          - 'Windows (Windows 2022, x86_64)'  # Build for Windows 2022 (x86_64)
+      release_tag:
+        description: 'Release tag (required if creating release)'
+        required: false
+        type: string
+        default: ''
+      create_release:
+        description: 'Create a GitHub Release'
+        required: true
+        type: boolean
+        default: false
+      pre_release:
+        description: 'Mark as a pre-release'
+        required: true
+        type: boolean
+        default: false
 
+permissions: write-all
 env:
   CARGO_INCREMENTAL: 0
   RUST_BACKTRACE: short
-  CARGO_TERM_COLOR: always
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -23,6 +49,7 @@ jobs:
   check_tag_version:
     name: Check Release Tag and Cargo.toml Version Consistency
     runs-on: ubuntu-latest
+    if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
 
@@ -30,8 +57,10 @@ jobs:
         run: |
           TAG_REF="${GITHUB_REF##*/}"
           echo "Current tag: $TAG_REF"
-          CARGO_MANIFEST_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+
+          CARGO_MANIFEST_VERSION=$(cargo metadata --no-deps --format-version 1 --frozen | jq -r '.packages[0].version')
           echo "Cargo.toml Robrix version: $CARGO_MANIFEST_VERSION"
+
           if [[ "$TAG_REF" != "v$CARGO_MANIFEST_VERSION" ]]; then
             echo "Error: Tag '$TAG_REF' does not match Cargo.toml version '$CARGO_MANIFEST_VERSION'."
             echo "Please create a tag that matches the Cargo.toml version."
@@ -40,21 +69,49 @@ jobs:
             echo "Tag and Cargo.toml version are consistent."
           fi
 
-  release_robrix_for_desktop:
-    name: Release Robrix for Desktop (${{ matrix.os }})
+  determine_matrix:
+    name: Determine Build Matrix
+    runs-on: ubuntu-latest
+    if: always() && (needs.check_tag_version.result == 'success' || github.event_name == 'workflow_dispatch')
     needs: check_tag_version
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Set build matrix
+        id: set-matrix
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            case "${{ github.event.inputs.target_platforms }}" in
+              "All")
+                matrix='{"include":[{"os":"ubuntu-22.04","arch":"x86_64"},{"os":"macos-latest","arch":"aarch64"},{"os":"macos-13","arch":"x86_64"},{"os":"windows-2022","arch":"x86_64"}]}'
+                ;;
+              "Linux (Ubuntu 22.04, x86_64)")
+                matrix='{"include":[{"os":"ubuntu-22.04","arch":"x86_64"}]}'
+                ;;
+              "MacOS (Apple Silicon)")
+                matrix='{"include":[{"os":"macos-latest","arch":"aarch64"}]}'
+                ;;
+              "MacOS (Intel x64)")
+                matrix='{"include":[{"os":"macos-13","arch":"x86_64"}]}'
+                ;;
+              "MacOS (Both architectures)")
+                matrix='{"include":[{"os":"macos-latest","arch":"aarch64"},{"os":"macos-13","arch":"x86_64"}]}'
+                ;;
+              "Windows (Windows 2022, x86_64)")
+                matrix='{"include":[{"os":"windows-2022","arch":"x86_64"}]}'
+                ;;
+            esac
+          else
+            matrix='{"include":[{"os":"ubuntu-22.04","arch":"x86_64"},{"os":"macos-latest","arch":"aarch64"},{"os":"macos-13","arch":"x86_64"},{"os":"windows-2022","arch":"x86_64"}]}'
+          fi
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+
+  release_robrix_for_desktop:
+    name: Release Robrix for Desktop (${{ matrix.os }}, ${{ matrix.arch }})
+    needs: determine_matrix
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            arch: x86_64
-          - os: macos-14 # Apple Silicon Macs (M1/M2/M3/M4 chips)
-            arch: aarch64
-          - os: macos-13 # Intel Macs (x86_64 architecture)
-            arch: x86_64
-          - os: windows-2022
-            arch: x86_64
+      matrix: ${{ fromJson(needs.determine_matrix.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -88,25 +145,20 @@ jobs:
           cargo install --version 0.2.0 --locked --git https://github.com/project-robius/robius-packaging-commands.git robius-packaging-commands
 
       - name: Build
+        shell: bash
         run: |
           cargo packager --release
           ls ./dist
 
       - name: Set Version
         run: |
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            pwsh -Command "
-              \$content = Get-Content -Path 'Cargo.toml';
-              foreach (\$line in \$content) {
-                if (\$line -match '^version\s*=\s*\"(.*)\"') {
-                  'VERSION=' + \$matches[1] | Out-File -FilePath \$env:GITHUB_ENV -Append;
-                  break;
-                }
-              }"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.release_tag }}" ]]; then
+            VERSION="${{ github.event.inputs.release_tag }}"
+            VERSION="${VERSION#v}"  # Remove 'v' prefix if present
           else
-            VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-            echo "VERSION=$VERSION" >> $GITHUB_ENV
+            VERSION=$(cargo metadata --no-deps --format-version 1 --frozen | jq -r '.packages[0].version')
           fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
         shell: bash
 
       - name: Set Artifact and Upload Paths
@@ -116,7 +168,20 @@ jobs:
           OS=${{ matrix.os }}
           ARCH=${{ matrix.arch }}
 
-          if [[ "$OS" == "macos-14" ]]; then
+
+          if [[ "$OS" == "ubuntu-22.04" ]]; then
+            {
+              echo "DEB=robrix_${VERSION}_amd64.deb"
+              echo "APPIMAGE=robrix_${VERSION}_x86_64.AppImage"
+              echo "TAR=robrix_${VERSION}_x86_64.tar.gz"
+              echo "UPLOAD_FILES<<EOF"
+              echo "./dist/robrix_${VERSION}_amd64.deb"
+              echo "./dist/robrix_${VERSION}_x86_64.AppImage"
+              echo "./dist/robrix_${VERSION}_x86_64.tar.gz"
+              echo "EOF"
+            } >> $GITHUB_ENV
+
+          elif [[ "$OS" == "macos-latest" ]]; then
             FILE="robrix-${VERSION}-macOS-${ARCH}.dmg"
             mv ./dist/Robrix_${VERSION}_aarch64.dmg ./dist/$FILE
             echo "RELEASE_FILE=$FILE" >> $GITHUB_ENV
@@ -133,24 +198,26 @@ jobs:
             mv ./dist/robrix_${VERSION}_x64-setup.exe ./dist/$FILE
             echo "RELEASE_FILE=$FILE" >> $GITHUB_ENV
             echo "UPLOAD_FILES=./dist/$FILE" >> $GITHUB_ENV
-
-          elif [[ "$OS" == "ubuntu-22.04" ]]; then
-            {
-              echo "DEB=robrix_${VERSION}_amd64.deb"
-              echo "APPIMAGE=robrix_${VERSION}_x86_64.AppImage"
-              echo "TAR=robrix_${VERSION}_x86_64.tar.gz"
-              echo "UPLOAD_FILES<<EOF"
-              echo "./dist/robrix_${VERSION}_amd64.deb"
-              echo "./dist/robrix_${VERSION}_x86_64.AppImage"
-              echo "./dist/robrix_${VERSION}_x86_64.tar.gz"
-              echo "EOF"
-            } >> $GITHUB_ENV
           fi
 
       - name: Upload Release Artifacts
+        if: |
+          (github.event_name == 'push') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ env.VERSION }}
-          name: "Robrix v${{ env.VERSION }}"
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || format('v{0}', env.VERSION) }}
+          name: ${{ github.event_name == 'workflow_dispatch' && format('Robrix {0}', github.event.inputs.release_tag) || format('Robrix v{0}', env.VERSION) }}
           token: ${{ secrets.ROBRIX_RELEASE }}
           files: ${{ env.UPLOAD_FILES }}
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.pre_release == 'true' || contains(github.ref, '-') }}
+          draft: ${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Upload Artifacts (No Release)
+        if: |
+          github.event_name == 'workflow_dispatch' && github.event.inputs.create_release != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: robrix-${{ env.VERSION }}-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ env.UPLOAD_FILES }}
+          retention-days: 30
