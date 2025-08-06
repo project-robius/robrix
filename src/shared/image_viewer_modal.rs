@@ -65,11 +65,24 @@ live_design! {
                             source: (IMG_DEFAULT_AVATAR)
                         }
                     }
-                    loading_label_view = <View> {
+                    loading_view = <View> {
                         width: Fill,
-                        height: Fit
+                        height: Fit,
+                        flow: Down,
+                        align: {x: 0.5, y: 0.5},
+                        spacing: 10
+                        
+                        loading_spinner = <LoadingSpinner> {
+                            width: 40,
+                            height: 40,
+                            draw_bg: {
+                                color: (COLOR_ACTIVE_PRIMARY)
+                                border_size: 3.0,
+                            }
+                        }
+                        
                         <Label> {
-                            width: Fill,
+                            width: Fit,
                             height: 30,
                             text: "Loading image...",
                             draw_text: {
@@ -118,6 +131,11 @@ impl Widget for ImageViewerModal {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         
+        if !self.image_loaded && self.mxc_uri.is_some() {
+            if let Event::Signal = event {
+                self.populate_image_viewer(cx, self.mxc_uri.clone().unwrap());
+            }
+        }
         if let Event::Actions(actions) = event {
             if self.view.button(id!(close_button)).clicked(actions) {
                 self.close(cx);
@@ -133,32 +151,33 @@ impl Widget for ImageViewerModal {
 impl ImageViewerModal {
     /// Set the image to display in the modal
     pub fn set_image(&mut self, cx: &mut Cx, mxc_uri: OwnedMxcUri) {
+        self.mxc_uri = Some(mxc_uri.clone());
         self.image_loaded = false;
         self.show_loading_state(cx);
-        self.try_load_image(cx, mxc_uri.clone());
+        self.populate_image_viewer(cx, mxc_uri);
     }
 
     /// Try to load the image from the media cache
-    fn try_load_image(&mut self, cx: &mut Cx, mxc_uri: OwnedMxcUri) {
+    fn populate_image_viewer(&mut self, cx: &mut Cx, mxc_uri: OwnedMxcUri) {
         let media_cache = get_media_cache();
         let mut cache = media_cache.lock().unwrap();
         
         // Try to get the full-size image first, fallback to thumbnail
-        let (media_entry, _format) = cache.try_get_media_or_fetch(
+        let (media_entry, format) = cache.try_get_media_or_fetch(
             mxc_uri.clone(),
             MediaFormat::File,
         );
         drop(cache);
-        match media_entry {
-            MediaCacheEntry::Loaded(data) => {
+        match (media_entry, format) {
+            (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
                 self.load_image_data(cx, &data);
                 self.image_loaded = true;
             }
-            MediaCacheEntry::Requested => {
+            (MediaCacheEntry::Requested, _) | (MediaCacheEntry::Loaded(_), MediaFormat::Thumbnail(_))=> {
                 // Image is being fetched, keep showing loading state
                 self.show_loading_state(cx);
             }
-            MediaCacheEntry::Failed => {
+            (MediaCacheEntry::Failed, _) => {
                 self.show_error_state(cx);
                 self.image_loaded = true;
             }
@@ -170,8 +189,8 @@ impl ImageViewerModal {
         let image = self.view.image(id!(image));
         match load_png_or_jpg(&image, cx, data) {
             Ok(()) => {
-                self.view.view(id!(loading_label)).set_visible(cx, false);
-                self.view.view(id!(error_label)).set_visible(cx, false);
+                self.view.view(id!(loading_view)).set_visible(cx, false);
+                self.view.view(id!(error_label_view)).set_visible(cx, false);
                 self.view.image(id!(image)).set_visible(cx, true);
             }
             Err(e) => {
@@ -183,15 +202,15 @@ impl ImageViewerModal {
 
     /// Show loading state
     fn show_loading_state(&mut self, cx: &mut Cx) {
-        self.view.view(id!(loading_label)).set_visible(cx, true);
-        self.view.view(id!(error_label)).set_visible(cx, false);
+        self.view.view(id!(loading_view)).set_visible(cx, true);
+        self.view.view(id!(error_label_view)).set_visible(cx, false);
         self.view.image(id!(image)).set_visible(cx, false);
     }
 
     /// Show error state
     fn show_error_state(&mut self, cx: &mut Cx) {
-        self.view.view(id!(loading_label)).set_visible(cx, false);
-        self.view.view(id!(error_label)).set_visible(cx, true);
+        self.view.view(id!(loading_view)).set_visible(cx, false);
+        self.view.view(id!(error_label_view)).set_visible(cx, true);
         self.view.image(id!(image)).set_visible(cx, false);
     }
     fn close(&mut self, cx: &mut Cx) {
@@ -214,7 +233,6 @@ impl ImageViewerModalRef {
 
     /// Close the modal
     pub fn close(&self, cx: &mut Cx) {
-        // Reset the state
         if let Some(mut inner) = self.borrow_mut() {
             inner.close(cx);
         }
