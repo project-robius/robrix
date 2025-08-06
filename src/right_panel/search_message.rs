@@ -433,7 +433,6 @@ impl Widget for SearchResults {
                         search_item,
                         &self.search_state.profile_infos,
                         item_drawn_status,
-                        self.widget_uid(),
                         include_all_rooms,
                     );
                     if item_new_draw_status.content_drawn {
@@ -981,7 +980,6 @@ fn populate_message_search_view(
     search_item: &SearchResultItem,
     user_profiles: &BTreeMap<OwnedUserId, TimelineDetails<Profile>>,
     item_drawn_status: ItemDrawnStatus,
-    search_widget_uid: WidgetUid,
     include_all_rooms: bool,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
