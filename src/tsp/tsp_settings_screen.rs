@@ -5,6 +5,8 @@ use makepad_widgets::*;
 use crate::{shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, tsp::{create_wallet_modal::CreateWalletModalAction, tsp_state_ref, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
 live_design! {
+    link tsp_enabled
+
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
@@ -19,6 +21,10 @@ live_design! {
     pub TspSettingsScreen = {{TspSettingsScreen}} {
         width: Fill, height: Fit
         flow: Down
+
+        <TitleLabel> {
+            text: "TSP Wallet Settings"
+        }
 
         <SubsectionLabel> {
             text: "Your Wallets:"

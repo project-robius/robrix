@@ -6,6 +6,8 @@ use crate::{shared::styles::*, tsp::{self, TspWalletMetadata}};
 
 
 live_design! {
+    link tsp_enabled
+
     use link::theme::*;
     use link::widgets::*;
 
