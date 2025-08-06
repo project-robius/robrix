@@ -2,9 +2,8 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
-use crate::{app::{AppState, AppStateAction, SelectedRoom}, utils::room_name_or_id};
+use crate::{app::{AppState, AppStateAction, SelectedRoom}, shared::message_search_input_bar::MessageSearchAction, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -214,6 +213,7 @@ impl MainDesktopUI {
         dock.close_tab(cx, tab_id);
         self.tab_to_close = None;
         self.open_rooms.remove(&tab_id);
+        cx.widget_action(self.widget_uid(), &Scope::empty().path, MessageSearchAction::Clear);
     }
 
     /// Replaces an invite with a joined room in the dock.
@@ -381,6 +381,19 @@ impl WidgetMatchEvent for MainDesktopUI {
 
                     if let Some(ref selected_room) = &app_state.selected_room {
                         self.focus_or_create_tab(cx, selected_room.clone());
+                        // Call DockSave action to display the search message input box when a room is open.
+                        cx.widget_action(
+                            self.widget_uid(), 
+                            &HeapLiveIdPath::default(), 
+                            AppStateAction::RoomFocused(selected_room.clone())
+                        );
+                    } else {
+                        // If there is no selected room, focus on the home tab.
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &HeapLiveIdPath::default(),
+                            AppStateAction::FocusNone,
+                        );
                     }
                     self.view.redraw(cx);
                 }

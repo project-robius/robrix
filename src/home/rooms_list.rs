@@ -207,6 +207,8 @@ pub struct JoinedRoomInfo {
     pub is_selected: bool,
     /// Whether this a direct room.
     pub is_direct: bool,
+    /// Whether this room is currently encrypted.
+    pub is_room_encrypted: bool,
 }
 
 /// UI-related info about a room that the user has been invited to.
@@ -719,8 +721,31 @@ impl RoomsList {
             regular_rooms_indexes,
         )
     }
+    /// Returns the name of the room associated with the given room_id if it exists.
+    pub fn get_room_name(&self, room_id: &OwnedRoomId) -> Option<String> {
+        self.all_joined_rooms.get(room_id).and_then(|room| room.room_name.clone())
+    }
+    pub fn is_room_encrypted(&self, room_id: &OwnedRoomId) -> bool {
+        self.all_joined_rooms.get(room_id).map(|room| room.is_room_encrypted).unwrap_or(false)
+    }
 }
-
+impl RoomsListRef {
+    // See [`RoomsList::get_room_name`].
+    pub fn get_room_name(&self, room_id: &OwnedRoomId) -> Option<String> {
+        if let Some(inner) = self.borrow() {
+            inner.get_room_name(room_id)
+        } else {
+            None
+        }
+    }
+    pub fn is_room_encrypted(&self, room_id: &OwnedRoomId) -> bool {
+        if let Some(inner) = self.borrow() {
+            inner.is_room_encrypted(room_id)
+        } else {
+            false
+        }
+    }
+}
 impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Process all pending updates to the list of all rooms, and then redraw it.
