@@ -1,5 +1,5 @@
 use makepad_widgets::{makepad_futures::channel::oneshot::Sender, *};
-use crate::sliding_sync::{is_logout_past_point_of_no_return, submit_async_request, MatrixRequest};
+use crate::{shared::styles::{COLOR_RESTART_LATER_BLUE, COLOR_RESTART_NOW_RED}, sliding_sync::{is_logout_past_point_of_no_return, submit_async_request, MatrixRequest}};
 
 live_design! {
     use link::theme::*;
@@ -222,94 +222,87 @@ impl WidgetMatchEvent for LogoutConfirmModal {
         }
 
         for action in actions {
-            if let Some(LogoutAction::LogoutSuccess) = action.downcast_ref() {
-                // Logout was successful
-                self.final_success = Some(true);
-                self.set_message(cx, "Logout successful!");
-                let confirm_button = self.button(id!(confirm_button));
-                confirm_button.set_text(cx, "Close");
-                confirm_button.set_enabled(cx, true);
+            match action.downcast_ref() {
+                Some(LogoutAction::LogoutSuccess) => {
+                    // Logout was successful
+                    self.final_success = Some(true);
+                    self.set_message(cx, "Logout successful!");
+                    confirm_button.set_text(cx, "Okay");
+                    confirm_button.set_enabled(cx, true);
+                    cancel_button.set_visible(cx, false);
+                    
+                    needs_redraw = true;
+                }
                 
-                let cancel_button = self.button(id!(cancel_button));
-                cancel_button.set_visible(cx, false);
-                
-                needs_redraw = true;
-            }
-            
-            if let Some(LogoutAction::LogoutFailure(error)) = action.downcast_ref() {
-                if is_logout_past_point_of_no_return() {
-                    self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
-                    self.set_message(cx, "The logout process encountered an error when communicating with the homeserver. Since your login session has been partially invalidated, Robrix must restart in order to continue to properly function.");
+                Some(LogoutAction::LogoutFailure(error)) => {
+                    if is_logout_past_point_of_no_return() {
+                        self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
+                        self.set_message(cx, "The logout process encountered an error when communicating with the homeserver. Since your login session has been partially invalidated, Robrix must restart in order to continue to properly function.");
 
-                    let confirm_button = self.button(id!(confirm_button));
+                        confirm_button.set_text(cx, "Restart now");
+                        confirm_button.apply_over(cx, live!{
+                            draw_bg: {
+                                color: (COLOR_RESTART_NOW_RED)
+                            }
+                        });
+                        confirm_button.set_enabled(cx, true);
+
+                        cancel_button.set_visible(cx, true);
+                        cancel_button.set_text(cx, "Restart later");
+                        cancel_button.apply_over(cx, live!{
+                            draw_bg: {
+                                color: (COLOR_RESTART_LATER_BLUE)
+                            }
+                        });
+                        cancel_button.set_enabled(cx, true);
+
+                    } else {
+                        self.set_message(cx, &format!("Logout failed: {}", error));
+                        confirm_button.set_text(cx, "Okay");
+                        confirm_button.set_enabled(cx, true);
+                        cancel_button.set_visible(cx, false);
+                    }
+
+                    self.final_success = Some(false);
+                    needs_redraw = true;
+                }
+
+                Some(LogoutAction::ApplicationRequiresRestart { .. }) => {
+                    self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
+                    self.set_message(cx, "Application is in an inconsistent state and needs to be restarted to continue.");
+        
                     confirm_button.set_text(cx, "Restart now");
                     confirm_button.apply_over(cx, live!{
                         draw_bg: {
-                            color: #xE23A3A
+                            color: (COLOR_RESTART_NOW_RED)
                         }
                     });
                     confirm_button.set_enabled(cx, true);
 
-                    let cancel_button = self.button(id!(cancel_button));
                     cancel_button.set_visible(cx, true);
                     cancel_button.set_text(cx, "Restart later");
                     cancel_button.apply_over(cx, live!{
                         draw_bg: {
-                            color: #x3A78E2
+                            color: (COLOR_RESTART_LATER_BLUE)
                         }
                     });
                     cancel_button.set_enabled(cx, true);
-
-                } else {
-                    self.set_message(cx, &format!("Logout failed: {}", error));
-                    let confirm_button = self.button(id!(confirm_button));
-                    confirm_button.set_text(cx, "Okay");
-                    confirm_button.set_enabled(cx, true);
-
-                    let cancel_button = self.button(id!(cancel_button));
-                    cancel_button.set_visible(cx, false);
+                    
+                    self.final_success = Some(false);
+                    needs_redraw = true;
                 }
 
-                self.final_success = Some(false);
-                needs_redraw = true;
+                Some(LogoutAction::ProgressUpdate { message, percentage }) => {
+                    // Just update the message text to show progress
+                    self.set_message(cx, &format!("{} ({}%)", message, percentage));
+                    // Disable buttons during logout
+                    confirm_button.set_enabled(cx, false);
+                    cancel_button.set_enabled(cx, false);
+                    needs_redraw = true;
+                }
+
+                _ => {} // Handle other actions or None
             }
-
-            if let Some(LogoutAction::ApplicationRequiresRestart { .. }) = action.downcast_ref() {
-                self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
-                self.set_message(cx, "Application is in an inconsistent state and needs to be restarted to continue.");
-    
-                let confirm_button = self.button(id!(confirm_button));
-                confirm_button.set_text(cx, "Restart now");
-                confirm_button.apply_over(cx, live!{
-                    draw_bg: {
-                        color: #xE23A3A
-                    }
-                });
-                confirm_button.set_enabled(cx, true);
-
-                let cancel_button = self.button(id!(cancel_button));
-                cancel_button.set_visible(cx, true);
-                cancel_button.set_text(cx, "Restart later");
-                cancel_button.apply_over(cx, live!{
-                    draw_bg: {
-                        color: #x3A78E2
-                    }
-                });
-                cancel_button.set_enabled(cx, true);
-                
-                self.final_success = Some(false);
-                needs_redraw = true;
-            }
-
-            if let Some(LogoutAction::ProgressUpdate { message, percentage }) = action.downcast_ref() {
-                // Just update the message text to show progress
-                self.set_message(cx, &format!("{} ({}%)", message, percentage));
-                // Disable buttons during logout
-                self.button(id!(confirm_button)).set_enabled(cx, false);
-                self.button(id!(cancel_button)).set_enabled(cx, false);
-                needs_redraw = true;
-            }
-
         }
 
         if needs_redraw {

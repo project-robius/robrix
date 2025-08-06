@@ -87,6 +87,8 @@ live_design! {
     pub COLOR_BG_DANGER_RED = #FFF0F0
     pub COLOR_FG_DISABLED = #B3B3B3
     pub COLOR_BG_DISABLED = #E0E0E0
+    pub COLOR_RESTART_NOW_RED = #E23A3A
+    pub COLOR_RESTART_LATER_BLUE = #3A78E2
 
     pub COLOR_SELECT_TEXT = #A6CDFE
 
@@ -229,6 +231,8 @@ pub const COLOR_FG_DISABLED:         Vec4 = vec4(0.7, 0.7, 0.7, 1.0); // #B3B3B3
 pub const COLOR_BG_DISABLED:         Vec4 = vec4(0.878, 0.878, 0.878, 1.0); // #E0E0E0
 pub const COLOR_FG_DANGER_RED:       Vec4 = vec4(0.863, 0.0, 0.02, 1.0); // #DC0005
 pub const COLOR_BG_DANGER_RED:       Vec4 = vec4(1.0, 0.941, 0.941, 1.0); // #FFF0F0
+pub const COLOR_RESTART_NOW_RED:     Vec4 = vec4(0.886, 0.227, 0.227, 1.0); // #E23A3A
+pub const COLOR_RESTART_LATER_BLUE:  Vec4 = vec4(0.227, 0.471, 0.886, 1.0); // #3A78E2
 pub const COLOR_ROBRIX_PURPLE:       Vec4 = vec4(0.341, 0.176, 0.8, 1.0); // #572DCC
 pub const COLOR_UNKNOWN_ROOM_AVATAR: Vec4 = vec4(1.0, 0.431, 0.0, 1.0); // #FF6e00
 pub const COLOR_WARNING_YELLOW:      Vec4 = vec4(0.988, 0.859, 0.01, 1.0); // #fcdb03
