@@ -59,7 +59,6 @@ pub struct TextOrImage {
     #[rust] status: TextOrImageStatus,
     // #[rust(TextOrImageStatus::Text)] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
-    #[rust] image_click_handler: Option<Box<dyn Fn(&mut Cx) + Send + Sync>>,
 }
 
 impl Widget for TextOrImage {
@@ -136,13 +135,6 @@ impl TextOrImage {
         self.status.clone()
     }
 
-    /// Sets a click handler for the image. The handler will be called when the image is clicked.
-    pub fn set_image_click_handler<F>(&mut self, _cx: &mut Cx, handler: F)
-    where
-        F: Fn(&mut Cx) + Send + Sync + 'static,
-    {
-        self.image_click_handler = Some(Box::new(handler));
-    }
 }
 
 impl TextOrImageRef {
@@ -173,15 +165,6 @@ impl TextOrImageRef {
         }
     }
 
-    /// See [TextOrImage::set_image_click_handler()].
-    pub fn set_image_click_handler<F>(&self, cx: &mut Cx, handler: F)
-    where
-        F: Fn(&mut Cx) + Send + Sync + 'static,
-    {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.set_image_click_handler(cx, handler);
-        }
-    }
 }
 
 /// Whether a `TextOrImage` instance is currently displaying text or an image.
