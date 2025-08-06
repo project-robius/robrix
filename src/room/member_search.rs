@@ -11,6 +11,7 @@ use matrix_sdk::room::RoomMember;
 use unicode_segmentation::UnicodeSegmentation;
 use crate::shared::mentionable_text_input::SearchResult;
 use crate::sliding_sync::current_user_id;
+use tokio_util::sync::CancellationToken;
 use makepad_widgets::log;
 
 /// Search room members in background thread with streaming support
@@ -19,9 +20,17 @@ pub fn search_room_members_streaming(
     search_text: String,
     max_results: usize,
     sender: Sender<SearchResult>,
+    cancellation_token: CancellationToken,
 ) {
     // Get current user ID to filter out self-mentions
+    // Note: We capture this once at the start to avoid repeated global state access
     let current_user_id = current_user_id();
+    
+    // Early return if task is already cancelled
+    if cancellation_token.is_cancelled() {
+        log!("Member search cancelled before starting");
+        return;
+    }
 
     // Constants for batching
     const BATCH_SIZE: usize = 10;  // Send results in batches
@@ -32,6 +41,12 @@ pub fn search_room_members_streaming(
         let mut sent_count = 0;
 
         for (index, member) in members.iter().enumerate() {
+            // Check for cancellation
+            if cancellation_token.is_cancelled() {
+                log!("Member search cancelled during empty search processing");
+                return;
+            }
+            
             if all_results.len() >= max_results {
                 break;
             }
@@ -101,6 +116,12 @@ pub fn search_room_members_streaming(
     let mut high_priority_count = 0;
 
     for (index, member) in members.iter().enumerate() {
+        // Check for cancellation periodically
+        if index % 100 == 0 && cancellation_token.is_cancelled() {
+            log!("Member search cancelled during search at index {}", index);
+            return;
+        }
+        
         // Skip the current user - users should not be able to mention themselves
         if let Some(ref current_id) = current_user_id {
             if member.user_id() == current_id {
@@ -192,7 +213,34 @@ pub fn search_room_members_streaming(
     }
 }
 
-/// Helper function to check if a string starts with another string based on graphemes
+/// Check if a string starts with another string based on grapheme clusters
+/// 
+/// ## What are Grapheme Clusters?
+/// 
+/// A grapheme cluster is what users perceive as a single "character". This is NOT about
+/// phonetics/pronunciation, but about visual representation. Examples:
+/// 
+/// - "👨‍👩‍👧‍👦" (family emoji) looks like 1 character but is actually 7 Unicode code points
+/// - "é" might be 1 precomposed character or 2 characters (e + ´ combining accent)
+/// - "🇺🇸" (flag) is 2 regional indicator symbols that combine into 1 visual character
+/// 
+/// ## Why is this needed?
+/// 
+/// Standard string operations like `starts_with()` work on bytes or chars, which can
+/// break these multi-codepoint characters. For @mentions, users expect:
+/// - Typing "👨‍👩‍👧‍👦" should match a username starting with that family emoji
+/// - Typing "é" should match whether the username uses precomposed or decomposed form
+/// 
+/// ## When is this function called?
+/// 
+/// This function is ONLY used when the search text contains complex Unicode characters
+/// (when grapheme count != char count). For regular ASCII or simple Unicode, the
+/// standard `starts_with()` is used for better performance.
+/// 
+/// ## Performance Note
+/// 
+/// This function is intentionally not called for common cases (ASCII usernames,
+/// simple Chinese characters) to avoid the overhead of grapheme segmentation.
 fn grapheme_starts_with(haystack: &str, needle: &str, case_insensitive: bool) -> bool {
     if needle.is_empty() {
         return true;
@@ -280,7 +328,8 @@ fn user_matches_search(member: &RoomMember, search_text: &str) -> bool {
                 return true;
             }
             // Only fall back to grapheme search for complex cases
-            // (e.g., when search text has combining characters or emojis)
+            // This condition checks if search text contains multi-codepoint graphemes
+            // Examples: emojis (👨‍👩‍👧‍👦), combining characters (é = e + ´), flags (🇺🇸)
             if search_text.graphemes(true).count() != search_text.chars().count() {
                 if grapheme_starts_with(display_name, search_text, false) {
                     return true;
@@ -378,4 +427,135 @@ fn get_match_priority(member: &RoomMember, search_text: &str) -> u8 {
 
     // Priority 8: Other matches (shouldn't happen with optimized search)
     8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_grapheme_starts_with_basic() {
+        // Basic ASCII cases
+        assert!(grapheme_starts_with("hello", "hel", false));
+        assert!(grapheme_starts_with("hello", "hello", false));
+        assert!(!grapheme_starts_with("hello", "llo", false));
+        assert!(grapheme_starts_with("hello", "", false));
+        assert!(!grapheme_starts_with("hi", "hello", false));
+    }
+
+    #[test]
+    fn test_grapheme_starts_with_case_sensitivity() {
+        // Case-insensitive for ASCII
+        assert!(grapheme_starts_with("Hello", "hel", true));
+        assert!(grapheme_starts_with("HELLO", "hel", true));
+        assert!(!grapheme_starts_with("Hello", "hel", false));
+        
+        // Case-insensitive only works for ASCII
+        assert!(!grapheme_starts_with("Привет", "прив", true)); // Russian
+    }
+
+    #[test]
+    fn test_grapheme_starts_with_emojis() {
+        // Family emoji (multiple code points appearing as single character)
+        let family = "👨‍👩‍👧‍👦"; // 7 code points, 1 grapheme
+        assert!(grapheme_starts_with("👨‍👩‍👧‍👦 Smith Family", "👨‍👩‍👧‍👦", false));
+        assert!(grapheme_starts_with(family, family, false));
+        
+        // Flag emojis (regional indicators)
+        assert!(grapheme_starts_with("🇺🇸 USA", "🇺🇸", false));
+        assert!(grapheme_starts_with("🇯🇵 Japan", "🇯🇵", false));
+        
+        // Skin tone modifiers
+        assert!(grapheme_starts_with("👋🏽 Hello", "👋🏽", false));
+        assert!(!grapheme_starts_with("👋🏽 Hello", "👋", false)); // Different without modifier
+        
+        // Complex emoji sequences
+        assert!(grapheme_starts_with("🧑‍💻 Developer", "🧑‍💻", false));
+    }
+
+    #[test]
+    fn test_grapheme_starts_with_combining_characters() {
+        // Precomposed vs decomposed forms
+        let precomposed = "café"; // é as single character (U+00E9)
+        let decomposed = "cafe\u{0301}"; // e + combining acute accent (U+0065 + U+0301)
+        
+        // Both should work
+        assert!(grapheme_starts_with(precomposed, "caf", false));
+        assert!(grapheme_starts_with(decomposed, "caf", false));
+        
+        // Other combining characters
+        assert!(grapheme_starts_with("naïve", "naï", false)); // ï with diaeresis
+        assert!(grapheme_starts_with("piñata", "piñ", false)); // ñ with tilde
+    }
+
+    #[test]
+    fn test_grapheme_starts_with_various_scripts() {
+        // Chinese
+        assert!(grapheme_starts_with("张三", "张", false));
+        
+        // Japanese (Hiragana + Kanji)
+        assert!(grapheme_starts_with("こんにちは", "こん", false));
+        assert!(grapheme_starts_with("日本語", "日本", false));
+        
+        // Korean
+        assert!(grapheme_starts_with("안녕하세요", "안녕", false));
+        
+        // Arabic (RTL)
+        assert!(grapheme_starts_with("مرحبا", "مر", false));
+        
+        // Hindi with complex ligatures
+        assert!(grapheme_starts_with("नमस्ते", "नम", false));
+        
+        // Thai with combining marks
+        assert!(grapheme_starts_with("สวัสดี", "สวั", false));
+    }
+
+    #[test]
+    fn test_grapheme_starts_with_zero_width_joiners() {
+        // Zero-width joiner sequences
+        let zwj_sequence = "👨‍⚕️"; // Man + ZWJ + Medical symbol
+        assert!(grapheme_starts_with("👨‍⚕️ Dr. Smith", zwj_sequence, false));
+        
+        // Gender-neutral sequences
+        assert!(grapheme_starts_with("🧑‍🎓 Student", "🧑‍🎓", false));
+    }
+
+    #[test]
+    fn test_grapheme_starts_with_edge_cases() {
+        // Empty strings
+        assert!(grapheme_starts_with("", "", false));
+        assert!(!grapheme_starts_with("", "a", false));
+        
+        // Single grapheme vs multiple
+        assert!(grapheme_starts_with("a", "a", false));
+        assert!(!grapheme_starts_with("a", "ab", false));
+        
+        // Whitespace handling
+        assert!(grapheme_starts_with("  hello", "  ", false));
+        assert!(grapheme_starts_with("\nhello", "\n", false));
+    }
+
+    #[test]
+    fn test_when_grapheme_search_is_used() {
+        // This test demonstrates when grapheme_starts_with is actually called
+        // in the user_matches_search function
+        
+        // Regular ASCII - grapheme count == char count
+        assert_eq!("hello".graphemes(true).count(), "hello".chars().count());
+        
+        // Family emoji - grapheme count != char count  
+        assert_ne!("👨‍👩‍👧‍👦".graphemes(true).count(), "👨‍👩‍👧‍👦".chars().count());
+        assert_eq!("👨‍👩‍👧‍👦".graphemes(true).count(), 1);
+        assert_eq!("👨‍👩‍👧‍👦".chars().count(), 7);
+        
+        // Combining character - grapheme count != char count
+        // Using actual decomposed form: e (U+0065) + combining acute accent (U+0301)
+        let decomposed = "e\u{0301}"; // e + combining acute accent
+        assert_ne!(decomposed.graphemes(true).count(), decomposed.chars().count());
+        assert_eq!(decomposed.graphemes(true).count(), 1); // Shows as 1 grapheme
+        assert_eq!(decomposed.chars().count(), 2); // But is 2 chars
+        
+        // Simple Chinese - grapheme count == char count
+        assert_eq!("你好".graphemes(true).count(), "你好".chars().count());
+    }
 }

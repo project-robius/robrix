@@ -27,6 +27,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
 use std::io;
+use tokio_util::sync::CancellationToken;
 use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction
@@ -441,9 +442,16 @@ async fn async_worker(
                 match async_job_request {
                     LocalJob::SearchRoomMembers { room_id: _, search_text, sender, max_results, cached_members } => {
                         // Directly spawn blocking task for search
+                        let cancellation_token = get_cancellation_token();
                         let _search_task = tokio::task::spawn_blocking(move || {
                             // Perform streaming search
-                            crate::room::member_search::search_room_members_streaming(cached_members, search_text, max_results, sender);
+                            crate::room::member_search::search_room_members_streaming(
+                                cached_members, 
+                                search_text, 
+                                max_results, 
+                                sender,
+                                cancellation_token
+                            );
                         });
                     }
                 }
@@ -676,9 +684,10 @@ async fn async_worker(
 
                     MatrixRequest::SearchRoomMembers { room_id: _, search_text, sender, max_results, cached_members } => {
                         // Directly spawn blocking task for search
+                        let cancellation_token = get_cancellation_token();
                         let _search_task = tokio::task::spawn_blocking(move || {
                             // Perform streaming search
-                            search_room_members_streaming(cached_members, search_text, max_results, sender);
+                            search_room_members_streaming(cached_members, search_text, max_results, sender, cancellation_token);
                         });
                     }
 
@@ -1188,6 +1197,9 @@ pub fn start_matrix_tokio() -> Result<()> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
     let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
 
+    // Reset cancellation flag for background tasks
+    reset_background_tasks_cancellation();
+
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<BackgroundRequest>();
     REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
@@ -1322,8 +1334,42 @@ static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: OnceLock<Client> = OnceLock::new();
 
+/// Global cancellation token for background tasks
+static BACKGROUND_TASKS_CANCELLATION: LazyLock<Mutex<CancellationToken>> = LazyLock::new(|| {
+    Mutex::new(CancellationToken::new())
+});
+
 pub fn get_client() -> Option<Client> {
     CLIENT.get().cloned()
+}
+
+/// Get the current cancellation token
+pub fn get_cancellation_token() -> CancellationToken {
+    BACKGROUND_TASKS_CANCELLATION.lock().unwrap().clone()
+}
+
+/// Cancel all background tasks gracefully
+/// 
+/// This should be called during logout to ensure all background tasks
+/// (like member search) are cancelled before shutting down the runtime.
+/// 
+/// Call this BEFORE calling any shutdown_background_tasks() to avoid panics.
+pub fn cancel_all_background_tasks() {
+    log!("Cancelling all background tasks...");
+    let token = get_cancellation_token();
+    token.cancel();
+}
+
+/// Check if background tasks have been cancelled
+pub fn are_background_tasks_cancelled() -> bool {
+    let token = get_cancellation_token();
+    token.is_cancelled()
+}
+
+/// Reset cancellation flag (create a new token for new tasks)
+pub fn reset_background_tasks_cancellation() {
+    let mut token_guard = BACKGROUND_TASKS_CANCELLATION.lock().unwrap();
+    *token_guard = CancellationToken::new();
 }
 
 /// Returns the user ID of the currently logged-in user, if any.

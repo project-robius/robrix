@@ -344,8 +344,12 @@ pub struct MentionableTextInput {
     #[rust] is_searching: bool,
     /// Whether the current user can notify everyone in the room (@room mention)
     #[rust] can_notify_room: bool,
-    /// Whether the room members are currently being loaded
-    #[rust] members_loading: bool,
+    /// Whether we're waiting for initial room members to be loaded
+    #[rust] waiting_for_initial_members: bool,
+    /// Whether a search operation is currently in progress
+    #[rust] search_in_progress: bool,
+    /// Track if search was just cancelled to prevent immediate re-triggering
+    #[rust] search_just_cancelled: bool,
     /// Channel receiver for search results from background thread
     #[rust] search_receiver: Option<Receiver<SearchResult>>,
     /// Accumulated search results for streaming
@@ -357,6 +361,19 @@ pub struct MentionableTextInput {
 
 impl Widget for MentionableTextInput {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Handle ESC key early before passing to child widgets
+        if self.is_searching {
+            if let Event::KeyUp(key_event) = event {
+                if key_event.key_code == KeyCode::Escape {
+                    log!("mentionable_text_input: ESC key detected via KeyUp event");
+                    self.search_just_cancelled = true;
+                    self.close_mention_popup(cx);
+                    self.redraw(cx);
+                    return; // Don't process other events
+                }
+            }
+        }
+        
         self.cmd_text_input.handle_event(cx, event, scope);
 
         // Best practice: Always check Scope first to get current context
@@ -384,12 +401,8 @@ impl Widget for MentionableTextInput {
             let text_input_area = text_input_ref.area();
             let has_focus = cx.has_key_focus(text_input_area);
 
-            // Handle ESC key to close mention popup
-            if self.is_searching && text_input_ref.escaped(actions) {
-                self.close_mention_popup(cx);
-                self.redraw(cx);
-                return; // Don't process other actions after ESC
-            }
+            // ESC key is now handled in the main event handler using KeyUp event
+            // This avoids conflicts with escaped() method being consumed by other components
 
             // Handle item selection from mention popup
             if let Some(selected) = self.cmd_text_input.item_selected(actions) {
@@ -404,6 +417,10 @@ impl Widget for MentionableTextInput {
                         let search_text = self.cmd_text_input.search_text();
                         self.update_user_list(cx, &search_text, scope);
                     }
+                // TODO: Replace direct access to internal popup view with public API method
+                // Suggested improvement: Use self.cmd_text_input.is_popup_visible() instead
+                // This requires adding is_popup_visible() method to CommandTextInput in makepad
+                // See: https://github.com/makepad/makepad/widgets/src/command_text_input.rs
                 } else if self.cmd_text_input.view(id!(popup)).visible() {
                     self.close_mention_popup(cx);
                 }
@@ -459,14 +476,18 @@ impl Widget for MentionableTextInput {
                 }
             }
 
-            // Close popup if focus is lost
-            if !has_focus && self.cmd_text_input.view(id!(popup)).visible() {
+            // Close popup if focus is lost while searching
+            // TODO: Replace direct access to internal popup view with public API method
+            // Should use self.cmd_text_input.is_popup_visible() for better encapsulation
+            // This violates the principle of not accessing internal widget structure
+            if !has_focus && self.is_searching {
+                log!("Lost focus while searching, closing mention popup");
                 self.close_mention_popup(cx);
             }
         }
 
         // Check if we were waiting for members and they're now available
-        if self.members_loading && self.is_searching {
+        if self.waiting_for_initial_members && self.is_searching {
             let room_props = scope
                 .props
                 .get::<RoomScreenProps>()
@@ -475,7 +496,7 @@ impl Widget for MentionableTextInput {
             if let Some(room_members) = &room_props.room_members {
                 if !room_members.is_empty() {
                     // Members are now available, update the list
-                    self.members_loading = false;
+                    self.waiting_for_initial_members = false;
                     let text_input = self.cmd_text_input.text_input(id!(text_input));
                     let text_input_area = text_input.area();
                     let is_focused = cx.has_key_focus(text_input_area);
@@ -577,7 +598,6 @@ impl MentionableTextInput {
     fn add_user_mention_items(
         &mut self,
         cx: &mut Cx,
-        member_indices: &[usize],
         user_items_limit: usize,
         is_desktop: bool,
         room_props: &RoomScreenProps,
@@ -589,7 +609,7 @@ impl MentionableTextInput {
             return 0;
         };
 
-        for (index, &member_idx) in member_indices.iter().take(user_items_limit).enumerate() {
+        for (index, &member_idx) in self.accumulated_results.iter().take(user_items_limit).enumerate() {
             // Get the actual member from the index
             let Some(member) = members.get(member_idx) else {
                 continue;
@@ -662,31 +682,37 @@ impl MentionableTextInput {
         items_added
     }
 
-    /// Update popup visibility and layout
+    /// Update popup visibility and layout based on current state
     fn update_popup_visibility(&mut self, cx: &mut Cx, has_items: bool) {
         let popup = self.cmd_text_input.view(id!(popup));
 
-        if has_items {
-            popup.set_visible(cx, true);
-            if self.is_searching {
-                self.cmd_text_input.text_input_ref().set_key_focus(cx);
-            }
-        } else if self.is_searching {
-            if self.members_loading {
-                // Show loading indicator while fetching members
-                self.show_loading_indicator(cx);
-                popup.set_visible(cx, true);
-                self.cmd_text_input.text_input_ref().set_key_focus(cx);
-            } else {
-                // Show "no matches" if we're searching and not loading
-                self.show_no_matches_indicator(cx);
-                popup.set_visible(cx, true);
-                self.cmd_text_input.text_input_ref().set_key_focus(cx);
-            }
-        } else {
-            // Only hide popup if we're not actively searching
+        if !self.is_searching {
+            // Not in search mode, hide popup
             popup.apply_over(cx, live! { height: Fit });
             popup.set_visible(cx, false);
+            return;
+        }
+
+        // We are in search mode
+        if has_items {
+            // We have search results to display
+            popup.set_visible(cx, true);
+            self.cmd_text_input.text_input_ref().set_key_focus(cx);
+        } else if self.waiting_for_initial_members {
+            // Waiting for room members to be loaded
+            self.show_loading_indicator(cx);
+            popup.set_visible(cx, true);
+            self.cmd_text_input.text_input_ref().set_key_focus(cx);
+        } else if self.search_in_progress {
+            // Search is running but no results yet - keep popup visible
+            // Could optionally show a "searching..." indicator here
+            popup.set_visible(cx, true);
+            self.cmd_text_input.text_input_ref().set_key_focus(cx);
+        } else {
+            // Search completed with no results
+            self.show_no_matches_indicator(cx);
+            popup.set_visible(cx, true);
+            self.cmd_text_input.text_input_ref().set_key_focus(cx);
         }
     }
 
@@ -746,13 +772,25 @@ impl MentionableTextInput {
 
         }
 
+        log!("on_user_selected - Before: is_searching = {}", self.is_searching);
+        self.search_just_cancelled = true;
         self.is_searching = false;
+        log!("on_user_selected - After setting false: is_searching = {}", self.is_searching);
         self.current_mention_start_index = None;
         self.close_mention_popup(cx);
+        log!("on_user_selected - After close_mention_popup: is_searching = {}", self.is_searching);
     }
 
     /// Core text change handler that manages mention context
     fn handle_text_change(&mut self, cx: &mut Cx, scope: &mut Scope, text: String) {
+        log!("handle_text_change - Start: is_searching = {}, search_just_cancelled = {}", self.is_searching, self.search_just_cancelled);
+        // If search was just cancelled, clear the flag and don't re-trigger search
+        if self.search_just_cancelled {
+            log!("handle_text_change - Search was just cancelled, skipping");
+            self.search_just_cancelled = false;
+            return;
+        }
+        
         // Check if text is empty or contains only whitespace
         let trimmed_text = text.trim();
         if trimmed_text.is_empty() {
@@ -790,6 +828,7 @@ impl MentionableTextInput {
             let is_new_search = self.current_mention_start_index != Some(trigger_pos);
 
             self.current_mention_start_index = Some(trigger_pos);
+            log!("handle_text_change - Setting is_searching = true (found @ at position {})", trigger_pos);
             self.is_searching = true;
 
             if is_new_search {
@@ -817,7 +856,7 @@ impl MentionableTextInput {
             self.check_search_channel(cx, scope);
 
             // Only redraw if check_search_channel didn't update UI
-            if self.accumulated_results.is_empty() && !self.members_loading {
+            if self.accumulated_results.is_empty() && !self.search_in_progress {
                 cx.redraw_all();
             }
         } else if self.is_searching {
@@ -867,7 +906,8 @@ impl MentionableTextInput {
         if should_update_ui && !self.accumulated_results.is_empty() {
             // Received search results, updating UI...
             // Hide loading and show results immediately
-            self.members_loading = false;
+            // We have search results, so search is no longer in progress for this batch
+            // Note: search_in_progress will be set to false when is_complete is true
 
             // Results are already sorted in member_search.rs and indices are unique
             self.update_ui_with_results(cx, scope, &search_text);
@@ -876,12 +916,10 @@ impl MentionableTextInput {
 
         // Handle completion
         if is_complete {
-            // Search is complete, clear loading state regardless of results
-            self.members_loading = false;
+            // Search is complete
+            self.search_in_progress = false;
             if self.accumulated_results.is_empty() {
                 // No user results, but still update UI (may show @room)
-                // Clear results before showing empty state
-                self.accumulated_results.clear();
                 self.update_ui_with_results(cx, scope, &search_text);
                 // redraw_all already called in update_ui_with_results
             }
@@ -895,19 +933,7 @@ impl MentionableTextInput {
 
             if disconnected {
                 // Channel was closed - search completed or failed
-                // Clear the receiver to stop checking
-                self.search_receiver = None;
-
-                // If we still have loading indicator, clear it
-                if self.members_loading {
-                    self.members_loading = false;
-                    // If no results were shown, show empty state
-                    if self.accumulated_results.is_empty() {
-                        // Clear results before showing empty state
-                        self.accumulated_results.clear();
-                        self.update_ui_with_results(cx, scope, "");
-                    }
-                }
+                self.handle_search_channel_closed(cx, scope);
             }
         }
 
@@ -937,9 +963,7 @@ impl MentionableTextInput {
 
         // Add user mention items
         let user_items_limit = max_visible_items.saturating_sub(has_room_item as usize);
-        // Clone the indices to avoid borrowing issues
-        let member_indices = self.accumulated_results.clone();
-        let user_items_added = self.add_user_mention_items(cx, &member_indices, user_items_limit, is_desktop, room_props);
+        let user_items_added = self.add_user_mention_items(cx, user_items_limit, is_desktop, room_props);
         items_added += user_items_added;
 
         // Update popup visibility based on whether we have items
@@ -971,22 +995,17 @@ impl MentionableTextInput {
         let is_desktop = cx.display_context.is_desktop();
         let max_visible_items = if is_desktop { 10 } else { 5 };
 
-        // Cancel any existing search task
-        // Note: Cancellation happens automatically when receiver is dropped
-
-        // Cancel any existing search by dropping the old receiver
-        self.search_receiver = None;
-
-        // Clear accumulated results for new search
-        self.accumulated_results.clear();
+        // Prepare for new search
+        self.prepare_for_new_search();
 
         // Check if we have cached members
         let has_members = matches!(&room_props.room_members, Some(members) if !members.is_empty());
 
         if has_members {
-            // Clear loading state since we have cached members
-            // Search results will come quickly from the background thread
-            self.members_loading = false;
+            // We have cached members, not waiting for initial load
+            self.waiting_for_initial_members = false;
+            // Mark that search is starting
+            self.search_in_progress = true;
 
             let popup = self.cmd_text_input.view(id!(popup));
             let header_view = self.cmd_text_input.view(id!(popup.header_view));
@@ -994,8 +1013,9 @@ impl MentionableTextInput {
             popup.set_visible(cx, true);
             self.cmd_text_input.text_input_ref().set_key_focus(cx);
         } else {
-            // No cached members, set loading state and show loading indicator
-            self.members_loading = true;
+            // No cached members yet, wait for them to be loaded
+            self.waiting_for_initial_members = true;
+            self.search_in_progress = false;
             // Clear old items before showing loading indicator
             self.cmd_text_input.clear_items();
             self.show_loading_indicator(cx);
@@ -1013,6 +1033,7 @@ impl MentionableTextInput {
             // Submit search request to background worker
             let search_text_clone = search_text.to_string();
             let max_results = max_visible_items * SEARCH_BUFFER_MULTIPLIER;
+            
             submit_async_job(crate::sliding_sync::LocalJob::SearchRoomMembers {
                 room_id: room_props.room_id.clone(),
                 search_text: search_text_clone,
@@ -1020,6 +1041,8 @@ impl MentionableTextInput {
                 max_results,
                 cached_members: cached_members.clone(),
             });
+        } else {
+            // No members available yet, search_in_progress remains false
 
             // Request next frame to continue checking the channel
             cx.new_next_frame();
@@ -1094,7 +1117,7 @@ impl MentionableTextInput {
     }
 
 
-    /// Shows the loading indicator when members are being fetched
+    /// Shows the loading indicator when waiting for initial members to be loaded
     fn show_loading_indicator(&mut self, cx: &mut Cx) {
         // Clear any existing items
         self.cmd_text_input.clear_items();
@@ -1155,26 +1178,76 @@ impl MentionableTextInput {
     }
 
 
-    /// Cleanup helper for closing mention popup
-    fn close_mention_popup(&mut self, cx: &mut Cx) {
-        self.current_mention_start_index = None;
-        self.is_searching = false;
-        self.members_loading = false; // Reset loading state when closing popup
+    /// Check if mention search is currently active
+    pub fn is_mention_searching(&self) -> bool {
+        self.is_searching
+    }
+    
+    /// Check if ESC was handled by mention popup
+    pub fn handled_escape(&self) -> bool {
+        self.search_just_cancelled
+    }
 
-        // Cancel any ongoing search task
-        // Note: Cancellation happens automatically when receiver is dropped
-
+    /// Handle search channel closed event
+    fn handle_search_channel_closed(&mut self, cx: &mut Cx, scope: &mut Scope) {
+        // Clear the receiver to stop checking
+        self.search_receiver = None;
+        
+        // Search completed or failed
+        self.search_in_progress = false;
+        
+        // Handle the case where we were waiting for initial members
+        if self.waiting_for_initial_members {
+            // Still no members available
+            self.waiting_for_initial_members = false;
+            
+            // If no results were shown, show empty state
+            if self.should_show_empty_state() {
+                self.update_ui_with_results(cx, scope, "");
+            }
+        }
+    }
+    
+    /// Check if we should show empty state UI
+    fn should_show_empty_state(&self) -> bool {
+        self.accumulated_results.is_empty()
+    }
+    
+    /// Reset all search-related state
+    fn reset_search_state(&mut self) {
         // Cancel any ongoing search by dropping the receiver
         self.search_receiver = None;
-
+        
         // Clear accumulated results
         self.accumulated_results.clear();
-
+        
         // Reset last search text to allow new searches
         self.last_search_text = None;
-
-        // Clear list items to avoid keeping old content when popup is shown again
+        
+        // Clear list items
         self.cmd_text_input.clear_items();
+    }
+    
+    /// Prepare for a new search by resetting relevant state
+    fn prepare_for_new_search(&mut self) {
+        // Cancel any existing search by dropping the old receiver
+        self.search_receiver = None;
+        
+        // Clear accumulated results for new search
+        self.accumulated_results.clear();
+    }
+    
+    /// Cleanup helper for closing mention popup
+    fn close_mention_popup(&mut self, cx: &mut Cx) {
+        log!("close_mention_popup - Before: is_searching = {}", self.is_searching);
+        self.current_mention_start_index = None;
+        self.is_searching = false;
+        log!("close_mention_popup - After: is_searching = {}", self.is_searching);
+        self.waiting_for_initial_members = false;
+        self.search_in_progress = false;
+
+        // Reset all search-related state
+        self.reset_search_state();
 
         // Get popup and header view references
         let popup = self.cmd_text_input.view(id!(popup));
@@ -1235,6 +1308,16 @@ impl MentionableTextInputRef {
         self.borrow()
             .map(|inner| inner.cmd_text_input.text_input_ref())
             .unwrap_or_default()
+    }
+
+    /// Check if mention search is currently active
+    pub fn is_mention_searching(&self) -> bool {
+        self.borrow().map_or(false, |inner| inner.is_mention_searching())
+    }
+    
+    /// Check if ESC was handled by mention popup
+    pub fn handled_escape(&self) -> bool {
+        self.borrow().map_or(false, |inner| inner.handled_escape())
     }
 
     pub fn set_text(&self, cx: &mut Cx, text: &str) {
