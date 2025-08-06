@@ -33,8 +33,12 @@ pub fn get_invited_rooms(_cx: &mut Cx) -> Rc<RefCell<HashMap<OwnedRoomId, Invite
     ALL_INVITED_ROOMS.with(Rc::clone)
 }
 
-/// The `cx` parameter ensures that these thread-local caches are cleared on the main UI thread, 
-pub fn clean_all_invited_rooms(_cx: &mut Cx) {
+/// Clears all UI-related all invited rooms
+///
+/// This function requires passing in a reference to `Cx`,
+/// which isn't used, but acts as a guarantee that this function
+/// must only be called by the main UI thread.
+pub fn clear_all_invited_rooms(_cx: &mut Cx) {
     ALL_INVITED_ROOMS.with(|rooms| {
        rooms.borrow_mut().clear();
     });

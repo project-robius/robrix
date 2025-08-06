@@ -1,7 +1,5 @@
-use std::sync::atomic::Ordering;
-
 use makepad_widgets::{makepad_futures::channel::oneshot::Sender, *};
-use crate::sliding_sync::{submit_async_request, MatrixRequest, LOGOUT_POINT_OF_NO_RETURN};
+use crate::sliding_sync::{is_logout_past_point_of_no_return, submit_async_request, MatrixRequest};
 
 live_design! {
     use link::theme::*;
@@ -81,10 +79,14 @@ live_design! {
                 confirm_button = <RobrixIconButton> {
                     width: Fit, height: Fit,
                     padding: 10,
-                    draw_bg: { color: (COLOR_ACTIVE_PRIMARY) },
-                    text: "Confirm"
+                    draw_bg: { color: (COLOR_BG_DANGER_RED) },
+                    draw_icon: {
+                            svg_file: (ICON_LOGOUT)
+                            color: (COLOR_FG_DANGER_RED),
+                    },
+                    text: "Logout Now"
                     draw_text: {
-                        color: (COLOR_PRIMARY)
+                        color: (COLOR_FG_DANGER_RED)
                         text_style: <REGULAR_TEXT> {font_size: 14}
                     },
                 }
@@ -128,16 +130,16 @@ pub enum LogoutAction {
     LogoutSuccess,
     /// A negative response from the backend Matrix task to the logout.
     LogoutFailure(String),
-    /// Signal to clean up App-state 
-    CleanAppState {
-        on_clean_appstate: Sender<bool>
+    /// A request from the background task to the main UI thread to clear all app state.
+    ClearAppState {
+        on_clear_appstate: Sender<bool>
     },
     /// Signal that the application is in an invalid state and needs to be restarted.
     /// This happens when critical components have been cleaned up during a previous
     /// logout attempt that reached the point of no return, but the app wasn't restarted.
     ApplicationRequiresRestart {
-        /// Indicates which critical component is missing
-        missing_component: MissingComponentType,
+        /// Indicates which critical component was cleared
+        cleared_component: ClearedComponentType,
     },
     /// Progress update from the logout state machine
     ProgressUpdate {
@@ -152,9 +154,9 @@ impl std::fmt::Debug for LogoutAction {
         match self {
             LogoutAction::LogoutSuccess => write!(f, "LogoutSuccess"),
             LogoutAction::LogoutFailure(msg) => write!(f, "LogoutFailure({})", msg),
-            LogoutAction::CleanAppState { .. } => write!(f, "CleanAppState"),
-            LogoutAction::ApplicationRequiresRestart { missing_component } => {
-                write!(f, "ApplicationRequiresRestart({:?})", missing_component)
+            LogoutAction::ClearAppState { .. } => write!(f, "ClearAppState"),
+            LogoutAction::ApplicationRequiresRestart { cleared_component } => {
+                write!(f, "ApplicationRequiresRestart({:?})", cleared_component)
             }
             LogoutAction::ProgressUpdate { message, percentage } => {
                 write!(f, "ProgressUpdate({}, {}%)", message, percentage)
@@ -164,14 +166,14 @@ impl std::fmt::Debug for LogoutAction {
     }
 }
 
-/// Indicates which critical component is missing after a partial logout,
-/// requiring application restart to restore functionality.
+/// Indicates which critical component was cleared during a failed logout attempt
+/// that reached the point of no return, requiring application restart.
 #[derive(Clone, Copy, Debug, DefaultNone)]
-pub enum MissingComponentType {
-    /// The Matrix client has been disposed
-    ClientMissing,
-    /// The sync service has been disposed
-    SyncServiceMissing,
+pub enum ClearedComponentType {
+    /// The Matrix client was cleared during logout
+    Client,
+    /// The sync service was cleared during logout
+    SyncService,
     None,
 }
 
@@ -203,7 +205,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
         let mut needs_redraw = false;
         if confirm_button.clicked(actions) {
             if let Some(successful) = self.final_success {
-                if LOGOUT_POINT_OF_NO_RETURN.load(Ordering::Acquire) && !successful {
+                if is_logout_past_point_of_no_return() && !successful {
                     log!("User requested immediate restart after unrecoverable logout error");
                     std::process::exit(0);
                 }
@@ -235,7 +237,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
             }
             
             if let Some(LogoutAction::LogoutFailure(error)) = action.downcast_ref() {
-                if LOGOUT_POINT_OF_NO_RETURN.load(Ordering::Acquire) {
+                if is_logout_past_point_of_no_return() {
                     self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
                     self.set_message(cx, "The logout process encountered an error when communicating with the homeserver. Since your login session has been partially invalidated, Robrix must restart in order to continue to properly function.");
 
@@ -330,7 +332,7 @@ impl LogoutConfirmModal {
         self.set_message(cx, "Are you sure you want to logout?");
         confirm_button.set_enabled(cx, true);
         confirm_button.reset_hover(cx);
-        confirm_button.set_text(cx, "Confirm");
+        confirm_button.set_text(cx, "Logout Now");
         cancel_button.set_visible(cx, true);
         cancel_button.set_enabled(cx, true);
         confirm_button.reset_hover(cx);        

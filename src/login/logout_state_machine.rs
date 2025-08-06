@@ -90,15 +90,13 @@ use anyhow::{anyhow, Result};
 use makepad_widgets::{Cx, log, makepad_futures::channel::oneshot};
 
 use crate::settings::SettingsAction;
-use crate::sliding_sync::clean_app_state;
+use crate::sliding_sync::{clean_app_state, is_logout_past_point_of_no_return, set_logout_in_progress, set_logout_point_of_no_return};
 use crate::{
     home::main_desktop_ui::MainDesktopUiAction,
     persistent_state::delete_latest_user_id,
-    sliding_sync::{get_client, get_sync_service, 
-                   LOGOUT_POINT_OF_NO_RETURN,
-                   LOGOUT_IN_PROGRESS, shutdown_background_tasks, start_matrix_tokio},
+    sliding_sync::{get_client, get_sync_service, shutdown_background_tasks, start_matrix_tokio},
 };
-use super::logout_confirm_modal::{LogoutAction, MissingComponentType};
+use super::logout_confirm_modal::{LogoutAction, ClearedComponentType};
 use super::logout_errors::{LogoutError, RecoverableError, UnrecoverableError};
 
 /// Represents the current state of the logout process
@@ -270,10 +268,10 @@ impl LogoutStateMachine {
         log!("LogoutStateMachine::execute() started");
         
         // Set logout in progress flag
-        LOGOUT_IN_PROGRESS.store(true, Ordering::Relaxed);
+        set_logout_in_progress(true);
         
         // Reset global point of no return flag
-        LOGOUT_POINT_OF_NO_RETURN.store(false, Ordering::Relaxed);
+        set_logout_point_of_no_return(false);
         
         // Start from Idle state
         self.transition_to(
@@ -320,7 +318,7 @@ impl LogoutStateMachine {
         match self.perform_server_logout().await {
             Ok(_) => {
                 self.point_of_no_return.store(true, Ordering::Release);
-                LOGOUT_POINT_OF_NO_RETURN.store(true, Ordering::Release);
+                set_logout_point_of_no_return(true);
                 self.transition_to(
                     LogoutState::PointOfNoReturn,
                     "Point of no return reached".to_string(),
@@ -339,7 +337,7 @@ impl LogoutStateMachine {
                 if matches!(&e, LogoutError::Recoverable(RecoverableError::ServerLogoutFailed(msg)) if msg.contains("M_UNKNOWN_TOKEN")) {
                     log!("Token already invalidated, continuing with logout");
                     self.point_of_no_return.store(true, Ordering::Release);
-                    LOGOUT_POINT_OF_NO_RETURN.store(true, Ordering::Release);
+                    set_logout_point_of_no_return(true);
                     self.transition_to(
                         LogoutState::PointOfNoReturn,
                         "Token already invalidated".to_string(),
@@ -448,7 +446,7 @@ impl LogoutStateMachine {
         Cx::post_action(SettingsAction::CloseSettings);
 
         // Reset logout in progress flag
-        LOGOUT_IN_PROGRESS.store(false, Ordering::Relaxed);
+        set_logout_in_progress(false);
         Cx::post_action(LogoutAction::LogoutSuccess);
         Ok(())
     }
@@ -533,19 +531,19 @@ impl LogoutStateMachine {
     /// Handle errors by posting appropriate actions
     async fn handle_error(&self, error: &LogoutError) {
         // Reset logout in progress flag on error (unless we've reached point of no return)
-        if !LOGOUT_POINT_OF_NO_RETURN.load(Ordering::Acquire) {
-            LOGOUT_IN_PROGRESS.store(false, Ordering::Relaxed);
+        if !is_logout_past_point_of_no_return() {
+            set_logout_in_progress(false);
         }
         
         match error {
             LogoutError::Unrecoverable(UnrecoverableError::ClientMissing) => {
                 Cx::post_action(LogoutAction::ApplicationRequiresRestart { 
-                    missing_component: MissingComponentType::ClientMissing 
+                    cleared_component: ClearedComponentType::Client 
                 });
             }
             LogoutError::Unrecoverable(UnrecoverableError::SyncServiceMissing) => {
                 Cx::post_action(LogoutAction::ApplicationRequiresRestart { 
-                    missing_component: MissingComponentType::SyncServiceMissing 
+                    cleared_component: ClearedComponentType::SyncService 
                 });
             }
             LogoutError::Recoverable(RecoverableError::Cancelled) => {

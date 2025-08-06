@@ -9,11 +9,11 @@ use std::collections::HashMap;
 use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
-    home::{
+    avatar_cache::clear_avatar_cache, home::{
         main_desktop_ui::MainDesktopUiAction,
         new_message_context_menu::NewMessageContextMenuWidgetRefExt,
-        room_screen::{clean_timeline_states, MessageAction},
-        rooms_list::{clean_all_invited_rooms, RoomsListAction},
+        room_screen::{clear_timeline_states, MessageAction},
+        rooms_list::{clear_all_invited_rooms, RoomsListAction},
     }, join_leave_room_modal::{
         JoinLeaveRoomModalAction,
         JoinLeaveRoomModalWidgetRefExt,
@@ -21,7 +21,7 @@ use crate::{
         load_window_state,
         save_app_state,
         save_window_state,
-    }, profile::user_profile_cache::clear_user_profile_caches, shared::callout_tooltip::{
+    }, profile::user_profile_cache::clear_user_profile_cache, shared::callout_tooltip::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
@@ -215,12 +215,12 @@ impl MatchEvent for App {
                 continue;
             }
 
-            if let Some(LogoutAction::CleanAppState { on_clean_appstate: on_clean_resources }) = action.downcast_ref() {
-                // Clear user profile cache, invired_rooms timeline states 
-                clear_all_caches(cx);
-                // Reset saved dock state to prevent crashes when switching back to desktop mode
-                self.app_state.saved_dock_state = Default::default();
-                on_clean_resources.clone().send(true).unwrap();
+            if let Some(LogoutAction::ClearAppState { on_clear_appstate: on_clear_resources }) = action.downcast_ref() {
+                // Clear user profile cache, invited_rooms timeline states 
+                clear_all_app_state(cx);
+                // Reset all app state to its default.
+                self.app_state = Default::default();
+                on_clear_resources.clone().send(true).unwrap();
                 continue;
             }
 
@@ -379,10 +379,11 @@ impl MatchEvent for App {
 
 /// Clears all thread-local UI caches (user profiles, invited rooms, and timeline states).
 /// The `cx` parameter ensures that these thread-local caches are cleared on the main UI thread, 
-fn clear_all_caches(cx: &mut Cx) {
-    clear_user_profile_caches(cx);
-    clean_all_invited_rooms(cx);
-    clean_timeline_states(cx);
+fn clear_all_app_state(cx: &mut Cx) {
+    clear_user_profile_cache(cx);
+    clear_all_invited_rooms(cx);
+    clear_timeline_states(cx);
+    clear_avatar_cache(cx);
 }
 
 impl AppMain for App {
@@ -392,8 +393,6 @@ impl AppMain for App {
         // }
 
         if let Event::Shutdown = event {
-            log!("Handling shutdown event, cleaning up resources...");
-
             let window_ref = self.ui.window(id!(main_window));
             if let Err(e) = save_window_state(window_ref, cx) {
                 error!("Failed to save window state. Error details: {}", e);
@@ -404,7 +403,6 @@ impl AppMain for App {
                     error!("Failed to save app state. Error details: {}", e);
                 }
             }
-
         }
         
         // Forward events to the MatchEvent trait implementation.

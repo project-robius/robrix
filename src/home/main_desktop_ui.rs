@@ -218,12 +218,23 @@ impl MainDesktopUI {
 
     /// Closes all tabs
     pub fn close_all_tabs(&mut self, cx: &mut Cx) {
-        let tab_ids: Vec<LiveId> = self.open_rooms.keys().cloned().collect();
-        for tab_id in tab_ids {
-            self.tab_to_close = Some(tab_id);
-            self.close_tab(cx, tab_id);
+        let dock = self.view.dock(id!(dock));
+        for tab_id in self.open_rooms.keys() {        
+                dock.close_tab(cx, *tab_id);
         }
-        self.redraw(cx);
+
+        dock.select_tab(cx, live_id!(home_tab));
+        cx.widget_action(
+            self.widget_uid(),
+            &HeapLiveIdPath::default(),
+            AppStateAction::FocusNone,
+        );
+
+        // Clear tab-related dock UI state.
+        self.open_rooms.clear();
+        self.tab_to_close = None;
+        self.room_order.clear();
+        self.most_recently_selected_room = None;
     }
 
     /// Replaces an invite with a joined room in the dock.

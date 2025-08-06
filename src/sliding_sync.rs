@@ -452,10 +452,8 @@ async fn async_worker(
                         },
                         Err(e) => {
                             error!("Logout failed: {e:?}");
-                            // Error handling is done within the state machine
                         }
                     }
-                    log!("Logout task finished");
                 });
             }
 
@@ -1275,7 +1273,7 @@ pub type TimelineRequestSender = watch::Sender<Vec<BackwardsPaginateUntilEventRe
 
 
 /// Backend-specific details about a joined room that our client currently knows about.
-pub(crate) struct JoinedRoomDetails {
+struct JoinedRoomDetails {
     #[allow(unused)]
     room_id: OwnedRoomId,
     /// A reference to this room's timeline of events.
@@ -1342,11 +1340,10 @@ pub fn current_user_id() -> Option<OwnedUserId> {
 }
 
 /// The singleton sync service.
-/// sync_service if build from the client, and is used to sync the client with the server.
 static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
 
 
-/// Get a clone of the sync service, if available.
+/// Get a reference to the current sync service, if available.
 pub fn get_sync_service() -> Option<Arc<SyncService>> {
     SYNC_SERVICE.lock().ok()?.as_ref().cloned()
 }
@@ -1354,7 +1351,7 @@ pub fn get_sync_service() -> Option<Arc<SyncService>> {
 /// The list of users that the current user has chosen to ignore.
 /// Ideally we shouldn't have to maintain this list ourselves,
 /// but the Matrix SDK doesn't currently properly maintain the list of ignored users.
-pub(crate) static IGNORED_USERS: Mutex<BTreeSet<OwnedUserId>> = Mutex::new(BTreeSet::new());
+static IGNORED_USERS: Mutex<BTreeSet<OwnedUserId>> = Mutex::new(BTreeSet::new());
 
 /// Returns a deep clone of the current list of ignored users.
 pub fn get_ignored_users() -> BTreeSet<OwnedUserId> {
@@ -1551,7 +1548,9 @@ async fn async_main_loop(
 
     client.event_cache().subscribe().expect("BUG: CLIENT's event cache unable to subscribe");
 
-    *CLIENT.lock().unwrap() = Some(client.clone());
+    if let Some(_existing) = CLIENT.lock().unwrap().replace(client.clone()) {
+        error!("BUG: unexpectedly replaced an existing client when initializing the matrix client.");
+    }
 
     add_verification_event_handlers_and_sync_client(client.clone());
 
@@ -1570,7 +1569,10 @@ async fn async_main_loop(
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
     let room_list_service = sync_service.room_list_service();
-    *SYNC_SERVICE.lock().unwrap() = Some(Arc::new(sync_service));
+
+    if let Some(_existing) = SYNC_SERVICE.lock().unwrap().replace(Arc::new(sync_service)) {
+        error!("BUG: unexpectedly replaced an existing sync service when initializing the matrix client.");
+    }
 
     let all_rooms_list = room_list_service.all_rooms().await?;
     handle_room_list_service_loading_state(all_rooms_list.loading_state());
@@ -2954,10 +2956,26 @@ impl UserPowerLevels {
 
 /// Global atomic flag indicating if the logout process has reached the "point of no return"
 /// where aborting the logout operation is no longer safe.
-pub static LOGOUT_POINT_OF_NO_RETURN: AtomicBool = AtomicBool::new(false);
+static LOGOUT_POINT_OF_NO_RETURN: AtomicBool = AtomicBool::new(false);
 
 /// Global atomic flag indicating if logout is in progress
-pub static LOGOUT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+static LOGOUT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+pub fn is_logout_past_point_of_no_return() -> bool {
+    LOGOUT_POINT_OF_NO_RETURN.load(Ordering::Relaxed)
+}
+
+pub fn is_logout_in_progress() -> bool {
+    LOGOUT_IN_PROGRESS.load(Ordering::Relaxed)
+}
+
+pub fn set_logout_point_of_no_return(value: bool) {
+    LOGOUT_POINT_OF_NO_RETURN.store(value, Ordering::Relaxed);
+}
+
+pub fn set_logout_in_progress(value: bool) {
+    LOGOUT_IN_PROGRESS.store(value, Ordering::Relaxed);
+}
 
 pub async fn shutdown_background_tasks() {
     let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
@@ -2978,13 +2996,12 @@ pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
     REQUEST_SENDER.lock().unwrap().take();
     log!("Request sender cleared during logout");
     
-    // Only clear collections that don't contain Matrix SDK objects
     TOMBSTONED_ROOMS.lock().unwrap().clear();
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
     
     let (tx, rx) = oneshot::channel::<bool>();
-    Cx::post_action(LogoutAction::CleanAppState { on_clean_appstate: tx });
+    Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: tx });
     
     match tokio::time::timeout(config.app_state_cleanup_timeout, rx).await {
         Ok(Ok(_)) => {
