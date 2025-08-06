@@ -12,8 +12,8 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::icon_button::*;
     use crate::settings::account_settings::AccountSettings;
-    use crate::settings::tsp_settings_screen_wrapper::TspSettingsScreenWrapper;
-    use crate::tsp::create_wallet_modal::CreateWalletModal;
+    use link::tsp_link::TspSettingsScreen;
+    use link::tsp_link::CreateWalletModal;
 
     // The main, top-level settings screen widget.
     pub SettingsScreen = {{SettingsScreen}} {
@@ -80,7 +80,7 @@ live_design! {
                 <LineH> { width: 400, padding: 10, margin: {top: 20, bottom: 5} }
 
                 // The TSP wallet settings section.
-                tsp_settings_screen_wrapper = <TspSettingsScreenWrapper> {}
+                tsp_settings_screen = <TspSettingsScreen> {}
 
                 <LineH> { width: 400, padding: 10, margin: {top: 20, bottom: 5} }
 
