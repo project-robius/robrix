@@ -1083,14 +1083,13 @@ fn populate_message_search_view(
     }
     item.as_message().set_jump_option(
         cx,
-        Some(JumpOption {
+        JumpOption {
             room_id: event.room_id().to_owned(),
             event_id: event.event_id().to_owned(),
             from_all_rooms_search: include_all_rooms,
-        }),
+        },
     );
-    item.as_message()
-        .set_room_screen_widget_uid(Some(search_widget_uid));
+
     (item, new_drawn_status)
 }
 

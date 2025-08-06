@@ -4353,7 +4353,6 @@ pub struct Message {
     /// The jump option required for searched messages.
     /// Contains the room ID, event ID for the message, and whether it's from an all-rooms search.
     #[rust] jump_option: Option<JumpOption>,
-    #[rust] room_screen_widget_uid: Option<WidgetUid>,
 }
 
 impl Widget for Message {
@@ -4368,7 +4367,7 @@ impl Widget for Message {
             self.animator_play(cx, id!(highlight.off));
         }
         if let Event::Actions(actions) = event {
-            if let (Some(widget_uid), Some(jump_option)) = (self.room_screen_widget_uid, &self.jump_option) {
+            if let  Some(jump_option) = &self.jump_option {
                 
                 if self.view.button(id!(jump_button_view.jump_button)).clicked(actions) {
                     if jump_option.from_all_rooms_search {
@@ -4400,7 +4399,7 @@ impl Widget for Message {
                     
                     // Always scroll to the message after room selection (if needed)
                     cx.widget_action(
-                        widget_uid,
+                        self.widget_uid(),
                         &scope.path,
                         MessageAction::ScrollToMessage {
                             room_id: jump_option.room_id.clone(),
@@ -4543,12 +4542,13 @@ impl Message {
     fn set_data(&mut self, details: MessageDetails) {
         self.details = Some(details);
     }
-
-    fn set_jump_option(&mut self, cx: &mut Cx, jump_option: Option<JumpOption>) {
-        let is_visible = jump_option.is_some();
-        self.jump_option = jump_option;
+    /// If there is a jump option, show the jump button at the top right corner.
+    /// 
+    /// Used primarily for search results to allow navigation to the original message location.
+    pub fn set_jump_option(&mut self, cx: &mut Cx, jump_option: JumpOption) {
+        self.jump_option = Some(jump_option);
         self.view.view(id!(jump_button_view))
-            .set_visible(cx, is_visible);
+            .set_visible(cx, true);
         
         // Event Hit is not captured when Message is in a stack navigation. Hence, cannot implement jump when clicking the message.
         // Add a pointer to hand cursor when jump option is available.
@@ -4562,10 +4562,6 @@ impl Message {
         //     });
         // }
     }
-
-    fn set_room_screen_widget_uid(&mut self, room_screen_widget_uid: Option<WidgetUid>) {
-        self.room_screen_widget_uid = room_screen_widget_uid;
-    }
 }
 
 impl MessageRef {
@@ -4574,13 +4570,9 @@ impl MessageRef {
         inner.set_data(details);
     }
 
-    pub fn set_jump_option(&self, cx: &mut Cx, jump_option: Option<JumpOption>) {
+    /// See [`Message::set_jump_option()`].
+    pub fn set_jump_option(&self, cx: &mut Cx, jump_option: JumpOption) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_jump_option(cx, jump_option);
-    }
-
-    pub fn set_room_screen_widget_uid(&self, room_screen_widget_uid: Option<WidgetUid>) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_room_screen_widget_uid(room_screen_widget_uid);
     }
 }
