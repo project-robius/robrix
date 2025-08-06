@@ -3,14 +3,18 @@
 //! We only need to define dummy widgets for TSP-specific widgets that are used
 //! from non-TSP DSL code, i.e., any widgets that exist on the boundary between
 //! TSP and non-TSP code.
-//! Those real TSP widgets are all defined in the `link tsp_enabled` namespace.
 //!
-//! They are enabled via the `cx.link()` call in `App::live_register()`,
-//! which connects the `tsp` DSL namespace to the `tsp_disabled` namespace
+//! The real TSP widgets are all defined in the `tsp_enabled` namespace,
+//! and their live_design DSL blocks all start with `link tsp_enabled`,
+//! which declares the namespace that they exist within.
+//!
+//! The "active" namespace is selected via the `cx.link()` call in `App::live_register()`,
+//! which connects the `tsp_link` DSL namespace to the `tsp_disabled` namespace
 //! defined in this module, only when the `tsp` feature is not enabled.
 //!
-//! This allows the rest of the application's DSL to *appear* to directly use TSP widgets,
-//! but they will be replaced with these dummy widgets when the `tsp` feature is not enabled.
+//! This allows the rest of the application's DSL to directly use TSP widgets,
+//! but the widgets that actually get imported under the `tsp_link` namespace
+//! will be replaced with these dummy widgets when the `tsp` feature is not enabled.
 
 use makepad_widgets::*;
 
