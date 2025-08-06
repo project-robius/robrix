@@ -248,6 +248,7 @@ impl LiveHook for App {
         // Here we set the global singleton for the PopupList widget,
         // which is used to access PopupList Widget from anywhere in the app.
         crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
+        crate::shared::image_viewer_modal::set_global_image_viewer_modal(cx, self.ui.image_viewer_modal(id!(image_viewer_modal)));
     }
 }
 
@@ -257,7 +258,6 @@ impl MatchEvent for App {
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
-        crate::shared::image_viewer_modal::set_global_image_viewer_modal(cx, self.ui.image_viewer_modal(id!(image_viewer_modal)));
 
         if let Err(e) = persistence::load_window_state(self.ui.window(id!(main_window)), cx) {
             error!("Failed to load window state: {}", e);
@@ -331,6 +331,7 @@ impl MatchEvent for App {
             match action.as_widget_action().cast() {
                 AppStateAction::RoomFocused(selected_room) => {
                     self.app_state.selected_room = Some(selected_room.clone());
+                    self.ui.image_viewer_modal(id!(image_viewer_modal)).open(cx, None);
                     continue;
                 }
                 AppStateAction::FocusNone => {
@@ -414,12 +415,6 @@ impl MatchEvent for App {
                 continue;
             }
 
-            match action.as_widget_action().cast() {
-                crate::shared::image_viewer_modal::ImageViewerAction::Clicked(mxc_uri) => {
-                    self.ui.image_viewer_modal(id!(image_viewer_modal)).open(cx, Some(mxc_uri));
-                }
-                _ => {}
-            }
             // // message source modal handling.
             // match action.as_widget_action().cast() {
             //     MessageAction::MessageSourceModalOpen { room_id: _, event_id: _, original_json: _ } => {

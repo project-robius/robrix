@@ -77,8 +77,6 @@ impl Widget for TextOrImage {
                     // If `image_value` is `None`, it can tell that the image has not been fetched,
                     // user actually clicks the blurhash,
                     // so we do nothing this condition.
-                    //cx.action(ImageViewerAction::Clicked(mxc_uri.clone()));
-                    println!("clicked");
                     let image_viewer_modal = get_global_image_viewer_modal(cx);
                     image_viewer_modal.open(cx, Some(mxc_uri.clone()));
                 }
