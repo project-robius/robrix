@@ -1,5 +1,5 @@
 use makepad_widgets::{makepad_futures::channel::oneshot::Sender, *};
-use crate::{shared::styles::{COLOR_RESTART_LATER_BLUE, COLOR_RESTART_NOW_RED}, sliding_sync::{is_logout_past_point_of_no_return, submit_async_request, MatrixRequest}};
+use crate::{shared::styles::{COLOR_RESTART_LATER_BLUE, COLOR_RESTART_NOW_RED}, sliding_sync::{is_logout_past_point_of_no_return, set_logout_in_progress, submit_async_request, MatrixRequest}};
 
 live_design! {
     use link::theme::*;
@@ -216,6 +216,11 @@ impl WidgetMatchEvent for LogoutConfirmModal {
             } else {
                 self.set_message(cx, "Waiting for logout...");
                 confirm_button.set_enabled(cx, false);
+                
+                // Change cancel button to "Abort" during logout process
+                cancel_button.set_text(cx, "Abort");
+                cancel_button.set_enabled(cx, true);
+                
                 submit_async_request(MatrixRequest::Logout { is_desktop: cx.display_context.is_desktop() });
                 needs_redraw = true;
             }
@@ -295,9 +300,10 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                 Some(LogoutAction::ProgressUpdate { message, percentage }) => {
                     // Just update the message text to show progress
                     self.set_message(cx, &format!("{} ({}%)", message, percentage));
-                    // Disable buttons during logout
+                    // Disable confirm button during logout, but keep cancel/abort enabled
                     confirm_button.set_enabled(cx, false);
-                    cancel_button.set_enabled(cx, false);
+                    // Keep cancel button enabled so user can abort
+                    cancel_button.set_enabled(cx, true);
                     needs_redraw = true;
                 }
 
@@ -328,7 +334,10 @@ impl LogoutConfirmModal {
         confirm_button.set_text(cx, "Logout Now");
         cancel_button.set_visible(cx, true);
         cancel_button.set_enabled(cx, true);
+        cancel_button.set_text(cx, "Cancel"); 
+        cancel_button.reset_hover(cx);
         confirm_button.reset_hover(cx);        
+        set_logout_in_progress(false);
         self.redraw(cx);
     }
 
