@@ -1,9 +1,8 @@
 //! Handles app persistence by saving and restoring client session data to/from the filesystem.
+
 use std::path::PathBuf;
 use anyhow::{anyhow, bail};
-use makepad_widgets::{
-    dvec2, error, log, makepad_micro_serde::{DeRon, SerRon}, Cx, WindowRef
-};
+use makepad_widgets::{log, Cx};
 use matrix_sdk::{
     authentication::matrix::MatrixSession,
     ruma::{OwnedUserId, UserId},
@@ -11,10 +10,8 @@ use matrix_sdk::{
     Client,
 };
 use serde::{Deserialize, Serialize};
-use tokio::{fs, io};
 
 use crate::{
-    app::{SavedDockState, SelectedRoom, WindowGeomState},
     app_data_dir,
     login::login_screen::LoginAction,
 };
@@ -60,14 +57,14 @@ pub struct FullSessionPersisted {
     #[serde(default)]
     pub sliding_sync_version: SlidingSyncVersion,
 }
-/// The serializable version of the sliding_sync::Version
+
+/// A serializable duplicate of [`sliding_sync::Version`].
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub enum SlidingSyncVersion {
     #[default]
     Native,
     None,
 }
-
 impl From<SlidingSyncVersion> for sliding_sync::Version {
     fn from(version: SlidingSyncVersion) -> Self {
         match version {
@@ -76,7 +73,6 @@ impl From<SlidingSyncVersion> for sliding_sync::Version {
         }
     }
 }
-
 impl From<sliding_sync::Version> for SlidingSyncVersion {
     fn from(version: sliding_sync::Version) -> Self {
         match version {
@@ -92,21 +88,19 @@ fn user_id_to_file_name(user_id: &UserId) -> String {
         .replace("@", "")
 }
 
+/// Returns the path to the persistent state directory for the given user.
 pub fn persistent_state_dir(user_id: &UserId) -> PathBuf {
     app_data_dir()
         .join(user_id_to_file_name(user_id))
         .join("persistent_state")
 }
 
+/// Returns the path to the session file for the given user.
 pub fn session_file_path(user_id: &UserId) -> PathBuf {
     persistent_state_dir(user_id).join("session")
 }
 
 const LATEST_USER_ID_FILE_NAME: &str = "latest_user_id.txt";
-
-const LATEST_DOCK_STATE_FILE_NAME: &str = "latest_dock_state.ron";
-
-const WINDOW_GEOM_STATE_FILE_NAME: &str = "window_geom_state.json";
 
 /// Returns the user ID of the most recently-logged in user session.
 pub fn most_recent_user_id() -> Option<OwnedUserId> {
@@ -121,7 +115,7 @@ pub fn most_recent_user_id() -> Option<OwnedUserId> {
 
 /// Save which user was the most recently logged in.
 async fn save_latest_user_id(user_id: &UserId) -> anyhow::Result<()> {
-    fs::write(
+    tokio::fs::write(
         app_data_dir().join(LATEST_USER_ID_FILE_NAME),
         user_id.as_str(),
     ).await?;
@@ -153,7 +147,7 @@ pub async fn restore_session(
     });
 
     // The session was serialized as JSON in a file.
-    let serialized_session = fs::read_to_string(session_file).await?;
+    let serialized_session = tokio::fs::read_to_string(session_file).await?;
     let FullSessionPersisted { client_session, user_session, sync_token, sliding_sync_version } =
         serde_json::from_str(&serialized_session)?;
 
@@ -215,91 +209,10 @@ pub async fn save_session(
         sliding_sync_version
     })?;
     if let Some(parent) = session_file.parent() {
-        fs::create_dir_all(parent).await?;
+        tokio::fs::create_dir_all(parent).await?;
     }
-    fs::write(&session_file, serialized_session).await?;
+    tokio::fs::write(&session_file, serialized_session).await?;
 
     log!("Session persisted to: {}", session_file.display());
-
-    // After logging in, you might want to verify this session with another one (see
-    // the `emoji_verification` example), or bootstrap cross-signing if this is your
-    // first session with encryption, or if you need to reset cross-signing because
-    // you don't have access to your old sessions (see the
-    // `cross_signing_bootstrap` example).
-
-    Ok(())
-}
-
-/// Save the current display state of the room panel to persistent storage.
-pub fn save_room_panel(
-    rooms_panel_state: SavedDockState,
-    user_id: OwnedUserId,
-) -> anyhow::Result<()> {
-    std::fs::write(
-        persistent_state_dir(&user_id).join(LATEST_DOCK_STATE_FILE_NAME),
-        rooms_panel_state.serialize_ron(),
-    )?;
-    for (tab_id, room) in &rooms_panel_state.open_rooms {
-        match room {
-            SelectedRoom::JoinedRoom { room_id, .. }
-            | SelectedRoom::InvitedRoom { room_id, .. } => {
-                if !rooms_panel_state.dock_items.contains_key(tab_id) {
-                    error!("Room id: {} already in dock state", room_id);
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Save the current state of the given window's geometry to persistent storage.
-pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
-    let inner_size = window_ref.get_inner_size(cx);
-    let position = window_ref.get_position(cx);
-    let window_geom = WindowGeomState {
-        inner_size: (inner_size.x, inner_size.y),
-        position: (position.x, position.y),
-        is_fullscreen: window_ref.is_fullscreen(cx),
-    };
-    std::fs::write(
-        app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME),
-        serde_json::to_string(&window_geom)?,
-    )?;
-    log!("Successfully saved window geometry: {window_geom:?}");
-    Ok(())
-}
-
-/// Loads the rooms panel's state from persistent storage.
-pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<SavedDockState> {
-    let content = match tokio::fs::read_to_string(persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME)).await {
-        Ok(file) => file,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(SavedDockState::default()),
-        Err(e) => return Err(e.into())
-    };
-    SavedDockState::deserialize_ron(&content)
-        .map_err(|er| anyhow::Error::msg(er.msg))
-}
-
-/// Loads the window geometry's state from persistent storage.
-pub fn load_window_state(window_ref: WindowRef, cx: &mut Cx) -> anyhow::Result<()> {
-    let file = match std::fs::File::open(app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME)) {
-        Ok(file) => file,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e.into()),
-    };
-    let window_geom = serde_json::from_reader(file).map_err(|e| anyhow!(e))?;
-    log!("Restoring window geometry: {window_geom:?}");
-    let WindowGeomState {
-        inner_size,
-        position,
-        is_fullscreen,
-    } = window_geom;
-    window_ref.configure_window(
-        cx,
-        dvec2(inner_size.0, inner_size.1),
-        dvec2(position.0, position.1),
-        is_fullscreen,
-        "Robrix".to_string(),
-    );
     Ok(())
 }

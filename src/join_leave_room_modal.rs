@@ -1,7 +1,11 @@
+//! A modal dialog for joining or leaving rooms in Matrix.
+//!
+//! Also used as a confirmation dialog for accepting or rejecting room invites.
+
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{home::invite_screen::{InviteDetails, JoinRoomAction, LeaveRoomAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
+use crate::{home::invite_screen::{InviteDetails, JoinRoomAction, LeaveRoomAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
 
 live_design! {
     use link::theme::*;
@@ -37,6 +41,7 @@ live_design! {
                     draw_text: {
                         text_style: <TITLE_TEXT>{font_size: 13},
                         color: #000
+                        wrap: Word
                     }
                 }
             }
@@ -69,18 +74,18 @@ live_design! {
                         align: {x: 0.5, y: 0.5}
                         padding: 15,
                         draw_icon: {
-                            svg_file: (ICON_BLOCK_USER)
-                            color: (COLOR_DANGER_RED),
+                            svg_file: (ICON_FORBIDDEN)
+                            color: (COLOR_FG_DANGER_RED),
                         }
                         icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
         
                         draw_bg: {
-                            border_color: (COLOR_DANGER_RED),
-                            color: #fff0f0 // light red
+                            border_color: (COLOR_FG_DANGER_RED),
+                            color: (COLOR_BG_DANGER_RED)
                         }
                         text: "Cancel"
                         draw_text:{
-                            color: (COLOR_DANGER_RED),
+                            color: (COLOR_FG_DANGER_RED),
                         }
                     }
 
@@ -90,17 +95,17 @@ live_design! {
                         padding: 15,
                         draw_icon: {
                             svg_file: (ICON_CHECKMARK)
-                            color: (COLOR_ACCEPT_GREEN),
+                            color: (COLOR_FG_ACCEPT_GREEN),
                         }
                         icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
 
                         draw_bg: {
-                            border_color: (COLOR_ACCEPT_GREEN),
-                            color: #f0fff0 // light green
+                            border_color: (COLOR_FG_ACCEPT_GREEN),
+                            color: (COLOR_BG_ACCEPT_GREEN)
                         }
                         text: "Yes"
                         draw_text:{
-                            color: (COLOR_ACCEPT_GREEN),
+                            color: (COLOR_FG_ACCEPT_GREEN),
                         }
                     }
                 }
@@ -298,8 +303,9 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         for action in actions {
             match action.downcast_ref() {
                 Some(JoinRoomAction::Joined { room_id }) if room_id == kind.room_id() => {
-                    enqueue_popup_notification(PopupItem{
-                        message: "Successfully joined room.".into(), 
+                    enqueue_popup_notification(PopupItem {
+                        message: "Successfully joined room.".into(),
+                        kind: PopupKind::Success,
                         auto_dismissal_duration: Some(3.0),
                     });
                     self.view.label(id!(title)).set_text(cx, "Joined room!");
@@ -318,10 +324,11 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     let was_invite = matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_));
                     let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, was_invite);
                     self.view.label(id!(description)).set_text(cx, &msg);
-                    enqueue_popup_notification(PopupItem{
-                        message: msg, 
-                        auto_dismissal_duration: None}
-                    );
+                    enqueue_popup_notification(PopupItem {
+                        message: msg,
+                        kind: PopupKind::Error,
+                        auto_dismissal_duration: None
+                    });
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
                     cancel_button.set_visible(cx, false);
@@ -355,7 +362,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     }
                     self.view.label(id!(title)).set_text(cx, title);
                     self.view.label(id!(description)).set_text(cx, &description);
-                    enqueue_popup_notification(PopupItem { message: popup_msg, auto_dismissal_duration: Some(3.0) });
+                    enqueue_popup_notification(PopupItem { message: popup_msg, kind: PopupKind::Success, auto_dismissal_duration: Some(3.0) });
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
                     cancel_button.set_visible(cx, false);
@@ -381,7 +388,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
 
                     self.view.label(id!(title)).set_text(cx, title);
                     self.view.label(id!(description)).set_text(cx, &description);
-                    enqueue_popup_notification(PopupItem { message: popup_msg, auto_dismissal_duration: None });
+                    enqueue_popup_notification(PopupItem { message: popup_msg, kind: PopupKind::Error, auto_dismissal_duration: None });
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
                     cancel_button.set_visible(cx, false);

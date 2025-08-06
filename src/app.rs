@@ -7,11 +7,36 @@
 
 use std::collections::HashMap;
 use makepad_widgets::{makepad_micro_serde::*, *};
-use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomId, RoomId};
+use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
-    home::{main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt}, login::login_screen::LoginAction, persistent_state::{load_window_state, save_room_panel, save_window_state}, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, image_viewer_modal::{set_global_image_viewer_modal, ImageViewerModalWidgetRefExt}}, sliding_sync::current_user_id, utils::{room_name_or_id, OwnedRoomIdRon}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{
+        main_desktop_ui::MainDesktopUiAction,
+        new_message_context_menu::NewMessageContextMenuWidgetRefExt,
+        room_screen::MessageAction,
+        rooms_list::RoomsListAction,
+    },
+    join_leave_room_modal::{
+        JoinLeaveRoomModalAction,
+        JoinLeaveRoomModalWidgetRefExt,
+    },
+    login::login_screen::LoginAction,
+    persistence,
+    shared::{callout_tooltip::{
+        CalloutTooltipOptions,
+        CalloutTooltipWidgetRefExt,
+        TooltipAction,
+    }, image_viewer_modal::ImageViewerModalWidgetRefExt},
+    sliding_sync::current_user_id,
+    utils::{
+        room_name_or_id,
+        OwnedRoomIdRon,
+    },
+    verification::VerificationAction,
+    verification_modal::{
+        VerificationModalAction,
+        VerificationModalWidgetRefExt,
+    },
 };
-use serde::{self, Deserialize, Serialize};
 
 live_design! {
     use link::theme::*;
@@ -23,7 +48,7 @@ live_design! {
     use crate::verification_modal::VerificationModal;
     use crate::join_leave_room_modal::JoinLeaveRoomModal;
     use crate::login::login_screen::LoginScreen;
-    use crate::shared::popup_list::PopupList;
+    use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
     use crate::shared::image_viewer_modal::ImageViewerModal;
@@ -140,10 +165,10 @@ live_design! {
                 body = {
                     padding: 0,
 
-                    // A wrapper view for showing top-level app modals/dialogs/popups
                     <View> {
                         width: Fill, height: Fill,
                         flow: Overlay,
+
                         home_screen_view = <View> {
                             visible: true
                             home_screen = <HomeScreen> {}
@@ -157,20 +182,23 @@ live_design! {
                             visible: false
                             login_screen = <LoginScreen> {}
                         }
-                        app_tooltip = <CalloutTooltip> {}
                         <PopupList> {}
-
-                        // Context menus should be shown above other UI elements,
-                        // but beneath the verification modal.
+                        
+                        // Context menus should be shown in front of other UI elements,
+                        // but behind the verification modal.
                         new_message_context_menu = <NewMessageContextMenu> { }
 
-                        // We want the verification modal to always show up on top of
+                        // We want the verification modal to always show up in front of
                         // all other elements when an incoming verification request is received.
                         verification_modal = <Modal> {
                             content: {
                                 verification_modal_inner = <VerificationModal> {}
                             }
                         }
+
+                        // Tooltips must be shown in front of all other UI elements,
+                        // since they can be shown as a hover atop any other widget.
+                        app_tooltip = <CalloutTooltip> {}
                         
                         image_viewer_modal = <ImageViewerModal> {}
                     }
@@ -199,6 +227,9 @@ impl LiveRegister for App {
         // then other modules widgets.
         makepad_widgets::live_design(cx);
         crate::shared::live_design(cx);
+        #[cfg(feature = "tsp")]
+        crate::tsp::live_design(cx);
+        crate::settings::live_design(cx);
         crate::room::live_design(cx);
         crate::join_leave_room_modal::live_design(cx);
         crate::verification_modal::live_design(cx);
@@ -212,6 +243,12 @@ impl LiveHook for App {
     fn after_update_from_doc(&mut self, cx: &mut Cx) {
         self.update_login_visibility(cx);
     }
+
+    fn after_new_from_doc(&mut self, cx: &mut Cx) {
+        // Here we set the global singleton for the PopupList widget,
+        // which is used to access PopupList Widget from anywhere in the app.
+        crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
+    }
 }
 
 impl MatchEvent for App {
@@ -220,14 +257,20 @@ impl MatchEvent for App {
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
+        crate::shared::image_viewer_modal::set_global_image_viewer_modal(cx, self.ui.image_viewer_modal(id!(image_viewer_modal)));
+
+        if let Err(e) = persistence::load_window_state(self.ui.window(id!(main_window)), cx) {
+            error!("Failed to load window state: {}", e);
+        }
 
         self.update_login_visibility(cx);
-        set_global_image_viewer_modal(cx, self.ui.image_viewer_modal(id!(image_viewer_modal)));
-        //self.ui.image_viewer_modal(id!(image_viewer_modal)).open(cx, None);
-        log!("App::handle_startup(): starting matrix sdk loop");
-        crate::sliding_sync::start_matrix_tokio().unwrap();
-        if let Err(e) = load_window_state(self.ui.window(id!(main_window)), cx) {
-            error!("Failed to load window state: {}", e);
+
+        log!("App::Startup: starting matrix sdk loop");
+        let _tokio_rt = crate::sliding_sync::start_matrix_tokio().unwrap();
+
+        #[cfg(feature = "tsp")] {
+            log!("App::Startup: initializing TSP (Trust Spanning Protocol) module.");
+            crate::tsp::tsp_init(_tokio_rt).unwrap();
         }
     }
 
@@ -257,10 +300,14 @@ impl MatchEvent for App {
                 continue;
             }
 
-            if let Some(RoomsPanelRestoreAction::RestoreDockFromPersistentState(rooms_panel_state)) = action.downcast_ref() {
-                self.app_state.saved_dock_state = rooms_panel_state.clone();
+            if let Some(AppStateAction::RestoreAppStateFromPersistentState(app_state)) = action.downcast_ref() {
+                // Ignore the `logged_in` state that was stored persistently.
+                let logged_in_actual = self.app_state.logged_in;
+                self.app_state = app_state.clone();
+                self.app_state.logged_in = logged_in_actual;
                 cx.action(MainDesktopUiAction::LoadDockFromAppState);
             }
+
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 let display_name = room_name_or_id(selected_room.room_name(), selected_room.room_id());
@@ -274,12 +321,13 @@ impl MatchEvent for App {
                 cx.widget_action(
                     self.ui.widget_uid(),
                     &Scope::default().path,
-                    StackNavigationAction::NavigateTo(live_id!(main_content_view))
+                    StackNavigationAction::Push(live_id!(main_content_view))
                 );
                 self.ui.redraw(cx);
                 continue;
             }
 
+            // Handle actions that instruct us to update the top-level app state.
             match action.as_widget_action().cast() {
                 AppStateAction::RoomFocused(selected_room) => {
                     self.app_state.selected_room = Some(selected_room.clone());
@@ -303,6 +351,7 @@ impl MatchEvent for App {
                 _ => {}
             }
 
+            // Handle actions for showing or hiding the tooltip.
             match action.as_widget_action().cast() {
                 TooltipAction::HoverIn {
                     widget_rect,
@@ -367,7 +416,7 @@ impl MatchEvent for App {
 
             match action.as_widget_action().cast() {
                 crate::shared::image_viewer_modal::ImageViewerAction::Clicked(mxc_uri) => {
-                    self.ui.image_viewer_modal(id!(image_viewer_modal)).open(cx, None);
+                    self.ui.image_viewer_modal(id!(image_viewer_modal)).open(cx, Some(mxc_uri));
                 }
                 _ => {}
             }
@@ -388,15 +437,40 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // if let Event::WindowGeomChange(geom) = event {
+        //     log!("App::handle_event(): Window geometry changed: {:?}", geom);
+        // }
+
         if let Event::Shutdown = event {
             let window_ref = self.ui.window(id!(main_window));
-            if let Err(e) = save_window_state(window_ref, cx) {
-                error!("Failed to save window state. Error details: {}", e);
+            if let Err(e) = persistence::save_window_state(window_ref, cx) {
+                error!("Failed to save window state. Error: {e}");
             }
             if let Some(user_id) = current_user_id() {
-                let rooms_panel = self.app_state.saved_dock_state.clone();
-                if let Err(e) = save_room_panel(rooms_panel, user_id) {
-                    error!("Failed to save room panel. Error details: {}", e);
+                let app_state = self.app_state.clone();
+                if let Err(e) = persistence::save_app_state(app_state, user_id) {
+                    error!("Failed to save app state. Error: {e}");
+                }
+            }
+            #[cfg(feature = "tsp")] {
+                // Save the TSP wallet state, if it exists, with a 3-second timeout.
+                let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
+                if tsp_state.has_content() {
+                    let res = crate::sliding_sync::block_on_async_with_timeout(
+                        Some(std::time::Duration::from_secs(3)),
+                        async move {
+                            match tsp_state.close_and_serialize().await {
+                                Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
+                                    Ok(_) => { }
+                                    Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
+                                }
+                                Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
+                            }
+                        },
+                    );
+                    if let Err(_e) = res {
+                        error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
+                    }
                 }
             }
         }
@@ -453,23 +527,20 @@ impl App {
     }
 }
 
-/// State that is shared across different parts of the Robrix app.
-#[derive(Default, Debug)]
+/// App-wide state that is stored persistently across multiple app runs
+/// and shared/updated across various parts of the app.
+#[derive(Clone, Default, Debug, DeRon, SerRon)]
 pub struct AppState {
     /// The currently-selected room, which is highlighted (selected) in the RoomsList
     /// and considered "active" in the main rooms screen.
     pub selected_room: Option<SelectedRoom>,
-    /// The saved state of the dock.
-    /// This is cloned from the main desktop UI's dock and saved here
-    /// when transitioning from the desktop view to mobile view,
-    /// and then restored from here back to the main desktop UI's dock
-    /// when transitioning from the mobile view back to the desktop view.
+    /// A saved "snapshot" of the dock's UI state.
     pub saved_dock_state: SavedDockState,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
 }
 
-/// A saved instance of the state of the main desktop UI's dock.
+/// A snapshot of the main dock: all state needed to restore the dock tabs/layout.
 #[derive(Clone, Default, Debug, DeRon, SerRon)]
 pub struct SavedDockState {
     /// All items contained in the dock, keyed by their LiveId.
@@ -538,7 +609,7 @@ impl PartialEq for SelectedRoom {
 }
 impl Eq for SelectedRoom {}
 
-/// Actions sent to the top-level App in order to update its [`AppState`].
+/// Actions sent to the top-level App in order to update / restore its [`AppState`].
 #[derive(Clone, Debug, DefaultNone)]
 pub enum AppStateAction {
     /// The given room was focused (selected).
@@ -548,35 +619,12 @@ pub enum AppStateAction {
     /// The given room has successfully been upgraded from being displayed
     /// as an InviteScreen to a RoomScreen.
     UpgradedInviteToJoinedRoom(OwnedRoomId),
-    None,
-}
-
-/// Action related to restoring the main dock and RoomScreen widgets from storage.
-#[derive(Debug, DefaultNone)]
-pub enum RoomsPanelRestoreAction {
-    /// The previously-saved state of the rooms panel & dock was loaded from storage
-    /// and is now ready to be restored to the dock UI widget.
-    ///
-    /// This will be handled by the top-level App and by each RoomScreen.
-    ///
-    /// Note: there is no SaveDockToPersistentState variant.
-    /// The dock state is saved to persistent in the Event::Shutdown handler directly.
-    RestoreDockFromPersistentState(SavedDockState),
+    /// The app state was restored from persistent storage.
+    RestoreAppStateFromPersistentState(AppState),
     /// The given room was successfully loaded from the homeserver
     /// and is now known to our client.
     ///
     /// The RoomScreen for this room can now fully display the room's timeline.
-    Success(OwnedRoomId),
+    RoomLoadedSuccessfully(OwnedRoomId),
     None,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// The state of the window geometry
-pub struct WindowGeomState {
-    /// A tuple containing the window's width and height.
-    pub inner_size: (f64, f64),
-    /// A tuple containing the window's x and y position.
-    pub position: (f64, f64),
-    /// Maximise fullscreen if true.
-    pub is_fullscreen: bool,
 }

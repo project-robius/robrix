@@ -7,7 +7,7 @@ pub use makepad_widgets;
 /// The top-level main application module.
 pub mod app;
 /// Function for loading and saving persistent application/session state.
-pub mod persistent_state;
+pub mod persistence;
 /// The settings screen and settings-related content/widgets.
 pub mod settings;
 
@@ -16,7 +16,7 @@ pub mod login;
 /// Core UI content: the main home screen (rooms list), room screen.
 pub mod home;
 /// User profile info and a user profile sliding pane.
-mod profile;
+pub mod profile;
 /// A modal/dialog popup for interactive verification of users/devices.
 mod verification_modal;
 /// A modal/dialog popup for joining/leaving rooms, including confirming invite accept/reject.
@@ -26,6 +26,9 @@ pub mod shared;
 /// Generating text previews of timeline events/messages.
 mod event_preview;
 pub mod room;
+/// All content related to TSP (Trust Spanning Protocol) wallets/identities.
+#[cfg(feature = "tsp")]
+pub mod tsp;
 
 
 // Matrix stuff

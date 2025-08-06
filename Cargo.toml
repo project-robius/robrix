@@ -16,9 +16,7 @@ version = "0.0.1-pre-alpha-3"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev" }
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "portal_list_is_filling_viewport" }
-
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
 robius-use-makepad = "0.1.1"
@@ -43,6 +41,7 @@ matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "
 matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "rustls-tls" ] }
 rand = "0.8.5"
 rangemap = "1.5.0"
+sanitize-filename = "0.6"
 serde = "1.0"
 serde_json = "1.0"
 tokio = { version = "1.43.1", features = ["macros", "rt-multi-thread"] }
@@ -54,14 +53,46 @@ bitflags = "2.6.0"
 indexmap = "2.6.0"
 blurhash = { version = "0.2.3", default-features = false }
 
+tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", optional = true, features = ["async", "resolve"] }
+# tsp_sdk = { version = "0.8.0", optional = true, default-features = false, features = ["async", "resolve"] }
+quinn = { version = "0.11.8", default-features = false }
+
+
 [features]
 default = []
+## Enables experimental support for using TSP wallets.
+tsp = ["dep:tsp_sdk"]
+
 ## Hides the command prompt console on Windows.
 hide_windows_console = []
+
 ## Logs all diffs received by the Matrix RoomListService.
 log_room_list_diffs = []
+
 ## Logs all diffs to all room timelines.
 log_timeline_diffs = []
+
+
+[patch.crates-io]
+## This is required to avoid a version conflict on the libsqlite3-sys crate,
+## which is a native crate that can only exist once in the dependency graph.
+## The `matrix-sdk` crate's dependencies require a specific version of `libsqlite3-sys`
+## (via rustsqlite which requires libsqlite3-sys 0.33.0),
+## whereas the `tsp_sdk` crate depends on `sqlx`, which requires a different version
+## of `libsqlite3-sys` (via `aries-askar`, which depends on `askar-storage`,
+## which requires libsqlite3-sys 0.30.0).
+## So this patch is a custom version of sqlx that *pretends* to be 0.8.6
+## (even though in reality uses the newest commit of `sqlx`,
+## which recently was updated to allow for a *range* of versions of `libsqlite3-sys`).
+## See <https://github.com/launchbadge/sqlx/pull/3928/files#diff-4f4849707ed063bc5de6d9f6d105f0e7baf62d1085b3c8aee4a547468b89248fR57>
+# sqlx = { git = "https://github.com/project-robius/sqlx.git", branch = "version_0.9_alpha_as_0.8.6" }
+sqlx = { git = "https://github.com/project-robius/sqlx.git", branch = "update_libsqlite3-sys_version" }
+
+## This is required for the askar repos to work with the above-patched `sqlx` crate,
+## more specifically, the updated `libsqlite3-sys` version (0.31.0).
+## See <https://github.com/openwallet-foundation/askar/pull/386>
+askar-storage = { git = "https://github.com/openwallet-foundation/askar.git", rev = "0b919bb58205416df7cd2cc1a24ce52373cbe105" }
+
 
 [package.metadata.docs.rs]
 all-features = true

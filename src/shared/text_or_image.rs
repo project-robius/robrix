@@ -4,9 +4,9 @@
 //! or to display an error message if the image fails to load, etc.
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::{owned_mxc_uri, OwnedMxcUri};
+use matrix_sdk::ruma::OwnedMxcUri;
 
-use crate::shared::image_viewer_modal::{get_global_image_viewer_modal, ImageViewerAction};
+use crate::shared::image_viewer_modal::get_global_image_viewer_modal;
 
 live_design! {
     use link::theme::*;

@@ -1,10 +1,9 @@
 use makepad_widgets::*;
 use matrix_sdk::{media::MediaFormat, ruma::OwnedMxcUri};
-use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::{
     media_cache::{get_media_cache, MediaCacheEntry},
-    utils::{ImageFormat, load_png_or_jpg},
+    utils::load_png_or_jpg,
 };
 
 live_design! {
