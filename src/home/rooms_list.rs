@@ -144,7 +144,7 @@ pub enum RoomsListUpdate {
     Status {
         status: String,
     },
-    /// Mark the given room as tombstone.
+    /// Mark the given room as tombstoned.
     TombstonedRoom {
         room_id: OwnedRoomId
     }
