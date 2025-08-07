@@ -1178,7 +1178,7 @@ async fn async_worker(
 
 
 /// The single global Tokio runtime that is used by all async tasks.
-static TOKIO_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
+static TOKIO_RUNTIME: Mutex<Option<Arc<tokio::runtime::Runtime>>> = Mutex::new(None);
 
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
@@ -1202,17 +1202,14 @@ pub fn block_on_async_with_timeout<T>(
     timeout: Option<Duration>,
     async_future: impl Future<Output = T>,
 ) -> Result<T, Elapsed> {
-    let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
-    let runtime = rt_guard.get_or_insert_with(|| {
-        tokio::runtime::Runtime::new().unwrap()
-    });
-    
+    let mut binding = TOKIO_RUNTIME.lock().unwrap();
+    let rt = binding.get_or_insert_with(|| Arc::new(tokio::runtime::Runtime::new().unwrap()));
     if let Some(timeout) = timeout {
-        runtime.block_on(async {
+        rt.block_on(async {
             tokio::time::timeout(timeout, async_future).await
         })
     } else {
-        Ok(runtime.block_on(async_future))
+        Ok(rt.block_on(async_future))
     }
 }
 
@@ -1223,14 +1220,15 @@ pub fn block_on_async_with_timeout<T>(
 /// Returns a reference to the Tokio runtime that is used to run async background tasks.
 pub fn start_matrix_tokio() -> Result<Arc<tokio::runtime::Runtime>> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
-    let rt_handle = {
+    let runtime = {
         let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
-        let runtime = rt_guard.get_or_insert_with(|| {
-            log!("Creating new Tokio runtime...");
-            tokio::runtime::Runtime::new().unwrap()
-        });
-        runtime.handle().clone()
+        rt_guard.get_or_insert_with(|| {
+            log!("Create newTokio Runtime...");
+            Arc::new(tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime"))
+        }).clone()
     };
+
+    let rt_handle = runtime.handle().clone();
 
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
@@ -1312,8 +1310,7 @@ pub fn start_matrix_tokio() -> Result<Arc<tokio::runtime::Runtime>> {
         }
     });
 
-    let rt = Arc::new(tokio::runtime::Runtime::new().unwrap());
-    Ok(rt)
+    Ok(runtime)
 }
 
 
@@ -3027,11 +3024,33 @@ pub fn set_logout_in_progress(value: bool) {
     LOGOUT_IN_PROGRESS.store(value, Ordering::Relaxed);
 }
 
-pub async fn shutdown_background_tasks() {
-    let mut rt_guard = TOKIO_RUNTIME.lock().unwrap();
-    if let Some(existing_rt) = rt_guard.take() {
-        existing_rt.shutdown_background();
-        log!("Runtime shutdown_background called");
+/// Shuts down the current Tokio runtime safely in an independent thread.
+/// 
+/// This function takes ownership of the global runtime and shuts it down
+/// using `shutdown_background()` to avoid blocking indefinitely on spawned tasks.
+/// Blocks until shutdown is complete to ensure clean state for restart.
+pub fn shutdown_background_tasks() {
+    if let Some(old_rt) = TOKIO_RUNTIME.lock().unwrap().take() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        
+        std::thread::spawn(move || {
+            match Arc::try_unwrap(old_rt) {
+                Ok(runtime) => {
+                    runtime.shutdown_background();
+                    log!("✅ Old runtime shutdown completed");
+                }
+                Err(arc_rt) => {
+                    // If unwrap fails, force drop the Arc
+                    drop(arc_rt);
+                    log!("⚠️ Forced drop of old runtime Arc");
+                }
+            }
+            let _ = tx.send(());
+        });
+        
+        // Block current thread until shutdown completes
+        // This is safe because we're not in tokio context anymore
+        let _ = rx.recv();
     }
 }
 

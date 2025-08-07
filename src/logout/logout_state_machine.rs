@@ -415,7 +415,7 @@ impl LogoutStateMachine {
             80
         ).await?;
         
-        self.shutdown_background_tasks().await;
+        self.shutdown_background_tasks();
         
         // Restart runtime
         self.transition_to(
@@ -424,7 +424,7 @@ impl LogoutStateMachine {
             90
         ).await?;
         
-        if let Err(e) = self.restart_runtime().await {
+        if let Err(e) = self.restart_runtime(){
             let error = LogoutError::Unrecoverable(UnrecoverableError::RuntimeRestartFailed);
             self.transition_to(
                 LogoutState::Failed(error.clone()),
@@ -519,11 +519,11 @@ impl LogoutStateMachine {
         }
     }
     
-    async fn shutdown_background_tasks(&self) {
-        shutdown_background_tasks().await;
+    fn shutdown_background_tasks(&self) {
+        shutdown_background_tasks();
     }
     
-    async fn restart_runtime(&self) -> Result<()> {
+    fn restart_runtime(&self) -> Result<()> {
         start_matrix_tokio()
             .map(|_| ())
             .map_err(|e| anyhow!("Failed to restart runtime: {}", e))
