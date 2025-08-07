@@ -12,24 +12,39 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::icon_button::RobrixIconButton;
-    IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
+    IMG_DEFAULT = dep("crate://self/resources/img/default_image.png")
     pub ImageViewerModal = {{ImageViewerModal}} {
         width: Fill, height: Fill
         image_modal = <Modal> {
-            content: {
-                <RoundedView> {
-                    flow: Down
-                    width: 700
-                    height: 700
-                    padding: 10
-                    spacing: 0
+            content: <View> {
+                flow: Overlay
+                width: Fill
+                height: Fill
+                padding: 5
+                spacing: 0
 
-                    show_bg: true
-                    draw_bg: {
-                        //color: #000
-                        color: #ffffff
-                        border_radius: 8.0
+                show_bg: true
+                draw_bg: {
+                    color: #000
+                    border_radius: 8.0
+                }
+                image_container = <View> {
+                    width: Fill,
+                    height: Fill,
+                    flow: Down,
+                    align: {x: 0.5}
+                    image = <Image> {
+                        height: Fill
+                        width: Fill
+                        fit: Smallest,
+                        source: (IMG_DEFAULT)
                     }
+                }
+                <View> {
+                    width: Fill,
+                    height: Fill,
+                    flow: Down,
+                    align: {x: 0.5}
                     header = <View> {
                         width: Fill,
                         height: Fit
@@ -40,7 +55,6 @@ live_design! {
                             height: Fit,
                             spacing: 0,
                             margin: 7,
-                            padding: 15,
 
                             draw_bg: {
                                 color: (COLOR_SECONDARY)
@@ -52,17 +66,6 @@ live_design! {
                                 }
                             }
                             icon_walk: {width: 14, height: 14}
-                        }
-                    }
-                    image_container = <View> {
-                        width: Fill,
-                        height: Fill,
-                        align: {x: 0.5}
-                        image = <Image> {
-                            height: Fill
-                            width: Fill
-                            fit: Smallest,
-                            source: (IMG_DEFAULT_AVATAR)
                         }
                     }
                     loading_view = <View> {
