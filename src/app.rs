@@ -17,7 +17,7 @@ use crate::{
     }, join_leave_room_modal::{
         JoinLeaveRoomModalAction,
         JoinLeaveRoomModalWidgetRefExt,
-    }, login::{login_screen::LoginAction, logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}}, persistent_state::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistent_state::{
         load_window_state,
         save_app_state,
         save_window_state,
@@ -45,7 +45,7 @@ live_design! {
     use crate::verification_modal::VerificationModal;
     use crate::join_leave_room_modal::JoinLeaveRoomModal;
     use crate::login::login_screen::LoginScreen;
-    use crate::login::logout_confirm_modal::LogoutConfirmModal;
+    use crate::logout::logout_confirm_modal::LogoutConfirmModal;
     use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
@@ -160,6 +160,7 @@ impl LiveRegister for App {
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
         crate::login::live_design(cx);
+        crate::logout::live_design(cx);
     }
 }
 

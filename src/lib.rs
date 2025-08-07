@@ -13,6 +13,8 @@ pub mod settings;
 
 /// Login screen
 pub mod login;
+/// Logout confirmation and state management
+pub mod logout;
 /// Core UI content: the main home screen (rooms list), room screen.
 pub mod home;
 /// User profile info and a user profile sliding pane.

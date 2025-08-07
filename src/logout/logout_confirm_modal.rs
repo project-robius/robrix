@@ -1,5 +1,5 @@
 use makepad_widgets::{makepad_futures::channel::oneshot::Sender, *};
-use crate::{shared::styles::{COLOR_RESTART_LATER_BLUE, COLOR_RESTART_NOW_RED}, sliding_sync::{is_logout_past_point_of_no_return, set_logout_in_progress, submit_async_request, MatrixRequest}};
+use crate::{shared::styles::COLOR_RESTART_NOW_RED, sliding_sync::{is_logout_past_point_of_no_return, set_logout_in_progress, submit_async_request, MatrixRequest}};
 
 live_design! {
     use link::theme::*;

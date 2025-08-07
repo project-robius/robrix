@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::{login::logout_confirm_modal::LogoutConfirmModalAction, profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, utils};
+use crate::{logout::logout_confirm_modal::LogoutConfirmModalAction, profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, utils};
 
 live_design! {
     use link::theme::*;
