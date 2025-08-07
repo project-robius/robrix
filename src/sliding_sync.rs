@@ -2081,7 +2081,6 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         is_direct,
         is_tombstoned: room.is_tombstoned() || room.successor_room().is_some(),
     }));
-    println!("room.is_tombstoned {:?}: {:?}", room.is_tombstoned(), room.room_id());
     Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_id));
     spawn_fetch_room_avatar(room.clone());
 
