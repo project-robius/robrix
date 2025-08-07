@@ -1710,8 +1710,14 @@ impl RoomScreen {
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
-                TimelineUpdate::TombstonedRoomUpdated(successor_room_update) => {
-                    self.view.tombstone_footer(id!(tombstone_footer)).show(cx, successor_room_update);
+                TimelineUpdate::TombstonedRoomUpdated(tombstone_detail) => {
+                    if let Some(tombstone_detail) = tombstone_detail {
+                        self.view.tombstone_footer(id!(tombstone_footer)).show(cx, tombstone_detail);
+                        self.view.view(id!(message_input_view)).set_visible(cx, false);
+                    } else {
+                        self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
+                        self.view.view(id!(message_input_view)).set_visible(cx, true);
+                    }
                 }
             }
         }
@@ -2528,25 +2534,12 @@ impl RoomScreen {
         });
 
         self.show_timeline(cx);
-        let is_tombstoned = self.view.tombstone_footer(id!(tombstone_footer)).is_tombstoned(cx, &room_id);
-        if is_tombstoned {
-            self.show_tombstone_screen(cx, room_id);
-        }
-    }
 
-
-    /// Shows the tombstone screen for the given room and hides the text input view.
-    ///
-    /// The tombstone screen is a view that is displayed when the user is in a
-    /// tombstoned room (a room that has been replaced with a new room).
-    /// It allows the user to join the new room.
-    pub fn show_tombstone_screen(
-        &self,
-        cx: &mut Cx,
-        room_id: OwnedRoomId,
-    ) {
+        // Submit an async request to display tombstone footer if the room is tombstoned.
+        // Shows the tombstone screen for the given room and hides the text input view.
+        //
+        // It allows the user to join the new room if the successor room has not been joined.
         submit_async_request(MatrixRequest::GetSuccessorRoom { room_id });
-        self.view.view(id!(message_input_view)).set_visible(cx, false);
     }
 
     /// Hides the tombstone screen that's shown when the user is in a room
@@ -2555,7 +2548,6 @@ impl RoomScreen {
     pub fn hide_tombstone_screen(
         &self,
         cx: &mut Cx,
-        _room_id: OwnedRoomId,
     ) {
         self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
         self.view.view(id!(message_input_view)).set_visible(cx, true);
@@ -2672,15 +2664,6 @@ impl RoomScreenRef {
         inner.set_displayed_room(cx, room_id, room_name);
     }
 
-    /// Display the tombstone screen for the given room.
-    pub fn show_tombstone_screen(
-        &self,
-        cx: &mut Cx,
-        room_id: OwnedRoomId,
-    ) {
-        let Some(inner) = self.borrow_mut() else { return };
-        inner.show_tombstone_screen(cx, room_id);
-    }
 }
 
 /// RoomScreenProps serves as an interface between RoomScreen and its child components.
@@ -2806,7 +2789,7 @@ pub enum TimelineUpdate {
     OwnUserReadReceipt(Receipt),
     /// A notice that the given room has been tombstoned,
     /// includes a `TombstoneDetail` that contains the details of the tombstone event.
-    TombstonedRoomUpdated(TombstoneDetail)
+    TombstonedRoomUpdated(Option<TombstoneDetail>)
 }
 
 thread_local! {

@@ -181,7 +181,7 @@ pub enum RoomsListAction {
 ///
 /// This includes info needed display a preview of that room in the RoomsList
 /// and to filter the list of rooms based on the current search filter.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct JoinedRoomInfo {
     /// The matrix ID of this room.
     pub room_id: OwnedRoomId,
@@ -213,6 +213,7 @@ pub struct JoinedRoomInfo {
     pub is_selected: bool,
     /// Whether this a direct room.
     pub is_direct: bool,
+    /// Whether this room is tombstoned (shut down and replaced with a successor room).
     pub is_tombstoned: bool,
 }
 
@@ -357,11 +358,6 @@ impl RoomsList {
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
         self.all_joined_rooms.contains_key(room_id)
             || self.invited_rooms.borrow().contains_key(room_id)
-    }
-
-    /// Returns the `RoomPreviewAvatar` for the given `room_id`, if it exists in the list of all joined rooms.
-    pub fn get_joined_room_info(&self, room_id: &OwnedRoomId) -> Option<JoinedRoomInfo> {
-        self.all_joined_rooms.get(room_id).cloned()
     }
 
     /// Handle all pending updates to the list of all rooms.
