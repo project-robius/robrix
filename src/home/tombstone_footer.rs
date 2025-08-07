@@ -96,9 +96,13 @@ live_design! {
 
 /// The information about a tombstoned room.
 #[derive(Clone, Debug)]
-pub struct TimelineTombstone {
-    pub current_room_id: OwnedRoomId,
+pub struct TombstoneDetail {
+    /// The ID of the tombstoned room
+    pub tombstoned_room_id: OwnedRoomId,
+    /// The ID of the successor room
     pub successor_room_id: Option<OwnedRoomId>,
+    /// The name of the successor room
+    pub successor_room_name: Option<String>,
     /// The reason why the room was tombstoned
     pub successor_reason: String,
 }
@@ -147,53 +151,17 @@ impl Widget for TombstoneFooter {
 
 impl TombstoneFooter {
     /// Sets the tombstone details to be displayed by this screen.
-    pub fn show(&mut self, cx: &mut Cx, room_id: OwnedRoomId) {
+    pub fn show(&mut self, cx: &mut Cx, successor_room_update: TombstoneDetail) {
         self.view
             .label_set(ids![replacement_reason, successor_room_name])
             .set_text(cx, "");
         self.visible = true;
-        self.room_id = Some(room_id.clone());
-        let mut successor_id: Option<OwnedRoomId> = None;
-        let mut successor_reason = None;
-        let mut successor_room_name = None;
-        // This is required as a tombstoned room may not have a successor room. Hence not added to TOMBSTONED_ROOMS.
-        match crate::sliding_sync::ALL_JOINED_ROOMS.lock() {
-            Ok(all_joined_rooms_guard) => {
-                for (inner_room_id, room_info) in (*all_joined_rooms_guard).iter() {
-                    if let Some((_, reason)) = room_info
-                        .replaces_tombstoned_room
-                        .as_ref()
-                        .filter(|(replaces, _)| replaces == &room_id)
-                    {
-                        successor_reason = reason.clone();
-                        successor_id = Some(inner_room_id.clone());
-                        successor_room_name = room_info.room_name.clone();
-                        break;
-                    }
-                }
-            }
-            Err(e) => {
-                error!("Failed to acquire lock on ALL_JOINED_ROOMS while looking for successor room for {}: {}", room_id, e);
-            }
-        }
-        if successor_id.is_none() {
-            match crate::sliding_sync::TOMBSTONED_ROOMS.lock() {
-                Ok(tombstoned_rooms_guard) => {
-                    for (new_room_id, (old_room_id, reason)) in (*tombstoned_rooms_guard).iter() {
-                        if old_room_id == &room_id {
-                            successor_id = Some(new_room_id.clone());
-                            successor_reason = reason.clone();
-                            break; // Stop searching once we find a replacement
-                        }
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to acquire lock on TOMBSTONED_ROOMS while looking for successor room for {}: {}", room_id, e);
-                }
-            }
-        }
-
-        let successor_avatar_preview = successor_id
+        self.room_id = Some(successor_room_update.tombstoned_room_id.clone());
+        self.view
+            .label(id!(replacement_reason))
+            .set_text(cx, &successor_room_update.successor_reason);
+        
+        let successor_avatar_preview = successor_room_update.successor_room_id
             .as_ref()
             .map(|room_id| {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
@@ -219,25 +187,22 @@ impl TombstoneFooter {
                 );
             }
         }
-        if let Some(successor_reason) = &successor_reason {
-            self.view
-                .label(id!(replacement_reason))
-                .set_text(cx, successor_reason);
-        }
-        if let Some(successor_room_name) = &successor_room_name {
+        let successor_info = if let Some(successor_room_id) = successor_room_update.successor_room_id.as_ref() {
+            Some(BasicRoomDetails {
+                room_id: successor_room_id.clone(),
+                room_name: successor_room_update.successor_room_name.clone(),
+                room_avatar: successor_avatar_preview,
+            })
+        } else {
+            None
+        };
+
+        if let Some(successor_room_name) = successor_info.as_ref().and_then(|f| f.room_name.as_ref()) {
             self.view
                 .label(id!(successor_room_name))
                 .set_text(cx, successor_room_name);
         }
-        let successor_room_info =
-            successor_id
-                .as_ref()
-                .map(|successor_id| crate::room::BasicRoomDetails {
-                    room_id: successor_id.clone(),
-                    room_name: successor_room_name,
-                    room_avatar: successor_avatar_preview,
-                });
-        self.successor_info = successor_room_info;
+        self.successor_info = successor_info;
     }
 
     /// Navigate to the successor room or show a join room modal if not loaded.
@@ -319,9 +284,9 @@ impl TombstoneFooter {
 
 impl TombstoneFooterRef {
     /// See [`TombstoneFooter::show()`].
-    pub fn show(&mut self, cx: &mut Cx, room_id: OwnedRoomId) {
+    pub fn show(&mut self, cx: &mut Cx, successor_room_update: TombstoneDetail) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show(cx, room_id);
+            inner.show(cx, successor_room_update);
         }
     }
     /// See [`TombstoneFooter::hide()`].

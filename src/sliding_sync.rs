@@ -36,7 +36,7 @@ use crate::{
         invite_screen::{JoinRoomAction, LeaveRoomAction},
         room_screen::TimelineUpdate,
         rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate},
-        rooms_list_header::RoomsListHeaderAction,
+        rooms_list_header::RoomsListHeaderAction, tombstone_footer::TombstoneDetail,
     },
     login::login_screen::LoginAction,
     media_cache::{MediaCacheEntry, MediaCacheEntryRef},
@@ -409,6 +409,9 @@ pub enum MatrixRequest {
         matrix_id: MatrixId,
         via: Vec<OwnedServerName>
     },
+    GetSuccessorRoom {
+        room_id: OwnedRoomId,
+    }
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -1146,6 +1149,80 @@ async fn async_worker(
                         };
                     }
                 });
+            }
+            MatrixRequest::GetSuccessorRoom { room_id } => {
+                let all_joined_rooms_guard = match ALL_JOINED_ROOMS.lock() {
+                    Ok(guard) => guard,
+                    Err(e) => {
+                        error!("Failed to acquire lock on ALL_JOINED_ROOMS while looking for successor room for {}: {}", room_id, e);
+                        continue;
+                    }
+                };
+
+                let mut successor_id: Option<OwnedRoomId> = None;
+                let mut successor_reason = None;
+                let mut successor_room_name = None;
+
+                // Search for successor room in ALL_JOINED_ROOMS
+                for (inner_room_id, room_info) in (*all_joined_rooms_guard).iter() {
+                    if let Some((_, reason)) = room_info
+                        .replaces_tombstoned_room
+                        .as_ref()
+                        .filter(|(replaces, _)| replaces == &room_id)
+                    {
+                        successor_reason = reason.clone();
+                        successor_id = Some(inner_room_id.clone());
+                        successor_room_name = room_info.room_name.clone();
+                        break;
+                    }
+                }
+
+                drop(all_joined_rooms_guard);
+
+                // If not found in ALL_JOINED_ROOMS, check TOMBSTONED_ROOMS
+                if successor_id.is_none() {
+                    match TOMBSTONED_ROOMS.lock() {
+                        Ok(tombstoned_rooms_guard) => {
+                            for (new_room_id, (old_room_id, reason)) in (*tombstoned_rooms_guard).iter() {
+                                if old_room_id == &room_id {
+                                    successor_id = Some(new_room_id.clone());
+                                    successor_reason = reason.clone();
+                                    break;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to acquire lock on TOMBSTONED_ROOMS while looking for successor room for {}: {}", room_id, e);
+                        }
+                    }
+                }
+                let timeline_update_sender = {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                        log!("BUG: room info not found when sending fully read receipt, room {room_id}, ");
+                        continue;
+                    };
+                    room_info.timeline_update_sender.clone()
+                };
+
+                let timeline_tombstone= TombstoneDetail{
+                    tombstoned_room_id: room_id.clone(),
+                    successor_room_id: successor_id.clone(),
+                    successor_room_name: successor_room_name.clone(),
+                    successor_reason: successor_reason.unwrap_or_default(),
+                };
+                timeline_update_sender.send(
+                    TimelineUpdate::TombstonedRoomUpdated(timeline_tombstone)
+                ).unwrap_or_else(
+                    |_e| panic!("Error: timeline update sender couldn't send TargetEventFound() to room {room_id}!")
+                );
+                if let Some(successor_id) = successor_id {
+                    log!("Found successor room {} for tombstoned room {}", successor_id, room_id);
+                    // TODO: Send result back to UI via signal or callback
+                    // This could be done via SignalToUI or a callback mechanism
+                } else {
+                    log!("No successor room found for tombstoned room {}", room_id);
+                }
             }
         }
     }
@@ -2607,14 +2684,21 @@ fn update_latest_event(
                 }
                 // Check for room tombstone changes.
                 AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content, prev_content: _ }) => {
+                    let mut successor_room_name = None;
                     if let Some(room_info) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&content.replacement_room) {
                         room_info.replaces_tombstoned_room = Some((room_id.clone(), Some(content.body.clone())));
+                        successor_room_name = room_info.room_name.clone();
                     } else {
                         TOMBSTONED_ROOMS.lock().unwrap().insert(content.replacement_room.clone(), (room_id.clone(), Some(content.body.clone())));
                     }
                     enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room_id.clone() });
                     if let Some(sender) = timeline_update_sender {
-                        match sender.send(TimelineUpdate::IsTombstoned) {
+                        match sender.send(TimelineUpdate::TombstonedRoomUpdated(TombstoneDetail { 
+                            tombstoned_room_id: room_id.clone(), 
+                            successor_room_id: Some(content.replacement_room.clone()), 
+                            successor_room_name, 
+                            successor_reason: content.body.clone()
+                        })) {
                             Ok(_) => {
                                 SignalToUI::set_ui_signal();
                             }
