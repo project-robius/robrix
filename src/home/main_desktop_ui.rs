@@ -220,7 +220,7 @@ impl MainDesktopUI {
     pub fn close_all_tabs(&mut self, cx: &mut Cx) {
         let dock = self.view.dock(id!(dock));
         for tab_id in self.open_rooms.keys() {        
-                dock.close_tab(cx, *tab_id);
+            dock.close_tab(cx, *tab_id);
         }
 
         dock.select_tab(cx, live_id!(home_tab));

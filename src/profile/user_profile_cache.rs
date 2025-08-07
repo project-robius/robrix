@@ -266,7 +266,7 @@ pub fn get_user_profile_and_room_member(
     )
 }
 
-/// Clears all cached user profile.
+/// Clears cached user profile.
 /// This function requires passing in a reference to `Cx`,
 /// which acts as a gures that these thread-local caches are cleared on the main UI thread, 
 pub fn clear_user_profile_cache(_cx: &mut Cx) {

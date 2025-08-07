@@ -33,7 +33,7 @@ pub fn get_invited_rooms(_cx: &mut Cx) -> Rc<RefCell<HashMap<OwnedRoomId, Invite
     ALL_INVITED_ROOMS.with(Rc::clone)
 }
 
-/// Clears all UI-related all invited rooms
+/// Clears all invited rooms
 ///
 /// This function requires passing in a reference to `Cx`,
 /// which isn't used, but acts as a guarantee that this function

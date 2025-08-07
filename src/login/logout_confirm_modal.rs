@@ -192,10 +192,10 @@ impl WidgetMatchEvent for LogoutConfirmModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let cancel_button = self.button(id!(cancel_button));
         let confirm_button = self.button(id!(confirm_button));
-        
+
         let modal_dismissed = actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
-        let cancel_clicked = cancel_button.clicked(actions); 
-        
+        let cancel_clicked = cancel_button.clicked(actions);
+
         if cancel_clicked || modal_dismissed {
             cx.action(LogoutConfirmModalAction::Close { successful: false, was_internal: cancel_clicked });
             self.reset_state(cx);
@@ -216,11 +216,11 @@ impl WidgetMatchEvent for LogoutConfirmModal {
             } else {
                 self.set_message(cx, "Waiting for logout...");
                 confirm_button.set_enabled(cx, false);
-                
+
                 // Change cancel button to "Abort" during logout process
                 cancel_button.set_text(cx, "Abort");
                 cancel_button.set_enabled(cx, true);
-                
+
                 submit_async_request(MatrixRequest::Logout { is_desktop: cx.display_context.is_desktop() });
                 needs_redraw = true;
             }
@@ -252,14 +252,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                         });
                         confirm_button.set_enabled(cx, true);
 
-                        cancel_button.set_visible(cx, true);
-                        cancel_button.set_text(cx, "Restart later");
-                        cancel_button.apply_over(cx, live!{
-                            draw_bg: {
-                                color: (COLOR_RESTART_LATER_BLUE)
-                            }
-                        });
-                        cancel_button.set_enabled(cx, true);
+                        cancel_button.set_visible(cx, false);
 
                     } else {
                         self.set_message(cx, &format!("Logout failed: {}", error));
@@ -283,16 +276,8 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                         }
                     });
                     confirm_button.set_enabled(cx, true);
+                    cancel_button.set_visible(cx, false);
 
-                    cancel_button.set_visible(cx, true);
-                    cancel_button.set_text(cx, "Restart later");
-                    cancel_button.apply_over(cx, live!{
-                        draw_bg: {
-                            color: (COLOR_RESTART_LATER_BLUE)
-                        }
-                    });
-                    cancel_button.set_enabled(cx, true);
-                    
                     self.final_success = Some(false);
                     needs_redraw = true;
                 }
@@ -342,7 +327,6 @@ impl LogoutConfirmModal {
     }
 
 }
-
 
 impl LogoutConfirmModalRef {
     /// See [`LogoutConfirmModal::set_message()`].
