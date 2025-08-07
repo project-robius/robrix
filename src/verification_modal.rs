@@ -121,9 +121,9 @@ pub struct VerificationModal {
     #[rust(false)] is_final: bool,
 }
 
-#[derive(Clone, Debug, DefaultNone)]
+/// Actions emitted by the `VerificationModal`.
+#[derive(Clone, Copy, Debug)]
 pub enum VerificationModalAction {
-    None,
     Close,
 }
 

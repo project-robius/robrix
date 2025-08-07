@@ -57,9 +57,6 @@ live_design! {
     use crate::shared::collapsible_header::*;
     use crate::home::room_preview::*;
 
-    // An empty view that takes up no space in the portal list.
-    Empty = <View> { }
-
     StatusLabel = <View> {
         width: Fill, height: Fit,
         align: { x: 0.5, y: 0.5 }
@@ -91,7 +88,7 @@ live_design! {
 
             collapsible_header = <CollapsibleHeader> {}
             room_preview = <RoomPreview> {}
-            empty = <Empty> {}
+            empty = <View> {}
             status_label = <StatusLabel> {}
             bottom_filler = <View> {
                 width: Fill,

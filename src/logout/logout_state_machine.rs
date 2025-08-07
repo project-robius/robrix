@@ -89,11 +89,11 @@ use tokio::sync::Mutex;
 use anyhow::{anyhow, Result};
 use makepad_widgets::{Cx, log, makepad_futures::channel::oneshot};
 
+use crate::persistence::delete_latest_user_id;
 use crate::settings::SettingsAction;
 use crate::sliding_sync::{clean_app_state, is_logout_past_point_of_no_return, set_logout_in_progress, set_logout_point_of_no_return};
 use crate::{
     home::main_desktop_ui::MainDesktopUiAction,
-    persistent_state::delete_latest_user_id,
     sliding_sync::{get_client, get_sync_service, shutdown_background_tasks, start_matrix_tokio},
 };
 use super::logout_confirm_modal::{LogoutAction, ClearedComponentType};
@@ -525,6 +525,7 @@ impl LogoutStateMachine {
     
     async fn restart_runtime(&self) -> Result<()> {
         start_matrix_tokio()
+            .map(|_| ())
             .map_err(|e| anyhow!("Failed to restart runtime: {}", e))
     }
     
