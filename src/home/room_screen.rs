@@ -28,7 +28,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::{TombstoneDetail, TombstoneFooterWidgetExt}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -82,6 +82,7 @@ live_design! {
     use crate::home::location_preview::*;
     use crate::room::room_input_bar::*;
     use crate::home::room_read_receipt::*;
+    use crate::home::tombstone_footer::TombstoneFooter;
     use crate::rooms_list::*;
     use crate::shared::restore_status_view::*;
 
@@ -706,15 +707,14 @@ live_design! {
 
                 // Below that, display a preview of the current location that a user is about to send.
                 location_preview = <LocationPreview> { }
-
+                tombstone_footer = <TombstoneFooter> { }
                 // Below that, display one of multiple possible views:
                 // * the message input bar
                 // * the slide-up editing pane
                 // * a notice that the user can't send messages to this room
-                <View> {
+                message_input_view = <View> {
                     width: Fill, height: Fit,
                     flow: Overlay,
-
                     // Below that, display a view that holds the message input bar and send button.
                     input_bar = <RoomInputBar> {}
 
@@ -1710,6 +1710,15 @@ impl RoomScreen {
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
+                TimelineUpdate::TombstonedRoomUpdated(tombstone_detail) => {
+                    if let Some(tombstone_detail) = tombstone_detail {
+                        self.view.tombstone_footer(id!(tombstone_footer)).show(cx, tombstone_detail);
+                        self.view.view(id!(message_input_view)).set_visible(cx, false);
+                    } else {
+                        self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
+                        self.view.view(id!(message_input_view)).set_visible(cx, true);
+                    }
+                }
             }
         }
 
@@ -2525,6 +2534,23 @@ impl RoomScreen {
         });
 
         self.show_timeline(cx);
+
+        // Submit an async request to display tombstone footer if the room is tombstoned.
+        // Shows the tombstone screen for the given room and hides the text input view.
+        //
+        // It allows the user to join the new room if the successor room has not been joined.
+        submit_async_request(MatrixRequest::GetSuccessorRoom { room_id });
+    }
+
+    /// Hides the tombstone screen that's shown when the user is in a room
+    /// that has been replaced by another room, and shows the normal timeline
+    /// input bar instead.
+    pub fn hide_tombstone_screen(
+        &self,
+        cx: &mut Cx,
+    ) {
+        self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
+        self.view.view(id!(message_input_view)).set_visible(cx, true);
     }
 
     /// Sends read receipts based on the current scroll position of the timeline.
@@ -2637,6 +2663,7 @@ impl RoomScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
     }
+
 }
 
 /// RoomScreenProps serves as an interface between RoomScreen and its child components.
@@ -2760,7 +2787,9 @@ pub enum TimelineUpdate {
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
     OwnUserReadReceipt(Receipt),
-
+    /// A notice that the given room has been tombstoned,
+    /// includes a `TombstoneDetail` that contains the details of the tombstone event.
+    TombstonedRoomUpdated(Option<TombstoneDetail>)
 }
 
 thread_local! {
