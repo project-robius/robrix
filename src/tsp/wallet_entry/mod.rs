@@ -185,6 +185,7 @@ impl Widget for WalletEntry {
         if self.metadata.as_ref().is_none_or(|m| m != metadata) {
             self.metadata = Some(metadata.clone());
         }
+        log!("Drawing wallet entry for: {}, is_default: {}, status: {:?}", metadata.wallet_name, sd.is_default, sd.status);
 
         self.label(id!(wallet_name)).set_text(
             cx,
@@ -192,25 +193,29 @@ impl Widget for WalletEntry {
         );
         self.label(id!(wallet_path)).set_text(
             cx,
-            &metadata.path,
+            &metadata.url.as_url_unencoded()
         );
         // There is a weird makepad bug where if we re-style one instance of the
         // `set_default_wallet_button` in one WalletEntry, all other instances of that button
         // get their styling messed up in weird ways.
         // So, as a workaround, we just hide the button entirely and show a `is_default_label_view` instead.
 
-        let set_default_wallet_button = self.button(id!(set_default_wallet_button));
-        if sd.is_default {
-            self.view(id!(is_default_label_view)).set_visible(cx, true);
-            set_default_wallet_button.set_visible(cx, false);
-        }
-
-        if matches!(sd.status, WalletStatus::NotFound) {
-            self.label(id!(not_found_label_view)).set_visible(cx, true);
-            set_default_wallet_button.set_visible(cx, false);
-            self.button(id!(remove_wallet_button)).set_visible(cx, false);
-            self.button(id!(delete_wallet_button)).set_visible(cx, false);
-        }
+        self.view(id!(is_default_label_view)).set_visible(
+            cx,
+            sd.is_default
+        );
+        self.label(id!(not_found_label_view)).set_visible(
+            cx,
+            sd.status == WalletStatus::NotFound,
+        );
+        self.button(id!(set_default_wallet_button)).set_visible(
+            cx,
+            !sd.is_default && sd.status != WalletStatus::NotFound,
+        );
+        self.button(id!(delete_wallet_button)).set_visible(
+            cx,
+            sd.status != WalletStatus::NotFound,
+        );
 
         self.view.draw_walk(cx, scope, walk)
     }

@@ -102,13 +102,13 @@ live_design! {
                     width: Fill, height: Fit
                     flow: Down
 
-                    wallet_path_input = <RobrixTextInput> {
+                    wallet_file_name_input = <RobrixTextInput> {
                         width: Fill, height: Fit,
                         flow: Right, // do not wrap
                         padding: {top: 3, bottom: 3}
-                        empty_text: "sqlite://my_wallet.sqlite",
+                        empty_text: "my_wallet_file",
                         draw_text: {
-                            text_style: <TITLE_TEXT>{font_size: 10.0}
+                            text_style: <REGULAR_TEXT>{font_size: 10.0}
                         }
                     }
 
@@ -131,7 +131,7 @@ live_design! {
                                 color: #777777
                                 text_style: <REGULAR_TEXT>{font_size: 9}
                             }
-                            text: "Wallet Path/URL (optional)"
+                            text: "Wallet File Name (optional)"
                         }
 
                         right_line = <LineH> {
@@ -271,7 +271,7 @@ impl WidgetMatchEvent for CreateWalletModal {
         }
 
         let wallet_name_input = self.view.text_input(id!(wallet_name_input));
-        let wallet_path_input = self.view.text_input(id!(wallet_path_input));
+        let wallet_file_name_input = self.view.text_input(id!(wallet_file_name_input));
         let password_input = self.view.text_input(id!(password_input));
         let confirm_password_input = self.view.text_input(id!(confirm_password_input));
         let status_label = self.view.label(id!(status_label));
@@ -317,13 +317,16 @@ impl WidgetMatchEvent for CreateWalletModal {
                             },
                         ));
                     } else {
-                        let path = match wallet_path_input.text() {
-                            empty if empty.is_empty() => tsp::wallet_path_from_name(&wallet_name),
-                            non_empty => non_empty,
-                        };
+                        let url = tsp::TspWalletSqliteUrl::from_wallet_file_name(
+                            match wallet_file_name_input.text() {
+                                empty if empty.is_empty() => wallet_file_name_input.empty_text(),
+                                non_empty => tsp::sanitize_wallet_name(&non_empty),
+                            }
+                            .as_str()
+                        );
                         let metadata = TspWalletMetadata {
                             wallet_name,
-                            path,
+                            url,
                             password,
                         };
                         // Submit the wallet creation request to the TSP async worker thread.
@@ -339,7 +342,7 @@ impl WidgetMatchEvent for CreateWalletModal {
                         accept_button.set_enabled(cx, false);
                         cancel_button.set_enabled(cx, false); // TODO: support canceling the wallet creation request?
                         wallet_name_input.set_is_read_only(cx, true);
-                        wallet_path_input.set_is_read_only(cx, true);
+                        wallet_file_name_input.set_is_read_only(cx, true);
                         password_input.set_is_read_only(cx, true);
                         confirm_password_input.set_is_read_only(cx, true);
                     }
@@ -355,7 +358,7 @@ impl WidgetMatchEvent for CreateWalletModal {
         // Clear the error message if the user changes any of the input fields.
         if self.is_showing_error {
             if wallet_name_input.changed(actions).is_some()
-                || wallet_path_input.changed(actions).is_some()
+                || wallet_file_name_input.changed(actions).is_some()
                 || password_input.changed(actions).is_some()
                 || confirm_password_input.changed(actions).is_some()
             {
@@ -373,13 +376,10 @@ impl WidgetMatchEvent for CreateWalletModal {
             }
         }
 
-        // If the path is empty and the name is changed,
-        // update the path's empty text to show the name.
+        // If the wallet name is changed, update the path's empty text to show
+        // a sanitized version of the wallet name.
         if let Some(name) = wallet_name_input.changed(actions) {
-            if wallet_path_input.text().is_empty() {
-                let new_path = tsp::wallet_path_from_name(&name);
-                wallet_path_input.set_empty_text(cx, new_path);
-            }
+            wallet_file_name_input.set_empty_text(cx, tsp::sanitize_wallet_name(&name));
         }
 
         for action in actions {
@@ -455,7 +455,7 @@ impl CreateWalletModal {
         cancel_button.set_visible(cx, true);
         // TODO: return buttons to their default state/appearance
         self.view.text_input(id!(wallet_name_input)).set_is_read_only(cx, false);
-        self.view.text_input(id!(wallet_path_input)).set_is_read_only(cx, false);
+        self.view.text_input(id!(wallet_file_name_input)).set_is_read_only(cx, false);
         self.view.text_input(id!(password_input)).set_is_read_only(cx, false);
         self.view.text_input(id!(confirm_password_input)).set_is_read_only(cx, false);
         self.view.label(id!(status_label)).set_text(cx, "");

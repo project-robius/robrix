@@ -1,7 +1,7 @@
 // Ignore clippy warnings in `DeRon` macro derive bodies.
 #![allow(clippy::question_mark)]
 
-use std::{ops::Deref, sync::{Arc, Mutex, OnceLock}};
+use std::{borrow::Cow, ops::Deref, path::Path, sync::{Arc, Mutex, OnceLock}};
 
 use anyhow::anyhow;
 use makepad_widgets::{makepad_micro_serde::*, *};
@@ -9,7 +9,7 @@ use quinn::rustls::crypto::{CryptoProvider, aws_lc_rs};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
 use tsp_sdk::{AskarSecureStorage, AsyncSecureStore, SecureStorage};
 
-use crate::{persistence, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}};
+use crate::{persistence::{self, tsp_wallets_dir}, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}};
 
 
 pub mod create_wallet_modal;
@@ -164,7 +164,7 @@ impl std::fmt::Debug for OpenedTspWallet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpenedTspWallet")
             .field("wallet_name", &self.wallet_name)
-            .field("path", &self.path)
+            .field("url", &self.url)
             .finish()
     }
 }
@@ -184,31 +184,38 @@ impl OpenedTspWallet {
 /// Metadata about a TSP wallet that has been created or imported.
 ///
 /// When comparing two `TspWalletMetadata` instances,
-/// they are considered equal if their `path` is the same
+/// they are considered equal if their `url` is the same
 /// regardless of their `wallet_name` or `password`.
+///
+/// The URL is *NOT* percent-encoded yet, but it should be before
+/// being passed to `AskarSecureStorage` methods like `new()` and `open()`.
 #[derive(Clone, Default, DeRon, SerRon)]
 pub struct TspWalletMetadata {
+    /// The human-readable, user-defined name of the wallet.
     pub wallet_name: String,
-    pub path: String,
+    /// The URL of the wallet, which is NOT percent-encoded yet.
+    pub url: TspWalletSqliteUrl,
     pub password: String,
 }
 impl std::fmt::Debug for TspWalletMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TspWalletMetadata")
             .field("wallet_name", &self.wallet_name)
-            .field("path", &self.path)
+            .field("url", &self.url)
             .finish_non_exhaustive()
     }
 }
 impl PartialEq for TspWalletMetadata {
     fn eq(&self, other: &Self) -> bool {
-        self.path == other.path
+        self.url == other.url
     }
 }
 impl TspWalletMetadata {
     /// Attempts to open the wallet described by this metadata.
     pub async fn open_wallet(&self) -> Result<OpenedTspWallet, tsp_sdk::Error> {
-        let vault = AskarSecureStorage::open(&self.path, self.password.as_bytes()).await?;
+        let encoded_url = self.url.to_url_encoded();
+        log!("Opening TSP wallet at URL: {encoded_url}");
+        let vault = AskarSecureStorage::open(&encoded_url, self.password.as_bytes()).await?;
         let (vids, aliases, keys) = vault.read().await?;
         let db = AsyncSecureStore::new();
         db.import(vids, aliases, keys)?;
@@ -259,7 +266,6 @@ pub fn tsp_init(rt: Arc<tokio::runtime::Runtime>) -> anyhow::Result<()> {
                     auto_dismissal_duration: None,
                     kind: PopupKind::Error,
                 });
-                return;
             }
         }
 
@@ -336,7 +342,7 @@ pub enum TspWalletAction {
     /// Failed to create a wallet.
     CreateWalletError {
         metadata: TspWalletMetadata,
-        error: tsp_sdk::Error,
+        error: anyhow::Error,
     },
     /// A wallet was removed from the list.
     WalletRemoved(TspWalletMetadata),
@@ -379,7 +385,30 @@ async fn async_tsp_worker(
         TspRequest::CreateWallet { metadata } => {
             log!("Received TspRequest::CreateWallet({metadata:?})");
             Handle::current().spawn(async move {
-                match AskarSecureStorage::new(&metadata.path, metadata.password.as_bytes()).await {
+                if let Some(sqlite_path) = metadata.url.get_path() {
+                    if let Ok(true) = tokio::fs::try_exists(sqlite_path).await {
+                        error!("Wallet already exists at path: {}", sqlite_path.display());
+                        Cx::post_action(TspWalletAction::CreateWalletError {
+                            metadata: metadata.clone(),
+                            error: anyhow!("Wallet already exists at path: {}", sqlite_path.display()),
+                        });
+                        return;
+                    }
+                    if let Some(parent_dir) = sqlite_path.parent() {
+                        log!("Ensuring that new wallet's parent dir exists: {}", parent_dir.display());
+                        if let Err(e) = tokio::fs::create_dir_all(parent_dir).await {
+                            error!("Failed to create directory to hold new wallet: {e:?}");
+                            Cx::post_action(TspWalletAction::CreateWalletError {
+                                metadata: metadata.clone(),
+                                error: anyhow!("Failed to create directory for new wallet: {}, error: {}", parent_dir.display(), e),
+                            });
+                            return;
+                        }
+                    }
+                }
+                let encoded_url = metadata.url.to_url_encoded();
+                log!("Attempting to create new wallet at:\n   Reg: {}\n   Enc: {}", metadata.url, encoded_url);
+                match AskarSecureStorage::new(&encoded_url, metadata.password.as_bytes()).await {
                     Ok(vault) => {
                         log!("Successfully created new wallet: {metadata:?}");
                         let db = AsyncSecureStore::new();
@@ -409,7 +438,7 @@ async fn async_tsp_worker(
                         Cx::post_action(
                             TspWalletAction::CreateWalletError {
                                 metadata: metadata.clone(),
-                                error,
+                                error: error.into(),
                             }
                         );
                     }
@@ -433,7 +462,7 @@ async fn async_tsp_worker(
                 let mut tsp_state = tsp_state_ref().lock().unwrap();
                 if let Some(TspWalletEntry::Opened(opened)) = tsp_state.other_wallets.iter()
                     .position(|w| match w {
-                        TspWalletEntry::Opened(opened) => opened.path == metadata.path,
+                        TspWalletEntry::Opened(opened) => opened.metadata == metadata,
                         _ => false,
                     })
                     .map(|idx| tsp_state.other_wallets.remove(idx))
@@ -484,11 +513,97 @@ async fn async_tsp_worker(
 }
 
 
-/// Generate the default wallet SQLite path based on the wallet name.
-pub fn wallet_path_from_name(name: &str) -> String {
-    format!(
-        "sqlite://{}.sqlite",
-        sanitize_filename::sanitize(name)
-            .replace(char::is_whitespace, "_"),
-    )
+/// Sanitizes a wallet name to ensure it is safe to use in file paths.
+pub fn sanitize_wallet_name(name: &str) -> String {
+    sanitize_filename::sanitize(name)
+        .replace(char::is_whitespace, "_")
+}
+
+
+/// Represents a SQLite URL for a TSP wallet, which is *NOT* percent-encoded yet.
+///
+/// Currently the scheme is always "sqlite://" (or "sqlite:///" for absolute paths),
+/// and the path is the full file path to the local SQLite database file for the wallet.
+/// We haven't tested it with remote URLs yet.
+#[derive(Clone, Debug, Default, DeRon, SerRon, Eq)]
+pub struct TspWalletSqliteUrl(String);
+impl std::fmt::Display for TspWalletSqliteUrl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl PartialEq for TspWalletSqliteUrl {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl TspWalletSqliteUrl {
+    /// Returns a SQLite scheme and full file path for a wallet with the given `name`.
+    pub fn from_wallet_file_name(name: &str) -> Self {
+        let parent = tsp_wallets_dir();
+        let path = parent.join(sanitize_wallet_name(name));
+        let scheme = if path.is_absolute() {
+            "sqlite:///"
+        } else {
+            "sqlite://"
+        };
+        Self(format!("{}{}.sqlite", scheme, path.display()))
+    }
+
+    /// Returns the part of the URL after the "scheme://", which may be a local file path.
+    pub fn get_path(&self) -> Option<&Path> {
+        let url = &self.0;
+        // Handle URLs with a scheme for absolute paths, e.g., "sqlite:///"
+        if let Some(p) = url.find(":///").and_then(|pos| url.get(pos + 4 ..)) {
+            Some(&Path::new(p))
+        }
+        // Handle URLs with a scheme for relative paths, e.g., "sqlite://"
+        else if let Some(p) = url.find("://").and_then(|pos| url.get(pos + 3 ..)) {
+            Some(&Path::new(p))
+        }
+        else { None }
+    }
+
+    /// Returns the URL as a string that is not percent-encoded.
+    ///
+    /// This is suitable for display purposes, but should not be passed into
+    /// `AskarSecureStorage` methods like `new()` and `open()`.
+    /// For those, use [`Self::to_url_encoded()`] instead.
+    pub fn as_url_unencoded(&self) -> &str {
+        &self.0
+    }
+
+
+    /// Converts this wallet URL to a percent-encoded URL.
+    ///
+    /// Note: this URL is suitable for use in `AskarSecureStorage` methods
+    /// like `new()` and `open()`.
+    pub fn to_url_encoded(&self) -> Cow<str> {
+        const DELIMITER_ABS: &str = ":///";
+        const DELIMITER_REG: &str = "://";
+        let try_encode = |delim: &str| -> Option<Cow<str>> {
+            if let Some(idx) = self.0.find(delim) {
+                let before = self.0.get(.. (idx + delim.len())).unwrap_or("");
+                let after  = self.0.get((idx + delim.len()) ..).unwrap_or("");
+                Some(format!("{}{}",
+                    before,
+                    percent_encoding::utf8_percent_encode(
+                        after,
+                        percent_encoding::NON_ALPHANUMERIC,
+                    )
+                ).into())
+            } else {
+                None
+            }
+        };
+
+        try_encode(DELIMITER_ABS)
+            .or_else(|| try_encode(DELIMITER_REG))
+            .unwrap_or_else(|| {
+                percent_encoding::utf8_percent_encode(
+                    &self.0,
+                    percent_encoding::NON_ALPHANUMERIC,
+                ).into()
+            })
+    }
 }
