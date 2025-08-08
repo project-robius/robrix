@@ -147,7 +147,7 @@ impl WalletState {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WalletStatus {
     Opened,
     NotFound,
@@ -210,7 +210,7 @@ impl Widget for TspSettingsScreen {
             };
 
             for (metadata, mut status_and_default) in (0..wallets.len()).filter_map(|i| wallets.get(i)) {
-                let item_live_id = LiveId::from_str(metadata.path.as_str());
+                let item_live_id = LiveId::from_str(metadata.url.as_url_unencoded());
                 let item = list.item(cx, item_live_id, live_id!(wallet_entry)).unwrap();
                 // Pass the wallet metadata in through Scope via props,
                 // and status/is_default via data.
