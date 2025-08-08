@@ -1,4 +1,4 @@
-use makepad_widgets::*;
+use makepad_widgets::{makepad_futures::channel::oneshot::Sender, *};
 use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
@@ -216,6 +216,27 @@ impl MainDesktopUI {
         self.open_rooms.remove(&tab_id);
     }
 
+    /// Closes all tabs
+    pub fn close_all_tabs(&mut self, cx: &mut Cx) {
+        let dock = self.view.dock(id!(dock));
+        for tab_id in self.open_rooms.keys() {        
+            dock.close_tab(cx, *tab_id);
+        }
+
+        dock.select_tab(cx, live_id!(home_tab));
+        cx.widget_action(
+            self.widget_uid(),
+            &HeapLiveIdPath::default(),
+            AppStateAction::FocusNone,
+        );
+
+        // Clear tab-related dock UI state.
+        self.open_rooms.clear();
+        self.tab_to_close = None;
+        self.room_order.clear();
+        self.most_recently_selected_room = None;
+    }
+
     /// Replaces an invite with a joined room in the dock.
     fn replace_invite_with_joined_room(
         &mut self,
@@ -267,6 +288,12 @@ impl WidgetMatchEvent for MainDesktopUI {
         let mut should_save_dock_action: bool = false;
         for action in actions {
             let widget_action = action.as_widget_action();
+
+            if let Some(MainDesktopUiAction::CloseAllTabs { on_close_all }) = action.downcast_ref() {
+                self.close_all_tabs(cx);
+                on_close_all.clone().send(true).unwrap();
+                continue;
+            }
 
             // Handle actions emitted by the dock within the MainDesktopUI
             match widget_action.cast() { // TODO: don't we need to call `widget_uid_eq(dock.widget_uid())` here?
@@ -410,5 +437,10 @@ pub enum MainDesktopUiAction {
     SaveDockIntoAppState,
     /// Load the room panel state from the AppState to the dock.
     LoadDockFromAppState,
+    DockLoad,
+    /// Close all tabs; see [`MainDesktopUI::close_all_tabs()`]
+    CloseAllTabs {
+        on_close_all: Sender<bool>,
+    },
     None,
 }

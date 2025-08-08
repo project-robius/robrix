@@ -216,3 +216,21 @@ pub async fn save_session(
     log!("Session persisted to: {}", session_file.display());
     Ok(())
 }
+
+/// Remove the LATEST_USER_ID_FILE_NAME file if it exists
+/// 
+/// Returns:
+/// - Ok(true) if file was found and deleted
+/// - Ok(false) if file didn't exist
+/// - Err if deletion failed
+pub async fn delete_latest_user_id() -> anyhow::Result<bool> {
+    let last_login_path = app_data_dir().join(LATEST_USER_ID_FILE_NAME);
+    
+    if last_login_path.exists() {
+        tokio::fs::remove_file(&last_login_path).await
+            .map_err(|e| anyhow::anyhow!("Failed to remove latest user file: {e}"))
+            .map(|_| true)
+    } else {
+        Ok(false)
+    }
+}
