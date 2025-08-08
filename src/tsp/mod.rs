@@ -555,11 +555,11 @@ impl TspWalletSqliteUrl {
         let url = &self.0;
         // Handle URLs with a scheme for absolute paths, e.g., "sqlite:///"
         if let Some(p) = url.find(":///").and_then(|pos| url.get(pos + 4 ..)) {
-            Some(&Path::new(p))
+            Some(Path::new(p))
         }
         // Handle URLs with a scheme for relative paths, e.g., "sqlite://"
         else if let Some(p) = url.find("://").and_then(|pos| url.get(pos + 3 ..)) {
-            Some(&Path::new(p))
+            Some(Path::new(p))
         }
         else { None }
     }
@@ -578,7 +578,7 @@ impl TspWalletSqliteUrl {
     ///
     /// Note: this URL is suitable for use in `AskarSecureStorage` methods
     /// like `new()` and `open()`.
-    pub fn to_url_encoded(&self) -> Cow<str> {
+    pub fn to_url_encoded(&self) -> Cow<'_, str> {
         const DELIMITER_ABS: &str = ":///";
         const DELIMITER_REG: &str = "://";
         let try_encode = |delim: &str| -> Option<Cow<str>> {

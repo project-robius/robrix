@@ -193,7 +193,7 @@ impl Widget for WalletEntry {
         );
         self.label(id!(wallet_path)).set_text(
             cx,
-            &metadata.url.as_url_unencoded()
+            metadata.url.as_url_unencoded()
         );
         // There is a weird makepad bug where if we re-style one instance of the
         // `set_default_wallet_button` in one WalletEntry, all other instances of that button
