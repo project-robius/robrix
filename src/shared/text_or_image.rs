@@ -59,7 +59,6 @@ pub struct TextOrImage {
     #[rust] status: TextOrImageStatus,
     // #[rust(TextOrImageStatus::Text)] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
-    #[rust] image_click_handler: Option<Box<dyn Fn(&mut Cx) + Send + Sync>>,
 }
 
 impl Widget for TextOrImage {
@@ -77,8 +76,6 @@ impl Widget for TextOrImage {
                     // If `image_value` is `None`, it can tell that the image has not been fetched,
                     // user actually clicks the blurhash,
                     // so we do nothing this condition.
-                    //cx.action(ImageViewerAction::Clicked(mxc_uri.clone()));
-                    println!("clicked");
                     let image_viewer_modal = get_global_image_viewer_modal(cx);
                     image_viewer_modal.open(cx, Some(mxc_uri.clone()));
                 }
@@ -137,14 +134,6 @@ impl TextOrImage {
     pub fn status(&self) -> TextOrImageStatus {
         self.status.clone()
     }
-
-    /// Sets a click handler for the image. The handler will be called when the image is clicked.
-    pub fn set_image_click_handler<F>(&mut self, _cx: &mut Cx, handler: F)
-    where
-        F: Fn(&mut Cx) + Send + Sync + 'static,
-    {
-        self.image_click_handler = Some(Box::new(handler));
-    }
 }
 
 impl TextOrImageRef {
@@ -172,16 +161,6 @@ impl TextOrImageRef {
             inner.status()
         } else {
             TextOrImageStatus::Text
-        }
-    }
-
-    /// See [TextOrImage::set_image_click_handler()].
-    pub fn set_image_click_handler<F>(&self, cx: &mut Cx, handler: F)
-    where
-        F: Fn(&mut Cx) + Send + Sync + 'static,
-    {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.set_image_click_handler(cx, handler);
         }
     }
 }

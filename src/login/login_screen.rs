@@ -330,9 +330,6 @@ impl MatchEvent for LoginScreen {
             || password_input.returned(actions).is_some()
             || homeserver_input.returned(actions).is_some()
         {
-            // let image_viewer_modal = crate::shared::image_viewer_modal::get_global_image_viewer_modal(cx);
-            // image_viewer_modal.open(cx, None);
-            // return;
             let user_id = user_id_input.text();
             let password = password_input.text();
             let homeserver = homeserver_input.text();
