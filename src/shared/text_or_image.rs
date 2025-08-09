@@ -78,6 +78,7 @@ impl Widget for TextOrImage {
                     // so we do nothing this condition.
                     let image_viewer_modal = get_global_image_viewer_modal(cx);
                     image_viewer_modal.open(cx, Some(mxc_uri.clone()));
+                    println!("Image clicked");
                 }
                 _ => { },
             }
