@@ -27,7 +27,6 @@ use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
 use std::io;
-use tokio_util::sync::CancellationToken;
 use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction
@@ -405,7 +404,7 @@ pub enum MatrixRequest {
 pub fn submit_async_request(req: MatrixRequest) {
     REQUEST_SENDER.get()
         .unwrap() // this is initialized
-        .send(BackgroundRequest::Matrix(Box::new(req)))
+        .send(req)
         .expect("BUG: async worker task receiver has died!");
 }
 
@@ -430,44 +429,22 @@ pub struct LoginByPassword {
 /// All this thread does is wait for [`BackgroundRequests`] from the main UI-driven non-async thread(s)
 /// and then executes them within an async runtime context.
 async fn async_worker(
-    mut request_receiver: UnboundedReceiver<BackgroundRequest>,
+    mut request_receiver: UnboundedReceiver<MatrixRequest>,
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started async_worker task.");
     let mut tasks_list: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
     while let Some(request) = request_receiver.recv().await {
         match request {
-            // Pure background tasks
-            BackgroundRequest::AsyncJob(async_job_request) => {
-                match async_job_request {
-                    LocalJob::SearchRoomMembers { room_id: _, search_text, sender, max_results, cached_members } => {
-                        // Directly spawn blocking task for search
-                        let cancellation_token = get_cancellation_token();
-                        let _search_task = tokio::task::spawn_blocking(move || {
-                            // Perform streaming search
-                            crate::room::member_search::search_room_members_streaming(
-                                cached_members, 
-                                search_text, 
-                                max_results, 
-                                sender,
-                                cancellation_token
-                            );
-                        });
-                    }
+            MatrixRequest::Login(login_request) => {
+                if let Err(e) = login_sender.send(login_request).await {
+                    error!("Error sending login request to login_sender: {e:?}");
+                    Cx::post_action(LoginAction::LoginFailure(String::from(
+                        "BUG: failed to send login request to async worker thread."
+                    )));
                 }
             }
-            // tasks that involve requests to the matrix server
-            BackgroundRequest::Matrix(matrix_request) => {
-                match *matrix_request {
-                    MatrixRequest::Login(login_request) => {
-                        if let Err(e) = login_sender.send(login_request).await {
-                            error!("Error sending login request to login_sender: {e:?}");
-                            Cx::post_action(LoginAction::LoginFailure(String::from(
-                                "BUG: failed to send login request to async worker thread."
-                            )));
-                        }
-                    }
-                    MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
+            MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
                         let (timeline, sender) = {
                             let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                             let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
@@ -516,7 +493,7 @@ async fn async_worker(
                         });
                     }
 
-                    MatrixRequest::EditMessage { room_id, timeline_event_item_id: timeline_event_id, edited_content } => {
+            MatrixRequest::EditMessage { room_id, timeline_event_item_id: timeline_event_id, edited_content } => {
                         let (timeline, sender) = {
                             let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                             let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
@@ -542,7 +519,7 @@ async fn async_worker(
                         });
                     }
 
-                    MatrixRequest::FetchDetailsForEvent { room_id, event_id } => {
+            MatrixRequest::FetchDetailsForEvent { room_id, event_id } => {
                         let (timeline, sender) = {
                             let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                             let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
@@ -573,7 +550,7 @@ async fn async_worker(
                         });
                     }
 
-                    MatrixRequest::SyncRoomMemberList { room_id } => {
+            MatrixRequest::SyncRoomMemberList { room_id } => {
                         let (timeline, sender) = {
                             let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                             let Some(room_info) = all_joined_rooms.get(&room_id) else {
@@ -594,7 +571,7 @@ async fn async_worker(
                         });
                     }
 
-                    MatrixRequest::JoinRoom { room_id } => {
+            MatrixRequest::JoinRoom { room_id } => {
                         let Some(client) = CLIENT.get() else { continue };
                         let _join_room_task = Handle::current().spawn(async move {
                             log!("Sending request to join room {room_id}...");
@@ -622,7 +599,7 @@ async fn async_worker(
                         });
                     }
 
-                    MatrixRequest::LeaveRoom { room_id } => {
+            MatrixRequest::LeaveRoom { room_id } => {
                         let Some(client) = CLIENT.get() else { continue };
                         let _leave_room_task = Handle::current().spawn(async move {
                             log!("Sending request to leave room {room_id}...");
@@ -650,7 +627,7 @@ async fn async_worker(
                         });
                     }
 
-                    MatrixRequest::GetRoomMembers { room_id, memberships, local_only } => {
+            MatrixRequest::GetRoomMembers { room_id, memberships, local_only } => {
                         let (timeline, sender) = {
                             let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                             let Some(room_info) = all_joined_rooms.get(&room_id) else {
@@ -682,16 +659,15 @@ async fn async_worker(
                         });
                     }
 
-                    MatrixRequest::SearchRoomMembers { room_id: _, search_text, sender, max_results, cached_members } => {
+            MatrixRequest::SearchRoomMembers { room_id: _, search_text, sender, max_results, cached_members } => {
                         // Directly spawn blocking task for search
-                        let cancellation_token = get_cancellation_token();
                         let _search_task = tokio::task::spawn_blocking(move || {
                             // Perform streaming search
-                            search_room_members_streaming(cached_members, search_text, max_results, sender, cancellation_token);
+                            search_room_members_streaming(cached_members, search_text, max_results, sender);
                         });
                     }
 
-                    MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
+            MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
                         let Some(client) = CLIENT.get() else { continue };
                         let _fetch_task = Handle::current().spawn(async move {
                             // log!("Sending get user profile request: user: {user_id}, \
@@ -758,7 +734,7 @@ async fn async_worker(
                             }
                         });
                     }
-                    MatrixRequest::GetNumberUnreadMessages { room_id } => {
+            MatrixRequest::GetNumberUnreadMessages { room_id } => {
                         let (timeline, sender) = {
                             let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                             let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
@@ -782,7 +758,7 @@ async fn async_worker(
                             });
                         });
                     }
-                    MatrixRequest::IgnoreUser { ignore, room_member, room_id } => {
+            MatrixRequest::IgnoreUser { ignore, room_member, room_id } => {
                         let Some(client) = CLIENT.get() else { continue };
                         let _ignore_task = Handle::current().spawn(async move {
                             let user_id = room_member.user_id();
@@ -835,7 +811,7 @@ async fn async_worker(
                         });
                     }
 
-                    MatrixRequest::SendTypingNotice { room_id, typing } => {
+            MatrixRequest::SendTypingNotice { room_id, typing } => {
                         let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
                             error!("BUG: client/room not found for typing notice request {room_id}");
                             continue;
@@ -847,7 +823,7 @@ async fn async_worker(
                         });
                     }
 
-                    MatrixRequest::SubscribeToTypingNotices { room_id, subscribe } => {
+            MatrixRequest::SubscribeToTypingNotices { room_id, subscribe } => {
                         let (room, timeline_update_sender, mut typing_notice_receiver) = {
                             let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                             let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
@@ -897,7 +873,7 @@ async fn async_worker(
                             // log!("Note: typing notifications recv loop has ended for room {}", room_id);
                         });
                     }
-                    MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
+            MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
                         if !subscribe {
                             if let Some(task_handler) = tasks_list.remove(&room_id) {
                                 task_handler.abort();
@@ -950,10 +926,10 @@ async fn async_worker(
                         });
                         tasks_list.insert(room_id.clone(), subscribe_own_read_receipt_task);
                     }
-                    MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
+            MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
                         spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
                     }
-                    MatrixRequest::ResolveRoomAlias(room_alias) => {
+            MatrixRequest::ResolveRoomAlias(room_alias) => {
                         let Some(client) = CLIENT.get() else { continue };
                         let _resolve_task = Handle::current().spawn(async move {
                             log!("Sending resolve room alias request for {room_alias}...");
@@ -962,7 +938,7 @@ async fn async_worker(
                             todo!("Send the resolved room alias back to the UI thread somehow.");
                         });
                     }
-                    MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
+            MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
                         let Some(client) = CLIENT.get() else { continue };
                         let _fetch_task = Handle::current().spawn(async move {
                             // log!("Sending fetch avatar request for {mxc_uri:?}...");
@@ -976,7 +952,7 @@ async fn async_worker(
                         });
                     }
 
-                    MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
+            MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
                         let Some(client) = CLIENT.get() else { continue };
                         let media = client.media();
 
@@ -987,7 +963,7 @@ async fn async_worker(
                         });
                     }
 
-                    MatrixRequest::SendMessage { room_id, message, replied_to } => {
+            MatrixRequest::SendMessage { room_id, message, replied_to } => {
                         let timeline = {
                             let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                             let Some(room_info) = all_joined_rooms.get(&room_id) else {
@@ -1022,7 +998,7 @@ async fn async_worker(
                         });
                     }
 
-                    MatrixRequest::ReadReceipt { room_id, event_id } => {
+            MatrixRequest::ReadReceipt { room_id, event_id } => {
                         let timeline = {
                             let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                             let Some(room_info) = all_joined_rooms.get(&room_id) else {
@@ -1045,7 +1021,7 @@ async fn async_worker(
                         });
                     },
 
-                    MatrixRequest::FullyReadReceipt { room_id, event_id, .. } => {
+            MatrixRequest::FullyReadReceipt { room_id, event_id, .. } => {
                         let timeline = {
                             let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                             let Some(room_info) = all_joined_rooms.get(&room_id) else {
@@ -1070,7 +1046,7 @@ async fn async_worker(
                         });
                     },
 
-                    MatrixRequest::GetRoomPowerLevels { room_id } => {
+            MatrixRequest::GetRoomPowerLevels { room_id } => {
                         let (timeline, sender) = {
                             let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                             let Some(room_info) = all_joined_rooms.get(&room_id) else {
@@ -1100,7 +1076,7 @@ async fn async_worker(
                             }
                         });
                     },
-                    MatrixRequest::ToggleReaction { room_id, timeline_event_id, reaction } => {
+            MatrixRequest::ToggleReaction { room_id, timeline_event_id, reaction } => {
                         let timeline = {
                             let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                             let Some(room_info) = all_joined_rooms.get(&room_id) else {
@@ -1121,7 +1097,7 @@ async fn async_worker(
                             }
                         });
                     },
-                    MatrixRequest::RedactMessage { room_id, timeline_event_id, reason } => {
+            MatrixRequest::RedactMessage { room_id, timeline_event_id, reason } => {
                         let timeline = {
                             let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                             let Some(room_info) = all_joined_rooms.get(&room_id) else {
@@ -1141,35 +1117,32 @@ async fn async_worker(
                             }
                         });
                     },
-                    MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
-                        let Some(client) = CLIENT.get() else { continue };
-                        let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {
-                            let room_or_alias_id: Option<&RoomOrAliasId> = match &matrix_id {
-                                MatrixId::Room(room_id) => Some((&**room_id).into()),
-                                MatrixId::RoomAlias(room_alias_id) => Some((&**room_alias_id).into()),
-                                MatrixId::Event(room_or_alias_id, _event_id) => Some(room_or_alias_id),
-                                _ => {
-                                    log!("MatrixLinkRoomPillInfoRequest: Unsupported MatrixId type: {matrix_id:?}");
-                                    return;
-                                }
-                            };
-                            if let Some(room_or_alias_id) = room_or_alias_id {
-                                match client.get_room_preview(room_or_alias_id, via).await {
-                                    Ok(preview) => Cx::post_action(MatrixLinkPillState::Loaded {
-                                        matrix_id: matrix_id.clone(),
-                                        name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
-                                        avatar_url: preview.avatar_url
-                                    }),
-                                    Err(_e) => {
-                                        log!("Failed to get room link pill info for {room_or_alias_id:?}: {_e:?}");
-                                    }
-                                };
+            MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {
+                    let room_or_alias_id: Option<&RoomOrAliasId> = match &matrix_id {
+                        MatrixId::Room(room_id) => Some((&**room_id).into()),
+                        MatrixId::RoomAlias(room_alias_id) => Some((&**room_alias_id).into()),
+                        MatrixId::Event(room_or_alias_id, _event_id) => Some(room_or_alias_id),
+                        _ => {
+                            log!("MatrixLinkRoomPillInfoRequest: Unsupported MatrixId type: {matrix_id:?}");
+                            return;
+                        }
+                    };
+                    if let Some(room_or_alias_id) = room_or_alias_id {
+                        match client.get_room_preview(room_or_alias_id, via).await {
+                            Ok(preview) => Cx::post_action(MatrixLinkPillState::Loaded {
+                                matrix_id: matrix_id.clone(),
+                                name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
+                                avatar_url: preview.avatar_url
+                            }),
+                            Err(_e) => {
+                                log!("Failed to get room link pill info for {room_or_alias_id:?}: {_e:?}");
                             }
-                        });
+                        };
                     }
-                }
+                });
             }
-
         }
     }
 
@@ -1183,7 +1156,7 @@ static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
-static REQUEST_SENDER: OnceLock<UnboundedSender<BackgroundRequest>> = OnceLock::new();
+static REQUEST_SENDER: OnceLock<UnboundedSender<MatrixRequest>> = OnceLock::new();
 
 /// A client object that is proactively created during initialization
 /// in order to speed up the client-building process when the user logs in.
@@ -1197,11 +1170,8 @@ pub fn start_matrix_tokio() -> Result<()> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
     let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
 
-    // Reset cancellation flag for background tasks
-    reset_background_tasks_cancellation();
-
     // Create a channel to be used between UI thread(s) and the async worker thread.
-    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<BackgroundRequest>();
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
     REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
 
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
@@ -1334,43 +1304,13 @@ static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: OnceLock<Client> = OnceLock::new();
 
-/// Global cancellation token for background tasks
-static BACKGROUND_TASKS_CANCELLATION: LazyLock<Mutex<CancellationToken>> = LazyLock::new(|| {
-    Mutex::new(CancellationToken::new())
-});
 
 pub fn get_client() -> Option<Client> {
     CLIENT.get().cloned()
 }
 
-/// Get the current cancellation token
-pub fn get_cancellation_token() -> CancellationToken {
-    BACKGROUND_TASKS_CANCELLATION.lock().unwrap().clone()
-}
 
-/// Cancel all background tasks gracefully
-/// 
-/// This should be called during logout to ensure all background tasks
-/// (like member search) are cancelled before shutting down the runtime.
-/// 
-/// Call this BEFORE calling any shutdown_background_tasks() to avoid panics.
-pub fn cancel_all_background_tasks() {
-    log!("Cancelling all background tasks...");
-    let token = get_cancellation_token();
-    token.cancel();
-}
 
-/// Check if background tasks have been cancelled
-pub fn are_background_tasks_cancelled() -> bool {
-    let token = get_cancellation_token();
-    token.is_cancelled()
-}
-
-/// Reset cancellation flag (create a new token for new tasks)
-pub fn reset_background_tasks_cancellation() {
-    let mut token_guard = BACKGROUND_TASKS_CANCELLATION.lock().unwrap();
-    *token_guard = CancellationToken::new();
-}
 
 /// Returns the user ID of the currently logged-in user, if any.
 pub fn current_user_id() -> Option<OwnedUserId> {
@@ -2989,82 +2929,3 @@ impl UserPowerLevels {
     }
 }
 
-/// Top-level request types for the background worker
-///
-/// This enum provides semantic separation between different types of background tasks:
-/// - Matrix requests that involve server communication and API calls
-/// - Local async jobs that are CPU-intensive but don't require server interaction
-///
-/// Both types are processed by the same unified background worker thread (`async_worker`)
-/// using the same `REQUEST_SENDER` channel, but are handled differently based on their nature:
-/// - Matrix requests may involve network I/O, authentication, and server response handling
-/// - AsyncJob requests are executed using `tokio::task::spawn_blocking` to avoid blocking
-///   the async runtime on CPU-intensive operations
-///
-/// This design allows for:
-/// 1. **Unified Infrastructure**: Both request types use the same channel and worker
-/// 2. **Semantic Clarity**: Clear distinction between server-bound vs local operations
-/// 3. **Performance Optimization**: CPU-intensive tasks are offloaded to thread pool
-/// 4. **Extensibility**: Easy to add new types of background operations
-/// 5. **Tokio Integration**: Uses existing Tokio runtime instead of `cx.spawn_thread`
-///    for better async task coordination and resource management
-///
-/// # Examples
-///
-/// ```rust
-/// // Matrix server request (e.g., fetching room members from server)
-/// submit_async_request(MatrixRequest::GetRoomMembers { ... });
-///
-/// // Local async job (e.g., searching cached room members)
-/// submit_async_job(LocalJob::SearchRoomMembers { ... });
-/// ```
-pub enum BackgroundRequest {
-    /// Matrix server interaction request
-    ///
-    /// These requests involve communication with the Matrix homeserver and may include:
-    /// - Authentication and session management
-    /// - Room operations (join, leave, get members)
-    /// - Timeline operations (pagination, message editing)
-    /// - Profile and user data fetching
-    ///
-    /// Matrix requests are processed directly in the async context and may involve
-    /// network I/O, retries, and error handling specific to Matrix protocol.
-    Matrix(Box<MatrixRequest>),
-
-    /// Local async job (no Matrix server interaction)
-    ///
-    /// These requests are CPU-intensive operations that work with locally cached data:
-    /// - Searching and filtering large datasets
-    /// - Complex computations on room member lists
-    /// - Text processing and matching algorithms
-    /// - Any blocking operation that should not halt the async runtime
-    ///
-    /// AsyncJob requests are executed using `tokio::task::spawn_blocking` to prevent
-    /// blocking the main async runtime, ensuring responsive UI and continued server
-    /// communication while CPU-intensive work proceeds in the background.
-    ///
-    /// Note: We use the existing Tokio runtime rather than `cx.spawn_thread` to maintain
-    /// consistency with Matrix SDK operations and enable better coordination between
-    /// async tasks (e.g., cancellation, resource sharing, error propagation).
-    AsyncJob(LocalJob),
-}
-
-/// Background job requests that don't interact with Matrix API
-pub enum LocalJob {
-    /// Search room members locally
-    SearchRoomMembers {
-        room_id: OwnedRoomId,
-        search_text: String,
-        sender: std::sync::mpsc::Sender<crate::shared::mentionable_text_input::SearchResult>,
-        max_results: usize,
-        cached_members: Arc<Vec<RoomMember>>,
-    },
-}
-
-/// Submit a background job request to be executed asynchronously
-pub fn submit_async_job(req: LocalJob) {
-    REQUEST_SENDER.get()
-        .unwrap()
-        .send(BackgroundRequest::AsyncJob(req))
-        .expect("BUG: async worker task receiver has died!");
-}

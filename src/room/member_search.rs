@@ -11,7 +11,6 @@ use matrix_sdk::room::RoomMember;
 use unicode_segmentation::UnicodeSegmentation;
 use crate::shared::mentionable_text_input::SearchResult;
 use crate::sliding_sync::current_user_id;
-use tokio_util::sync::CancellationToken;
 use makepad_widgets::log;
 
 /// Search room members in background thread with streaming support
@@ -20,17 +19,11 @@ pub fn search_room_members_streaming(
     search_text: String,
     max_results: usize,
     sender: Sender<SearchResult>,
-    cancellation_token: CancellationToken,
 ) {
     // Get current user ID to filter out self-mentions
     // Note: We capture this once at the start to avoid repeated global state access
     let current_user_id = current_user_id();
     
-    // Early return if task is already cancelled
-    if cancellation_token.is_cancelled() {
-        log!("Member search cancelled before starting");
-        return;
-    }
 
     // Constants for batching
     const BATCH_SIZE: usize = 10;  // Send results in batches
@@ -41,11 +34,6 @@ pub fn search_room_members_streaming(
         let mut sent_count = 0;
 
         for (index, member) in members.iter().enumerate() {
-            // Check for cancellation
-            if cancellation_token.is_cancelled() {
-                log!("Member search cancelled during empty search processing");
-                return;
-            }
             
             if all_results.len() >= max_results {
                 break;
@@ -116,11 +104,6 @@ pub fn search_room_members_streaming(
     let mut high_priority_count = 0;
 
     for (index, member) in members.iter().enumerate() {
-        // Check for cancellation periodically
-        if index % 100 == 0 && cancellation_token.is_cancelled() {
-            log!("Member search cancelled during search at index {}", index);
-            return;
-        }
         
         // Skip the current user - users should not be able to mention themselves
         if let Some(ref current_id) = current_user_id {

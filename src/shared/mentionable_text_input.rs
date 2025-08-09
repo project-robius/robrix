@@ -6,7 +6,7 @@ use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::shared::typing_animation::TypingAnimationWidgetRefExt;
 use crate::shared::styles::COLOR_UNKNOWN_ROOM_AVATAR;
 use crate::utils;
-use crate::sliding_sync::submit_async_job;
+use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
 
 use makepad_widgets::{text::selection::Cursor, *};
@@ -31,13 +31,13 @@ pub struct SearchResult {
 enum MentionSearchState {
     /// Not in search mode
     Idle,
-    
+
     /// Waiting for room members data to be loaded
     WaitingForMembers {
         trigger_position: usize,
         pending_search_text: String,
     },
-    
+
     /// Actively searching with background task
     Searching {
         trigger_position: usize,
@@ -45,7 +45,7 @@ enum MentionSearchState {
         receiver: Receiver<SearchResult>,
         accumulated_results: Vec<usize>,
     },
-    
+
     /// Search was just cancelled (prevents immediate re-trigger)
     JustCancelled,
 }
@@ -390,7 +390,7 @@ impl Widget for MentionableTextInput {
                 }
             }
         }
-        
+
         self.cmd_text_input.handle_event(cx, event, scope);
 
         // Best practice: Always check Scope first to get current context
@@ -494,16 +494,13 @@ impl Widget for MentionableTextInput {
             }
 
             // Close popup if focus is lost while searching
-            // TODO: Replace direct access to internal popup view with public API method
-            // Should use self.cmd_text_input.is_popup_visible() for better encapsulation
-            // This violates the principle of not accessing internal widget structure
             if !has_focus && self.is_searching() {
                 self.close_mention_popup(cx);
             }
         }
 
         // Check if we were waiting for members and they're now available
-        if let MentionSearchState::WaitingForMembers { trigger_position, pending_search_text } = &self.search_state {
+        if let MentionSearchState::WaitingForMembers { trigger_position: _, pending_search_text } = &self.search_state {
             let room_props = scope
                 .props
                 .get::<RoomScreenProps>()
@@ -538,7 +535,7 @@ impl MentionableTextInput {
             MentionSearchState::WaitingForMembers { .. } | MentionSearchState::Searching { .. }
         )
     }
-    
+
     /// Get the current trigger position if in search mode
     fn get_trigger_position(&self) -> Option<usize> {
         match &self.search_state {
@@ -547,7 +544,7 @@ impl MentionableTextInput {
             _ => None,
         }
     }
-    
+
     /// Check if search was just cancelled
     fn is_just_cancelled(&self) -> bool {
         matches!(self.search_state, MentionSearchState::JustCancelled)
@@ -818,7 +815,7 @@ impl MentionableTextInput {
             self.search_state = MentionSearchState::Idle;
             return;
         }
-        
+
         // Check if text is empty or contains only whitespace
         let trimmed_text = text.trim();
         if trimmed_text.is_empty() {
@@ -895,7 +892,7 @@ impl MentionableTextInput {
         let mut any_results = false;
         let mut should_update_ui = false;
         let mut new_results = Vec::new();
-        
+
         // Process all available results from the channel
         if let MentionSearchState::Searching { receiver, accumulated_results, .. } = &mut self.search_state {
             while let Ok(result) = receiver.try_recv() {
@@ -909,7 +906,7 @@ impl MentionableTextInput {
                     should_update_ui = true;
                 }
             }
-            
+
             if !new_results.is_empty() {
                 accumulated_results.extend(new_results);
             }
@@ -925,7 +922,7 @@ impl MentionableTextInput {
             } else {
                 Vec::new()
             };
-            
+
             if !results_for_ui.is_empty() {
                 // Results are already sorted in member_search.rs and indices are unique
                 self.update_ui_with_results(cx, scope, &search_text);
@@ -940,12 +937,12 @@ impl MentionableTextInput {
             } else {
                 Vec::new()
             };
-            
+
             if final_results.is_empty() {
                 // No user results, but still update UI (may show @room)
                 self.update_ui_with_results(cx, scope, &search_text);
             }
-            
+
             // Don't change state here - let update_ui_with_results handle it
         } else if !any_results {
             // No results received yet - check if channel is still open
@@ -989,15 +986,15 @@ impl MentionableTextInput {
         } else {
             Vec::new()
         };
-        
+
         // Add user mention items using the results
         if !results_to_display.is_empty() {
             let user_items_limit = max_visible_items.saturating_sub(has_room_item as usize);
             let user_items_added = self.add_user_mention_items_from_results(
-                cx, 
+                cx,
                 &results_to_display,
-                user_items_limit, 
-                is_desktop, 
+                user_items_limit,
+                is_desktop,
                 room_props
             );
             items_added += user_items_added;
@@ -1019,7 +1016,7 @@ impl MentionableTextInput {
             _ => {
                 // Not in searching mode, need to determine trigger position
                 if let Some(pos) = self.find_mention_trigger_position(
-                    &self.cmd_text_input.text_input_ref().text(), 
+                    &self.cmd_text_input.text_input_ref().text(),
                     self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.cursor().index)
                 ) {
                     pos
@@ -1058,7 +1055,7 @@ impl MentionableTextInput {
                 trigger_position: trigger_pos,
                 pending_search_text: search_text.to_string(),
             };
-            
+
             // Clear old items before showing loading indicator
             self.cmd_text_input.clear_items();
             self.show_loading_indicator(cx);
@@ -1075,7 +1072,7 @@ impl MentionableTextInput {
             // Submit search request to background worker
             let search_text_clone = search_text.to_string();
             let max_results = max_visible_items * SEARCH_BUFFER_MULTIPLIER;
-            
+
             // Transition to Searching state with new receiver
             self.search_state = MentionSearchState::Searching {
                 trigger_position: trigger_pos,
@@ -1083,18 +1080,18 @@ impl MentionableTextInput {
                 receiver,
                 accumulated_results: Vec::new(),
             };
-            
-            submit_async_job(crate::sliding_sync::LocalJob::SearchRoomMembers {
+
+            submit_async_request(MatrixRequest::SearchRoomMembers {
                 room_id: room_props.room_id.clone(),
                 search_text: search_text_clone,
                 sender,
                 max_results,
                 cached_members: cached_members.clone(),
             });
-            
+
             // Request next frame to check the channel
             cx.new_next_frame();
-            
+
             // Try to check immediately for faster response
             self.check_search_channel(cx, scope);
         }
@@ -1230,7 +1227,7 @@ impl MentionableTextInput {
     pub fn is_mention_searching(&self) -> bool {
         self.is_searching()
     }
-    
+
     /// Check if ESC was handled by mention popup
     pub fn handled_escape(&self) -> bool {
         self.is_just_cancelled()
@@ -1244,28 +1241,28 @@ impl MentionableTextInput {
         } else {
             false
         };
-        
+
         // If no results were shown, show empty state
         if !has_results {
             self.update_ui_with_results(cx, scope, "");
         }
-        
+
         // Keep searching state but mark search as complete
         // The state will be reset when user types or closes popup
     }
-    
+
     /// Reset all search-related state
     fn reset_search_state(&mut self) {
         // Reset to idle state
         self.search_state = MentionSearchState::Idle;
-        
+
         // Reset last search text to allow new searches
         self.last_search_text = None;
-        
+
         // Clear list items
         self.cmd_text_input.clear_items();
     }
-    
+
     /// Cleanup helper for closing mention popup
     fn close_mention_popup(&mut self, cx: &mut Cx) {
         // Reset all search-related state
@@ -1287,6 +1284,7 @@ impl MentionableTextInput {
 
         // Ensure header view is reset to visible next time it's triggered
         // This will happen before update_user_list is called in handle_text_change
+
 
         self.cmd_text_input.request_text_input_focus();
         self.cmd_text_input.redraw(cx);
@@ -1315,21 +1313,7 @@ impl MentionableTextInput {
     pub fn can_notify_room(&self) -> bool {
         self.can_notify_room
     }
-    
-    /// Cleanup method to be called during logout
-    /// Ensures all search state is properly reset and no dangling tasks remain
-    pub fn cleanup_for_logout(&mut self) {
-        // Reset to idle state - this will drop any receiver and cancel ongoing searches
-        self.search_state = MentionSearchState::Idle;
-        
-        // Clear other resources
-        self.last_search_text = None;
-        self.possible_mentions.clear();
-        self.possible_room_mention = false;
-        
-        // Note: Background tasks will be cancelled by the global CancellationToken
-        // which is handled in sliding_sync.rs
-    }
+
 
 
 }
@@ -1351,7 +1335,7 @@ impl MentionableTextInputRef {
     pub fn is_mention_searching(&self) -> bool {
         self.borrow().map_or(false, |inner| inner.is_mention_searching())
     }
-    
+
     /// Check if ESC was handled by mention popup
     pub fn handled_escape(&self) -> bool {
         self.borrow().map_or(false, |inner| inner.handled_escape())
@@ -1375,13 +1359,7 @@ impl MentionableTextInputRef {
     pub fn can_notify_room(&self) -> bool {
         self.borrow().is_some_and(|inner| inner.can_notify_room())
     }
-    
-    /// Cleanup method to be called during logout
-    pub fn cleanup_for_logout(&self) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.cleanup_for_logout();
-        }
-    }
+
 
 
     /// Returns the mentions actually present in the given html message content.
