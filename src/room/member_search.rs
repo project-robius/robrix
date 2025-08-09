@@ -28,70 +28,79 @@ pub fn search_room_members_streaming(
     // Constants for batching
     const BATCH_SIZE: usize = 10;  // Send results in batches
 
-    // For empty search, return all members (up to max_results)
+    // For empty search, return top members sorted by display name (using heap for O(N log K))
     if search_text.is_empty() {
-        let mut all_results = Vec::new();
-        let mut sent_count = 0;
-
+        // Use a max-heap to keep the K smallest elements (by display name)
+        // We use Reverse to make BinaryHeap work as a max-heap for the smallest elements
+        let mut top_k: BinaryHeap<Reverse<(String, usize)>> = BinaryHeap::with_capacity(max_results);
+        
         for (index, member) in members.iter().enumerate() {
-            
-            if all_results.len() >= max_results {
-                break;
-            }
-
             // Skip the current user
             if let Some(ref current_id) = current_user_id {
                 if member.user_id() == current_id {
                     continue;
                 }
             }
-
-            all_results.push(index);
-
-            // Send in batches
-            if all_results.len() >= sent_count + BATCH_SIZE {
-                let batch_end = (sent_count + BATCH_SIZE).min(all_results.len());
-                let batch: Vec<_> = all_results.get(sent_count..batch_end)
-                    .map(|slice| slice.to_vec())
-                    .unwrap_or_else(Vec::new);
-                sent_count = batch_end;
-
-                let search_result = SearchResult {
-                    results: batch,
-                    is_complete: false,
-                    search_text: search_text.clone(),
-                };
-                // Sending batch of results
-                if sender.send(search_result).is_err() {
-                    // Failed to send search results - receiver dropped
-                    return;
+            
+            // Get display name for sorting
+            let sort_key = member.display_name()
+                .unwrap_or_else(|| member.user_id().localpart())
+                .to_lowercase();
+            
+            // Maintain top K smallest elements
+            if top_k.len() < max_results {
+                top_k.push(Reverse((sort_key, index)));
+            } else if let Some(&Reverse((ref worst_key, _))) = top_k.peek() {
+                // Only add if this member comes before the worst (alphabetically last) in heap
+                if sort_key < *worst_key {
+                    top_k.pop();
+                    top_k.push(Reverse((sort_key, index)));
                 }
             }
         }
+        
+        // Extract and sort the final results
+        let mut member_indices: Vec<(String, usize)> = top_k
+            .into_iter()
+            .map(|Reverse(item)| item)
+            .collect();
+        
+        // Sort the K elements for consistent ordering
+        member_indices.sort_by(|a, b| a.0.cmp(&b.0));
+        
+        // Extract just the indices
+        let all_results: Vec<usize> = member_indices.into_iter()
+            .map(|(_, idx)| idx)
+            .collect();
+        
+        let mut sent_count = 0;
+        
+        // Send in batches
+        while sent_count < all_results.len() {
+            let batch_end = (sent_count + BATCH_SIZE).min(all_results.len());
+            let batch: Vec<_> = all_results[sent_count..batch_end].to_vec();
+            sent_count = batch_end;
 
-        // Send any remaining results
-        if sent_count < all_results.len() {
-            let remaining: Vec<_> = all_results.get(sent_count..)
-                .map(|slice| slice.to_vec())
-                .unwrap_or_else(Vec::new);
+            let is_last = sent_count >= all_results.len();
             let search_result = SearchResult {
-                results: remaining,
-                is_complete: true,
+                results: batch,
+                is_complete: is_last,
                 search_text: search_text.clone(),
             };
+            
             if sender.send(search_result).is_err() {
                 return;
             }
-        } else {
-            // Send completion signal
+        }
+        
+        // If no results were sent, send completion signal
+        if all_results.is_empty() {
             let completion_result = SearchResult {
                 results: Vec::new(),
                 is_complete: true,
                 search_text,
             };
-            if sender.send(completion_result).is_err() {
-                return;
-            }
+            let _ = sender.send(completion_result);
         }
         return;
     }
@@ -112,10 +121,8 @@ pub fn search_room_members_streaming(
             }
         }
 
-        // Check if this member matches the search text
-        if user_matches_search(member, &search_text) {
-            let priority = get_match_priority(member, &search_text);
-
+        // Check if this member matches the search text and get priority
+        if let Some(priority) = match_member_with_priority(member, &search_text) {
             // Count high-priority matches (0-3 are exact or starts-with matches)
             if priority <= 3 {
                 high_priority_count += 1;
@@ -132,20 +139,42 @@ pub fn search_room_members_streaming(
                 }
             }
 
-            // Early exit: if we have enough high-priority matches, stop searching
-            if high_priority_count >= max_results {
+            // Soft early exit: continue searching a bit more even after finding enough
+            // high-priority matches to ensure we don't miss better matches
+            // Only exit if we have significantly more high-priority matches than needed
+            if high_priority_count >= max_results * 2 {
                 break;
             }
         }
     }
 
 
-    // Extract results from heap and sort them
+    // Extract results from heap and sort them with stable secondary sorting
     let mut all_matches: Vec<(u8, usize)> = top_matches
         .into_iter()
         .map(|Reverse(item)| item)
         .collect();
-    all_matches.sort_by_key(|(priority, _)| *priority);
+    
+    // Sort by priority first, then by display name for stable ordering within same priority
+    all_matches.sort_by(|(priority_a, idx_a), (priority_b, idx_b)| {
+        match priority_a.cmp(priority_b) {
+            std::cmp::Ordering::Equal => {
+                // Same priority - sort by display name (case-insensitive)
+                let member_a = &members[*idx_a];
+                let member_b = &members[*idx_b];
+                
+                let name_a = member_a.display_name()
+                    .unwrap_or_else(|| member_a.user_id().localpart())
+                    .to_lowercase();
+                let name_b = member_b.display_name()
+                    .unwrap_or_else(|| member_b.user_id().localpart())
+                    .to_lowercase();
+                
+                name_a.cmp(&name_b)
+            }
+            other => other,
+        }
+    });
 
     // Send results in sorted batches
     let mut sent_count = 0;
@@ -194,6 +223,27 @@ pub fn search_room_members_streaming(
             // Failed to send completion signal - receiver dropped
         }
     }
+}
+
+/// Check if search_text appears after a word boundary in text
+/// Word boundaries include: punctuation, symbols, and other non-alphanumeric characters
+fn check_word_boundary_match(text: &str, search_text: &str) -> bool {
+    // Find all occurrences of search_text
+    for (index, _) in text.match_indices(search_text) {
+        if index == 0 {
+            // At the beginning of text is a valid boundary
+            continue; // But we already check starts_with elsewhere
+        }
+        
+        // Check the character before the match
+        if let Some(prev_char) = text[..index].chars().last() {
+            // Consider it a word boundary if previous char is not alphanumeric
+            if !prev_char.is_alphanumeric() {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Check if a string starts with another string based on grapheme clusters
@@ -254,163 +304,124 @@ fn grapheme_starts_with(haystack: &str, needle: &str, case_insensitive: bool) ->
     true
 }
 
-/// Helper function to check if a user matches the search text
-fn user_matches_search(member: &RoomMember, search_text: &str) -> bool {
-    // Early return for empty search
+/// Match a member against search text and return priority if matched
+/// Returns None if no match, Some(priority) if matched (lower priority = better match)
+/// This combines the previous user_matches_search and get_match_priority functions
+/// to avoid duplicate string operations
+fn match_member_with_priority(member: &RoomMember, search_text: &str) -> Option<u8> {
+    // Early return for empty search - all members match with lowest priority
     if search_text.is_empty() {
-        return true;
+        return Some(8);
     }
 
+    let display_name = member.display_name();
+    let localpart = member.user_id().localpart();
+    
     // Determine if we should do case-insensitive search (only for pure ASCII text)
     let case_insensitive = search_text.is_ascii();
-
-    // For ASCII searches, use simple string operations which are much faster
-    if case_insensitive {
-        let search_lower = search_text.to_lowercase();
-
-        // Check display name
-        if let Some(display_name) = member.display_name() {
-            let display_lower = display_name.to_lowercase();
-            if display_lower.starts_with(&search_lower) {
-                return true;
-            }
-            // Check word boundary (simple version for performance)
-            if display_lower.contains(&format!(" {}", search_lower)) {
-                return true;
-            }
-            // Check if search text appears anywhere in display name
-            if display_lower.contains(&search_lower) {
-                return true;
-            }
-        }
-
-        // Check localpart
-        let localpart = member.user_id().localpart();
-        let localpart_lower = localpart.to_lowercase();
-        if localpart_lower.starts_with(&search_lower) {
-            return true;
-        }
-        // Check if search text appears anywhere in localpart
-        if localpart_lower.contains(&search_lower) {
-            return true;
-        }
+    
+    // For ASCII searches, prepare lowercase versions once
+    let (search_lower, display_lower, localpart_lower) = if case_insensitive {
+        (
+            Some(search_text.to_lowercase()),
+            display_name.map(|d| d.to_lowercase()),
+            Some(localpart.to_lowercase())
+        )
     } else {
-        // For non-ASCII text, try simple string operations first (much faster for most cases)
-        // Check display name
-        if let Some(display_name) = member.display_name() {
-            // First try simple starts_with (works for most Chinese names)
-            if display_name.starts_with(search_text) {
-                return true;
-            }
-            // Check if it appears after a space (common word boundary)
-            if display_name.contains(&format!(" {}", search_text)) {
-                return true;
-            }
-            // Check if search text appears anywhere in display name
-            if display_name.contains(search_text) {
-                return true;
-            }
-            // Only fall back to grapheme search for complex cases
-            // This condition checks if search text contains multi-codepoint graphemes
-            // Examples: emojis (👨‍👩‍👧‍👦), combining characters (é = e + ´), flags (🇺🇸)
-            if search_text.graphemes(true).count() != search_text.chars().count() {
-                if grapheme_starts_with(display_name, search_text, false) {
-                    return true;
-                }
-            }
-        }
-
-        // Check localpart
-        let localpart = member.user_id().localpart();
-        if localpart.starts_with(search_text) {
-            return true;
-        }
-        // Check if search text appears anywhere in localpart
-        if localpart.contains(search_text) {
-            return true;
-        }
-    }
-
-    false
-}
-
-
-/// Helper function to determine match priority for sorting
-/// Lower values = higher priority (better matches shown first)
-fn get_match_priority(member: &RoomMember, search_text: &str) -> u8 {
-    let display_name = member
-        .display_name()
-        .map(|n| n.to_string())
-        .unwrap_or_else(|| member.user_id().to_string());
-
-    let localpart = member.user_id().localpart();
-
-    // Determine if we should do case-insensitive comparison
-    let case_insensitive = search_text.is_ascii();
-
-    // Cache lowercase conversions for ASCII text to avoid repeated allocations
-    let search_lower = if case_insensitive { Some(search_text.to_lowercase()) } else { None };
-    let display_lower = if case_insensitive { Some(display_name.to_lowercase()) } else { None };
-    let localpart_lower = if case_insensitive { Some(localpart.to_lowercase()) } else { None };
+        (None, None, None)
+    };
 
     // Priority 0: Exact case-sensitive match (highest priority)
-    if display_name == search_text || localpart == search_text {
-        return 0;
+    if display_name == Some(search_text) || localpart == search_text {
+        return Some(0);
     }
 
     // Priority 1: Exact match (case-insensitive for ASCII)
     if let (Some(ref search_l), Some(ref display_l), Some(ref localpart_l)) =
         (&search_lower, &display_lower, &localpart_lower) {
         if display_l == search_l || localpart_l == search_l {
-            return 1;
+            return Some(1);
         }
     }
 
     // Priority 2: Starts with search text (case-sensitive)
-    if display_name.starts_with(search_text) || localpart.starts_with(search_text) {
-        return 2;
+    if display_name.map_or(false, |d| d.starts_with(search_text)) || 
+       localpart.starts_with(search_text) {
+        return Some(2);
     }
 
-    // Priority 3: Starts with search text (case-insensitive for ASCII)
+    // Priority 3: Display name starts with search text (case-insensitive for ASCII)
     if let (Some(ref search_l), Some(ref display_l)) = (&search_lower, &display_lower) {
         if display_l.starts_with(search_l) {
-            return 3;
+            return Some(3);
         }
     }
 
     // Priority 4: Localpart starts with search text (case-insensitive)
     if let (Some(ref search_l), Some(ref localpart_l)) = (&search_lower, &localpart_lower) {
         if localpart_l.starts_with(search_l) {
-            return 4;
+            return Some(4);
         }
     }
 
     // Priority 5: Display name contains search text at word boundary
-    if display_name.contains(&format!(" {}", search_text)) {
-        return 5;
+    if let Some(display) = display_name {
+        // Check for space boundary (most common)
+        if display.contains(&format!(" {}", search_text)) {
+            return Some(5);
+        }
+        
+        // Check for other word boundaries (punctuation, etc.)
+        // This handles cases like "Hello,@alice" or "(@bob)" or "user:@charlie"
+        if check_word_boundary_match(display, search_text) {
+            return Some(5);
+        }
     }
 
     // Priority 6: Display name contains search text anywhere (substring match)
-    if let (Some(ref search_l), Some(ref display_l)) = (&search_lower, &display_lower) {
-        if display_l.contains(search_l) {
-            return 6;
+    if let Some(display) = display_name {
+        if case_insensitive {
+            if let Some(ref display_l) = display_lower {
+                if let Some(ref search_l) = search_lower {
+                    if display_l.contains(search_l) {
+                        return Some(6);
+                    }
+                }
+            }
+        } else {
+            if display.contains(search_text) {
+                return Some(6);
+            }
         }
-    } else if !case_insensitive && display_name.contains(search_text) {
-        return 6;
     }
 
     // Priority 7: Localpart contains search text anywhere (substring match)
-    if let (Some(ref search_l), Some(ref localpart_l)) = (&search_lower, &localpart_lower) {
-        if localpart_l.contains(search_l) {
-            return 7;
+    if case_insensitive {
+        if let (Some(ref search_l), Some(ref localpart_l)) = (&search_lower, &localpart_lower) {
+            if localpart_l.contains(search_l) {
+                return Some(7);
+            }
         }
-    } else if !case_insensitive && localpart.contains(search_text) {
-        return 7;
+    } else {
+        if localpart.contains(search_text) {
+            return Some(7);
+        }
     }
 
-    // Priority 8: Other matches (shouldn't happen with optimized search)
-    8
+    // For non-ASCII text with complex graphemes, check grapheme-based matching
+    if !case_insensitive && search_text.graphemes(true).count() != search_text.chars().count() {
+        if let Some(display) = display_name {
+            if grapheme_starts_with(display, search_text, false) {
+                return Some(6); // Treat as substring match priority
+            }
+        }
+    }
+
+    // No match found
+    None
 }
+
+
 
 #[cfg(test)]
 mod tests {
@@ -516,6 +527,25 @@ mod tests {
         // Whitespace handling
         assert!(grapheme_starts_with("  hello", "  ", false));
         assert!(grapheme_starts_with("\nhello", "\n", false));
+    }
+
+    #[test]
+    fn test_word_boundary_match() {
+        // Test various word boundary scenarios
+        assert!(check_word_boundary_match("Hello,alice", "alice"));
+        assert!(check_word_boundary_match("(bob) is here", "bob"));
+        assert!(check_word_boundary_match("user:charlie", "charlie"));
+        assert!(check_word_boundary_match("@david!", "david"));
+        assert!(check_word_boundary_match("eve.smith", "smith"));
+        assert!(check_word_boundary_match("frank-jones", "jones"));
+        
+        // Should not match in the middle of a word
+        assert!(!check_word_boundary_match("alice123", "lice"));
+        assert!(!check_word_boundary_match("bobcat", "cat"));
+        
+        // Edge cases
+        assert!(!check_word_boundary_match("test", "test")); // Starts with (handled elsewhere)
+        assert!(!check_word_boundary_match("", "test")); // Empty text
     }
 
     #[test]

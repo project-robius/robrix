@@ -41,7 +41,7 @@ enum MentionSearchState {
     /// Actively searching with background task
     Searching {
         trigger_position: usize,
-        search_text: String,
+        _search_text: String,  // Kept for debugging/future use
         receiver: Receiver<SearchResult>,
         accumulated_results: Vec<usize>,
     },
@@ -646,10 +646,19 @@ impl MentionableTextInput {
                 continue;
             };
 
-            // Get display name from member
+            // Get display name from member, with better fallback
             let display_name = member.display_name()
+                .filter(|name| !name.is_empty())  // Filter out empty display names
                 .unwrap_or_else(|| member.user_id().localpart())
                 .to_owned();
+            
+            // Log warning for extreme cases where we still have no displayable text
+            #[cfg(debug_assertions)]
+            if display_name.is_empty() {
+                log!("Warning: Member {} has no displayable name (empty display_name and localpart)", 
+                     member.user_id());
+            }
+            
             let Some(user_list_item_ptr) = self.user_list_item else {
                 // user_list_item_ptr is None
                 continue;
@@ -1076,7 +1085,7 @@ impl MentionableTextInput {
             // Transition to Searching state with new receiver
             self.search_state = MentionSearchState::Searching {
                 trigger_position: trigger_pos,
-                search_text: search_text.to_string(),
+                _search_text: search_text.to_string(),
                 receiver,
                 accumulated_results: Vec::new(),
             };
