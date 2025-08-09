@@ -22,7 +22,7 @@ use crate::{
     app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
-    }, shared::{
+    }, room::member_search::{PrecomputedMemberSort, precompute_member_sort}, shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::COLOR_FG_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
@@ -1151,6 +1151,7 @@ impl Widget for RoomScreen {
             RoomScreenProps {
                 room_id,
                 room_members,
+                room_members_sort: tl.room_members_sort.clone(),
                 room_display_name,
                 room_avatar_url,
             }
@@ -1160,6 +1161,7 @@ impl Widget for RoomScreen {
             RoomScreenProps {
                 room_id,
                 room_members: None,
+                room_members_sort: None,
                 room_display_name: None,
                 room_avatar_url: None,
             }
@@ -1173,6 +1175,7 @@ impl Widget for RoomScreen {
             RoomScreenProps {
                 room_id: matrix_sdk::ruma::OwnedRoomId::try_from("!dummy:matrix.org").unwrap(),
                 room_members: None,
+                room_members_sort: None,
                 room_display_name: None,
                 room_avatar_url: None,
             }
@@ -1661,8 +1664,13 @@ impl RoomScreen {
                 }
                 TimelineUpdate::RoomMembersListFetched { members } => {
                     // RoomMembersListFetched: Received members for room
-                    // Store room members directly in TimelineUiState
+                    // Precompute sort data for fast @mention search
+                    let sort_data = precompute_member_sort(&members);
+                    
+                    // Store room members and sort data in TimelineUiState
                     tl.room_members = Some(Arc::new(members));
+                    tl.room_members_sort = Some(Arc::new(sort_data));
+                    
                     // Notify MentionableTextInput that members are loaded
                     cx.action(MentionableTextInputAction::RoomMembersLoaded {
                         room_id: tl.room_id.clone(),
@@ -2300,6 +2308,7 @@ impl RoomScreen {
                 user_power: UserPowerLevels::all(),
                 // Room members start as NotLoaded and get populated when fetched from the server
                 room_members: None,
+                room_members_sort: None,
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
                 items: Vector::new(),
@@ -2642,6 +2651,7 @@ impl RoomScreenRef {
 pub struct RoomScreenProps {
     pub room_id: OwnedRoomId,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
+    pub room_members_sort: Option<Arc<PrecomputedMemberSort>>,
     pub room_display_name: Option<String>,
     pub room_avatar_url: Option<OwnedMxcUri>,
 }
@@ -2784,6 +2794,9 @@ struct TimelineUiState {
 
     /// The list of room members for this room.
     room_members: Option<Arc<Vec<RoomMember>>>,
+    
+    /// Pre-computed sort data for room members (for fast @mention search)
+    room_members_sort: Option<Arc<PrecomputedMemberSort>>,
 
     /// Whether this room's timeline has been fully paginated, which means
     /// that the oldest (first) event in the timeline is locally synced and available.

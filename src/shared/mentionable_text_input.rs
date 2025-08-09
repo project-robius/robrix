@@ -647,8 +647,10 @@ impl MentionableTextInput {
             };
 
             // Get display name from member, with better fallback
+            // Trim whitespace and filter out empty/whitespace-only names
             let display_name = member.display_name()
-                .filter(|name| !name.is_empty())  // Filter out empty display names
+                .map(|name| name.trim())  // Remove leading/trailing whitespace
+                .filter(|name| !name.is_empty())  // Filter out empty or whitespace-only names
                 .unwrap_or_else(|| member.user_id().localpart())
                 .to_owned();
             
@@ -1096,6 +1098,7 @@ impl MentionableTextInput {
                 sender,
                 max_results,
                 cached_members: cached_members.clone(),
+                precomputed_sort: room_props.room_members_sort.clone(),
             });
 
             // Request next frame to check the channel

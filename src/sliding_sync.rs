@@ -33,7 +33,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_app_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, room::{RoomPreviewAvatar, member_search::search_room_members_streaming}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem,PopupKind}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, room::{RoomPreviewAvatar, member_search::{search_room_members_streaming_with_sort, PrecomputedMemberSort}}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem,PopupKind}}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -276,6 +276,7 @@ pub enum MatrixRequest {
         sender: std::sync::mpsc::Sender<crate::shared::mentionable_text_input::SearchResult>,
         max_results: usize,
         cached_members: Arc<Vec<RoomMember>>,
+        precomputed_sort: Option<Arc<PrecomputedMemberSort>>,
     },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
@@ -659,11 +660,11 @@ async fn async_worker(
                         });
                     }
 
-            MatrixRequest::SearchRoomMembers { room_id: _, search_text, sender, max_results, cached_members } => {
+            MatrixRequest::SearchRoomMembers { room_id: _, search_text, sender, max_results, cached_members, precomputed_sort } => {
                         // Directly spawn blocking task for search
                         let _search_task = tokio::task::spawn_blocking(move || {
-                            // Perform streaming search
-                            search_room_members_streaming(cached_members, search_text, max_results, sender);
+                            // Perform streaming search with precomputed sort data
+                            search_room_members_streaming_with_sort(cached_members, search_text, max_results, sender, precomputed_sort);
                         });
                     }
 
