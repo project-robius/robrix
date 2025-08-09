@@ -54,11 +54,7 @@ pub fn precompute_member_sort(members: &[RoomMember]) -> PrecomputedMemberSort {
         }
         
         // Get power level rank
-        let power_rank = match member.suggested_role_for_power_level() {
-            RoomMemberRole::Administrator => 0,
-            RoomMemberRole::Moderator => 1,
-            RoomMemberRole::User => 2,
-        };
+        let power_rank = role_to_rank(member.suggested_role_for_power_level());
         
         // Get normalized display name
         let raw_name = member.display_name()
@@ -135,6 +131,15 @@ pub fn precompute_member_sort(members: &[RoomMember]) -> PrecomputedMemberSort {
     }
 }
 
+/// Maps a member role to a sortable rank (lower value = higher priority)
+fn role_to_rank(role: RoomMemberRole) -> u8 {
+    match role {
+        RoomMemberRole::Administrator => 0,
+        RoomMemberRole::Moderator => 1,
+        RoomMemberRole::User => 2,
+    }
+}
+
 /// Search room members in background thread with streaming support (backward compatible)
 pub fn search_room_members_streaming(
     members: Arc<Vec<RoomMember>>,
@@ -183,11 +188,7 @@ pub fn search_room_members_streaming_with_sort(
                 }
                 
                 // Get power level rank (0=highest priority)
-                let power_rank = match member.suggested_role_for_power_level() {
-                    RoomMemberRole::Administrator => 0,
-                    RoomMemberRole::Moderator => 1,
-                    RoomMemberRole::User => 2,
-                };
+                let power_rank = role_to_rank(member.suggested_role_for_power_level());
                 
                 // Get normalized display name
                 let raw_name = member.display_name()
@@ -597,7 +598,7 @@ fn match_member_with_priority(member: &RoomMember, search_text: &str) -> Option<
     }
 
     // Priority 4: Display name starts with search text (case-sensitive)
-    if display_name.map_or(false, |d| d.starts_with(search_text)) {
+    if display_name.is_some_and(|d| d.starts_with(search_text)) {
         return Some(4);
     }
 
@@ -685,6 +686,117 @@ fn match_member_with_priority(member: &RoomMember, search_text: &str) -> Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use matrix_sdk::room::RoomMemberRole;
+
+    #[test]
+    fn test_role_to_rank() {
+        // Verify that admin < moderator < user in terms of rank
+        assert_eq!(role_to_rank(RoomMemberRole::Administrator), 0);
+        assert_eq!(role_to_rank(RoomMemberRole::Moderator), 1);
+        assert_eq!(role_to_rank(RoomMemberRole::User), 2);
+        
+        // Verify ordering
+        assert!(role_to_rank(RoomMemberRole::Administrator) < role_to_rank(RoomMemberRole::Moderator));
+        assert!(role_to_rank(RoomMemberRole::Moderator) < role_to_rank(RoomMemberRole::User));
+    }
+
+    #[test]
+    fn test_top_k_selection_correctness() {
+        use std::collections::BinaryHeap;
+        
+        // Simulate Top-K selection with mixed priorities
+        let test_data = vec![
+            (5, "user5"),   // priority 5
+            (1, "user1"),   // priority 1 (better)
+            (3, "user3"),   // priority 3
+            (0, "user0"),   // priority 0 (best)
+            (8, "user8"),   // priority 8 (worst)
+            (2, "user2"),   // priority 2
+            (4, "user4"),   // priority 4
+            (1, "user1b"),  // priority 1 (tie)
+        ];
+        
+        let max_results = 3;
+        let mut top_matches: BinaryHeap<(u8, &str)> = BinaryHeap::with_capacity(max_results);
+        
+        // Apply the same algorithm as in search
+        for (priority, name) in test_data {
+            if top_matches.len() < max_results {
+                top_matches.push((priority, name));
+            } else if let Some(&(worst_priority, _)) = top_matches.peek() {
+                if priority < worst_priority {
+                    top_matches.pop();
+                    top_matches.push((priority, name));
+                }
+            }
+        }
+        
+        // Extract and sort results
+        let mut results: Vec<(u8, &str)> = top_matches.into_iter().collect();
+        results.sort_by_key(|&(priority, _)| priority);
+        
+        // Verify we got the top 3 with lowest priorities
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].0, 0);  // Best priority
+        assert_eq!(results[1].0, 1);  // Second best
+        assert_eq!(results[2].0, 1);  // Tied second best
+        
+        // Verify the worst candidates were excluded
+        assert!(!results.iter().any(|&(p, _)| p >= 4));
+    }
+
+    #[test]
+    fn test_word_boundary_case_insensitive() {
+        // Test case-insensitive word boundary matching for ASCII
+        assert!(check_word_boundary_match("Hello, Alice", "alice", true));
+        assert!(check_word_boundary_match("@BOB is here", "bob", true));
+        assert!(check_word_boundary_match("Meet CHARLIE!", "charlie", true));
+        assert!(check_word_boundary_match("user:David", "david", true));
+        
+        // Should not match in middle of word (case-insensitive)
+        assert!(!check_word_boundary_match("AliceSmith", "lice", true));
+        assert!(!check_word_boundary_match("BOBCAT", "cat", true));
+        
+        // Test case-sensitive mode
+        assert!(check_word_boundary_match("Hello, alice", "alice", false));
+        assert!(!check_word_boundary_match("Hello, Alice", "alice", false));
+        
+        // Test with mixed case in search text
+        assert!(check_word_boundary_match("Hello, Alice", "Alice", true));
+        assert!(check_word_boundary_match("Hello, Alice", "Alice", false));
+    }
+
+    #[test]
+    fn test_name_category_with_stripped_prefix() {
+        // Helper to determine name category (matching the actual implementation)
+        fn get_name_category(raw_name: &str) -> u8 {
+            let stripped = raw_name.trim_start_matches(|c: char| !c.is_alphanumeric());
+            if !stripped.is_empty() {
+                match stripped.chars().next() {
+                    Some(c) if c.is_alphabetic() => 0,
+                    Some(c) if c.is_numeric() => 1,
+                    _ => 2,
+                }
+            } else {
+                2  // All symbols
+            }
+        }
+        
+        // Test normal names
+        assert_eq!(get_name_category("alice"), 0);      // Alphabetic
+        assert_eq!(get_name_category("123user"), 1);    // Numeric
+        assert_eq!(get_name_category("@#$%"), 2);       // All symbols
+        
+        // Test names with symbol prefixes
+        assert_eq!(get_name_category("!!!alice"), 0);   // Should be alphabetic after stripping
+        assert_eq!(get_name_category("@bob"), 0);       // Should be alphabetic after stripping
+        assert_eq!(get_name_category("___123"), 1);     // Should be numeric after stripping
+        assert_eq!(get_name_category("#$%alice"), 0);   // Should be alphabetic after stripping
+        
+        // Test edge cases
+        assert_eq!(get_name_category(""), 2);           // Empty -> symbols
+        assert_eq!(get_name_category("!!!"), 2);        // All symbols -> symbols
+    }
 
     #[test]
     fn test_grapheme_starts_with_basic() {
@@ -881,6 +993,49 @@ mod tests {
         assert_eq!(names[3].0, "123test");
         assert_eq!(names[4].0, "!!!alice");
         assert_eq!(names[5].0, "@bob");
+    }
+
+    #[test]
+    fn test_role_to_rank_mapping() {
+        assert_eq!(role_to_rank(RoomMemberRole::Administrator), 0);
+        assert_eq!(role_to_rank(RoomMemberRole::Moderator), 1);
+        assert_eq!(role_to_rank(RoomMemberRole::User), 2);
+    }
+
+    #[test]
+    fn test_top_k_heap_selection_priorities() {
+        // Simulate the heap logic used in non-empty search: keep K smallest priorities
+        fn top_k(items: &[(u8, usize)], k: usize) -> Vec<(u8, usize)> {
+            use std::collections::BinaryHeap;
+            let mut heap: BinaryHeap<(u8, usize)> = BinaryHeap::with_capacity(k);
+            for &(p, idx) in items {
+                if heap.len() < k {
+                    heap.push((p, idx));
+                } else if let Some(&(worst_p, _)) = heap.peek() {
+                    if p < worst_p {
+                        let _ = heap.pop();
+                        heap.push((p, idx));
+                    }
+                }
+            }
+            let mut out: Vec<(u8, usize)> = heap.into_iter().collect();
+            out.sort_by_key(|(p, _)| *p);
+            out
+        }
+
+        let items = vec![
+            (9, 0), (3, 1), (5, 2), (1, 3), (2, 4), (7, 5), (0, 6), (4, 7), (6, 8), (8, 9),
+        ];
+
+        // K = 3 should return priorities [0, 1, 2]
+        let k3 = top_k(&items, 3);
+        let priorities: Vec<u8> = k3.into_iter().map(|(p, _)| p).collect();
+        assert_eq!(priorities, vec![0, 1, 2]);
+
+        // K = 5 should return priorities [0, 1, 2, 3, 4]
+        let k5 = top_k(&items, 5);
+        let priorities: Vec<u8> = k5.into_iter().map(|(p, _)| p).collect();
+        assert_eq!(priorities, vec![0, 1, 2, 3, 4]);
     }
 
     #[test]

@@ -27,9 +27,10 @@ pub struct SearchResult {
 }
 
 /// State machine for mention search functionality
-#[derive(Debug)]
+#[derive(Debug, Default)]
 enum MentionSearchState {
     /// Not in search mode
+    #[default]
     Idle,
 
     /// Waiting for room members data to be loaded
@@ -50,11 +51,7 @@ enum MentionSearchState {
     JustCancelled,
 }
 
-impl Default for MentionSearchState {
-    fn default() -> Self {
-        MentionSearchState::Idle
-    }
-}
+// Default is derived above; Idle is marked as the default variant
 
 // Constants for mention popup height calculations
 const DESKTOP_ITEM_HEIGHT: f64 = 32.0;
@@ -1345,12 +1342,12 @@ impl MentionableTextInputRef {
 
     /// Check if mention search is currently active
     pub fn is_mention_searching(&self) -> bool {
-        self.borrow().map_or(false, |inner| inner.is_mention_searching())
+        self.borrow().is_some_and(|inner| inner.is_mention_searching())
     }
 
     /// Check if ESC was handled by mention popup
     pub fn handled_escape(&self) -> bool {
-        self.borrow().map_or(false, |inner| inner.handled_escape())
+        self.borrow().is_some_and(|inner| inner.handled_escape())
     }
 
     pub fn set_text(&self, cx: &mut Cx, text: &str) {
