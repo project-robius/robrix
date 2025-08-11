@@ -1,4 +1,4 @@
-//! A simpel modal that displays basic confirmation (yes/no) dialog.
+//! A simple modal that displays basic confirmation (yes/no) dialog.
 
 use std::borrow::Cow;
 
@@ -125,8 +125,19 @@ pub enum ConfirmationModalAction {
 }
 
 /// Defines the content and behavior of a confirmation modal.
+///
+/// Only the title and body text are required.
+/// Everything else can be left as default values like so:
+/// ```rust,no_run
+/// let content = ConfirmationModalContent {
+///     title_text: "Confirm deletion".into()
+///     body_text: "Are you sure you want to delete this file?".into()
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Default)]
-pub struct ConfirmationModalBuilder {
+#[allow(clippy::type_complexity)]
+pub struct ConfirmationModalContent {
     /// The title text of the modal, shown at the top.
     pub title_text: Cow<'static, str>,
     /// The body text of the modal, shown below the title and above the buttons.
@@ -142,9 +153,9 @@ pub struct ConfirmationModalBuilder {
     /// A callback to be called when the cancel button is clicked.
     pub on_cancel_clicked: Option<Box<dyn FnOnce(&mut Cx)>>,
 }
-impl std::fmt::Debug for ConfirmationModalBuilder {
+impl std::fmt::Debug for ConfirmationModalContent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ConfirmationModalBuilder")
+        f.debug_struct("ConfirmationModalContent")
             .field("title", &self.title_text)
             .field("body", &self.body_text)
             .field("accept_button", &self.accept_button_text)
@@ -159,7 +170,7 @@ impl std::fmt::Debug for ConfirmationModalBuilder {
 #[derive(Live, LiveHook, Widget)]
 pub struct ConfirmationModal {
     #[deref] view: View,
-    #[rust] content: ConfirmationModalBuilder,
+    #[rust] content: ConfirmationModalContent,
 }
 
 impl Widget for ConfirmationModal {
@@ -214,12 +225,12 @@ impl WidgetMatchEvent for ConfirmationModal {
 }
 
 impl ConfirmationModal {
-    pub fn show(&mut self, cx: &mut Cx, builder: ConfirmationModalBuilder) {
-        self.content = builder;
-        self.apply_builder_content(cx);
+    pub fn show(&mut self, cx: &mut Cx, content: ConfirmationModalContent) {
+        self.content = content  ;
+        self.apply_content(cx);
     }
 
-    fn apply_builder_content(&mut self, cx: &mut Cx) {
+    fn apply_content(&mut self, cx: &mut Cx) {
         self.view.label(id!(title)).set_text(cx, &self.content.title_text);
         self.view.label(id!(body)).set_text(cx, &self.content.body_text);
         self.view.button(id!(accept_button)).set_text(
@@ -240,9 +251,10 @@ impl ConfirmationModal {
 }
 
 impl ConfirmationModalRef {
-    pub fn show(&self, cx: &mut Cx, builder: ConfirmationModalBuilder) {
+    /// Shows the confirmation modal with the given content.
+    pub fn show(&self, cx: &mut Cx, content: ConfirmationModalContent) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show(cx, builder);
+        inner.show(cx, content);
     }
 
     /// Returns `Some(bool)` if this modal was closed by one of the given `actions`.

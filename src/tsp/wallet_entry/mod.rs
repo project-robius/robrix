@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use makepad_widgets::*;
 
 use crate::{
-    shared::{confirmation_modal::ConfirmationModalBuilder, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}},
+    shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}},
     tsp::{submit_tsp_request, tsp_settings_screen::{WalletStatus, WalletStatusAndDefault}, TspRequest, TspWalletMetadata}
 };
 
@@ -162,7 +162,7 @@ impl Widget for WalletEntry {
             }
             if self.view.button(id!(remove_wallet_button)).clicked(actions) {
                 let metadata_clone = metadata.clone();
-                let confirmation_modal_content = ConfirmationModalBuilder {
+                let content = ConfirmationModalContent {
                     title_text: "Remove Wallet".into(),
                     body_text: format!(
                         "Are you sure you want to remove the wallet \"{}\" \
@@ -175,7 +175,7 @@ impl Widget for WalletEntry {
                     })),
                     ..Default::default()
                 };
-                cx.action(TspWalletEntryAction::ShowConfirmationModal(RefCell::new(Some(confirmation_modal_content))));
+                cx.action(TspWalletEntryAction::ShowConfirmationModal(RefCell::new(Some(content))));
             }
             if self.view.button(id!(delete_wallet_button)).clicked(actions) {
                 // TODO: Implement the delete wallet feature.
@@ -240,7 +240,7 @@ pub enum TspWalletEntryAction {
     /// Show a confirmation modal for an action related to a TSP wallet entry.
     ///
     /// The content is wrapped in a `RefCell` to ensure that only one entity handles it
-    /// and that that one entity can take ownership of the builder object,
+    /// and that that one entity can take ownership of the content object,
     /// which avoids having to clone it.
-    ShowConfirmationModal(RefCell<Option<ConfirmationModalBuilder>>),
+    ShowConfirmationModal(RefCell<Option<ConfirmationModalContent>>),
 }
