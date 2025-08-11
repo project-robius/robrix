@@ -326,6 +326,14 @@ async fn inner_tsp_init() -> anyhow::Result<()> {
     let saved_tsp_state = persistence::load_tsp_state().await?;
     let mut new_tsp_state = TspState::new();
     new_tsp_state.deserialize_and_open_default_wallet_from(saved_tsp_state).await?;
+    if new_tsp_state.has_content() && new_tsp_state.current_wallet.is_none() {
+        enqueue_popup_notification(PopupItem {
+            message: String::from("TSP wallet(s) were loaded successfully, but no default wallet was set.\n\n\
+                TSP wallet-related features will not work properly until you set a default wallet."),
+            auto_dismissal_duration: None,
+            kind: PopupKind::Warning,
+        });
+    }
     *TSP_STATE.lock().unwrap() = new_tsp_state;
     Ok(())
 }
@@ -345,7 +353,10 @@ pub enum TspWalletAction {
         error: anyhow::Error,
     },
     /// A wallet was removed from the list.
-    WalletRemoved(TspWalletMetadata),
+    WalletRemoved {
+        metadata: TspWalletMetadata,
+        was_default: bool,
+    },
     /// The default wallet was successfully or unsuccessfully changed.
     DefaultWalletChanged(Result<TspWalletMetadata, ()>),
     /// The given wallet was successfully or unsuccessfully opened.
@@ -368,7 +379,9 @@ pub enum TspRequest {
     },
     /// Request to set an existing open wallet as the default.
     SetDefaultWallet(TspWalletMetadata),
-    /// Request to delete a TSP wallet.
+    /// Request to remove a TSP wallet from the list without deleting it.
+    RemoveWallet(TspWalletMetadata),
+    /// Request to permanently delete a TSP wallet.
     DeleteWallet(TspWalletMetadata),
 }
 
@@ -500,6 +513,25 @@ async fn async_tsp_worker(
                     }
                 };
                 Cx::post_action(TspWalletAction::WalletOpened(result));
+            });
+        }
+
+        TspRequest::RemoveWallet(metadata) => {
+            log!("Received TspRequest::RemoveWallet({metadata:?})");
+            Handle::current().spawn(async move {
+                let mut tsp_state = tsp_state_ref().lock().unwrap();
+                let was_default = if tsp_state.current_wallet.as_ref().is_some_and(|cw| cw.metadata == metadata) {
+                    tsp_state.current_wallet = None;
+                    true
+                }
+                else if let Some(i) = tsp_state.other_wallets.iter().position(|w| w.metadata() == &metadata) {
+                    tsp_state.other_wallets.remove(i);
+                    false
+                } else {
+                    error!("BUG: failed to remove wallet not found in TSP state: {metadata:?}");
+                    return;
+                };
+                Cx::post_action(TspWalletAction::WalletRemoved { metadata, was_default });
             });
         }
 
