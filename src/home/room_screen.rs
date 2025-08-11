@@ -28,7 +28,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::MediaCacheEntry, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -84,7 +84,8 @@ live_design! {
     use crate::home::room_read_receipt::*;
     use crate::rooms_list::*;
     use crate::shared::restore_status_view::*;
-
+    use crate::shared::image_viewer_modal::ImageViewerModal;
+    
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
@@ -752,10 +753,10 @@ live_design! {
             // The user profile sliding pane should be displayed on top of other "static" subviews
             // (on top of all other views that are always visible).
             user_profile_sliding_pane = <UserProfileSlidingPane> { }
-
+            
             // The loading pane appears while the user is waiting for something in the room screen
             // to finish loading, e.g., when loading an older replied-to message.
-            loading_pane = <LoadingPane> { }
+            //loading_pane = <LoadingPane> { }
 
 
             /*
@@ -1321,7 +1322,6 @@ impl Widget for RoomScreen {
                                         event_tl_item,
                                         msg_like_content,
                                         prev_event,
-                                        &mut tl_state.media_cache,
                                         &tl_state.user_power,
                                         item_drawn_status,
                                         room_screen_widget_uid,
@@ -2310,7 +2310,6 @@ impl RoomScreen {
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
                 request_sender,
-                media_cache: MediaCache::new(Some(update_sender)),
                 replying_to: None,
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
@@ -2319,6 +2318,10 @@ impl RoomScreen {
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
             };
+            
+            // Add this timeline's update sender to the global MediaCache
+            crate::media_cache::get_media_cache().lock().unwrap().add_timeline_update_sender(update_sender);
+            
             (tl_state, true)
         };
 
@@ -2827,10 +2830,6 @@ struct TimelineUiState {
     /// to the background async task that handles this room's timeline updates.
     request_sender: TimelineRequestSender,
 
-    /// The cache of media items (images, videos, etc.) that appear in this timeline.
-    ///
-    /// Currently this excludes avatars, as those are shared across multiple rooms.
-    media_cache: MediaCache,
 
     /// Info about the event currently being replied to, if any.
     replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
@@ -2994,7 +2993,6 @@ fn populate_message_view(
     event_tl_item: &EventTimelineItem,
     msg_like_content: &MsgLikeContent,
     prev_event: Option<&Arc<TimelineItem>>,
-    media_cache: &mut MediaCache,
     user_power_levels: &UserPowerLevels,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
@@ -3193,7 +3191,6 @@ fn populate_message_view(
                             image_info,
                             image.source.clone(),
                             msg.body(),
-                            media_cache,
                         );
                         new_drawn_status.content_drawn = is_image_fully_drawn;
                         (item, false)
@@ -3346,7 +3343,6 @@ fn populate_message_view(
                         Some(Box::new(image_info.clone())),
                         MediaSource::Plain(owned_mxc_url.clone()),
                         body,
-                        media_cache,
                     );
                     new_drawn_status.content_drawn = is_image_fully_drawn;
                     (item, false)
@@ -3514,7 +3510,6 @@ fn populate_image_message_content(
     image_info_source: Option<Box<ImageInfo>>,
     original_source: MediaSource,
     body: &str,
-    media_cache: &mut MediaCache,
 ) -> bool {
     // We don't use thumbnails, as their resolution is too low to be visually useful.
     // We also don't trust the provided mimetype, as it can be incorrect.
@@ -3539,9 +3534,9 @@ fn populate_image_message_content(
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
     let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
+        match crate::media_cache::get_media_cache().lock().unwrap().try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
-                let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                let show_image_result = text_or_image_ref.show_image(cx, mxc_uri.clone(),|cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
@@ -3549,6 +3544,9 @@ fn populate_image_message_content(
                     let err_str = format!("{body}\n\nFailed to display image: {e:?}");
                     error!("{err_str}");
                     text_or_image_ref.show_text(cx, &err_str);
+                } else {
+                    // Add click handler for the image
+                    let _mxc_uri_clone = mxc_uri.clone();
                 }
 
                 // We're done drawing the image, so mark it as fully drawn.
@@ -3557,7 +3555,7 @@ fn populate_image_message_content(
             (MediaCacheEntry::Requested, _media_format) => {
                 // If the image is being fetched, we try to show its blurhash.
                 if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
-                    let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                    let show_image_result = text_or_image_ref.show_image(cx, mxc_uri.clone(), |cx, img| {
                         let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else {
                             return Err(image_cache::ImageError::EmptyData)
                         };
