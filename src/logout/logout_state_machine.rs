@@ -52,7 +52,7 @@
 //! - **Special case**: M_UNKNOWN_TOKEN treated as success (token already invalid)
 //!
 //! ### Async Coordination
-//! Uses oneshot channels for UI synchronization:
+//! Uses Arc<Notify> for UI synchronization:
 //! - `ClosingTabs`: Wait for desktop tabs to close (5s timeout)
 //! - `CleaningAppState`: Wait for UI state cleanup (5s timeout)
 //! - All operations have timeout protection to prevent hanging
@@ -85,9 +85,9 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use anyhow::{anyhow, Result};
-use makepad_widgets::{Cx, log, makepad_futures::channel::oneshot};
+use makepad_widgets::{Cx, log};
 
 use crate::persistence::delete_latest_user_id;
 use crate::settings::SettingsAction;
@@ -458,13 +458,13 @@ impl LogoutStateMachine {
         // Check client existence
         if get_client().is_none() {
             log!("perform_prechecks: client missing");
-            return Err(LogoutError::Unrecoverable(UnrecoverableError::ClientMissing));
+            return Err(LogoutError::Unrecoverable(UnrecoverableError::ComponentsCleared));
         }
         
         // Check sync service
         if get_sync_service().is_none() {
             log!("perform_prechecks: sync service missing");
-            return Err(LogoutError::Unrecoverable(UnrecoverableError::SyncServiceMissing));
+            return Err(LogoutError::Unrecoverable(UnrecoverableError::ComponentsCleared));
         }
         log!("perform_prechecks: sync service exists");
         
@@ -486,13 +486,13 @@ impl LogoutStateMachine {
             sync_service.stop().await;
             Ok(())
         } else {
-            Err(LogoutError::Unrecoverable(UnrecoverableError::SyncServiceMissing))
+            Err(LogoutError::Unrecoverable(UnrecoverableError::ComponentsCleared))
         }
     }
     
     async fn perform_server_logout(&self) -> Result<(), LogoutError> {
         let Some(client) = get_client() else {
-            return Err(LogoutError::Unrecoverable(UnrecoverableError::ClientMissing));
+            return Err(LogoutError::Unrecoverable(UnrecoverableError::ComponentsCleared));
         };
         
         match tokio::time::timeout(
@@ -506,15 +506,14 @@ impl LogoutStateMachine {
     }
     
     async fn close_all_tabs(&self) -> Result<()> {
-        let (tx, rx) = oneshot::channel::<bool>();
-        Cx::post_action(MainDesktopUiAction::CloseAllTabs { on_close_all: tx });
+        let on_close_all = Arc::new(Notify::new());
+        Cx::post_action(MainDesktopUiAction::CloseAllTabs { on_close_all: on_close_all.clone() });
         
-        match tokio::time::timeout(self.config.tab_close_timeout, rx).await {
-            Ok(Ok(_)) => {
+        match tokio::time::timeout(self.config.tab_close_timeout, on_close_all.notified()).await {
+            Ok(_) => {
                 log!("Received signal that all tabs were closed successfully");
                 Ok(())
             }
-            Ok(Err(e)) => Err(anyhow!("Failed to close all tabs: {}", e)),
             Err(_) => Err(anyhow!("Timed out waiting for tabs to close")),
         }
     }
@@ -537,14 +536,9 @@ impl LogoutStateMachine {
         }
         
         match error {
-            LogoutError::Unrecoverable(UnrecoverableError::ClientMissing) => {
+            LogoutError::Unrecoverable(UnrecoverableError::ComponentsCleared) => {
                 Cx::post_action(LogoutAction::ApplicationRequiresRestart { 
                     cleared_component: ClearedComponentType::Client 
-                });
-            }
-            LogoutError::Unrecoverable(UnrecoverableError::SyncServiceMissing) => {
-                Cx::post_action(LogoutAction::ApplicationRequiresRestart { 
-                    cleared_component: ClearedComponentType::SyncService 
                 });
             }
             LogoutError::Recoverable(RecoverableError::Cancelled) => {
@@ -554,30 +548,6 @@ impl LogoutStateMachine {
             _ => {
                 Cx::post_action(LogoutAction::LogoutFailure(error.to_string()));
             }
-        }
-    }
-}
-
-/// Telemetry data for logout operations
-#[derive(Debug, Clone)]
-pub struct LogoutTelemetry {
-    pub total_duration: Duration,
-    pub step_durations: Vec<(String, Duration)>,
-    pub final_state: LogoutState,
-    pub error_count: u32,
-}
-
-impl LogoutStateMachine {
-    /// Get telemetry data for the logout operation
-    pub async fn get_telemetry(&self) -> LogoutTelemetry {
-        let progress = self.progress.lock().await;
-        let current_state = self.current_state.lock().await;
-        
-        LogoutTelemetry {
-            total_duration: progress.started_at.elapsed(),
-            step_durations: vec![], // Would be populated during execution
-            final_state: current_state.clone(),
-            error_count: 0, // Would be tracked during execution
         }
     }
 }

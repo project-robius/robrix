@@ -1,5 +1,8 @@
-use makepad_widgets::{makepad_futures::channel::oneshot::Sender, *};
-use crate::{shared::styles::COLOR_RESTART_NOW_RED, sliding_sync::{is_logout_past_point_of_no_return, set_logout_in_progress, submit_async_request, MatrixRequest}};
+use std::sync::Arc;
+
+use makepad_widgets::*;
+use tokio::sync::Notify;
+use crate::{shared::styles::COLOR_FG_DANGER_RED, sliding_sync::{is_logout_past_point_of_no_return, set_logout_in_progress, submit_async_request, MatrixRequest}};
 
 live_design! {
     use link::theme::*;
@@ -14,7 +17,7 @@ live_design! {
         height: Fit,
 
         <RoundedView> {
-            width: 300,
+            width: 400,
             height: Fit,
             flow: Down,
             align: {x: 0.5},
@@ -124,7 +127,6 @@ pub enum LogoutConfirmModalAction {
 }
 
 /// Actions related to logout process 
-#[derive(Clone, DefaultNone)]
 pub enum LogoutAction {
     /// A positive response from the backend Matrix task to the logout.
     LogoutSuccess,
@@ -132,7 +134,7 @@ pub enum LogoutAction {
     LogoutFailure(String),
     /// A request from the background task to the main UI thread to clear all app state.
     ClearAppState {
-        on_clear_appstate: Sender<bool>
+        on_clear_appstate: Arc<Notify>,
     },
     /// Signal that the application is in an invalid state and needs to be restarted.
     /// This happens when critical components have been cleaned up during a previous
@@ -146,7 +148,6 @@ pub enum LogoutAction {
         message: String,
         percentage: u8,
     },
-    None,
 }
 
 impl std::fmt::Debug for LogoutAction {
@@ -161,7 +162,6 @@ impl std::fmt::Debug for LogoutAction {
             LogoutAction::ProgressUpdate { message, percentage } => {
                 write!(f, "ProgressUpdate({}, {}%)", message, percentage)
             }
-            LogoutAction::None => write!(f, "None"),
         }
     }
 }
@@ -247,7 +247,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                         confirm_button.set_text(cx, "Restart now");
                         confirm_button.apply_over(cx, live!{
                             draw_bg: {
-                                color: (COLOR_RESTART_NOW_RED)
+                                color: (COLOR_FG_DANGER_RED)
                             }
                         });
                         confirm_button.set_enabled(cx, true);
@@ -272,7 +272,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                     confirm_button.set_text(cx, "Restart now");
                     confirm_button.apply_over(cx, live!{
                         draw_bg: {
-                            color: (COLOR_RESTART_NOW_RED)
+                            color: (COLOR_FG_DANGER_RED)
                         }
                     });
                     confirm_button.set_enabled(cx, true);

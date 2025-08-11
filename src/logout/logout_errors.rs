@@ -24,10 +24,8 @@ pub enum RecoverableError {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UnrecoverableError {
-    /// Client is missing (previous logout reached point of no return)
-    ClientMissing,
-    /// Sync service is missing
-    SyncServiceMissing,
+    /// Core components(client, sync service) have been cleared (previous logout reached point of no return)
+    ComponentsCleared,
     /// Failed after point of no return
     PostPointOfNoReturnFailure(String),
     /// Runtime restart failed

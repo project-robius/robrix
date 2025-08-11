@@ -1,6 +1,7 @@
-use makepad_widgets::{makepad_futures::channel::oneshot::Sender, *};
+use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use std::collections::HashMap;
+use tokio::sync::Notify;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{app::{AppState, AppStateAction, SelectedRoom}, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
@@ -291,7 +292,7 @@ impl WidgetMatchEvent for MainDesktopUI {
 
             if let Some(MainDesktopUiAction::CloseAllTabs { on_close_all }) = action.downcast_ref() {
                 self.close_all_tabs(cx);
-                on_close_all.clone().send(true).unwrap();
+                on_close_all.notify_one();
                 continue;
             }
 
@@ -431,7 +432,7 @@ impl WidgetMatchEvent for MainDesktopUI {
 }
 
 /// Actions sent to the MainDesktopUI widget for saving/restoring its dock state.
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Debug)]
 pub enum MainDesktopUiAction {
     /// Save the state of the dock into the AppState.
     SaveDockIntoAppState,
@@ -440,7 +441,6 @@ pub enum MainDesktopUiAction {
     DockLoad,
     /// Close all tabs; see [`MainDesktopUI::close_all_tabs()`]
     CloseAllTabs {
-        on_close_all: Sender<bool>,
+        on_close_all: Arc<Notify>,
     },
-    None,
 }

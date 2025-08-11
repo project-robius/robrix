@@ -5,7 +5,7 @@ use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
-use makepad_widgets::{error, log, makepad_futures::channel::oneshot, warning, Cx, SignalToUI};
+use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
@@ -3070,15 +3070,14 @@ pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
     
-    let (tx, rx) = oneshot::channel::<bool>();
-    Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: tx });
+    let on_clear_appstate = Arc::new(Notify::new());
+    Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });
     
-    match tokio::time::timeout(config.app_state_cleanup_timeout, rx).await {
-        Ok(Ok(_)) => {
+    match tokio::time::timeout(config.app_state_cleanup_timeout, on_clear_appstate.notified()).await {
+        Ok(_) => {
             log!("Received signal that app state was cleaned successfully");
             Ok(())
         }
-        Ok(Err(e)) => Err(anyhow!("Failed to clean app state: {}", e)),
         Err(_) => Err(anyhow!("Timed out waiting for app state cleanup")),
     }
 }
