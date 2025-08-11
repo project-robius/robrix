@@ -13,8 +13,7 @@ use crate::{
     join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
     room::{BasicRoomDetails, RoomPreviewAvatar},
     shared::avatar::AvatarWidgetExt,
-    sliding_sync::avatar_from_room_name,
-    utils::{self, OwnedRoomIdRon},
+    utils::{self, OwnedRoomIdRon, avatar_from_room_name},
 };
 
 use super::rooms_list::RoomsListAction;
@@ -262,23 +261,13 @@ impl TombstoneFooter {
         );
     }
 
-    /// Returns `true` if the room with the given `room_id` is tombstoned (shut down and replaced with a successor room).
-    /// Returns `false` if the room is not tombstoned.
-    pub fn is_tombstoned(&self, cx: &mut Cx, room_id: &OwnedRoomId) -> bool {
-        let rooms_list_ref = cx.get_global::<RoomsListRef>();
-        let Some(is_tombstoned) = rooms_list_ref
-            .get_joined_room_info(room_id)
-            .map(|room_info| room_info.is_tombstoned)
-        else {
-            return false;
-        };
-        is_tombstoned
-    }
-
     /// Hides the tombstone footer, making it invisible and clearing any successor room information.
-    fn hide(&mut self, _cx: &mut Cx) {
+    fn hide(&mut self, cx: &mut Cx) {
         self.visible = false;
         self.successor_info = None;
+        self.view
+            .label_set(ids![replacement_reason, successor_room_name])
+            .set_text(cx, "");
     }
 }
 
@@ -294,12 +283,5 @@ impl TombstoneFooterRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.hide(cx);
         }
-    }
-    /// See [`TombstoneFooter::is_tombstoned()`].
-    pub fn is_tombstoned(&self, cx: &mut Cx, room_id: &OwnedRoomId) -> bool {
-        if let Some(inner) = self.borrow() {
-            return inner.is_tombstoned(cx, room_id);
-        }
-        false
     }
 }

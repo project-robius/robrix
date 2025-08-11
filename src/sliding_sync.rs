@@ -23,7 +23,6 @@ use tokio::{
     runtime::Handle,
     sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
-use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
 use std::io;
@@ -51,7 +50,7 @@ use crate::{
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{enqueue_popup_notification, PopupItem, PopupKind}
     },
-    utils::{self, AVATAR_THUMBNAIL_FORMAT},
+    utils::{self, avatar_from_room_name, AVATAR_THUMBNAIL_FORMAT},
     verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -1151,78 +1150,30 @@ async fn async_worker(
                 });
             }
             MatrixRequest::GetSuccessorRoom { room_id } => {
-                let all_joined_rooms_guard = match ALL_JOINED_ROOMS.lock() {
-                    Ok(guard) => guard,
-                    Err(e) => {
-                        error!("Failed to acquire lock on ALL_JOINED_ROOMS while looking for successor room for {}: {}", room_id, e);
-                        continue;
-                    }
-                };
-
-                let mut successor_id: Option<OwnedRoomId> = None;
-                let mut successor_reason = None;
-                let mut successor_room_name = None;
-
-                // Search for successor room in ALL_JOINED_ROOMS
-                for (inner_room_id, room_info) in (*all_joined_rooms_guard).iter() {
-                    if let Some((_, reason)) = room_info
-                        .replaces_tombstoned_room
-                        .as_ref()
-                        .filter(|(replaces, _)| replaces == &room_id)
-                    {
-                        successor_reason = reason.clone();
-                        successor_id = Some(inner_room_id.clone());
-                        successor_room_name = room_info.room_name.clone();
-                        break;
-                    }
-                }
-
-                drop(all_joined_rooms_guard);
-
-                // If not found in ALL_JOINED_ROOMS, check TOMBSTONED_ROOMS
-                if successor_id.is_none() {
-                    match TOMBSTONED_ROOMS.lock() {
-                        Ok(tombstoned_rooms_guard) => {
-                            for (new_room_id, (old_room_id, reason)) in (*tombstoned_rooms_guard).iter() {
-                                if old_room_id == &room_id {
-                                    successor_id = Some(new_room_id.clone());
-                                    successor_reason = reason.clone();
-                                    break;
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            error!("Failed to acquire lock on TOMBSTONED_ROOMS while looking for successor room for {}: {}", room_id, e);
-                        }
-                    }
-                }
-                let timeline_update_sender = {
+                let (timeline_update_sender, tombstone_detail) = {
                     let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                        log!("BUG: room info not found when sending fully read receipt, room {room_id}, ");
+                        log!("BUG: room info not found when sending get successor room {room_id}, ");
                         continue;
                     };
-                    room_info.timeline_update_sender.clone()
-                };
-
-                let timeline_tombstone= TombstoneDetail{
-                    tombstoned_room_id: room_id.clone(),
-                    successor_room_id: successor_id.clone(),
-                    successor_room_name: successor_room_name.clone(),
-                    successor_reason: successor_reason.unwrap_or_default(),
+                    let tombstone_detail = if let Some(successor_room) = room_info.timeline.room().successor_room() {
+                        let successor_room_name = get_client().and_then(|client|client.get_room(&successor_room.room_id)).and_then(|f|f.name());
+                        Some(TombstoneDetail {
+                            tombstoned_room_id: room_id.clone(),
+                            successor_room_id: Some(successor_room.room_id),
+                            successor_room_name,
+                            successor_reason: successor_room.reason.unwrap_or_default()
+                        })
+                    } else {
+                        None
+                    };
+                    (room_info.timeline_update_sender.clone(), tombstone_detail)
                 };
                 timeline_update_sender.send(
-                    TimelineUpdate::TombstonedRoomUpdated(timeline_tombstone)
+                    TimelineUpdate::TombstonedRoomUpdated(tombstone_detail)
                 ).unwrap_or_else(
-                    |_e| panic!("Error: timeline update sender couldn't send TargetEventFound() to room {room_id}!")
+                    |_e| panic!("Error: not found when sending get successor room {room_id}!")
                 );
-                if let Some(successor_id) = successor_id {
-                    log!("Found successor room {} for tombstoned room {}", successor_id, room_id);
-                    // TODO: Send result back to UI via signal or callback
-                    // This could be done via SignalToUI or a callback mechanism
-                } else {
-                    log!("No successor room found for tombstoned room {}", room_id);
-                }
             }
         }
     }
@@ -1354,10 +1305,10 @@ pub type TimelineRequestSender = watch::Sender<Vec<BackwardsPaginateUntilEventRe
 
 
 /// Backend-specific details about a joined room that our client currently knows about.
-pub struct JoinedRoomDetails {
+struct JoinedRoomDetails {
     #[allow(unused)]
     room_id: OwnedRoomId,
-    pub room_name: Option<String>,
+    room_name: Option<String>,
     /// A reference to this room's timeline of events.
     timeline: Arc<Timeline>,
     /// An instance of the clone-able sender that can be used to send updates to this room's timeline.
@@ -1382,7 +1333,7 @@ pub struct JoinedRoomDetails {
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
     /// The ID of the old tombstoned room that this room has replaced, if any.
     /// Includes the successor reason.
-    pub replaces_tombstoned_room: Option<(OwnedRoomId, Option<String>)>,
+    replaces_tombstoned_room: Option<(OwnedRoomId, Option<String>)>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
@@ -1400,13 +1351,13 @@ impl Drop for JoinedRoomDetails {
 
 
 /// Information about all joined rooms that our client currently know about.
-pub static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
+static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
 
 /// Information about all of the rooms that have been tombstoned.
 ///
 /// The map key is the **NEW** replacement room ID, and the value is the **OLD** tombstoned room ID.
 /// This allows us to quickly query if a newly-encountered room is a replacement for an old tombstoned room.
-pub static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, (OwnedRoomId, Option<String>)>> = Mutex::new(BTreeMap::new());
+static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, (OwnedRoomId, Option<String>)>> = Mutex::new(BTreeMap::new());
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: OnceLock<Client> = OnceLock::new();
@@ -2128,9 +2079,8 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         has_been_paginated: false,
         is_selected: false,
         is_direct,
-        is_tombstoned: room.is_tombstoned(),
+        is_tombstoned: room.is_tombstoned() || room.successor_room().is_some(),
     }));
-
     Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_id));
     spawn_fetch_room_avatar(room.clone());
 
@@ -2691,14 +2641,15 @@ fn update_latest_event(
                     } else {
                         TOMBSTONED_ROOMS.lock().unwrap().insert(content.replacement_room.clone(), (room_id.clone(), Some(content.body.clone())));
                     }
+                    
                     enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room_id.clone() });
                     if let Some(sender) = timeline_update_sender {
-                        match sender.send(TimelineUpdate::TombstonedRoomUpdated(TombstoneDetail { 
+                        match sender.send(TimelineUpdate::TombstonedRoomUpdated(Some(TombstoneDetail {
                             tombstoned_room_id: room_id.clone(), 
                             successor_room_id: Some(content.replacement_room.clone()), 
                             successor_room_name, 
                             successor_reason: content.body.clone()
-                        })) {
+                        }))) {
                             Ok(_) => {
                                 SignalToUI::set_ui_signal();
                             }
@@ -2760,21 +2711,9 @@ async fn room_avatar(room: &Room, room_name: Option<&str>) -> RoomPreviewAvatar 
                     }
                 }
             }
-            avatar_from_room_name(room_name)
+            utils::avatar_from_room_name(room_name)
         }
     }
-}
-
-/// Returns a text avatar string containing the first character of the room name.
-///
-/// Skips the first character if it is a `#` or `!`, the sigils used for Room aliases and Room IDs.
-pub fn avatar_from_room_name(room_name: Option<&str>) -> RoomPreviewAvatar {
-    let first = room_name.and_then(|rn| rn
-        .graphemes(true)
-        .find(|&g| g != "#" && g != "!")
-        .map(ToString::to_string)
-    ).unwrap_or_else(|| String::from("?"));
-    RoomPreviewAvatar::Text(first)
 }
 
 /// Spawn an async task to login to the given Matrix homeserver using the given SSO identity provider ID.
