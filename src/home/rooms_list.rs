@@ -181,7 +181,7 @@ pub enum RoomsListAction {
 ///
 /// This includes info needed display a preview of that room in the RoomsList
 /// and to filter the list of rooms based on the current search filter.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct JoinedRoomInfo {
     /// The matrix ID of this room.
     pub room_id: OwnedRoomId,
@@ -759,6 +759,20 @@ impl RoomsList {
             direct_rooms_indexes,
             regular_rooms_indexes,
         )
+    }
+
+    /// Returns information about a joined room given its room ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `room_id` - A reference to the room ID for which information is requested.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<JoinedRoomInfo>` - Returns `Some(JoinedRoomInfo)` if the room is found
+    ///   in the list of all joined rooms, otherwise returns `None`.
+    pub fn get_joined_room_info(&self, room_id: &OwnedRoomId) -> Option<JoinedRoomInfo> {
+        self.all_joined_rooms.get(room_id).cloned()
     }
 }
 

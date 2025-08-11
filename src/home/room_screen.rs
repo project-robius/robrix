@@ -2788,7 +2788,7 @@ pub enum TimelineUpdate {
     /// An update to the currently logged-in user's own read receipt for this room.
     OwnUserReadReceipt(Receipt),
     /// A notice that the given room has been tombstoned,
-    /// includes a `TombstoneDetail` that contains the details of the tombstone event.
+    /// includes a `TombstoneDetail` that contains the successor room.
     TombstonedRoomUpdated(Option<TombstoneDetail>)
 }
 
