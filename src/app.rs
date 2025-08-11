@@ -148,8 +148,20 @@ impl LiveRegister for App {
         // then other modules widgets.
         makepad_widgets::live_design(cx);
         crate::shared::live_design(cx);
-        #[cfg(feature = "tsp")]
-        crate::tsp::live_design(cx);
+
+        // If the `tsp` cargo feature is enabled, we create a new "tsp_link" DSL namespace
+        // and link it to the real `tsp_enabled` DSL namespace, which contains real TSP widgets.
+        // If the `tsp` feature is not enabled, link the "tsp_link" DSL namespace
+        // to the `tsp_disabled` DSL namespace instead, which defines dummy placeholder widgets.
+        #[cfg(feature = "tsp")] {
+            crate::tsp::live_design(cx);
+            cx.link(live_id!(tsp_link), live_id!(tsp_enabled));
+        }
+        #[cfg(not(feature = "tsp"))] {
+            crate::tsp_dummy::live_design(cx);
+            cx.link(live_id!(tsp_link), live_id!(tsp_disabled));
+        }
+
         crate::settings::live_design(cx);
         crate::room::live_design(cx);
         crate::join_leave_room_modal::live_design(cx);

@@ -7,6 +7,13 @@ use crate::{app_data_dir, tsp::SavedTspState};
 
 const TSP_STATE_FILE_NAME: &str = "tsp_state.ron";
 
+const WALLETS_DIR_NAME: &str = "tsp_wallets";
+
+/// Returns the path to the persistent app data directory for TSP wallets.
+/// When Robrix creates a new TSP wallet, it will be saved in this directory.
+pub fn tsp_wallets_dir() -> std::path::PathBuf {
+    app_data_dir().join(WALLETS_DIR_NAME)
+}
 
 /// Loads the TSP state from persistent storage.
 pub async fn load_tsp_state() -> anyhow::Result<SavedTspState> {
