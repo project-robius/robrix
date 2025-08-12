@@ -721,10 +721,13 @@ impl RoomsList {
             regular_rooms_indexes,
         )
     }
+
     /// Returns the name of the room associated with the given room_id if it exists.
     pub fn get_room_name(&self, room_id: &OwnedRoomId) -> Option<String> {
         self.all_joined_rooms.get(room_id).and_then(|room| room.room_name.clone())
     }
+
+    /// Returns `true` if the room associated with the given room_id is encrypted.
     pub fn is_room_encrypted(&self, room_id: &OwnedRoomId) -> bool {
         self.all_joined_rooms.get(room_id).map(|room| room.is_room_encrypted).unwrap_or(false)
     }
@@ -738,6 +741,8 @@ impl RoomsListRef {
             None
         }
     }
+
+    // See [`RoomsList::is_room_encrypted`].
     pub fn is_room_encrypted(&self, room_id: &OwnedRoomId) -> bool {
         if let Some(inner) = self.borrow() {
             inner.is_room_encrypted(room_id)

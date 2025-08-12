@@ -54,9 +54,11 @@ live_design! {
                     main_page = <View> {
                         width: Fill, height: Fill
                         flow: Down
+
                         <View> {
                             width: Fill, height: Fit
                             flow: Right,
+
                             <CachedWidget> {
                                 room_filter_input_bar = <RoomFilterInputBar> {
                                     align: {x: 0.0 }
@@ -66,6 +68,8 @@ live_design! {
                                 width: Fill, height: Fit,
                                 visible: false,
                                 align: {x: 1.0},
+
+
                                 <CachedWidget> {
                                     message_search_input_bar = <MessageSearchInputBar> {
                                         width: 300,
@@ -73,10 +77,11 @@ live_design! {
                                 }
                             }
                         }
-                        
+
                         <View> {
                             width: Fill, height: Fill
                             flow: Right
+                            
                             <MainDesktopUI> {}
                             <RightPanel> {}
                         }
@@ -156,10 +161,9 @@ live_design! {
                                         height: Fit,
                                         width: Fill,
                                         align: {x: 1.0 }
-                                        mobile_message_search_input_view = <View> {
+                                        <View> {
                                             height: Fit,
                                             width: 140,
-                                            visible: false,
                                             <CachedWidget> {
                                                 message_search_input_bar = <MessageSearchInputBar> {
                                                     width: 300
@@ -257,6 +261,10 @@ impl Widget for HomeScreen {
                     }
                     _ => {}
                 }
+                match action.as_widget_action().cast() {
+                    MessageSearchInputAction::Show => self.view.view(id!(message_search_input_view)).set_visible(cx, true),
+                    MessageSearchInputAction::Hide => self.view.view(id!(message_search_input_view)).set_visible(cx, false),
+                }
             }
         }
 
@@ -310,4 +318,12 @@ impl MatchEvent for NavigationWrapper {
         self.stack_navigation(id!(view_stack))
             .handle_stack_view_actions(cx, actions);
     }
+}
+
+/// An action that controls the visibility of the message search input bar.
+#[derive(Clone, Debug, Default)]
+pub enum MessageSearchInputAction {
+    #[default]
+    Show,
+    Hide
 }

@@ -9,8 +9,6 @@ use makepad_widgets::*;
 
 use crate::shared::popup_list::{PopupItem, PopupKind};
 
-use super::popup_list::enqueue_popup_notification;
-const SEARCH_INPUT_LIMIT: usize = 50;
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -22,9 +20,7 @@ live_design! {
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
 
     pub MessageSearchInputBar = {{MessageSearchInputBar}}<RoundedView> {
-        width: Fill,
-        height: 35,
-
+        width: Fill, height: 35,
         show_bg: true,
         draw_bg: {
             color: (COLOR_PRIMARY),
@@ -46,19 +42,15 @@ live_design! {
             }
             icon_walk: {width: 14, height: Fit}
         }
-
         input = <RobrixTextInput> {
             width: Fill,
             height: Fit,
             flow: Right, // do not wrap
-
             empty_text: "Search Messages..."
-
             draw_text: {
                 text_style: { font_size: 10 },
             }
         }
-
         clear_button = <RobrixIconButton> {
             visible: false,
             padding: {top: 7, bottom: 7, left: 10, right: 10},
@@ -89,7 +81,7 @@ pub enum MessageSearchAction {
     /// The user has changed the text entered into the filter bar.
     Changed(String),
     /// The user has clicked the input bar.
-    Click(String),
+    Clicked(String),
     /// Clear the text entered into the input bar.
     Clear,
     /// Set the text entered into the input bar.
@@ -115,7 +107,7 @@ impl Widget for MessageSearchInputBar {
             cx.widget_action(
                 widget_uid,
                 &scope.path,
-                MessageSearchAction::Click(self.view.text_input(id!(input)).text())
+                MessageSearchAction::Clicked(self.view.text_input(id!(input)).text())
             );
         }
         self.widget_match_event(cx, event, scope);
@@ -133,16 +125,6 @@ impl WidgetMatchEvent for MessageSearchInputBar {
 
         // Handle user changing the input text
         if let Some(keywords) = input.changed(actions) {
-            if keywords.len() > SEARCH_INPUT_LIMIT {
-                // Limit search term to up to 50 characters, because the search result widget keeps a clone of the search term.
-                enqueue_popup_notification(PopupItem {
-                    message: format!("Search is limited to {:?} characters", SEARCH_INPUT_LIMIT),
-                    auto_dismissal_duration: None,
-                    kind: PopupKind::Warning,
-                });
-                input.set_text(cx, "");
-                return;
-            }
             clear_button.set_visible(cx, !keywords.is_empty());
             self.debounce_timer = cx.start_timeout(1.0);
             self.search_term = keywords.clone();

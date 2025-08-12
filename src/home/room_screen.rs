@@ -39,7 +39,7 @@ use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::shared::mentionable_text_input::{MentionableTextInputWidgetRefExt, MentionableTextInputAction};
-
+use std::num::NonZeroU32;
 use rangemap::RangeSet;
 
 use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, location_preview::LocationPreviewWidgetExt, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
@@ -55,10 +55,10 @@ const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
 /// from getting into a long-running loop if an event cannot be found quickly.
 const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 
-/// The time required to scroll to the targeted message in seconds.
+/// The time required to scroll to the targeted message in milliseconds.
 /// 
 /// This value cannot be zero.
-const SMOOTH_SCROLL_TIME: f64 = 0.5;
+const SMOOTH_SCROLL_TIME: NonZeroU32 = NonZeroU32::new(500).unwrap();
 
 /// The max size (width or height) of a blurhash image to decode.
 const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
@@ -345,10 +345,12 @@ live_design! {
                         }
                         text: "<Username not available>"
                     }
-                    jump_button_view = <View> {
+
+                    jump_to_this_message = <View> {
                         visible: false,
                         width: Fit,
                         height: Fit,
+
                         jump_button = <Button> {
                             width: Fit,
                             draw_bg: {
@@ -1026,10 +1028,13 @@ impl Widget for RoomScreen {
 
                         if let Some(index) = target_msg_tl_index {
                             let current_first_index = portal_list.first_id();
+                            let t = index.saturating_sub(1).abs_diff(current_first_index) as f64 / (SMOOTH_SCROLL_TIME.get() as f64 * 0.001);
+                            println!("t {:?}",t);
                             portal_list.smooth_scroll_to(
                                 cx,
-                                index.saturating_sub(2),
-                                index.saturating_sub(2).abs_diff(current_first_index) as f64 / SMOOTH_SCROLL_TIME,
+                                index.saturating_sub(1),
+                                //index.saturating_sub(1).abs_diff(current_first_index) as f64 / (SMOOTH_SCROLL_TIME as f64 * 0.001),
+                                t,
                                 None,
                             );
                             // start highlight animation.
@@ -4307,8 +4312,8 @@ pub enum MessageAction {
     /// Scroll to a message in the main room timeline with the given event_id.
     /// Used when navigating from search results to the original message in the timeline.
     ScrollToMessage {
-        room_id: matrix_sdk::ruma::OwnedRoomId,
-        event_id: matrix_sdk::ruma::OwnedEventId,
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
     },
     /// The user requested that we show a context menu with actions
     /// that can be performed on a given message.
@@ -4333,14 +4338,11 @@ pub enum MessageAction {
 /// Contains the information needed to jump to a specific message.
 /// Used primarily for search results to allow navigation to the original message location.
 #[derive(Clone, Debug)]
-pub struct JumpOption {
+pub struct JumpToMessageRequest {
     /// The room ID where the target message is located.
     pub room_id: OwnedRoomId,
     /// The event ID of the target message.
     pub event_id: OwnedEventId,
-    /// Whether this jump is from a search across all rooms.
-    /// When true, the jump may need to switch to a different room first.
-    pub from_all_rooms_search: bool,
 }
 
 /// A widget representing a single message of any kind within a room timeline.
@@ -4352,7 +4354,7 @@ pub struct Message {
     #[rust] details: Option<MessageDetails>,
     /// The jump option required for searched messages.
     /// Contains the room ID, event ID for the message, and whether it's from an all-rooms search.
-    #[rust] jump_option: Option<JumpOption>,
+    #[rust] jump_option: Option<JumpToMessageRequest>,
 }
 
 impl Widget for Message {
@@ -4367,43 +4369,39 @@ impl Widget for Message {
             self.animator_play(cx, id!(highlight.off));
         }
         if let Event::Actions(actions) = event {
-            if let  Some(jump_option) = &self.jump_option {
-                
-                if self.view.button(id!(jump_button_view.jump_button)).clicked(actions) {
-                    if jump_option.from_all_rooms_search {
-                        if let Some(selected_room) = {
-                            let app_state = scope.data.get::<AppState>().unwrap();
-                            app_state.selected_room.clone()
-                        } {
-                            // If room_id is not the selected room, select the room and open its dock tab
-                            if selected_room.room_id() != &jump_option.room_id {
-                                let room_name: Option<String> = {
-                                    let rooms_list_ref = cx.get_global::<RoomsListRef>();
-                                    rooms_list_ref.get_room_name(&jump_option.room_id)
-                                };
-                                
-                                let target_selected_room = SelectedRoom::JoinedRoom {
-                                    room_id: jump_option.room_id.clone().into(),
-                                    room_name,
-                                };
-                                
-                                // Dispatch action to select the room and open its dock tab
-                                cx.widget_action(
-                                    self.widget_uid(),
-                                    &scope.path,
-                                    RoomsListAction::Selected(target_selected_room)
-                                );
-                            }
+            if let  Some(jump_request) = &self.jump_option {
+                if self.view.button(id!(jump_to_this_message.jump_button)).clicked(actions) {
+                    if let Some(selected_room) = {
+                        let app_state = scope.data.get::<AppState>().unwrap();
+                        &app_state.selected_room
+                    } {
+                        // If room_id is not the selected room, select the room and open its dock tab
+                        if selected_room.room_id() != &jump_request.room_id {
+                            let room_name: Option<String> = {
+                                let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                                rooms_list_ref.get_room_name(&jump_request.room_id)
+                            };
+                            
+                            let target_selected_room = SelectedRoom::JoinedRoom {
+                                room_id: jump_request.room_id.clone().into(),
+                                room_name,
+                            };
+                            
+                            // Dispatch action to select the room and open its dock tab
+                            cx.widget_action(
+                                self.widget_uid(),
+                                &scope.path,
+                                RoomsListAction::Selected(target_selected_room)
+                            );
                         }
                     }
-                    
                     // Always scroll to the message after room selection (if needed)
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
                         MessageAction::ScrollToMessage {
-                            room_id: jump_option.room_id.clone(),
-                            event_id: jump_option.event_id.clone(),
+                            room_id: jump_request.room_id.clone(),
+                            event_id: jump_request.event_id.clone(),
                         }
                     );
                 }
@@ -4545,9 +4543,9 @@ impl Message {
     /// If there is a jump option, show the jump button at the top right corner.
     /// 
     /// Used primarily for search results to allow navigation to the original message location.
-    pub fn set_jump_option(&mut self, cx: &mut Cx, jump_option: JumpOption) {
+    pub fn set_jump_option(&mut self, cx: &mut Cx, jump_option: JumpToMessageRequest) {
         self.jump_option = Some(jump_option);
-        self.view.view(id!(jump_button_view))
+        self.view.view(id!(jump_to_this_message))
             .set_visible(cx, true);
         
         // Event Hit is not captured when Message is in a stack navigation. Hence, cannot implement jump when clicking the message.
@@ -4571,7 +4569,7 @@ impl MessageRef {
     }
 
     /// See [`Message::set_jump_option()`].
-    pub fn set_jump_option(&self, cx: &mut Cx, jump_option: JumpOption) {
+    pub fn set_jump_option(&self, cx: &mut Cx, jump_option: JumpToMessageRequest) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_jump_option(cx, jump_option);
     }

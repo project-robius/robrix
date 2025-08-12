@@ -2057,7 +2057,6 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
     let room_name = room.display_name().await.map(|n| n.to_string()).ok();
     let is_room_encrypted = room.encryption_state().is_encrypted();
     let is_direct = room.is_direct().await.unwrap_or(false);
-
     match room.state() {
         RoomState::Knocked => {
             // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
@@ -2399,7 +2398,6 @@ async fn timeline_subscriber_handler(
     timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
     mut request_receiver: watch::Receiver<Vec<BackwardsPaginateUntilEventRequest>>,
 ) {
-
     /// An inner function that searches the given new timeline items for a target event.
     ///
     /// If the target event is found, it is removed from the `target_event_id_opt` and returned,
