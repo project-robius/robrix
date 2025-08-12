@@ -147,7 +147,7 @@ impl WalletState {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WalletStatus {
     Opened,
     NotFound,
@@ -210,7 +210,7 @@ impl Widget for TspSettingsScreen {
             };
 
             for (metadata, mut status_and_default) in (0..wallets.len()).filter_map(|i| wallets.get(i)) {
-                let item_live_id = LiveId::from_str(metadata.path.as_str());
+                let item_live_id = LiveId::from_str(metadata.url.as_url_unencoded());
                 let item = list.item(cx, item_live_id, live_id!(wallet_entry)).unwrap();
                 // Pass the wallet metadata in through Scope via props,
                 // and status/is_default via data.
@@ -238,23 +238,31 @@ impl MatchEvent for TspSettingsScreen {
                 }
 
                 // Remove the wallet from the list of drawn wallets.
-                Some(TspWalletAction::WalletRemoved(metadata)) => {
-                    if let Some(wallets) = &mut self.wallets {
-                        // If the wallet was the active one, clear it.
-                        if wallets.active_wallet.as_ref() == Some(metadata) {
-                            wallets.active_wallet = None;
-                            self.view.redraw(cx);
-                        } else if let Some(pos) = wallets.other_wallets.iter().position(|(w, _)| w == metadata) {
-                            wallets.other_wallets.remove(pos);
-                            self.view.redraw(cx);
-                        } else {
-                            error!("BUG: TspSettingsScreen::handle_actions(): Wallet deleted, but not found in the list.");
-                            self.refresh_wallets();
-                        }
-                    } else {
-                        error!("BUG: TspSettingsScreen::handle_actions(): Wallet deleted, but no wallets list exists.");
-                        self.refresh_wallets();
+                Some(TspWalletAction::WalletRemoved { metadata, was_default }) => {
+                    let Some(wallets) = &mut self.wallets.as_mut() else { continue };
+                    if *was_default {
+                        wallets.active_wallet = None;
                     }
+                    else if let Some(pos) = wallets.other_wallets.iter().position(|(w, _)| w == metadata) {
+                        wallets.other_wallets.remove(pos);
+                    }
+                    else { continue; }
+                    enqueue_popup_notification(PopupItem {
+                        message: format!("Removed wallet \"{}\".", metadata.wallet_name),
+                        auto_dismissal_duration: Some(4.0),
+                        kind: PopupKind::Success,
+                    });
+                    if *was_default {
+                        // If the removed wallet was the default wallet, notify the user.
+                        // The user should then select another wallet as the default.
+                        enqueue_popup_notification(PopupItem {
+                            message: String::from("The default wallet was removed.\n\n\
+                                TSP wallet-related features will not work properly until you set a default wallet."),
+                            auto_dismissal_duration: None,
+                            kind: PopupKind::Warning,
+                        });
+                    }
+                    self.view.redraw(cx);
                 }
 
                 // Update the default/active wallet.
