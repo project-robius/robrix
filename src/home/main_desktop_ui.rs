@@ -219,7 +219,8 @@ impl MainDesktopUI {
         dock.close_tab(cx, tab_id);
         self.tab_to_close = None;
         self.open_rooms.remove(&tab_id);
-        cx.widget_action(self.widget_uid(), &Scope::empty().path, MessageSearchAction::Clear);
+        // Clear the search input when a room is closed
+        cx.widget_action(self.widget_uid(), &Scope::empty().path, MessageSearchAction::SetText(String::from("")));
     }
 
     /// Replaces an invite with a joined room in the dock.

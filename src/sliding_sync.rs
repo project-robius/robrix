@@ -36,18 +36,12 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, load_app_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, right_panel, room::RoomPreviewAvatar, shared::{
+    }, right_panel::{self, search_message::MessageSearchChoice}, room::RoomPreviewAvatar, shared::{
         html_or_plaintext::MatrixLinkPillState,
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{enqueue_popup_notification, PopupItem, PopupKind}
     }, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
-
-/// Maximum length for search terms to prevent overly long queries
-const MAX_SEARCH_TERM_LENGTH: usize = 500;
-
-/// Minimum length for search terms to ensure meaningful searches
-const MIN_SEARCH_TERM_LENGTH: usize = 2;
 
 #[derive(Parser, Debug, Default)]
 struct Cli {
@@ -405,10 +399,7 @@ pub enum MatrixRequest {
     },
     /// General Matrix Search API with given categories
     SearchMessages {
-        /// The room_id to search for messages.
-        room_id: Option<OwnedRoomId>,
-        /// Filter criteria for searching messages.
-        include_all_rooms: bool,
+        message_search_choice: MessageSearchChoice,
         /// Text in the search bar.
         search_term: String,
         /// Token for next batch of search results.
@@ -1156,14 +1147,13 @@ async fn async_worker(
                 });
             }
             MatrixRequest::SearchMessages {
-                room_id,
+                message_search_choice,
                 search_term,
-                include_all_rooms,
                 next_batch,
                 abort_previous_search,
             } => {
-                log!("MatrixRequest::SearchMessages - room_id: {:?}, search_term: '{}', include_all_rooms: {}, next_batch: {:?}, abort_previous_search: {}",
-                    room_id, search_term, include_all_rooms, next_batch, abort_previous_search);
+                log!("MatrixRequest::SearchMessages - message_search_choice: {:?}, search_term: '{}', next_batch: {:?}, abort_previous_search: {}",
+                    message_search_choice, search_term, next_batch, abort_previous_search);
                 if abort_previous_search {
                     if let Some(abort_handler) = search_task_abort_handler.take() {
                         abort_handler.abort();
@@ -1172,32 +1162,14 @@ async fn async_worker(
                 if search_term.is_empty() {
                     continue;
                 }
-                
-                // Validate search term length
-                if search_term.len() < MIN_SEARCH_TERM_LENGTH {
-                    log!("Search term too short: '{}' (minimum {} characters)", search_term, MIN_SEARCH_TERM_LENGTH);
-                    enqueue_popup_notification(PopupItem {
-                        message: format!("Search term must be at least {} characters long", MIN_SEARCH_TERM_LENGTH),
-                        auto_dismissal_duration: Some(3.0),
-                        kind: PopupKind::Info,
-                    });
-                    continue;
-                }
-                
-                if search_term.len() > MAX_SEARCH_TERM_LENGTH {
-                    log!("Search term too long: '{}' (maximum {} characters)", search_term, MAX_SEARCH_TERM_LENGTH);
-                    enqueue_popup_notification(PopupItem {
-                        message: format!("Search term cannot exceed {} characters", MAX_SEARCH_TERM_LENGTH),
-                        auto_dismissal_duration: Some(3.0),
-                        kind: PopupKind::Warning,
-                    });
-                    continue;
-                }
-                
                 let client = CLIENT.get().unwrap();
                 let mut search_categories = client::search::search_events::v3::Categories::new();
                 let mut room_filter = client::filter::RoomEventFilter::empty();
-                room_filter.rooms = room_id.clone().map(|room_id| vec![room_id.to_owned()]);
+                if let MessageSearchChoice::OneRoom(room_id) = &message_search_choice {
+                    room_filter.rooms = Some(vec![room_id.to_owned()]);
+                } else {
+                    room_filter.rooms = None;
+                }
                 let mut criteria = client::search::search_events::v3::Criteria::new(search_term.clone());
                 criteria.filter = room_filter;
                 criteria.order_by = Some(client::search::search_events::v3::OrderBy::Recent);
@@ -1239,7 +1211,6 @@ async fn async_worker(
                                         })
                                     });
                                 }
-                                let room_id = event.room_id().to_owned();
                                 let mut message_option = None;
                                 if let AnyTimelineEvent::MessageLike(msg) = &event {
                                     let mut content = msg.original_content();
@@ -1258,18 +1229,20 @@ async fn async_worker(
                                         message_option = Some(message);
                                     }
                                 }
+                                let event_room_id = event.room_id().to_owned();
                                 items.push_back(right_panel::search_message::SearchResultItem::Event{ event:
                                     Box::new(event), formatted_content: Box::new(message_option)}
                                 );
-                                if include_all_rooms {
+                                // Include all rooms in the search results.
+                                if let MessageSearchChoice::AllRooms = &message_search_choice {                                
                                     if let Some(ref mut last_room_id) = last_room_id {
-                                        if last_room_id != &room_id {
-                                            *last_room_id = room_id.clone();
-                                            items.push_back(right_panel::search_message::SearchResultItem::RoomHeader(room_id));
+                                        if last_room_id != &event_room_id {
+                                            *last_room_id = event_room_id.clone();
+                                            items.push_back(right_panel::search_message::SearchResultItem::RoomHeader(event_room_id));
                                         }
                                     } else {
-                                        last_room_id = Some(room_id.clone());
-                                        items.push_back(right_panel::search_message::SearchResultItem::RoomHeader(room_id));
+                                        last_room_id = Some(event_room_id.clone());
+                                        items.push_back(right_panel::search_message::SearchResultItem::RoomHeader(event_room_id));
                                     }
                                 }
                             }
@@ -1288,7 +1261,7 @@ async fn async_worker(
                             }));
                         }
                         Err(e) => {
-                            let context = if let Some(room_id) = room_id {
+                            let context = if let MessageSearchChoice::OneRoom(room_id) = &message_search_choice {
                                 format!("Failed to search messages in room {room_id}")
                             } else {
                                 "Failed to search messages in all rooms".to_string()

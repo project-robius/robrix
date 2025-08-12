@@ -228,7 +228,6 @@ live_design! {
             max_pull_down: 0.0, // set to `0.0` to disable the pulldown bounce animation.
 
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
-            Message = <Message> {}
             MessageCard = <MessageCard> {}
             Empty = <Empty> {}
             RoomHeader = <Label> {
@@ -382,11 +381,6 @@ impl Widget for SearchResults {
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let tl_items = &self.search_state.items;
-        let include_all_rooms = self
-            .view
-            .search_result_summary(id!(search_result_plane))
-            .get_search_criteria()
-            .include_all_rooms;
        
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
@@ -501,8 +495,11 @@ impl SearchResults {
                     self.display_bottom_space(cx);
 
                     submit_async_request(MatrixRequest::SearchMessages {
-                        room_id: self.room_id.clone(),
-                        include_all_rooms: criteria.include_all_rooms,
+                        message_search_choice: if let (false, Some(room_id)) = (criteria.include_all_rooms, &self.room_id) {
+                            MessageSearchChoice::OneRoom(room_id.clone())
+                        } else {
+                            MessageSearchChoice::AllRooms
+                        },
                         search_term: criteria.search_term.clone(),
                         next_batch: Some(next_batch_token.clone()),
                         abort_previous_search: false,
@@ -593,8 +590,7 @@ impl SearchResults {
                     self.search_state = SearchState::default();
                     // Abort previous inflight search request.
                     submit_async_request(MatrixRequest::SearchMessages {
-                        room_id: None,
-                        include_all_rooms: false,
+                        message_search_choice: MessageSearchChoice::AllRooms,
                         search_term: String::default(),
                         next_batch: None,
                         abort_previous_search: true,
@@ -610,7 +606,6 @@ impl SearchResults {
                         return;
                     }
                     criteria.search_term = search_term;
-                    criteria.include_all_rooms = false;
                     search_result_summary_ref.set_search_criteria(cx, scope, criteria.clone());
                     let room_id = selected_room.room_id();
                     self.room_id = Some(room_id.clone());
@@ -630,8 +625,7 @@ impl SearchResults {
                         .button(id!(search_all_rooms_button))
                         .set_enabled(cx, false);
                     submit_async_request(MatrixRequest::SearchMessages {
-                        room_id: Some(room_id.to_owned()),
-                        include_all_rooms: criteria.include_all_rooms,
+                        message_search_choice: MessageSearchChoice::OneRoom(room_id.clone()),
                         search_term: criteria.search_term.clone(),
                         next_batch: None,
                         abort_previous_search: true,
@@ -644,17 +638,6 @@ impl SearchResults {
                 let mut criteria = search_result_summary_ref.get_search_criteria();
                 criteria.search_term = search_term.clone();
                 search_result_summary_ref.set_search_criteria(cx, scope, criteria);
-            }
-            MessageSearchAction::Clear => {
-                let search_result_summary_ref =
-                    self.search_result_summary(id!(search_result_plane));
-                search_result_summary_ref.reset(cx);
-                search_result_summary_ref.set_visible(cx, false);
-                // Re-enable the search all rooms button when search is cleared
-                self.view
-                    .button(id!(search_all_rooms_button))
-                    .set_enabled(cx, true);
-                self.search_state = SearchState::default();
             }
             _ => {}
         }
@@ -711,8 +694,7 @@ impl WidgetMatchEvent for SearchResults {
                 self.display_bottom_space(cx);
                 self.search_state = SearchState::default();
                 submit_async_request(MatrixRequest::SearchMessages {
-                    room_id: None,
-                    include_all_rooms: true,
+                    message_search_choice: MessageSearchChoice::AllRooms,
                     search_term: criteria.search_term,
                     next_batch: None,
                     abort_previous_search: true,
@@ -752,8 +734,7 @@ impl WidgetMatchEvent for SearchResults {
                         .button(id!(search_all_rooms_button))
                         .set_enabled(cx, false);
                     submit_async_request(MatrixRequest::SearchMessages {
-                        room_id: Some(room_id.to_owned()),
-                        include_all_rooms: criteria.include_all_rooms,
+                        message_search_choice: MessageSearchChoice::OneRoom(room_id.clone()),
                         search_term: criteria.search_term.clone(),
                         next_batch: None,
                         abort_previous_search: true,
@@ -956,6 +937,15 @@ pub enum SearchResultItem {
     },
     /// The room id used for displaying room header for all searched messages in a screen.
     RoomHeader(OwnedRoomId),
+}
+
+/// Message search choice.
+#[derive(Clone, Debug)]
+pub enum MessageSearchChoice {
+    /// Search in all rooms
+    AllRooms,
+    /// Search in one room
+    OneRoom(OwnedRoomId),
 }
 
 fn populate_message_search_view(

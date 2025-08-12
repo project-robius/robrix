@@ -7,7 +7,9 @@
 
 use makepad_widgets::*;
 
-use crate::shared::popup_list::{PopupItem, PopupKind};
+/// Delay in seconds before sending a search request.
+/// This is to avoid sending too many requests when the user is typing.
+const SEARCH_INPUT_DELAY_SECS: f64 = 1.0;
 
 live_design! {
     use link::theme::*;
@@ -82,8 +84,6 @@ pub enum MessageSearchAction {
     Changed(String),
     /// The user has clicked the input bar.
     Clicked(String),
-    /// Clear the text entered into the input bar.
-    Clear,
     /// Set the text entered into the input bar.
     SetText(String),
     None,
@@ -126,7 +126,7 @@ impl WidgetMatchEvent for MessageSearchInputBar {
         // Handle user changing the input text
         if let Some(keywords) = input.changed(actions) {
             clear_button.set_visible(cx, !keywords.is_empty());
-            self.debounce_timer = cx.start_timeout(1.0);
+            self.debounce_timer = cx.start_timeout(SEARCH_INPUT_DELAY_SECS);
             self.search_term = keywords.clone();
         }
 
@@ -141,13 +141,17 @@ impl WidgetMatchEvent for MessageSearchInputBar {
             );
         }
         for action in actions {
-            if let MessageSearchAction::Clear = action.as_widget_action().cast() {
-                cx.stop_timer(self.debounce_timer);
-                self.text_input(id!(input)).set_text(cx, "");
-                cx.widget_action(
-                    self.widget_uid(),
-                    &scope.path,
-                    MessageSearchAction::Changed(String::new()));
+            if let MessageSearchAction::SetText(text) = action.as_widget_action().cast() {
+                if text.is_empty() {
+                    cx.stop_timer(self.debounce_timer);
+                    self.text_input(id!(input)).set_text(cx, &text);
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        MessageSearchAction::Changed(text));
+                } else {
+                    self.text_input(id!(input)).set_text(cx, &text);
+                }
             }
             if let Some(MessageSearchAction::SetText(text)) = action.downcast_ref() {
                 self.text_input(id!(input)).set_text(cx, text);
