@@ -1218,14 +1218,13 @@ pub fn block_on_async_with_timeout<T>(
 /// The primary initialization routine for starting the Matrix client sync
 /// and the async tokio runtime.
 ///
-/// Returns a Tokio runtime that is used to run async background tasks.
+/// Returns a Handle to the Tokio runtime for spawning async background tasks.
 pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
     let rt_handle = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(|| {
         log!("Create newTokio Runtime...");
         tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
     }).handle().clone();
-    
 
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
