@@ -1710,7 +1710,7 @@ impl RoomScreen {
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
-                TimelineUpdate::TombstonedRoomUpdated(tombstone_detail) => {
+                TimelineUpdate::SuccessorRoomUpdated(tombstone_detail) => {
                     if let Some(tombstone_detail) = tombstone_detail {
                         self.view.tombstone_footer(id!(tombstone_footer)).show(cx, tombstone_detail);
                         self.view.view(id!(message_input_view)).set_visible(cx, false);
@@ -2542,17 +2542,6 @@ impl RoomScreen {
         submit_async_request(MatrixRequest::GetSuccessorRoom { room_id });
     }
 
-    /// Hides the tombstone screen that's shown when the user is in a room
-    /// that has been replaced by another room, and shows the normal timeline
-    /// input bar instead.
-    pub fn hide_tombstone_screen(
-        &self,
-        cx: &mut Cx,
-    ) {
-        self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
-        self.view.view(id!(message_input_view)).set_visible(cx, true);
-    }
-
     /// Sends read receipts based on the current scroll position of the timeline.
     fn send_user_read_receipts_based_on_scroll_pos(
         &mut self,
@@ -2663,7 +2652,6 @@ impl RoomScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
     }
-
 }
 
 /// RoomScreenProps serves as an interface between RoomScreen and its child components.
@@ -2789,7 +2777,8 @@ pub enum TimelineUpdate {
     OwnUserReadReceipt(Receipt),
     /// A notice that the given room has been tombstoned,
     /// includes a `TombstoneDetail` that contains the successor room.
-    TombstonedRoomUpdated(Option<TombstoneDetail>)
+    /// If the room is not tombstoned, then the `TombstoneDetail` is `None`.
+    SuccessorRoomUpdated(Option<TombstoneDetail>)
 }
 
 thread_local! {

@@ -8,12 +8,12 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    app::SelectedRoom,
+    app::{AppStateAction, SelectedRoom},
     home::rooms_list::RoomsListRef,
     join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
     room::{BasicRoomDetails, RoomPreviewAvatar},
     shared::avatar::AvatarWidgetExt,
-    utils::{self, OwnedRoomIdRon, avatar_from_room_name},
+    utils::{self, avatar_from_room_name, OwnedRoomIdRon},
 };
 
 use super::rooms_list::RoomsListAction;
@@ -119,8 +119,6 @@ pub struct TombstoneFooter {
     /// The ID of the current tombstoned room
     #[rust]
     room_id: Option<OwnedRoomId>,
-    #[rust]
-    room_name: Option<String>,
 }
 
 impl Widget for TombstoneFooter {
@@ -150,17 +148,17 @@ impl Widget for TombstoneFooter {
 
 impl TombstoneFooter {
     /// Sets the tombstone details to be displayed by this screen.
-    pub fn show(&mut self, cx: &mut Cx, successor_room_update: TombstoneDetail) {
+    pub fn show(&mut self, cx: &mut Cx, tombstone_detail: TombstoneDetail) {
         self.view
             .label_set(ids![replacement_reason, successor_room_name])
             .set_text(cx, "");
         self.visible = true;
-        self.room_id = Some(successor_room_update.tombstoned_room_id.clone());
+        self.room_id = Some(tombstone_detail.tombstoned_room_id.clone());
         self.view
             .label(id!(replacement_reason))
-            .set_text(cx, &successor_room_update.successor_reason);
+            .set_text(cx, &tombstone_detail.successor_reason);
         
-        let successor_avatar_preview = successor_room_update.successor_room_id
+        let successor_avatar_preview = tombstone_detail.successor_room_id
             .as_ref()
             .map(|room_id| {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
@@ -186,10 +184,10 @@ impl TombstoneFooter {
                 );
             }
         }
-        let successor_info = if let Some(successor_room_id) = successor_room_update.successor_room_id.as_ref() {
+        let successor_info = if let Some(successor_room_id) = tombstone_detail.successor_room_id.as_ref() {
             Some(BasicRoomDetails {
                 room_id: successor_room_id.clone(),
-                room_name: successor_room_update.successor_room_name.clone(),
+                room_name: tombstone_detail.successor_room_name.clone(),
                 room_avatar: successor_avatar_preview,
             })
         } else {
@@ -238,15 +236,12 @@ impl TombstoneFooter {
             room_name: successor_room_detail.room_name.clone(),
         };
 
-        // Close the current tombstoned room and navigate to the successor room
         cx.widget_action(
             self.widget_uid(),
             &scope.path,
-            RoomsListAction::Close(SelectedRoom::JoinedRoom {
-                room_id: OwnedRoomIdRon(room_id.clone()),
-                room_name: self.room_name.clone(),
-            }),
+            AppStateAction::RoomFocusLost(room_id.clone())
         );
+
         log!(
             "Navigating from tombstoned room {} to successor room {}",
             room_id,
@@ -273,9 +268,9 @@ impl TombstoneFooter {
 
 impl TombstoneFooterRef {
     /// See [`TombstoneFooter::show()`].
-    pub fn show(&mut self, cx: &mut Cx, successor_room_update: TombstoneDetail) {
+    pub fn show(&mut self, cx: &mut Cx, tombstone_detail: TombstoneDetail) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show(cx, successor_room_update);
+            inner.show(cx, tombstone_detail);
         }
     }
     /// See [`TombstoneFooter::hide()`].

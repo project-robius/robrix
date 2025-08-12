@@ -171,8 +171,6 @@ pub enum RoomsListAction {
         room_id: OwnedRoomId,
         room_name: Option<String>,
     },
-    /// Close a room.
-    Close(SelectedRoom),
     None,
 }
 
@@ -1027,7 +1025,7 @@ impl RoomsListRef {
 
     /// See [`RoomsList::get_joined_room_info()`].
     pub fn get_joined_room_info(&self, room_id: &OwnedRoomId) -> Option<JoinedRoomInfo> {
-        let inner: std::cell::Ref<'_, RoomsList> = self.borrow()?;
+        let inner = self.borrow()?;
         inner.get_joined_room_info(room_id)
     }
 }

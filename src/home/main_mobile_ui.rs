@@ -65,18 +65,6 @@ impl Widget for MainMobileUI {
                             AppStateAction::UpgradedInviteToJoinedRoom(room_id),
                         );
                     }
-                    RoomsListAction::Close(_selected_room) => {
-                        cx.widget_action(
-                            self.widget_uid(),
-                            &Scope::default().path,
-                            StackNavigationAction::PopToRoot
-                        );
-                        cx.widget_action(
-                            self.widget_uid(),
-                            &Scope::default().path,
-                            StackNavigationAction::Push(live_id!(main_content_view))
-                        );
-                    }
                     RoomsListAction::None => {}
                 }
             }

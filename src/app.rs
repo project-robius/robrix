@@ -265,6 +265,29 @@ impl MatchEvent for App {
                     self.app_state.selected_room = Some(selected_room.clone());
                     continue;
                 }
+                AppStateAction::RoomFocusLost(room_id) => {
+                    let mut to_remove = None;
+                    for (key, room) in &self.app_state.saved_dock_state.open_rooms {
+                        if room.room_id() == &room_id {
+                            to_remove = Some(*key);
+                            break;
+                        }
+                    }
+                    if let Some(to_remove) = to_remove {
+                        // For mobile UI, navigate back to the root view.
+                        cx.widget_action(
+                            self.ui.widget_uid(),
+                            &Scope::default().path,
+                            StackNavigationAction::PopToRoot,
+                        );
+                        cx.widget_action(
+                            self.ui.widget_uid(),
+                            &Scope::default().path,
+                            DockAction::TabCloseWasPressed(to_remove),
+                        );
+                    }
+                    continue;
+                }
                 AppStateAction::FocusNone => {
                     self.app_state.selected_room = None;
                     continue;
@@ -542,6 +565,8 @@ pub enum AppStateAction {
     RoomFocused(SelectedRoom),
     /// Resets the focus to none, meaning that no room is selected.
     FocusNone,
+    /// Unfocus the given room. Close the tab and remove it from the DockState.
+    RoomFocusLost(OwnedRoomId),
     /// The given room has successfully been upgraded from being displayed
     /// as an InviteScreen to a RoomScreen.
     UpgradedInviteToJoinedRoom(OwnedRoomId),

@@ -216,22 +216,6 @@ impl MainDesktopUI {
         self.open_rooms.remove(&tab_id);
     }
 
-    /// Close a tab in the dock identified by its room id.
-    ///
-    /// If the room is not open in a tab, then this function does nothing.
-    fn close_tab_by_room_id(
-        &mut self,
-        cx: &mut Cx,
-        room_id: &OwnedRoomId,
-    ) {
-        for (tab_id, value) in self.open_rooms.iter() {
-            if value.room_id() == room_id {
-                self.close_tab(cx, *tab_id);
-                break;
-            }
-        }
-    }
-
     /// Replaces an invite with a joined room in the dock.
     fn replace_invite_with_joined_room(
         &mut self,
@@ -353,9 +337,6 @@ impl WidgetMatchEvent for MainDesktopUI {
                 }
                 RoomsListAction::InviteAccepted { room_id, room_name } => {
                     self.replace_invite_with_joined_room(cx, scope, room_id, room_name);
-                }
-                RoomsListAction::Close(selected_room) => {
-                    self.close_tab_by_room_id(cx, selected_room.room_id());
                 }
                 RoomsListAction::None => { }
             }

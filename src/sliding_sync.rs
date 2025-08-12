@@ -1153,27 +1153,32 @@ async fn async_worker(
                 let (timeline_update_sender, tombstone_detail) = {
                     let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                        log!("BUG: room info not found when sending get successor room {room_id}, ");
+                        log!(
+                            "BUG: room info not found when sending get successor room request{room_id}, "
+                        );
                         continue;
                     };
-                    let tombstone_detail = if let Some(successor_room) = room_info.timeline.room().successor_room() {
-                        let successor_room_name = get_client().and_then(|client|client.get_room(&successor_room.room_id)).and_then(|f|f.name());
-                        Some(TombstoneDetail {
-                            tombstoned_room_id: room_id.clone(),
-                            successor_room_id: Some(successor_room.room_id),
-                            successor_room_name,
-                            successor_reason: successor_room.reason.unwrap_or_default()
-                        })
-                    } else {
-                        None
-                    };
+                    let tombstone_detail =
+                        if let Some(successor_room) = room_info.timeline.room().successor_room() {
+                            let successor_room_name = get_client()
+                                .and_then(|client| client.get_room(&successor_room.room_id))
+                                .and_then(|f| f.name());
+                            Some(TombstoneDetail {
+                                tombstoned_room_id: room_id.clone(),
+                                successor_room_id: Some(successor_room.room_id),
+                                successor_room_name,
+                                successor_reason: successor_room.reason.unwrap_or_default(),
+                            })
+                        } else {
+                            None
+                        };
                     (room_info.timeline_update_sender.clone(), tombstone_detail)
                 };
-                timeline_update_sender.send(
-                    TimelineUpdate::TombstonedRoomUpdated(tombstone_detail)
-                ).unwrap_or_else(
-                    |_e| panic!("Error: not found when sending get successor room {room_id}!")
-                );
+                timeline_update_sender
+                    .send(TimelineUpdate::SuccessorRoomUpdated(tombstone_detail))
+                    .unwrap_or_else(|_e| {
+                        panic!("Error: room not found when sending successor room update for {room_id}!")
+                    });
             }
         }
     }
@@ -1308,7 +1313,6 @@ pub type TimelineRequestSender = watch::Sender<Vec<BackwardsPaginateUntilEventRe
 struct JoinedRoomDetails {
     #[allow(unused)]
     room_id: OwnedRoomId,
-    room_name: Option<String>,
     /// A reference to this room's timeline of events.
     timeline: Arc<Timeline>,
     /// An instance of the clone-able sender that can be used to send updates to this room's timeline.
@@ -1332,8 +1336,7 @@ struct JoinedRoomDetails {
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
     /// The ID of the old tombstoned room that this room has replaced, if any.
-    /// Includes the successor reason.
-    replaces_tombstoned_room: Option<(OwnedRoomId, Option<String>)>,
+    replaces_tombstoned_room: Option<OwnedRoomId>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
@@ -1357,7 +1360,7 @@ static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex
 ///
 /// The map key is the **NEW** replacement room ID, and the value is the **OLD** tombstoned room ID.
 /// This allows us to quickly query if a newly-encountered room is a replacement for an old tombstoned room.
-static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, (OwnedRoomId, Option<String>)>> = Mutex::new(BTreeMap::new());
+static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: OnceLock<Client> = OnceLock::new();
@@ -2011,13 +2014,13 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         // to indicate that it replaces this tombstoned room.
         let replacement_room_id = tombstoned_info.room_id;
         if let Some(room_info) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&replacement_room_id) {
-            room_info.replaces_tombstoned_room = Some((room_id.clone(), tombstoned_info.reason));
+            room_info.replaces_tombstoned_room = Some(replacement_room_id.clone());
         }
         // But if we don't know about the replacement room yet, we need to save this tombstoned room
         // in a separate list so that the replacement room we will discover in the future
         // can know which old tombstoned room it replaces (see the bottom of this function).
         else {
-            TOMBSTONED_ROOMS.lock().unwrap().insert(replacement_room_id, (room_id.clone(), tombstoned_info.reason));
+            TOMBSTONED_ROOMS.lock().unwrap().insert(replacement_room_id, room_id.clone());
         }
     }
 
@@ -2048,12 +2051,10 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         .remove(&room_id);
 
     log!("Adding new joined room {room_id}. Replaces tombstoned room: {tombstoned_room_replaced_by_this_room:?}");
-
     ALL_JOINED_ROOMS.lock().unwrap().insert(
         room_id.clone(),
         JoinedRoomDetails {
             room_id: room_id.clone(),
-            room_name: room_name.clone(),
             timeline,
             timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender)),
             timeline_update_sender,
@@ -2081,6 +2082,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         is_direct,
         is_tombstoned: room.is_tombstoned() || room.successor_room().is_some(),
     }));
+
     Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_id));
     spawn_fetch_room_avatar(room.clone());
 
@@ -2632,19 +2634,21 @@ fn update_latest_event(
                         }
                     }
                 }
-                // Check for room tombstone changes.
+                // Check for room tombstone status changes.
                 AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content, prev_content: _ }) => {
                     let mut successor_room_name = None;
                     if let Some(room_info) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&content.replacement_room) {
-                        room_info.replaces_tombstoned_room = Some((room_id.clone(), Some(content.body.clone())));
-                        successor_room_name = room_info.room_name.clone();
+                        room_info.replaces_tombstoned_room = Some(room_id.clone());
+                        if let Some(room) = get_client().and_then(|client| client.get_room(&room_id)) {
+                            successor_room_name = room.name();
+                        }
                     } else {
-                        TOMBSTONED_ROOMS.lock().unwrap().insert(content.replacement_room.clone(), (room_id.clone(), Some(content.body.clone())));
+                        TOMBSTONED_ROOMS.lock().unwrap().insert(content.replacement_room.clone(), room_id.clone());
                     }
                     
                     enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room_id.clone() });
                     if let Some(sender) = timeline_update_sender {
-                        match sender.send(TimelineUpdate::TombstonedRoomUpdated(Some(TombstoneDetail {
+                        match sender.send(TimelineUpdate::SuccessorRoomUpdated(Some(TombstoneDetail {
                             tombstoned_room_id: room_id.clone(), 
                             successor_room_id: Some(content.replacement_room.clone()), 
                             successor_room_name, 

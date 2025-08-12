@@ -32,9 +32,9 @@ live_design! {
                     return #666;
                 }
             }
+            icon_walk: { width: 22, height: 22 }
         }
     }
-                            
 
     RoomName = <Label> {
         width: Fill, height: Fit
