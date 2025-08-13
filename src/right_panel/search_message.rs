@@ -369,7 +369,7 @@ impl Widget for SearchResults {
         // Handle pagination when user scrolls to the top
         if let Event::Actions(actions) = event {
             let search_portal_list = self.portal_list(id!(searched_messages.list));
-            self.send_pagination_request_based_on_scroll_pos(
+            self.paginate_search_results_based_on_scroll_pos(
                 cx,
                 actions,
                 &search_portal_list,
@@ -379,6 +379,7 @@ impl Widget for SearchResults {
 
         self.widget_match_event(cx, event, scope);
     }
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let tl_items = &self.search_state.items;
        
@@ -453,6 +454,7 @@ impl Widget for SearchResults {
         DrawStep::done()
     }
 }
+
 impl SearchResults {
     /// Sends a pagination request when the user is scrolling down and approaching the bottom of the search results.
     /// The request is sent with the `next_batch` token from the last search result received.
@@ -642,10 +644,12 @@ impl SearchResults {
             _ => {}
         }
     }
-     /// Displays the loading view for backwards pagination for search result.
+
+    /// Displays the loading view for backwards pagination for search result.
     fn display_bottom_space(&mut self, cx: &mut Cx) {
         self.view.view(id!(bottom_space)).set_visible(cx, true);
     }
+
     /// Hides the loading view for backwards pagination for search result.
     fn hide_bottom_space(&mut self, cx: &mut Cx) {
         self.view.view(id!(bottom_space)).set_visible(cx, false);
@@ -843,6 +847,7 @@ impl SearchResultSummary {
         );
         self.view.view(id!(loading_view)).set_visible(cx, false);
     }
+
     /// Sets the search criteria for the SearchResultSummary widget.
     ///
     /// This function is used to display the search criteria in the top-right of the room screen.
@@ -875,6 +880,7 @@ impl SearchResultSummary {
         self.visible = true;
         self.view.view(id!(loading_view)).set_visible(cx, true);
     }
+
     /// Resets the search result summary and set the loading view back to visible.
     ///
     /// This function clears the summary text and makes the loading indicator visible.
@@ -896,6 +902,7 @@ impl SearchResultSummaryRef {
         };
         inner.set_result_count(cx, search_result_count);
     }
+
     /// See [`SearchResultSummary::set_search_criteria()`].
     pub fn set_search_criteria(&self, cx: &mut Cx, scope: &mut Scope, search_criteria: Criteria) {
         let Some(mut inner) = self.borrow_mut() else {
@@ -903,6 +910,7 @@ impl SearchResultSummaryRef {
         };
         inner.set_search_criteria(cx, scope, search_criteria);
     }
+
     /// See [`SearchResultSummary::reset()`].
     pub fn reset(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else {
