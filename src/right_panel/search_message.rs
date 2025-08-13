@@ -238,7 +238,7 @@ live_design! {
                     },
                     color: #000,
                 }
-                text: "??"
+                text: "Unknown Room Name"
             }
         }
     }
