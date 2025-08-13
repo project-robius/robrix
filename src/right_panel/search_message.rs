@@ -1057,13 +1057,13 @@ fn populate_message_search_view(
     (item, new_drawn_status)
 }
 
-/// Truncates a string to 50 characters and appends ".." if longer.
+/// Truncates a string to 50 characters and appends "..." if longer.
 /// Used for displaying search terms in the UI summary.
 /// Uses Cow for efficient string handling to avoid unnecessary allocations.
 fn truncate_to_50(s: &str) -> Cow<str> {
     if s.len() <= 50 {
         Cow::Borrowed(s)
     } else {
-        Cow::Owned(format!("{}..", &s[..48]))
+        Cow::Owned(format!("{}...", &s[..47]))
     }
 }
