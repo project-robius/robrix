@@ -725,9 +725,7 @@ impl WidgetMatchEvent for SearchResults {
                     }
                     self.display_bottom_space(cx);
                     // Disable the search all rooms button during search
-                    self.view
-                        .button(id!(search_all_rooms_button))
-                        .set_enabled(cx, false);
+                    search_all_rooms_button.set_enabled(cx, false);
                     submit_async_request(MatrixRequest::SearchMessages {
                         message_search_choice: MessageSearchChoice::OneRoom(room_id.clone()),
                         search_term: criteria.search_term.clone(),
