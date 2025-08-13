@@ -457,13 +457,13 @@ impl LogoutStateMachine {
         
         // Check client existence
         if get_client().is_none() {
-            log!("perform_prechecks: client missing");
+            log!("perform_prechecks: client cleared");
             return Err(LogoutError::Unrecoverable(UnrecoverableError::ComponentsCleared));
         }
         
         // Check sync service
         if get_sync_service().is_none() {
-            log!("perform_prechecks: sync service missing");
+            log!("perform_prechecks: sync service cleared");
             return Err(LogoutError::Unrecoverable(UnrecoverableError::ComponentsCleared));
         }
         log!("perform_prechecks: sync service exists");
