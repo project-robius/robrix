@@ -676,15 +676,10 @@ impl WidgetMatchEvent for SearchResults {
                 }
                 _ => {}
             }
-            if self
-                .view
-                .button(id!(search_all_rooms_button))
-                .clicked(actions)
-            {
+            let search_all_rooms_button = self.view.button(id!(search_all_rooms_button));
+            if search_all_rooms_button.clicked(actions) {
                 // Disable the button during search
-                self.view
-                    .button(id!(search_all_rooms_button))
-                    .set_enabled(cx, false);
+                search_all_rooms_button.set_enabled(cx, false);
                 let search_result_summary_ref =
                     self.search_result_summary(id!(search_result_plane));
                 let mut criteria = search_result_summary_ref.get_search_criteria();
