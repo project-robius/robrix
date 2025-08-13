@@ -12,7 +12,7 @@ use matrix_sdk::{
             receipt::ReceiptThread, room::{
                 message::{Relation, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, AnyMessageLikeEventContent, AnyTimelineEvent, FullStateEventContent, MessageLikeEventType, StateEventType
-        }, matrix_uri::MatrixId, uint, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
+        }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState
 };
 use matrix_sdk_ui::{
@@ -36,7 +36,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, load_app_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, right_panel::{self, search_message::MessageSearchChoice}, room::RoomPreviewAvatar, shared::{
+    }, right_panel::{self}, room::RoomPreviewAvatar, shared::{
         html_or_plaintext::MatrixLinkPillState,
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{enqueue_popup_notification, PopupItem, PopupKind}
@@ -399,9 +399,8 @@ pub enum MatrixRequest {
     },
     /// General Matrix Search API with given categories
     SearchMessages {
-        message_search_choice: MessageSearchChoice,
-        /// Text in the search bar.
-        search_term: String,
+        /// The search criteria containing all search parameters
+        criteria: client::search::search_events::v3::Criteria,
         /// Token for next batch of search results.
         next_batch: Option<String>,
         /// Abort previous search only when debouncing from typing search term.
@@ -1147,37 +1146,24 @@ async fn async_worker(
                 });
             }
             MatrixRequest::SearchMessages {
-                message_search_choice,
-                search_term,
+                criteria,
                 next_batch,
                 abort_previous_search,
             } => {
-                log!("MatrixRequest::SearchMessages - message_search_choice: {:?}, search_term: '{}', next_batch: {:?}, abort_previous_search: {}",
-                    message_search_choice, search_term, next_batch, abort_previous_search);
+                log!("MatrixRequest::SearchMessages - search_term: '{}', next_batch: {:?}, abort_previous_search: {}",
+                    criteria.search_term, next_batch, abort_previous_search);
                 if abort_previous_search {
                     if let Some(abort_handler) = search_task_abort_handler.take() {
                         abort_handler.abort();
                     }
                 }
-                if search_term.is_empty() {
+                if criteria.search_term.is_empty() {
                     continue;
                 }
                 let client = CLIENT.get().unwrap();
                 let mut search_categories = client::search::search_events::v3::Categories::new();
-                let mut room_filter = client::filter::RoomEventFilter::empty();
-                if let MessageSearchChoice::OneRoom(room_id) = &message_search_choice {
-                    room_filter.rooms = Some(vec![room_id.to_owned()]);
-                } else {
-                    room_filter.rooms = None;
-                }
-                let mut criteria = client::search::search_events::v3::Criteria::new(search_term.clone());
-                criteria.filter = room_filter;
-                criteria.order_by = Some(client::search::search_events::v3::OrderBy::Recent);
-                criteria.event_context = client::search::search_events::v3::EventContext::new();
-                criteria.event_context.after_limit = uint!(0);
-                criteria.event_context.before_limit = uint!(0);
-                criteria.event_context.include_profile = true;
-
+                let search_term = criteria.search_term.clone(); // Capture search term for async task
+                let room_filter = criteria.filter.rooms.clone(); // Capture room filter for async task
                 search_categories.room_events = Some(criteria);
                 let mut req = client::search::search_events::v3::Request::new(search_categories);
                 req.next_batch = next_batch.clone();
@@ -1234,7 +1220,7 @@ async fn async_worker(
                                     Box::new(event), formatted_content: Box::new(message_option)}
                                 );
                                 // Include all rooms in the search results.
-                                if let MessageSearchChoice::AllRooms = &message_search_choice {                                
+                                if room_filter.is_none() {                                
                                     if let Some(ref mut last_room_id) = last_room_id {
                                         if last_room_id != &event_room_id {
                                             *last_room_id = event_room_id.clone();
@@ -1261,8 +1247,12 @@ async fn async_worker(
                             }));
                         }
                         Err(e) => {
-                            let context = if let MessageSearchChoice::OneRoom(room_id) = &message_search_choice {
-                                format!("Failed to search messages in room {room_id}")
+                            let context = if let Some(rooms) = &room_filter {
+                                if let Some(room_id) = rooms.first() {
+                                    format!("Failed to search messages in room {room_id}")
+                                } else {
+                                    "Failed to search messages".to_string()
+                                }
                             } else {
                                 "Failed to search messages in all rooms".to_string()
                             };

@@ -3,13 +3,14 @@ use std::{borrow::Cow, collections::BTreeMap, ops::DerefMut};
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{
+    api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria as MatrixCriteria, EventContext, OrderBy}},
     events::{
         room::message::{
             FormattedBody, MessageType, RoomMessageEventContent, TextMessageEventContent,
         },
         AnyTimelineEvent,
     },
-    OwnedRoomId, OwnedUserId,
+    uint, OwnedRoomId, OwnedUserId,
 };
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use rangemap::RangeSet;
@@ -496,13 +497,13 @@ impl SearchResults {
 
                     self.display_bottom_space(cx);
 
+                    let message_search_choice = if let (false, Some(room_id)) = (criteria.include_all_rooms, &self.room_id) {
+                        MessageSearchChoice::OneRoom(room_id.clone())
+                    } else {
+                        MessageSearchChoice::AllRooms
+                    };
                     submit_async_request(MatrixRequest::SearchMessages {
-                        message_search_choice: if let (false, Some(room_id)) = (criteria.include_all_rooms, &self.room_id) {
-                            MessageSearchChoice::OneRoom(room_id.clone())
-                        } else {
-                            MessageSearchChoice::AllRooms
-                        },
-                        search_term: criteria.search_term.clone(),
+                        criteria: create_search_criteria(criteria.search_term.clone(), message_search_choice),
                         next_batch: Some(next_batch_token.clone()),
                         abort_previous_search: false,
                     });
@@ -592,8 +593,7 @@ impl SearchResults {
                     self.search_state = SearchState::default();
                     // Abort previous inflight search request.
                     submit_async_request(MatrixRequest::SearchMessages {
-                        message_search_choice: MessageSearchChoice::AllRooms,
-                        search_term: String::default(),
+                        criteria: create_search_criteria(String::default(), MessageSearchChoice::AllRooms),
                         next_batch: None,
                         abort_previous_search: true,
                     });
@@ -627,8 +627,7 @@ impl SearchResults {
                         .button(id!(search_all_rooms_button))
                         .set_enabled(cx, false);
                     submit_async_request(MatrixRequest::SearchMessages {
-                        message_search_choice: MessageSearchChoice::OneRoom(room_id.clone()),
-                        search_term: criteria.search_term.clone(),
+                        criteria: create_search_criteria(criteria.search_term.clone(), MessageSearchChoice::OneRoom(room_id.clone())),
                         next_batch: None,
                         abort_previous_search: true,
                     });
@@ -693,8 +692,7 @@ impl WidgetMatchEvent for SearchResults {
                 self.display_bottom_space(cx);
                 self.search_state = SearchState::default();
                 submit_async_request(MatrixRequest::SearchMessages {
-                    message_search_choice: MessageSearchChoice::AllRooms,
-                    search_term: criteria.search_term,
+                    criteria: create_search_criteria(criteria.search_term, MessageSearchChoice::AllRooms),
                     next_batch: None,
                     abort_previous_search: true,
                 });
@@ -731,8 +729,7 @@ impl WidgetMatchEvent for SearchResults {
                     // Disable the search all rooms button during search
                     search_all_rooms_button.set_enabled(cx, false);
                     submit_async_request(MatrixRequest::SearchMessages {
-                        message_search_choice: MessageSearchChoice::OneRoom(room_id.clone()),
-                        search_term: criteria.search_term.clone(),
+                        criteria: create_search_criteria(criteria.search_term.clone(), MessageSearchChoice::OneRoom(room_id.clone())),
                         next_batch: None,
                         abort_previous_search: true,
                     });
@@ -1074,4 +1071,24 @@ fn truncate_to_50(s: &str) -> Cow<str> {
     } else {
         Cow::Owned(format!("{}...", &s[..47]))
     }
+}
+
+/// Creates a search criteria object based on the search parameters.
+fn create_search_criteria(search_term: String, message_search_choice: MessageSearchChoice) -> MatrixCriteria {
+    let mut room_filter = RoomEventFilter::empty();
+    if let MessageSearchChoice::OneRoom(room_id) = &message_search_choice {
+        room_filter.rooms = Some(vec![room_id.to_owned()]);
+    } else {
+        room_filter.rooms = None;
+    }
+    
+    let mut criteria = MatrixCriteria::new(search_term);
+    criteria.filter = room_filter;
+    criteria.order_by = Some(OrderBy::Recent);
+    criteria.event_context = EventContext::new();
+    criteria.event_context.after_limit = uint!(0);
+    criteria.event_context.before_limit = uint!(0);
+    criteria.event_context.include_profile = true;
+    
+    criteria
 }
