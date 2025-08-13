@@ -266,24 +266,25 @@ impl MatchEvent for App {
                     continue;
                 }
                 AppStateAction::RoomFocusLost(room_id) => {
-                    let mut to_remove = None;
-                    for (key, room) in &self.app_state.saved_dock_state.open_rooms {
+                    let mut to_be_removed = None;
+                    for (tab_id, room) in &self.app_state.saved_dock_state.open_rooms {
                         if room.room_id() == &room_id {
-                            to_remove = Some(*key);
+                            to_be_removed = Some(*tab_id);
                             break;
                         }
                     }
-                    if let Some(to_remove) = to_remove {
+                    if let Some(to_be_removed) = to_be_removed {
                         // For mobile UI, navigate back to the root view.
                         cx.widget_action(
                             self.ui.widget_uid(),
                             &Scope::default().path,
                             StackNavigationAction::PopToRoot,
                         );
+                        // For desktop UI, close the tab.
                         cx.widget_action(
                             self.ui.widget_uid(),
                             &Scope::default().path,
-                            DockAction::TabCloseWasPressed(to_remove),
+                            DockAction::TabCloseWasPressed(to_be_removed),
                         );
                     }
                     continue;
@@ -563,10 +564,10 @@ impl Eq for SelectedRoom {}
 pub enum AppStateAction {
     /// The given room was focused (selected).
     RoomFocused(SelectedRoom),
-    /// Resets the focus to none, meaning that no room is selected.
-    FocusNone,
     /// Unfocus the given room. Close the tab and remove it from the DockState.
     RoomFocusLost(OwnedRoomId),
+    /// Resets the focus to none, meaning that no room is selected.
+    FocusNone,
     /// The given room has successfully been upgraded from being displayed
     /// as an InviteScreen to a RoomScreen.
     UpgradedInviteToJoinedRoom(OwnedRoomId),

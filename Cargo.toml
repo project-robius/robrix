@@ -58,6 +58,25 @@ tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", optio
 # tsp_sdk = { version = "0.8.0", optional = true, default-features = false, features = ["async", "resolve"] }
 quinn = { version = "0.11.8", default-features = false, optional = true }
 percent-encoding = { version = "2.3", optional = true }
+ruma = { git = "https://github.com/ruma/ruma", rev = "d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a", features = [
+    "client-api-c",
+    "compat-upload-signatures",
+    "compat-user-id",
+    "compat-arbitrary-length-ids",
+    "compat-tag-info",
+    "compat-optional",
+    "compat-encrypted-stickers",
+    "unstable-msc3401",
+    "unstable-msc3266",
+    "unstable-msc3488",
+    "unstable-msc3489",
+    "unstable-msc4075",
+    "unstable-msc4140",
+    "unstable-msc4143",
+    "unstable-msc4171",
+    "unstable-msc4278",
+    "unstable-msc4286",
+] }
 
 [features]
 default = []
@@ -93,7 +112,6 @@ sqlx = { git = "https://github.com/project-robius/sqlx.git", branch = "update_li
 ## more specifically, the updated `libsqlite3-sys` version (0.31.0).
 ## See <https://github.com/openwallet-foundation/askar/pull/386>
 askar-storage = { git = "https://github.com/openwallet-foundation/askar.git", rev = "0b919bb58205416df7cd2cc1a24ce52373cbe105" }
-
 
 [package.metadata.docs.rs]
 all-features = true

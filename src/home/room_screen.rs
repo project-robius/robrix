@@ -715,6 +715,7 @@ live_design! {
                 message_input_view = <View> {
                     width: Fill, height: Fit,
                     flow: Overlay,
+
                     // Below that, display a view that holds the message input bar and send button.
                     input_bar = <RoomInputBar> {}
 
@@ -2778,7 +2779,7 @@ pub enum TimelineUpdate {
     /// A notice that the given room has been tombstoned,
     /// includes a `TombstoneDetail` that contains the successor room.
     /// If the room is not tombstoned, then the `TombstoneDetail` is `None`.
-    SuccessorRoomUpdated(Option<TombstoneDetail>)
+    SuccessorRoomUpdated(Option<TombstoneDetail>),
 }
 
 thread_local! {

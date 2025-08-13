@@ -96,14 +96,14 @@ live_design! {
 /// The information about a tombstoned room.
 #[derive(Clone, Debug)]
 pub struct TombstoneDetail {
-    /// The ID of the tombstoned room
+    /// The ID of the tombstoned room.
     pub tombstoned_room_id: OwnedRoomId,
-    /// The ID of the successor room
+    /// The ID of the successor room.
     pub successor_room_id: Option<OwnedRoomId>,
-    /// The name of the successor room
+    /// The name of the successor room.
     pub successor_room_name: Option<String>,
-    /// The reason why the room was tombstoned
-    pub successor_reason: String,
+    /// The reason why the room was tombstoned.
+    pub replacement_reason: String,
 }
 
 /// A view that shows information about a tombstoned room and its successor.
@@ -113,10 +113,10 @@ pub struct TombstoneFooter {
     view: View,
     #[live(false)]
     visible: bool,
-    /// The details of the successor room
+    /// The details of the successor room.
     #[rust]
     successor_info: Option<BasicRoomDetails>,
-    /// The ID of the current tombstoned room
+    /// The ID of the current tombstoned room.
     #[rust]
     room_id: Option<OwnedRoomId>,
 }
@@ -156,7 +156,7 @@ impl TombstoneFooter {
         self.room_id = Some(tombstone_detail.tombstoned_room_id.clone());
         self.view
             .label(id!(replacement_reason))
-            .set_text(cx, &tombstone_detail.successor_reason);
+            .set_text(cx, &tombstone_detail.replacement_reason);
         
         let successor_avatar_preview = tombstone_detail.successor_room_id
             .as_ref()
@@ -202,7 +202,7 @@ impl TombstoneFooter {
         self.successor_info = successor_info;
     }
 
-    /// Navigate to the successor room or show a join room modal if not loaded.
+    /// Navigate to the successor room or show join room modal if not loaded.
     ///
     /// If the successor room is not loaded, show a join room modal. Otherwise,
     /// close the tombstone room and show the successor room in the room list.

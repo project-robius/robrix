@@ -524,7 +524,7 @@ impl RoomsList {
                 RoomsListUpdate::Status { status } => {
                     self.status = status;
                 }
-                RoomsListUpdate::TombstonedRoom { room_id} => {
+                RoomsListUpdate::TombstonedRoom { room_id } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         let was_displayed = (self.display_filter)(room);
                         room.is_tombstoned = true;
@@ -554,7 +554,7 @@ impl RoomsList {
                             }
                         }
                     } else {
-                        error!("Error: couldn't find room {room_id} to update room name");
+                        warning!("Warning: couldn't find room {room_id} to update the tombstone status");
                     }
                 }
             }

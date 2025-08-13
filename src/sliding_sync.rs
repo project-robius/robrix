@@ -1154,7 +1154,7 @@ async fn async_worker(
                     let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get(&room_id) else {
                         log!(
-                            "BUG: room info not found when sending get successor room request{room_id}, "
+                            "BUG: room info not found when sending get successor room request {room_id}, "
                         );
                         continue;
                     };
@@ -1167,7 +1167,7 @@ async fn async_worker(
                                 tombstoned_room_id: room_id.clone(),
                                 successor_room_id: Some(successor_room.room_id),
                                 successor_room_name,
-                                successor_reason: successor_room.reason.unwrap_or_default(),
+                                replacement_reason: successor_room.reason.unwrap_or_default(),
                             })
                         } else {
                             None
@@ -1358,7 +1358,7 @@ static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex
 
 /// Information about all of the rooms that have been tombstoned.
 ///
-/// The map key is the **NEW** replacement room ID, and the value is the **OLD** tombstoned room ID.
+/// The map key is the **NEW** successor room ID, and the value is the **OLD** tombstoned room ID.
 /// This allows us to quickly query if a newly-encountered room is a replacement for an old tombstoned room.
 static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
 
@@ -2005,22 +2005,22 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
     room_list_service.subscribe_to_rooms(&[&room_id]);
 
     // Do not add tombstoned rooms to the rooms list; they require special handling.
-    if let Some(tombstoned_info) = room.successor_room() {
-        log!("Room {room_id} has been tombstoned: {tombstoned_info:#?}");
+    if let Some(successor_room) = room.successor_room() {
+        log!("Room {room_id} has been tombstoned: {successor_room:#?}");
         // Since we don't know the order in which we'll learn about new rooms,
         // we need to first check to see if the replacement for this tombstoned room
-        // refers to an already-known room as its replacement.
-        // If so, we can immediately update the replacement room's room info
+        // refers to an already-known room as its successor.
+        // If so, we can immediately update the successor room's room info
         // to indicate that it replaces this tombstoned room.
-        let replacement_room_id = tombstoned_info.room_id;
-        if let Some(room_info) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&replacement_room_id) {
-            room_info.replaces_tombstoned_room = Some(replacement_room_id.clone());
+        let successor_room_id = successor_room.room_id;
+        if let Some(room_info) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&successor_room_id) {
+            room_info.replaces_tombstoned_room = Some(successor_room_id.clone());
         }
-        // But if we don't know about the replacement room yet, we need to save this tombstoned room
-        // in a separate list so that the replacement room we will discover in the future
+        // But if we don't know about the successor room yet, we need to save this tombstoned room
+        // in a separate list so that the successor room we will discover in the future
         // can know which old tombstoned room it replaces (see the bottom of this function).
         else {
-            TOMBSTONED_ROOMS.lock().unwrap().insert(replacement_room_id, room_id.clone());
+            TOMBSTONED_ROOMS.lock().unwrap().insert(successor_room_id, room_id.clone());
         }
     }
 
@@ -2080,7 +2080,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         has_been_paginated: false,
         is_selected: false,
         is_direct,
-        is_tombstoned: room.is_tombstoned() || room.successor_room().is_some(),
+        is_tombstoned: room.is_tombstoned() || room.successor_room().is_some() || room.tombstone_content().is_some(),
     }));
 
     Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_id));
@@ -2652,7 +2652,7 @@ fn update_latest_event(
                             tombstoned_room_id: room_id.clone(), 
                             successor_room_id: Some(content.replacement_room.clone()), 
                             successor_room_name, 
-                            successor_reason: content.body.clone()
+                            replacement_reason: content.body.clone()
                         }))) {
                             Ok(_) => {
                                 SignalToUI::set_ui_signal();

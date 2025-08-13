@@ -118,7 +118,7 @@ pub fn text_preview_of_timeline_item(
         )),
         TimelineItemContent::FailedToParseState { event_type, .. } => TextPreview::from((
             format!("[Failed to parse <i>{}</i> state]", event_type),
-            BeforeText::UsernameWithColon
+            BeforeText::UsernameWithColon,
         )),
         TimelineItemContent::CallInvite => TextPreview::from((
             String::from("[Call Invitation]"),
