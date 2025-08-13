@@ -20,11 +20,7 @@ use crate::{
         JoinLeaveRoomModalWidgetRefExt,
     },
     login::login_screen::LoginAction,
-    persistent_state::{
-        load_window_state,
-        save_app_state,
-        save_window_state,
-    },
+    persistence,
     shared::callout_tooltip::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
@@ -41,7 +37,6 @@ use crate::{
         VerificationModalWidgetRefExt,
     },
 };
-use serde::{self, Deserialize, Serialize};
 
 live_design! {
     use link::theme::*;
@@ -116,7 +111,7 @@ live_design! {
                         // but behind the verification modal.
                         new_message_context_menu = <NewMessageContextMenu> { }
 
-                        // We want the verification modal to always show up on top of
+                        // We want the verification modal to always show up in front of
                         // all other elements when an incoming verification request is received.
                         verification_modal = <Modal> {
                             content: {
@@ -153,6 +148,20 @@ impl LiveRegister for App {
         // then other modules widgets.
         makepad_widgets::live_design(cx);
         crate::shared::live_design(cx);
+
+        // If the `tsp` cargo feature is enabled, we create a new "tsp_link" DSL namespace
+        // and link it to the real `tsp_enabled` DSL namespace, which contains real TSP widgets.
+        // If the `tsp` feature is not enabled, link the "tsp_link" DSL namespace
+        // to the `tsp_disabled` DSL namespace instead, which defines dummy placeholder widgets.
+        #[cfg(feature = "tsp")] {
+            crate::tsp::live_design(cx);
+            cx.link(live_id!(tsp_link), live_id!(tsp_enabled));
+        }
+        #[cfg(not(feature = "tsp"))] {
+            crate::tsp_dummy::live_design(cx);
+            cx.link(live_id!(tsp_link), live_id!(tsp_disabled));
+        }
+
         crate::settings::live_design(cx);
         crate::room::live_design(cx);
         crate::join_leave_room_modal::live_design(cx);
@@ -181,12 +190,19 @@ impl MatchEvent for App {
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
+
+        if let Err(e) = persistence::load_window_state(self.ui.window(id!(main_window)), cx) {
+            error!("Failed to load window state: {}", e);
+        }
+
         self.update_login_visibility(cx);
 
-        log!("App::handle_startup(): starting matrix sdk loop");
-        crate::sliding_sync::start_matrix_tokio().unwrap();
-        if let Err(e) = load_window_state(self.ui.window(id!(main_window)), cx) {
-            error!("Failed to load window state: {}", e);
+        log!("App::Startup: starting matrix sdk loop");
+        let _tokio_rt = crate::sliding_sync::start_matrix_tokio().unwrap();
+
+        #[cfg(feature = "tsp")] {
+            log!("App::Startup: initializing TSP (Trust Spanning Protocol) module.");
+            crate::tsp::tsp_init(_tokio_rt).unwrap();
         }
     }
 
@@ -353,13 +369,34 @@ impl AppMain for App {
 
         if let Event::Shutdown = event {
             let window_ref = self.ui.window(id!(main_window));
-            if let Err(e) = save_window_state(window_ref, cx) {
-                error!("Failed to save window state. Error details: {}", e);
+            if let Err(e) = persistence::save_window_state(window_ref, cx) {
+                error!("Failed to save window state. Error: {e}");
             }
             if let Some(user_id) = current_user_id() {
                 let app_state = self.app_state.clone();
-                if let Err(e) = save_app_state(app_state, user_id) {
-                    error!("Failed to save app state. Error details: {}", e);
+                if let Err(e) = persistence::save_app_state(app_state, user_id) {
+                    error!("Failed to save app state. Error: {e}");
+                }
+            }
+            #[cfg(feature = "tsp")] {
+                // Save the TSP wallet state, if it exists, with a 3-second timeout.
+                let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
+                if tsp_state.has_content() {
+                    let res = crate::sliding_sync::block_on_async_with_timeout(
+                        Some(std::time::Duration::from_secs(3)),
+                        async move {
+                            match tsp_state.close_and_serialize().await {
+                                Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
+                                    Ok(_) => { }
+                                    Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
+                                }
+                                Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
+                            }
+                        },
+                    );
+                    if let Err(_e) = res {
+                        error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
+                    }
                 }
             }
         }
@@ -516,15 +553,4 @@ pub enum AppStateAction {
     /// The RoomScreen for this room can now fully display the room's timeline.
     RoomLoadedSuccessfully(OwnedRoomId),
     None,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// The state of the window geometry
-pub struct WindowGeomState {
-    /// A tuple containing the window's width and height.
-    pub inner_size: (f64, f64),
-    /// A tuple containing the window's x and y position.
-    pub position: (f64, f64),
-    /// Maximise fullscreen if true.
-    pub is_fullscreen: bool,
 }

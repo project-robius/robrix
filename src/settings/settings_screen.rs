@@ -11,71 +11,98 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::styles::*;
     use crate::shared::icon_button::*;
+    use crate::shared::confirmation_modal::*;
     use crate::settings::account_settings::AccountSettings;
+    use link::tsp_link::TspSettingsScreen;
+    use link::tsp_link::CreateWalletModal;
 
     // The main, top-level settings screen widget.
     pub SettingsScreen = {{SettingsScreen}} {
-        width: Fill,
-        height: Fill,
-        padding: {top: 5, left: 15, right: 15, bottom: 15},
-        spacing: 10,
-        flow: Down,
+        width: Fill, height: Fill,
+        flow: Overlay
 
         show_bg: true,
         draw_bg: {
             color: (COLOR_PRIMARY)
         }
 
-        // The settings header shows a title, with a close button to the right.
-        settings_header = <View> {
-            flow: Right,
-            align: {x: 1.0, y: 0.5},
-            width: Fill, height: Fit
-            margin: {left: 5, right: 5}
+        <View> {
+            padding: {top: 5, left: 15, right: 15, bottom: 15},
             spacing: 10,
+            flow: Down
 
-            settings_header_title = <TitleLabel> {
-                margin: {top: 4} // line up with the close button
-                text: "All Settings"
-                draw_text: {
-                    text_style: {font_size: 18},
+            // The settings header shows a title, with a close button to the right.
+            settings_header = <View> {
+                flow: Right,
+                align: {x: 1.0, y: 0.5},
+                width: Fill, height: Fit
+                margin: {left: 5, right: 5}
+                spacing: 10,
+
+                settings_header_title = <TitleLabel> {
+                    margin: {top: 4} // line up with the close button
+                    text: "All Settings"
+                    draw_text: {
+                        text_style: {font_size: 18},
+                    }
+                }
+
+                // The "X" close button on the top right
+                close_button = <RobrixIconButton> {
+                    width: Fit,
+                    height: Fit,
+                    align: {x: 1.0, y: 0.0},
+                    spacing: 0,
+                    margin: {top: 4.5} // vertically align with the title
+                    padding: 15,
+
+                    draw_bg: {
+                        color: (COLOR_SECONDARY)
+                    }
+                    draw_icon: {
+                        svg_file: (ICON_CLOSE),
+                        fn get_color(self) -> vec4 {
+                            return #x0;
+                        }
+                    }
+                    icon_walk: {width: 14, height: 14}
                 }
             }
 
-            // The "X" close button on the top right
-            close_button = <RobrixIconButton> {
-                width: Fit,
-                height: Fit,
-                align: {x: 1.0, y: 0.0},
-                spacing: 0,
-                margin: {top: 4.5} // vertically align with the title
-                padding: 15,
+            <LineH> { padding: 10 }
 
-                draw_bg: {
-                    color: (COLOR_SECONDARY)
-                }
-                draw_icon: {
-                    svg_file: (ICON_CLOSE),
-                    fn get_color(self) -> vec4 {
-                        return #x0;
-                    }
-                }
-                icon_walk: {width: 14, height: 14}
+            <ScrollXYView> {
+                width: Fill, height: Fill
+                flow: Down
+
+                // The account settings section.
+                account_settings = <AccountSettings> {}
+
+                <LineH> { width: 400, padding: 10, margin: {top: 20, bottom: 5} }
+
+                // The TSP wallet settings section.
+                tsp_settings_screen = <TspSettingsScreen> {}
+
+                <LineH> { width: 400, padding: 10, margin: {top: 20, bottom: 5} }
+
+                // Add other settings sections here as needed.
+                // Don't forget to add a `show()` fn to those settings sections
+                // and call them in `SettingsScreen::show()`.
             }
         }
 
-        <LineH> { padding: 10 }
+        // We want the modal for creating a new TSP wallet to appear
+        // in front of the main settings content defined above.
+        create_wallet_modal = <Modal> {
+            content: {
+                create_wallet_modal_inner = <CreateWalletModal> {}
+            }
+        }
 
-        <ScrollXYView> {
-            width: Fill, height: Fill
-            flow: Down
-
-            // The account settings section.
-            account_settings = <AccountSettings> {}
-
-            // Add other settings sections here as needed.
-            // Don't forget to add a `show()` fn to those settings sections
-            // and call them in `SettingsScreen::show()`.
+        remove_delete_wallet_modal = <Modal> {
+            content: {
+                remove_delete_wallet_modal_inner = <ConfirmationModal> { }
+            }
         }
     }
 }
@@ -103,7 +130,7 @@ impl Widget for SettingsScreen {
                 Event::Actions(actions) if self.button(id!(close_button)).clicked(actions)
             )
             || event.back_pressed()
-            || match event.hits_with_capture_overload(cx, area, true) {
+            || match event.hits(cx, area) {
                 Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
                 Hit::FingerDown(_fde) => {
                     cx.set_key_focus(area);
@@ -114,6 +141,41 @@ impl Widget for SettingsScreen {
         };
         if close_pane {
             cx.action(SettingsAction::CloseSettings);
+        }
+
+        #[cfg(feature = "tsp")]
+        if let Event::Actions(actions) = event {
+            use crate::shared::confirmation_modal::ConfirmationModalWidgetExt;
+
+            for action in actions {
+                // Handle the create wallet modal being closed.
+                use crate::tsp::{create_wallet_modal::CreateWalletModalAction, wallet_entry::TspWalletEntryAction};
+                match action.downcast_ref() {
+                    Some(CreateWalletModalAction::Open) => {
+                        // Open the create wallet modal.
+                        use crate::tsp::create_wallet_modal::CreateWalletModalWidgetExt;
+                        self.view.create_wallet_modal(id!(create_wallet_modal_inner)).show(cx);
+                        self.view.modal(id!(create_wallet_modal)).open(cx);
+                    }
+                    Some(CreateWalletModalAction::Close) => {
+                        self.view.modal(id!(create_wallet_modal)).close(cx);
+                    }
+                    None => { }
+                }
+
+                // Handle a request to show a TSP wallet confirmation modal.
+                if let Some(TspWalletEntryAction::ShowConfirmationModal(content_opt)) = action.downcast_ref() {
+                    if let Some(content) = content_opt.borrow_mut().take() {
+                        self.view.confirmation_modal(id!(remove_delete_wallet_modal_inner)).show(cx, content);
+                        self.view.modal(id!(remove_delete_wallet_modal)).open(cx);
+                    }
+                }
+            }
+
+            if let Some(_accepted) = self.view.confirmation_modal(id!(remove_delete_wallet_modal_inner)).closed(actions) {
+                log!("Confirmation modal closed, did user accept? {}", _accepted);
+                self.view.modal(id!(remove_delete_wallet_modal)).close(cx);
+            }
         }
     }
 
