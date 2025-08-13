@@ -1,7 +1,7 @@
 // Ignore clippy warnings in `DeRon` macro derive bodies.
 #![allow(clippy::question_mark)]
 
-use std::{borrow::Cow, ops::Deref, path::Path, sync::{Arc, Mutex, OnceLock}};
+use std::{borrow::Cow, ops::Deref, path::Path, sync::{Mutex, OnceLock}};
 
 use anyhow::anyhow;
 use makepad_widgets::{makepad_micro_serde::*, *};
@@ -245,7 +245,7 @@ pub struct SavedTspState {
 }
 
 
-pub fn tsp_init(rt: Arc<tokio::runtime::Runtime>) -> anyhow::Result<()> {
+pub fn tsp_init(rt_handle: tokio::runtime::Handle) -> anyhow::Result<()> {
     CryptoProvider::install_default(aws_lc_rs::default_provider())
         .map_err(|_| anyhow!("BUG: default CryptoProvider was already set."))?;
 
@@ -253,9 +253,8 @@ pub fn tsp_init(rt: Arc<tokio::runtime::Runtime>) -> anyhow::Result<()> {
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<TspRequest>();
     TSP_REQUEST_SENDER.set(sender).expect("BUG: TSP_REQUEST_SENDER already set!");
 
-    let rt2 = rt.clone();
     // Start a high-level async task that will start and monitor all other tasks.
-    let _monitor = rt.spawn(async move {
+    let _monitor = rt_handle.spawn(async move {
         // First, run the inner TSP initialization logic to load prior TSP state.
         match inner_tsp_init().await {
             Ok(()) => log!("TSP state initialized successfully."),
@@ -273,7 +272,7 @@ pub fn tsp_init(rt: Arc<tokio::runtime::Runtime>) -> anyhow::Result<()> {
         }
 
         // Spawn the actual async worker thread.
-        let mut tsp_worker_join_handle = rt2.spawn(async_tsp_worker(receiver));
+        let mut tsp_worker_join_handle = Handle::current().spawn(async_tsp_worker(receiver));
 
         // TODO: start the main loop that drives the TSP SDK's receiver handler,
         //       e.g., to process incoming requests from other TSP instances.
