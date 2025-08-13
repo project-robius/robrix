@@ -1228,7 +1228,7 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
 
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
-    *REQUEST_SENDER.lock().unwrap() = Some(sender);
+    REQUEST_SENDER.lock().unwrap().replace(sender);
 
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
     // Start a high-level async task that will start and monitor all other tasks.
