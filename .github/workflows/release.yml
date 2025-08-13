@@ -53,6 +53,7 @@ jobs:
   check_tag_version:
     name: Check Release Tag and Cargo.toml Version Consistency
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +77,7 @@ jobs:
   determine_matrix:
     name: Determine Build Matrix
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: always() && (needs.check_tag_version.result == 'success' || github.event_name == 'workflow_dispatch')
     needs: check_tag_version
     outputs:
@@ -87,7 +89,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             case "${{ github.event.inputs.target_platforms }}" in
               "All")
-                matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"},{"os":"ubuntu-24.04-arm","arch":"aarch64"},{"os":"ubuntu-22.04","arch":"x86_64"},{"os":"ubuntu-22.04-arm","arch":"aarch64"},{"os":"macos-14","arch":"aarch64"},{"os":"macos-13","arch":"x86_64"},{"os":"windows-2022-x86_64","arch":"x86_64"}]}'
+                matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"},{"os":"ubuntu-24.04-arm","arch":"aarch64"},{"os":"ubuntu-22.04","arch":"x86_64"},{"os":"ubuntu-22.04-arm","arch":"aarch64"},{"os":"macos-14","arch":"aarch64"},{"os":"macos-13","arch":"x86_64"},{"os":"windows-2022","arch":"x86_64"}]}'
                 ;;
               "linux-ubuntu-24.04")
                 matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"},{"os":"ubuntu-24.04-arm","arch":"aarch64"}]}'
@@ -118,13 +120,14 @@ jobs:
                 ;;
             esac
           else
-            matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"},{"os":"ubuntu-24.04-arm","arch":"aarch64"},{"os":"ubuntu-22.04","arch":"x86_64"},{"os":"ubuntu-22.04-arm","arch":"aarch64"},{"os":"macos-14","arch":"aarch64"},{"os":"macos-13","arch":"x86_64"},{"os":"windows-2022-x86_64","arch":"x86_64"}]}'
+            matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"},{"os":"ubuntu-24.04-arm","arch":"aarch64"},{"os":"ubuntu-22.04","arch":"x86_64"},{"os":"ubuntu-22.04-arm","arch":"aarch64"},{"os":"macos-14","arch":"aarch64"},{"os":"macos-13","arch":"x86_64"},{"os":"windows-2022","arch":"x86_64"}]}'
           fi
           echo "matrix=$matrix" >> $GITHUB_OUTPUT
 
   release_robrix_for_desktop:
     name: Release Robrix for Desktop (${{ matrix.os }}, ${{ matrix.arch }})
     needs: determine_matrix
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.determine_matrix.outputs.matrix) }}

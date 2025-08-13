@@ -138,6 +138,11 @@ macOS, Windows, Linux, Android, and iOS.
 icons = ["./packaging/robrix_logo_alpha.png"]
 out_dir = "./dist"
 
+## Ultimately, all resources will be packaged into the resources folder under ./<out_dir>, where the corresponding folder name is the project name.
+## Like ./dist/resources/robrix/resources,
+## - The robrix is your project's name.
+## - The second resource folder is your project's own resources, the `robius-packaging-commands` will handle copying these files.
+## NOTE: The `robius-packaging-commands` CLI tool only copies the app `resources` folder now.
 ## See the above paragraph comments for more info on how we create/populate the below `src` directories.
 resources = [
     # Makepad resources
