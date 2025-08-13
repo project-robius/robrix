@@ -456,7 +456,7 @@ impl Widget for SearchResults {
 impl SearchResults {
     /// Sends a pagination request when the user is scrolling down and approaching the bottom of the search results.
     /// The request is sent with the `next_batch` token from the last search result received.
-    fn send_pagination_request_based_on_scroll_pos(
+    fn paginate_search_results_based_on_scroll_pos(
         &mut self,
         cx: &mut Cx,
         actions: &ActionsBuf,
