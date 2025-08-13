@@ -247,7 +247,7 @@ impl TombstoneFooter {
             &scope.path,
             AppStateAction::RoomFocusLost(room_id.clone())
         );
-        // RoomsListAction is used instead of RoomPreviewAction::Clicked because RoomsListAction::Selected being called much later. 
+        // We use RoomsListAction instead of RoomPreviewAction::Clicked since RoomsListAction::Selected triggers much later.
         cx.widget_action(
             self.widget_uid(),
             &scope.path,
