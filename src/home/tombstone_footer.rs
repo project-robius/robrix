@@ -236,19 +236,18 @@ impl TombstoneFooter {
             room_name: successor_room_detail.room_name.clone(),
         };
 
-        cx.widget_action(
-            self.widget_uid(),
-            &scope.path,
-            AppStateAction::RoomFocusLost(room_id.clone())
-        );
-
         log!(
             "Navigating from tombstoned room {} to successor room {}",
             room_id,
             successor_room_detail.room_id
         );
 
-        // BUG: This opens the correct tab, but it does not select the room preview in the room list.
+        cx.widget_action(
+            self.widget_uid(),
+            &scope.path,
+            AppStateAction::RoomFocusLost(room_id.clone())
+        );
+        // RoomsListAction is used instead of RoomPreviewAction::Clicked because RoomsListAction::Selected being called much later. 
         cx.widget_action(
             self.widget_uid(),
             &scope.path,

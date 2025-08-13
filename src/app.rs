@@ -267,12 +267,23 @@ impl MatchEvent for App {
                 }
                 AppStateAction::RoomFocusLost(room_id) => {
                     let mut to_be_removed = None;
+                    for (index, selected_room) in self.app_state.saved_dock_state.room_order.iter().enumerate() {
+                        if selected_room.room_id() == &room_id {
+                            to_be_removed = Some(index);
+                            break;
+                        }
+                    }
+                    if let Some(to_be_removed) = to_be_removed {
+                        self.app_state.saved_dock_state.room_order.remove(to_be_removed);
+                    }
+                    let mut to_be_removed = None;
                     for (tab_id, room) in &self.app_state.saved_dock_state.open_rooms {
                         if room.room_id() == &room_id {
                             to_be_removed = Some(*tab_id);
                             break;
                         }
                     }
+                    self.app_state.selected_room = None;
                     if let Some(to_be_removed) = to_be_removed {
                         // For mobile UI, navigate back to the root view.
                         cx.widget_action(
