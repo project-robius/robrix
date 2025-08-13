@@ -744,7 +744,7 @@ pub enum SearchResultAction {
     /// Search results have been received from the Matrix server.
     Received(SearchResultReceived),
     /// An error occurred while processing search results.
-    /// Restoring the previous next batch token.
+    /// The previous token should be restored.
     ErrorWithNextBatchToken(Option<String>),
     None,
 }
