@@ -2080,7 +2080,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         has_been_paginated: false,
         is_selected: false,
         is_direct,
-        is_tombstoned: room.is_tombstoned() || room.successor_room().is_some() || room.tombstone_content().is_some(),
+        is_tombstoned: room.is_tombstoned() || room.tombstone_content().is_some(),
     }));
 
     Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_id));
