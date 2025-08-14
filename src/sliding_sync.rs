@@ -408,9 +408,6 @@ pub enum MatrixRequest {
         matrix_id: MatrixId,
         via: Vec<OwnedServerName>
     },
-    GetSuccessorRoom {
-        room_id: OwnedRoomId,
-    }
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -1148,37 +1145,6 @@ async fn async_worker(
                         };
                     }
                 });
-            }
-            MatrixRequest::GetSuccessorRoom { room_id } => {
-                let (timeline_update_sender, tombstone_detail) = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                        log!(
-                            "BUG: room info not found when sending get successor room request {room_id}, "
-                        );
-                        continue;
-                    };
-                    let tombstone_detail =
-                        if let Some(successor_room) = room_info.timeline.room().successor_room() {
-                            let successor_room_name = get_client()
-                                .and_then(|client| client.get_room(&successor_room.room_id))
-                                .and_then(|f| f.name());
-                            Some(TombstoneDetail {
-                                tombstoned_room_id: room_id.clone(),
-                                successor_room_id: Some(successor_room.room_id),
-                                successor_room_name,
-                                replacement_reason: successor_room.reason.unwrap_or_default(),
-                            })
-                        } else {
-                            None
-                        };
-                    (room_info.timeline_update_sender.clone(), tombstone_detail)
-                };
-                timeline_update_sender
-                    .send(TimelineUpdate::SuccessorRoomUpdated(tombstone_detail))
-                    .unwrap_or_else(|_e| {
-                        panic!("Error: room not found when sending successor room update for {room_id}!")
-                    });
             }
         }
     }
@@ -2645,14 +2611,13 @@ fn update_latest_event(
                     } else {
                         TOMBSTONED_ROOMS.lock().unwrap().insert(content.replacement_room.clone(), room_id.clone());
                     }
-                    
                     enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room_id.clone() });
                     if let Some(sender) = timeline_update_sender {
                         match sender.send(TimelineUpdate::SuccessorRoomUpdated(Some(TombstoneDetail {
                             tombstoned_room_id: room_id.clone(), 
                             successor_room_id: Some(content.replacement_room.clone()), 
                             successor_room_name, 
-                            replacement_reason: content.body.clone()
+                            replacement_reason: Some(content.body.clone())
                         }))) {
                             Ok(_) => {
                                 SignalToUI::set_ui_signal();

@@ -31,62 +31,58 @@ live_design! {
 
     pub TombstoneFooter = {{TombstoneFooter}}{
         visible: false,
-        width: Fill,
-        height: Fit,
-        flow: Overlay
+        width: Fill, height: Fit
+        flow: Down,
+
+        replacement_reason = <Label> {
+            width: Fill, height: Fit,
+            padding: 5
+            flow: RightWrap,
+            draw_text: {
+                color: (TYPING_NOTICE_TEXT_COLOR),
+                text_style: <REGULAR_TEXT>{font_size: 11}
+                wrap: Word,
+            }
+            text: "This room has been replaced and is no longer active."
+        }
         <View> {
-            height: Fit
-            flow: Down,
-            replacement_reason = <Label> {
+            width: Fill, height: Fit,
+            align: {y: 0.5}
+            join_successor_button = <RobrixIconButton> {
+                align: {y: 0.5}
+                padding: 15,
+                draw_icon: {
+                    svg_file: (ICON_TOMBSTONE)
+                    color: (COLOR_FG_ACCEPT_GREEN),
+                }
+                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+
+                draw_bg: {
+                    border_color: (COLOR_FG_ACCEPT_GREEN),
+                    color: #f0fff0 // light green
+                }
+                text: "The conversation continues here."
+                draw_text:{
+                    color: (COLOR_FG_ACCEPT_GREEN),
+                }
+            }
+            successor_room_avatar = <Avatar> {
+                width: 25,
+                height: 25,
+                cursor: Default,
+                text_view = { text = { draw_text: {
+                    text_style: <TITLE_TEXT>{ font_size: 13.0 }
+                }}}
+            }
+            successor_room_name = <Label> {
                 width: Fill, height: Fit,
-                padding: 5
                 flow: RightWrap,
                 draw_text: {
-                    color: (TYPING_NOTICE_TEXT_COLOR),
-                    text_style: <REGULAR_TEXT>{font_size: 11}
+                    text_style: <TITLE_TEXT>{
+                        font_size: 12,
+                    },
+                    color: (COLOR_TEXT)
                     wrap: Word,
-                }
-                text: "This room has been replaced and is no longer active."
-            }
-            <View> {
-                width: Fill, height: Fit,
-                align: {y: 0.5}
-                join_successor_button = <RobrixIconButton> {
-                    align: {y: 0.5}
-                    padding: 15,
-                    draw_icon: {
-                        svg_file: (ICON_TOMBSTONE)
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
-                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
-
-                    draw_bg: {
-                        border_color: (COLOR_FG_ACCEPT_GREEN),
-                        color: #f0fff0 // light green
-                    }
-                    text: "The conversation continues here."
-                    draw_text:{
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
-                }
-                successor_room_avatar = <Avatar> {
-                    width: 25,
-                    height: 25,
-                    cursor: Default,
-                    text_view = { text = { draw_text: {
-                        text_style: <TITLE_TEXT>{ font_size: 13.0 }
-                    }}}
-                }
-                successor_room_name = <Label> {
-                    width: Fill, height: Fit,
-                    flow: RightWrap,
-                    draw_text: {
-                        text_style: <TITLE_TEXT>{
-                            font_size: 12,
-                        },
-                        color: (COLOR_TEXT)
-                        wrap: Word,
-                    }
                 }
             }
         }
@@ -103,7 +99,7 @@ pub struct TombstoneDetail {
     /// The name of the successor room.
     pub successor_room_name: Option<String>,
     /// The reason why the room was tombstoned.
-    pub replacement_reason: String,
+    pub replacement_reason: Option<String>,
 }
 
 /// A view that shows information about a tombstoned room and its successor.
@@ -111,8 +107,8 @@ pub struct TombstoneDetail {
 pub struct TombstoneFooter {
     #[deref]
     view: View,
-    #[live(false)]
-    visible: bool,
+    // #[live(false)]
+    // visible: bool,
     /// The details of the successor room.
     #[rust]
     successor_info: Option<BasicRoomDetails>,
@@ -154,10 +150,11 @@ impl TombstoneFooter {
             .set_text(cx, "");
         self.visible = true;
         self.room_id = Some(tombstone_detail.tombstoned_room_id.clone());
-        self.view
-            .label(id!(replacement_reason))
-            .set_text(cx, &tombstone_detail.replacement_reason);
-        
+        if let Some(reason) = tombstone_detail.replacement_reason {
+            self.view
+                .label(id!(replacement_reason))
+                .set_text(cx, &reason);
+        }
         let successor_avatar_preview = tombstone_detail.successor_room_id
             .as_ref()
             .map(|room_id| {

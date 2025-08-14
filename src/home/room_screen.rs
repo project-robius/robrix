@@ -1712,13 +1712,14 @@ impl RoomScreen {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
                 TimelineUpdate::SuccessorRoomUpdated(tombstone_detail) => {
-                    if let Some(tombstone_detail) = tombstone_detail {
-                        self.view.tombstone_footer(id!(tombstone_footer)).show(cx, tombstone_detail);
+                    if let Some(tombstone_detail) = &tombstone_detail {
+                        self.view.tombstone_footer(id!(tombstone_footer)).show(cx, tombstone_detail.clone());
                         self.view.view(id!(message_input_view)).set_visible(cx, false);
                     } else {
                         self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
                         self.view.view(id!(message_input_view)).set_visible(cx, true);
                     }
+                    tl.tombstone_detail = tombstone_detail;
                 }
             }
         }
@@ -2304,6 +2305,17 @@ impl RoomScreen {
                 }
                 return;
             };
+            let Some(client) = get_client() else {return};
+            let tombstone_detail = client.get_room(&room_id)
+                .and_then(|room| room.successor_room())
+                .map(|room| 
+                    TombstoneDetail {
+                        tombstoned_room_id: room_id.clone(),
+                        successor_room_id: Some(room.room_id.clone()),
+                        successor_room_name: client.get_room(&room.room_id).and_then(|room| room.name()),
+                        replacement_reason: room.reason.clone(),
+                    }
+                );
             let tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // Initially, we assume the user has all power levels by default.
@@ -2328,6 +2340,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
+                tombstone_detail,
             };
             (tl_state, true)
         };
@@ -2408,6 +2421,13 @@ impl RoomScreen {
         // Now, restore the visual state of this timeline from its previously-saved state.
         self.restore_state(cx, &mut tl_state);
 
+        if let Some(tombstone_detail) = &tl_state.tombstone_detail {
+            self.view.tombstone_footer(id!(tombstone_footer)).show(cx, tombstone_detail.clone());
+            self.view.view(id!(message_input_view)).set_visible(cx, false);
+        } else {
+            self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
+            self.view.view(id!(message_input_view)).set_visible(cx, true);
+        }
         // As the final step, store the tl_state for this room into this RoomScreen widget,
         // such that it can be accessed in future event/draw handlers.
         self.tl_state = Some(tl_state);
@@ -2535,12 +2555,6 @@ impl RoomScreen {
         });
 
         self.show_timeline(cx);
-
-        // Submit an async request to display tombstone footer if the room is tombstoned.
-        // Shows the tombstone screen for the given room and hides the text input view.
-        //
-        // It allows the user to join the new room if the successor room has not been joined.
-        submit_async_request(MatrixRequest::GetSuccessorRoom { room_id });
     }
 
     /// Sends read receipts based on the current scroll position of the timeline.
@@ -2891,6 +2905,7 @@ struct TimelineUiState {
     /// When new message come in, this value is reset to `false`.
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
+    tombstone_detail: Option<TombstoneDetail>,
 }
 
 #[derive(Default, Debug)]

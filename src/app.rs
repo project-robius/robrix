@@ -267,7 +267,7 @@ impl MatchEvent for App {
                 }
                 AppStateAction::RoomFocusLost(room_id) => {
                     if let Some(index) = self.app_state.saved_dock_state.room_order.iter().position(|r| r.room_id() == &room_id) {
-                        self.app_state.saved_dock_state.room_order.remove(to_be_removed);
+                        self.app_state.saved_dock_state.room_order.remove(index);
                     }
                     let mut to_be_removed = None;
                     for (tab_id, room) in &self.app_state.saved_dock_state.open_rooms {

@@ -39,25 +39,8 @@ imghdr = "0.7.0"
 linkify = "0.10.0"
 matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
 matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "rustls-tls" ] }
-rand = "0.8.5"
-rangemap = "1.5.0"
-sanitize-filename = "0.6"
-serde = "1.0"
-serde_json = "1.0"
-tokio = { version = "1.43.1", features = ["macros", "rt-multi-thread"] }
-tracing-subscriber = "0.3.17"
-unicode-segmentation = "1.11.0"
-url = "2.5.0"
-bytesize = "2.0"
-bitflags = "2.6.0"
-indexmap = "2.6.0"
-blurhash = { version = "0.2.3", default-features = false }
-
-## Dependencies for TSP support.
-tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", optional = true, features = ["async", "resolve"] }
-# tsp_sdk = { version = "0.8.0", optional = true, default-features = false, features = ["async", "resolve"] }
-quinn = { version = "0.11.8", default-features = false, optional = true }
-percent-encoding = { version = "2.3", optional = true }
+# List of features for ruma taken from "https://github.com/matrix-org/matrix-rust-sdk/blob/main/Cargo.toml".
+# Added "compat-optional" feature to allow missing body field in m.room.tombstone event.
 ruma = { git = "https://github.com/ruma/ruma", rev = "d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a", features = [
     "client-api-c",
     "compat-upload-signatures",
@@ -77,6 +60,25 @@ ruma = { git = "https://github.com/ruma/ruma", rev = "d1d53e2b7aaf9190f11a5465b9
     "unstable-msc4278",
     "unstable-msc4286",
 ] }
+rand = "0.8.5"
+rangemap = "1.5.0"
+sanitize-filename = "0.6"
+serde = "1.0"
+serde_json = "1.0"
+tokio = { version = "1.43.1", features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = "0.3.17"
+unicode-segmentation = "1.11.0"
+url = "2.5.0"
+bytesize = "2.0"
+bitflags = "2.6.0"
+indexmap = "2.6.0"
+blurhash = { version = "0.2.3", default-features = false }
+
+## Dependencies for TSP support.
+tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", optional = true, features = ["async", "resolve"] }
+# tsp_sdk = { version = "0.8.0", optional = true, default-features = false, features = ["async", "resolve"] }
+quinn = { version = "0.11.8", default-features = false, optional = true }
+percent-encoding = { version = "2.3", optional = true }
 
 [features]
 default = []
