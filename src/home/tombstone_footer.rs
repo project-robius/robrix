@@ -48,6 +48,7 @@ live_design! {
         <View> {
             width: Fill, height: Fit,
             align: {y: 0.5}
+
             join_successor_button = <RobrixIconButton> {
                 align: {y: 0.5}
                 padding: 15,
@@ -107,8 +108,6 @@ pub struct TombstoneDetail {
 pub struct TombstoneFooter {
     #[deref]
     view: View,
-    // #[live(false)]
-    // visible: bool,
     /// The details of the successor room.
     #[rust]
     successor_info: Option<BasicRoomDetails>,
@@ -149,7 +148,7 @@ impl TombstoneFooter {
             .label_set(ids![replacement_reason, successor_room_name])
             .set_text(cx, "");
         self.visible = true;
-        self.room_id = Some(tombstone_detail.tombstoned_room_id.clone());
+        self.room_id = Some(tombstone_detail.tombstoned_room_id);
         if let Some(reason) = tombstone_detail.replacement_reason {
             self.view
                 .label(id!(replacement_reason))
@@ -269,6 +268,7 @@ impl TombstoneFooterRef {
             inner.show(cx, tombstone_detail);
         }
     }
+
     /// See [`TombstoneFooter::hide()`].
     pub fn hide(&mut self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {

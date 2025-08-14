@@ -2305,7 +2305,7 @@ impl RoomScreen {
                 }
                 return;
             };
-            let Some(client) = get_client() else {return};
+            let Some(client) = get_client() else { return };
             let tombstone_detail = client.get_room(&room_id)
                 .and_then(|room| room.successor_room())
                 .map(|room| 

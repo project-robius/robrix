@@ -266,7 +266,13 @@ impl MatchEvent for App {
                     continue;
                 }
                 AppStateAction::CloseRoom(room_id) => {
-                    if let Some(index) = self.app_state.saved_dock_state.room_order.iter().position(|r| r.room_id() == &room_id) {
+                    if let Some(index) = self
+                        .app_state
+                        .saved_dock_state
+                        .room_order
+                        .iter()
+                        .position(|r| r.room_id() == &room_id)
+                    {
                         self.app_state.saved_dock_state.room_order.remove(index);
                     }
                     self.app_state.selected_room = None;
@@ -276,13 +282,17 @@ impl MatchEvent for App {
                         &Scope::default().path,
                         StackNavigationAction::PopToRoot,
                     );
-                    if let Some(tab_id) = self.app_state.saved_dock_state.open_rooms.iter().find_map(|(tab_id, room)| {
-                        if room.room_id() == &room_id {
-                            Some(*tab_id)
-                        } else {
-                            None
-                        }
-                    }) {
+                    if let Some(tab_id) =
+                        self.app_state.saved_dock_state.open_rooms.iter().find_map(
+                            |(tab_id, room)| {
+                                if room.room_id() == &room_id {
+                                    Some(*tab_id)
+                                } else {
+                                    None
+                                }
+                            },
+                        )
+                    {
                         // For desktop UI, close the tab.
                         cx.widget_action(
                             self.ui.widget_uid(),
