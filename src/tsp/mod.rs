@@ -578,7 +578,7 @@ async fn async_tsp_worker(
                         store_did_in_wallet(private_vid, metadata, alias, did).await
                     }
                     Err(e) => {
-                        error!("Failed to create new DID: {e:?}");
+                        error!("Failed to create new DID: {e}");
                         Err(e)
                     }
                 };
@@ -626,22 +626,32 @@ async fn create_did_web(
         .send()
         .await
         .inspect(|r| log!("DID server responded with status code {}", r.status()))
-        .expect("Could not publish VID on server");
+        .map_err(|e| anyhow!("Could not publish VID. The DID server responded with error: {e}"))?;
 
-    let _: Vid = match response.status() {
-        r if r.is_success() => response.json().await.expect("Could not decode VID"),
-        _ => {
-            error!("An error occurred while publishing the DID. Maybe this DID exists already?");
-            error!("Response: {}", response.text().await.unwrap());
-            // return Err(tsp_sdk::Error::Vid(VidError::InvalidVid(
-            //     "An error occurred while publishing the DID. Maybe this DID exists already?"
-            //         .to_string(),
-            // )));
-            panic!("An error occurred while publishing the DID. Maybe this DID exists already?");
+    let vid_result: Result<Vid, anyhow::Error> = match response.status() {
+        r if r.is_success() => {
+            response.json().await
+                .map_err(|e| anyhow!("Could not decode response from DID server as a valid VID: {e}"))
+        }
+        r => {
+            let text = response.text().await.unwrap_or_else(|_| "[Unknown]".to_string());
+            if r.as_u16() == 500 {
+                return Err(anyhow!(
+                    "The DID server returned error code 500. The DID username may already exist, \
+                     or the server had another problem.\n\nResponse: \"{text}\""
+                ));
+            } else {
+                return Err(anyhow!(
+                    "The DID server returned error code {}.\n\nResponse: \"{text}\"",
+                    r.as_u16()
+                ));
+            }
         }
     };
-    log!(
-        "published DID document at {}",
+
+    let _vid = vid_result?;
+
+    log!("published DID document at {}",
         tsp_sdk::vid::did::get_resolve_url(&did)?.to_string()
     );
 

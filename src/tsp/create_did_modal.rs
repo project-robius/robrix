@@ -24,7 +24,7 @@ live_design! {
             height: Fit
             align: {x: 0.5}
             flow: Down
-            padding: {top: 30, right: 40, bottom: 20, left: 40}
+            padding: {top: 30, right: 25, bottom: 20, left: 25}
 
             show_bg: true
             draw_bg: {
@@ -49,7 +49,7 @@ live_design! {
                 }
             }
 
-            <View> {
+            <RoundedView> {
                 width: 350,
                 height: Fit,
                 spacing: 15,
@@ -60,6 +60,7 @@ live_design! {
                 show_bg: true
                 draw_bg: {
                     color: (COLOR_SECONDARY)
+                    border_radius: 4.0
                 }
 
                 username_input = <RobrixTextInput> {
@@ -190,7 +191,6 @@ live_design! {
                 width: Fill, height: Fit
                 flow: Right,
                 padding: {top: 20, bottom: 20}
-                margin: {right: -15}
                 align: {x: 1.0, y: 0.5}
                 spacing: 20
 
@@ -238,6 +238,8 @@ live_design! {
             status_label = <Label> {
                 width: Fill,
                 height: Fit,
+                padding: 0,
+                margin: 0,
                 flow: RightWrap,
                 align: {x: 0.5, y: 0.0}
                 draw_text: {

@@ -24,7 +24,7 @@ live_design! {
             height: Fit
             align: {x: 0.5}
             flow: Down
-            padding: {top: 30, right: 40, bottom: 20, left: 40}
+            padding: {top: 30, right: 25, bottom: 20, left: 25}
 
             show_bg: true
             draw_bg: {
@@ -145,7 +145,6 @@ live_design! {
                 width: Fill, height: Fit
                 flow: Right,
                 padding: {top: 20, bottom: 20}
-                margin: {right: -15}
                 align: {x: 1.0, y: 0.5}
                 spacing: 20
 
