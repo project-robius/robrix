@@ -1182,6 +1182,7 @@ async fn async_worker(
                             } else {
                                 log!("Found {} highlights in search results for term '{search_term}'", highlights.len());
                             }
+                            log!("Search results for term '{search_term}': {:?} events found", result.room_events.count);
                             for item in result.room_events.results.iter() {
                                 let Some(event) =
                                     item.result.as_ref().and_then(|f| f.deserialize().ok())
@@ -1217,7 +1218,7 @@ async fn async_worker(
                                 }
                                 let event_room_id = event.room_id().to_owned();
                                 items.push_back(right_panel::search_message::SearchResultItem::Event{ event:
-                                    Box::new(event), formatted_content: Box::new(message_option)}
+                                    Arc::new(event), formatted_content: Arc::new(message_option)}
                                 );
                                 // Include all rooms in the search results.
                                 if room_filter.is_none() {                                

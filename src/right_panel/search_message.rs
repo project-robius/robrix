@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::BTreeMap, ops::DerefMut};
+use std::{borrow::Cow, collections::BTreeMap, ops::DerefMut, sync::Arc, usize};
 
 use imbl::Vector;
 use makepad_widgets::*;
@@ -306,16 +306,15 @@ pub fn format_message_content(message: &mut RoomMessageEventContent, highlights:
     if let MessageType::Text(text) = &mut message.msgtype {
         let formatted = if let Some(ref mut formatted) = text.formatted {
             let mut body = formatted.body.clone();
-            // TODO: Remove all <code> </code> before appending them to highlights.
             for highlight in highlights {
-                body = body.replace(highlight, &format!("<code>{}</code>", highlight));
+                body = body.replace(highlight, &format!("<span data-mx-bg-color=\"#fcdb03\">{}</span>", highlight));
             }
             body
         } else {
             let mut formatted_string = text.body.clone();
             for highlight in highlights {
                 formatted_string =
-                    formatted_string.replace(highlight, &format!("<code>{}</code>", highlight));
+                    formatted_string.replace(highlight, &format!("<span data-mx-bg-color=\"#fcdb03\">{}</span>", highlight));
             }
             formatted_string
         };
@@ -343,6 +342,7 @@ struct SearchState {
     prev_first_index: Option<usize>,
     /// Whether all search results have been fully paginated.
     is_fully_paginated: bool,
+    last_scrolled_index: usize,
 }
 
 /// The main widget that displays a list of search results.
@@ -466,48 +466,34 @@ impl SearchResults {
         portal_list: &PortalListRef,
         _scope: &mut Scope,
     ) {
-        if !portal_list.scrolled(actions) {
-            return;
-        };
+        if self.search_state.is_fully_paginated { return };
+        if !portal_list.scrolled(actions) { return };
 
         let first_index = portal_list.first_id();
         let total_items = self.search_state.items.len();
-
-        // Detect scroll direction using prev_first_index
-        let is_scrolling_down = if let Some(prev_first_index) = self.search_state.prev_first_index {
-            first_index > prev_first_index
-        } else {
-            false // Default to false if no previous index
-        };
-
-        self.search_state.prev_first_index = Some(first_index);
-        // Only trigger pagination when scrolling down, at the bottom, and not fully paginated
-        // Tried to use is_filling_port, it does not work.
-        if is_scrolling_down && total_items > 0 && !self.search_state.is_fully_paginated {
-            let visible_items: usize = portal_list.visible_items();
-            // Check if we've reached the bottom (first_id + visible_items >= total_items)
-            if first_index + visible_items >= total_items.saturating_sub(1) {
-                if let Some(next_batch_token) = self.search_state.next_batch_token.take() {
-                    log!("Scrolling down reached bottom: first_id={}, visible_items={}, total={}, sending pagination request",
-                        first_index, visible_items, total_items
-                    );
-                    let search_result_summary_ref =
-                        self.view.search_result_summary(id!(search_result_plane));
-                    let criteria = search_result_summary_ref.get_search_criteria();
-
-                    self.display_bottom_space(cx);
-
-                    let message_search_choice = if let (false, Some(room_id)) = (criteria.include_all_rooms, &self.room_id) {
-                        MessageSearchChoice::OneRoom(room_id.clone())
-                    } else {
-                        MessageSearchChoice::AllRooms
-                    };
-                    submit_async_request(MatrixRequest::SearchMessages {
-                        criteria: create_search_criteria(criteria.search_term.clone(), message_search_choice),
-                        next_batch: Some(next_batch_token.clone()),
-                        abort_previous_search: false,
-                    });
-                }
+        let visible_items: usize = portal_list.visible_items();
+        log!("Scrolled down from item {} --> {:?}, before sending room {:?} last index {:?}",
+            self.search_state.last_scrolled_index, total_items, self.room_id, first_index + visible_items
+        );
+        if first_index + visible_items >= total_items.saturating_sub(1) && self.search_state.last_scrolled_index < first_index {
+            if let Some(next_batch_token) = self.search_state.next_batch_token.take() {
+                log!("Scrolled down from item {} --> {:?}, sending back pagination request for search result in room {:?}",
+                    self.search_state.last_scrolled_index, total_items, self.room_id,
+                );
+                let search_result_summary_ref =
+                    self.view.search_result_summary(id!(search_result_plane));
+                let criteria = search_result_summary_ref.get_search_criteria();
+                self.display_bottom_space(cx);
+                let message_search_choice = if let (false, Some(room_id)) = (criteria.include_all_rooms, &self.room_id) {
+                    MessageSearchChoice::OneRoom(room_id.clone())
+                } else {
+                    MessageSearchChoice::AllRooms
+                };
+                submit_async_request(MatrixRequest::SearchMessages {
+                    criteria: create_search_criteria(criteria.search_term.clone(), message_search_choice),
+                    next_batch: Some(next_batch_token.clone()),
+                    abort_previous_search: false,
+                });
             }
         }
     }
@@ -535,6 +521,7 @@ impl SearchResults {
                 .is_some_and(|p| p != &results.search_term)
         {
             self.search_state = SearchState::default();
+            
         }
 
         self.hide_bottom_space(cx);
@@ -578,7 +565,7 @@ impl SearchResults {
         self.search_state.next_batch_token = results.next_batch.clone();
         self.search_state.is_fully_paginated = results.next_batch.is_none();
         self.search_state.prev_search_term = Some(results.search_term);
-
+        self.search_state.last_scrolled_index = search_portal_list.first_id();
         self.redraw(cx);
     }
 
@@ -591,6 +578,7 @@ impl SearchResults {
                 if search_term.is_empty() {
                     search_result_summary_ref.reset(cx);
                     self.search_state = SearchState::default();
+                    
                     // Abort previous inflight search request.
                     submit_async_request(MatrixRequest::SearchMessages {
                         criteria: create_search_criteria(String::default(), MessageSearchChoice::AllRooms),
@@ -673,9 +661,8 @@ impl WidgetMatchEvent for SearchResults {
                     self.view
                         .button(id!(search_again_button))
                         .set_visible(cx, true);
-                    
                     let search_portal_list = self.portal_list(id!(searched_messages.list));
-                    search_portal_list.set_first_id_and_scroll(search_portal_list.first_id().saturating_sub(10), 5.0);
+                    search_portal_list.set_first_id_and_scroll(self.search_state.last_scrolled_index, 100.0);
                 }
                 _ => {}
             }
@@ -691,6 +678,7 @@ impl WidgetMatchEvent for SearchResults {
                 search_result_summary_ref.set_search_criteria(cx, scope, criteria.clone());
                 self.display_bottom_space(cx);
                 self.search_state = SearchState::default();
+                
                 submit_async_request(MatrixRequest::SearchMessages {
                     criteria: create_search_criteria(criteria.search_term, MessageSearchChoice::AllRooms),
                     next_batch: None,
@@ -930,8 +918,8 @@ impl SearchResultSummaryRef {
 pub enum SearchResultItem {
     /// The event that matches the search criteria with precomputed formatted content.
     Event {
-        event: Box<AnyTimelineEvent>,
-        formatted_content: Box<Option<RoomMessageEventContent>>,
+        event: Arc<AnyTimelineEvent>,
+        formatted_content: Arc<Option<RoomMessageEventContent>>,
     },
     /// The room id used for displaying room header for all searched messages in a screen.
     RoomHeader(OwnedRoomId),
