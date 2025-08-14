@@ -54,4 +54,8 @@ live_design! {
     pub CreateWalletModal = <View> {
         visible: false,
     }
+
+    pub CreateDidModal = <View> {
+        visible: false,
+    }
 }

@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::{shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, tsp::{create_wallet_modal::CreateWalletModalAction, tsp_state_ref, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
+use crate::{shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, tsp_state_ref, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
 live_design! {
     link tsp_enabled
@@ -73,6 +73,27 @@ live_design! {
             flow: RightWrap,
             align: {y: 0.5},
             spacing: 10
+
+            create_did_button = <RobrixIconButton> {
+                width: Fit, height: Fit,
+                padding: 10,
+                margin: {left: 5},
+
+                draw_bg: {
+                    border_color: (COLOR_FG_ACCEPT_GREEN),
+                    color: (COLOR_BG_ACCEPT_GREEN),
+                    border_radius: 5
+                }
+                draw_icon: {
+                    svg_file: (ICON_ADD_USER)
+                    color: (COLOR_FG_ACCEPT_GREEN),
+                }
+                icon_walk: {width: 21, height: Fit, margin: 0}
+                draw_text: {
+                    color: (COLOR_FG_ACCEPT_GREEN),
+                }
+                text: "Create New Identity (DID)"
+            }
 
             create_wallet_button = <RobrixIconButton> {
                 width: Fit, height: Fit,
@@ -306,12 +327,17 @@ impl MatchEvent for TspSettingsScreen {
                 }
 
                 Some(TspWalletAction::CreateWalletError { .. }) // handled in the CreateWalletModal
+                | Some(TspWalletAction::DidCreationResult(_)) // handled in the CreateDidModal
                 | None => { }
             }
         }
 
         if self.view.button(id!(create_wallet_button)).clicked(actions) {
             cx.action(CreateWalletModalAction::Open);
+        }
+
+        if self.view.button(id!(create_did_button)).clicked(actions) {
+            cx.action(CreateDidModalAction::Open);
         }
 
         if self.view.button(id!(import_wallet_button)).clicked(actions) {
