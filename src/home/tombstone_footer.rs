@@ -242,7 +242,7 @@ impl TombstoneFooter {
         cx.widget_action(
             self.widget_uid(),
             &scope.path,
-            AppStateAction::RoomFocusLost(room_id.clone())
+            AppStateAction::CloseRoom(room_id.clone())
         );
         // We use RoomsListAction instead of RoomPreviewAction::Clicked since RoomsListAction::Selected triggers much later.
         cx.widget_action(

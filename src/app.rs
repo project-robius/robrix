@@ -265,30 +265,29 @@ impl MatchEvent for App {
                     self.app_state.selected_room = Some(selected_room.clone());
                     continue;
                 }
-                AppStateAction::RoomFocusLost(room_id) => {
+                AppStateAction::CloseRoom(room_id) => {
                     if let Some(index) = self.app_state.saved_dock_state.room_order.iter().position(|r| r.room_id() == &room_id) {
                         self.app_state.saved_dock_state.room_order.remove(index);
                     }
-                    let mut to_be_removed = None;
-                    for (tab_id, room) in &self.app_state.saved_dock_state.open_rooms {
-                        if room.room_id() == &room_id {
-                            to_be_removed = Some(*tab_id);
-                            break;
-                        }
-                    }
                     self.app_state.selected_room = None;
-                    if let Some(to_be_removed) = to_be_removed {
-                        // For mobile UI, navigate back to the root view.
-                        cx.widget_action(
-                            self.ui.widget_uid(),
-                            &Scope::default().path,
-                            StackNavigationAction::PopToRoot,
-                        );
+                    // For mobile UI, navigate back to the root view.
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        &Scope::default().path,
+                        StackNavigationAction::PopToRoot,
+                    );
+                    if let Some(tab_id) = self.app_state.saved_dock_state.open_rooms.iter().find_map(|(tab_id, room)| {
+                        if room.room_id() == &room_id {
+                            Some(*tab_id)
+                        } else {
+                            None
+                        }
+                    }) {
                         // For desktop UI, close the tab.
                         cx.widget_action(
                             self.ui.widget_uid(),
                             &Scope::default().path,
-                            DockAction::TabCloseWasPressed(to_be_removed),
+                            DockAction::TabCloseWasPressed(tab_id),
                         );
                     }
                     continue;
@@ -569,7 +568,7 @@ pub enum AppStateAction {
     /// The given room was focused (selected).
     RoomFocused(SelectedRoom),
     /// Unfocus the given room. Close the tab and remove it from the DockState.
-    RoomFocusLost(OwnedRoomId),
+    CloseRoom(OwnedRoomId),
     /// Resets the focus to none, meaning that no room is selected.
     FocusNone,
     /// The given room has successfully been upgraded from being displayed
