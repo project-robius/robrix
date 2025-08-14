@@ -4671,6 +4671,7 @@ dependencies = [
  "robius-location",
  "robius-open",
  "robius-use-makepad",
+ "ruma",
  "sanitize-filename",
  "serde",
  "serde_json",

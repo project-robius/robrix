@@ -265,6 +265,43 @@ impl MatchEvent for App {
                     self.app_state.selected_room = Some(selected_room.clone());
                     continue;
                 }
+                AppStateAction::CloseRoom(room_id) => {
+                    if let Some(index) = self
+                        .app_state
+                        .saved_dock_state
+                        .room_order
+                        .iter()
+                        .position(|r| r.room_id() == &room_id)
+                    {
+                        self.app_state.saved_dock_state.room_order.remove(index);
+                    }
+                    self.app_state.selected_room = None;
+                    // For mobile UI, navigate back to the root view.
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        &Scope::default().path,
+                        StackNavigationAction::PopToRoot,
+                    );
+                    if let Some(tab_id) =
+                        self.app_state.saved_dock_state.open_rooms.iter().find_map(
+                            |(tab_id, room)| {
+                                if room.room_id() == &room_id {
+                                    Some(*tab_id)
+                                } else {
+                                    None
+                                }
+                            },
+                        )
+                    {
+                        // For desktop UI, close the tab.
+                        cx.widget_action(
+                            self.ui.widget_uid(),
+                            &Scope::default().path,
+                            DockAction::TabCloseWasPressed(tab_id),
+                        );
+                    }
+                    continue;
+                }
                 AppStateAction::FocusNone => {
                     self.app_state.selected_room = None;
                     continue;
@@ -540,6 +577,8 @@ impl Eq for SelectedRoom {}
 pub enum AppStateAction {
     /// The given room was focused (selected).
     RoomFocused(SelectedRoom),
+    /// Unfocus the given room. Close the tab and remove it from the DockState.
+    CloseRoom(OwnedRoomId),
     /// Resets the focus to none, meaning that no room is selected.
     FocusNone,
     /// The given room has successfully been upgraded from being displayed

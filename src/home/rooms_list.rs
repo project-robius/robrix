@@ -144,6 +144,10 @@ pub enum RoomsListUpdate {
     Status {
         status: String,
     },
+    /// Mark the given room as tombstoned.
+    TombstonedRoom {
+        room_id: OwnedRoomId
+    }
 }
 
 static PENDING_ROOM_UPDATES: SegQueue<RoomsListUpdate> = SegQueue::new();
@@ -175,7 +179,7 @@ pub enum RoomsListAction {
 ///
 /// This includes info needed display a preview of that room in the RoomsList
 /// and to filter the list of rooms based on the current search filter.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct JoinedRoomInfo {
     /// The matrix ID of this room.
     pub room_id: OwnedRoomId,
@@ -207,6 +211,8 @@ pub struct JoinedRoomInfo {
     pub is_selected: bool,
     /// Whether this a direct room.
     pub is_direct: bool,
+    /// Whether this room is tombstoned (shut down and replaced with a successor room).
+    pub is_tombstoned: bool,
 }
 
 /// UI-related info about a room that the user has been invited to.
@@ -518,6 +524,39 @@ impl RoomsList {
                 RoomsListUpdate::Status { status } => {
                     self.status = status;
                 }
+                RoomsListUpdate::TombstonedRoom { room_id } => {
+                    if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
+                        let was_displayed = (self.display_filter)(room);
+                        room.is_tombstoned = true;
+                        let should_display = (self.display_filter)(room);
+                        match (was_displayed, should_display) {
+                            // No need to update the displayed rooms list.
+                            (true, true) | (false, false) => { }
+                            // Room was displayed but should no longer be displayed.
+                            (true, false) => {
+                                if room.is_direct {
+                                    self.displayed_direct_rooms.iter()
+                                        .position(|r| r == &room_id)
+                                        .map(|index| self.displayed_direct_rooms.remove(index));
+                                } else {
+                                    self.displayed_regular_rooms.iter()
+                                        .position(|r| r == &room_id)
+                                        .map(|index| self.displayed_regular_rooms.remove(index));
+                                }
+                            }
+                            // Room was not displayed but should now be displayed.
+                            (false, true) => {
+                                if room.is_direct {
+                                    self.displayed_direct_rooms.push(room_id);
+                                } else {
+                                    self.displayed_regular_rooms.push(room_id);
+                                }
+                            }
+                        }
+                    } else {
+                        warning!("Warning: couldn't find room {room_id} to update the tombstone status");
+                    }
+                }
             }
         }
         if num_updates > 0 {
@@ -718,6 +757,20 @@ impl RoomsList {
             direct_rooms_indexes,
             regular_rooms_indexes,
         )
+    }
+
+    /// Returns information about a joined room given its room ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `room_id` - A reference to the room ID for which information is requested.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<JoinedRoomInfo>` - Returns `Some(JoinedRoomInfo)` if the room is found
+    ///   in the list of all joined rooms, otherwise returns `None`.
+    pub fn get_joined_room_info(&self, room_id: &OwnedRoomId) -> Option<JoinedRoomInfo> {
+        self.all_joined_rooms.get(room_id).cloned()
     }
 }
 
@@ -968,6 +1021,12 @@ impl RoomsListRef {
             return false;
         };
         inner.is_room_loaded(room_id)
+    }
+
+    /// See [`RoomsList::get_joined_room_info()`].
+    pub fn get_joined_room_info(&self, room_id: &OwnedRoomId) -> Option<JoinedRoomInfo> {
+        let inner = self.borrow()?;
+        inner.get_joined_room_info(room_id)
     }
 }
 pub struct RoomsListScopeProps {
