@@ -21,7 +21,7 @@ on:
           - 'linux-ubuntu-22.04'          # Build for Ubuntu 22.04 both x86_64 and aarch64
           - 'linux-ubuntu-22.04-x86_64'   # Build for Ubuntu 22.04 x86_64
           - 'linux-ubuntu-22.04-aarch64'  # Build for Ubuntu 22.04 aarch64
-          - 'macos-14-arm'                # Build for MacOS 14 (Apple Silicon)
+          - 'macos-14-aarch64'            # Build for MacOS 14 (Apple Silicon)
           - 'macos-13-x86_64'             # Build for MacOS 13 (Intel)
           - 'windows-2022-x86_64'         # Build for Windows 2022 x86_64
       release_tag:
