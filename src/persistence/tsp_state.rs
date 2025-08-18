@@ -1,5 +1,8 @@
 //! Functions for loading and saving the TSP wallet state to persistent storage.
 
+// Ignore clippy warnings in `DeRon` macro derive bodies.
+#![allow(clippy::question_mark)]
+
 use makepad_widgets::{makepad_micro_serde::*, *};
 use crate::{app_data_dir, tsp::TspWalletMetadata};
 

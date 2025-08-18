@@ -1,6 +1,3 @@
-// Ignore clippy warnings in `DeRon` macro derive bodies.
-#![allow(clippy::question_mark)]
-
 use std::{borrow::Cow, ops::Deref, path::Path, sync::{Mutex, OnceLock}};
 
 use anyhow::anyhow;
