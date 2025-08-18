@@ -10,7 +10,7 @@ use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
 use tsp_sdk::{vid::{verify_vid, VidError}, AskarSecureStorage, AsyncSecureStore, OwnedVid, SecureStorage, VerifiedVid, Vid};
 use url::Url;
 
-use crate::{persistence::{self, tsp_wallets_dir}, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}};
+use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}};
 
 
 pub mod create_did_modal;
@@ -72,7 +72,7 @@ impl TspState {
         saved_state: SavedTspState,
     ) -> Result<(), tsp_sdk::Error> {
         for (idx, wallet_metadata) in saved_state.wallets.into_iter().enumerate() {
-       if let Ok(opened_wallet) = wallet_metadata.open_wallet().await {
+            if let Ok(opened_wallet) = wallet_metadata.open_wallet().await {
                 if saved_state.default_wallet == Some(idx) {
                     self.current_wallet = Some(opened_wallet);
                 } else {
@@ -82,13 +82,13 @@ impl TspState {
                 self.other_wallets.push(TspWalletEntry::NotFound(wallet_metadata));
             }
         }
-        if saved_state.default_wallet.is_some() && self.current_wallet.is_none() {
-            error!("BUG: saved TSP state had a default wallet, but it wasn't opened successfully.");
-        }
         match self.current_wallet.is_some() as usize + self.other_wallets.len() {
             0 => log!("Restored no TSP wallets from saved TSP state."),
             1 => log!("Restored 1 TSP wallet from saved state."),
             n => log!("Restored {n} TSP wallets from saved state."),
+        }
+        if saved_state.default_wallet.is_some() && self.current_wallet.is_none() {
+            warning!("Saved TSP state had a default wallet, but it wasn't opened successfully.");
         }
         Ok(())
     }
@@ -228,20 +228,6 @@ impl TspWalletMetadata {
             metadata: self.clone(),
         })
     }
-}
-
-
-/// The TSP state that is saved to persistent storage.
-///
-/// It contains metadata about all wallets that have been created or imported.
-#[derive(Clone, Default, Debug, DeRon, SerRon)]
-pub struct SavedTspState {
-    /// All wallets that have been created or imported into Robrix.
-    ///
-    /// This is a list of metadata, not the actual wallet objects.
-    pub wallets: Vec<TspWalletMetadata>,
-    /// The index of the default wallet in `wallets`, if any.
-    pub default_wallet: Option<usize>,
 }
 
 
@@ -570,16 +556,20 @@ async fn async_tsp_worker(
             let client = get_reqwest_client();
 
             Handle::current().spawn(async move {
-                let result = match create_did_web(&did_server, &server, &username, &client).await {
-                    Ok((did, private_vid, metadata)) => {
-                        log!("Successfully created & published new DID: {did}.\n\
-                            Adding private VID to current wallet: {private_vid:?}",
-                        );
-                        store_did_in_wallet(private_vid, metadata, alias, did).await
-                    }
-                    Err(e) => {
-                        error!("Failed to create new DID: {e}");
-                        Err(e)
+                let result = if tsp_state_ref().lock().unwrap().current_wallet.is_none() {
+                    Err(anyhow!("Please choose a default TSP wallet to hold the DID."))
+                } else {
+                    match create_did_web(&did_server, &server, &username, &client).await {
+                        Ok((did, private_vid, metadata)) => {
+                            log!("Successfully created & published new DID: {did}.\n\
+                                Adding private VID to current wallet: {private_vid:?}",
+                            );
+                            store_did_in_wallet(private_vid, metadata, alias, did).await
+                        }
+                        Err(e) => {
+                            error!("Failed to create new DID: {e}");
+                            Err(e)
+                        }
                     }
                 };
                 Cx::post_action(TspWalletAction::DidCreationResult(result));
@@ -675,7 +665,7 @@ async fn store_did_in_wallet(
 ) -> Result<String, anyhow::Error> {
     let tsp_state = tsp_state_ref().lock().unwrap();
     let Some(current_wallet) = tsp_state.current_wallet.as_ref() else {
-        anyhow::bail!("No current TSP wallet to store a DID in!");
+        anyhow::bail!("Please select a default TSP wallet to hold the DID.");
     };
     current_wallet.db.add_private_vid(private_vid, metadata)?;
     if let Some(alias) = alias {

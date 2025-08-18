@@ -86,7 +86,7 @@ live_design! {
                 }
 
                 did_type_radio_buttons = <View> {
-                    spacing: (THEME_SPACE_2)
+                    spacing: 20,
                     width: Fit, height: Fit,
                     did_web   = <RadioButtonFlat> {
                         text: "Web"

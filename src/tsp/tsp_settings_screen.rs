@@ -337,7 +337,9 @@ impl MatchEvent for TspSettingsScreen {
         }
 
         if self.view.button(id!(create_did_button)).clicked(actions) {
-            cx.action(CreateDidModalAction::Open);
+            if self.has_default_wallet() {
+                cx.action(CreateDidModalAction::Open);
+            }
         }
 
         if self.view.button(id!(import_wallet_button)).clicked(actions) {
@@ -367,5 +369,31 @@ impl TspSettingsScreen {
             active_wallet: current_wallet,
             other_wallets,
         });
+    }
+
+    /// Checks if the current TSP state has a default wallet set and ready to use.
+    ///
+    /// This function will display warnings to the user if no default wallet is set
+    /// or if there are no wallets at all.
+    ///
+    /// Returns `true` if a default wallet is set, `false` otherwise.
+    fn has_default_wallet(&self) -> bool {
+        let Some(wallets) = self.wallets.as_ref() else {
+            enqueue_popup_notification(PopupItem {
+                message: String::from("No TSP wallets found.\n\nPlease create or import a wallet."),
+                auto_dismissal_duration: Some(5.0),
+                kind: PopupKind::Warning,
+            });
+            return false;
+        };
+        if wallets.active_wallet.is_none() {
+            enqueue_popup_notification(PopupItem {
+                message: String::from("No default TSP wallet is set.\n\nPlease select or create a default wallet."),
+                auto_dismissal_duration: Some(5.0),
+                kind: PopupKind::Warning,
+            });
+            return false;
+        }
+        true
     }
 }
