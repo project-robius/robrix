@@ -1178,8 +1178,8 @@ async fn async_worker(
 
 
 /// The single global Tokio runtime that is used by all async tasks.
-static TOKIO_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 
+static TOKIO_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
@@ -1205,6 +1205,7 @@ pub fn block_on_async_with_timeout<T>(
     let rt = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(||
         tokio::runtime::Runtime::new().unwrap()
     ).handle().clone();
+
     if let Some(timeout) = timeout {
         rt.block_on(async {
             tokio::time::timeout(timeout, async_future).await
