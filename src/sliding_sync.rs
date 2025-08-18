@@ -1178,7 +1178,6 @@ async fn async_worker(
 
 
 /// The single global Tokio runtime that is used by all async tasks.
-
 static TOKIO_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
@@ -1219,7 +1218,7 @@ pub fn block_on_async_with_timeout<T>(
 /// The primary initialization routine for starting the Matrix client sync
 /// and the async tokio runtime.
 ///
-/// Returns a handle to the Tokio runtime that is used to run async background tasks
+/// Returns a handle to the Tokio runtime that is used to run async background tasks.
 pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
     let rt_handle = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(|| {
