@@ -334,7 +334,8 @@ impl WidgetMatchEvent for CreateDidModal {
                 }
 
                 CreateDidModalState::WaitingForUserInput => {
-                    let username = username_input.text();
+                    let username_full = username_input.text();
+                    let username = username_full.trim();
 
                     // Check to ensure that the user has entered all required fields.
                     if username.is_empty() {
@@ -347,20 +348,25 @@ impl WidgetMatchEvent for CreateDidModal {
                         ));
                     } else {
                         let alias = match alias_input.text().trim() {
-                            empty if empty.is_empty() => None,
+                            "" => None,
                             non_empty => Some(non_empty.to_string()),
                         };
-                        let server = match server_input.text() {
-                            empty if empty.is_empty() => server_input.empty_text(),
-                            non_empty => non_empty,
+                        let server = match server_input.text().trim() {
+                            "" => server_input.empty_text(),
+                            non_empty => non_empty.to_string(),
                         };
-                        let did_server = match did_server_input.text() {
-                            empty if empty.is_empty() => did_server_input.empty_text(),
-                            non_empty => non_empty,
+                        let did_server = match did_server_input.text().trim() {
+                            "" => did_server_input.empty_text(),
+                            non_empty => non_empty.to_string(),
                         };
 
                         // Submit the identity creation request to the TSP async worker thread.
-                        tsp::submit_tsp_request(tsp::TspRequest::CreateDid { username, alias, server, did_server }).unwrap();
+                        tsp::submit_tsp_request(tsp::TspRequest::CreateDid {
+                            username: username.to_string(),
+                            alias,
+                            server,
+                            did_server
+                        }).unwrap();
 
                         self.state = CreateDidModalState::WaitingForIdentityCreation;
                         self.is_showing_error = false;
