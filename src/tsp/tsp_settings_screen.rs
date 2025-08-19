@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::{shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, tsp::{create_wallet_modal::CreateWalletModalAction, tsp_state_ref, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
+use crate::{shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, tsp_state_ref, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
 live_design! {
     link tsp_enabled
@@ -73,6 +73,27 @@ live_design! {
             flow: RightWrap,
             align: {y: 0.5},
             spacing: 10
+
+            create_did_button = <RobrixIconButton> {
+                width: Fit, height: Fit,
+                padding: 10,
+                margin: {left: 5},
+
+                draw_bg: {
+                    border_color: (COLOR_FG_ACCEPT_GREEN),
+                    color: (COLOR_BG_ACCEPT_GREEN),
+                    border_radius: 5
+                }
+                draw_icon: {
+                    svg_file: (ICON_ADD_USER)
+                    color: (COLOR_FG_ACCEPT_GREEN),
+                }
+                icon_walk: {width: 21, height: Fit, margin: 0}
+                draw_text: {
+                    color: (COLOR_FG_ACCEPT_GREEN),
+                }
+                text: "Create New Identity (DID)"
+            }
 
             create_wallet_button = <RobrixIconButton> {
                 width: Fit, height: Fit,
@@ -306,12 +327,19 @@ impl MatchEvent for TspSettingsScreen {
                 }
 
                 Some(TspWalletAction::CreateWalletError { .. }) // handled in the CreateWalletModal
+                | Some(TspWalletAction::DidCreationResult(_)) // handled in the CreateDidModal
                 | None => { }
             }
         }
 
         if self.view.button(id!(create_wallet_button)).clicked(actions) {
             cx.action(CreateWalletModalAction::Open);
+        }
+
+        if self.view.button(id!(create_did_button)).clicked(actions) {
+            if self.has_default_wallet() {
+                cx.action(CreateDidModalAction::Open);
+            }
         }
 
         if self.view.button(id!(import_wallet_button)).clicked(actions) {
@@ -341,5 +369,31 @@ impl TspSettingsScreen {
             active_wallet: current_wallet,
             other_wallets,
         });
+    }
+
+    /// Checks if the current TSP state has a default wallet set and ready to use.
+    ///
+    /// This function will display warnings to the user if no default wallet is set
+    /// or if there are no wallets at all.
+    ///
+    /// Returns `true` if a default wallet is set, `false` otherwise.
+    fn has_default_wallet(&self) -> bool {
+        let Some(wallets) = self.wallets.as_ref() else {
+            enqueue_popup_notification(PopupItem {
+                message: String::from("No TSP wallets found.\n\nPlease create or import a wallet."),
+                auto_dismissal_duration: Some(5.0),
+                kind: PopupKind::Warning,
+            });
+            return false;
+        };
+        if wallets.active_wallet.is_none() {
+            enqueue_popup_notification(PopupItem {
+                message: String::from("No default TSP wallet is set.\n\nPlease select or create a default wallet."),
+                auto_dismissal_duration: Some(5.0),
+                kind: PopupKind::Warning,
+            });
+            return false;
+        }
+        true
     }
 }
