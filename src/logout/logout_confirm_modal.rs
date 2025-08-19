@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use makepad_widgets::*;
 use tokio::sync::Notify;
-use crate::{shared::styles::COLOR_FG_DANGER_RED, sliding_sync::{is_logout_past_point_of_no_return, set_logout_in_progress, submit_async_request, MatrixRequest}};
+use crate::{shared::styles::COLOR_FG_DANGER_RED, sliding_sync::{submit_async_request, MatrixRequest}};
+use super::logout_state_machine::{is_logout_past_point_of_no_return, set_logout_in_progress};
 
 live_design! {
     use link::theme::*;
@@ -128,9 +129,9 @@ pub enum LogoutConfirmModalAction {
 
 /// Actions related to logout process 
 pub enum LogoutAction {
-    /// A positive response from the backend Matrix task to the logout.
+    /// A positive response to a logout request from the Matrix homeserver.
     LogoutSuccess,
-    /// A negative response from the backend Matrix task to the logout.
+    /// A negative response to a logout request from the Matrix homeserver.
     LogoutFailure(String),
     /// A request from the background task to the main UI thread to clear all app state.
     ClearAppState {

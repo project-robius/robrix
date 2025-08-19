@@ -91,7 +91,7 @@ use makepad_widgets::{Cx, log};
 
 use crate::persistence::delete_latest_user_id;
 use crate::settings::SettingsAction;
-use crate::sliding_sync::{clean_app_state, is_logout_past_point_of_no_return, set_logout_in_progress, set_logout_point_of_no_return};
+use crate::sliding_sync::clean_app_state;
 use crate::{
     home::main_desktop_ui::MainDesktopUiAction,
     sliding_sync::{get_client, get_sync_service, shutdown_background_tasks, start_matrix_tokio},
@@ -550,6 +550,29 @@ impl LogoutStateMachine {
             }
         }
     }
+}
+
+/// Global atomic flag indicating if the logout process has reached the "point of no return"
+/// where aborting the logout operation is no longer safe.
+static LOGOUT_POINT_OF_NO_RETURN: AtomicBool = AtomicBool::new(false);
+
+/// Global atomic flag indicating if logout is in progress
+static LOGOUT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+pub fn is_logout_past_point_of_no_return() -> bool {
+    LOGOUT_POINT_OF_NO_RETURN.load(Ordering::Relaxed)
+}
+
+pub fn is_logout_in_progress() -> bool {
+    LOGOUT_IN_PROGRESS.load(Ordering::Relaxed)
+}
+
+pub fn set_logout_point_of_no_return(value: bool) {
+    LOGOUT_POINT_OF_NO_RETURN.store(value, Ordering::Relaxed);
+}
+
+pub fn set_logout_in_progress(value: bool) {
+    LOGOUT_IN_PROGRESS.store(value, Ordering::Relaxed);
 }
 
 /// Execute logout using the state machine

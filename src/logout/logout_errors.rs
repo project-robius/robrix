@@ -1,4 +1,4 @@
-/// Improved error types for logout operations
+//! Improved error types for logout operations
 use std::fmt;
 
 /// Categorized logout errors for better handling
@@ -24,7 +24,8 @@ pub enum RecoverableError {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UnrecoverableError {
-    /// Core components(client, sync service) have been cleared (previous logout reached point of no return)
+    /// Key components (e.g., the client or sync service) have been cleared
+    /// during a logout attempt, so Robrix cannot continue executing properly.
     ComponentsCleared,
     /// Failed after point of no return
     PostPointOfNoReturnFailure(String),

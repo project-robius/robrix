@@ -112,12 +112,12 @@ live_design! {
                             }
                         }
 
-                    // Logout confirmation modal 
-                    logout_confirm_modal = <Modal> {
-                        content: {
-                            logout_confirm_modal_inner = <LogoutConfirmModal> {}
+                        // Logout confirmation modal 
+                        logout_confirm_modal = <Modal> {
+                            content: {
+                                logout_confirm_modal_inner = <LogoutConfirmModal> {}
+                            }
                         }
-                    }
 
                         // Tooltips must be shown in front of all other UI elements,
                         // since they can be shown as a hover atop any other widget.
@@ -211,11 +211,11 @@ impl MatchEvent for App {
         for action in actions {
             if let Some(logout_modal_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
                 match logout_modal_action {
-                    LogoutConfirmModalAction::Open=> {
+                    LogoutConfirmModalAction::Open => {
                         self.ui.logout_confirm_modal(id!(logout_confirm_modal_inner)).reset_state(cx);
                         self.ui.modal(id!(logout_confirm_modal)).open(cx)
                     },
-                    LogoutConfirmModalAction::Close {was_internal, ..}=> {
+                    LogoutConfirmModalAction::Close { was_internal, ..} => {
                         if *was_internal {
                             self.ui.modal(id!(logout_confirm_modal)).close(cx);
                         }
@@ -232,12 +232,12 @@ impl MatchEvent for App {
                 continue;
             }
 
-            if let Some(LogoutAction::ClearAppState { on_clear_appstate: on_clear_resources }) = action.downcast_ref() {
+            if let Some(LogoutAction::ClearAppState { on_clear_appstate }) = action.downcast_ref() {
                 // Clear user profile cache, invited_rooms timeline states 
                 clear_all_app_state(cx);
                 // Reset all app state to its default.
                 self.app_state = Default::default();
-                on_clear_resources.notify_one();
+                on_clear_appstate.notify_one();
                 continue;
             }
 

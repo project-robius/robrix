@@ -25,7 +25,7 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::Not, path:: Path, sync::{atomic::{AtomicBool, Ordering}, Arc, LazyLock, Mutex}, time::Duration};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
 use std::io;
 use crate::{
     app::AppStateAction,
@@ -39,7 +39,7 @@ use crate::{
         rooms_list_header::RoomsListHeaderAction,
     },
     login::login_screen::LoginAction,
-    logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{logout_with_state_machine, LogoutConfig}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
+    logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{logout_with_state_machine, LogoutConfig, is_logout_in_progress}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
     persistence::{self, load_app_state, ClientSessionPersisted},
     profile::{
         user_profile::{AvatarState, UserProfile},
@@ -1202,7 +1202,7 @@ pub fn block_on_async_with_timeout<T>(
     async_future: impl Future<Output = T>,
 ) -> Result<T, Elapsed> {
     let rt = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(||
-        tokio::runtime::Runtime::new().unwrap()
+        tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
     ).handle().clone();
 
     if let Some(timeout) = timeout {
@@ -1222,7 +1222,6 @@ pub fn block_on_async_with_timeout<T>(
 pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
     let rt_handle = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(|| {
-        log!("Create newTokio Runtime...");
         tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
     }).handle().clone();
 
@@ -1277,7 +1276,7 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
                     match result {
                         Ok(Ok(())) => {
                             // Check if this is due to logout
-                            if LOGOUT_IN_PROGRESS.load(Ordering::Acquire) {
+                            if is_logout_in_progress() {
                                 log!("async worker task ended due to logout");
                             } else {
                                 error!("BUG: async worker task ended unexpectedly!");
@@ -1285,7 +1284,7 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
                         }
                         Ok(Err(e)) => {
                             // Check if this is due to logout
-                            if LOGOUT_IN_PROGRESS.load(Ordering::Acquire) {
+                            if is_logout_in_progress() {
                                 log!("async worker task ended with error due to logout: {e:?}");
                             } else {
                                 error!("Error: async worker task ended:\n\t{e:?}");
@@ -2189,8 +2188,15 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
             log!("Received a sync service state update: {state:?}");
             if state == sync_service::State::Error {
                 log!("Restarting sync service due to error.");
-                let sync_service = get_sync_service().expect("BUG: sync service is None");
-                sync_service.start().await;
+                if let Some(ss) = get_sync_service() {
+                    ss.start().await;
+                } else {
+                    enqueue_popup_notification(PopupItem {
+                        message: "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.".into(),
+                        auto_dismissal_duration: None,
+                        kind: PopupKind::Error,
+                    });
+                }
             }
         }
     });
@@ -2997,28 +3003,6 @@ impl UserPowerLevels {
     }
 }
 
-/// Global atomic flag indicating if the logout process has reached the "point of no return"
-/// where aborting the logout operation is no longer safe.
-static LOGOUT_POINT_OF_NO_RETURN: AtomicBool = AtomicBool::new(false);
-
-/// Global atomic flag indicating if logout is in progress
-static LOGOUT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
-
-pub fn is_logout_past_point_of_no_return() -> bool {
-    LOGOUT_POINT_OF_NO_RETURN.load(Ordering::Relaxed)
-}
-
-pub fn is_logout_in_progress() -> bool {
-    LOGOUT_IN_PROGRESS.load(Ordering::Relaxed)
-}
-
-pub fn set_logout_point_of_no_return(value: bool) {
-    LOGOUT_POINT_OF_NO_RETURN.store(value, Ordering::Relaxed);
-}
-
-pub fn set_logout_in_progress(value: bool) {
-    LOGOUT_IN_PROGRESS.store(value, Ordering::Relaxed);
-}
 
 /// Shuts down the current Tokio runtime completely and takes ownership to ensure proper cleanup.
 pub fn shutdown_background_tasks() {

@@ -438,7 +438,6 @@ pub enum MainDesktopUiAction {
     SaveDockIntoAppState,
     /// Load the room panel state from the AppState to the dock.
     LoadDockFromAppState,
-    DockLoad,
     /// Close all tabs; see [`MainDesktopUI::close_all_tabs()`]
     CloseAllTabs {
         on_close_all: Arc<Notify>,
