@@ -186,7 +186,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
 - [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
 - [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
-- [ ] User settings screen
+- [x] User settings screen
 - [ ] Dedicated view of spaces
 - [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
