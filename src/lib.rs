@@ -7,7 +7,7 @@ pub use makepad_widgets;
 /// The top-level main application module.
 pub mod app;
 /// Function for loading and saving persistent application/session state.
-pub mod persistent_state;
+pub mod persistence;
 /// The settings screen and settings-related content/widgets.
 pub mod settings;
 
@@ -26,6 +26,14 @@ pub mod shared;
 /// Generating text previews of timeline events/messages.
 mod event_preview;
 pub mod room;
+
+
+/// All content related to TSP (Trust Spanning Protocol) wallets/identities.
+#[cfg(feature = "tsp")]
+pub mod tsp;
+/// Dummy TSP module with placeholder widgets, for builds without TSP.
+#[cfg(not(feature = "tsp"))]
+pub mod tsp_dummy;
 
 
 // Matrix stuff
