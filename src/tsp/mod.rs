@@ -1,22 +1,22 @@
-// Ignore clippy warnings in `DeRon` macro derive bodies.
-#![allow(clippy::question_mark)]
-
-use std::{borrow::Cow, ops::Deref, path::Path, sync::{Arc, Mutex, OnceLock}};
+use std::{borrow::Cow, ops::Deref, path::Path, sync::{Mutex, OnceLock}};
 
 use anyhow::anyhow;
 use makepad_widgets::{makepad_micro_serde::*, *};
 use quinn::rustls::crypto::{CryptoProvider, aws_lc_rs};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
-use tsp_sdk::{AskarSecureStorage, AsyncSecureStore, SecureStorage};
+use tsp_sdk::{vid::{verify_vid, VidError}, AskarSecureStorage, AsyncSecureStore, OwnedVid, SecureStorage, VerifiedVid, Vid};
+use url::Url;
 
-use crate::{persistence::{self, tsp_wallets_dir}, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}};
+use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}};
 
 
+pub mod create_did_modal;
 pub mod create_wallet_modal;
 pub mod tsp_settings_screen;
 pub mod wallet_entry;
 
 pub fn live_design(cx: &mut Cx) {
+    create_did_modal::live_design(cx);
     create_wallet_modal::live_design(cx);
     wallet_entry::live_design(cx);
     tsp_settings_screen::live_design(cx);
@@ -69,7 +69,7 @@ impl TspState {
         saved_state: SavedTspState,
     ) -> Result<(), tsp_sdk::Error> {
         for (idx, wallet_metadata) in saved_state.wallets.into_iter().enumerate() {
-       if let Ok(opened_wallet) = wallet_metadata.open_wallet().await {
+            if let Ok(opened_wallet) = wallet_metadata.open_wallet().await {
                 if saved_state.default_wallet == Some(idx) {
                     self.current_wallet = Some(opened_wallet);
                 } else {
@@ -79,13 +79,13 @@ impl TspState {
                 self.other_wallets.push(TspWalletEntry::NotFound(wallet_metadata));
             }
         }
-        if saved_state.default_wallet.is_some() && self.current_wallet.is_none() {
-            error!("BUG: saved TSP state had a default wallet, but it wasn't opened successfully.");
-        }
         match self.current_wallet.is_some() as usize + self.other_wallets.len() {
             0 => log!("Restored no TSP wallets from saved TSP state."),
             1 => log!("Restored 1 TSP wallet from saved state."),
             n => log!("Restored {n} TSP wallets from saved state."),
+        }
+        if saved_state.default_wallet.is_some() && self.current_wallet.is_none() {
+            warning!("Saved TSP state had a default wallet, but it wasn't opened successfully.");
         }
         Ok(())
     }
@@ -228,21 +228,7 @@ impl TspWalletMetadata {
 }
 
 
-/// The TSP state that is saved to persistent storage.
-///
-/// It contains metadata about all wallets that have been created or imported.
-#[derive(Clone, Default, Debug, DeRon, SerRon)]
-pub struct SavedTspState {
-    /// All wallets that have been created or imported into Robrix.
-    ///
-    /// This is a list of metadata, not the actual wallet objects.
-    pub wallets: Vec<TspWalletMetadata>,
-    /// The index of the default wallet in `wallets`, if any.
-    pub default_wallet: Option<usize>,
-}
-
-
-pub fn tsp_init(rt: Arc<tokio::runtime::Runtime>) -> anyhow::Result<()> {
+pub fn tsp_init(rt_handle: tokio::runtime::Handle) -> anyhow::Result<()> {
     CryptoProvider::install_default(aws_lc_rs::default_provider())
         .map_err(|_| anyhow!("BUG: default CryptoProvider was already set."))?;
 
@@ -250,9 +236,8 @@ pub fn tsp_init(rt: Arc<tokio::runtime::Runtime>) -> anyhow::Result<()> {
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<TspRequest>();
     TSP_REQUEST_SENDER.set(sender).expect("BUG: TSP_REQUEST_SENDER already set!");
 
-    let rt2 = rt.clone();
     // Start a high-level async task that will start and monitor all other tasks.
-    let _monitor = rt.spawn(async move {
+    let _monitor = rt_handle.spawn(async move {
         // First, run the inner TSP initialization logic to load prior TSP state.
         match inner_tsp_init().await {
             Ok(()) => log!("TSP state initialized successfully."),
@@ -270,7 +255,7 @@ pub fn tsp_init(rt: Arc<tokio::runtime::Runtime>) -> anyhow::Result<()> {
         }
 
         // Spawn the actual async worker thread.
-        let mut tsp_worker_join_handle = rt2.spawn(async_tsp_worker(receiver));
+        let mut tsp_worker_join_handle = Handle::current().spawn(async_tsp_worker(receiver));
 
         // TODO: start the main loop that drives the TSP SDK's receiver handler,
         //       e.g., to process incoming requests from other TSP instances.
@@ -361,6 +346,10 @@ pub enum TspWalletAction {
     DefaultWalletChanged(Result<TspWalletMetadata, ()>),
     /// The given wallet was successfully or unsuccessfully opened.
     WalletOpened(Result<TspWalletMetadata, tsp_sdk::Error>),
+    /// A new identity (DID) was successfully created or had an error.
+    ///
+    /// If successful, the result contains the created DID string.
+    DidCreationResult(Result<String, anyhow::Error>),
 }
 
 /// Requests that can be sent to the TSP async worker thread.
@@ -383,6 +372,14 @@ pub enum TspRequest {
     RemoveWallet(TspWalletMetadata),
     /// Request to permanently delete a TSP wallet.
     DeleteWallet(TspWalletMetadata),
+    /// Requeqst to create a new identity (DID) on the given server
+    /// and store it in the default TSP wallet.
+    CreateDid {
+        username: String,
+        alias: Option<String>,
+        server: String,
+        did_server: String,
+    },
 }
 
 /// The entry point for an async worker thread that processes TSP-related async tasks.
@@ -393,6 +390,17 @@ async fn async_tsp_worker(
     mut request_receiver: UnboundedReceiver<TspRequest>,
 ) -> anyhow::Result<()> {
     log!("Started async_tsp_worker task.");
+
+    // Lazily initialize the reqwest client.
+    let mut __reqwest_client = None;
+    let mut get_reqwest_client = || {
+        __reqwest_client.get_or_insert_with(|| {
+            reqwest::ClientBuilder::new()
+                .user_agent(format!("Robrix v{}", env!("CARGO_PKG_VERSION")))
+                .build()
+                .unwrap()
+        }).clone()
+    };
 
     while let Some(req) = request_receiver.recv().await { match req {
         TspRequest::CreateWallet { metadata } => {
@@ -539,9 +547,129 @@ async fn async_tsp_worker(
             log!("Received TspRequest::DeleteWallet({metadata:?})");
             todo!("handle deleting a wallet");
         }
+
+        TspRequest::CreateDid { username, alias, server, did_server } => {
+            log!("Received TspRequest::CreateDid(username: {username}, alias: {alias:?}, server: {server}, did_server: {did_server})");
+            let client = get_reqwest_client();
+
+            Handle::current().spawn(async move {
+                let result = if tsp_state_ref().lock().unwrap().current_wallet.is_none() {
+                    Err(anyhow!("Please choose a default TSP wallet to hold the DID."))
+                } else {
+                    match create_did_web(&did_server, &server, &username, &client).await {
+                        Ok((did, private_vid, metadata)) => {
+                            log!("Successfully created & published new DID: {did}.\n\
+                                Adding private VID to current wallet: {private_vid:?}",
+                            );
+                            store_did_in_wallet(private_vid, metadata, alias, did).await
+                        }
+                        Err(e) => {
+                            error!("Failed to create new DID: {e}");
+                            Err(e)
+                        }
+                    }
+                };
+                Cx::post_action(TspWalletAction::DidCreationResult(result));
+            });
+        }
     } }
+
     error!("async_tsp_worker task ended unexpectedly");
     anyhow::bail!("async_tsp_worker task ended unexpectedly")
+}
+
+
+/// Creates a new DID on the given `did_server` and publishes it to the TSP `server`.
+///
+/// This function does not modify or add anything to the current TSP wallet.
+/// The caller must do that separately.
+///
+/// Returns a tuple of the DID string, the private VID, and optional metadata.
+async fn create_did_web(
+    did_server: &str,
+    server: &str,
+    username: &str,
+    client: &reqwest::Client,
+) -> Result<(String, OwnedVid, Option<serde_json::Value>), anyhow::Error> {
+    // The following code is based on the TSP SDK's CLI example for creating a DID.
+    let did = format!(
+        "did:web:{}:endpoint:{username}",
+        did_server.replace(":", "%3A").replace("/", ":")
+    );
+
+    let transport = Url::parse(
+        &format!("https://{}/endpoint/{}",
+            server,
+            &did.replace("%", "%25")
+        )
+    ).map_err(|e| anyhow!("Invalid transport URL: {e}"))?;
+
+    let private_vid = OwnedVid::bind(&did, transport);
+    log!("created identity {}", private_vid.identifier());
+
+    let response = client
+        .post(format!("https://{did_server}/add-vid"))
+        .json(&private_vid.vid())
+        .send()
+        .await
+        .inspect(|r| log!("DID server responded with status code {}", r.status()))
+        .map_err(|e| anyhow!("Could not publish VID. The DID server responded with error: {e}"))?;
+
+    let vid_result: Result<Vid, anyhow::Error> = match response.status() {
+        r if r.is_success() => {
+            response.json().await
+                .map_err(|e| anyhow!("Could not decode response from DID server as a valid VID: {e}"))
+        }
+        r => {
+            let text = response.text().await.unwrap_or_else(|_| "[Unknown]".to_string());
+            if r.as_u16() == 500 {
+                return Err(anyhow!(
+                    "The DID server returned error code 500. The DID username may already exist, \
+                     or the server had another problem.\n\nResponse: \"{text}\""
+                ));
+            } else {
+                return Err(anyhow!(
+                    "The DID server returned error code {}.\n\nResponse: \"{text}\"",
+                    r.as_u16()
+                ));
+            }
+        }
+    };
+
+    let _vid = vid_result?;
+
+    log!("published DID document at {}",
+        tsp_sdk::vid::did::get_resolve_url(&did)?.to_string()
+    );
+
+    let (_vid, metadata) = verify_vid(private_vid.identifier())
+        .await
+        .map_err(|err| tsp_sdk::Error::Vid(VidError::InvalidVid(err.to_string())))?;
+
+    Ok((did, private_vid, metadata))
+}
+
+
+/// Stores the given private VID in the current default TSP wallet,
+/// and optionally establishes an alias for the given `did`.
+///
+/// Returns the DID string if successful, otherwise an error.
+async fn store_did_in_wallet(
+    private_vid: OwnedVid,
+    metadata: Option<serde_json::Value>,
+    alias: Option<String>,
+    did: String,
+) -> Result<String, anyhow::Error> {
+    let tsp_state = tsp_state_ref().lock().unwrap();
+    let Some(current_wallet) = tsp_state.current_wallet.as_ref() else {
+        anyhow::bail!("Please select a default TSP wallet to hold the DID.");
+    };
+    current_wallet.db.add_private_vid(private_vid, metadata)?;
+    if let Some(alias) = alias {
+        current_wallet.db.set_alias(alias.clone(), did.clone())?;
+        log!("added alias {alias} -> {did}");
+    }
+    Ok(did)
 }
 
 
