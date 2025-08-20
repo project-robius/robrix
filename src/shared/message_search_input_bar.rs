@@ -77,15 +77,13 @@ pub struct MessageSearchInputBar {
     #[rust] search_term: String,
 }
 
-/// Actions emitted by the `MessageSearchInputBar` based on user interaction with it.
+/// Actions emitting by the `MessageSearchInputBar`.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum MessageSearchAction {
-    /// The user has changed the text entered into the filter bar.
+    /// Emitted when the user has changed the text (after debounce delay or clear button).
     Changed(String),
-    /// The user has clicked the input bar.
-    Clicked(String),
-    /// Set the text entered into the input bar.
-    SetText(String),
+    /// Emitted when the user has clicked the input bar.
+    Clicked,
     None,
 }
 
@@ -100,20 +98,21 @@ impl Widget for MessageSearchInputBar {
                 );
             }
         }
-        self.view.handle_event(cx, event, scope);
         let area = self.text_input(id!(input)).area();
         if let Hit::FingerDown(..) = event.hits(cx, area) {
             let widget_uid = self.widget_uid();
             cx.widget_action(
                 widget_uid,
                 &scope.path,
-                MessageSearchAction::Clicked(self.view.text_input(id!(input)).text())
+                MessageSearchAction::Clicked
             );
         }
+        self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.text_input(id!(input)).set_text(cx, &self.search_term);
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -127,11 +126,10 @@ impl WidgetMatchEvent for MessageSearchInputBar {
         if let Some(keywords) = input.changed(actions) {
             clear_button.set_visible(cx, !keywords.is_empty());
             self.debounce_timer = cx.start_timeout(SEARCH_INPUT_DELAY_SECS);
-            self.search_term = keywords.clone();
+            self.search_term = keywords;
         }
 
         if clear_button.clicked(actions) {
-            input.set_text(cx, "");
             clear_button.set_visible(cx, false);
             input.set_key_focus(cx);
             cx.widget_action(
@@ -139,23 +137,34 @@ impl WidgetMatchEvent for MessageSearchInputBar {
                 &scope.path,
                 MessageSearchAction::Changed(String::new())
             );
+            self.search_term = String::new();
         }
-        for action in actions {
-            if let MessageSearchAction::SetText(text) = action.as_widget_action().cast() {
-                if text.is_empty() {
-                    cx.stop_timer(self.debounce_timer);
-                    self.text_input(id!(input)).set_text(cx, &text);
-                    cx.widget_action(
-                        self.widget_uid(),
-                        &scope.path,
-                        MessageSearchAction::Changed(text));
-                } else {
-                    self.text_input(id!(input)).set_text(cx, &text);
-                }
-            }
-            if let Some(MessageSearchAction::SetText(text)) = action.downcast_ref() {
-                self.text_input(id!(input)).set_text(cx, text);
-            }
+    }
+}
+
+impl MessageSearchInputBarRef {
+
+    /// Sets the text of the `MessageSearchInputBar`.
+    ///
+    /// `text` - The new text to set for the `MessageSearchInputBar`.
+    ///
+    /// This function sets the text of the `MessageSearchInputBar` to `text`.
+    /// If the `MessageSearchInputBar` is not being viewed, it will not be updated.
+    pub fn set_text(&self, text: &str) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.search_term = text.to_string();
+        }
+    }
+
+    /// Returns the current search term entered by the user.
+    ///
+    /// Returns an empty string if the `MessageSearchInputBar` is not currently
+    /// being viewed.
+    pub fn get_text(&self) -> String {
+        if let Some(inner) = self.borrow() {
+            inner.search_term.clone()
+        } else {
+            String::new()
         }
     }
 }

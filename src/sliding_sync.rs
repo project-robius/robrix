@@ -12,7 +12,7 @@ use matrix_sdk::{
             receipt::ReceiptThread, room::{
                 message::{Relation, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, AnyMessageLikeEventContent, AnyTimelineEvent, FullStateEventContent, MessageLikeEventType, StateEventType
-        }, matrix_uri::MatrixId, uint, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
+        }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState
 };
 use matrix_sdk_ui::{
@@ -36,7 +36,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, load_app_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, right_panel::{self, search_message::MessageSearchChoice}, room::RoomPreviewAvatar, shared::{
+    }, right_panel::{self}, room::RoomPreviewAvatar, shared::{
         html_or_plaintext::MatrixLinkPillState,
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{enqueue_popup_notification, PopupItem, PopupKind}
@@ -399,9 +399,8 @@ pub enum MatrixRequest {
     },
     /// General Matrix Search API with given categories
     SearchMessages {
-        message_search_choice: MessageSearchChoice,
-        /// Text in the search bar.
-        search_term: String,
+        /// The search criteria containing all search parameters
+        criteria: client::search::search_events::v3::Criteria,
         /// Token for next batch of search results.
         next_batch: Option<String>,
         /// Abort previous search only when debouncing from typing search term.
@@ -1147,46 +1146,43 @@ async fn async_worker(
                 });
             }
             MatrixRequest::SearchMessages {
-                message_search_choice,
-                search_term,
+                criteria,
                 next_batch,
                 abort_previous_search,
             } => {
-                log!("MatrixRequest::SearchMessages - message_search_choice: {:?}, search_term: '{}', next_batch: {:?}, abort_previous_search: {}",
-                    message_search_choice, search_term, next_batch, abort_previous_search);
+                log!("MatrixRequest::SearchMessages - search_term: '{}', next_batch: {:?}, abort_previous_search: {}",
+                    criteria.search_term, next_batch, abort_previous_search);
                 if abort_previous_search {
                     if let Some(abort_handler) = search_task_abort_handler.take() {
                         abort_handler.abort();
                     }
                 }
-                if search_term.is_empty() {
+                if criteria.search_term.is_empty() {
                     continue;
                 }
                 let client = CLIENT.get().unwrap();
                 let mut search_categories = client::search::search_events::v3::Categories::new();
-                let mut room_filter = client::filter::RoomEventFilter::empty();
-                if let MessageSearchChoice::OneRoom(room_id) = &message_search_choice {
-                    room_filter.rooms = Some(vec![room_id.to_owned()]);
-                } else {
-                    room_filter.rooms = None;
-                }
-                let mut criteria = client::search::search_events::v3::Criteria::new(search_term.clone());
-                criteria.filter = room_filter;
-                criteria.order_by = Some(client::search::search_events::v3::OrderBy::Recent);
-                criteria.event_context = client::search::search_events::v3::EventContext::new();
-                criteria.event_context.after_limit = uint!(0);
-                criteria.event_context.before_limit = uint!(0);
-                criteria.event_context.include_profile = true;
-
+                let search_term = criteria.search_term.clone(); // Capture search term for async task
+                let room_filter = criteria.filter.rooms.clone(); // Capture room filter for async task
                 search_categories.room_events = Some(criteria);
                 let mut req = client::search::search_events::v3::Request::new(search_categories);
                 req.next_batch = next_batch.clone();
+                
+                let includes_all_rooms = room_filter.as_ref().is_none();
+                let room_name = room_filter.as_ref().and_then(
+                    |room_ids| room_ids.first().clone()
+                ).and_then(
+                    |room_id| {
+                        client.get_room(room_id).and_then(|room| room.name().to_owned())
+                    }
+                );
+                
                 let handle = Handle::current().spawn(async move {
                     match client.send(req).await {
                         Ok(response) => {
                             let next_batch =
                                 response.search_categories.room_events.next_batch.clone();
-                            let mut last_room_id = None;
+                            let mut room_id_for_grouping = None;
                             let result = response.search_categories;
                             let mut items = Vector::new();
                             let mut profile_infos = BTreeMap::new();
@@ -1194,8 +1190,9 @@ async fn async_worker(
                             if highlights.is_empty() {
                                 log!("No highlights found in search results for term '{search_term}'");
                             } else {
-                                log!("Found {} highlights in search results for term '{search_term}'", highlights.len());
+                                log!("Found {} highlights in search results for term '{search_term}', highlighted string: {:?}", highlights.len(), highlights);
                             }
+                            log!("Search results for term '{search_term}': {:?} events found", result.room_events.count);
                             for item in result.room_events.results.iter() {
                                 let Some(event) =
                                     item.result.as_ref().and_then(|f| f.deserialize().ok())
@@ -1225,23 +1222,23 @@ async fn async_worker(
                                             let new_content = &replace.new_content;
                                             message.msgtype = new_content.msgtype.clone();
                                         }
-                                        right_panel::search_message::format_message_content(&mut message, &highlights);
+                                        right_panel::search_message::highlight_search_terms_in_message(&mut message, &highlights);
                                         message_option = Some(message);
                                     }
                                 }
                                 let event_room_id = event.room_id().to_owned();
                                 items.push_back(right_panel::search_message::SearchResultItem::Event{ event:
-                                    Box::new(event), formatted_content: Box::new(message_option)}
+                                    Arc::new(event), formatted_content: Arc::new(message_option)}
                                 );
                                 // Include all rooms in the search results.
-                                if let MessageSearchChoice::AllRooms = &message_search_choice {                                
-                                    if let Some(ref mut last_room_id) = last_room_id {
-                                        if last_room_id != &event_room_id {
-                                            *last_room_id = event_room_id.clone();
+                                if room_filter.is_none() {                                
+                                    if let Some(ref mut room_id_for_grouping) = room_id_for_grouping {
+                                        if room_id_for_grouping != &event_room_id {
+                                            *room_id_for_grouping = event_room_id.clone();
                                             items.push_back(right_panel::search_message::SearchResultItem::RoomHeader(event_room_id));
                                         }
                                     } else {
-                                        last_room_id = Some(event_room_id.clone());
+                                        room_id_for_grouping = Some(event_room_id.clone());
                                         items.push_back(right_panel::search_message::SearchResultItem::RoomHeader(event_room_id));
                                     }
                                 }
@@ -1258,11 +1255,17 @@ async fn async_worker(
                                 search_term,
                                 profile_infos,
                                 next_batch,
+                                room_name,
+                                includes_all_rooms
                             }));
                         }
                         Err(e) => {
-                            let context = if let MessageSearchChoice::OneRoom(room_id) = &message_search_choice {
-                                format!("Failed to search messages in room {room_id}")
+                            let context = if let Some(rooms) = &room_filter {
+                                if let Some(room_id) = rooms.first() {
+                                    format!("Failed to search messages in room {room_id}")
+                                } else {
+                                    "Failed to search messages".to_string()
+                                }
                             } else {
                                 "Failed to search messages in all rooms".to_string()
                             };

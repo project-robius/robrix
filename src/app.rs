@@ -359,7 +359,7 @@ impl MatchEvent for App {
             //     }
             //     _ => {}
             // }
-            if let MessageSearchAction::Clicked(_) = action.as_widget_action().cast() {
+            if let MessageSearchAction::Clicked = action.as_widget_action().cast() {
                 cx.widget_action(
                     self.ui.widget_uid(),
                     &Scope::default().path,

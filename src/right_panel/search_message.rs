@@ -1,21 +1,23 @@
-use std::{borrow::Cow, collections::BTreeMap, ops::DerefMut};
+use std::{borrow::Cow, collections::BTreeMap, ops::DerefMut, sync::Arc};
+use regex::Regex;
 
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{
+    api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria as MatrixCriteria, EventContext, OrderBy}},
     events::{
         room::message::{
-            FormattedBody, MessageType, RoomMessageEventContent, TextMessageEventContent,
+            AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent
         },
         AnyTimelineEvent,
     },
-    OwnedRoomId, OwnedUserId,
+    uint, OwnedRoomId, OwnedUserId,
 };
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use rangemap::RangeSet;
 
 use crate::{
-    app::AppState,
+    app::{AppState, AppStateAction},
     home::{
         room_screen::{
             populate_text_message_content, ItemDrawnStatus, JumpToMessageRequest, MessageWidgetRefExt,
@@ -23,12 +25,7 @@ use crate::{
         rooms_list::RoomsListRef,
     },
     shared::{
-        avatar::AvatarWidgetRefExt,
-        html_or_plaintext::HtmlOrPlaintextWidgetRefExt,
-        message_search_input_bar::MessageSearchAction,
-        popup_list::{enqueue_popup_notification, PopupItem, PopupKind},
-        timestamp::TimestampWidgetRefExt,
-        styles::COLOR_WARNING_YELLOW
+        avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::COLOR_WARNING_YELLOW, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{submit_async_request, MatrixRequest},
     utils::unix_time_millis_to_datetime,
@@ -40,8 +37,7 @@ live_design! {
     use link::widgets::*;
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
-    use crate::shared::icon_button::*;
-    use crate::shared::message_search_input_bar::*;
+    use crate::shared::icon_button::RobrixIconButton;
     use crate::home::rooms_list::RoomsList;
     use crate::home::room_screen::*;
 
@@ -49,18 +45,17 @@ live_design! {
 
     // The bottom space is used to display a loading message while the room is being paginated.
     BottomSpace = <View> {
-        visible: false,
-        width: Fill,
-        height: Fit,
+        width: Fill, height: Fit,
+        visible: true,
         align: {x: 0.5, y: 0}
         show_bg: true,
         draw_bg: {
             color: #xDAF5E5F0, // mostly opaque light green
         }
+        flow: Right,
 
         label = <Label> {
-            width: Fill,
-            height: Fit,
+            width: Fit, height: Fit,
             align: {x: 0.5, y: 0.5},
             padding: { top: 10.0, bottom: 7.0, left: 15.0, right: 15.0 }
             draw_text: {
@@ -69,21 +64,29 @@ live_design! {
             }
             text: "Loading older search results..."
         }
+        <LoadingSpinner> {
+            width: 20,
+            height: Fill,
+            visible: true,
+            draw_bg: {
+                color: (COLOR_ACTIVE_PRIMARY)
+                border_size: 3.0,
+            }
+        }
     }
 
     SearchIcon = <Icon> {
-        align: {x: 0.0} // Align to top-right
-        spacing: 10,
+        width: Fit, height: Fit,
         margin: {top: 0, left: 10},
+        align: {x: 0.0}
+        spacing: 10,
         padding: 10,
-        width: Fit,
-        height: Fit,
         draw_bg: {
             instance color: (COLOR_BUTTON_GREY)
             instance color_hover: #fef65b
-            instance border_width: 1.5
-            instance radius: 3.0
-            instance hover: 0.0
+            uniform border_width: 1.5
+            uniform border_radius: 4.0
+            uniform hover: 0.0
             fn get_color(self) -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
             }
@@ -94,7 +97,7 @@ live_design! {
                     self.border_width,
                     self.rect_size.x - self.border_width * 2.0,
                     self.rect_size.y - self.border_width * 2.0,
-                    max(1.0, self.radius)
+                    max(1.0, self.border_radius)
                 )
                 sdf.fill(self.get_color());
                 return sdf.result;
@@ -110,84 +113,56 @@ live_design! {
     }
 
     pub SearchResultSummary = {{SearchResultSummary}} {
-        width: Fill,
-        height: Fill,
-        show_bg: false,
-        flow: Overlay,
-
-        loading_view = <View> {
-            width: Fill,
-            height: Fill,
-            show_bg: true,
-            visible: true,
-            draw_bg: {
-                color: (COLOR_SECONDARY)
-            }
-            align: {x: 0.5, y: 0.5}
-
-            <SearchIcon> {}
+        width: Fill, height: 60,
+        show_bg: true,
+        align: {y: 0.5}
+        draw_bg: {
+            color: (COLOR_SECONDARY)
         }
-        <View> {
-            width: Fill,
+
+        <SearchIcon> {}
+        summary_label = <Markdown> {
             height: Fit,
-            flow: Down,
-
-            <View> {
-                width: Fill,
-                height: 60,
-                show_bg: true,
-                align: {y: 0.5}
-                draw_bg: {
-                    color: (COLOR_SECONDARY)
-                }
-
-                <SearchIcon> {}
-                summary_label = <Markdown> {
-                    margin: {left: 10, top:0},
-                    align: {x: 0.3, y: 0.5}  // Align to top-right
-                    height: Fit,
-                    padding: 5,
-                    font_color: (MESSAGE_TEXT_COLOR),
-                    font_size: (MESSAGE_FONT_SIZE),
-                    body: ""
-                }
-                search_all_rooms_button = <RobrixIconButton> {
-                    flow: RightWrap,
-                    width: 90,
-                    height: Fit,
-                    padding: { top:2, bottom:2, left: 10, right: 10}
-                    margin: {top: 5, bottom: 10}
-                    align: {x: 0.5, y: 0.5}
-                    draw_bg: {
-                        color: (COLOR_ACTIVE_PRIMARY)
-                    }
-                    draw_text: {
-                        color: (COLOR_PRIMARY)
-                        text_style: <REGULAR_TEXT> {}
-                    }
-                    text: "Search All Rooms"
-                }
-                search_again_button = <RobrixIconButton> {
-                    flow: RightWrap,
-                    visible: false,
-                    width: 70,
-                    height: Fit,
-                    padding: { top:2, bottom:2, left: 10, right: 10}
-                    margin: {top: 5, bottom: 10}
-                    align: {x: 0.5, y: 0.5}
-                    draw_bg: {
-                        color: (COLOR_ACTIVE_PRIMARY)
-                    }
-                    draw_text: {
-                        color: (COLOR_PRIMARY)
-                        text_style: <REGULAR_TEXT> {}
-                    }
-                    text: "Search Again"
-                }
+            margin: {left: 10, top: 0},
+            align: {x: 0.3, y: 0.5}
+            padding: 5,
+            font_color: (MESSAGE_TEXT_COLOR),
+            font_size: (MESSAGE_FONT_SIZE),
+            body: "Type to search."
+        }
+        search_all_rooms_button = <RobrixIconButton> {
+            flow: RightWrap,
+            width: 90,
+            padding: { top:2, bottom:2, left: 10, right: 10}
+            margin: {top: 5, bottom: 10}
+            align: {x: 0.5, y: 0.5}
+            draw_bg: {
+                color: (COLOR_ACTIVE_PRIMARY)
             }
-            
+            draw_text: {
+                color: (COLOR_PRIMARY)
+                text_style: <REGULAR_TEXT> {}
+            }
+            text: "Search All Rooms"
+        }
+        search_again_button = <RobrixIconButton> {
+            flow: RightWrap,
+            width: 70,
+            visible: false,
+            padding: { top:2, bottom:2, left: 10, right: 10}
+            margin: {top: 5, bottom: 10}
+            align: {x: 0.5, y: 0.5}
+            draw_bg: {
+                color: (COLOR_ACTIVE_PRIMARY)
+            }
+            draw_text: {
+                color: (COLOR_PRIMARY)
+                text_style: <REGULAR_TEXT> {}
+            }
+            text: "Search Again"
         }
     }
+
     // White rounded message card against a grey backdrop.
     pub MessageCard = <Message> {
         draw_bg: {
@@ -215,14 +190,12 @@ live_design! {
     }
 
     pub SearchedMessages = <View> {
-        width: Fill,
-        height: Fill,
+        width: Fill, height: Fill,
         align: {x: 0.5, y: 0.0} // center horizontally, align to top vertically
         flow: Overlay,
 
         list = <PortalList> {
-            height: Fill,
-            width: Fill
+            width: Fill, height: Fill,
             flow: Down
             auto_tail: false, // set to `true` to lock the view to the last item.
             max_pull_down: 0.0, // set to `0.0` to disable the pulldown bounce animation.
@@ -255,67 +228,61 @@ live_design! {
         }
 
         <View> {
-            width: Fill,
-            height: Fill,
+            width: Fill, height: Fill,
             flow: Down,
 
             search_result_plane = <SearchResultSummary> {
-                width: Fill,
-                height: Fit,
                 visible: true
             }
-            searched_messages = <SearchedMessages> {
-                width: Fill,
-                height: Fill,
-            }
+            searched_messages = <SearchedMessages> { }
             bottom_space = <BottomSpace> {
                 visible: false
-            }
-        }
-        search_context_menu = <RoundedView> {
-            visible: false,
-            flow: Down
-            width: 180,
-            height: Fit,
-            padding: 8
-            spacing: 0,
-            align: {x: 0, y: 0}
-            show_bg: true
-            draw_bg: {
-                color: #fff
-                border_radius: 5.0
-                border_size: 0.5
-                border_color: #888
-            }
-
-            go_to_message_button = <RobrixIconButton> {
-                height: 35
-                width: Fill,
-                margin: 0,
-                icon_walk: {width: 16, height: 16, margin: {right: 3}}
-                draw_icon: { svg_file: dep("crate://self/resources/icons/jump.svg") }
-                text: "Go to Message"
             }
         }
     }
 }
 
-/// Precompute formatted message content with highlights to avoid repeated string operations during rendering.
-pub fn format_message_content(message: &mut RoomMessageEventContent, highlights: &[String]) {
+/// Apply highlights to a string by wrapping matching terms in HTML spans.
+fn apply_highlights(text: String, highlights: &[String]) -> String {
+    let mut result = text;
+    for highlight in highlights {
+        let re = Regex::new(&format!(r"(?i){}", regex::escape(highlight))).unwrap();
+        result = re.replace_all(
+            &result,
+            |caps: &regex::Captures| {
+                format!(
+                    "<span data-mx-bg-color=\"#fcdb03\">{}</span>",
+                    caps[0].to_string() // Preserves original case
+                )
+            },
+        ).to_string();
+    }
+    result
+}
+
+/// Injects search term highlights into message content by wrapping matching terms in HTML spans.
+/// 
+/// This function modifies the message's formatted content to include visual highlighting
+/// for search terms. It processes only text messages and preserves the original case
+/// of matched terms while adding background color styling.
+/// 
+/// # Arguments
+/// * `message` - The room message event content to modify
+/// * `highlights` - Array of search terms to highlight in the message content
+/// 
+/// # Behavior
+/// - Only processes `MessageType::Text` messages, ignoring other message types
+/// - Uses case-insensitive matching to find search terms
+/// - Wraps matches in `<span data-mx-bg-color="#fcdb03">` tags for yellow highlighting
+/// - Preserves original case and formatting of the matched text
+/// - Creates or updates the message's `formatted` field with highlighted HTML content
+pub fn highlight_search_terms_in_message(message: &mut RoomMessageEventContent, highlights: &[String]) {
     if let MessageType::Text(text) = &mut message.msgtype {
         let formatted = if let Some(ref mut formatted) = text.formatted {
-            let mut body = formatted.body.clone();
-            // TODO: Remove all <code> </code> before appending them to highlights.
-            for highlight in highlights {
-                body = body.replace(highlight, &format!("<code>{}</code>", highlight));
-            }
-            body
+            apply_highlights(formatted.body.clone(), highlights)
         } else {
-            let mut formatted_string = text.body.clone();
-            for highlight in highlights {
-                formatted_string =
-                    formatted_string.replace(highlight, &format!("<code>{}</code>", highlight));
-            }
+            let formatted_string = apply_highlights(text.body.clone(), highlights);
+            // issue of returning one result
             formatted_string
         };
         text.formatted = Some(FormattedBody::html(formatted));
@@ -338,10 +305,13 @@ struct SearchState {
     next_batch_token: Option<String>,
     /// The search term for the last search request.
     prev_search_term: Option<String>,
-    /// Previous first_id to detect scroll direction.
-    prev_first_index: Option<usize>,
     /// Whether all search results have been fully paginated.
     is_fully_paginated: bool,
+    /// The index of the searched item that was most recently scrolled up past it.
+    /// This is used to detect when the user has scrolled up past the second visible item (index 1)
+    /// upwards to the first visible item (index 0), which is the top of the timeline,
+    /// at which point we submit a backwards pagination request to fetch more events.
+    last_scrolled_index: usize,
 }
 
 /// The main widget that displays a list of search results.
@@ -364,8 +334,6 @@ struct SearchResults {
 impl Widget for SearchResults {
     /// Handles events and actions for the SearchResults widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope);
-
         // Handle pagination when user scrolls to the top
         if let Event::Actions(actions) = event {
             let search_portal_list = self.portal_list(id!(searched_messages.list));
@@ -376,13 +344,12 @@ impl Widget for SearchResults {
                 scope,
             );
         }
-
+        self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let tl_items = &self.search_state.items;
-       
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
@@ -400,7 +367,6 @@ impl Widget for SearchResults {
 
             while let Some(item_id) = list.next_visible_item(cx) {
                 // Show "No More" template at the bottom when fully paginated
-
                 let item = {
                     let tl_idx = item_id;
                     let Some(search_item) = tl_items.get(tl_idx) else {
@@ -465,48 +431,36 @@ impl SearchResults {
         portal_list: &PortalListRef,
         _scope: &mut Scope,
     ) {
-        if !portal_list.scrolled(actions) {
-            return;
-        };
-
-        let first_index = portal_list.first_id();
         let total_items = self.search_state.items.len();
-
-        // Detect scroll direction using prev_first_index
-        let is_scrolling_down = if let Some(prev_first_index) = self.search_state.prev_first_index {
-            first_index > prev_first_index
-        } else {
-            false // Default to false if no previous index
-        };
-
-        self.search_state.prev_first_index = Some(first_index);
-        // Only trigger pagination when scrolling down, at the bottom, and not fully paginated
-        // Tried to use is_filling_port, it does not work.
-        if is_scrolling_down && total_items > 0 && !self.search_state.is_fully_paginated {
-            let visible_items: usize = portal_list.visible_items();
-            // Check if we've reached the bottom (first_id + visible_items >= total_items)
-            if first_index + visible_items >= total_items.saturating_sub(1) {
-                if let Some(next_batch_token) = self.search_state.next_batch_token.take() {
-                    log!("Scrolling down reached bottom: first_id={}, visible_items={}, total={}, sending pagination request",
-                        first_index, visible_items, total_items
-                    );
-                    let search_result_summary_ref =
-                        self.view.search_result_summary(id!(search_result_plane));
-                    let criteria = search_result_summary_ref.get_search_criteria();
-
-                    self.display_bottom_space(cx);
-
-                    submit_async_request(MatrixRequest::SearchMessages {
-                        message_search_choice: if let (false, Some(room_id)) = (criteria.include_all_rooms, &self.room_id) {
-                            MessageSearchChoice::OneRoom(room_id.clone())
-                        } else {
-                            MessageSearchChoice::AllRooms
-                        },
-                        search_term: criteria.search_term.clone(),
-                        next_batch: Some(next_batch_token.clone()),
-                        abort_previous_search: false,
-                    });
-                }
+        if total_items == 0 { return };
+        if self.search_state.is_fully_paginated { return };
+        if !portal_list.scrolled(actions) { return };
+        let first_index = portal_list.first_id();
+        let visible_items: usize = portal_list.visible_items();
+        log!("Scrolled down from item {} --> {:?}, before sending room {:?} last index {:?}",
+            self.search_state.last_scrolled_index, total_items, self.room_id, first_index + visible_items
+        );
+        if first_index + visible_items >= total_items.saturating_sub(1) && self.search_state.last_scrolled_index < first_index {
+            if let Some(next_batch_token) = self.search_state.next_batch_token.take() {
+                log!("Scrolled down from item {} --> {:?}, sending back pagination request for search result in room {:?}",
+                    self.search_state.last_scrolled_index, total_items, self.room_id,
+                );
+                let search_result_summary_ref =
+                    self.view.search_result_summary(id!(search_result_plane));
+                let includes_all_rooms = search_result_summary_ref.includes_all_rooms();
+                self.display_bottom_space(cx);
+                let message_search_choice = if let (false, Some(room_id)) = (includes_all_rooms, &self.room_id) {
+                    MessageSearchChoice::OneRoom(room_id.clone())
+                } else {
+                    MessageSearchChoice::AllRooms
+                };
+                let message_search_input_bar_ref = cx.get_global::<MessageSearchInputBarRef>();
+                let search_term = message_search_input_bar_ref.get_text();
+                submit_async_request(MatrixRequest::SearchMessages {
+                    criteria: create_search_criteria(search_term, message_search_choice),
+                    next_batch: Some(next_batch_token.clone()),
+                    abort_previous_search: false,
+                });
             }
         }
     }
@@ -521,21 +475,15 @@ impl SearchResults {
         scope: &mut Scope,
         results: SearchResultReceived,
     ) {
-        let mut search_result_summary_ref =
+        let message_search_input_bar_ref = cx.get_global::<MessageSearchInputBarRef>();
+        let search_term = message_search_input_bar_ref.get_text();
+        let search_result_summary_ref =
             self.view.search_result_summary(id!(search_result_plane));
-        let criteria = search_result_summary_ref.get_search_criteria();
-
         // If the search input text has changed, reset everything.
-        if criteria.search_term != results.search_term
-            || self
-                .search_state
-                .prev_search_term
-                .as_ref()
-                .is_some_and(|p| p != &results.search_term)
-        {
-            self.search_state = SearchState::default();
+        if search_term != results.search_term {
+            cx.widget_action(self.widget_uid(), &scope.path, MessageSearchAction::Changed(search_term));
+            return
         }
-
         self.hide_bottom_space(cx);
         // Re-enable the search all rooms button when results are received
         self.view
@@ -546,14 +494,12 @@ impl SearchResults {
             .button(id!(search_again_button))
             .set_visible(cx, false);
 
+        search_result_summary_ref.display_result_summary(
+            cx, 
+            &results
+        );
         // Take ownership of profile infos instead of cloning
         self.search_state.profile_infos = results.profile_infos;
-
-        // Update the search bar and summary widget
-        cx.action(MessageSearchAction::SetText(results.search_term.clone()));
-        search_result_summary_ref.set_search_criteria(cx, scope, criteria);
-        search_result_summary_ref.set_result_count(cx, results.count);
-
         self.view.view(id!(searched_messages)).set_visible(cx, true);
 
         // Clear draw caches
@@ -562,22 +508,18 @@ impl SearchResults {
 
         // Append new items efficiently using Vector::append
         self.search_state.items.append(results.items);
-
         let search_portal_list = self.portal_list(id!(searched_messages.list));
         search_portal_list.set_tail_range(false);
         if let Some(mut search_portal_list) = search_portal_list.borrow_mut() {
             search_portal_list.set_item_range(cx, 0, self.search_state.items.len());
             if self.search_state.prev_search_term.is_none() {
-                // After several testing, multiply the length of the list by 5, will ensure the the portal list is at the top.
-                // This is a hacky way to ensure the portal list is at the top as it is easy to display the bottom of the portal list.
                 search_portal_list.smooth_scroll_to(cx, 0, 0.0, None);
             }
         }
-        
         self.search_state.next_batch_token = results.next_batch.clone();
         self.search_state.is_fully_paginated = results.next_batch.is_none();
         self.search_state.prev_search_term = Some(results.search_term);
-
+        self.search_state.last_scrolled_index = search_portal_list.first_id();
         self.redraw(cx);
     }
 
@@ -585,35 +527,36 @@ impl SearchResults {
     fn handle_search_bar_action(&mut self, cx: &mut Cx, scope: &mut Scope, action: &Action) {
         match action.as_widget_action().cast() {
             MessageSearchAction::Changed(search_term) => {
+                self.hide_bottom_space(cx);
                 let search_result_summary_ref =
                     self.search_result_summary(id!(search_result_plane));
+                self.search_state = SearchState::default();
                 if search_term.is_empty() {
-                    search_result_summary_ref.reset(cx);
-                    self.search_state = SearchState::default();
-                    // Abort previous inflight search request.
+                    self.view
+                        .button_set(ids!(search_all_rooms_button, search_again_button))
+                        .set_enabled(cx, false);
+                    // Abort previous inflight search request regardless of message choice if search term is empty.
                     submit_async_request(MatrixRequest::SearchMessages {
-                        message_search_choice: MessageSearchChoice::AllRooms,
-                        search_term: String::default(),
+                        criteria: create_search_criteria(search_term, MessageSearchChoice::AllRooms),
                         next_batch: None,
                         abort_previous_search: true,
                     });
                     return;
                 }
+                self.view
+                    .button_set(ids!(search_all_rooms_button, search_again_button))
+                    .set_enabled(cx, true);
                 if let Some(selected_room) = {
                     let app_state = scope.data.get::<AppState>().unwrap();
                     app_state.selected_room.clone()
                 } {
-                    let mut criteria = search_result_summary_ref.get_search_criteria();
-                    if criteria.search_term == search_term {
-                        return;
-                    }
-                    criteria.search_term = search_term;
-                    search_result_summary_ref.set_search_criteria(cx, scope, criteria.clone());
                     let room_id = selected_room.room_id();
+                    let criteria = create_search_criteria(search_term.clone(), MessageSearchChoice::OneRoom(room_id.clone()));
+                    search_result_summary_ref.display_search_criteria(cx, scope, criteria.clone());
                     self.room_id = Some(room_id.clone());
                     let rooms_list_ref = cx.get_global::<RoomsListRef>();
                     let is_encrypted = rooms_list_ref.is_room_encrypted(room_id);
-                    if is_encrypted && !criteria.include_all_rooms {
+                    if is_encrypted && criteria.filter.rooms.is_none() {
                         enqueue_popup_notification(PopupItem {
                             message: String::from("Searching for encrypted messages is not supported yet."),
                             auto_dismissal_duration: None,
@@ -627,24 +570,36 @@ impl SearchResults {
                         .button(id!(search_all_rooms_button))
                         .set_enabled(cx, false);
                     submit_async_request(MatrixRequest::SearchMessages {
-                        message_search_choice: MessageSearchChoice::OneRoom(room_id.clone()),
-                        search_term: criteria.search_term.clone(),
+                        criteria,
                         next_batch: None,
                         abort_previous_search: true,
                     });
                 }
             }
-            MessageSearchAction::Clicked(search_term) => {
+            MessageSearchAction::Clicked => {
                 let search_result_summary_ref =
                     self.search_result_summary(id!(search_result_plane));
-                let mut criteria = search_result_summary_ref.get_search_criteria();
-                criteria.search_term = search_term.clone();
-                search_result_summary_ref.set_search_criteria(cx, scope, criteria);
+                let message_search_input_bar_ref = cx.get_global::<MessageSearchInputBarRef>();
+                let search_term = message_search_input_bar_ref.get_text();
+                if search_term.is_empty() {
+                    search_result_summary_ref.display_instruction(cx);
+                }
             }
             _ => {}
         }
     }
 
+    fn handle_room_focus_changed_action(&mut self, cx: &mut Cx, action: &Action) {
+        match action.as_widget_action().cast() {
+            AppStateAction::RoomFocused(_room_id) => {
+                // Show the search again button
+                self.view
+                    .button(id!(search_again_button))
+                    .set_visible(cx, true);
+            }
+            _ => { }
+        }
+    }
     /// Displays the loading view for backwards pagination for search result.
     fn display_bottom_space(&mut self, cx: &mut Cx) {
         self.view.view(id!(bottom_space)).set_visible(cx, true);
@@ -660,7 +615,8 @@ impl WidgetMatchEvent for SearchResults {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         for action in actions.iter() {
             self.handle_search_bar_action(cx, scope, action);
-            match action.downcast_ref(){
+            self.handle_room_focus_changed_action(cx, action);
+            match action.downcast_ref() {
                 Some(SearchResultAction::Received(results)) => {
                     self.process_search_results(cx, scope, results.clone());
                 }
@@ -674,27 +630,29 @@ impl WidgetMatchEvent for SearchResults {
                     self.view
                         .button(id!(search_again_button))
                         .set_visible(cx, true);
-                    
                     let search_portal_list = self.portal_list(id!(searched_messages.list));
-                    search_portal_list.set_first_id_and_scroll(search_portal_list.first_id().saturating_sub(10), 5.0);
+                    search_portal_list.set_first_id_and_scroll(self.search_state.last_scrolled_index, 100.0);
                 }
                 _ => {}
             }
             let search_all_rooms_button = self.view.button(id!(search_all_rooms_button));
             if search_all_rooms_button.clicked(actions) {
+                let message_search_input_bar_ref = cx.get_global::<MessageSearchInputBarRef>();
+                let search_term = message_search_input_bar_ref.get_text();
+                if search_term.is_empty() {
+                    continue;
+                }
+                self.search_state = SearchState::default();
                 // Disable the button during search
                 search_all_rooms_button.set_enabled(cx, false);
+                let criteria = create_search_criteria(search_term, MessageSearchChoice::AllRooms);
                 let search_result_summary_ref =
                     self.search_result_summary(id!(search_result_plane));
-                let mut criteria = search_result_summary_ref.get_search_criteria();
-                search_result_summary_ref.reset(cx);
-                criteria.include_all_rooms = true;
-                search_result_summary_ref.set_search_criteria(cx, scope, criteria.clone());
+                search_result_summary_ref.set_includes_all_rooms(cx, true);
+                search_result_summary_ref.display_search_criteria(cx, scope, criteria.clone());
                 self.display_bottom_space(cx);
-                self.search_state = SearchState::default();
                 submit_async_request(MatrixRequest::SearchMessages {
-                    message_search_choice: MessageSearchChoice::AllRooms,
-                    search_term: criteria.search_term,
+                    criteria,
                     next_batch: None,
                     abort_previous_search: true,
                 });
@@ -714,12 +672,16 @@ impl WidgetMatchEvent for SearchResults {
                 } {
                     let search_result_summary_ref =
                         self.search_result_summary(id!(search_result_plane));
-                    let criteria = search_result_summary_ref.get_search_criteria();
+                    let Some(previous_room_id) = &self.room_id else { continue; };
+                    if previous_room_id != selected_room.room_id() {
+                        self.search_state = SearchState::default();
+                    }
+                    let includes_all_rooms = search_result_summary_ref.includes_all_rooms();
                     let room_id = selected_room.room_id();
                     self.room_id = Some(room_id.clone());
                     let rooms_list_ref = cx.get_global::<RoomsListRef>();
                     let is_encrypted = rooms_list_ref.is_room_encrypted(room_id);
-                    if is_encrypted && !criteria.include_all_rooms {
+                    if is_encrypted && !includes_all_rooms {
                         enqueue_popup_notification(PopupItem {
                             message: String::from("Searching for encrypted messages is not supported yet."),
                             auto_dismissal_duration: None,
@@ -730,12 +692,25 @@ impl WidgetMatchEvent for SearchResults {
                     self.display_bottom_space(cx);
                     // Disable the search all rooms button during search
                     search_all_rooms_button.set_enabled(cx, false);
-                    submit_async_request(MatrixRequest::SearchMessages {
-                        message_search_choice: MessageSearchChoice::OneRoom(room_id.clone()),
-                        search_term: criteria.search_term.clone(),
-                        next_batch: None,
-                        abort_previous_search: true,
-                    });
+                    let message_search_input_bar_ref = cx.get_global::<MessageSearchInputBarRef>();
+                    let search_term = message_search_input_bar_ref.get_text();
+                    if includes_all_rooms {
+                        let criteria = create_search_criteria(search_term, MessageSearchChoice::AllRooms);
+                        search_result_summary_ref.display_search_criteria(cx, scope, criteria.clone());
+                        submit_async_request(MatrixRequest::SearchMessages {
+                            criteria,
+                            next_batch: None,
+                            abort_previous_search: true,
+                        });
+                    } else {
+                        let criteria = create_search_criteria(search_term, MessageSearchChoice::OneRoom(room_id.clone()));
+                        search_result_summary_ref.display_search_criteria(cx, scope, criteria.clone());
+                        submit_async_request(MatrixRequest::SearchMessages {
+                            criteria,
+                            next_batch: None,
+                            abort_previous_search: true,
+                        });
+                    }
                 }
             }
         }
@@ -761,6 +736,8 @@ impl Default for SearchResultReceived {
             count: 0,
             search_term: String::new(),
             next_batch: None,
+            includes_all_rooms: false,
+            room_name: None,
         }
     }
 }
@@ -773,6 +750,8 @@ pub struct SearchResultReceived {
     pub count: u32,
     pub search_term: String,
     pub next_batch: Option<String>,
+    pub room_name: Option<String>,
+    pub includes_all_rooms: bool,
 }
 
 // The widget that displays an overlay of the summary for search results.
@@ -781,21 +760,9 @@ pub struct SearchResultSummary {
     #[deref]
     pub view: View,
     #[rust]
-    pub search_criteria: Criteria,
-    /// The number of search results.
-    ///
-    /// This number includes the contextual messages which are not displayed.
-    #[rust]
-    pub result_count: u32,
-    #[rust]
     pub room_name: Option<String>,
-}
-
-#[derive(Clone, Default, Debug)]
-pub struct Criteria {
-    pub search_term: String,
-    pub include_all_rooms: bool,
-    pub is_encrypted: bool,
+    #[rust]
+    pub includes_all_rooms: bool,
 }
 
 impl Widget for SearchResultSummary {
@@ -806,6 +773,7 @@ impl Widget for SearchResultSummary {
         }
         self.view.handle_event(cx, event, scope);
     }
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if !self.visible {
             return DrawStep::done();
@@ -815,51 +783,18 @@ impl Widget for SearchResultSummary {
 }
 
 impl SearchResultSummary {
-    /// Display search summary.
-    ///
-    /// This is used to display the number of search results and the search criteria
-    /// in the top-right of the room screen.
-    /// Optimized to avoid unnecessary string operations.
-    fn set_result_count(&mut self, cx: &mut Cx, search_result_count: u32) {
-        if self.result_count == search_result_count {
-            return;
-        }
-
-        self.result_count = search_result_count;
-        let location_text = if self.search_criteria.include_all_rooms {
-            Cow::Borrowed("in all rooms")
-        } else {
-            Cow::Owned(format!(
-                "in {}",
-                self.room_name.as_deref().unwrap_or_default()
-            ))
-        };
-
-        self.view.markdown(id!(summary_label)).set_text(
-            cx,
-            &format!(
-                "{} result{} for **'{}'** {}",
-                self.result_count,
-                if self.result_count <= 1 { "" } else { "s" },
-                truncate_to_50(&self.search_criteria.search_term),
-                location_text
-            ),
-        );
-        self.view.view(id!(loading_view)).set_visible(cx, false);
-    }
-
-    /// Sets the search criteria for the SearchResultSummary widget.
+    /// Display the search criteria for the SearchResultSummary widget.
     ///
     /// This function is used to display the search criteria in the top-right of the room screen.
     /// It is typically used when a new search is initiated.
     ///
-    fn set_search_criteria(&mut self, cx: &mut Cx, scope: &mut Scope, search_criteria: Criteria) {
+    pub fn display_search_criteria(&mut self, cx: &mut Cx, scope: &mut Scope, search_criteria: MatrixCriteria) {
         self.room_name = scope.data.get::<AppState>().and_then(|f| {
             f.selected_room
                 .as_ref()
                 .and_then(|f| f.room_name().cloned())
         });
-        let location_text = if search_criteria.include_all_rooms {
+        let location_text = if search_criteria.filter.rooms.is_none() {
             "in all rooms".to_string()
         } else {
             if let Some(room_name) = &self.room_name {
@@ -876,55 +811,86 @@ impl SearchResultSummary {
                 location_text
             ),
         );
-        self.search_criteria = search_criteria;
         self.visible = true;
-        self.view.view(id!(loading_view)).set_visible(cx, true);
-    }
-
-    /// Resets the search result summary and set the loading view back to visible.
-    ///
-    /// This function clears the summary text and makes the loading indicator visible.
-    /// It is typically used when a new search is initiated or search results are being cleared.
-    fn reset(&mut self, cx: &mut Cx) {
-        self.view.html(id!(summary_label)).set_text(cx, "");
-        self.view.view(id!(loading_view)).set_visible(cx, true);
-        self.search_criteria = Criteria::default();
-        self.visible = false;
-        self.result_count = 0;
     }
     
+    /// Display result summary.
+    ///
+    /// This is used to display the number of search results and the search term at the top of the search result.
+    pub fn display_result_summary(&mut self, 
+        cx: &mut Cx, 
+        results: &SearchResultReceived
+    ) {
+        let location_text = if results.includes_all_rooms {
+            Cow::Borrowed("in all rooms")
+        } else {
+            Cow::Owned(format!(
+                "in {}",
+                results.room_name.as_deref().unwrap_or_default()
+            ))
+        };
+
+        self.view.markdown(id!(summary_label)).set_text(
+            cx,
+            &format!(
+                "{} result{} for **'{}'** {}",
+                results.count,
+                if results.count <= 1 { "" } else { "s" },
+                truncate_to_50(&results.search_term),
+                location_text
+            ),
+        );
+    }
+
+    /// Set whether the search criteria to include all rooms.
+    pub fn set_includes_all_rooms(&mut self, _cx: &mut Cx, includes_all_rooms: bool) {
+        self.includes_all_rooms = includes_all_rooms;
+    }
 }
+
 impl SearchResultSummaryRef {
-    /// See [`SearchResultSummary::set_result_count()`].
-    pub fn set_result_count(&mut self, cx: &mut Cx, search_result_count: u32) {
+    /// Display instruction to type to search.
+    pub fn display_instruction(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.set_result_count(cx, search_result_count);
+        inner.view.markdown(id!(summary_label)).set_text(
+            cx,
+            "Type to search.",
+        );
+        inner.visible = true;
     }
-
-    /// See [`SearchResultSummary::set_search_criteria()`].
-    pub fn set_search_criteria(&self, cx: &mut Cx, scope: &mut Scope, search_criteria: Criteria) {
+    
+    /// See [`SearchResultSummary::display_search_criteria()`].
+    pub fn display_search_criteria(&self, cx: &mut Cx, scope: &mut Scope, search_criteria: MatrixCriteria) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.set_search_criteria(cx, scope, search_criteria);
+        inner.display_search_criteria(cx, scope, search_criteria);
     }
 
-    /// See [`SearchResultSummary::reset()`].
-    pub fn reset(&self, cx: &mut Cx) {
+    /// See [`SearchResultSummary::display_result_summary()`].
+    pub fn display_result_summary(&self, cx: &mut Cx, results: &SearchResultReceived) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.reset(cx);
+        inner.display_result_summary(cx, results);
     }
 
-    /// See [`SearchResultSummary::get_search_criteria()`].
-    pub fn get_search_criteria(&self) -> Criteria {
+    /// See [`SearchResultSummary::includes_all_rooms()`].
+    pub fn includes_all_rooms(&self) -> bool {
         let Some(inner) = self.borrow() else {
-            return Criteria::default();
+            return false;
         };
-        inner.search_criteria.clone()
+        inner.includes_all_rooms
+    }
+
+    /// See [`SearchResultSummary::set_includes_all_rooms()`].
+    pub fn set_includes_all_rooms(&self, cx: &mut Cx, includes_all_rooms: bool) {
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
+        inner.set_includes_all_rooms(cx, includes_all_rooms);
     }
 }
 
@@ -933,8 +899,8 @@ impl SearchResultSummaryRef {
 pub enum SearchResultItem {
     /// The event that matches the search criteria with precomputed formatted content.
     Event {
-        event: Box<AnyTimelineEvent>,
-        formatted_content: Box<Option<RoomMessageEventContent>>,
+        event: Arc<AnyTimelineEvent>,
+        formatted_content: Arc<Option<RoomMessageEventContent>>,
     },
     /// The room id used for displaying room header for all searched messages in a screen.
     RoomHeader(OwnedRoomId),
@@ -980,9 +946,14 @@ fn populate_message_search_view(
     // Use precomputed formatted content
     let (item, used_cached_item) = if let Some(content) = formatted_content.as_ref() {
         match &content.msgtype {
-            MessageType::Text(TextMessageEventContent {
-                body, formatted, ..
-            }) => {
+            MessageType::Text(TextMessageEventContent { body, formatted, ..})
+                | MessageType::Notice(NoticeMessageEventContent { body, formatted, ..})
+                | MessageType::Emote(EmoteMessageEventContent { body, formatted, ..})
+                | MessageType::Image(ImageMessageEventContent { body, formatted, ..})
+                | MessageType::File(FileMessageEventContent { body, formatted, ..})
+                | MessageType::Audio(AudioMessageEventContent { body, formatted, ..})
+                | MessageType::Video(VideoMessageEventContent { body, formatted, ..})
+                | MessageType::VerificationRequest(KeyVerificationRequestEventContent { body, formatted, ..}) => {
                 let template = live_id!(MessageCard);
                 let (item, existed) = list.item_with_existed(cx, item_id, template);
                 if existed && item_drawn_status.content_drawn {
@@ -1027,7 +998,6 @@ fn populate_message_search_view(
         // log!("\t --> populate_message_view(): SKIPPING profile draw for item_id: {item_id}");
         new_drawn_status.profile_drawn = true;
     } else {
-        // log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
         let username_label = item.label(id!(content.username));
         let (username, profile_drawn) = item
             .avatar(id!(profile.avatar))
@@ -1074,4 +1044,22 @@ fn truncate_to_50(s: &str) -> Cow<str> {
     } else {
         Cow::Owned(format!("{}...", &s[..47]))
     }
+}
+
+/// Creates a search criteria object based on the search parameters.
+fn create_search_criteria(search_term: String, message_search_choice: MessageSearchChoice) -> MatrixCriteria {
+    let mut room_filter = RoomEventFilter::empty();
+    if let MessageSearchChoice::OneRoom(room_id) = &message_search_choice {
+        room_filter.rooms = Some(vec![room_id.to_owned()]);
+    } else {
+        room_filter.rooms = None;
+    }
+    let mut criteria = MatrixCriteria::new(search_term);
+    criteria.filter = room_filter;
+    criteria.order_by = Some(OrderBy::Recent);
+    criteria.event_context = EventContext::new();
+    criteria.event_context.after_limit = uint!(0);
+    criteria.event_context.before_limit = uint!(0);
+    criteria.event_context.include_profile = true;
+    criteria
 }

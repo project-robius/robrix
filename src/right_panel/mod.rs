@@ -9,13 +9,11 @@ live_design! {
     use link::widgets::*;
 
     use crate::shared::styles::*;
-    use crate::shared::message_search_input_bar::*;
     use crate::right_panel::search_message::*;
-    use crate::shared::icon_button::RobrixIconButton;
 
     pub SearchResultView = <StackNavigationView> {
-        full_screen: false
         width: Fill, height: Fill
+        full_screen: false
         padding: 0,
         draw_bg: {
             color: (COLOR_SECONDARY)
@@ -49,7 +47,7 @@ live_design! {
         width: 400, height: Fill,
         flow: Down,
         visible: false
-    
+
         view_stack = <StackNavigation> {
             width: Fill, height: Fill
             padding: 0.0
@@ -81,13 +79,10 @@ impl Widget for RightPanel {
 
 impl WidgetMatchEvent for RightPanel {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        if self.view.button(id!(back_button)).clicked(actions) {
-            self.view.set_visible(cx, true);
-        }
 
         for action in actions.iter() {
             match action.as_widget_action().cast() {
-                MessageSearchAction::Clicked(_) => {
+                MessageSearchAction::Clicked => {
                     self.view.set_visible(cx, true);
                     self.view.stack_navigation(id!(view_stack)).pop_to_root(cx);
                     self.view

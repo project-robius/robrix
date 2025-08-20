@@ -1029,7 +1029,6 @@ impl Widget for RoomScreen {
                         if let Some(index) = target_msg_tl_index {
                             let current_first_index = portal_list.first_id();
                             let t = index.saturating_sub(1).abs_diff(current_first_index) as f64 / (SMOOTH_SCROLL_TIME.get() as f64 * 0.001);
-                            println!("t {:?}",t);
                             portal_list.smooth_scroll_to(
                                 cx,
                                 index.saturating_sub(1),
@@ -2225,7 +2224,6 @@ impl RoomScreen {
                     }
                     self.redraw(cx);
                 }
-               
                 MessageAction::Redact { details, reason } => {
                     let Some(tl) = self.tl_state.as_mut() else { return };
                     let mut success = false;
@@ -4355,6 +4353,8 @@ pub struct Message {
     /// The jump option required for searched messages.
     /// Contains the room ID, event ID for the message, and whether it's from an all-rooms search.
     #[rust] jump_option: Option<JumpToMessageRequest>,
+    /// Add a small delay to ensure new room tab is opened before jumping to the message.
+    #[rust] jump_delay: Timer,
 }
 
 impl Widget for Message {
@@ -4368,8 +4368,20 @@ impl Widget for Message {
         {
             self.animator_play(cx, id!(highlight.off));
         }
-        if let Event::Actions(actions) = event {
-            if let  Some(jump_request) = &self.jump_option {
+        if let Event::Timer(te) = event {
+            if let (Some(_), Some(jump_request)) = (self.jump_delay.is_timer(te), &self.jump_option) {
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    MessageAction::ScrollToMessage {
+                        room_id: jump_request.room_id.clone(),
+                        event_id: jump_request.event_id.clone(),
+                    }
+                );
+            }
+        }
+        if let Some(jump_request) = &self.jump_option {
+            if let Event::Actions(actions) = event {
                 if self.view.button(id!(jump_to_this_message.jump_button)).clicked(actions) {
                     if let Some(selected_room) = {
                         let app_state = scope.data.get::<AppState>().unwrap();
@@ -4395,19 +4407,24 @@ impl Widget for Message {
                             );
                         }
                     }
-                    // Always scroll to the message after room selection (if needed)
-                    cx.widget_action(
-                        self.widget_uid(),
-                        &scope.path,
-                        MessageAction::ScrollToMessage {
-                            room_id: jump_request.room_id.clone(),
-                            event_id: jump_request.event_id.clone(),
-                        }
-                    );
+                    // Add a jump delay to ensure new room tab is opened before jumping to the message.
+                    self.jump_delay = cx.start_timeout(0.5);
                 }
             }
+            self.view.handle_event(cx, event, scope);
+            let message_view_area = self.view.area();
+            match event.hits(cx, message_view_area) {
+                Hit::FingerDown(fe) => {
+                    cx.set_key_focus(message_view_area);
+                    // A left click to scroll to the message in room screen.
+                    if fe.device.mouse_button().is_some_and(|b| b.is_primary()) {
+                        self.jump_delay = cx.start_timeout(0.5);
+                    }
+                }
+                _ => {}
+            }
+            return;
         }
-        self.view.handle_event(cx, event, scope);
         let Some(details) = self.details.clone() else { return };
 
         // We first handle a click on the replied-to message preview, if present,
@@ -4456,7 +4473,7 @@ impl Widget for Message {
         // This ensures that events like right-clicking/long-pressing a reaction button
         // or a link within a message will be treated as an action upon that child view
         // rather than an action upon the message itself.
-        
+        self.view.handle_event(cx, event, scope);
 
         // Finally, handle any hits on the rest of the message body itself.
         let message_view_area = self.view.area();
@@ -4474,17 +4491,6 @@ impl Widget for Message {
                         }
                     );
                 }
-                // Event Hits is not captured when Message is in a stack navigation. Hence, cannot implement jump when clicking the message.
-                // if let (Some(widget_uid), Some((room_id, event_id))) = (self.room_screen_widget_uid, &self.jump_option) {
-                //     cx.widget_action(
-                //         widget_uid,
-                //         &scope.path,
-                //         MessageAction::ScrollToMessage {
-                //             room_id: room_id.clone(),
-                //             event_id: event_id.clone(),
-                //         }
-                //     );
-                // }
             }
             Hit::FingerLongPress(lp) => {
                 cx.widget_action(
@@ -4540,6 +4546,7 @@ impl Message {
     fn set_data(&mut self, details: MessageDetails) {
         self.details = Some(details);
     }
+
     /// If there is a jump option, show the jump button at the top right corner.
     /// 
     /// Used primarily for search results to allow navigation to the original message location.
@@ -4547,18 +4554,9 @@ impl Message {
         self.jump_option = Some(jump_option);
         self.view.view(id!(jump_to_this_message))
             .set_visible(cx, true);
-        
-        // Event Hit is not captured when Message is in a stack navigation. Hence, cannot implement jump when clicking the message.
-        // Add a pointer to hand cursor when jump option is available.
-        // if is_visible {
-        //     self.view.apply_over(cx, live! {
-        //         cursor: Hand
-        //     });
-        // } else {
-        //     self.view.apply_over(cx, live! {
-        //         cursor: Default
-        //     });
-        // }
+        self.view.apply_over(cx, live! {
+            cursor: Hand
+        });
     }
 }
 

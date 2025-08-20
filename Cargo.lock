@@ -4666,6 +4666,7 @@ dependencies = [
  "quinn",
  "rand 0.8.5",
  "rangemap",
+ "regex",
  "robius-directories",
  "robius-location",
  "robius-open",

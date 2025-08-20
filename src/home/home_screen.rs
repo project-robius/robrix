@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::settings::{settings_screen::SettingsScreenWidgetRefExt, SettingsAction};
+use crate::{settings::{settings_screen::SettingsScreenWidgetRefExt, SettingsAction}, shared::message_search_input_bar::{MessageSearchInputBarRef, MessageSearchInputBarWidgetExt}};
 
 live_design! {
     use link::theme::*;
@@ -68,7 +68,6 @@ live_design! {
                                 width: Fill, height: Fit,
                                 visible: false,
                                 align: {x: 1.0},
-
 
                                 <CachedWidget> {
                                     message_search_input_bar = <MessageSearchInputBar> {
@@ -262,7 +261,14 @@ impl Widget for HomeScreen {
                     _ => {}
                 }
                 match action.as_widget_action().cast() {
-                    MessageSearchInputAction::Show => self.view.view(id!(message_search_input_view)).set_visible(cx, true),
+                    MessageSearchInputAction::Show => {
+                        if !cx.has_global::<MessageSearchInputBarRef>() {
+                            if self.view.message_search_input_bar(id!(message_search_input_bar)).borrow().is_some() {
+                                Cx::set_global(cx, self.view.message_search_input_bar(id!(message_search_input_bar)));
+                            }
+                        }
+                        self.view.view(id!(message_search_input_view)).set_visible(cx, true)
+                    },
                     MessageSearchInputAction::Hide => self.view.view(id!(message_search_input_view)).set_visible(cx, false),
                 }
             }
