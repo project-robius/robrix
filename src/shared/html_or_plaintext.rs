@@ -55,8 +55,8 @@ live_design! {
     // A RobrixHtmlLink is either a regular Html link (default) or a Matrix link.
     // The Matrix link is a pill-shaped widget with an avatar and a title.
     pub RobrixHtmlLink = {{RobrixHtmlLink}} {
-        width: Fit, height: Fit,
-        flow: RightWrap, // ensure the link text can wrap
+        width: Fill, height: Fit,
+        flow: Down,
         align: { y: 0.5 },
         cursor: Hand,
 

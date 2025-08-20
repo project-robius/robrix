@@ -45,7 +45,7 @@ use crate::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     },
-    room::RoomPreviewAvatar,
+    room::{link_preview_card::{LinkPreviewCardState, LinkPreviewData}, RoomPreviewAvatar},
     shared::{
         html_or_plaintext::MatrixLinkPillState,
         jump_to_bottom_button::UnreadMessageCount,
@@ -409,6 +409,12 @@ pub enum MatrixRequest {
         matrix_id: MatrixId,
         via: Vec<OwnedServerName>
     },
+    /// Sends a request to obtain the details of the given URL.
+    /// use `url_preview` to get the preview of the URL, will get the metadata for the URL.
+    /// such as title, description, and image.
+    GetLinkPreviewDetails {
+        url: String,
+    }
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -1146,6 +1152,53 @@ async fn async_worker(
                         };
                     }
                 });
+            },
+            MatrixRequest::GetLinkPreviewDetails { url } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _fetch_link_preview_task = Handle::current().spawn(async move {
+                    match URL_PREVIEW_SERVICE.get_or_init(|| {
+                        url_preview::PreviewService::new()
+                    }).generate_preview(&url).await {
+                        Ok(preview) => {
+                            let image = if let Some(preview_image_url) = &preview.image_url {
+                                match client.http_client()
+                                    .get(preview_image_url)
+                                    .send()
+                                    .await
+                                    .map_err(|e| {
+                                        error!("Failed to fetch link preview image: {e}");
+                                        e
+                                }) {
+                                    Ok(response) => {
+                                        let raw_data = response.bytes().await.unwrap().to_vec();
+                                        match imghdr::from_bytes(&raw_data) {
+                                            Some(imghdr::Type::Png) | Some(imghdr::Type::Jpeg) => Some(Arc::new(raw_data)),
+                                            _ => None
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to fetch link preview image: {e}");
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+                            Cx::post_action(LinkPreviewCardState::Loaded {
+                                url: url.clone(),
+                                preview: Some(LinkPreviewData {
+                                    title: preview.title,
+                                    description: preview.description,
+                                    url: url.clone(),
+                                    raw_image: image,
+                                }),
+                            });
+                        }
+                        Err(e) => {
+                            log!("Failed to fetch link preview for URL {url}: {e}");
+                        }
+                    };
+                });
             }
         }
     }
@@ -1154,6 +1207,9 @@ async fn async_worker(
     bail!("async_worker task ended unexpectedly")
 }
 
+/// The `url_preview` crate provides a service for fetching URL previews.
+/// It is initialized once and used throughout the application to fetch link previews.
+static URL_PREVIEW_SERVICE: OnceLock<url_preview::PreviewService> = OnceLock::new();
 
 /// The single global Tokio runtime that is used by all async tasks.
 static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
