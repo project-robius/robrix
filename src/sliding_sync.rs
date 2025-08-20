@@ -13,7 +13,7 @@ use matrix_sdk::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
         }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState, SuccessorRoom
 };
 use matrix_sdk_ui::{
     room_list_service::{RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RoomExt, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
@@ -35,7 +35,7 @@ use crate::{
         invite_screen::{JoinRoomAction, LeaveRoomAction},
         room_screen::TimelineUpdate,
         rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate},
-        rooms_list_header::RoomsListHeaderAction, tombstone_footer::TombstoneDetail,
+        rooms_list_header::RoomsListHeaderAction,
     },
     login::login_screen::LoginAction,
     media_cache::{MediaCacheEntry, MediaCacheEntryRef},
@@ -2602,22 +2602,20 @@ fn update_latest_event(
                 }
                 // Check for room tombstone status changes.
                 AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content, prev_content: _ }) => {
-                    let mut successor_room_name = None;
-                    if let Some(room_info) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&content.replacement_room) {
-                        room_info.replaces_tombstoned_room = Some(room_id.clone());
-                        if let Some(room) = get_client().and_then(|client| client.get_room(&room_id)) {
-                            successor_room_name = room.name();
+                    {
+                        let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                        let mut tombstoned_rooms = TOMBSTONED_ROOMS.lock().unwrap();
+                        if let Some(room_info) = all_joined_rooms.get_mut(&content.replacement_room) {
+                            room_info.replaces_tombstoned_room = Some(room_id.clone());
+                        } else {
+                            tombstoned_rooms.insert(content.replacement_room.clone(), room_id.clone());
                         }
-                    } else {
-                        TOMBSTONED_ROOMS.lock().unwrap().insert(content.replacement_room.clone(), room_id.clone());
                     }
                     enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room_id.clone() });
                     if let Some(sender) = timeline_update_sender {
-                        match sender.send(TimelineUpdate::SuccessorRoomUpdated(Some(TombstoneDetail {
-                            tombstoned_room_id: room_id.clone(), 
-                            successor_room_id: Some(content.replacement_room.clone()), 
-                            successor_room_name, 
-                            replacement_reason: Some(content.body.clone())
+                        match sender.send(TimelineUpdate::SuccessorRoomUpdated(Some(SuccessorRoom {
+                            room_id: content.replacement_room.clone(),
+                            reason: Some(content.body.clone()),
                         }))) {
                             Ok(_) => {
                                 SignalToUI::set_ui_signal();

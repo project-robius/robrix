@@ -147,7 +147,9 @@ pub enum RoomsListUpdate {
     /// Mark the given room as tombstoned.
     TombstonedRoom {
         room_id: OwnedRoomId
-    }
+    },
+    /// Scroll to the given room.
+    ScrollToRoom(OwnedRoomId),
 }
 
 static PENDING_ROOM_UPDATES: SegQueue<RoomsListUpdate> = SegQueue::new();
@@ -555,6 +557,21 @@ impl RoomsList {
                         }
                     } else {
                         warning!("Warning: couldn't find room {room_id} to update the tombstone status");
+                    }
+                }
+                RoomsListUpdate::ScrollToRoom(room_id) => {
+                    let portal_list = self.view.portal_list(id!(list));
+                    // Check if the room is in displayed_direct_rooms
+                    if let Some(direct_index) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
+                        let (_, direct_rooms_indexes, _) = self.calculate_indexes();
+                        let portal_list_index = direct_rooms_indexes.first_room_index + direct_index;
+                        portal_list.set_first_id_and_scroll(portal_list_index, 0.0);
+                    }
+                    // Check if the room is in displayed_regular_rooms
+                    else if let Some(regular_index) = self.displayed_regular_rooms.iter().position(|r| r == &room_id) {
+                        let (_, _, regular_rooms_indexes) = self.calculate_indexes();
+                        let portal_list_index = regular_rooms_indexes.first_room_index + regular_index;
+                        portal_list.set_first_id_and_scroll(portal_list_index, 0.0);
                     }
                 }
             }

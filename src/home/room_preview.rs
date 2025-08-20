@@ -20,6 +20,7 @@ live_design! {
     use crate::shared::html_or_plaintext::HtmlOrPlaintext;
     use crate::shared::unread_badge::UnreadBadge;
 
+    // A cancel icon to be displayed in the room preview when the room is tombstoned.
     TombstoneIcon = <View> {
         width: Fit, height: Fit,
         visible: false,
