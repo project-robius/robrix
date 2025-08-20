@@ -4383,32 +4383,57 @@ impl Widget for Message {
         if let Some(jump_request) = &self.jump_option {
             if let Event::Actions(actions) = event {
                 if self.view.button(id!(jump_to_this_message.jump_button)).clicked(actions) {
-                    if let Some(selected_room) = {
-                        let app_state = scope.data.get::<AppState>().unwrap();
-                        &app_state.selected_room
-                    } {
-                        // If room_id is not the selected room, select the room and open its dock tab
-                        if selected_room.room_id() != &jump_request.room_id {
-                            let room_name: Option<String> = {
-                                let rooms_list_ref = cx.get_global::<RoomsListRef>();
-                                rooms_list_ref.get_room_name(&jump_request.room_id)
-                            };
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &Scope::default().path,
+                        StackNavigationAction::PopToRoot
+                    );
+                    let room_name: Option<String> = {
+                        let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                        rooms_list_ref.get_room_name(&jump_request.room_id)
+                    };
+                    let target_selected_room = SelectedRoom::JoinedRoom {
+                        room_id: jump_request.room_id.clone().into(),
+                        room_name,
+                    };
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        RoomsListAction::Selected(target_selected_room)
+                    );
+                    // if let Some(selected_room) = {
+                    //     let app_state = scope.data.get::<AppState>().unwrap();
+                    //     &app_state.selected_room
+                    // } {
+                    //     cx.widget_action(
+                    //         self.widget_uid(),
+                    //         &Scope::default().path,
+                    //         StackNavigationAction::PopToRoot
+                    //     );
+                    //     println!("selected_room.room_id(){:?}", selected_room.room_id());
+                    //     // If room_id is not the selected room, select the room and open its dock tab
+                    //     if selected_room.room_id() != &jump_request.room_id {
+                    //         let room_name: Option<String> = {
+                    //             let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                    //             rooms_list_ref.get_room_name(&jump_request.room_id)
+                    //         };
                             
-                            let target_selected_room = SelectedRoom::JoinedRoom {
-                                room_id: jump_request.room_id.clone().into(),
-                                room_name,
-                            };
+                    //         let target_selected_room = SelectedRoom::JoinedRoom {
+                    //             room_id: jump_request.room_id.clone().into(),
+                    //             room_name,
+                    //         };
+                    //         println!("Jumping to message in room: {} StackNavigationAction::PopToRoot", target_selected_room.room_id());
                             
-                            // Dispatch action to select the room and open its dock tab
-                            cx.widget_action(
-                                self.widget_uid(),
-                                &scope.path,
-                                RoomsListAction::Selected(target_selected_room)
-                            );
-                        }
-                    }
+                    //         // Dispatch action to select the room and open its dock tab
+                    //         cx.widget_action(
+                    //             self.widget_uid(),
+                    //             &scope.path,
+                    //             RoomsListAction::Selected(target_selected_room)
+                    //         );
+                    //     }
+                    // }
                     // Add a jump delay to ensure new room tab is opened before jumping to the message.
-                    self.jump_delay = cx.start_timeout(0.5);
+                    self.jump_delay = cx.start_timeout(1.0);
                 }
             }
             self.view.handle_event(cx, event, scope);
