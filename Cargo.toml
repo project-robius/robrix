@@ -149,12 +149,10 @@ macOS, Windows, Linux, Android, and iOS.
 icons = ["./packaging/robrix_logo_alpha.png"]
 out_dir = "./dist"
 
-## Ultimately, all resources will be packaged into the resources folder under ./<out_dir>, where the corresponding folder name is the project name.
-## Like ./dist/resources/robrix/resources,
-## - The robrix is your project's name.
-## - The second resource folder is your project's own resources, the `robius-packaging-commands` will handle copying these files.
-## NOTE: The `robius-packaging-commands` CLI tool only copies the app `resources` folder now.
-## See the above paragraph comments for more info on how we create/populate the below `src` directories.
+## Here, we define the list of resource directories for both Makepad and Robrix.
+## The `src` directory is based on `./dist/` as the `out_dir` (above), which is where the
+## `robius-packaging-commands` tool outputs the resources that it discovers after each build.
+## See the README from the `robius-packaging-commands` repo for more details.
 resources = [
     # Makepad resources
     { src = "./dist/resources/makepad_widgets", target = "makepad_widgets" },
@@ -167,16 +165,9 @@ resources = [
     { src = "./dist/resources/robrix", target = "robrix" },
 ]
 
-## We then build the entire Robrix project and set the `MAKEPAD`/`MAKEPAD_PACKAGE_DIR` env vars to the proper value.
-## * For macOS app bundles, this should be set to `.` because we set the `apple_bundle` cfg option
-##   for Makepad, which causes Makepad to look for resources in the `Contents/Resources/` directory,
-##   which is where the resources are located for an Apple app bundle (`.app` and `.dmg`).
-## * For Debian `.deb` packages, this should be set to `/usr/lib/<main-binary-name>`,
-##   which is currently `/usr/lib/robrix`.
-##   This is the directory in which `dpkg` copies app resource files to when installing the `.deb` package.
-##   * On Linux, we also strip the binaries of unneeded content, as required for Debian packages.
-##   * For Debian and Pacman (still a to-do!) packages, we also auto-generate the list of dependencies required by Robrix.
-##
+## We use the `robius-packaging-commands` tool to build the entire Robrix app project,
+## which properly configures the release build settings for each target platform
+## (e.g., it sets the `MAKEPAD`/`MAKEPAD_PACKAGE_DIR` env vars to the appropriate value).
 before-each-package-command = """
 robius-packaging-commands before-each-package \
     --force-makepad \
