@@ -15,6 +15,7 @@ live_design! {
     use crate::settings::account_settings::AccountSettings;
     use link::tsp_link::TspSettingsScreen;
     use link::tsp_link::CreateWalletModal;
+    use link::tsp_link::CreateDidModal;
 
     // The main, top-level settings screen widget.
     pub SettingsScreen = {{SettingsScreen}} {
@@ -91,11 +92,16 @@ live_design! {
             }
         }
 
-        // We want the modal for creating a new TSP wallet to appear
-        // in front of the main settings content defined above.
+        // We want all modals to appear in front of the settings screen.
         create_wallet_modal = <Modal> {
             content: {
                 create_wallet_modal_inner = <CreateWalletModal> {}
+            }
+        }
+
+        create_did_modal = <Modal> {
+            content: {
+                create_did_modal_inner = <CreateDidModal> {}
             }
         }
 
@@ -146,19 +152,35 @@ impl Widget for SettingsScreen {
         #[cfg(feature = "tsp")]
         if let Event::Actions(actions) = event {
             use crate::shared::confirmation_modal::ConfirmationModalWidgetExt;
+            use crate::tsp::{
+                create_did_modal::CreateDidModalAction,
+                create_wallet_modal::CreateWalletModalAction,
+                wallet_entry::TspWalletEntryAction,
+            };
 
             for action in actions {
-                // Handle the create wallet modal being closed.
-                use crate::tsp::{create_wallet_modal::CreateWalletModalAction, wallet_entry::TspWalletEntryAction};
+                // Handle the create wallet modal being opened or closed.
                 match action.downcast_ref() {
                     Some(CreateWalletModalAction::Open) => {
-                        // Open the create wallet modal.
                         use crate::tsp::create_wallet_modal::CreateWalletModalWidgetExt;
                         self.view.create_wallet_modal(id!(create_wallet_modal_inner)).show(cx);
                         self.view.modal(id!(create_wallet_modal)).open(cx);
                     }
                     Some(CreateWalletModalAction::Close) => {
                         self.view.modal(id!(create_wallet_modal)).close(cx);
+                    }
+                    None => { }
+                }
+
+                // Handle the create DID modal being opened or closed.
+                match action.downcast_ref() {
+                    Some(CreateDidModalAction::Open) => {
+                        use crate::tsp::create_did_modal::CreateDidModalWidgetExt;
+                        self.view.create_did_modal(id!(create_did_modal_inner)).show(cx);
+                        self.view.modal(id!(create_did_modal)).open(cx);
+                    }
+                    Some(CreateDidModalAction::Close) => {
+                        self.view.modal(id!(create_did_modal)).close(cx);
                     }
                     None => { }
                 }
