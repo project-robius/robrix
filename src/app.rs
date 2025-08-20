@@ -217,7 +217,7 @@ impl MatchEvent for App {
                         self.ui.logout_confirm_modal(id!(logout_confirm_modal_inner)).reset_state(cx);
                         self.ui.modal(id!(logout_confirm_modal)).open(cx)
                     },
-                    LogoutConfirmModalAction::Close { was_internal, ..} => {
+                    LogoutConfirmModalAction::Close { was_internal, .. } => {
                         if *was_internal {
                             self.ui.modal(id!(logout_confirm_modal)).close(cx);
                         }
