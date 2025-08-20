@@ -1290,7 +1290,7 @@ async fn async_worker(
 
 
 /// The single global Tokio runtime that is used by all async tasks.
-static TOKIO_RUNTIME: OnceLock<Arc<tokio::runtime::Runtime>> = OnceLock::new();
+static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
@@ -1313,7 +1313,7 @@ pub fn block_on_async_with_timeout<T>(
     timeout: Option<Duration>,
     async_future: impl Future<Output = T>,
 ) -> Result<T, Elapsed> {
-    let rt = TOKIO_RUNTIME.get_or_init(|| Arc::new(tokio::runtime::Runtime::new().unwrap()));
+    let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
     if let Some(timeout) = timeout {
         rt.block_on(async {
             tokio::time::timeout(timeout, async_future).await
@@ -1327,10 +1327,10 @@ pub fn block_on_async_with_timeout<T>(
 /// The primary initialization routine for starting the Matrix client sync
 /// and the async tokio runtime.
 ///
-/// Returns a reference to the Tokio runtime that is used to run async background tasks.
-pub fn start_matrix_tokio() -> Result<Arc<tokio::runtime::Runtime>> {
+/// Returns a handle to the Tokio runtime that is used to run async background tasks.
+pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
-    let rt = TOKIO_RUNTIME.get_or_init(|| Arc::new(tokio::runtime::Runtime::new().unwrap()));
+    let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
 
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
@@ -1401,7 +1401,7 @@ pub fn start_matrix_tokio() -> Result<Arc<tokio::runtime::Runtime>> {
         }
     });
 
-    Ok(Arc::clone(rt))
+    Ok(rt.handle().clone())
 }
 
 

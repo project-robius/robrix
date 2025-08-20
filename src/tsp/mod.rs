@@ -1,22 +1,22 @@
-// Ignore clippy warnings in `DeRon` macro derive bodies.
-#![allow(clippy::question_mark)]
-
-use std::{ops::Deref, sync::{Arc, Mutex, OnceLock}};
+use std::{borrow::Cow, ops::Deref, path::Path, sync::{Mutex, OnceLock}};
 
 use anyhow::anyhow;
 use makepad_widgets::{makepad_micro_serde::*, *};
 use quinn::rustls::crypto::{CryptoProvider, aws_lc_rs};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
-use tsp_sdk::{AskarSecureStorage, AsyncSecureStore, SecureStorage};
+use tsp_sdk::{vid::{verify_vid, VidError}, AskarSecureStorage, AsyncSecureStore, OwnedVid, SecureStorage, VerifiedVid, Vid};
+use url::Url;
 
-use crate::{persistence, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}};
+use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}};
 
 
+pub mod create_did_modal;
 pub mod create_wallet_modal;
 pub mod tsp_settings_screen;
 pub mod wallet_entry;
 
 pub fn live_design(cx: &mut Cx) {
+    create_did_modal::live_design(cx);
     create_wallet_modal::live_design(cx);
     wallet_entry::live_design(cx);
     tsp_settings_screen::live_design(cx);
@@ -69,7 +69,7 @@ impl TspState {
         saved_state: SavedTspState,
     ) -> Result<(), tsp_sdk::Error> {
         for (idx, wallet_metadata) in saved_state.wallets.into_iter().enumerate() {
-       if let Ok(opened_wallet) = wallet_metadata.open_wallet().await {
+            if let Ok(opened_wallet) = wallet_metadata.open_wallet().await {
                 if saved_state.default_wallet == Some(idx) {
                     self.current_wallet = Some(opened_wallet);
                 } else {
@@ -79,13 +79,13 @@ impl TspState {
                 self.other_wallets.push(TspWalletEntry::NotFound(wallet_metadata));
             }
         }
-        if saved_state.default_wallet.is_some() && self.current_wallet.is_none() {
-            error!("BUG: saved TSP state had a default wallet, but it wasn't opened successfully.");
-        }
         match self.current_wallet.is_some() as usize + self.other_wallets.len() {
             0 => log!("Restored no TSP wallets from saved TSP state."),
             1 => log!("Restored 1 TSP wallet from saved state."),
             n => log!("Restored {n} TSP wallets from saved state."),
+        }
+        if saved_state.default_wallet.is_some() && self.current_wallet.is_none() {
+            warning!("Saved TSP state had a default wallet, but it wasn't opened successfully.");
         }
         Ok(())
     }
@@ -164,7 +164,7 @@ impl std::fmt::Debug for OpenedTspWallet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpenedTspWallet")
             .field("wallet_name", &self.wallet_name)
-            .field("path", &self.path)
+            .field("url", &self.url)
             .finish()
     }
 }
@@ -184,31 +184,38 @@ impl OpenedTspWallet {
 /// Metadata about a TSP wallet that has been created or imported.
 ///
 /// When comparing two `TspWalletMetadata` instances,
-/// they are considered equal if their `path` is the same
+/// they are considered equal if their `url` is the same
 /// regardless of their `wallet_name` or `password`.
+///
+/// The URL is *NOT* percent-encoded yet, but it should be before
+/// being passed to `AskarSecureStorage` methods like `new()` and `open()`.
 #[derive(Clone, Default, DeRon, SerRon)]
 pub struct TspWalletMetadata {
+    /// The human-readable, user-defined name of the wallet.
     pub wallet_name: String,
-    pub path: String,
+    /// The URL of the wallet, which is NOT percent-encoded yet.
+    pub url: TspWalletSqliteUrl,
     pub password: String,
 }
 impl std::fmt::Debug for TspWalletMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TspWalletMetadata")
             .field("wallet_name", &self.wallet_name)
-            .field("path", &self.path)
+            .field("url", &self.url)
             .finish_non_exhaustive()
     }
 }
 impl PartialEq for TspWalletMetadata {
     fn eq(&self, other: &Self) -> bool {
-        self.path == other.path
+        self.url == other.url
     }
 }
 impl TspWalletMetadata {
     /// Attempts to open the wallet described by this metadata.
     pub async fn open_wallet(&self) -> Result<OpenedTspWallet, tsp_sdk::Error> {
-        let vault = AskarSecureStorage::open(&self.path, self.password.as_bytes()).await?;
+        let encoded_url = self.url.to_url_encoded();
+        log!("Opening TSP wallet at URL: {encoded_url}");
+        let vault = AskarSecureStorage::open(&encoded_url, self.password.as_bytes()).await?;
         let (vids, aliases, keys) = vault.read().await?;
         let db = AsyncSecureStore::new();
         db.import(vids, aliases, keys)?;
@@ -221,21 +228,7 @@ impl TspWalletMetadata {
 }
 
 
-/// The TSP state that is saved to persistent storage.
-///
-/// It contains metadata about all wallets that have been created or imported.
-#[derive(Clone, Default, Debug, DeRon, SerRon)]
-pub struct SavedTspState {
-    /// All wallets that have been created or imported into Robrix.
-    ///
-    /// This is a list of metadata, not the actual wallet objects.
-    pub wallets: Vec<TspWalletMetadata>,
-    /// The index of the default wallet in `wallets`, if any.
-    pub default_wallet: Option<usize>,
-}
-
-
-pub fn tsp_init(rt: Arc<tokio::runtime::Runtime>) -> anyhow::Result<()> {
+pub fn tsp_init(rt_handle: tokio::runtime::Handle) -> anyhow::Result<()> {
     CryptoProvider::install_default(aws_lc_rs::default_provider())
         .map_err(|_| anyhow!("BUG: default CryptoProvider was already set."))?;
 
@@ -243,9 +236,8 @@ pub fn tsp_init(rt: Arc<tokio::runtime::Runtime>) -> anyhow::Result<()> {
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<TspRequest>();
     TSP_REQUEST_SENDER.set(sender).expect("BUG: TSP_REQUEST_SENDER already set!");
 
-    let rt2 = rt.clone();
     // Start a high-level async task that will start and monitor all other tasks.
-    let _monitor = rt.spawn(async move {
+    let _monitor = rt_handle.spawn(async move {
         // First, run the inner TSP initialization logic to load prior TSP state.
         match inner_tsp_init().await {
             Ok(()) => log!("TSP state initialized successfully."),
@@ -259,12 +251,11 @@ pub fn tsp_init(rt: Arc<tokio::runtime::Runtime>) -> anyhow::Result<()> {
                     auto_dismissal_duration: None,
                     kind: PopupKind::Error,
                 });
-                return;
             }
         }
 
         // Spawn the actual async worker thread.
-        let mut tsp_worker_join_handle = rt2.spawn(async_tsp_worker(receiver));
+        let mut tsp_worker_join_handle = Handle::current().spawn(async_tsp_worker(receiver));
 
         // TODO: start the main loop that drives the TSP SDK's receiver handler,
         //       e.g., to process incoming requests from other TSP instances.
@@ -320,6 +311,14 @@ async fn inner_tsp_init() -> anyhow::Result<()> {
     let saved_tsp_state = persistence::load_tsp_state().await?;
     let mut new_tsp_state = TspState::new();
     new_tsp_state.deserialize_and_open_default_wallet_from(saved_tsp_state).await?;
+    if new_tsp_state.has_content() && new_tsp_state.current_wallet.is_none() {
+        enqueue_popup_notification(PopupItem {
+            message: String::from("TSP wallet(s) were loaded successfully, but no default wallet was set.\n\n\
+                TSP wallet-related features will not work properly until you set a default wallet."),
+            auto_dismissal_duration: None,
+            kind: PopupKind::Warning,
+        });
+    }
     *TSP_STATE.lock().unwrap() = new_tsp_state;
     Ok(())
 }
@@ -336,14 +335,21 @@ pub enum TspWalletAction {
     /// Failed to create a wallet.
     CreateWalletError {
         metadata: TspWalletMetadata,
-        error: tsp_sdk::Error,
+        error: anyhow::Error,
     },
     /// A wallet was removed from the list.
-    WalletRemoved(TspWalletMetadata),
+    WalletRemoved {
+        metadata: TspWalletMetadata,
+        was_default: bool,
+    },
     /// The default wallet was successfully or unsuccessfully changed.
     DefaultWalletChanged(Result<TspWalletMetadata, ()>),
     /// The given wallet was successfully or unsuccessfully opened.
     WalletOpened(Result<TspWalletMetadata, tsp_sdk::Error>),
+    /// A new identity (DID) was successfully created or had an error.
+    ///
+    /// If successful, the result contains the created DID string.
+    DidCreationResult(Result<String, anyhow::Error>),
 }
 
 /// Requests that can be sent to the TSP async worker thread.
@@ -362,8 +368,18 @@ pub enum TspRequest {
     },
     /// Request to set an existing open wallet as the default.
     SetDefaultWallet(TspWalletMetadata),
-    /// Request to delete a TSP wallet.
+    /// Request to remove a TSP wallet from the list without deleting it.
+    RemoveWallet(TspWalletMetadata),
+    /// Request to permanently delete a TSP wallet.
     DeleteWallet(TspWalletMetadata),
+    /// Requeqst to create a new identity (DID) on the given server
+    /// and store it in the default TSP wallet.
+    CreateDid {
+        username: String,
+        alias: Option<String>,
+        server: String,
+        did_server: String,
+    },
 }
 
 /// The entry point for an async worker thread that processes TSP-related async tasks.
@@ -375,11 +391,45 @@ async fn async_tsp_worker(
 ) -> anyhow::Result<()> {
     log!("Started async_tsp_worker task.");
 
+    // Lazily initialize the reqwest client.
+    let mut __reqwest_client = None;
+    let mut get_reqwest_client = || {
+        __reqwest_client.get_or_insert_with(|| {
+            reqwest::ClientBuilder::new()
+                .user_agent(format!("Robrix v{}", env!("CARGO_PKG_VERSION")))
+                .build()
+                .unwrap()
+        }).clone()
+    };
+
     while let Some(req) = request_receiver.recv().await { match req {
         TspRequest::CreateWallet { metadata } => {
             log!("Received TspRequest::CreateWallet({metadata:?})");
             Handle::current().spawn(async move {
-                match AskarSecureStorage::new(&metadata.path, metadata.password.as_bytes()).await {
+                if let Some(sqlite_path) = metadata.url.get_path() {
+                    if let Ok(true) = tokio::fs::try_exists(sqlite_path).await {
+                        error!("Wallet already exists at path: {}", sqlite_path.display());
+                        Cx::post_action(TspWalletAction::CreateWalletError {
+                            metadata: metadata.clone(),
+                            error: anyhow!("Wallet already exists at path: {}", sqlite_path.display()),
+                        });
+                        return;
+                    }
+                    if let Some(parent_dir) = sqlite_path.parent() {
+                        log!("Ensuring that new wallet's parent dir exists: {}", parent_dir.display());
+                        if let Err(e) = tokio::fs::create_dir_all(parent_dir).await {
+                            error!("Failed to create directory to hold new wallet: {e:?}");
+                            Cx::post_action(TspWalletAction::CreateWalletError {
+                                metadata: metadata.clone(),
+                                error: anyhow!("Failed to create directory for new wallet: {}, error: {}", parent_dir.display(), e),
+                            });
+                            return;
+                        }
+                    }
+                }
+                let encoded_url = metadata.url.to_url_encoded();
+                log!("Attempting to create new wallet at:\n   Reg: {}\n   Enc: {}", metadata.url, encoded_url);
+                match AskarSecureStorage::new(&encoded_url, metadata.password.as_bytes()).await {
                     Ok(vault) => {
                         log!("Successfully created new wallet: {metadata:?}");
                         let db = AsyncSecureStore::new();
@@ -409,7 +459,7 @@ async fn async_tsp_worker(
                         Cx::post_action(
                             TspWalletAction::CreateWalletError {
                                 metadata: metadata.clone(),
-                                error,
+                                error: error.into(),
                             }
                         );
                     }
@@ -433,7 +483,7 @@ async fn async_tsp_worker(
                 let mut tsp_state = tsp_state_ref().lock().unwrap();
                 if let Some(TspWalletEntry::Opened(opened)) = tsp_state.other_wallets.iter()
                     .position(|w| match w {
-                        TspWalletEntry::Opened(opened) => opened.path == metadata.path,
+                        TspWalletEntry::Opened(opened) => opened.metadata == metadata,
                         _ => false,
                     })
                     .map(|idx| tsp_state.other_wallets.remove(idx))
@@ -474,21 +524,246 @@ async fn async_tsp_worker(
             });
         }
 
+        TspRequest::RemoveWallet(metadata) => {
+            log!("Received TspRequest::RemoveWallet({metadata:?})");
+            Handle::current().spawn(async move {
+                let mut tsp_state = tsp_state_ref().lock().unwrap();
+                let was_default = if tsp_state.current_wallet.as_ref().is_some_and(|cw| cw.metadata == metadata) {
+                    tsp_state.current_wallet = None;
+                    true
+                }
+                else if let Some(i) = tsp_state.other_wallets.iter().position(|w| w.metadata() == &metadata) {
+                    tsp_state.other_wallets.remove(i);
+                    false
+                } else {
+                    error!("BUG: failed to remove wallet not found in TSP state: {metadata:?}");
+                    return;
+                };
+                Cx::post_action(TspWalletAction::WalletRemoved { metadata, was_default });
+            });
+        }
+
         TspRequest::DeleteWallet(metadata) => {
             log!("Received TspRequest::DeleteWallet({metadata:?})");
             todo!("handle deleting a wallet");
         }
+
+        TspRequest::CreateDid { username, alias, server, did_server } => {
+            log!("Received TspRequest::CreateDid(username: {username}, alias: {alias:?}, server: {server}, did_server: {did_server})");
+            let client = get_reqwest_client();
+
+            Handle::current().spawn(async move {
+                let result = if tsp_state_ref().lock().unwrap().current_wallet.is_none() {
+                    Err(anyhow!("Please choose a default TSP wallet to hold the DID."))
+                } else {
+                    match create_did_web(&did_server, &server, &username, &client).await {
+                        Ok((did, private_vid, metadata)) => {
+                            log!("Successfully created & published new DID: {did}.\n\
+                                Adding private VID to current wallet: {private_vid:?}",
+                            );
+                            store_did_in_wallet(private_vid, metadata, alias, did).await
+                        }
+                        Err(e) => {
+                            error!("Failed to create new DID: {e}");
+                            Err(e)
+                        }
+                    }
+                };
+                Cx::post_action(TspWalletAction::DidCreationResult(result));
+            });
+        }
     } }
+
     error!("async_tsp_worker task ended unexpectedly");
     anyhow::bail!("async_tsp_worker task ended unexpectedly")
 }
 
 
-/// Generate the default wallet SQLite path based on the wallet name.
-pub fn wallet_path_from_name(name: &str) -> String {
-    format!(
-        "sqlite://{}.sqlite",
-        sanitize_filename::sanitize(name)
-            .replace(char::is_whitespace, "_"),
-    )
+/// Creates a new DID on the given `did_server` and publishes it to the TSP `server`.
+///
+/// This function does not modify or add anything to the current TSP wallet.
+/// The caller must do that separately.
+///
+/// Returns a tuple of the DID string, the private VID, and optional metadata.
+async fn create_did_web(
+    did_server: &str,
+    server: &str,
+    username: &str,
+    client: &reqwest::Client,
+) -> Result<(String, OwnedVid, Option<serde_json::Value>), anyhow::Error> {
+    // The following code is based on the TSP SDK's CLI example for creating a DID.
+    let did = format!(
+        "did:web:{}:endpoint:{username}",
+        did_server.replace(":", "%3A").replace("/", ":")
+    );
+
+    let transport = Url::parse(
+        &format!("https://{}/endpoint/{}",
+            server,
+            &did.replace("%", "%25")
+        )
+    ).map_err(|e| anyhow!("Invalid transport URL: {e}"))?;
+
+    let private_vid = OwnedVid::bind(&did, transport);
+    log!("created identity {}", private_vid.identifier());
+
+    let response = client
+        .post(format!("https://{did_server}/add-vid"))
+        .json(&private_vid.vid())
+        .send()
+        .await
+        .inspect(|r| log!("DID server responded with status code {}", r.status()))
+        .map_err(|e| anyhow!("Could not publish VID. The DID server responded with error: {e}"))?;
+
+    let vid_result: Result<Vid, anyhow::Error> = match response.status() {
+        r if r.is_success() => {
+            response.json().await
+                .map_err(|e| anyhow!("Could not decode response from DID server as a valid VID: {e}"))
+        }
+        r => {
+            let text = response.text().await.unwrap_or_else(|_| "[Unknown]".to_string());
+            if r.as_u16() == 500 {
+                return Err(anyhow!(
+                    "The DID server returned error code 500. The DID username may already exist, \
+                     or the server had another problem.\n\nResponse: \"{text}\""
+                ));
+            } else {
+                return Err(anyhow!(
+                    "The DID server returned error code {}.\n\nResponse: \"{text}\"",
+                    r.as_u16()
+                ));
+            }
+        }
+    };
+
+    let _vid = vid_result?;
+
+    log!("published DID document at {}",
+        tsp_sdk::vid::did::get_resolve_url(&did)?.to_string()
+    );
+
+    let (_vid, metadata) = verify_vid(private_vid.identifier())
+        .await
+        .map_err(|err| tsp_sdk::Error::Vid(VidError::InvalidVid(err.to_string())))?;
+
+    Ok((did, private_vid, metadata))
+}
+
+
+/// Stores the given private VID in the current default TSP wallet,
+/// and optionally establishes an alias for the given `did`.
+///
+/// Returns the DID string if successful, otherwise an error.
+async fn store_did_in_wallet(
+    private_vid: OwnedVid,
+    metadata: Option<serde_json::Value>,
+    alias: Option<String>,
+    did: String,
+) -> Result<String, anyhow::Error> {
+    let tsp_state = tsp_state_ref().lock().unwrap();
+    let Some(current_wallet) = tsp_state.current_wallet.as_ref() else {
+        anyhow::bail!("Please select a default TSP wallet to hold the DID.");
+    };
+    current_wallet.db.add_private_vid(private_vid, metadata)?;
+    if let Some(alias) = alias {
+        current_wallet.db.set_alias(alias.clone(), did.clone())?;
+        log!("added alias {alias} -> {did}");
+    }
+    Ok(did)
+}
+
+
+/// Sanitizes a wallet name to ensure it is safe to use in file paths.
+pub fn sanitize_wallet_name(name: &str) -> String {
+    sanitize_filename::sanitize(name)
+        .replace(char::is_whitespace, "_")
+}
+
+
+/// Represents a SQLite URL for a TSP wallet, which is *NOT* percent-encoded yet.
+///
+/// Currently the scheme is always "sqlite://" (or "sqlite:///" for absolute paths),
+/// and the path is the full file path to the local SQLite database file for the wallet.
+/// We haven't tested it with remote URLs yet.
+#[derive(Clone, Debug, Default, DeRon, SerRon, Eq)]
+pub struct TspWalletSqliteUrl(String);
+impl std::fmt::Display for TspWalletSqliteUrl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl PartialEq for TspWalletSqliteUrl {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl TspWalletSqliteUrl {
+    /// Returns a SQLite scheme and full file path for a wallet with the given `name`.
+    pub fn from_wallet_file_name(name: &str) -> Self {
+        let parent = tsp_wallets_dir();
+        let path = parent.join(sanitize_wallet_name(name));
+        let scheme = if path.is_absolute() {
+            "sqlite:///"
+        } else {
+            "sqlite://"
+        };
+        Self(format!("{}{}.sqlite", scheme, path.display()))
+    }
+
+    /// Returns the part of the URL after the "scheme://", which may be a local file path.
+    pub fn get_path(&self) -> Option<&Path> {
+        let url = &self.0;
+        // Handle URLs with a scheme for absolute paths, e.g., "sqlite:///"
+        if let Some(p) = url.find(":///").and_then(|pos| url.get(pos + 4 ..)) {
+            Some(Path::new(p))
+        }
+        // Handle URLs with a scheme for relative paths, e.g., "sqlite://"
+        else if let Some(p) = url.find("://").and_then(|pos| url.get(pos + 3 ..)) {
+            Some(Path::new(p))
+        }
+        else { None }
+    }
+
+    /// Returns the URL as a string that is not percent-encoded.
+    ///
+    /// This is suitable for display purposes, but should not be passed into
+    /// `AskarSecureStorage` methods like `new()` and `open()`.
+    /// For those, use [`Self::to_url_encoded()`] instead.
+    pub fn as_url_unencoded(&self) -> &str {
+        &self.0
+    }
+
+
+    /// Converts this wallet URL to a percent-encoded URL.
+    ///
+    /// Note: this URL is suitable for use in `AskarSecureStorage` methods
+    /// like `new()` and `open()`.
+    pub fn to_url_encoded(&self) -> Cow<'_, str> {
+        const DELIMITER_ABS: &str = ":///";
+        const DELIMITER_REG: &str = "://";
+        let try_encode = |delim: &str| -> Option<Cow<str>> {
+            if let Some(idx) = self.0.find(delim) {
+                let before = self.0.get(.. (idx + delim.len())).unwrap_or("");
+                let after  = self.0.get((idx + delim.len()) ..).unwrap_or("");
+                Some(format!("{}{}",
+                    before,
+                    percent_encoding::utf8_percent_encode(
+                        after,
+                        percent_encoding::NON_ALPHANUMERIC,
+                    )
+                ).into())
+            } else {
+                None
+            }
+        };
+
+        try_encode(DELIMITER_ABS)
+            .or_else(|| try_encode(DELIMITER_REG))
+            .unwrap_or_else(|| {
+                percent_encoding::utf8_percent_encode(
+                    &self.0,
+                    percent_encoding::NON_ALPHANUMERIC,
+                ).into()
+            })
+    }
 }

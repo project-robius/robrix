@@ -1,8 +1,10 @@
 
+use std::cell::RefCell;
+
 use makepad_widgets::*;
 
 use crate::{
-    shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind},
+    shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}},
     tsp::{submit_tsp_request, tsp_settings_screen::{WalletStatus, WalletStatusAndDefault}, TspRequest, TspWalletMetadata}
 };
 
@@ -159,12 +161,21 @@ impl Widget for WalletEntry {
                 submit_tsp_request(TspRequest::SetDefaultWallet(metadata.clone())).unwrap();
             }
             if self.view.button(id!(remove_wallet_button)).clicked(actions) {
-                // TODO: Implement the remove wallet feature.
-                enqueue_popup_notification(PopupItem {
-                    message: "Remove wallet feature is not yet implemented.".to_string(),
-                    auto_dismissal_duration: None,
-                    kind: PopupKind::Warning,
-                });
+                let metadata_clone = metadata.clone();
+                let content = ConfirmationModalContent {
+                    title_text: "Remove Wallet".into(),
+                    body_text: format!(
+                        "Are you sure you want to remove the wallet \"{}\" \
+                        from the list?\n\nThis won't delete the actual wallet file.",
+                        metadata.wallet_name
+                    ).into(),
+                    accept_button_text: Some("Remove".into()),
+                    on_accept_clicked: Some(Box::new(move |_cx| {
+                        submit_tsp_request(TspRequest::RemoveWallet(metadata_clone)).unwrap();
+                    })),
+                    ..Default::default()
+                };
+                cx.action(TspWalletEntryAction::ShowConfirmationModal(RefCell::new(Some(content))));
             }
             if self.view.button(id!(delete_wallet_button)).clicked(actions) {
                 // TODO: Implement the delete wallet feature.
@@ -192,26 +203,44 @@ impl Widget for WalletEntry {
         );
         self.label(id!(wallet_path)).set_text(
             cx,
-            &metadata.path,
+            metadata.url.as_url_unencoded()
         );
         // There is a weird makepad bug where if we re-style one instance of the
         // `set_default_wallet_button` in one WalletEntry, all other instances of that button
         // get their styling messed up in weird ways.
         // So, as a workaround, we just hide the button entirely and show a `is_default_label_view` instead.
 
-        let set_default_wallet_button = self.button(id!(set_default_wallet_button));
-        if sd.is_default {
-            self.view(id!(is_default_label_view)).set_visible(cx, true);
-            set_default_wallet_button.set_visible(cx, false);
-        }
-
-        if matches!(sd.status, WalletStatus::NotFound) {
-            self.label(id!(not_found_label_view)).set_visible(cx, true);
-            set_default_wallet_button.set_visible(cx, false);
-            self.button(id!(remove_wallet_button)).set_visible(cx, false);
-            self.button(id!(delete_wallet_button)).set_visible(cx, false);
-        }
+        self.view(id!(is_default_label_view)).set_visible(
+            cx,
+            sd.is_default
+        );
+        self.label(id!(not_found_label_view)).set_visible(
+            cx,
+            sd.status == WalletStatus::NotFound,
+        );
+        self.button(id!(set_default_wallet_button)).set_visible(
+            cx,
+            !sd.is_default && sd.status != WalletStatus::NotFound,
+        );
+        self.button(id!(delete_wallet_button)).set_visible(
+            cx,
+            sd.status != WalletStatus::NotFound,
+        );
 
         self.view.draw_walk(cx, scope, walk)
     }
+}
+
+
+/// Actions related to a single TSP wallet.
+///
+/// These are NOT widget actions, just regular actions.
+#[derive(Debug)]
+pub enum TspWalletEntryAction {
+    /// Show a confirmation modal for an action related to a TSP wallet entry.
+    ///
+    /// The content is wrapped in a `RefCell` to ensure that only one entity handles it
+    /// and that that one entity can take ownership of the content object,
+    /// which avoids having to clone it.
+    ShowConfirmationModal(RefCell<Option<ConfirmationModalContent>>),
 }

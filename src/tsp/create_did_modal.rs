@@ -1,8 +1,8 @@
-//! A modal dialog for creating a new TSP wallet.
+//! A modal dialog for creating a new TSP Decentralized Identity (DID).
 
 use makepad_widgets::*;
 
-use crate::{shared::styles::*, tsp::{self, TspWalletMetadata}};
+use crate::{shared::styles::*, tsp};
 
 
 live_design! {
@@ -15,7 +15,7 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::icon_button::RobrixIconButton;
 
-    pub CreateWalletModal = {{CreateWalletModal}} {
+    pub CreateDidModal = {{CreateDidModal}} {
         width: Fit
         height: Fit
 
@@ -45,7 +45,7 @@ live_design! {
                         color: #000
                         wrap: Word
                     }
-                    text: "Create New TSP Wallet"
+                    text: "Create New Identity (DID)"
                 }
             }
 
@@ -63,7 +63,7 @@ live_design! {
                     border_radius: 4.0
                 }
 
-                wallet_name_input = <RobrixTextInput> {
+                username_input = <RobrixTextInput> {
                     width: Fill,
                     height: Fit,
                     padding: 10,
@@ -71,10 +71,10 @@ live_design! {
                         text_style: <REGULAR_TEXT>{font_size: 12},
                         color: #000
                     }
-                    empty_text: "Wallet Name",
+                    empty_text: "Identity Username",
                 }
 
-                password_input = <RobrixTextInput> {
+                alias_input = <RobrixTextInput> {
                     width: Fill,
                     height: Fit,
                     padding: 10,
@@ -82,31 +82,77 @@ live_design! {
                         text_style: <REGULAR_TEXT>{font_size: 12},
                         color: #000
                     }
-                    is_password: true,
-                    empty_text: "Wallet Password",
+                    empty_text: "Enter an alias (optional)",
                 }
 
-                confirm_password_input = <RobrixTextInput> {
-                    width: Fill,
-                    height: Fit,
-                    padding: 10,
-                    draw_text: {
-                        text_style: <REGULAR_TEXT>{font_size: 12},
-                        color: #000
+                did_type_radio_buttons = <View> {
+                    spacing: 20,
+                    width: Fit, height: Fit,
+                    did_web   = <RadioButtonFlat> {
+                        text: "Web"
+                        animator: { active = { default: on } }
                     }
-                    is_password: true,
-                    empty_text: "Confirm Wallet Password",
+                    did_webvh = <RadioButtonFlat> {
+                        text: "WebVH"
+                        animator: { disabled = { default: on } }
+                    }
+                    did_peer  = <RadioButtonFlat> {
+                        text: "Peer",
+                        animator: { disabled = { default: on } }
+                    }
                 }
 
                 <View> {
                     width: Fill, height: Fit
                     flow: Down
 
-                    wallet_file_name_input = <RobrixTextInput> {
+                    server_input = <RobrixTextInput> {
                         width: Fill, height: Fit,
                         flow: Right, // do not wrap
                         padding: {top: 3, bottom: 3}
-                        empty_text: "my_wallet_file",
+                        empty_text: "p.teaspoon.world",
+                        draw_text: {
+                            text_style: <REGULAR_TEXT>{font_size: 10.0}
+                        }
+                    }
+
+                    <View> {
+                        width: Fill,
+                        height: Fit,
+                        flow: Right,
+                        padding: {top: 5, left: 2, right: 2, bottom: 2}
+                        spacing: 0.0,
+                        align: {x: 0.5, y: 0.5} // center horizontally and vertically
+
+                        left_line = <LineH> {
+                            draw_bg: { color: #C8C8C8 }
+                        }
+
+                        <Label> {
+                            width: Fit, height: Fit
+                            padding:  0
+                            draw_text: {
+                                color: #777777
+                                text_style: <REGULAR_TEXT>{font_size: 9}
+                            }
+                            text: "Intermediary server domain"
+                        }
+
+                        right_line = <LineH> {
+                            draw_bg: { color: #C8C8C8 }
+                        }
+                    }
+                }
+
+                <View> {
+                    width: Fill, height: Fit
+                    flow: Down
+
+                    did_server_input = <RobrixTextInput> {
+                        width: Fill, height: Fit,
+                        flow: Right, // do not wrap
+                        padding: {top: 3, bottom: 3}
+                        empty_text: "did.teaspoon.world",
                         draw_text: {
                             text_style: <REGULAR_TEXT>{font_size: 10.0}
                         }
@@ -131,7 +177,7 @@ live_design! {
                                 color: #777777
                                 text_style: <REGULAR_TEXT>{font_size: 9}
                             }
-                            text: "Wallet File Name (optional)"
+                            text: "DID server domain"
                         }
 
                         right_line = <LineH> {
@@ -182,7 +228,7 @@ live_design! {
                         border_color: (COLOR_FG_ACCEPT_GREEN),
                         color: (COLOR_BG_ACCEPT_GREEN)
                     }
-                    text: "Create Wallet"
+                    text: "Create DID"
                     draw_text:{
                         color: (COLOR_FG_ACCEPT_GREEN),
                     }
@@ -192,6 +238,8 @@ live_design! {
             status_label = <Label> {
                 width: Fill,
                 height: Fit,
+                padding: 0,
+                margin: 0,
                 flow: RightWrap,
                 align: {x: 0.5, y: 0.0}
                 draw_text: {
@@ -206,9 +254,9 @@ live_design! {
 }
 
 /// Actions emitted by other widgets to instruct the main settings screen
-/// to open or close the `CreateWalletModal`.
+/// to open or close the `CreateDidModal`.
 #[derive(Clone, Copy, Debug)]
-pub enum CreateWalletModalAction {
+pub enum CreateDidModalAction {
     /// The settings screen should open the modal.
     Open,
     /// The settings screen should close the modal.
@@ -216,27 +264,27 @@ pub enum CreateWalletModalAction {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum CreateWalletModalState {
-    /// Waiting for the user to enter wallet details.
+enum CreateDidModalState {
+    /// Waiting for the user to enter identity details.
     #[default]
     WaitingForUserInput,
-    /// Waiting for the wallet to be created.
-    WaitingForWalletCreation,
-    /// The wallet was created successfully.
-    WalletCreated,
-    /// An error occurred while creating the wallet.
-    WalletCreationError,
+    /// Waiting for the identity to be created.
+    WaitingForIdentityCreation,
+    /// The identity was created successfully.
+    IdentityCreated,
+    /// An error occurred while creating the identity.
+    IdentityCreationError,
 }
 
 
 #[derive(Live, LiveHook, Widget)]
-pub struct CreateWalletModal {
+pub struct CreateDidModal {
     #[deref] view: View,
-    #[rust] state: CreateWalletModalState,
+    #[rust] state: CreateDidModalState,
     #[rust] is_showing_error: bool,
 }
 
-impl Widget for CreateWalletModal {
+impl Widget for CreateDidModal {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
@@ -247,7 +295,7 @@ impl Widget for CreateWalletModal {
     }
 }
 
-impl WidgetMatchEvent for CreateWalletModal {
+impl WidgetMatchEvent for CreateDidModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let accept_button = self.view.button(id!(accept_button));
         let cancel_button = self.view.button(id!(cancel_button));
@@ -258,10 +306,10 @@ impl WidgetMatchEvent for CreateWalletModal {
             actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
         {
             // If the modal was dismissed by clicking outside of it, we MUST NOT emit
-            // a `CreateWalletModalAction::Close` action, as that would cause
+            // a `CreateDidModalAction::Close` action, as that would cause
             // an infinite action feedback loop.
             if cancel_clicked {
-                cx.action(CreateWalletModalAction::Close);
+                cx.action(CreateDidModalAction::Close);
             }
 
             // TODO: if possible, cancel the wallet creation request if it's still pending.
@@ -269,10 +317,10 @@ impl WidgetMatchEvent for CreateWalletModal {
             return;
         }
 
-        let wallet_name_input = self.view.text_input(id!(wallet_name_input));
-        let wallet_file_name_input = self.view.text_input(id!(wallet_file_name_input));
-        let password_input = self.view.text_input(id!(password_input));
-        let confirm_password_input = self.view.text_input(id!(confirm_password_input));
+        let username_input = self.view.text_input(id!(username_input));
+        let alias_input = self.view.text_input(id!(alias_input));
+        let server_input = self.view.text_input(id!(server_input));
+        let did_server_input = self.view.text_input(id!(did_server_input));
         let status_label = self.view.label(id!(status_label));
 
         // Handle clicking the accept button.
@@ -280,70 +328,60 @@ impl WidgetMatchEvent for CreateWalletModal {
         if accept_button.clicked(actions) {
             match self.state {
                 // If the modal is in the "final" state, just close the modal.
-                CreateWalletModalState::WalletCreated => {
-                    self.state = CreateWalletModalState::WaitingForUserInput;
-                    cx.action(CreateWalletModalAction::Close);
+                CreateDidModalState::IdentityCreated => {
+                    self.state = CreateDidModalState::WaitingForUserInput;
+                    cx.action(CreateDidModalAction::Close);
                 }
 
-                CreateWalletModalState::WaitingForUserInput => {
-                    let wallet_name = wallet_name_input.text();
-                    let password = password_input.text();
-                    let confirm_password = confirm_password_input.text();
+                CreateDidModalState::WaitingForUserInput => {
+                    let username_full = username_input.text();
+                    let username = username_full.trim();
 
                     // Check to ensure that the user has entered all required fields.
-                    if password.is_empty() || confirm_password.is_empty() {
+                    if username.is_empty() {
                         self.is_showing_error = true;
                         status_label.apply_over(cx, live!(
-                            text: "Please enter a wallet password.",
-                            draw_text: {
-                                color: (COLOR_FG_DANGER_RED),
-                            },
-                        ));
-                    } else if password != confirm_password {
-                        self.is_showing_error = true;
-                        status_label.apply_over(cx, live!(
-                            text: "Passwords do not match.",
-                            draw_text: {
-                                color: (COLOR_FG_DANGER_RED),
-                            },
-                        ));
-                    } else if wallet_name.is_empty() {
-                        self.is_showing_error = true;
-                        status_label.apply_over(cx, live!(
-                            text: "Please enter a wallet name.",
+                            text: "Please enter a DID username.",
                             draw_text: {
                                 color: (COLOR_FG_DANGER_RED),
                             },
                         ));
                     } else {
-                        let url = tsp::TspWalletSqliteUrl::from_wallet_file_name(
-                            match wallet_file_name_input.text() {
-                                empty if empty.is_empty() => wallet_file_name_input.empty_text(),
-                                non_empty => tsp::sanitize_wallet_name(&non_empty),
-                            }
-                            .as_str()
-                        );
-                        let metadata = TspWalletMetadata {
-                            wallet_name,
-                            url,
-                            password,
+                        let alias = match alias_input.text().trim() {
+                            "" => None,
+                            non_empty => Some(non_empty.to_string()),
                         };
-                        // Submit the wallet creation request to the TSP async worker thread.
-                        tsp::submit_tsp_request(tsp::TspRequest::CreateWallet { metadata }).unwrap();
-                        self.state = CreateWalletModalState::WaitingForWalletCreation;
+                        let server = match server_input.text().trim() {
+                            "" => server_input.empty_text(),
+                            non_empty => non_empty.to_string(),
+                        };
+                        let did_server = match did_server_input.text().trim() {
+                            "" => did_server_input.empty_text(),
+                            non_empty => non_empty.to_string(),
+                        };
+
+                        // Submit the identity creation request to the TSP async worker thread.
+                        tsp::submit_tsp_request(tsp::TspRequest::CreateDid {
+                            username: username.to_string(),
+                            alias,
+                            server,
+                            did_server
+                        }).unwrap();
+
+                        self.state = CreateDidModalState::WaitingForIdentityCreation;
                         self.is_showing_error = false;
                         status_label.apply_over(cx, live!(
-                            text: "Waiting for wallet to be created...",
+                            text: "Waiting for identity to be created and published...",
                             draw_text: {
                                 color: (COLOR_ACTIVE_PRIMARY_DARKER),
                             },
                         ));
                         accept_button.set_enabled(cx, false);
-                        cancel_button.set_enabled(cx, false); // TODO: support canceling the wallet creation request?
-                        wallet_name_input.set_is_read_only(cx, true);
-                        wallet_file_name_input.set_is_read_only(cx, true);
-                        password_input.set_is_read_only(cx, true);
-                        confirm_password_input.set_is_read_only(cx, true);
+                        cancel_button.set_enabled(cx, false); // TODO: support canceling the identity creation request?
+                        username_input.set_is_read_only(cx, true);
+                        alias_input.set_is_read_only(cx, true);
+                        server_input.set_is_read_only(cx, true);
+                        did_server_input.set_is_read_only(cx, true);
                     }
 
                     needs_redraw = true;
@@ -354,18 +392,19 @@ impl WidgetMatchEvent for CreateWalletModal {
         }
 
 
-        // Clear the error message if the user changes any of the input fields.
+        // If the user changes any of the input fields, clear the error message
+        // and reset the accept button to its default state.
         if self.is_showing_error {
-            if wallet_name_input.changed(actions).is_some()
-                || wallet_file_name_input.changed(actions).is_some()
-                || password_input.changed(actions).is_some()
-                || confirm_password_input.changed(actions).is_some()
+            if username_input.changed(actions).is_some()
+                || alias_input.changed(actions).is_some()
+                || server_input.changed(actions).is_some()
+                || did_server_input.changed(actions).is_some()
             {
                 self.is_showing_error = false;
                 self.view.label(id!(status_label)).set_text(cx, "");
-                self.state = CreateWalletModalState::WaitingForUserInput;
+                self.state = CreateDidModalState::WaitingForUserInput;
                 accept_button.apply_over(cx, live!(
-                    text: "Create Wallet",
+                    text: "Create DID",
                     enabled: true,
                     draw_text: {
                         color: (COLOR_FG_ACCEPT_GREEN),
@@ -375,23 +414,12 @@ impl WidgetMatchEvent for CreateWalletModal {
             }
         }
 
-        // If the wallet name is changed, update the path's empty text to show
-        // a sanitized version of the wallet name.
-        if let Some(name) = wallet_name_input.changed(actions) {
-            wallet_file_name_input.set_empty_text(cx, tsp::sanitize_wallet_name(&name));
-        }
-
         for action in actions {
             match action.downcast_ref() {
-                // Handle the wallet creation success action.
-                Some(tsp::TspWalletAction::CreateWalletSuccess { metadata, is_default }) => {
-                    self.state = CreateWalletModalState::WalletCreated;
+                Some(tsp::TspWalletAction::DidCreationResult(Ok(did)))=> {
+                    self.state = CreateDidModalState::IdentityCreated;
                     self.is_showing_error = false;
-                    let message = if *is_default {
-                        format!("Wallet \"{}\" created successfully and set as the default.", metadata.wallet_name)
-                    } else {
-                        format!("Wallet \"{}\" created successfully.", metadata.wallet_name)
-                    };
+                    let message = format!("Successfully created and published DID: \"{}\"", did);
                     status_label.apply_over(cx, live!(
                         text: (message),
                         draw_text: {
@@ -412,13 +440,15 @@ impl WidgetMatchEvent for CreateWalletModal {
                         },
                     ));
                     cancel_button.set_visible(cx, false);
+                    needs_redraw = true;
                 }
 
-                // Handle the wallet creation error action.
-                Some(tsp::TspWalletAction::CreateWalletError { error, .. }) => {
-                    self.state = CreateWalletModalState::WalletCreationError;
+                // Upon an error, update the status label and disable the accept button.
+                // Re-enable the input fields so the user can change the input values to try again.
+                Some(tsp::TspWalletAction::DidCreationResult(Err(e)))=> {
+                    self.state = CreateDidModalState::IdentityCreationError;
                     self.is_showing_error = true;
-                    let message = format!("Failed to create wallet: {error}.");
+                    let message = format!("Failed to create DID: {e}");
                     status_label.apply_over(cx, live!(
                         text: (message),
                         draw_text: {
@@ -427,10 +457,11 @@ impl WidgetMatchEvent for CreateWalletModal {
                     ));
                     accept_button.set_enabled(cx, false);
                     cancel_button.set_enabled(cx, true);
-                    wallet_name_input.set_is_read_only(cx, false);
-                    wallet_file_name_input.set_is_read_only(cx, false);
-                    password_input.set_is_read_only(cx, false);
-                    confirm_password_input.set_is_read_only(cx, false);
+                    username_input.set_is_read_only(cx, false);
+                    alias_input.set_is_read_only(cx, false);
+                    server_input.set_is_read_only(cx, false);
+                    did_server_input.set_is_read_only(cx, false);
+                    needs_redraw = true;
                 }
 
                 _ => { }
@@ -443,12 +474,12 @@ impl WidgetMatchEvent for CreateWalletModal {
     }
 }
 
-impl CreateWalletModal {
+impl CreateDidModal {
     pub fn show(&mut self, cx: &mut Cx) {
-        self.state = CreateWalletModalState::WaitingForUserInput;
+        self.state = CreateDidModalState::WaitingForUserInput;
         let accept_button = self.view.button(id!(accept_button));
         let cancel_button = self.view.button(id!(cancel_button));
-        accept_button.set_text(cx, "Create Wallet");
+        accept_button.set_text(cx, "Create DID");
         cancel_button.set_text(cx, "Cancel");
         accept_button.reset_hover(cx);
         cancel_button.reset_hover(cx);
@@ -457,17 +488,17 @@ impl CreateWalletModal {
         accept_button.set_visible(cx, true);
         cancel_button.set_visible(cx, true);
         // TODO: return buttons to their default state/appearance
-        self.view.text_input(id!(wallet_name_input)).set_is_read_only(cx, false);
-        self.view.text_input(id!(wallet_file_name_input)).set_is_read_only(cx, false);
-        self.view.text_input(id!(password_input)).set_is_read_only(cx, false);
-        self.view.text_input(id!(confirm_password_input)).set_is_read_only(cx, false);
+        self.view.text_input(id!(username_input)).set_is_read_only(cx, false);
+        self.view.text_input(id!(alias_input)).set_is_read_only(cx, false);
+        self.view.text_input(id!(server_input)).set_is_read_only(cx, false);
+        self.view.text_input(id!(did_server_input)).set_is_read_only(cx, false);
         self.view.label(id!(status_label)).set_text(cx, "");
         self.is_showing_error = false;
         self.view.redraw(cx);        
     }
 }
 
-impl CreateWalletModalRef {
+impl CreateDidModalRef {
     pub fn show(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.show(cx);

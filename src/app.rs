@@ -144,9 +144,23 @@ impl LiveRegister for App {
         // then `shared`` widgets (in which styles are defined),
         // then other modules widgets.
         makepad_widgets::live_design(cx);
+        // Override Makepad's default desktop dark theme with the desktop light theme.
+        cx.link(live_id!(theme), live_id!(theme_desktop_light));
         crate::shared::live_design(cx);
-        #[cfg(feature = "tsp")]
-        crate::tsp::live_design(cx);
+
+        // If the `tsp` cargo feature is enabled, we create a new "tsp_link" DSL namespace
+        // and link it to the real `tsp_enabled` DSL namespace, which contains real TSP widgets.
+        // If the `tsp` feature is not enabled, link the "tsp_link" DSL namespace
+        // to the `tsp_disabled` DSL namespace instead, which defines dummy placeholder widgets.
+        #[cfg(feature = "tsp")] {
+            crate::tsp::live_design(cx);
+            cx.link(live_id!(tsp_link), live_id!(tsp_enabled));
+        }
+        #[cfg(not(feature = "tsp"))] {
+            crate::tsp_dummy::live_design(cx);
+            cx.link(live_id!(tsp_link), live_id!(tsp_disabled));
+        }
+
         crate::settings::live_design(cx);
         crate::room::live_design(cx);
         crate::join_leave_room_modal::live_design(cx);
@@ -185,11 +199,11 @@ impl MatchEvent for App {
         self.update_login_visibility(cx);
 
         log!("App::Startup: starting matrix sdk loop");
-        let _tokio_rt = crate::sliding_sync::start_matrix_tokio().unwrap();
+        let _tokio_rt_handle = crate::sliding_sync::start_matrix_tokio().unwrap();
 
         #[cfg(feature = "tsp")] {
             log!("App::Startup: initializing TSP (Trust Spanning Protocol) module.");
-            crate::tsp::tsp_init(_tokio_rt).unwrap();
+            crate::tsp::tsp_init(_tokio_rt_handle).unwrap();
         }
     }
 
@@ -390,22 +404,20 @@ impl AppMain for App {
             #[cfg(feature = "tsp")] {
                 // Save the TSP wallet state, if it exists, with a 3-second timeout.
                 let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
-                if tsp_state.has_content() {
-                    let res = crate::sliding_sync::block_on_async_with_timeout(
-                        Some(std::time::Duration::from_secs(3)),
-                        async move {
-                            match tsp_state.close_and_serialize().await {
-                                Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
-                                    Ok(_) => { }
-                                    Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
-                                }
-                                Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
+                let res = crate::sliding_sync::block_on_async_with_timeout(
+                    Some(std::time::Duration::from_secs(3)),
+                    async move {
+                        match tsp_state.close_and_serialize().await {
+                            Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
+                                Ok(_) => { }
+                                Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
                             }
-                        },
-                    );
-                    if let Err(_e) = res {
-                        error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
-                    }
+                            Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
+                        }
+                    },
+                );
+                if let Err(_e) = res {
+                    error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
                 }
             }
         }
