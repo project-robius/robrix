@@ -11,7 +11,12 @@ use matrix_sdk::{
 };
 
 use crate::{
-    app::{AppStateAction, SelectedRoom}, home::rooms_list::{enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::avatar::AvatarWidgetExt, sliding_sync::get_client, utils::{self, avatar_from_room_name, OwnedRoomIdRon}
+    app::AppStateAction, 
+    home::rooms_list::RoomsListRef,
+    room::{BasicRoomDetails, RoomPreviewAvatar}, 
+    shared::avatar::AvatarWidgetExt, 
+    sliding_sync::get_client, 
+    utils::{self, avatar_from_room_name}
 };
 
 live_design! {
@@ -195,46 +200,15 @@ impl TombstoneFooter {
             error!("Cannot navigate to successor room: current room ID is not set");
             return;
         };
-        // Check if successor room is loaded, if not show join modal
-        let rooms_list_ref = cx.get_global::<RoomsListRef>();
-        if !rooms_list_ref.is_room_loaded(&successor_room_detail.room_id) {
-            log!(
-                "Successor room {} not loaded, showing join modal",
-                successor_room_detail.room_id
-            );
-            // Show join room modal for the successor room
-            cx.action(JoinLeaveRoomModalAction::Open(
-                JoinLeaveModalKind::JoinRoom(successor_room_detail.clone()),
-            ));
-            return;
-        }
 
-        let new_selected_room = SelectedRoom::JoinedRoom {
-            room_id: OwnedRoomIdRon(successor_room_detail.room_id.clone()),
-            room_name: successor_room_detail.room_name.clone(),
-        };
-
-        log!(
-            "Navigating from tombstoned room {} to successor room {}",
-            room_id,
-            successor_room_detail.room_id
-        );
-        // For mobile UI, navigate back to the root view.
-        cx.widget_action(
-            self.widget_uid(),
-            &Scope::default().path,
-            StackNavigationAction::PopToRoot,
-        );
-        cx.widget_action(
-            self.widget_uid(),
-            &Scope::default().path,
-            RoomsListAction::Selected(new_selected_room),
-        );
-        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(room_id.clone()));
+        // Trigger the NavigateToSuccessorRoom action which handles all the widget actions
         cx.widget_action(
             self.widget_uid(),
             &scope.path,
-            AppStateAction::CloseRoom(room_id.clone())
+            AppStateAction::NavigateToSuccessorRoom {
+                current_room_id: room_id.clone(),
+                successor_room_detail: successor_room_detail.clone(),
+            }
         );
     }
 
