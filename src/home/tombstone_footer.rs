@@ -11,10 +11,8 @@ use matrix_sdk::{
 };
 
 use crate::{
-    app::{AppStateAction, SelectedRoom}, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::avatar::AvatarWidgetExt, sliding_sync::get_client, utils::{self, avatar_from_room_name, OwnedRoomIdRon}
+    app::{AppStateAction, SelectedRoom}, home::rooms_list::{enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::avatar::AvatarWidgetExt, sliding_sync::get_client, utils::{self, avatar_from_room_name, OwnedRoomIdRon}
 };
-
-use super::rooms_list::RoomsListAction;
 
 live_design! {
     use link::theme::*;
@@ -221,11 +219,22 @@ impl TombstoneFooter {
             room_id,
             successor_room_detail.room_id
         );
-
+        // For mobile UI, navigate back to the root view.
+        cx.widget_action(
+            self.widget_uid(),
+            &Scope::default().path,
+            StackNavigationAction::PopToRoot,
+        );
+        cx.widget_action(
+            self.widget_uid(),
+            &Scope::default().path,
+            RoomsListAction::Selected(new_selected_room),
+        );
+        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(room_id.clone()));
         cx.widget_action(
             self.widget_uid(),
             &scope.path,
-            AppStateAction::CloseRoomAndNavigate(room_id.clone(), new_selected_room)
+            AppStateAction::CloseRoom(room_id.clone())
         );
     }
 

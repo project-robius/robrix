@@ -13,7 +13,7 @@ use crate::{
         main_desktop_ui::MainDesktopUiAction,
         new_message_context_menu::NewMessageContextMenuWidgetRefExt,
         room_screen::MessageAction,
-        rooms_list::{enqueue_rooms_list_update, RoomsListAction, RoomsListUpdate},
+        rooms_list::RoomsListAction,
     },
     join_leave_room_modal::{
         JoinLeaveRoomModalAction,
@@ -267,19 +267,7 @@ impl MatchEvent for App {
                     self.app_state.selected_room = Some(selected_room.clone());
                     continue;
                 }
-                AppStateAction::CloseRoomAndNavigate(room_id, new_selected_room) => {
-                    // For mobile UI, navigate back to the root view.
-                    cx.widget_action(
-                        self.ui.widget_uid(),
-                        &Scope::default().path,
-                        StackNavigationAction::PopToRoot,
-                    );
-                    cx.widget_action(
-                        self.ui.widget_uid(),
-                        &Scope::default().path,
-                        RoomsListAction::Selected(new_selected_room),
-                    );
-                    enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(room_id.clone()));
+                AppStateAction::CloseRoom(room_id) => {
                     if let Some(tab_id) =
                         self.app_state.saved_dock_state.open_rooms.iter().find_map(
                             |(tab_id, room)| {
@@ -574,7 +562,7 @@ pub enum AppStateAction {
     /// The given room was focused (selected).
     RoomFocused(SelectedRoom),
     /// Close the given room. Close the tab and remove it from the DockState.
-    CloseRoomAndNavigate(OwnedRoomId, SelectedRoom),
+    CloseRoom(OwnedRoomId),
     /// Resets the focus to none, meaning that no room is selected.
     FocusNone,
     /// The given room has successfully been upgraded from being displayed
