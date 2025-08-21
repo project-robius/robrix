@@ -146,8 +146,7 @@ impl TombstoneFooter {
         let successor_avatar_preview = {
             let rooms_list_ref = cx.get_global::<RoomsListRef>();
             rooms_list_ref
-                .get_joined_room_info(&successor_room.room_id)
-                .map(|room_info| room_info.avatar)
+                .get_room_avatar(&successor_room.room_id)
                 .unwrap_or_else(|| avatar_from_room_name(None))
         };
 

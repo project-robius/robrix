@@ -1711,7 +1711,7 @@ impl RoomScreen {
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
-                TimelineUpdate::SuccessorRoomUpdated(tombstone_info) => {
+                TimelineUpdate::Tombstoned(tombstone_info) => {
                     if let Some(tombstone_info) = &tombstone_info {
                         self.view.tombstone_footer(id!(tombstone_footer)).show(cx, &tl.room_id, tombstone_info);
                         self.view.view(id!(message_input_view)).set_visible(cx, false);
@@ -2412,6 +2412,8 @@ impl RoomScreen {
 
         // Now, restore the visual state of this timeline from its previously-saved state.
         self.restore_state(cx, &mut tl_state);
+        // Now, process the tl_state's tombstone info to show/hide the tombstone footer.
+        self.process_tombstone_footer(cx, &tl_state);
         // As the final step, store the tl_state for this room into this RoomScreen widget,
         // such that it can be accessed in future event/draw handlers.
         self.tl_state = Some(tl_state);
@@ -2463,7 +2465,6 @@ impl RoomScreen {
             message_input_state: message_input.save_state(),
             replying_to: tl.replying_to.clone(),
             editing_pane_state,
-            tombstone_info: tl.tombstone_info.as_ref().map(|info| SuccessorRoom { room_id: info.room_id.clone(), reason: info.reason.clone() }),
         };
         tl.saved_state = state;
         // Clear room_members to prevent memory leaks when state is stored long-term
@@ -2482,7 +2483,6 @@ impl RoomScreen {
             message_input_state,
             replying_to,
             editing_pane_state,
-            tombstone_info,
         } = &mut tl_state.saved_state;
         // 1. Restore the position of the timeline.
         if let Some((first_index, scroll_from_first_id)) = first_index_and_scroll {
@@ -2513,16 +2513,6 @@ impl RoomScreen {
         } else {
             editing_pane.force_reset_hide(cx);
             self.on_hide_editing_pane(cx);
-        }
-        if let Some(tombstone_info) = tombstone_info.take() {
-            tl_state.tombstone_info = Some(tombstone_info);
-        }
-        if let Some(tombstone_info) = &tl_state.tombstone_info {
-            self.view.tombstone_footer(id!(tombstone_footer)).show(cx, &tl_state.room_id, tombstone_info);
-            self.view.view(id!(message_input_view)).set_visible(cx, false);
-        } else {
-            self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
-            self.view.view(id!(message_input_view)).set_visible(cx, true);
         }
     }
 
@@ -2649,6 +2639,18 @@ impl RoomScreen {
             });
         }
         tl.last_scrolled_index = first_index;
+    }
+
+    /// If the current room is tombstoned, show the tombstone footer and hide the message input bar.
+    /// Otherwise, hide the tombstone footer and show the message input bar.
+    fn process_tombstone_footer(&mut self, cx: &mut Cx, tl_state: &TimelineUiState) {
+        if let Some(tombstone_info) = &tl_state.tombstone_info {
+            self.view.tombstone_footer(id!(tombstone_footer)).show(cx, &tl_state.room_id, tombstone_info);
+            self.view.view(id!(message_input_view)).set_visible(cx, false);
+        } else {
+            self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
+            self.view.view(id!(message_input_view)).set_visible(cx, true);
+        }
     }
 }
 
@@ -2789,7 +2791,7 @@ pub enum TimelineUpdate {
     /// A notice that the given room has been tombstoned,
     /// includes a `SuccessorRoom` that contains the successor room.
     /// If the room is not tombstoned, then the `SuccessorRoom` is `None`.
-    SuccessorRoomUpdated(Option<SuccessorRoom>),
+    Tombstoned(Option<SuccessorRoom>),
 }
 
 thread_local! {
@@ -2932,8 +2934,6 @@ struct SavedState {
     replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
     /// The state of the `EditingPane`, if any message was being edited.
     editing_pane_state: Option<EditingPaneState>,
-    /// The successor room for tombstoned room, if any.
-    tombstone_info: Option<SuccessorRoom>,
 }
 
 /// Returns info about the item in the list of `new_items` that matches the event ID

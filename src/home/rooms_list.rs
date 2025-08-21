@@ -181,7 +181,7 @@ pub enum RoomsListAction {
 ///
 /// This includes info needed display a preview of that room in the RoomsList
 /// and to filter the list of rooms based on the current search filter.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct JoinedRoomInfo {
     /// The matrix ID of this room.
     pub room_id: OwnedRoomId,
@@ -776,7 +776,7 @@ impl RoomsList {
         )
     }
 
-    /// Returns information about a joined room given its room ID.
+    /// Returns information about a room avatar given its room ID.
     ///
     /// # Arguments
     ///
@@ -784,10 +784,15 @@ impl RoomsList {
     ///
     /// # Returns
     ///
-    /// * `Option<JoinedRoomInfo>` - Returns `Some(JoinedRoomInfo)` if the room is found
-    ///   in the list of all joined rooms, otherwise returns `None`.
-    pub fn get_joined_room_info(&self, room_id: &OwnedRoomId) -> Option<JoinedRoomInfo> {
-        self.all_joined_rooms.get(room_id).cloned()
+    /// * `Option<RoomPreviewAvatar>` - Returns `Some(RoomPreviewAvatar)` if the room is found
+    ///   in the list of all joined rooms or invited rooms, otherwise returns `None`.
+    pub fn get_room_avatar(&self, room_id: &OwnedRoomId) -> Option<RoomPreviewAvatar> {
+        self.all_joined_rooms.get(room_id)
+            .map(|room_info| room_info.avatar.clone())
+            .or_else(|| {
+                self.invited_rooms.borrow().get(room_id)
+                    .map(|room_info| room_info.room_avatar.clone())
+            })
     }
 }
 
@@ -1040,10 +1045,10 @@ impl RoomsListRef {
         inner.is_room_loaded(room_id)
     }
 
-    /// See [`RoomsList::get_joined_room_info()`].
-    pub fn get_joined_room_info(&self, room_id: &OwnedRoomId) -> Option<JoinedRoomInfo> {
+    /// See [`RoomsList::get_room_avatar()`].
+    pub fn get_room_avatar(&self, room_id: &OwnedRoomId) -> Option<RoomPreviewAvatar> {
         let inner = self.borrow()?;
-        inner.get_joined_room_info(room_id)
+        inner.get_room_avatar(room_id)
     }
 }
 pub struct RoomsListScopeProps {

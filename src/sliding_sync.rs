@@ -2613,7 +2613,7 @@ fn update_latest_event(
                     }
                     enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room_id.clone() });
                     if let Some(sender) = timeline_update_sender {
-                        match sender.send(TimelineUpdate::SuccessorRoomUpdated(Some(SuccessorRoom {
+                        match sender.send(TimelineUpdate::Tombstoned(Some(SuccessorRoom {
                             room_id: content.replacement_room.clone(),
                             reason: Some(content.body.clone()),
                         }))) {
