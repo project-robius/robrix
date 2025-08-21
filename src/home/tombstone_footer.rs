@@ -15,8 +15,7 @@ use crate::{
     home::rooms_list::RoomsListRef,
     room::{BasicRoomDetails, RoomPreviewAvatar}, 
     shared::avatar::AvatarWidgetExt, 
-    sliding_sync::get_client, 
-    utils::{self, avatar_from_room_name}
+    utils
 };
 
 live_design! {
@@ -133,9 +132,6 @@ impl Widget for TombstoneFooter {
 impl TombstoneFooter {
     /// Sets the tombstone information to be displayed by this screen.
     pub fn show(&mut self, cx: &mut Cx, room_id: &OwnedRoomId, successor_room: &SuccessorRoom) {
-        self.view
-            .label_set(ids![replacement_reason, successor_room_name])
-            .set_text(cx, "");
         self.visible = true;
         self.room_id = Some(room_id.clone());
         if let Some(reason) = &successor_room.reason {
@@ -143,11 +139,10 @@ impl TombstoneFooter {
                 .label(id!(replacement_reason))
                 .set_text(cx, reason);
         }
-        let successor_avatar_preview = {
-            let rooms_list_ref = cx.get_global::<RoomsListRef>();
-            rooms_list_ref
-                .get_room_avatar(&successor_room.room_id)
-                .unwrap_or_else(|| avatar_from_room_name(None))
+        let rooms_list_ref = cx.get_global::<RoomsListRef>();
+        let Some((successor_avatar_preview, room_name)) = rooms_list_ref
+            .get_room_avatar_and_name(&successor_room.room_id) else {
+            return;
         };
 
         // Set the successor room avatar
@@ -165,22 +160,19 @@ impl TombstoneFooter {
                 );
             }
         }
-        let room_name = get_client().and_then(|client| client.get_room(&successor_room.room_id)).and_then(|room| room.name());
         let successor_info = Some(BasicRoomDetails {
             room_id: successor_room.room_id.clone(),
             room_name,
             room_avatar: successor_avatar_preview,
         });
 
-        if let Some(successor_room_name) = successor_info.as_ref().and_then(|f| f.room_name.as_ref()) {
-            self.view
-                .label(id!(successor_room_name))
-                .set_text(cx, successor_room_name);
-        } else {
-            self.view
-                .label(id!(successor_room_name))
-                .set_text(cx, "New room");
-        }
+        self.view.label(id!(successor_room_name)).set_text(
+            cx,
+            successor_info
+                .as_ref()
+                .and_then(|f| f.room_name.as_ref())
+                .map_or("New room", |v| v),
+        );
         self.successor_info = successor_info;
     }
 

@@ -7,7 +7,7 @@ use crate::{
     room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, RoomPreviewAvatar},
     shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
     jump_to_bottom_button::UnreadMessageCount, room_filter_input_bar::RoomFilterAction},
-    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection},
+    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}, utils::avatar_from_room_name,
 };
 use super::room_preview::RoomPreviewAction;
 
@@ -776,23 +776,21 @@ impl RoomsList {
         )
     }
 
-    /// Returns information about a room avatar given its room ID.
-    ///
-    /// # Arguments
-    ///
-    /// * `room_id` - A reference to the room ID for which information is requested.
-    ///
-    /// # Returns
-    ///
-    /// * `Option<RoomPreviewAvatar>` - Returns `Some(RoomPreviewAvatar)` if the room is found
-    ///   in the list of all joined rooms or invited rooms, otherwise returns `None`.
-    pub fn get_room_avatar(&self, room_id: &OwnedRoomId) -> Option<RoomPreviewAvatar> {
-        self.all_joined_rooms.get(room_id)
+    /// Returns information about room avatar and room namegiven its room ID.
+    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
+        let room_avatar = self.all_joined_rooms.get(room_id)
             .map(|room_info| room_info.avatar.clone())
             .or_else(|| {
                 self.invited_rooms.borrow().get(room_id)
                     .map(|room_info| room_info.room_avatar.clone())
-            })
+            });
+        let room_name = self.all_joined_rooms.get(room_id)
+            .map(|room_info| room_info.room_name.clone())
+            .or_else(|| {
+                self.invited_rooms.borrow().get(room_id)
+                    .map(|room_info| room_info.room_name.clone())
+            }).and_then(|room_name| room_name);
+        Some((room_avatar.unwrap_or_else(|| avatar_from_room_name(room_name.as_deref())), room_name))
     }
 }
 
@@ -1045,10 +1043,10 @@ impl RoomsListRef {
         inner.is_room_loaded(room_id)
     }
 
-    /// See [`RoomsList::get_room_avatar()`].
-    pub fn get_room_avatar(&self, room_id: &OwnedRoomId) -> Option<RoomPreviewAvatar> {
+    /// See [`RoomsList::get_room_avatar_and_name()`].
+    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
         let inner = self.borrow()?;
-        inner.get_room_avatar(room_id)
+        inner.get_room_avatar_and_name(room_id)
     }
 }
 pub struct RoomsListScopeProps {

@@ -13,7 +13,7 @@ use matrix_sdk::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
         }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState, SuccessorRoom
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState
 };
 use matrix_sdk_ui::{
     room_list_service::{RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RoomExt, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
@@ -2612,11 +2612,14 @@ fn update_latest_event(
                         }
                     }
                     enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room_id.clone() });
-                    if let Some(sender) = timeline_update_sender {
-                        match sender.send(TimelineUpdate::Tombstoned(Some(SuccessorRoom {
-                            room_id: content.replacement_room.clone(),
-                            reason: Some(content.body.clone()),
-                        }))) {
+                    if let (Some(sender), Some(room)) = (
+                        timeline_update_sender,
+                        get_client()
+                            .unwrap()
+                            .get_room(&room_id)
+                            .and_then(|room| room.successor_room()),
+                    ) {
+                        match sender.send(TimelineUpdate::Tombstoned(Some(room))) {
                             Ok(_) => {
                                 SignalToUI::set_ui_signal();
                             }
