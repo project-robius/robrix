@@ -942,7 +942,7 @@ fn populate_message_search_view(
     };
 
     let ts_millis = event.origin_server_ts();
-
+    
     // Use precomputed formatted content
     let (item, used_cached_item) = if let Some(content) = formatted_content.as_ref() {
         match &content.msgtype {
@@ -959,23 +959,9 @@ fn populate_message_search_view(
                 if existed && item_drawn_status.content_drawn {
                     (item, true)
                 } else {
-                    let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
-                    html_or_plaintext_ref.apply_over(
-                        cx,
-                        live!(
-                            html_view = {
-                                html = {
-                                    font_color: (vec3(0.0,0.0,0.0)),
-                                    draw_block: {
-                                        code_color: (COLOR_WARNING_YELLOW)
-                                    }
-                                }
-                            }
-                        ),
-                    );
                     populate_text_message_content(
                         cx,
-                        &html_or_plaintext_ref,
+                        &item.html_or_plaintext(id!(content.message)),
                         body,
                         formatted.as_ref(),
                     );

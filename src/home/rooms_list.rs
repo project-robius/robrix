@@ -159,7 +159,7 @@ pub fn enqueue_rooms_list_update(update: RoomsListUpdate) {
 #[derive(Debug, Clone, DefaultNone)]
 pub enum RoomsListAction {
     /// A new room was selected.
-    Selected(SelectedRoom),
+    Selected(SelectedRoom, Option<Arc<tokio::sync::Notify>>),
     /// A new room was joined from an accepted invite,
     /// meaning that the existing `InviteScreen` should be converted
     /// to a `RoomScreen` to display now-joined room.
@@ -787,7 +787,7 @@ impl Widget for RoomsList {
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    RoomsListAction::Selected(new_selected_room),
+                    RoomsListAction::Selected(new_selected_room, None),
                 );
                 self.redraw(cx);
             }

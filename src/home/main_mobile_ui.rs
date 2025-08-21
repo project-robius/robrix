@@ -54,7 +54,7 @@ impl Widget for MainMobileUI {
             for action in actions {
                 match action.as_widget_action().cast() {
                     // This is currently handled in the top-level App.
-                    RoomsListAction::Selected(_selected_room) => {}
+                    RoomsListAction::Selected(_selected_room, _) => {}
                     // Because the MainMobileUI is drawn based on the AppState only,
                     // all we need to do is update the AppState here.
                     RoomsListAction::InviteAccepted { room_id, .. } => {

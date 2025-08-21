@@ -241,7 +241,7 @@ impl MatchEvent for App {
                 cx.action(MainDesktopUiAction::LoadDockFromAppState);
             }
 
-            if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
+            if let RoomsListAction::Selected(selected_room, _) = action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 let display_name = room_name_or_id(selected_room.room_name(), selected_room.room_id());
                 self.app_state.selected_room = Some(selected_room);

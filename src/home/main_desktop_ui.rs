@@ -338,11 +338,14 @@ impl WidgetMatchEvent for MainDesktopUI {
 
             // Handle RoomsList actions, which are updates from the rooms list.
             match widget_action.cast() {
-                RoomsListAction::Selected(selected_room) => {
+                RoomsListAction::Selected(selected_room, notify) => {
                     // Note that this cannot be performed within draw_walk() as the draw flow prevents from
                     // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
                     // a redraw to be happening in order to draw the tab content.
                     self.focus_or_create_tab(cx, selected_room);
+                    if let Some(notify) = notify {
+                        notify.notify_one(); // Notify the waiting task that the room has been focused.
+                    }
                 }
                 RoomsListAction::InviteAccepted { room_id, room_name } => {
                     self.replace_invite_with_joined_room(cx, scope, room_id, room_name);

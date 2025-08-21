@@ -26,9 +26,10 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
+use tokio::sync::Notify;
 
 use crate::{
-    app::{AppState, AppStateAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::{RoomsListRef, RoomsListAction}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::{RoomsListRef, RoomsListAction}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -1402,6 +1403,7 @@ impl Widget for RoomScreen {
                             TimelineItemContent::MsgLike(msg_like_content) => match &msg_like_content.kind {
                                 MsgLikeKind::Message(_) | MsgLikeKind::Sticker(_) => {
                                     let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
+                                    println!("msg_like_content {:?}", msg_like_content.as_message().unwrap().body());
                                     populate_message_view(
                                         cx,
                                         list,
@@ -1531,6 +1533,7 @@ impl RoomScreen {
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
         let top_space = self.view(id!(top_space));
         let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
+        let loading_pane = self.loading_pane(id!(loading_pane));
         let curr_first_id = portal_list.first_id();
         let ui = self.widget_uid();
         let Some(tl) = self.tl_state.as_mut() else { return };
@@ -1798,6 +1801,61 @@ impl RoomScreen {
 
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
+                }
+                TimelineUpdate::ScrollToMessage { event_id } => {
+                    // Search through the timeline to find the message with the given event_id
+                    let mut num_items_searched = 0;
+                    let target_msg_tl_index = tl.items
+                        .focus()
+                        .into_iter()
+                        .position(|item| {
+                            num_items_searched += 1;
+                            item.as_event()
+                                .and_then(|e| e.event_id())
+                                .is_some_and(|ev_id| ev_id == event_id)
+                        });
+                    if let Some(index) = target_msg_tl_index {
+                        let current_first_index = portal_list.first_id();
+                        let speed = index.saturating_sub(1).abs_diff(current_first_index) as f64 / (SMOOTH_SCROLL_TIME.get() as f64 * 0.001);
+                        portal_list.smooth_scroll_to(
+                            cx,
+                            index.saturating_sub(1),
+                            //index.saturating_sub(1).abs_diff(current_first_index) as f64 / (SMOOTH_SCROLL_TIME as f64 * 0.001),
+                            speed,
+                            None,
+                        );
+                        // start highlight animation.
+                        tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
+                            item_id: index
+                        };
+                    } else {
+                        log!("essage not found - trigger backwards pagination to find it");
+                        // Message not found - trigger backwards pagination to find it
+                        loading_pane.set_state(
+                            cx,
+                            LoadingPaneState::BackwardsPaginateUntilEvent {
+                                target_event_id: event_id.clone(),
+                                events_paginated: 0,
+                                request_sender: tl.request_sender.clone(),
+                            },
+                        );
+                        loading_pane.show(cx);
+
+                        tl.request_sender.send_if_modified(|requests| {
+                            if let Some(existing) = requests.iter_mut().find(|r| r.room_id == tl.room_id) {
+                                // Re-use existing request
+                                existing.target_event_id = event_id.clone();
+                            } else {
+                                requests.push(BackwardsPaginateUntilEventRequest {
+                                    room_id: tl.room_id.clone(),
+                                    target_event_id: event_id.clone(),
+                                    starting_index: 0, // Search from the beginning since we don't know where it is
+                                    current_tl_len: tl.items.len(),
+                                });
+                            }
+                            true
+                        });
+                    }
                 }
             }
         }
@@ -2850,7 +2908,10 @@ pub enum TimelineUpdate {
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
     OwnUserReadReceipt(Receipt),
-
+    /// Scroll the timeline to the given event.
+    ScrollToMessage {
+        event_id: OwnedEventId,
+    }
 }
 
 thread_local! {
@@ -3578,6 +3639,7 @@ pub fn populate_text_message_content(
     if let Some(fb) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
+        println!("fb.body {:?}", fb.body);
         message_content_widget.show_html(
             cx,
             utils::linkify(
@@ -4353,8 +4415,6 @@ pub struct Message {
     /// The jump option required for searched messages.
     /// Contains the room ID, event ID for the message, and whether it's from an all-rooms search.
     #[rust] jump_option: Option<JumpToMessageRequest>,
-    /// Add a small delay to ensure new room tab is opened before jumping to the message.
-    #[rust] jump_delay: Timer,
 }
 
 impl Widget for Message {
@@ -4367,18 +4427,6 @@ impl Widget for Message {
             && self.animator_in_state(cx, id!(highlight.on))
         {
             self.animator_play(cx, id!(highlight.off));
-        }
-        if let Event::Timer(te) = event {
-            if let (Some(_), Some(jump_request)) = (self.jump_delay.is_timer(te), &self.jump_option) {
-                cx.widget_action(
-                    self.widget_uid(),
-                    &scope.path,
-                    MessageAction::ScrollToMessage {
-                        room_id: jump_request.room_id.clone(),
-                        event_id: jump_request.event_id.clone(),
-                    }
-                );
-            }
         }
         if let Some(jump_request) = &self.jump_option {
             if let Event::Actions(actions) = event {
@@ -4396,58 +4444,16 @@ impl Widget for Message {
                         room_id: jump_request.room_id.clone().into(),
                         room_name,
                     };
+                    let notify = Arc::new(Notify::new());
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
-                        RoomsListAction::Selected(target_selected_room)
+                        RoomsListAction::Selected(target_selected_room, Some(notify.clone()))
                     );
-                    // if let Some(selected_room) = {
-                    //     let app_state = scope.data.get::<AppState>().unwrap();
-                    //     &app_state.selected_room
-                    // } {
-                    //     cx.widget_action(
-                    //         self.widget_uid(),
-                    //         &Scope::default().path,
-                    //         StackNavigationAction::PopToRoot
-                    //     );
-                    //     println!("selected_room.room_id(){:?}", selected_room.room_id());
-                    //     // If room_id is not the selected room, select the room and open its dock tab
-                    //     if selected_room.room_id() != &jump_request.room_id {
-                    //         let room_name: Option<String> = {
-                    //             let rooms_list_ref = cx.get_global::<RoomsListRef>();
-                    //             rooms_list_ref.get_room_name(&jump_request.room_id)
-                    //         };
-                            
-                    //         let target_selected_room = SelectedRoom::JoinedRoom {
-                    //             room_id: jump_request.room_id.clone().into(),
-                    //             room_name,
-                    //         };
-                    //         println!("Jumping to message in room: {} StackNavigationAction::PopToRoot", target_selected_room.room_id());
-                            
-                    //         // Dispatch action to select the room and open its dock tab
-                    //         cx.widget_action(
-                    //             self.widget_uid(),
-                    //             &scope.path,
-                    //             RoomsListAction::Selected(target_selected_room)
-                    //         );
-                    //     }
-                    // }
-                    // Add a jump delay to ensure new room tab is opened before jumping to the message.
-                    self.jump_delay = cx.start_timeout(1.0);
+                    submit_async_request(MatrixRequest::WaitForRoomOpenToJump { notify, room_id: jump_request.room_id.clone(), event_id: jump_request.event_id.clone() });
                 }
             }
             self.view.handle_event(cx, event, scope);
-            let message_view_area = self.view.area();
-            match event.hits(cx, message_view_area) {
-                Hit::FingerDown(fe) => {
-                    cx.set_key_focus(message_view_area);
-                    // A left click to scroll to the message in room screen.
-                    if fe.device.mouse_button().is_some_and(|b| b.is_primary()) {
-                        self.jump_delay = cx.start_timeout(0.5);
-                    }
-                }
-                _ => {}
-            }
             return;
         }
         let Some(details) = self.details.clone() else { return };
@@ -4579,9 +4585,6 @@ impl Message {
         self.jump_option = Some(jump_option);
         self.view.view(id!(jump_to_this_message))
             .set_visible(cx, true);
-        self.view.apply_over(cx, live! {
-            cursor: Hand
-        });
     }
 }
 

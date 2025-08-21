@@ -405,6 +405,15 @@ pub enum MatrixRequest {
         next_batch: Option<String>,
         /// Abort previous search only when debouncing from typing search term.
         abort_previous_search: bool,
+    },
+    /// Wait for a room to be opened before jumping to a specific event.
+    WaitForRoomOpenToJump {
+        /// A notification that will be triggered when the room is opened.
+        notify: Arc<Notify>,
+        /// The ID of the room to jump to.
+        room_id: OwnedRoomId,
+        /// The ID of the event to jump to.
+        event_id: OwnedEventId,
     }
 }
 
@@ -1280,6 +1289,22 @@ async fn async_worker(
                     }
                 });
                 search_task_abort_handler = Some(handle.abort_handle());
+            }
+            MatrixRequest::WaitForRoomOpenToJump { notify, room_id, event_id } => {
+                let sender = {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                        log!("Skipping pagination request for not-yet-known room {room_id}");
+                        continue;
+                    };
+                    let sender = room_info.timeline_update_sender.clone();
+                    sender
+                };
+                Handle::current().spawn(async move {
+                    notify.notified().await;
+                    sender.send(TimelineUpdate::ScrollToMessage{event_id}).unwrap();
+                    SignalToUI::set_ui_signal();
+                });
             }
         }
     }
