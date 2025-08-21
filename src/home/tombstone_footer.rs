@@ -134,11 +134,8 @@ impl TombstoneFooter {
     pub fn show(&mut self, cx: &mut Cx, room_id: &OwnedRoomId, successor_room: &SuccessorRoom) {
         self.visible = true;
         self.room_id = Some(room_id.clone());
-        if let Some(reason) = &successor_room.reason {
-            self.view
-                .label(id!(replacement_reason))
-                .set_text(cx, reason);
-        }
+        self.view.label(id!(replacement_reason))
+            .set_text(cx, successor_room.reason.as_deref().unwrap_or_default());
         let rooms_list_ref = cx.get_global::<RoomsListRef>();
         let Some((successor_avatar_preview, room_name)) = rooms_list_ref
             .get_room_avatar_and_name(&successor_room.room_id) else {
