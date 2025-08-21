@@ -13,11 +13,12 @@ use crate::{
         main_desktop_ui::MainDesktopUiAction,
         new_message_context_menu::NewMessageContextMenuWidgetRefExt,
         room_screen::MessageAction,
-        rooms_list::RoomsListAction,
+        rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update},
     },
     join_leave_room_modal::{
         JoinLeaveRoomModalAction,
         JoinLeaveRoomModalWidgetRefExt,
+        JoinLeaveModalKind,
     },
     login::login_screen::LoginAction,
     persistence,
@@ -27,6 +28,7 @@ use crate::{
         TooltipAction,
     },
     sliding_sync::current_user_id,
+    room::BasicRoomDetails,
     utils::{
         room_name_or_id,
         OwnedRoomIdRon,
@@ -279,6 +281,64 @@ impl MatchEvent for App {
                         if did_upgrade {
                             self.ui.redraw(cx);
                         }
+                    }
+                    continue;
+                }
+                AppStateAction::NavigateToSuccessorRoom { current_room_id, successor_room_detail } => {
+                    // Check if successor room is loaded, if not show join modal
+                    let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                    if !rooms_list_ref.is_room_loaded(&successor_room_detail.room_id) {
+                        log!(
+                            "Successor room {} not loaded, showing join modal",
+                            successor_room_detail.room_id
+                        );
+                        // Show join room modal for the successor room
+                        cx.action(JoinLeaveRoomModalAction::Open(
+                            JoinLeaveModalKind::JoinRoom(successor_room_detail.clone()),
+                        ));
+                        continue;
+                    }
+
+                    let new_selected_room = SelectedRoom::JoinedRoom {
+                        room_id: OwnedRoomIdRon(successor_room_detail.room_id.clone()),
+                        room_name: successor_room_detail.room_name.clone(),
+                    };
+
+                    log!(
+                        "Navigating from tombstoned room {} to successor room {}",
+                        current_room_id,
+                        successor_room_detail.room_id
+                    );
+                    
+                    // For mobile UI, navigate back to the root view.
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        &Scope::default().path,
+                        StackNavigationAction::PopToRoot,
+                    );
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        &Scope::default().path,
+                        RoomsListAction::Selected(new_selected_room),
+                    );
+                    enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(current_room_id.clone()));
+                    if let Some(tab_id) =
+                        self.app_state.saved_dock_state.open_rooms.iter().find_map(
+                            |(tab_id, room)| {
+                                if room.room_id() == &current_room_id {
+                                    Some(*tab_id)
+                                } else {
+                                    None
+                                }
+                            },
+                        )
+                    {
+                        // For desktop UI, close the tab.
+                        cx.widget_action(
+                            self.ui.widget_uid(),
+                            &Scope::default().path,
+                            DockAction::TabCloseWasPressed(tab_id),
+                        );
                     }
                     continue;
                 }
@@ -552,5 +612,11 @@ pub enum AppStateAction {
     ///
     /// The RoomScreen for this room can now fully display the room's timeline.
     RoomLoadedSuccessfully(OwnedRoomId),
+    /// Navigate to the successor room of a tombstoned room.
+    /// Contains the current tombstoned room ID and successor room details.
+    NavigateToSuccessorRoom {
+        current_room_id: OwnedRoomId,
+        successor_room_detail: BasicRoomDetails,
+    },
     None,
 }

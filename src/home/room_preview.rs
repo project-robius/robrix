@@ -20,6 +20,22 @@ live_design! {
     use crate::shared::html_or_plaintext::HtmlOrPlaintext;
     use crate::shared::unread_badge::UnreadBadge;
 
+    // A cancel icon to be displayed in the room preview when the room is tombstoned.
+    TombstoneIcon = <View> {
+        width: Fit, height: Fit,
+        visible: false,
+
+        <Icon> {
+            width: 25, height: 25,
+            align: {x: 0.5, y: 0.5}
+            draw_icon: {
+                svg_file: (ICON_TOMBSTONE)
+                color: (COLOR_FG_DISABLED)
+            }
+            icon_walk: { width: 15, height: 15 }
+        }
+    }
+
     RoomName = <Label> {
         width: Fill, height: Fit
         flow: Right, // do not wrap
@@ -147,6 +163,7 @@ live_design! {
                     align: { x: 1.0 }
                     avatar = <Avatar> {}
                     unread_badge = <UnreadBadge> {}
+                    tombstone_icon = <TombstoneIcon> {}
                 }
             }
             IconAndName = <RoomPreviewContent> {
@@ -155,6 +172,7 @@ live_design! {
                 avatar = <Avatar> {}
                 room_name = <RoomName> {}
                 unread_badge = <UnreadBadge>  {}
+                tombstone_icon = <TombstoneIcon> {}
             }
             FullPreview = <RoomPreviewContent> {
                 padding: 10
@@ -181,6 +199,7 @@ live_design! {
                             width: Fit, height: Fit
                             align: { x: 1.0 }
                             unread_badge = <UnreadBadge> {}
+                            tombstone_icon = <TombstoneIcon> {}
                         }
                     }
                 }
@@ -294,8 +313,9 @@ impl RoomPreviewContent {
         self.view
             .unread_badge(id!(unread_badge))
             .update_counts(room_info.num_unread_mentions, room_info.num_unread_messages);
-
         self.draw_common(cx, &room_info.avatar, room_info.is_selected);
+        // Show tombstone icon if the room is tombstoned
+        self.view.view(id!(tombstone_icon)).set_visible(cx, room_info.is_tombstoned);
     }
 
     /// Populates this room preview with info about an invited room.
