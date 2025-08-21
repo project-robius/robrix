@@ -1,10 +1,10 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use std::collections::HashMap;
+use tokio::sync::Notify;
+use std::{collections::HashMap, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SelectedRoom}, utils::room_name_or_id};
+use crate::{app::{AppState, AppStateAction, SelectedRoom}, shared::message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef}, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -171,7 +171,13 @@ impl MainDesktopUI {
         }
 
         self.open_rooms.insert(room_id_as_live_id, room.clone());
-        self.most_recently_selected_room = Some(room);
+        self.most_recently_selected_room = Some(room.clone());
+        // Calls AppStateAction::RoomFocused action to display the search message input box when a room is open.
+        cx.widget_action(
+            self.widget_uid(), 
+            &HeapLiveIdPath::default(), 
+            AppStateAction::RoomFocused(room)
+        );
     }
 
     /// Closes a tab in the dock and focuses on the latest open room.
@@ -214,6 +220,10 @@ impl MainDesktopUI {
         dock.close_tab(cx, tab_id);
         self.tab_to_close = None;
         self.open_rooms.remove(&tab_id);
+        // Clear the search input when a room is closed
+        cx.get_global::<MessageSearchInputBarRef>().set_text("");
+        // clear the search results when a room is closed
+        cx.widget_action(self.widget_uid(), &Scope::empty().path, MessageSearchAction::Changed(String::new()));
     }
 
     /// Replaces an invite with a joined room in the dock.
@@ -334,6 +344,10 @@ impl WidgetMatchEvent for MainDesktopUI {
                     // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
                     // a redraw to be happening in order to draw the tab content.
                     self.focus_or_create_tab(cx, selected_room);
+                    if cx.has_global::<Arc<Notify>>() {
+                        let notify = cx.get_global::<Arc<Notify>>();
+                        notify.notify_one();
+                    }
                 }
                 RoomsListAction::InviteAccepted { room_id, room_name } => {
                     self.replace_invite_with_joined_room(cx, scope, room_id, room_name);
@@ -381,6 +395,13 @@ impl WidgetMatchEvent for MainDesktopUI {
 
                     if let Some(ref selected_room) = &app_state.selected_room {
                         self.focus_or_create_tab(cx, selected_room.clone());
+                    } else {
+                        // If there is no selected room, focus on the home tab.
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &HeapLiveIdPath::default(),
+                            AppStateAction::FocusNone,
+                        );
                     }
                     self.view.redraw(cx);
                 }

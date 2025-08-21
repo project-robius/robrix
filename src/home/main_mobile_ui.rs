@@ -1,3 +1,4 @@
+
 use makepad_widgets::*;
 
 use crate::{
@@ -54,7 +55,7 @@ impl Widget for MainMobileUI {
             for action in actions {
                 match action.as_widget_action().cast() {
                     // This is currently handled in the top-level App.
-                    RoomsListAction::Selected(_selected_room) => {}
+                    RoomsListAction::Selected(_selected_room) => { }
                     // Because the MainMobileUI is drawn based on the AppState only,
                     // all we need to do is update the AppState here.
                     RoomsListAction::InviteAccepted { room_id, .. } => {
@@ -85,7 +86,7 @@ impl Widget for MainMobileUI {
                 // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
                 self.view
                     .room_screen(id!(room_screen))
-                    .set_displayed_room(cx, room_id.clone().into(), room_name.clone());
+                    .set_displayed_room(cx, room_id.clone().into(), room_name.clone());                
             }
             Some(SelectedRoom::InvitedRoom { room_id, room_name }) => {
                 show_welcome = false;

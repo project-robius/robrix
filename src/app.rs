@@ -10,10 +10,7 @@ use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
     home::{
-        main_desktop_ui::MainDesktopUiAction,
-        new_message_context_menu::NewMessageContextMenuWidgetRefExt,
-        room_screen::MessageAction,
-        rooms_list::RoomsListAction,
+        home_screen::MessageSearchInputAction, main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction
     },
     join_leave_room_modal::{
         JoinLeaveRoomModalAction,
@@ -21,11 +18,11 @@ use crate::{
     },
     login::login_screen::LoginAction,
     persistence,
-    shared::callout_tooltip::{
+    shared::{callout_tooltip::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    },
+    }, message_search_input_bar::MessageSearchAction},
     sliding_sync::current_user_id,
     utils::{
         room_name_or_id,
@@ -167,6 +164,8 @@ impl LiveRegister for App {
         crate::settings::live_design(cx);
         crate::room::live_design(cx);
         crate::join_leave_room_modal::live_design(cx);
+        crate::right_panel::live_design(cx);
+        crate::right_panel::search_message::live_design(cx);
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
@@ -246,6 +245,7 @@ impl MatchEvent for App {
                 // A room has been selected, update the app state and navigate to the main content view.
                 let display_name = room_name_or_id(selected_room.room_name(), selected_room.room_id());
                 self.app_state.selected_room = Some(selected_room);
+
                 // Set the Stack Navigation header to show the name of the newly-selected room.
                 self.ui
                     .label(id!(main_content_view.header.content.title_container.title))
@@ -257,6 +257,11 @@ impl MatchEvent for App {
                     &Scope::default().path,
                     StackNavigationAction::Push(live_id!(main_content_view))
                 );
+                cx.widget_action(
+                    self.ui.widget_uid(),
+                    &Scope::default().path,
+                    MessageSearchInputAction::Show
+                );
                 self.ui.redraw(cx);
                 continue;
             }
@@ -265,10 +270,20 @@ impl MatchEvent for App {
             match action.as_widget_action().cast() {
                 AppStateAction::RoomFocused(selected_room) => {
                     self.app_state.selected_room = Some(selected_room.clone());
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        &Scope::default().path,
+                        MessageSearchInputAction::Show
+                    );
                     continue;
                 }
                 AppStateAction::FocusNone => {
                     self.app_state.selected_room = None;
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        &Scope::default().path,
+                        MessageSearchInputAction::Hide
+                    );
                     continue;
                 }
                 AppStateAction::UpgradedInviteToJoinedRoom(room_id) => {
@@ -359,6 +374,13 @@ impl MatchEvent for App {
             //     }
             //     _ => {}
             // }
+            if let MessageSearchAction::Clicked = action.as_widget_action().cast() {
+                cx.widget_action(
+                    self.ui.widget_uid(),
+                    &Scope::default().path,
+                    StackNavigationAction::Push(live_id!(search_result_view))
+                );
+            }
         }
     }
 }
@@ -403,7 +425,7 @@ impl AppMain for App {
         
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
-        let scope = &mut Scope::with_data(&mut self.app_state);
+        let scope: &mut Scope<'_, '_> = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
 
         /*

@@ -34,7 +34,7 @@ pub mod tsp;
 /// Dummy TSP module with placeholder widgets, for builds without TSP.
 #[cfg(not(feature = "tsp"))]
 pub mod tsp_dummy;
-
+pub mod right_panel;
 
 // Matrix stuff
 pub mod sliding_sync;
