@@ -5,7 +5,7 @@ use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
-use makepad_widgets::{error, log, warning, Cx, SignalToUI};
+use makepad_widgets::{error, log, warning, Cx, LiveId, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
@@ -409,6 +409,49 @@ pub enum MatrixRequest {
         matrix_id: MatrixId,
         via: Vec<OwnedServerName>
     },
+    /// Execute a custom function with access to the Matrix client.
+    /// 
+    /// This variant allows executing arbitrary async operations on the Matrix client
+    /// and returning the result back to the UI thread via a `MatrixClientAction`.
+    /// 
+    /// # Parameters
+    /// 
+    /// * `request_id` - A unique identifier for this request, used to match the response
+    ///   when it's delivered back to the UI thread via `MatrixClientAction::Action`.
+    /// * `func` - A closure that takes a Matrix `Client` and returns a boxed result.
+    ///   The result must implement `Any + Send` to allow for type-safe downcasting
+    ///   on the UI thread.
+    /// 
+    /// # Usage
+    /// 
+    /// ```rust,no_run
+    /// // Example: Fetch room name
+    /// submit_async_request(MatrixRequest::ExecuteClientFunction {
+    ///     request_id: live_id!(room_name_request),
+    ///     func: Box::new(move |client: Client| {
+    ///         Box::new(client.get_room(&room_id).and_then(|room| room.name()))
+    ///     }),
+    /// });
+    /// 
+    /// // Handle the response in your widget's handle_event:
+    /// if let Some(MatrixClientAction::Action(live_id!(room_name_request), result)) = 
+    ///     action.downcast_ref::<MatrixClientAction<Box<dyn Any + Send>>>() {
+    ///     if let Some(room_name) = result.downcast_ref::<Option<String>>() {
+    ///         // Use the room name
+    ///     }
+    /// }
+    /// ```
+    /// 
+    /// # Error Handling
+    /// 
+    /// If the client is not available (e.g., user is not logged in), this request
+    /// will return an error result instead of panicking.
+    ExecuteClientFunction {
+        /// Unique identifier for matching the async response
+        request_id: LiveId,
+        /// Function to execute with the Matrix client, returning a boxed result
+        func: Box<dyn FnOnce(Client) -> Box<dyn std::any::Any + Send> + Send + 'static>,
+    }
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -1144,6 +1187,27 @@ async fn async_worker(
                                 log!("Failed to get room link pill info for {room_or_alias_id:?}: {_e:?}");
                             }
                         };
+                    }
+                });
+            }
+            MatrixRequest::ExecuteClientFunction { request_id, func } => {
+                log!("Executing client function for request_id: {request_id}");
+                let _execute_client_fn_task = Handle::current().spawn(async move {
+                    match get_client() {
+                        Some(client) => {
+                            log!("Running client function for request_id: {request_id}");
+                            let result = func(client);
+                            log!("Client function completed for request_id: {request_id}");
+                            Cx::post_action(MatrixClientAction::Action(request_id, result));
+                        }
+                        None => {
+                            error!("Cannot execute ExecuteClientFunction: Matrix client not available for request_id: {request_id}");
+                            // Post an error result back to the UI
+                            let error_result: Box<dyn std::any::Any + Send> = Box::new(Result::<(), String>::Err(
+                                "Matrix client not available".to_string()
+                            ));
+                            Cx::post_action(MatrixClientAction::Action(request_id, error_result));
+                        }
                     }
                 });
             }
@@ -2951,4 +3015,38 @@ impl UserPowerLevels {
     pub fn can_pin(self) -> bool {
         self.contains(UserPowerLevels::RoomPinnedEvents)
     }
+}
+
+/// Action sent from async worker thread back to the UI thread containing the result of a Matrix operation.
+///
+/// This enum is used to deliver the results of `MatrixRequest::ExecuteClientFunction` operations
+/// back to the UI thread, where they can be handled in widget event loops.
+///
+/// # Type Parameter
+///
+/// * `T` - The type of the result data. For `ExecuteClientFunction` requests, this is typically
+///   `Box<dyn std::any::Any + Send>` to allow for dynamic typing and downcasting.
+///
+/// # Usage
+///
+/// ```rust,no_run
+/// // In a widget's handle_event method:
+/// if let Some(MatrixClientAction::Action(request_id, result)) = 
+///     action.downcast_ref::<MatrixClientAction<Box<dyn Any + Send>>>() {
+///     if request_id == &live_id!(my_request) {
+///         if let Some(data) = result.downcast_ref::<MyDataType>() {
+///             // Handle the result
+///         }
+///     }
+/// }
+/// ```
+#[derive(Debug)]
+pub enum MatrixClientAction<T> {
+    /// Carries the result of an async Matrix operation back to the UI thread.
+    ///
+    /// # Fields
+    /// 
+    /// * `LiveId` - The request identifier that matches the original request
+    /// * `T` - The result data from the async operation
+    Action(LiveId, T)
 }
