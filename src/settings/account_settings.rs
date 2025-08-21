@@ -1,6 +1,6 @@
 use makepad_widgets::{text::selection::Cursor, *};
 
-use crate::{logout::logout_confirm_modal::LogoutConfirmModalAction, profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, utils};
+use crate::{logout::{logout_confirm_modal::LogoutConfirmModalAction, logout_state_machine::is_logout_in_progress}, profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, utils};
 
 live_design! {
     use link::theme::*;
@@ -282,6 +282,17 @@ impl Widget for AccountSettings {
 
 impl MatchEvent for AccountSettings {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        // Update logout button state based on current logout progress
+        let logout_button = self.view.button(id!(logout_button));
+        if is_logout_in_progress() {
+            logout_button.set_text(cx, "Log out in progress...");
+            logout_button.set_enabled(cx, false);
+            logout_button.reset_hover(cx);
+        } else {
+            logout_button.set_text(cx, "Log out");
+            logout_button.set_enabled(cx, true);
+        }
+        
         let Some(own_profile) = &self.own_profile else { return };
 
         if self.view.button(id!(upload_avatar_button)).clicked(actions) {
@@ -386,7 +397,10 @@ impl MatchEvent for AccountSettings {
         }
 
         if self.view.button(id!(logout_button)).clicked(actions) {
-            cx.action(LogoutConfirmModalAction::Open);
+            // Only open modal if logout is not already in progress
+            if !is_logout_in_progress() {
+                cx.action(LogoutConfirmModalAction::Open);
+            }
         }
     }
 }

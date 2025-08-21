@@ -3,7 +3,7 @@ use std::sync::Arc;
 use makepad_widgets::*;
 use tokio::sync::Notify;
 use crate::{shared::styles::COLOR_FG_DANGER_RED, sliding_sync::{submit_async_request, MatrixRequest}};
-use super::logout_state_machine::{is_logout_past_point_of_no_return, set_logout_in_progress};
+use super::logout_state_machine::is_logout_past_point_of_no_return;
 
 live_design! {
     use link::theme::*;
@@ -316,14 +316,12 @@ impl LogoutConfirmModal {
         self.final_success = None;
         self.set_message(cx, "Are you sure you want to logout?");
         confirm_button.set_enabled(cx, true);
-        confirm_button.reset_hover(cx);
         confirm_button.set_text(cx, "Logout Now");
         cancel_button.set_visible(cx, true);
         cancel_button.set_enabled(cx, true);
-        cancel_button.set_text(cx, "Cancel"); 
+        cancel_button.set_text(cx, "Cancel");
         cancel_button.reset_hover(cx);
-        confirm_button.reset_hover(cx);        
-        set_logout_in_progress(false);
+        confirm_button.reset_hover(cx);
         self.redraw(cx);
     }
 

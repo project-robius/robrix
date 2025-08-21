@@ -567,11 +567,11 @@ pub fn is_logout_in_progress() -> bool {
     LOGOUT_IN_PROGRESS.load(Ordering::Relaxed)
 }
 
-pub fn set_logout_point_of_no_return(value: bool) {
+fn set_logout_point_of_no_return(value: bool) {
     LOGOUT_POINT_OF_NO_RETURN.store(value, Ordering::Relaxed);
 }
 
-pub fn set_logout_in_progress(value: bool) {
+fn set_logout_in_progress(value: bool) {
     LOGOUT_IN_PROGRESS.store(value, Ordering::Relaxed);
 }
 
