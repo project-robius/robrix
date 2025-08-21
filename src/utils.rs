@@ -330,11 +330,12 @@ pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail
     }
 );
 
-/// Removes leading whitespace and HTML whitespace tags (`<p>` and `<br>`) from the given `text`.
+/// Removes leading whitespace and HTML whitespace tags (`<mx-reply>`, `<p>` and `<br>`) from the given `text`.
 pub fn trim_start_html_whitespace(mut text: &str) -> &str {
     let mut prev_text_len = text.len();
     loop {
         text = text
+            .trim_start_matches("<mx-reply>")
             .trim_start_matches("<p>")
             .trim_start_matches("<br>")
             .trim_start_matches("<br/>")

@@ -1403,7 +1403,6 @@ impl Widget for RoomScreen {
                             TimelineItemContent::MsgLike(msg_like_content) => match &msg_like_content.kind {
                                 MsgLikeKind::Message(_) | MsgLikeKind::Sticker(_) => {
                                     let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
-                                    println!("msg_like_content {:?}", msg_like_content.as_message().unwrap().body());
                                     populate_message_view(
                                         cx,
                                         list,
@@ -2673,6 +2672,10 @@ impl RoomScreen {
         });
 
         self.show_timeline(cx);
+        if cx.has_global::<Arc<Notify>>() {
+            let notify = cx.get_global::<Arc<Notify>>();
+            notify.notify_one();
+        }
     }
 
     /// Sends read receipts based on the current scroll position of the timeline.
@@ -3639,7 +3642,6 @@ pub fn populate_text_message_content(
     if let Some(fb) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
-        println!("fb.body {:?}", fb.body);
         message_content_widget.show_html(
             cx,
             utils::linkify(
@@ -4445,10 +4447,15 @@ impl Widget for Message {
                         room_name,
                     };
                     let notify = Arc::new(Notify::new());
+                    if !cx.has_global::<Arc<Notify>>() {
+                        cx.set_global(notify.clone());
+                    } else {
+                        *(cx.get_global()) = notify.clone();
+                    }
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
-                        RoomsListAction::Selected(target_selected_room, Some(notify.clone()))
+                        RoomsListAction::Selected(target_selected_room)
                     );
                     submit_async_request(MatrixRequest::WaitForRoomOpenToJump { notify, room_id: jump_request.room_id.clone(), event_id: jump_request.event_id.clone() });
                 }

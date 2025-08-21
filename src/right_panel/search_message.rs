@@ -25,7 +25,7 @@ use crate::{
         rooms_list::RoomsListRef,
     },
     shared::{
-        avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::COLOR_WARNING_YELLOW, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{submit_async_request, MatrixRequest},
     utils::unix_time_millis_to_datetime,

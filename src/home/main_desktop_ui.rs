@@ -1,6 +1,7 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use std::collections::HashMap;
+use tokio::sync::Notify;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{app::{AppState, AppStateAction, SelectedRoom}, shared::message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef}, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
@@ -338,13 +339,14 @@ impl WidgetMatchEvent for MainDesktopUI {
 
             // Handle RoomsList actions, which are updates from the rooms list.
             match widget_action.cast() {
-                RoomsListAction::Selected(selected_room, notify) => {
+                RoomsListAction::Selected(selected_room) => {
                     // Note that this cannot be performed within draw_walk() as the draw flow prevents from
                     // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
                     // a redraw to be happening in order to draw the tab content.
                     self.focus_or_create_tab(cx, selected_room);
-                    if let Some(notify) = notify {
-                        notify.notify_one(); // Notify the waiting task that the room has been focused.
+                    if cx.has_global::<Arc<Notify>>() {
+                        let notify = cx.get_global::<Arc<Notify>>();
+                        notify.notify_one();
                     }
                 }
                 RoomsListAction::InviteAccepted { room_id, room_name } => {
