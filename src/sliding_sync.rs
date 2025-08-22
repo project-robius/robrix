@@ -8,7 +8,7 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
-        api::client::{self, receipt::create_receipt::v3::ReceiptType}, events::{
+        api::client::{search, receipt::create_receipt::v3::ReceiptType}, events::{
             receipt::ReceiptThread, room::{
                 message::{Relation, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, AnyMessageLikeEventContent, AnyTimelineEvent, FullStateEventContent, MessageLikeEventType, StateEventType
@@ -40,7 +40,8 @@ use crate::{
         html_or_plaintext::MatrixLinkPillState,
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{enqueue_popup_notification, PopupItem, PopupKind}
-    }, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client,
+    home::room_screen::get_timeline_loaded_notify
 };
 
 #[derive(Parser, Debug, Default)]
@@ -400,11 +401,18 @@ pub enum MatrixRequest {
     /// General Matrix Search API with given categories
     SearchMessages {
         /// The search criteria containing all search parameters
-        criteria: client::search::search_events::v3::Criteria,
+        criteria: search::search_events::v3::Criteria,
         /// Token for next batch of search results.
         next_batch: Option<String>,
         /// Abort previous search only when debouncing from typing search term.
         abort_previous_search: bool,
+    },
+    /// Wait for a room's timeline to be loaded before jumping to a specific event.
+    WaitForRoomTimelineLoadedToJump {
+        /// The ID of the room to jump to.
+        room_id: OwnedRoomId,
+        /// The ID of the event to jump to.
+        event_id: OwnedEventId,
     }
 }
 
@@ -1161,16 +1169,16 @@ async fn async_worker(
                     continue;
                 }
                 let client = CLIENT.get().unwrap();
-                let mut search_categories = client::search::search_events::v3::Categories::new();
+                let mut search_categories = search::search_events::v3::Categories::new();
                 let search_term = criteria.search_term.clone(); // Capture search term for async task
                 let room_filter = criteria.filter.rooms.clone(); // Capture room filter for async task
                 search_categories.room_events = Some(criteria);
-                let mut req = client::search::search_events::v3::Request::new(search_categories);
+                let mut req = search::search_events::v3::Request::new(search_categories);
                 req.next_batch = next_batch.clone();
                 
                 let includes_all_rooms = room_filter.as_ref().is_none();
                 let room_name = room_filter.as_ref().and_then(
-                    |room_ids| room_ids.first().clone()
+                    |room_ids| room_ids.first()
                 ).and_then(
                     |room_id| {
                         client.get_room(room_id).and_then(|room| room.name().to_owned())
@@ -1227,21 +1235,21 @@ async fn async_worker(
                                     }
                                 }
                                 let event_room_id = event.room_id().to_owned();
-                                items.push_back(right_panel::search_message::SearchResultItem::Event{ event:
-                                    Arc::new(event), formatted_content: Arc::new(message_option)}
-                                );
                                 // Include all rooms in the search results.
                                 if room_filter.is_none() {                                
                                     if let Some(ref mut room_id_for_grouping) = room_id_for_grouping {
                                         if room_id_for_grouping != &event_room_id {
                                             *room_id_for_grouping = event_room_id.clone();
-                                            items.push_back(right_panel::search_message::SearchResultItem::RoomHeader(event_room_id));
+                                            items.push_back(right_panel::search_message::SearchResultItem::RoomHeader(event_room_id.clone()));
                                         }
                                     } else {
                                         room_id_for_grouping = Some(event_room_id.clone());
-                                        items.push_back(right_panel::search_message::SearchResultItem::RoomHeader(event_room_id));
+                                        items.push_back(right_panel::search_message::SearchResultItem::RoomHeader(event_room_id.clone()));
                                     }
                                 }
+                                items.push_back(right_panel::search_message::SearchResultItem::Event{ event:
+                                    Arc::new(event), formatted_content: Arc::new(message_option)}
+                                );
                             }
                             let count = result
                                 .room_events
@@ -1280,6 +1288,27 @@ async fn async_worker(
                     }
                 });
                 search_task_abort_handler = Some(handle.abort_handle());
+            }
+            MatrixRequest::WaitForRoomTimelineLoadedToJump { room_id, event_id } => {
+                let sender = {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                        log!("Skipping pagination request for not-yet-known room {room_id}");
+                        continue;
+                    };
+                    room_info.timeline_update_sender.clone()
+                };
+                log!("Waiting for Room {room_id} to be opened before jumping to event {event_id}");
+                Handle::current().spawn(async move {
+                    if let Some(room_notify) = get_timeline_loaded_notify(&room_id) {
+                        room_notify.notified().await;
+                    }
+                    log!("Waited for Room {room_id} to be opened before jumping to event {event_id}");
+                    sender
+                        .send(TimelineUpdate::ScrollToMessage { event_id })
+                        .unwrap();
+                    SignalToUI::set_ui_signal();
+                });
             }
         }
     }

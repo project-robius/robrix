@@ -25,7 +25,7 @@ use crate::{
         rooms_list::RoomsListRef,
     },
     shared::{
-        avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::COLOR_WARNING_YELLOW, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{submit_async_request, MatrixRequest},
     utils::unix_time_millis_to_datetime,
@@ -252,7 +252,7 @@ fn apply_highlights(text: String, highlights: &[String]) -> String {
             |caps: &regex::Captures| {
                 format!(
                     "<span data-mx-bg-color=\"#fcdb03\">{}</span>",
-                    caps[0].to_string() // Preserves original case
+                    &caps[0].to_string() // Preserves original case
                 )
             },
         ).to_string();
@@ -281,9 +281,7 @@ pub fn highlight_search_terms_in_message(message: &mut RoomMessageEventContent, 
         let formatted = if let Some(ref mut formatted) = text.formatted {
             apply_highlights(formatted.body.clone(), highlights)
         } else {
-            let formatted_string = apply_highlights(text.body.clone(), highlights);
-            // issue of returning one result
-            formatted_string
+            apply_highlights(text.body.clone(), highlights)
         };
         text.formatted = Some(FormattedBody::html(formatted));
     }
@@ -590,14 +588,10 @@ impl SearchResults {
     }
 
     fn handle_room_focus_changed_action(&mut self, cx: &mut Cx, action: &Action) {
-        match action.as_widget_action().cast() {
-            AppStateAction::RoomFocused(_room_id) => {
-                // Show the search again button
-                self.view
-                    .button(id!(search_again_button))
-                    .set_visible(cx, true);
-            }
-            _ => { }
+        if let AppStateAction::RoomFocused(_room_id) = action.as_widget_action().cast() {
+            self.view
+                .button(id!(search_again_button))
+                .set_visible(cx, true);
         }
     }
     /// Displays the loading view for backwards pagination for search result.
@@ -942,7 +936,7 @@ fn populate_message_search_view(
     };
 
     let ts_millis = event.origin_server_ts();
-
+    
     // Use precomputed formatted content
     let (item, used_cached_item) = if let Some(content) = formatted_content.as_ref() {
         match &content.msgtype {
@@ -959,23 +953,9 @@ fn populate_message_search_view(
                 if existed && item_drawn_status.content_drawn {
                     (item, true)
                 } else {
-                    let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
-                    html_or_plaintext_ref.apply_over(
-                        cx,
-                        live!(
-                            html_view = {
-                                html = {
-                                    font_color: (vec3(0.0,0.0,0.0)),
-                                    draw_block: {
-                                        code_color: (COLOR_WARNING_YELLOW)
-                                    }
-                                }
-                            }
-                        ),
-                    );
                     populate_text_message_content(
                         cx,
-                        &html_or_plaintext_ref,
+                        &item.html_or_plaintext(id!(content.message)),
                         body,
                         formatted.as_ref(),
                     );

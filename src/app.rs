@@ -18,11 +18,11 @@ use crate::{
     },
     login::login_screen::LoginAction,
     persistence,
-    shared::{callout_tooltip::{
+    shared::callout_tooltip::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, message_search_input_bar::MessageSearchAction},
+    },
     sliding_sync::current_user_id,
     utils::{
         room_name_or_id,
@@ -245,6 +245,7 @@ impl MatchEvent for App {
                 // A room has been selected, update the app state and navigate to the main content view.
                 let display_name = room_name_or_id(selected_room.room_name(), selected_room.room_id());
                 self.app_state.selected_room = Some(selected_room);
+
                 // Set the Stack Navigation header to show the name of the newly-selected room.
                 self.ui
                     .label(id!(main_content_view.header.content.title_container.title))
@@ -373,13 +374,7 @@ impl MatchEvent for App {
             //     }
             //     _ => {}
             // }
-            if let MessageSearchAction::Clicked = action.as_widget_action().cast() {
-                cx.widget_action(
-                    self.ui.widget_uid(),
-                    &Scope::default().path,
-                    StackNavigationAction::Push(live_id!(search_result_view))
-                );
-            }
+            
         }
     }
 }
@@ -424,7 +419,7 @@ impl AppMain for App {
         
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
-        let scope = &mut Scope::with_data(&mut self.app_state);
+        let scope: &mut Scope<'_, '_> = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
 
         /*

@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::{settings::{settings_screen::SettingsScreenWidgetRefExt, SettingsAction}, shared::message_search_input_bar::{MessageSearchInputBarRef, MessageSearchInputBarWidgetExt}};
+use crate::{settings::{settings_screen::SettingsScreenWidgetRefExt, SettingsAction}, shared::message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef, MessageSearchInputBarWidgetExt}};
 
 live_design! {
     use link::theme::*;
@@ -270,6 +270,18 @@ impl Widget for HomeScreen {
                         self.view.view(id!(message_search_input_view)).set_visible(cx, true)
                     },
                     MessageSearchInputAction::Hide => self.view.view(id!(message_search_input_view)).set_visible(cx, false),
+                }
+
+                if let MessageSearchAction::Clicked = action.as_widget_action().cast() {
+                    if !self.view
+                        .stack_navigation(id!(view_stack))
+                        .stack_view_ids().contains(&live_id!(search_result_view)) {
+                            cx.widget_action(
+                                self.widget_uid(),
+                                &Scope::default().path,
+                                StackNavigationAction::Push(live_id!(search_result_view))
+                            );
+                        }
                 }
             }
         }
