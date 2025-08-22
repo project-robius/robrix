@@ -149,6 +149,8 @@ pub enum LogoutAction {
         message: String,
         percentage: u8,
     },
+    /// Indicates logout is in progress or not
+    InProgress(bool),
 }
 
 impl std::fmt::Debug for LogoutAction {
@@ -163,6 +165,7 @@ impl std::fmt::Debug for LogoutAction {
             LogoutAction::ProgressUpdate { message, percentage } => {
                 write!(f, "ProgressUpdate({}, {}%)", message, percentage)
             }
+            LogoutAction::InProgress(value) => write!(f, "InProgress({})", value),
         }
     }
 }
@@ -236,10 +239,10 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                     confirm_button.set_text(cx, "Okay");
                     confirm_button.set_enabled(cx, true);
                     cancel_button.set_visible(cx, false);
-                    
+
                     needs_redraw = true;
                 }
-                
+
                 Some(LogoutAction::LogoutFailure(error)) => {
                     if is_logout_past_point_of_no_return() {
                         self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
@@ -269,7 +272,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                 Some(LogoutAction::ApplicationRequiresRestart { .. }) => {
                     self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
                     self.set_message(cx, "Application is in an inconsistent state and needs to be restarted to continue.");
-        
+
                     confirm_button.set_text(cx, "Restart now");
                     confirm_button.apply_over(cx, live!{
                         draw_bg: {

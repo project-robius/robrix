@@ -572,7 +572,11 @@ fn set_logout_point_of_no_return(value: bool) {
 }
 
 fn set_logout_in_progress(value: bool) {
-    LOGOUT_IN_PROGRESS.store(value, Ordering::Relaxed);
+    let prev = LOGOUT_IN_PROGRESS.swap(value, Ordering::Relaxed);
+    if prev != value {
+        // Emit the action here (only when the value has changed)
+        Cx::post_action(LogoutAction::InProgress(value));
+    }
 }
 
 /// Execute logout using the state machine
