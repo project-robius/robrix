@@ -82,3 +82,12 @@ pub fn get_or_fetch_avatar(
         AvatarCacheEntry::Requested
     })
 }
+
+/// Clears cached avatars.
+/// This function requires passing in a reference to `Cx`,
+/// which acts as a guarantee that this function must only be called by the main UI thread.
+pub fn clear_avatar_cache(_cx: &mut Cx) {
+    AVATAR_NEW_CACHE.with_borrow_mut(|cache| {
+        cache.clear();
+    });
+}
