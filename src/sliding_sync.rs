@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use bitflags::bitflags;
 use clap::Parser;
 use eyeball::Subscriber;
@@ -25,7 +25,7 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
 use std::io;
 use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -33,7 +33,11 @@ use crate::{
         room_screen::{get_timeline_loaded_notify, remove_timeline_loaded_notify, TimelineUpdate},
         rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate},
         rooms_list_header::RoomsListHeaderAction, search_message::{highlight_search_terms_in_message, SearchResultAction, SearchResultItem, SearchResultReceived},
-    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, load_app_state, ClientSessionPersisted}, profile::{
+    },
+    login::login_screen::LoginAction,
+    logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{is_logout_in_progress, logout_with_state_machine, LogoutConfig}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
+    persistence::{self, load_app_state, ClientSessionPersisted},
+    profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, room::RoomPreviewAvatar, shared::{
@@ -236,6 +240,10 @@ pub type OnMediaFetchedFn = fn(
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
     Login(LoginRequest),
+    /// Request to logout.
+    Logout{
+        is_desktop: bool,
+    },
     /// Request to paginate the older (or newer) events of a room's timeline.
     PaginateRoomTimeline {
         room_id: OwnedRoomId,
@@ -417,10 +425,10 @@ pub enum MatrixRequest {
 
 /// Submits a request to the worker thread to be executed asynchronously.
 pub fn submit_async_request(req: MatrixRequest) {
-    REQUEST_SENDER.get()
-        .unwrap()
-        .send(req)
-        .expect("BUG: async worker task receiver has died!");
+    if let Some(sender) = REQUEST_SENDER.lock().unwrap().as_ref() {
+        sender.send(req)
+            .expect("BUG: async worker task receiver has died!");
+    }
 }
 
 /// Details of a login request that get submitted within [`MatrixRequest::Login`].
@@ -460,6 +468,23 @@ async fn async_worker(
                     )));
                 }
             }
+
+            MatrixRequest::Logout { is_desktop } => {
+                log!("Received MatrixRequest::Logout, is_desktop={}", is_desktop);
+                let _logout_task = Handle::current().spawn(async move {
+                    log!("Starting logout task");
+                    // Use the state machine implementation
+                    match logout_with_state_machine(is_desktop).await {
+                        Ok(()) => {
+                            log!("Logout completed successfully via state machine");
+                        },
+                        Err(e) => {
+                            error!("Logout failed: {e:?}");
+                        }
+                    }
+                });
+            }
+
             MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
                 let (timeline, sender) = {
                     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
@@ -588,7 +613,7 @@ async fn async_worker(
             }
 
             MatrixRequest::JoinRoom { room_id } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _join_room_task = Handle::current().spawn(async move {
                     log!("Sending request to join room {room_id}...");
                     let result_action = if let Some(room) = client.get_room(&room_id) {
@@ -616,7 +641,7 @@ async fn async_worker(
             }
 
             MatrixRequest::LeaveRoom { room_id } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _leave_room_task = Handle::current().spawn(async move {
                     log!("Sending request to leave room {room_id}...");
                     let result_action = if let Some(room) = client.get_room(&room_id) {
@@ -677,7 +702,7 @@ async fn async_worker(
             }
 
             MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending get user profile request: user: {user_id}, \
                     //     room: {room_id:?}, local_only: {local_only}...",
@@ -768,7 +793,7 @@ async fn async_worker(
                 });
             }
             MatrixRequest::IgnoreUser { ignore, room_member, room_id } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _ignore_task = Handle::current().spawn(async move {
                     let user_id = room_member.user_id();
                     log!("Sending request to {}ignore user: {user_id}...", if ignore { "" } else { "un" });
@@ -821,7 +846,7 @@ async fn async_worker(
             }
 
             MatrixRequest::SendTypingNotice { room_id, typing } => {
-                let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                let Some(room) = get_client().and_then(|c| c.get_room(&room_id)) else {
                     error!("BUG: client/room not found for typing notice request {room_id}");
                     continue;
                 };
@@ -844,7 +869,7 @@ async fn async_worker(
                             warning!("Note: room {room_id} is already subscribed to typing notices.");
                             continue;
                         } else {
-                            let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                            let Some(room) = get_client().and_then(|c| c.get_room(&room_id)) else {
                                 error!("BUG: client/room not found when subscribing to typing notices request, room: {room_id}");
                                 continue;
                             };
@@ -939,7 +964,7 @@ async fn async_worker(
                 spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
             }
             MatrixRequest::ResolveRoomAlias(room_alias) => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _resolve_task = Handle::current().spawn(async move {
                     log!("Sending resolve room alias request for {room_alias}...");
                     let res = client.resolve_room_alias(&room_alias).await;
@@ -948,8 +973,8 @@ async fn async_worker(
                 });
             }
             MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
-                let Some(client) = CLIENT.get() else { continue };
-                let _fetch_task = Handle::current().spawn(async move {
+                let Some(client) = get_client() else { continue };
+                Handle::current().spawn(async move {
                     // log!("Sending fetch avatar request for {mxc_uri:?}...");
                     let media_request = MediaRequestParameters {
                         source: MediaSource::Plain(mxc_uri.clone()),
@@ -962,7 +987,7 @@ async fn async_worker(
             }
 
             MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let media = client.media();
 
                 let _fetch_task = Handle::current().spawn(async move {
@@ -1105,6 +1130,7 @@ async fn async_worker(
                         Err(_e) => error!("Failed to send toggle reaction to room {room_id} {reaction}; error: {_e:?}"),
                     }
                 });
+
             },
             MatrixRequest::RedactMessage { room_id, timeline_event_id, reason } => {
                 let timeline = {
@@ -1127,7 +1153,7 @@ async fn async_worker(
                 });
             },
             MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {
                     let room_or_alias_id: Option<&RoomOrAliasId> = match &matrix_id {
                         MatrixId::Room(room_id) => Some((&**room_id).into()),
@@ -1167,7 +1193,7 @@ async fn async_worker(
                 if criteria.search_term.is_empty() {
                     continue;
                 }
-                let client = CLIENT.get().unwrap();
+                let Some(client) = get_client() else { continue };
                 let mut search_categories = search::search_events::v3::Categories::new();
                 let search_term = criteria.search_term.clone(); // Capture search term for async task
                 let room_filter = criteria.filter.rooms.clone(); // Capture room filter for async task
@@ -1321,11 +1347,11 @@ async fn async_worker(
 
 
 /// The single global Tokio runtime that is used by all async tasks.
-static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+static TOKIO_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
-static REQUEST_SENDER: OnceLock<UnboundedSender<MatrixRequest>> = OnceLock::new();
+static REQUEST_SENDER: Mutex<Option<UnboundedSender<MatrixRequest>>> = Mutex::new(None);
 
 /// A client object that is proactively created during initialization
 /// in order to speed up the client-building process when the user logs in.
@@ -1344,7 +1370,10 @@ pub fn block_on_async_with_timeout<T>(
     timeout: Option<Duration>,
     async_future: impl Future<Output = T>,
 ) -> Result<T, Elapsed> {
-    let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
+    let rt = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(||
+        tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
+    ).handle().clone();
+
     if let Some(timeout) = timeout {
         rt.block_on(async {
             tokio::time::timeout(timeout, async_future).await
@@ -1361,21 +1390,23 @@ pub fn block_on_async_with_timeout<T>(
 /// Returns a handle to the Tokio runtime that is used to run async background tasks.
 pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
-    let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
+    let rt_handle = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(|| {
+        tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
+    }).handle().clone();
 
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
-    REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
+    REQUEST_SENDER.lock().unwrap().replace(sender);
 
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
     // Start a high-level async task that will start and monitor all other tasks.
-    let _monitor = rt.spawn(async move {
+    let rt = rt_handle.clone();
+    let _monitor = rt_handle.spawn(async move {
         // Spawn the actual async worker thread.
         let mut worker_join_handle = rt.spawn(async_worker(receiver, login_sender));
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
-
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
@@ -1413,14 +1444,25 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
                 result = &mut worker_join_handle => {
                     match result {
                         Ok(Ok(())) => {
-                            error!("BUG: async worker task ended unexpectedly!");
+                            // Check if this is due to logout
+                            if is_logout_in_progress() {
+                                log!("async worker task ended due to logout");
+                            } else {
+                                error!("BUG: async worker task ended unexpectedly!");
+                            }
                         }
                         Ok(Err(e)) => {
-                            error!("Error: async worker task ended:\n\t{e:?}");
-                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                status: e.to_string(),
-                            });
-                            enqueue_popup_notification(PopupItem { message: format!("Rooms list update error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
+                            // Check if this is due to logout
+                            if is_logout_in_progress() {
+                                log!("async worker task ended with error due to logout: {e:?}");
+                            } else {
+                                error!("Error: async worker task ended:\n\t{e:?}");
+                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                    status: e.to_string(),
+                                });
+                                enqueue_popup_notification(PopupItem { message: format!("Rooms list update error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
+
+                            }
                         },
                         Err(e) => {
                             error!("BUG: failed to join async worker task: {e:?}");
@@ -1432,7 +1474,7 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
         }
     });
 
-    Ok(rt.handle().clone())
+    Ok(rt_handle)
 }
 
 
@@ -1495,26 +1537,27 @@ static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex
 static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
-static CLIENT: OnceLock<Client> = OnceLock::new();
+static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
 
 pub fn get_client() -> Option<Client> {
-    CLIENT.get().cloned()
+    CLIENT.lock().unwrap().clone()
 }
 
 /// Returns the user ID of the currently logged-in user, if any.
 pub fn current_user_id() -> Option<OwnedUserId> {
-    CLIENT.get().and_then(|c|
+    CLIENT.lock().unwrap().as_ref().and_then(|c|
         c.session_meta().map(|m| m.user_id.clone())
     )
 }
 
 /// The singleton sync service.
-static SYNC_SERVICE: OnceLock<SyncService> = OnceLock::new();
+static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
 
-pub fn get_sync_service() -> Option<&'static SyncService> {
-    SYNC_SERVICE.get()
+
+/// Get a reference to the current sync service, if available.
+pub fn get_sync_service() -> Option<Arc<SyncService>> {
+    SYNC_SERVICE.lock().ok()?.as_ref().cloned()
 }
-
 
 /// The list of users that the current user has chosen to ignore.
 /// Ideally we shouldn't have to maintain this list ourselves,
@@ -1576,6 +1619,7 @@ fn username_to_full_user_id(
         })
 }
 
+
 /// Info we store about a room received by the room list service.
 ///
 /// This struct is necessary in order for us to track the previous state
@@ -1605,11 +1649,11 @@ impl From<matrix_sdk::Room> for RoomListServiceRoomInfo {
     }
 }
 
-
 async fn async_main_loop(
     mut login_receiver: Receiver<LoginRequest>,
 ) -> Result<()> {
-    tracing_subscriber::fmt::init();
+    // only init subscribe once
+    let _ = tracing_subscriber::fmt::try_init();
 
     let most_recent_user_id = persistence::most_recent_user_id();
     log!("Most recent user ID: {most_recent_user_id:?}");
@@ -1715,7 +1759,9 @@ async fn async_main_loop(
 
     client.event_cache().subscribe().expect("BUG: CLIENT's event cache unable to subscribe");
 
-    CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
+    if let Some(_existing) = CLIENT.lock().unwrap().replace(client.clone()) {
+        error!("BUG: unexpectedly replaced an existing client when initializing the matrix client.");
+    }
 
     add_verification_event_handlers_and_sync_client(client.clone());
 
@@ -1734,7 +1780,10 @@ async fn async_main_loop(
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
     let room_list_service = sync_service.room_list_service();
-    SYNC_SERVICE.set(sync_service).unwrap_or_else(|_| panic!("BUG: SYNC_SERVICE already set!"));
+
+    if let Some(_existing) = SYNC_SERVICE.lock().unwrap().replace(Arc::new(sync_service)) {
+        error!("BUG: unexpectedly replaced an existing sync service when initializing the matrix client.");
+    }
 
     let all_rooms_list = room_list_service.all_rooms().await?;
     handle_room_list_service_loading_state(all_rooms_list.loading_state());
@@ -2308,8 +2357,14 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
             log!("Received a sync service state update: {state:?}");
             if state == sync_service::State::Error {
                 log!("Restarting sync service due to error.");
-                if let Some(ss) = SYNC_SERVICE.get() {
+                if let Some(ss) = get_sync_service() {
                     ss.start().await;
+                } else {
+                    enqueue_popup_notification(PopupItem {
+                        message: "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.".into(),
+                        auto_dismissal_duration: None,
+                        kind: PopupKind::Error,
+                    });
                 }
             }
         }
@@ -2339,7 +2394,6 @@ fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
         }
     });
 }
-
 
 fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomListLoadingState>) {
     log!("Initial room list loading state is {:?}", loading_state.get());
@@ -3114,5 +3168,41 @@ impl UserPowerLevels {
     #[doc(alias("unpin"))]
     pub fn can_pin(self) -> bool {
         self.contains(UserPowerLevels::RoomPinnedEvents)
+    }
+}
+
+
+/// Shuts down the current Tokio runtime completely and takes ownership to ensure proper cleanup.
+pub fn shutdown_background_tasks() {
+    if let Some(runtime) = TOKIO_RUNTIME.lock().unwrap().take() {
+        runtime.shutdown_background();
+    }
+}
+
+pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
+    // Clear resources normally, allowing them to be properly dropped
+    // This prevents memory leaks when users logout and login again without closing the app
+    CLIENT.lock().unwrap().take();
+    log!("Client cleared during logout");
+    
+    SYNC_SERVICE.lock().unwrap().take();
+    log!("Sync service cleared during logout");
+    
+    REQUEST_SENDER.lock().unwrap().take();
+    log!("Request sender cleared during logout");
+    
+    TOMBSTONED_ROOMS.lock().unwrap().clear();
+    IGNORED_USERS.lock().unwrap().clear();
+    ALL_JOINED_ROOMS.lock().unwrap().clear();
+    
+    let on_clear_appstate = Arc::new(Notify::new());
+    Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });
+    
+    match tokio::time::timeout(config.app_state_cleanup_timeout, on_clear_appstate.notified()).await {
+        Ok(_) => {
+            log!("Received signal that app state was cleaned successfully");
+            Ok(())
+        }
+        Err(_) => Err(anyhow!("Timed out waiting for app state cleanup")),
     }
 }

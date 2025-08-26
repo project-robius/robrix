@@ -1,6 +1,7 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use std::collections::HashMap;
+use tokio::sync::Notify;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{app::{AppState, AppStateAction, SelectedRoom}, shared::message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef}, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
@@ -225,6 +226,27 @@ impl MainDesktopUI {
         cx.widget_action(self.widget_uid(), &Scope::empty().path, MessageSearchAction::Changed(String::new()));
     }
 
+    /// Closes all tabs
+    pub fn close_all_tabs(&mut self, cx: &mut Cx) {
+        let dock = self.view.dock(id!(dock));
+        for tab_id in self.open_rooms.keys() {        
+            dock.close_tab(cx, *tab_id);
+        }
+
+        dock.select_tab(cx, live_id!(home_tab));
+        cx.widget_action(
+            self.widget_uid(),
+            &HeapLiveIdPath::default(),
+            AppStateAction::FocusNone,
+        );
+
+        // Clear tab-related dock UI state.
+        self.open_rooms.clear();
+        self.tab_to_close = None;
+        self.room_order.clear();
+        self.most_recently_selected_room = None;
+    }
+
     /// Replaces an invite with a joined room in the dock.
     fn replace_invite_with_joined_room(
         &mut self,
@@ -276,6 +298,12 @@ impl WidgetMatchEvent for MainDesktopUI {
         let mut should_save_dock_action: bool = false;
         for action in actions {
             let widget_action = action.as_widget_action();
+
+            if let Some(MainDesktopUiAction::CloseAllTabs { on_close_all }) = action.downcast_ref() {
+                self.close_all_tabs(cx);
+                on_close_all.notify_one();
+                continue;
+            }
 
             // Handle actions emitted by the dock within the MainDesktopUI
             match widget_action.cast() { // TODO: don't we need to call `widget_uid_eq(dock.widget_uid())` here?
@@ -420,11 +448,14 @@ impl WidgetMatchEvent for MainDesktopUI {
 }
 
 /// Actions sent to the MainDesktopUI widget for saving/restoring its dock state.
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Debug)]
 pub enum MainDesktopUiAction {
     /// Save the state of the dock into the AppState.
     SaveDockIntoAppState,
     /// Load the room panel state from the AppState to the dock.
     LoadDockFromAppState,
-    None,
+    /// Close all tabs; see [`MainDesktopUI::close_all_tabs()`]
+    CloseAllTabs {
+        on_close_all: Arc<Notify>,
+    },
 }

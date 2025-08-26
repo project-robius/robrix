@@ -150,38 +150,25 @@ macOS, Windows, Linux, Android, and iOS.
 icons = ["./packaging/robrix_logo_alpha.png"]
 out_dir = "./dist"
 
-## The below command primarily uses cargo-metadata to determine the path of the `makepad_widgets` crate on the host build system,
-## and copies the `makepad-widgets/resources` directory to the `./dist/resources/makepad_widgets` directory.
-## We also copy the Robrix project's `resources/` directory to the `./dist/resources/robrix` directory.
-##
-## This is necessary because the `cargo packager` command only supports defining resources at a known path
-## (see the below `resources = [...]` block below),
-## so we need to copy the resources to a known fixed (static) path before packaging,
-## such that cargo-packager can locate them and include them in the final package.
-before-packaging-command = """
-robius-packaging-commands before-packaging \
-    --force-makepad \
-    --binary-name robrix \
-    --path-to-binary ./target/release/robrix
-"""
-
-
-## See the above paragraph comments for more info on how we create/populate the below `src` directories.
+## Here, we define the list of resource directories for both Makepad and Robrix.
+## The `src` directory is based on `./dist/` as the `out_dir` (above), which is where the
+## `robius-packaging-commands` tool outputs the resources that it discovers after each build.
+## See the README from the `robius-packaging-commands` repo for more details.
 resources = [
+    # Makepad resources
     { src = "./dist/resources/makepad_widgets", target = "makepad_widgets" },
+    { src = "./dist/resources/makepad_fonts_chinese_bold", target = "makepad_fonts_chinese_bold" },
+    { src = "./dist/resources/makepad_fonts_chinese_bold_2", target = "makepad_fonts_chinese_bold_2" },
+    { src = "./dist/resources/makepad_fonts_chinese_regular", target = "makepad_fonts_chinese_regular" },
+    { src = "./dist/resources/makepad_fonts_chinese_regular_2", target = "makepad_fonts_chinese_regular_2" },
+    { src = "./dist/resources/makepad_fonts_emoji", target = "makepad_fonts_emoji" },
+    # Robrix resources
     { src = "./dist/resources/robrix", target = "robrix" },
 ]
 
-## We then build the entire Robrix project and set the `MAKEPAD`/`MAKEPAD_PACKAGE_DIR` env vars to the proper value.
-## * For macOS app bundles, this should be set to `.` because we set the `apple_bundle` cfg option
-##   for Makepad, which causes Makepad to look for resources in the `Contents/Resources/` directory,
-##   which is where the resources are located for an Apple app bundle (`.app` and `.dmg`).
-## * For Debian `.deb` packages, this should be set to `/usr/lib/<main-binary-name>`,
-##   which is currently `/usr/lib/robrix`.
-##   This is the directory in which `dpkg` copies app resource files to when installing the `.deb` package.
-##   * On Linux, we also strip the binaries of unneeded content, as required for Debian packages.
-##   * For Debian and Pacman (still a to-do!) packages, we also auto-generate the list of dependencies required by Robrix.
-##
+## We use the `robius-packaging-commands` tool to build the entire Robrix app project,
+## which properly configures the release build settings for each target platform
+## (e.g., it sets the `MAKEPAD`/`MAKEPAD_PACKAGE_DIR` env vars to the appropriate value).
 before-each-package-command = """
 robius-packaging-commands before-each-package \
     --force-makepad \
@@ -203,7 +190,7 @@ minimum_system_version = "11.0"
 frameworks = [ ]
 info_plist_path = "./packaging/Info.plist"
 entitlements = "./packaging/Entitlements.plist"
-signing_identity = "Developer ID Application: AppChef Inc. (SFVQ5V48GD)"
+signing_identity = "-"
 
 
 ## Configuration for `cargo packager`'s generation of a macOS `.dmg`.
