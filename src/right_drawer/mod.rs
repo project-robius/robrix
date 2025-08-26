@@ -1,6 +1,4 @@
 use makepad_widgets::*;
-/// Handles search functionality in the right panel
-pub mod search_message;
 use crate::shared::message_search_input_bar::MessageSearchAction;
 
 live_design! {
@@ -9,41 +7,10 @@ live_design! {
     use link::widgets::*;
 
     use crate::shared::styles::*;
-    use crate::right_panel::search_message::*;
+    use crate::home::search_message::SearchResult;
+    use crate::home::search_message::SearchResultStackView;
 
-    pub SearchResultView = <StackNavigationView> {
-        width: Fill, height: Fill
-        full_screen: false
-        padding: 0,
-        draw_bg: {
-            color: (COLOR_SECONDARY)
-        }
-        flow: Down
-    
-        body = {
-            margin: {top: 0.0 },
-            <SearchResults> {}
-        }
-    
-        header = {
-            height: 30.0,
-            padding: {bottom: 10., top: 10.}
-            content = {
-                title_container = {
-                    title = {
-                        draw_text: {
-                            wrap: Ellipsis,
-                            text_style: { font_size: 10. }
-                            color: #B,
-                        }
-                        text: "Search Results"
-                    }
-                }
-            }
-        }
-    }
-
-    pub RightPanel = {{RightPanel}} {
+    pub RightDrawer = {{RightDrawer}} {
         width: 400, height: Fill,
         flow: Down,
         visible: false
@@ -55,18 +22,20 @@ live_design! {
             root_view = <View> {
                 padding: 0.0,
             }
-            search_result_view = <SearchResultView> {}
+            // One of the possible stack navigation views: displays message search results
+            search_result_view = <SearchResultStackView> {}
         }
     }
 }
 
+/// Drawer-like sliding panel that can show/hide search results.
 #[derive(Live, LiveHook, Widget)]
-pub struct RightPanel {
+pub struct RightDrawer {
     #[deref]
     view: View,
 }
 
-impl Widget for RightPanel {
+impl Widget for RightDrawer {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
@@ -77,7 +46,7 @@ impl Widget for RightPanel {
     }
 }
 
-impl WidgetMatchEvent for RightPanel {
+impl WidgetMatchEvent for RightDrawer {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
 
         for action in actions.iter() {

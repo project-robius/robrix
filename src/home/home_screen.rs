@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::{settings::{settings_screen::SettingsScreenWidgetRefExt, SettingsAction}, shared::message_search_input_bar::{MessageSearchInputBarRef, MessageSearchInputBarWidgetExt}};
+use crate::{settings::{settings_screen::SettingsScreenWidgetRefExt, SettingsAction}, shared::message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef, MessageSearchInputBarWidgetExt}};
 
 live_design! {
     use link::theme::*;
@@ -15,8 +15,9 @@ live_design! {
     use crate::shared::message_search_input_bar::MessageSearchInputBar;
     use crate::shared::icon_button::RobrixIconButton;
     use crate::home::main_desktop_ui::MainDesktopUI;
+    use crate::home::search_message::SearchResultStackView;
     use crate::settings::settings_screen::SettingsScreen;
-    use crate::right_panel::*;
+    use crate::right_drawer::RightDrawer;
 
     NavigationWrapper = {{NavigationWrapper}} {
         view_stack = <StackNavigation> {}
@@ -82,7 +83,7 @@ live_design! {
                             flow: Right
                             
                             <MainDesktopUI> {}
-                            <RightPanel> {}
+                            <RightDrawer> {}
                         }
                     }
 
@@ -176,7 +177,7 @@ live_design! {
                                 main_content = <MainMobileUI> {}
                             }
                         }
-                        search_result_view = <SearchResultView> {
+                        search_result_view = <SearchResultStackView> {
                             flow: Overlay
                             header = {
                                 height: 50.0,
@@ -270,6 +271,18 @@ impl Widget for HomeScreen {
                         self.view.view(id!(message_search_input_view)).set_visible(cx, true)
                     },
                     MessageSearchInputAction::Hide => self.view.view(id!(message_search_input_view)).set_visible(cx, false),
+                }
+
+                if let MessageSearchAction::Clicked = action.as_widget_action().cast() {
+                    if !self.view
+                        .stack_navigation(id!(view_stack))
+                        .stack_view_ids().contains(&live_id!(search_result_view)) {
+                            cx.widget_action(
+                                self.widget_uid(),
+                                &Scope::default().path,
+                                StackNavigationAction::Push(live_id!(search_result_view))
+                            );
+                        }
                 }
             }
         }

@@ -18,11 +18,11 @@ use crate::{
     },
     login::login_screen::LoginAction,
     persistence,
-    shared::{callout_tooltip::{
+    shared::callout_tooltip::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, message_search_input_bar::MessageSearchAction},
+    },
     sliding_sync::current_user_id,
     utils::{
         room_name_or_id,
@@ -164,8 +164,7 @@ impl LiveRegister for App {
         crate::settings::live_design(cx);
         crate::room::live_design(cx);
         crate::join_leave_room_modal::live_design(cx);
-        crate::right_panel::live_design(cx);
-        crate::right_panel::search_message::live_design(cx);
+        crate::right_drawer::live_design(cx);
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
@@ -373,13 +372,6 @@ impl MatchEvent for App {
             //     }
             //     _ => {}
             // }
-            if let MessageSearchAction::Clicked = action.as_widget_action().cast() {
-                cx.widget_action(
-                    self.ui.widget_uid(),
-                    &Scope::default().path,
-                    StackNavigationAction::Push(live_id!(search_result_view))
-                );
-            }
         }
     }
 }

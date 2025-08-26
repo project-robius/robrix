@@ -1,17 +1,17 @@
-use std::{borrow::Cow, collections::BTreeMap, ops::DerefMut, sync::Arc};
+//! The SearchResult is the widget that contains search results interface for Desktop's right drawer.
+//!
+//! The SearchResultStackView is the stack navigation view that contains the `SearchResult` widget for Mobile view.
+use std::{borrow::Cow, collections::BTreeMap, ops::DerefMut};
 use regex::Regex;
 
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{
-    api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria as MatrixCriteria, EventContext, OrderBy}},
-    events::{
+    api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria as MatrixCriteria, EventContext, OrderBy}}, events::{
         room::message::{
             AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent
-        },
-        AnyTimelineEvent,
-    },
-    uint, OwnedRoomId, OwnedUserId,
+        }, AnyTimelineEvent
+    }, uint, OwnedRoomId, OwnedUserId
 };
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use rangemap::RangeSet;
@@ -25,7 +25,7 @@ use crate::{
         rooms_list::RoomsListRef,
     },
     shared::{
-        avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::COLOR_WARNING_YELLOW, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{submit_async_request, MatrixRequest},
     utils::unix_time_millis_to_datetime,
@@ -38,7 +38,6 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::icon_button::RobrixIconButton;
-    use crate::home::rooms_list::RoomsList;
     use crate::home::room_screen::*;
 
     COLOR_BUTTON_GREY = #B6BABF
@@ -112,7 +111,7 @@ live_design! {
         icon_walk: {width: 16, height: 16}
     }
 
-    pub SearchResultSummary = {{SearchResultSummary}} {
+    SearchResultSummary = {{SearchResultSummary}} {
         width: Fill, height: 60,
         show_bg: true,
         align: {y: 0.5}
@@ -164,7 +163,7 @@ live_design! {
     }
 
     // White rounded message card against a grey backdrop.
-    pub MessageCard = <Message> {
+    MessageCard = <Message> {
         draw_bg: {
             instance border_radius: 4.0,
             instance border_size: 1.0,
@@ -189,7 +188,7 @@ live_design! {
         }
     }
 
-    pub SearchedMessages = <View> {
+    SearchedMessages = <View> {
         width: Fill, height: Fill,
         align: {x: 0.5, y: 0.0} // center horizontally, align to top vertically
         flow: Overlay,
@@ -216,7 +215,8 @@ live_design! {
         }
     }
 
-    pub SearchResults = {{SearchResults}} {
+    // SearchResult widget displays the main search results interface.
+    pub SearchResult = {{SearchResult}} {
         no_more_template: <Label> {
             draw_text: {
                 text_style: <REGULAR_TEXT>{
@@ -240,6 +240,44 @@ live_design! {
             }
         }
     }
+    // SearchResultStackView is the main container widget for the search results screen.
+    // 
+    // This widget provides the overall layout structure for displaying search results
+    // within a navigation view. It's designed as a StackNavigationView that includes:
+    // - A header with the title "Search Results"
+    // - A body containing the SearchResult widget
+    // 
+    pub SearchResultStackView = <StackNavigationView> {
+        width: Fill, height: Fill
+        full_screen: false
+        padding: 0,
+        draw_bg: {
+            color: (COLOR_SECONDARY)
+        }
+        flow: Down
+    
+        body = {
+            margin: {top: 0.0 },
+            <SearchResult> {}
+        }
+    
+        header = {
+            height: 30.0,
+            padding: {bottom: 10., top: 10.}
+            content = {
+                title_container = {
+                    title = {
+                        draw_text: {
+                            wrap: Ellipsis,
+                            text_style: { font_size: 10. }
+                            color: #B,
+                        }
+                        text: "Search Results"
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Apply highlights to a string by wrapping matching terms in HTML spans.
@@ -252,7 +290,7 @@ fn apply_highlights(text: String, highlights: &[String]) -> String {
             |caps: &regex::Captures| {
                 format!(
                     "<span data-mx-bg-color=\"#fcdb03\">{}</span>",
-                    caps[0].to_string() // Preserves original case
+                    &caps[0].to_string() // Preserves original case
                 )
             },
         ).to_string();
@@ -277,15 +315,44 @@ fn apply_highlights(text: String, highlights: &[String]) -> String {
 /// - Preserves original case and formatting of the matched text
 /// - Creates or updates the message's `formatted` field with highlighted HTML content
 pub fn highlight_search_terms_in_message(message: &mut RoomMessageEventContent, highlights: &[String]) {
-    if let MessageType::Text(text) = &mut message.msgtype {
-        let formatted = if let Some(ref mut formatted) = text.formatted {
-            apply_highlights(formatted.body.clone(), highlights)
-        } else {
-            let formatted_string = apply_highlights(text.body.clone(), highlights);
-            // issue of returning one result
-            formatted_string
-        };
-        text.formatted = Some(FormattedBody::html(formatted));
+    /// Macro to apply highlights and set formatted content for message types with formatted fields
+    macro_rules! apply_highlights_to_content {
+        ($text:expr) => {{
+            let formatted = if let Some(ref mut formatted) = $text.formatted {
+                apply_highlights(formatted.body.clone(), highlights)
+            } else {
+                apply_highlights($text.body.clone(), highlights)
+            };
+            $text.formatted = Some(FormattedBody::html(formatted));
+        }};
+    }
+
+    match &mut message.msgtype {
+        MessageType::Text(text) => {
+            apply_highlights_to_content!(text);
+        }
+        MessageType::Notice(text) => {
+            apply_highlights_to_content!(text);
+        }
+        MessageType::Emote(text) => {
+            apply_highlights_to_content!(text);
+        }
+        MessageType::File(text) => {
+            apply_highlights_to_content!(text);
+        }
+        MessageType::Image(text) => {
+            apply_highlights_to_content!(text);
+        }
+        MessageType::Video(text) => {
+            apply_highlights_to_content!(text);
+        }
+        MessageType::Audio(text) => {
+            apply_highlights_to_content!(text);
+        }
+        MessageType::VerificationRequest(text) => {
+            apply_highlights_to_content!(text);
+        }
+        _ => {}
     }
 }
 
@@ -307,16 +374,43 @@ struct SearchState {
     prev_search_term: Option<String>,
     /// Whether all search results have been fully paginated.
     is_fully_paginated: bool,
-    /// The index of the searched item that was most recently scrolled up past it.
-    /// This is used to detect when the user has scrolled up past the second visible item (index 1)
-    /// upwards to the first visible item (index 0), which is the top of the timeline,
-    /// at which point we submit a backwards pagination request to fetch more events.
-    last_scrolled_index: usize,
+    /// This index is used when back pagination of the searched results fails.
+    /// We will restore the scroll position to this index with enough offset 
+    /// so that the user can scroll down to try back pagination again.
+    scroll_restore_checkpoint: usize,
 }
 
 /// The main widget that displays a list of search results.
+/// 
+/// SearchResult is a complex widget that manages the display and interaction
+/// with Matrix message search results. It provides:
+/// 
+/// ## Key Features:
+/// - **Infinite scrolling**: Automatically loads more results when scrolling
+/// - **Message highlighting**: Highlights search terms in message content
+/// - **Room filtering**: Can search in specific rooms or all rooms
+/// - **Pagination**: Handles Matrix server pagination tokens efficiently
+/// - **Loading states**: Shows loading indicators during search operations
+/// 
+/// ## State Management:
+/// The widget maintains a `SearchState` that tracks:
+/// - Search result items and their drawing status
+/// - User profile information for message authors
+/// - Pagination tokens for loading additional results
+/// - Search parameters and room context
+/// 
+/// ## UI Components:
+/// - Search summary bar showing result counts and search terms
+/// - Scrollable message list with rich content rendering
+/// - Loading indicators for ongoing operations
+/// - "Search All Rooms" and "Search Again" action buttons
+/// 
+/// ## Event Handling:
+/// The widget responds to scroll events to trigger pagination,
+/// search input changes to update results, and button clicks
+/// for room-specific vs global search operations.
 #[derive(Live, LiveHook, Widget)]
-struct SearchResults {
+struct SearchResult {
     #[deref]
     view: View,
     #[layout]
@@ -331,8 +425,8 @@ struct SearchResults {
     room_id: Option<OwnedRoomId>,
 }
 
-impl Widget for SearchResults {
-    /// Handles events and actions for the SearchResults widget and its inner Timeline view.
+impl Widget for SearchResult {
+    /// Handles events and actions for the SearchResult widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Handle pagination when user scrolls to the top
         if let Event::Actions(actions) = event {
@@ -354,7 +448,7 @@ impl Widget for SearchResults {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
             let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
-                error!("!!! SearchResults::draw_walk(): BUG: expected a PortalList widget, but got something else");
+                error!("!!! SearchResult::draw_walk(): BUG: expected a PortalList widget, but got something else");
                 continue;
             };
              if tl_items.is_empty() {
@@ -421,7 +515,7 @@ impl Widget for SearchResults {
     }
 }
 
-impl SearchResults {
+impl SearchResult {
     /// Sends a pagination request when the user is scrolling down and approaching the bottom of the search results.
     /// The request is sent with the `next_batch` token from the last search result received.
     fn paginate_search_results_based_on_scroll_pos(
@@ -438,12 +532,12 @@ impl SearchResults {
         let first_index = portal_list.first_id();
         let visible_items: usize = portal_list.visible_items();
         log!("Scrolled down from item {} --> {:?}, before sending room {:?} last index {:?}",
-            self.search_state.last_scrolled_index, total_items, self.room_id, first_index + visible_items
+            self.search_state.scroll_restore_checkpoint, total_items, self.room_id, first_index + visible_items
         );
-        if first_index + visible_items >= total_items.saturating_sub(1) && self.search_state.last_scrolled_index < first_index {
+        if first_index + visible_items >= total_items.saturating_sub(1) && self.search_state.scroll_restore_checkpoint < first_index {
             if let Some(next_batch_token) = self.search_state.next_batch_token.take() {
                 log!("Scrolled down from item {} --> {:?}, sending back pagination request for search result in room {:?}",
-                    self.search_state.last_scrolled_index, total_items, self.room_id,
+                    self.search_state.scroll_restore_checkpoint, total_items, self.room_id,
                 );
                 let search_result_summary_ref =
                     self.view.search_result_summary(id!(search_result_plane));
@@ -466,7 +560,7 @@ impl SearchResults {
     }
 }
 
-impl SearchResults {
+impl SearchResult {
     /// Processes a new batch of search results and updates the UI and state.
     /// Optimized to take ownership of results to avoid clones.
     fn process_search_results(
@@ -489,10 +583,6 @@ impl SearchResults {
         self.view
             .button(id!(search_all_rooms_button))
             .set_enabled(cx, true);
-        // Hide the search again button when successful results are received
-        self.view
-            .button(id!(search_again_button))
-            .set_visible(cx, false);
 
         search_result_summary_ref.display_result_summary(
             cx, 
@@ -519,7 +609,7 @@ impl SearchResults {
         self.search_state.next_batch_token = results.next_batch.clone();
         self.search_state.is_fully_paginated = results.next_batch.is_none();
         self.search_state.prev_search_term = Some(results.search_term);
-        self.search_state.last_scrolled_index = search_portal_list.first_id();
+        self.search_state.scroll_restore_checkpoint = search_portal_list.first_id();
         self.redraw(cx);
     }
 
@@ -541,6 +631,7 @@ impl SearchResults {
                         next_batch: None,
                         abort_previous_search: true,
                     });
+                    search_result_summary_ref.display_instruction(cx);
                     return;
                 }
                 self.view
@@ -590,14 +681,10 @@ impl SearchResults {
     }
 
     fn handle_room_focus_changed_action(&mut self, cx: &mut Cx, action: &Action) {
-        match action.as_widget_action().cast() {
-            AppStateAction::RoomFocused(_room_id) => {
-                // Show the search again button
-                self.view
-                    .button(id!(search_again_button))
-                    .set_visible(cx, true);
-            }
-            _ => { }
+        if let AppStateAction::RoomFocused(_room_id) = action.as_widget_action().cast() {
+            self.view
+                .button(id!(search_again_button))
+                .set_visible(cx, true);
         }
     }
     /// Displays the loading view for backwards pagination for search result.
@@ -611,7 +698,7 @@ impl SearchResults {
     }
 }
 
-impl WidgetMatchEvent for SearchResults {
+impl WidgetMatchEvent for SearchResult {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         for action in actions.iter() {
             self.handle_search_bar_action(cx, scope, action);
@@ -631,7 +718,8 @@ impl WidgetMatchEvent for SearchResults {
                         .button(id!(search_again_button))
                         .set_visible(cx, true);
                     let search_portal_list = self.portal_list(id!(searched_messages.list));
-                    search_portal_list.set_first_id_and_scroll(self.search_state.last_scrolled_index, 100.0);
+                    // Leave an Y offset 100.0, so that the user can still scroll down to trigger back pagination again.
+                    search_portal_list.set_first_id_and_scroll(self.search_state.scroll_restore_checkpoint, 100.0);
                 }
                 _ => {}
             }
@@ -657,7 +745,7 @@ impl WidgetMatchEvent for SearchResults {
                     abort_previous_search: true,
                 });
             }
-            
+
             if self
                 .view
                 .button(id!(search_again_button))
@@ -694,23 +782,13 @@ impl WidgetMatchEvent for SearchResults {
                     search_all_rooms_button.set_enabled(cx, false);
                     let message_search_input_bar_ref = cx.get_global::<MessageSearchInputBarRef>();
                     let search_term = message_search_input_bar_ref.get_text();
-                    if includes_all_rooms {
-                        let criteria = create_search_criteria(search_term, MessageSearchChoice::AllRooms);
-                        search_result_summary_ref.display_search_criteria(cx, scope, criteria.clone());
-                        submit_async_request(MatrixRequest::SearchMessages {
-                            criteria,
-                            next_batch: None,
-                            abort_previous_search: true,
-                        });
-                    } else {
-                        let criteria = create_search_criteria(search_term, MessageSearchChoice::OneRoom(room_id.clone()));
-                        search_result_summary_ref.display_search_criteria(cx, scope, criteria.clone());
-                        submit_async_request(MatrixRequest::SearchMessages {
-                            criteria,
-                            next_batch: None,
-                            abort_previous_search: true,
-                        });
-                    }
+                    let criteria = create_search_criteria(search_term, if includes_all_rooms { MessageSearchChoice::AllRooms } else { MessageSearchChoice::OneRoom(room_id.clone()) } );
+                    search_result_summary_ref.display_search_criteria(cx, scope, criteria.clone());
+                    submit_async_request(MatrixRequest::SearchMessages {
+                        criteria,
+                        next_batch: None,
+                        abort_previous_search: true,
+                    });
                 }
             }
         }
@@ -778,6 +856,11 @@ impl Widget for SearchResultSummary {
         if !self.visible {
             return DrawStep::done();
         }
+        let message_search_input_bar_ref = cx.get_global::<MessageSearchInputBarRef>();
+        let search_term = message_search_input_bar_ref.get_text();
+        self.view
+            .button(id!(search_again_button))
+            .set_visible(cx, !search_term.is_empty());
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -895,12 +978,13 @@ impl SearchResultSummaryRef {
 }
 
 /// Search result as timeline item
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum SearchResultItem {
     /// The event that matches the search criteria with precomputed formatted content.
     Event {
-        event: Arc<AnyTimelineEvent>,
-        formatted_content: Arc<Option<RoomMessageEventContent>>,
+        event: AnyTimelineEvent,
+        formatted_content: Option<RoomMessageEventContent>,
     },
     /// The room id used for displaying room header for all searched messages in a screen.
     RoomHeader(OwnedRoomId),
@@ -942,9 +1026,9 @@ fn populate_message_search_view(
     };
 
     let ts_millis = event.origin_server_ts();
-
+    
     // Use precomputed formatted content
-    let (item, used_cached_item) = if let Some(content) = formatted_content.as_ref() {
+    let (item, used_cached_item) = if let Some(content) = formatted_content {
         match &content.msgtype {
             MessageType::Text(TextMessageEventContent { body, formatted, ..})
                 | MessageType::Notice(NoticeMessageEventContent { body, formatted, ..})
@@ -959,23 +1043,9 @@ fn populate_message_search_view(
                 if existed && item_drawn_status.content_drawn {
                     (item, true)
                 } else {
-                    let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
-                    html_or_plaintext_ref.apply_over(
-                        cx,
-                        live!(
-                            html_view = {
-                                html = {
-                                    font_color: (vec3(0.0,0.0,0.0)),
-                                    draw_block: {
-                                        code_color: (COLOR_WARNING_YELLOW)
-                                    }
-                                }
-                            }
-                        ),
-                    );
                     populate_text_message_content(
                         cx,
-                        &html_or_plaintext_ref,
+                        &item.html_or_plaintext(id!(content.message)),
                         body,
                         formatted.as_ref(),
                     );
