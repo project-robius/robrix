@@ -5,6 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{app::{AppState, AppStateAction, SelectedRoom}, shared::message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef}, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -172,7 +173,7 @@ impl MainDesktopUI {
 
         self.open_rooms.insert(room_id_as_live_id, room.clone());
         self.most_recently_selected_room = Some(room.clone());
-        // Calls AppStateAction::RoomFocused action to display the search message input box when a room is open.
+        // Call AppStateAction::RoomFocused action to display the search message input box when a room is open.
         cx.widget_action(
             self.widget_uid(), 
             &HeapLiveIdPath::default(), 
@@ -222,7 +223,7 @@ impl MainDesktopUI {
         self.open_rooms.remove(&tab_id);
         // Clear the search input when a room is closed
         cx.get_global::<MessageSearchInputBarRef>().set_text("");
-        // clear the search results when a room is closed
+        // Clear the search results when a room is closed
         cx.widget_action(self.widget_uid(), &Scope::empty().path, MessageSearchAction::Changed(String::new()));
     }
 

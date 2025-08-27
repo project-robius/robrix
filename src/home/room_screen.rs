@@ -859,6 +859,8 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
+    /// Whether the timeline loaded notification has been sent for the current room.
+    #[rust] timeline_loaded_notified: bool,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1331,11 +1333,12 @@ impl Widget for RoomScreen {
             };
             let room_id = &tl_state.room_id;
             let tl_items = &tl_state.items;
-            if !tl_items.is_empty() {
+            if !tl_items.is_empty() && !self.timeline_loaded_notified {
                 // Signal waiting threads that this room's timeline has loaded and is ready to jump to specific messages.
                 if let Ok(map) = ROOM_TIMELINE_LOADED_MAP.read() {
                     if let Some(notify) = map.get(room_id) {
                         notify.notify_one();
+                        self.timeline_loaded_notified = true;
                     }
                 }
             }
@@ -1792,7 +1795,7 @@ impl RoomScreen {
                             item_id: index
                         };
                     } else {
-                        log!("essage not found - trigger backwards pagination to find it");
+                        log!("Message not found - trigger backwards pagination to find it");
                         // Message not found - trigger backwards pagination to find it
                         loading_pane.set_state(
                             cx,
@@ -2625,6 +2628,8 @@ impl RoomScreen {
         self.loading_pane(id!(loading_pane)).take_state();
         self.room_name = room_name_or_id(room_name.into(), &room_id);
         self.room_id = Some(room_id.clone());
+        // Reset timeline loaded notification flag for the new room
+        self.timeline_loaded_notified = false;
 
         // We initially tell every MentionableTextInput widget that the current user
         // *does not* has privileges to notify the entire room;
@@ -4406,7 +4411,7 @@ impl Widget for Message {
                         &scope.path,
                         RoomsListAction::Selected(target_selected_room)
                     );
-                    submit_async_request(MatrixRequest::WaitForRoomTimelineDrawnToJump { room_id: jump_request.room_id.clone(), event_id: jump_request.event_id.clone() });
+                    submit_async_request(MatrixRequest::WaitForRoomTimelineLoadedToJump { room_id: jump_request.room_id.clone(), event_id: jump_request.event_id.clone() });
                 }
             }
             self.view.handle_event(cx, event, scope);

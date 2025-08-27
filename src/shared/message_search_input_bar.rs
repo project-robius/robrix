@@ -77,7 +77,7 @@ pub struct MessageSearchInputBar {
     #[rust] search_term: String,
 }
 
-/// Actions emitting by the `MessageSearchInputBar`.
+/// Actions emitted by the `MessageSearchInputBar`.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum MessageSearchAction {
     /// Emitted when the user has changed the text (after debounce delay or clear button).

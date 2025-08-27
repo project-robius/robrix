@@ -344,5 +344,5 @@ impl MatchEvent for NavigationWrapper {
 pub enum MessageSearchInputAction {
     #[default]
     Show,
-    Hide
+    Hide,
 }
