@@ -11,9 +11,11 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::styles::*;
     use crate::shared::icon_button::*;
+    use crate::shared::confirmation_modal::*;
     use crate::settings::account_settings::AccountSettings;
-    use crate::settings::tsp_settings_screen_wrapper::TspSettingsScreenWrapper;
-    use crate::tsp::create_wallet_modal::CreateWalletModal;
+    use link::tsp_link::TspSettingsScreen;
+    use link::tsp_link::CreateWalletModal;
+    use link::tsp_link::CreateDidModal;
 
     // The main, top-level settings screen widget.
     pub SettingsScreen = {{SettingsScreen}} {
@@ -80,7 +82,7 @@ live_design! {
                 <LineH> { width: 400, padding: 10, margin: {top: 20, bottom: 5} }
 
                 // The TSP wallet settings section.
-                tsp_settings_screen_wrapper = <TspSettingsScreenWrapper> {}
+                tsp_settings_screen = <TspSettingsScreen> {}
 
                 <LineH> { width: 400, padding: 10, margin: {top: 20, bottom: 5} }
 
@@ -90,11 +92,22 @@ live_design! {
             }
         }
 
-        // We want the modal for creating a new TSP wallet to appear
-        // in front of the main settings content defined above.
+        // We want all modals to appear in front of the settings screen.
         create_wallet_modal = <Modal> {
             content: {
                 create_wallet_modal_inner = <CreateWalletModal> {}
+            }
+        }
+
+        create_did_modal = <Modal> {
+            content: {
+                create_did_modal_inner = <CreateDidModal> {}
+            }
+        }
+
+        remove_delete_wallet_modal = <Modal> {
+            content: {
+                remove_delete_wallet_modal_inner = <ConfirmationModal> { }
             }
         }
     }
@@ -138,12 +151,17 @@ impl Widget for SettingsScreen {
 
         #[cfg(feature = "tsp")]
         if let Event::Actions(actions) = event {
+            use crate::shared::confirmation_modal::ConfirmationModalWidgetExt;
+            use crate::tsp::{
+                create_did_modal::CreateDidModalAction,
+                create_wallet_modal::CreateWalletModalAction,
+                wallet_entry::TspWalletEntryAction,
+            };
+
             for action in actions {
-                // Handle the create wallet modal being closed.
-                use crate::tsp::create_wallet_modal::CreateWalletModalAction;
+                // Handle the create wallet modal being opened or closed.
                 match action.downcast_ref() {
                     Some(CreateWalletModalAction::Open) => {
-                        // Open the create wallet modal.
                         use crate::tsp::create_wallet_modal::CreateWalletModalWidgetExt;
                         self.view.create_wallet_modal(id!(create_wallet_modal_inner)).show(cx);
                         self.view.modal(id!(create_wallet_modal)).open(cx);
@@ -153,6 +171,32 @@ impl Widget for SettingsScreen {
                     }
                     None => { }
                 }
+
+                // Handle the create DID modal being opened or closed.
+                match action.downcast_ref() {
+                    Some(CreateDidModalAction::Open) => {
+                        use crate::tsp::create_did_modal::CreateDidModalWidgetExt;
+                        self.view.create_did_modal(id!(create_did_modal_inner)).show(cx);
+                        self.view.modal(id!(create_did_modal)).open(cx);
+                    }
+                    Some(CreateDidModalAction::Close) => {
+                        self.view.modal(id!(create_did_modal)).close(cx);
+                    }
+                    None => { }
+                }
+
+                // Handle a request to show a TSP wallet confirmation modal.
+                if let Some(TspWalletEntryAction::ShowConfirmationModal(content_opt)) = action.downcast_ref() {
+                    if let Some(content) = content_opt.borrow_mut().take() {
+                        self.view.confirmation_modal(id!(remove_delete_wallet_modal_inner)).show(cx, content);
+                        self.view.modal(id!(remove_delete_wallet_modal)).open(cx);
+                    }
+                }
+            }
+
+            if let Some(_accepted) = self.view.confirmation_modal(id!(remove_delete_wallet_modal_inner)).closed(actions) {
+                log!("Confirmation modal closed, did user accept? {}", _accepted);
+                self.view.modal(id!(remove_delete_wallet_modal)).close(cx);
             }
         }
     }

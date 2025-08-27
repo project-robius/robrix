@@ -1,6 +1,6 @@
 use makepad_widgets::{text::selection::Cursor, *};
 
-use crate::{profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, utils};
+use crate::{logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, utils};
 
 live_design! {
     use link::theme::*;
@@ -107,11 +107,11 @@ live_design! {
                 color_empty: (COLOR_SECONDARY)
                 color_disabled: (COLOR_BG_DISABLED)
 
-                border_color_1: (COLOR_SECONDARY)
-                border_color_1_hover: (COLOR_ACTIVE_PRIMARY)
-                border_color_1_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
-                border_color_1_down: (COLOR_ACTIVE_PRIMARY_DARKER)
-                border_color_1_disabled: (COLOR_FG_DISABLED)
+                border_color: (COLOR_SECONDARY)
+                border_color_hover: (COLOR_ACTIVE_PRIMARY)
+                border_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
+                border_color_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+                border_color_disabled: (COLOR_FG_DISABLED)
 
                 border_color_2: (COLOR_SECONDARY)
                 border_color_2_hover: (COLOR_ACTIVE_PRIMARY)
@@ -282,6 +282,21 @@ impl Widget for AccountSettings {
 
 impl MatchEvent for AccountSettings {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        // Handle LogoutAction::InProgress to update button state
+        for action in actions {
+            if let Some(LogoutAction::InProgress(value)) = action.downcast_ref() {
+                let logout_button = self.view.button(id!(logout_button));
+                if *value {
+                    logout_button.set_text(cx, "Log out in progress...");
+                    logout_button.set_enabled(cx, false);
+                    logout_button.reset_hover(cx);
+                } else {
+                    logout_button.set_text(cx, "Log out");
+                    logout_button.set_enabled(cx, true);
+                }
+            }
+        }
+        
         let Some(own_profile) = &self.own_profile else { return };
 
         if self.view.button(id!(upload_avatar_button)).clicked(actions) {
@@ -386,12 +401,7 @@ impl MatchEvent for AccountSettings {
         }
 
         if self.view.button(id!(logout_button)).clicked(actions) {
-            // TODO: support logging out the user.
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Logout is not yet implemented."),
-                auto_dismissal_duration: Some(4.0),
-                kind: PopupKind::Warning
-            });
+            cx.action(LogoutConfirmModalAction::Open);
         }
     }
 }

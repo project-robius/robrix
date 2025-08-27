@@ -4385,3 +4385,15 @@ impl MessageRef {
         inner.set_data(details);
     }
 }
+
+/// Clears all UI-related timeline states for all known rooms.
+///
+/// This function requires passing in a reference to `Cx`,
+/// which isn't used, but acts as a guarantee that this function
+/// must only be called by the main UI thread. 
+pub fn clear_timeline_states(_cx: &mut Cx) {
+    // Clear timeline states cache
+    TIMELINE_STATES.with_borrow_mut(|states| {
+        states.clear();
+    });
+}

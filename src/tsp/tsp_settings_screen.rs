@@ -1,10 +1,10 @@
-use std::ops::DerefMut;
-
 use makepad_widgets::*;
 
-use crate::{shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, tsp::{create_wallet_modal::CreateWalletModalAction, tsp_state_ref, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
+use crate::{shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, tsp_state_ref, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
 live_design! {
+    link tsp_enabled
+
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
@@ -19,6 +19,10 @@ live_design! {
     pub TspSettingsScreen = {{TspSettingsScreen}} {
         width: Fill, height: Fit
         flow: Down
+
+        <TitleLabel> {
+            text: "TSP Wallet Settings"
+        }
 
         <SubsectionLabel> {
             text: "Your Wallets:"
@@ -49,18 +53,17 @@ live_design! {
                 border_radius: 4.0,
             }
 
-            wallet_list = <PortalList> {
+            wallet_list = <FlatList> {
                 width: Fill,
-                height: 200,
+                height: Fit,
                 spacing: 0.0
                 flow: Down,
 
+                grab_key_focus: true,
+                drag_scrolling: true,
+                scroll_bars: { show_scroll_x: false, show_scroll_y: false },
+
                 wallet_entry = <WalletEntry> { }
-                empty = <View> { }
-                bottom_filler = <View> {
-                    width: Fill,
-                    height: 100.0,
-                }
             }
         }
 
@@ -70,6 +73,27 @@ live_design! {
             flow: RightWrap,
             align: {y: 0.5},
             spacing: 10
+
+            create_did_button = <RobrixIconButton> {
+                width: Fit, height: Fit,
+                padding: 10,
+                margin: {left: 5},
+
+                draw_bg: {
+                    border_color: (COLOR_FG_ACCEPT_GREEN),
+                    color: (COLOR_BG_ACCEPT_GREEN),
+                    border_radius: 5
+                }
+                draw_icon: {
+                    svg_file: (ICON_ADD_USER)
+                    color: (COLOR_FG_ACCEPT_GREEN),
+                }
+                icon_walk: {width: 21, height: Fit, margin: 0}
+                draw_text: {
+                    color: (COLOR_FG_ACCEPT_GREEN),
+                }
+                text: "Create New Identity (DID)"
+            }
 
             create_wallet_button = <RobrixIconButton> {
                 width: Fit, height: Fit,
@@ -120,7 +144,11 @@ struct WalletState {
 }
 impl WalletState {
     fn is_empty(&self) -> bool {
-        self.active_wallet.is_none() && self.other_wallets.is_empty()
+        self.len() == 0
+    }
+
+    fn len(&self) -> usize {
+        self.active_wallet.is_some() as usize + self.other_wallets.len()
     }
 
     fn get(&self, index: usize) -> Option<(&TspWalletMetadata, WalletStatusAndDefault)> {
@@ -140,7 +168,7 @@ impl WalletState {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WalletStatus {
     Opened,
     NotFound,
@@ -192,38 +220,23 @@ impl Widget for TspSettingsScreen {
         self.view.view(id!(no_wallets_label)).set_visible(cx, is_wallets_empty);
 
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
-            // Here, we only need to handle drawing the portal list.
-            let portal_list_ref = subview.as_portal_list();
-            let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
-                error!("!!! TspSettingsScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
+            // Here, we only need to handle drawing the wallet list.
+            let flat_list_ref = subview.as_flat_list();
+            let Some(mut list) = flat_list_ref.borrow_mut() else {
+                error!("!!! TspSettingsScreen::draw_walk(): BUG: expected a FlatList widget, but got something else");
                 continue;
             };
             let Some(wallets) = self.wallets.as_ref() else {
                 return DrawStep::done();
             };
-            let portal_list_height = if is_wallets_empty { 0.0 } else { 200.0 };
-            // Hide the list if there are no wallets
-            list_ref.apply_over(cx, live!(
-                height: (portal_list_height),
-            ));
 
-            // Set the portal list's range based on the number of timeline items.
-            let last_item_id = wallets.active_wallet.is_some() as usize + wallets.other_wallets.len();
-            let list = list_ref.deref_mut();
-            list.set_item_range(cx, 0, last_item_id);
-
-            while let Some(item_id) = list.next_visible_item(cx) {
-                if let Some((metadata, mut status_and_default)) = wallets.get(item_id) {
-                    let item = list.item(cx, item_id, live_id!(wallet_entry));
-                    // Pass the wallet metadata in through Scope via props,
-                    // and status/is_default via data.
-                    let mut scope = Scope::with_data_props(&mut status_and_default, metadata);
-                    item.draw_all(cx, &mut scope);
-                } else {
-                    list.item(cx, item_id, live_id!(bottom_filler))
-                        .draw_all(cx, scope);
-                }
-                
+            for (metadata, mut status_and_default) in (0..wallets.len()).filter_map(|i| wallets.get(i)) {
+                let item_live_id = LiveId::from_str(metadata.url.as_url_unencoded());
+                let item = list.item(cx, item_live_id, live_id!(wallet_entry)).unwrap();
+                // Pass the wallet metadata in through Scope via props,
+                // and status/is_default via data.
+                let mut scope = Scope::with_data_props(&mut status_and_default, metadata);
+                item.draw_all(cx, &mut scope);
             }
         }
         DrawStep::done()
@@ -246,23 +259,31 @@ impl MatchEvent for TspSettingsScreen {
                 }
 
                 // Remove the wallet from the list of drawn wallets.
-                Some(TspWalletAction::WalletRemoved(metadata)) => {
-                    if let Some(wallets) = &mut self.wallets {
-                        // If the wallet was the active one, clear it.
-                        if wallets.active_wallet.as_ref() == Some(metadata) {
-                            wallets.active_wallet = None;
-                            self.view.redraw(cx);
-                        } else if let Some(pos) = wallets.other_wallets.iter().position(|(w, _)| w == metadata) {
-                            wallets.other_wallets.remove(pos);
-                            self.view.redraw(cx);
-                        } else {
-                            error!("BUG: TspSettingsScreen::handle_actions(): Wallet deleted, but not found in the list.");
-                            self.refresh_wallets();
-                        }
-                    } else {
-                        error!("BUG: TspSettingsScreen::handle_actions(): Wallet deleted, but no wallets list exists.");
-                        self.refresh_wallets();
+                Some(TspWalletAction::WalletRemoved { metadata, was_default }) => {
+                    let Some(wallets) = &mut self.wallets.as_mut() else { continue };
+                    if *was_default {
+                        wallets.active_wallet = None;
                     }
+                    else if let Some(pos) = wallets.other_wallets.iter().position(|(w, _)| w == metadata) {
+                        wallets.other_wallets.remove(pos);
+                    }
+                    else { continue; }
+                    enqueue_popup_notification(PopupItem {
+                        message: format!("Removed wallet \"{}\".", metadata.wallet_name),
+                        auto_dismissal_duration: Some(4.0),
+                        kind: PopupKind::Success,
+                    });
+                    if *was_default {
+                        // If the removed wallet was the default wallet, notify the user.
+                        // The user should then select another wallet as the default.
+                        enqueue_popup_notification(PopupItem {
+                            message: String::from("The default wallet was removed.\n\n\
+                                TSP wallet-related features will not work properly until you set a default wallet."),
+                            auto_dismissal_duration: None,
+                            kind: PopupKind::Warning,
+                        });
+                    }
+                    self.view.redraw(cx);
                 }
 
                 // Update the default/active wallet.
@@ -306,12 +327,19 @@ impl MatchEvent for TspSettingsScreen {
                 }
 
                 Some(TspWalletAction::CreateWalletError { .. }) // handled in the CreateWalletModal
+                | Some(TspWalletAction::DidCreationResult(_)) // handled in the CreateDidModal
                 | None => { }
             }
         }
 
         if self.view.button(id!(create_wallet_button)).clicked(actions) {
             cx.action(CreateWalletModalAction::Open);
+        }
+
+        if self.view.button(id!(create_did_button)).clicked(actions) {
+            if self.has_default_wallet() {
+                cx.action(CreateDidModalAction::Open);
+            }
         }
 
         if self.view.button(id!(import_wallet_button)).clicked(actions) {
@@ -341,5 +369,31 @@ impl TspSettingsScreen {
             active_wallet: current_wallet,
             other_wallets,
         });
+    }
+
+    /// Checks if the current TSP state has a default wallet set and ready to use.
+    ///
+    /// This function will display warnings to the user if no default wallet is set
+    /// or if there are no wallets at all.
+    ///
+    /// Returns `true` if a default wallet is set, `false` otherwise.
+    fn has_default_wallet(&self) -> bool {
+        let Some(wallets) = self.wallets.as_ref() else {
+            enqueue_popup_notification(PopupItem {
+                message: String::from("No TSP wallets found.\n\nPlease create or import a wallet."),
+                auto_dismissal_duration: Some(5.0),
+                kind: PopupKind::Warning,
+            });
+            return false;
+        };
+        if wallets.active_wallet.is_none() {
+            enqueue_popup_notification(PopupItem {
+                message: String::from("No default TSP wallet is set.\n\nPlease select or create a default wallet."),
+                auto_dismissal_duration: Some(5.0),
+                kind: PopupKind::Warning,
+            });
+            return false;
+        }
+        true
     }
 }

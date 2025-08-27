@@ -3,6 +3,7 @@ use makepad_widgets::Cx;
 pub mod avatar;
 pub mod callout_tooltip;
 pub mod collapsible_header;
+pub mod confirmation_modal;
 pub mod helpers;
 pub mod html_or_plaintext;
 pub mod icon_button;
@@ -39,5 +40,5 @@ pub fn live_design(cx: &mut Cx) {
     callout_tooltip::live_design(cx);
     mentionable_text_input::live_design(cx);
     restore_status_view::live_design(cx);
-    image_viewer_modal::live_design(cx);
+    confirmation_modal::live_design(cx);
 }

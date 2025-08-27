@@ -9,15 +9,15 @@ use std::collections::HashMap;
 use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
-    home::{
+    avatar_cache::clear_avatar_cache, home::{
         main_desktop_ui::MainDesktopUiAction,
         new_message_context_menu::NewMessageContextMenuWidgetRefExt,
-        room_screen::MessageAction,
-        rooms_list::RoomsListAction,
-    },
-    join_leave_room_modal::{
+        room_screen::{clear_timeline_states, MessageAction},
+        rooms_list::{clear_all_invited_rooms, RoomsListAction},
+    }, join_leave_room_modal::{
         JoinLeaveRoomModalAction,
         JoinLeaveRoomModalWidgetRefExt,
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, shared::callout_tooltip::{
     },
     login::login_screen::LoginAction,
     persistence,
@@ -25,17 +25,13 @@ use crate::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, image_viewer_modal::ImageViewerModalWidgetRefExt},
-    sliding_sync::current_user_id,
-    utils::{
+    }, sliding_sync::current_user_id, utils::{
         room_name_or_id,
         OwnedRoomIdRon,
-    },
-    verification::VerificationAction,
-    verification_modal::{
+    }, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
-    },
+    }
 };
 
 live_design! {
@@ -48,6 +44,7 @@ live_design! {
     use crate::verification_modal::VerificationModal;
     use crate::join_leave_room_modal::JoinLeaveRoomModal;
     use crate::login::login_screen::LoginScreen;
+    use crate::logout::logout_confirm_modal::LogoutConfirmModal;
     use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
@@ -196,6 +193,13 @@ live_design! {
                             }
                         }
 
+                        // Logout confirmation modal 
+                        logout_confirm_modal = <Modal> {
+                            content: {
+                                logout_confirm_modal_inner = <LogoutConfirmModal> {}
+                            }
+                        }
+
                         // Tooltips must be shown in front of all other UI elements,
                         // since they can be shown as a hover atop any other widget.
                         app_tooltip = <CalloutTooltip> {}
@@ -226,9 +230,23 @@ impl LiveRegister for App {
         // then `shared`` widgets (in which styles are defined),
         // then other modules widgets.
         makepad_widgets::live_design(cx);
+        // Override Makepad's default desktop dark theme with the desktop light theme.
+        cx.link(live_id!(theme), live_id!(theme_desktop_light));
         crate::shared::live_design(cx);
-        #[cfg(feature = "tsp")]
-        crate::tsp::live_design(cx);
+
+        // If the `tsp` cargo feature is enabled, we create a new "tsp_link" DSL namespace
+        // and link it to the real `tsp_enabled` DSL namespace, which contains real TSP widgets.
+        // If the `tsp` feature is not enabled, link the "tsp_link" DSL namespace
+        // to the `tsp_disabled` DSL namespace instead, which defines dummy placeholder widgets.
+        #[cfg(feature = "tsp")] {
+            crate::tsp::live_design(cx);
+            cx.link(live_id!(tsp_link), live_id!(tsp_enabled));
+        }
+        #[cfg(not(feature = "tsp"))] {
+            crate::tsp_dummy::live_design(cx);
+            cx.link(live_id!(tsp_link), live_id!(tsp_disabled));
+        }
+
         crate::settings::live_design(cx);
         crate::room::live_design(cx);
         crate::join_leave_room_modal::live_design(cx);
@@ -236,6 +254,7 @@ impl LiveRegister for App {
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
         crate::login::live_design(cx);
+        crate::logout::live_design(cx);
     }
 }
 
@@ -266,16 +285,48 @@ impl MatchEvent for App {
         self.update_login_visibility(cx);
 
         log!("App::Startup: starting matrix sdk loop");
-        let _tokio_rt = crate::sliding_sync::start_matrix_tokio().unwrap();
+        let _tokio_rt_handle = crate::sliding_sync::start_matrix_tokio().unwrap();
 
         #[cfg(feature = "tsp")] {
             log!("App::Startup: initializing TSP (Trust Spanning Protocol) module.");
-            crate::tsp::tsp_init(_tokio_rt).unwrap();
+            crate::tsp::tsp_init(_tokio_rt_handle).unwrap();
         }
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
+            if let Some(logout_modal_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
+                match logout_modal_action {
+                    LogoutConfirmModalAction::Open => {
+                        self.ui.logout_confirm_modal(id!(logout_confirm_modal_inner)).reset_state(cx);
+                        self.ui.modal(id!(logout_confirm_modal)).open(cx)
+                    },
+                    LogoutConfirmModalAction::Close { was_internal, .. } => {
+                        if *was_internal {
+                            self.ui.modal(id!(logout_confirm_modal)).close(cx);
+                        }
+                    },
+                    _ => {}
+                }
+            }
+
+            if let Some(LogoutAction::LogoutSuccess) = action.downcast_ref() {
+                self.app_state.logged_in = false;
+                self.ui.modal(id!(logout_confirm_modal)).close(cx);
+                self.update_login_visibility(cx);
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            if let Some(LogoutAction::ClearAppState { on_clear_appstate }) = action.downcast_ref() {
+                // Clear user profile cache, invited_rooms timeline states 
+                clear_all_app_state(cx);
+                // Reset all app state to its default.
+                self.app_state = Default::default();
+                on_clear_appstate.notify_one();
+                continue;
+            }
+
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                 log!("Received LoginAction::LoginSuccess, hiding login view.");
                 self.app_state.logged_in = true;
@@ -429,6 +480,15 @@ impl MatchEvent for App {
     }
 }
 
+/// Clears all thread-local UI caches (user profiles, invited rooms, and timeline states).
+/// The `cx` parameter ensures that these thread-local caches are cleared on the main UI thread, 
+fn clear_all_app_state(cx: &mut Cx) {
+    clear_user_profile_cache(cx);
+    clear_all_invited_rooms(cx);
+    clear_timeline_states(cx);
+    clear_avatar_cache(cx);
+}
+
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         // if let Event::WindowGeomChange(geom) = event {
@@ -449,22 +509,20 @@ impl AppMain for App {
             #[cfg(feature = "tsp")] {
                 // Save the TSP wallet state, if it exists, with a 3-second timeout.
                 let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
-                if tsp_state.has_content() {
-                    let res = crate::sliding_sync::block_on_async_with_timeout(
-                        Some(std::time::Duration::from_secs(3)),
-                        async move {
-                            match tsp_state.close_and_serialize().await {
-                                Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
-                                    Ok(_) => { }
-                                    Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
-                                }
-                                Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
+                let res = crate::sliding_sync::block_on_async_with_timeout(
+                    Some(std::time::Duration::from_secs(3)),
+                    async move {
+                        match tsp_state.close_and_serialize().await {
+                            Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
+                                Ok(_) => { }
+                                Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
                             }
-                        },
-                    );
-                    if let Err(_e) = res {
-                        error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
-                    }
+                            Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
+                        }
+                    },
+                );
+                if let Err(_e) = res {
+                    error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
                 }
             }
         }

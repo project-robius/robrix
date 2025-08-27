@@ -13,6 +13,8 @@ pub mod settings;
 
 /// Login screen
 pub mod login;
+/// Logout confirmation and state management
+pub mod logout;
 /// Core UI content: the main home screen (rooms list), room screen.
 pub mod home;
 /// User profile info and a user profile sliding pane.
@@ -26,9 +28,14 @@ pub mod shared;
 /// Generating text previews of timeline events/messages.
 mod event_preview;
 pub mod room;
+
+
 /// All content related to TSP (Trust Spanning Protocol) wallets/identities.
 #[cfg(feature = "tsp")]
 pub mod tsp;
+/// Dummy TSP module with placeholder widgets, for builds without TSP.
+#[cfg(not(feature = "tsp"))]
+pub mod tsp_dummy;
 
 
 // Matrix stuff
