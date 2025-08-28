@@ -1128,11 +1128,15 @@ impl Widget for RoomScreen {
         let is_pane_shown: bool;
         if loading_pane.is_currently_shown(cx) {
             is_pane_shown = true;
-            loading_pane.handle_event(cx, event, scope);
+            if is_interactive_hit {
+                loading_pane.handle_event(cx, event, scope);
+            }
         }
         else if user_profile_sliding_pane.is_currently_shown(cx) {
             is_pane_shown = true;
-            user_profile_sliding_pane.handle_event(cx, event, scope);
+            if is_interactive_hit {
+                user_profile_sliding_pane.handle_event(cx, event, scope);
+            }
         }
         else {
             is_pane_shown = false;

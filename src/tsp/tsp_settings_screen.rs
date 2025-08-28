@@ -327,10 +327,15 @@ impl MatchEvent for TspSettingsScreen {
                 }
 
                 Some(TspWalletAction::CreateWalletError { .. }) // handled in the CreateWalletModal
-                | Some(TspWalletAction::DidCreationResult(_)) // handled in the CreateDidModal
                 | None => { }
             }
         }
+
+        // | Some(TspWalletAction::SentDidAssociationRequest { .. }) // handled in the TspVerifyUser widget
+        // | Some(TspWalletAction::ErrorSendingDidAssociationRequest { .. }) // handled in the TspVerifyUser widget
+        // | Some(TspWalletAction::ReceivedDidAssociationResponse { .. }) // handled in the TspVerifyUser widget
+        // | Some(TspWalletAction::ReceivedDidAssociationRequest(_)) // handled in the TspVerifyUser widget
+        // | Some(TspWalletAction::ReceiveLoopError { .. }) // handled in the top-level app
 
         if self.view.button(id!(create_wallet_button)).clicked(actions) {
             cx.action(CreateWalletModalAction::Open);

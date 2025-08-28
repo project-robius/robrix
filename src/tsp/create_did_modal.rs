@@ -416,7 +416,7 @@ impl WidgetMatchEvent for CreateDidModal {
 
         for action in actions {
             match action.downcast_ref() {
-                Some(tsp::TspWalletAction::DidCreationResult(Ok(did)))=> {
+                Some(tsp::TspIdentityAction::DidCreationResult(Ok(did)))=> {
                     self.state = CreateDidModalState::IdentityCreated;
                     self.is_showing_error = false;
                     let message = format!("Successfully created and published DID: \"{}\"", did);
@@ -445,7 +445,7 @@ impl WidgetMatchEvent for CreateDidModal {
 
                 // Upon an error, update the status label and disable the accept button.
                 // Re-enable the input fields so the user can change the input values to try again.
-                Some(tsp::TspWalletAction::DidCreationResult(Err(e)))=> {
+                Some(tsp::TspIdentityAction::DidCreationResult(Err(e)))=> {
                     self.state = CreateDidModalState::IdentityCreationError;
                     self.is_showing_error = true;
                     let message = format!("Failed to create DID: {e}");

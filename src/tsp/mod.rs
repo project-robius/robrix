@@ -1,10 +1,13 @@
-use std::{borrow::Cow, ops::Deref, path::Path, sync::{Mutex, OnceLock}};
+use std::{borrow::Cow, collections::BTreeMap, ops::Deref, path::Path, sync::{Mutex, OnceLock}};
 
 use anyhow::anyhow;
-use makepad_widgets::{makepad_micro_serde::*, *};
+use futures_util::StreamExt;
+use makepad_widgets::*;
+use matrix_sdk::ruma::{OwnedUserId, UserId};
 use quinn::rustls::crypto::{CryptoProvider, aws_lc_rs};
-use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
-use tsp_sdk::{vid::{verify_vid, VidError}, AskarSecureStorage, AsyncSecureStore, OwnedVid, SecureStorage, VerifiedVid, Vid};
+use serde::{Deserialize, Serialize};
+use tokio::{task::JoinHandle, runtime::Handle, sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender}};
+use tsp_sdk::{vid::{verify_vid, VidError}, AskarSecureStorage, AsyncSecureStore, OwnedVid, ReceivedTspMessage, SecureStorage, VerifiedVid, Vid};
 use url::Url;
 
 use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}};
@@ -14,11 +17,13 @@ pub mod create_did_modal;
 pub mod create_wallet_modal;
 pub mod tsp_settings_screen;
 pub mod wallet_entry;
+pub mod verify_user;
 
 pub fn live_design(cx: &mut Cx) {
     create_did_modal::live_design(cx);
     create_wallet_modal::live_design(cx);
     wallet_entry::live_design(cx);
+    verify_user::live_design(cx);
     tsp_settings_screen::live_design(cx);
 }
 
@@ -48,19 +53,39 @@ pub struct TspState {
     pub current_wallet: Option<OpenedTspWallet>,
     /// All other TSP wallets that have been created or imported.
     pub other_wallets: Vec<TspWalletEntry>,
+    /// The current (default) VID for the our current logged-in user.
+    pub current_local_vid: Option<String>,
+    /// Maps a user's Matrix ID to their published DID.
+    pub associations: BTreeMap<OwnedUserId, String>,
+    /// Tasks that are currently running to receive messages for specific VIDs.
+    ///
+    /// This maps the private VID to a tuple of the running task and a sender
+    /// that is used to send requests to the receive loop task.
+    receive_loop_tasks: BTreeMap<
+        String,
+        (JoinHandle<Result<(), anyhow::Error>>, UnboundedSender<TspReceiveLoopRequest>),
+    >,
+    /// Verification requests that we have sent out and are awaiting responses for.
+    pending_verification_requests: SmallVec<[TspVerificationDetails; 1]>,
 }
 impl TspState {
     const fn new() -> Self {
         Self {
             current_wallet: None,
             other_wallets: Vec::new(),
+            current_local_vid: None,
+            associations: BTreeMap::new(),
+            receive_loop_tasks: BTreeMap::new(),
+            pending_verification_requests: SmallVec::new_const(),
         }
     }
 
-    /// Returns true if this TSP state has any content, i.e. at least one wallet.
+    /// Returns true if this TSP state has any co
+    /// ntent, i.e. at least one wallet.
     pub fn has_content(&self) -> bool {
         self.current_wallet.is_some()
             || !self.other_wallets.is_empty()
+            || self.current_local_vid.is_some()
     }
 
     /// Opens all wallets in the given saved TSP state in order to populate this `TspState`.
@@ -84,9 +109,38 @@ impl TspState {
             1 => log!("Restored 1 TSP wallet from saved state."),
             n => log!("Restored {n} TSP wallets from saved state."),
         }
+
+        if let Some(current_local_vid) = saved_state.default_vid {
+            if let Some(cw) = self.current_wallet.as_ref() {
+                if cw.db.has_private_vid(&current_local_vid)? {
+                    log!("Restored current local VID {current_local_vid} from in default wallet.");
+                    self.current_local_vid = Some(current_local_vid);
+                } else {
+                    warning!("Previously-saved local VID {current_local_vid} was not found in default wallet.");
+                    enqueue_popup_notification(PopupItem {
+                        message: format!("Previously-saved local VID \"{current_local_vid}\" \
+                            was not found in default wallet.\n\n\
+                            Please select a default wallet and then a new default VID."),
+                        auto_dismissal_duration: None,
+                        kind: PopupKind::Warning
+                    });
+                }
+            } else {
+                warning!("Found a previously-saved local VID {current_local_vid}, but no saved default wallet.");
+                enqueue_popup_notification(PopupItem {
+                    message: format!("Found a previously-saved local VID \"{current_local_vid}\",\
+                        but no saved default wallet.\n\n\
+                        Please select a default wallet and then a new default VID."),
+                    auto_dismissal_duration: None,
+                    kind: PopupKind::Warning
+                });
+            }
+        }
+
         if saved_state.default_wallet.is_some() && self.current_wallet.is_none() {
             warning!("Saved TSP state had a default wallet, but it wasn't opened successfully.");
         }
+
         Ok(())
     }
 
@@ -116,7 +170,34 @@ impl TspState {
         Ok(SavedTspState {
             wallets,
             default_wallet,
+            default_vid: self.current_local_vid,
+            associations: self.associations,
         })
+    }
+
+    /// Returns the associated TSP DID for a given Matrix user ID, if it exists.
+    pub fn get_associated_did(&self, user_id: &UserId) -> Option<&String> {
+        self.associations.get(user_id)
+    }
+
+    /// Gets or spawns a new receive loop that listens for messages for the given VID in the given wallet.
+    ///
+    /// Returns a sender that can be used to send requests to the receive loop.
+    async fn get_or_spawn_receive_loop(
+        &mut self,
+        wallet_db: &AsyncSecureStore,
+        vid: &str,
+    ) -> UnboundedSender<TspReceiveLoopRequest> {
+        if let Some((_, sender)) = self.receive_loop_tasks.get(vid) {
+            return sender.clone();
+        }
+
+        let (sender, receiver) = unbounded_channel::<TspReceiveLoopRequest>();
+        let join_handle = Handle::current().spawn(
+            receive_messages_for_vid(wallet_db.clone(), vid.to_string(), receiver)
+        );
+        self.receive_loop_tasks.insert(vid.to_string(), (join_handle, sender.clone()));
+        sender
     }
 }
 
@@ -189,7 +270,7 @@ impl OpenedTspWallet {
 ///
 /// The URL is *NOT* percent-encoded yet, but it should be before
 /// being passed to `AskarSecureStorage` methods like `new()` and `open()`.
-#[derive(Clone, Default, DeRon, SerRon)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct TspWalletMetadata {
     /// The human-readable, user-defined name of the wallet.
     pub wallet_name: String,
@@ -227,12 +308,18 @@ impl TspWalletMetadata {
     }
 }
 
+#[derive(Debug)]
+enum TspReceiveLoopRequest {
+    /// Stop receiving messages for the given private VID.
+    Stop { vid: String },
+}
 
 pub fn tsp_init(rt_handle: tokio::runtime::Handle) -> anyhow::Result<()> {
     CryptoProvider::install_default(aws_lc_rs::default_provider())
         .map_err(|_| anyhow!("BUG: default CryptoProvider was already set."))?;
 
     // Create a channel to be used between UI thread(s) and the TSP async worker thread.
+    // We do this early on in order to allow TSP init routines to submit requests.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<TspRequest>();
     TSP_REQUEST_SENDER.set(sender).expect("BUG: TSP_REQUEST_SENDER already set!");
 
@@ -256,10 +343,6 @@ pub fn tsp_init(rt_handle: tokio::runtime::Handle) -> anyhow::Result<()> {
 
         // Spawn the actual async worker thread.
         let mut tsp_worker_join_handle = Handle::current().spawn(async_tsp_worker(receiver));
-
-        // TODO: start the main loop that drives the TSP SDK's receiver handler,
-        //       e.g., to process incoming requests from other TSP instances.
-        // let mut main_loop_join_handle = rt2.spawn(async_main_loop(...));
 
         #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
         loop {
@@ -319,6 +402,16 @@ async fn inner_tsp_init() -> anyhow::Result<()> {
             kind: PopupKind::Warning,
         });
     }
+    // If there is a private VID and a current wallet, spawn a receive loop
+    // to listen for incoming messages for that private VID.
+    if let (Some(private_vid), Some(cw)) =
+        (new_tsp_state.current_local_vid.clone(), new_tsp_state.current_wallet.as_ref())
+    {
+        new_tsp_state.get_or_spawn_receive_loop(
+            &cw.db.clone(),
+            &private_vid,
+        ).await;
+    }
     *TSP_STATE.lock().unwrap() = new_tsp_state;
     Ok(())
 }
@@ -346,10 +439,45 @@ pub enum TspWalletAction {
     DefaultWalletChanged(Result<TspWalletMetadata, ()>),
     /// The given wallet was successfully or unsuccessfully opened.
     WalletOpened(Result<TspWalletMetadata, tsp_sdk::Error>),
+}
+
+/// Actions related to TSP identities (DIDs and VIDs).
+#[derive(Debug)]
+pub enum TspIdentityAction {
     /// A new identity (DID) was successfully created or had an error.
     ///
     /// If successful, the result contains the created DID string.
     DidCreationResult(Result<String, anyhow::Error>),
+    /// We successfully sent a request to associate another user's DID
+    /// with their Matrix user ID.
+    ///
+    /// This does *NOT* mean that the response has been received yet.
+    SentDidAssociationRequest {
+        did: String,
+        user_id: OwnedUserId,
+    },
+    /// An error occurred while sending the request to associate another
+    /// user's DID with their Matrix user ID.
+    ErrorSendingDidAssociationRequest {
+        did: String,
+        user_id: OwnedUserId,
+        error: anyhow::Error,
+    },
+    /// We received a response to our above request to
+    /// associate another user's DID with their Matrix user ID.
+    ReceivedDidAssociationResponse {
+        did: String,
+        user_id: OwnedUserId,
+        accepted: bool,
+    },
+    /// We received a request to associate another user's DID with their Matrix user ID.
+    ReceivedDidAssociationRequest(TspVerificationDetails),
+    /// An error occurred in the async task that is receiving TSP messages
+    /// for the given VID.
+    ReceiveLoopError {
+        receiving_vid: String,
+        error: anyhow::Error,
+    },
 }
 
 /// Requests that can be sent to the TSP async worker thread.
@@ -372,7 +500,7 @@ pub enum TspRequest {
     RemoveWallet(TspWalletMetadata),
     /// Request to permanently delete a TSP wallet.
     DeleteWallet(TspWalletMetadata),
-    /// Requeqst to create a new identity (DID) on the given server
+    /// Request to create a new identity (DID) on the given server
     /// and store it in the default TSP wallet.
     CreateDid {
         username: String,
@@ -380,6 +508,15 @@ pub enum TspRequest {
         server: String,
         did_server: String,
     },
+    /// Request to associate another user's identity (DID) with their Matrix User ID.
+    ///
+    /// This will verify the DID and store it in the current default wallet
+    /// (using their Matrix User ID as the alias for that new verified ID),
+    /// and then send a verification/relationship request to that new verified ID.
+    AssociateDidWithUserId {
+        did: String,
+        user_id: OwnedUserId,
+    }
 }
 
 /// The entry point for an async worker thread that processes TSP-related async tasks.
@@ -391,7 +528,7 @@ async fn async_tsp_worker(
 ) -> anyhow::Result<()> {
     log!("Started async_tsp_worker task.");
 
-    // Lazily initialize the reqwest client.
+    // Allow lazily initialization of the reqwest client.
     let mut __reqwest_client = None;
     let mut get_reqwest_client = || {
         __reqwest_client.get_or_insert_with(|| {
@@ -553,31 +690,60 @@ async fn async_tsp_worker(
             let client = get_reqwest_client();
 
             Handle::current().spawn(async move {
-                let result = if tsp_state_ref().lock().unwrap().current_wallet.is_none() {
-                    Err(anyhow!("Please choose a default TSP wallet to hold the DID."))
-                } else {
-                    match create_did_web(&did_server, &server, &username, &client).await {
-                        Ok((did, private_vid, metadata)) => {
-                            log!("Successfully created & published new DID: {did}.\n\
-                                Adding private VID to current wallet: {private_vid:?}",
-                            );
-                            store_did_in_wallet(private_vid, metadata, alias, did).await
-                        }
-                        Err(e) => {
-                            error!("Failed to create new DID: {e}");
-                            Err(e)
-                        }
-                    }
-                };
-                Cx::post_action(TspWalletAction::DidCreationResult(result));
+                let result = create_did_and_add_to_wallet(
+                    &client,
+                    username,
+                    alias,
+                    server,
+                    did_server,
+                ).await;
+                Cx::post_action(TspIdentityAction::DidCreationResult(result));
             });
         }
-    } }
+
+        TspRequest::AssociateDidWithUserId { did, user_id } => {
+            log!("Received TspRequest::AssociateDidWithUserId(did: {did}, user_id: {user_id})");
+            Handle::current().spawn(async move {
+                let action = match associate_did_with_user_id(&did, &user_id).await {
+                    Ok(_) => TspIdentityAction::SentDidAssociationRequest { did, user_id },
+                    Err(error) => TspIdentityAction::ErrorSendingDidAssociationRequest { did, user_id, error },
+                };
+                Cx::post_action(action);
+            });
+        }
+    }
+}
 
     error!("async_tsp_worker task ended unexpectedly");
     anyhow::bail!("async_tsp_worker task ended unexpectedly")
 }
 
+
+/// Creates & publishes a new DID, adds it to the default wallet,
+/// and sets the new private VID to be default if none exists.
+///
+/// Returns the new DID that was published.
+async fn create_did_and_add_to_wallet(
+    client: &reqwest::Client,
+    username: String,
+    alias: Option<String>,
+    server: String,
+    did_server: String,
+) -> Result<String, anyhow::Error> {
+    let cw_db = tsp_state_ref().lock().unwrap()
+        .current_wallet.as_ref()
+        .map(|w| w.db.clone())
+        .ok_or_else(|| anyhow!("Please choose a default TSP wallet to hold the DID."))?;
+    let (did, private_vid, metadata) = create_did_web(&did_server, &server, &username, &client).await?;
+    let new_vid = private_vid.identifier().to_string();
+    log!("Successfully created & published new DID: {did}.\n\
+        Adding private VID {new_vid} to current wallet...",
+    );
+    let did = store_did_in_wallet(&cw_db, private_vid, metadata, alias, did)?;
+    // If there's no default VID, set this new one as the default.
+    tsp_state_ref().lock().unwrap().current_local_vid.get_or_insert(new_vid);
+    Ok(did)
+}
 
 /// Creates a new DID on the given `did_server` and publishes it to the TSP `server`.
 ///
@@ -654,24 +820,189 @@ async fn create_did_web(
 /// and optionally establishes an alias for the given `did`.
 ///
 /// Returns the DID string if successful, otherwise an error.
-async fn store_did_in_wallet(
+fn store_did_in_wallet(
+    current_wallet_db: &AsyncSecureStore,
     private_vid: OwnedVid,
     metadata: Option<serde_json::Value>,
     alias: Option<String>,
     did: String,
 ) -> Result<String, anyhow::Error> {
-    let tsp_state = tsp_state_ref().lock().unwrap();
-    let Some(current_wallet) = tsp_state.current_wallet.as_ref() else {
-        anyhow::bail!("Please select a default TSP wallet to hold the DID.");
-    };
-    current_wallet.db.add_private_vid(private_vid, metadata)?;
+    current_wallet_db.add_private_vid(private_vid, metadata)?;
     if let Some(alias) = alias {
-        current_wallet.db.set_alias(alias.clone(), did.clone())?;
+        current_wallet_db.set_alias(alias.clone(), did.clone())?;
         log!("added alias {alias} -> {did}");
     }
     Ok(did)
 }
 
+
+async fn receive_messages_for_vid(
+    wallet_db: AsyncSecureStore,
+    private_vid_to_receive_on: String,
+    mut request_rx: UnboundedReceiver<TspReceiveLoopRequest>,
+) -> Result<(), anyhow::Error> {
+    let mut message_stream = wallet_db.receive(&private_vid_to_receive_on).await?;
+
+    loop {
+        tokio::select! {
+            // we should handle new TspReceiveLoopRequests before incoming messages,
+            // in case the new request affects the message handling logic.
+            biased;
+
+            Some(request) = request_rx.recv() => {
+                log!("Received TSP receive loop request: {:?}", request);
+                match request {
+                    TspReceiveLoopRequest::Stop { vid } if vid == private_vid_to_receive_on => {
+                        log!("Stopping receive loop for VID: {}", vid);
+                        break;
+                    }
+                    // Handle other request types as needed
+                    _ => {}
+                }
+            }
+
+            Some(msg_result) = message_stream.next() => { match msg_result {
+                Ok(message) => match message {
+                    ReceivedTspMessage::GenericMessage { sender, receiver, nonconfidential_data, message, .. } => {
+                        log!("Received generic TSP message from {sender} to {receiver:?}: {:?}, nonconfidential_data: {:?}", message, nonconfidential_data);
+                        let Ok(tsp_message) = serde_json::from_slice::<TspMessage>(&message) else {
+                            log!("Received a message that couldn't be deserialized into a TspMessage.");
+                            continue;
+                        };
+                        match tsp_message {
+                            TspMessage::VerificationRequest(details) => {
+                                todo!("Handle incoming verification request: {details:?}");
+                                // TODO: send an action to the UI thread to show a TSP verification request modal
+
+                            }
+                            TspMessage::VerificationResponse {details, accepted} => {
+                                log!("Received {} verification response: {:?}", accepted, details);
+                                let mut tsp_state = tsp_state_ref().lock().unwrap();
+                                if let Some(matching_request) = tsp_state.pending_verification_requests.iter()
+                                    .position(|vreq| vreq == &details)
+                                    .map(|idx| tsp_state.pending_verification_requests.swap_remove(idx))
+                                {
+                                    log!("Found matching verification request: {:?}", matching_request);
+                                    tsp_state.associations.insert(
+                                        details.responding_user_id.clone(),
+                                        details.responding_vid.clone(),
+                                    );
+                                    Cx::post_action(TspIdentityAction::ReceivedDidAssociationResponse {
+                                        did: details.responding_vid,
+                                        user_id: details.responding_user_id,
+                                        accepted,
+                                    });
+                                }
+                                else {
+                                    log!("Verification response was unexpected: no matching verification request found");
+                                }
+                            }
+                        }
+                    }
+                    _other => {
+                        log!("Received other TSP message: {:?}", _other);
+                    }
+                }
+                Err(e) => {
+                    log!("Error receiving TSP message: {:?}", e);
+                }
+            } }
+        }
+    }
+
+    Ok(())
+}
+
+
+fn no_default_wallet_error() -> anyhow::Error {
+    anyhow!("Please choose a default TSP wallet.")
+}
+
+fn no_default_vid_error() -> anyhow::Error {
+    anyhow!("Please choose a default VID from your default\
+        TSP wallet to represent your own Matrix account.")
+}
+
+
+/// Associates the given DID with a Matrix User ID.
+///
+/// This function only performs the local verification of the given DID into
+/// the local default wallet, and then sends a verification request to the user.
+/// It does not wait to receive a verification response.
+async fn associate_did_with_user_id(
+    did: &str,
+    user_id: &OwnedUserId,
+) -> Result<(), anyhow::Error> {
+    let our_user_id = crate::sliding_sync::current_user_id()
+        .ok_or_else(|| anyhow!("Must be logged into Matrix in order to associate a DID with a Matrix User ID."))?;
+    let (wallet_db, our_vid) = {
+        let tsp_state = tsp_state_ref().lock().unwrap();
+        let wallet = tsp_state.current_wallet.as_ref().ok_or_else(no_default_wallet_error)?;
+        let our_vid = tsp_state.current_local_vid.clone().ok_or_else(no_default_vid_error)?;
+        (wallet.db.clone(), our_vid)
+    };
+    if !wallet_db.has_verified_vid(did)? {
+        wallet_db.verify_vid(did, Some(user_id.to_string())).await?;
+        log!("DID {did} was verified and added to the default wallet.");
+    }
+
+    let verification_details = TspVerificationDetails {
+        initiating_vid: our_vid.clone(),
+        initiating_user_id: our_user_id.clone(),
+        responding_vid: did.to_string(),
+        responding_user_id: user_id.clone(),
+        random_str: {
+            use rand::{Rng, thread_rng};
+            thread_rng()
+                .sample_iter(rand::distributions::Alphanumeric)
+                .take(32)
+                .map(char::from)
+                .collect()
+        },
+    };
+    tsp_state_ref().lock().unwrap().pending_verification_requests.push(verification_details.clone());
+    let request_msg = TspMessage::VerificationRequest(verification_details);
+    wallet_db.send(
+        &our_vid,
+        did,
+        // This is just for debugging and should be removed before production.
+        Some(format!("Verification from {our_user_id} to {user_id}").as_bytes()),
+        serde_json::to_string(&request_msg)?.as_bytes(),
+    ).await?;
+
+    // Note: the receive loop will wait to receive the verification response,
+    //       upon which the verification procedure will be completed
+    //       and the UI layer will be informed and updated to reflect this.
+    Ok(())
+}
+
+
+/// The types/schema of messages that we send over the TSP protocol.
+#[derive(Debug, Serialize, Deserialize)]
+enum TspMessage {
+    /// A request to verify another Matrix user's TSP DID.
+    VerificationRequest(TspVerificationDetails),
+    /// A response to a verification request.
+    VerificationResponse {
+        details: TspVerificationDetails,
+        accepted: bool,
+    },
+}
+
+/// The payload for a new verification request / response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TspVerificationDetails {
+    /// The VID of the user who initiated the verification request.
+    initiating_vid: String,
+    /// The Matrix User ID of the user who initiated the verification request.
+    initiating_user_id: OwnedUserId,
+    /// The VID of the user who is receiving this verification request.
+    responding_vid: String,
+    /// The Matrix User ID of the user who is receiving this verification request.
+    responding_user_id: OwnedUserId,
+    /// A string to be manually matched/verified on both sides of the request.
+    random_str: String,
+}
 
 /// Sanitizes a wallet name to ensure it is safe to use in file paths.
 pub fn sanitize_wallet_name(name: &str) -> String {
@@ -685,7 +1016,7 @@ pub fn sanitize_wallet_name(name: &str) -> String {
 /// Currently the scheme is always "sqlite://" (or "sqlite:///" for absolute paths),
 /// and the path is the full file path to the local SQLite database file for the wallet.
 /// We haven't tested it with remote URLs yet.
-#[derive(Clone, Debug, Default, DeRon, SerRon, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Eq)]
 pub struct TspWalletSqliteUrl(String);
 impl std::fmt::Display for TspWalletSqliteUrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

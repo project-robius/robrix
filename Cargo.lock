@@ -6115,7 +6115,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "tsp_sdk"
 version = "0.8.1"
-source = "git+https://github.com/openwallet-foundation-labs/tsp.git#d24e3ea7214069dcfc991c69c8e3e7795e221efa"
+source = "git+https://github.com/openwallet-foundation-labs/tsp.git#8ab2cbc643834e92c64a0891d2eb8117817a27b9"
 dependencies = [
  "aries-askar",
  "async-stream",

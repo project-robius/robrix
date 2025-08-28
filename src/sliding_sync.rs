@@ -2285,7 +2285,8 @@ async fn timeline_subscriber_handler(
     let mut found_target_event_id: Option<(usize, OwnedEventId)> = None;
 
     loop { tokio::select! {
-        // we must check for new requests before handling new timeline updates.
+        // we should check for new requests before handling new timeline updates,
+        // because the request might influence how we handle a timeline update.
         biased;
 
         // Handle updates to the current backwards pagination requests.

@@ -111,15 +111,18 @@ live_design! {
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
 
+    use link::tsp_link::TspVerifyUser;
+
     ICON_DOUBLE_CHAT = dep("crate://self/resources/icons/double_chat.svg")
 
     UserProfileView = <ScrollXYView> {
         width: Fill,
         height: Fill,
         align: {x: 0.5, y: 0},
-        padding: {left: 15., right: 15., top: 15.}
+        padding: {left: 15, right: 15, top: 15, bottom: 50}
         spacing: 20,
         flow: Down,
+        cursor: Default,
 
         show_bg: true,
         draw_bg: {
@@ -212,7 +215,7 @@ live_design! {
             width: Fill, height: Fit
             flow: Down,
             spacing: 10,
-            padding: {left: 10., right: 10, bottom: 50}
+            padding: {left: 10., right: 10, bottom: 10}
 
             <Label> {
                 width: Fill, height: Fit
@@ -290,6 +293,10 @@ live_design! {
                 }
             }
         }
+
+        // A view that allows the user to verify a new DID and associate it
+        // with a particular Matrix User ID.
+        tsp_verify_user = <TspVerifyUser> { }
     }
 
 
@@ -475,7 +482,7 @@ impl Widget for UserProfileSlidingPane {
             || match event.hits_with_capture_overload(cx, area, true) {
                 Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
                 Hit::FingerDown(_fde) => {
-                    cx.set_key_focus(area);
+                    // cx.set_key_focus(area);
                     false
                 }
                 Hit::FingerUp(fue) if fue.is_over => {
@@ -676,6 +683,14 @@ impl UserProfileSlidingPane {
                 info.avatar_state = AvatarState::Loaded(data);
             }
         }
+        
+        // If TSP is enabled, populate the TSP verification info for this user.
+        #[cfg(feature = "tsp")] {
+            use crate::tsp::verify_user::TspVerifyUserWidgetExt;
+            self.view.tsp_verify_user(id!(tsp_verify_user))
+                .show(_cx, info.user_id.clone());
+        }
+
         self.info = Some(info);
     }
 
