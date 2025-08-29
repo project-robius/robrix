@@ -1149,7 +1149,10 @@ impl TspWalletSqliteUrl {
     pub fn to_url_encoded(&self) -> Cow<'_, str> {
         const DELIMITER_ABS: &str = ":///";
         const DELIMITER_REG: &str = "://";
+        /// SQLite requires Unix-style path separators.
         const SEPARATOR: &str = "/";
+        /// The percent-encoded version of the separator,
+        /// which can be used everywhere except for prefixes.
         const SEPARATOR_PE: &str = "%2F";
 
         let try_encode = |delim: &str| -> Option<String> {
@@ -1161,10 +1164,11 @@ impl TspWalletSqliteUrl {
                     log!("### Got path component: {component:?}, as_os_str(): {}", component.as_os_str().to_string_lossy());
                     match component {
                         std::path::Component::Prefix(prefix) => {
+                            // Windows drive prefixes must not be percent-encoded.
                             after_encoded = format!("{}{}{}", after_encoded, SEPARATOR, prefix.as_os_str().to_string_lossy());
                         }
                         std::path::Component::RootDir => {
-                            // ignore, since we manually add '/' between components.
+                            // ignore, since we already manually add '/' between components.
                         }
                         std::path::Component::Normal(p) => {
                             let percent_encoded = percent_encoding::percent_encode(
