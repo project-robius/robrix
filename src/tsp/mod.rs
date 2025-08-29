@@ -10,12 +10,13 @@ use tokio::{task::JoinHandle, runtime::Handle, sync::mpsc::{unbounded_channel, U
 use tsp_sdk::{vid::{verify_vid, VidError}, AskarSecureStorage, AsyncSecureStore, OwnedVid, ReceivedTspMessage, SecureStorage, VerifiedVid, Vid};
 use url::Url;
 
-use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}};
+use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, tsp::tsp_verification_modal::TspVerificationModalAction, utils::DebugWrapper};
 
 
 pub mod create_did_modal;
 pub mod create_wallet_modal;
 pub mod tsp_settings_screen;
+pub mod tsp_verification_modal;
 pub mod wallet_entry;
 pub mod verify_user;
 
@@ -24,6 +25,7 @@ pub fn live_design(cx: &mut Cx) {
     create_wallet_modal::live_design(cx);
     wallet_entry::live_design(cx);
     verify_user::live_design(cx);
+    tsp_verification_modal::live_design(cx);
     tsp_settings_screen::live_design(cx);
 }
 
@@ -471,7 +473,13 @@ pub enum TspIdentityAction {
         accepted: bool,
     },
     /// We received a request to associate another user's DID with their Matrix user ID.
-    ReceivedDidAssociationRequest(TspVerificationDetails),
+    ReceivedDidAssociationRequest {
+        /// The details of the request.
+        details: TspVerificationDetails,
+        /// The wallet that received the request, which will be used to send the response
+        /// and store the sender's verified DID.
+        wallet_db: DebugWrapper<AsyncSecureStore>,
+    },
     /// An error occurred in the async task that is receiving TSP messages
     /// for the given VID.
     ReceiveLoopError {
@@ -479,6 +487,7 @@ pub enum TspIdentityAction {
         error: anyhow::Error,
     },
 }
+
 
 /// Requests that can be sent to the TSP async worker thread.
 pub enum TspRequest {
@@ -516,8 +525,18 @@ pub enum TspRequest {
     AssociateDidWithUserId {
         did: String,
         user_id: OwnedUserId,
-    }
+    },
+    /// Request to respond to a previously-received `DidAssociationRequest`.
+    RespondToDidAssociationRequest {
+        details: TspVerificationDetails,
+        wallet_db: AsyncSecureStore,
+        accepted: bool,
+    },
+    // TODO: support canceling a previously-initiated association/verification request.
+    // /// Request to cancel a previously-sent `AssociateDidWithUserId` request.
+    // CancelAssociateDidRequest(TspVerificationDetails),
 }
+
 
 /// The entry point for an async worker thread that processes TSP-related async tasks.
 ///
@@ -711,6 +730,24 @@ async fn async_tsp_worker(
                 Cx::post_action(action);
             });
         }
+
+        TspRequest::RespondToDidAssociationRequest { details, wallet_db, accepted } => {
+            log!("Received TspRequest::RespondToDidAssociationRequest(details: {details:?}, accepted: {accepted})");
+            Handle::current().spawn(async move {
+                let result = respond_to_did_association_request(&details, &wallet_db, accepted).await;
+                // If all was successful, add this new association to the TSP state.
+                if result.is_ok() {
+                    tsp_state_ref().lock().unwrap().associations.insert(
+                        details.initiating_user_id.clone(),
+                        details.initiating_vid.clone(),
+                    );
+                }
+                Cx::post_action(TspVerificationModalAction::SentDidAssociationResponse {
+                    details,
+                    result,
+                });
+            });
+        }
     }
 }
 
@@ -871,9 +908,11 @@ async fn receive_messages_for_vid(
                         };
                         match tsp_message {
                             TspMessage::VerificationRequest(details) => {
-                                todo!("Handle incoming verification request: {details:?}");
-                                // TODO: send an action to the UI thread to show a TSP verification request modal
-
+                                log!("Received TSP verification request: {:?}", details);
+                                Cx::post_action(TspIdentityAction::ReceivedDidAssociationRequest {
+                                    details,
+                                    wallet_db: wallet_db.clone().into(),
+                                });
                             }
                             TspMessage::VerificationResponse {details, accepted} => {
                                 log!("Received {} verification response: {:?}", accepted, details);
@@ -977,6 +1016,33 @@ async fn associate_did_with_user_id(
 }
 
 
+/// Sends a positive/negative response to a previous incoming DID association request.
+async fn respond_to_did_association_request(
+    details: &TspVerificationDetails,
+    wallet_db: &AsyncSecureStore,
+    accepted: bool,
+) -> Result<(), anyhow::Error> {
+    if wallet_db.has_verified_vid(&details.initiating_vid)? {
+        anyhow::bail!("Verification requestor's initiating DID {} already exists in your wallet.", details.initiating_vid);
+    }
+    wallet_db.verify_vid(&details.initiating_vid, Some(details.initiating_user_id.to_string())).await?;
+    log!("Verification requestor's initiating DID {} was verified and added to your wallet.", details.initiating_vid);
+
+    let response_msg = TspMessage::VerificationResponse {
+        details: details.clone(),
+        accepted,
+    };
+    wallet_db.send(
+        &details.responding_vid,
+        &details.initiating_vid,
+        // This is just for debugging and should be removed before production.
+        Some(format!("Verification Response ({accepted}) from {} to {}", details.responding_user_id, details.initiating_user_id).as_bytes()),
+        serde_json::to_string(&response_msg)?.as_bytes(),
+    ).await?;
+
+    Ok(())
+}
+
 /// The types/schema of messages that we send over the TSP protocol.
 #[derive(Debug, Serialize, Deserialize)]
 enum TspMessage {
@@ -987,6 +1053,9 @@ enum TspMessage {
         details: TspVerificationDetails,
         accepted: bool,
     },
+    // TODO: support initiator-side cancelation of a request.
+    // /// A request to cancel a previously-initiated verification request.
+    // VerificationCancel(TspVerificationDetails),
 }
 
 /// The payload for a new verification request / response.

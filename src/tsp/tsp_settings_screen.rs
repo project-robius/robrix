@@ -334,7 +334,7 @@ impl MatchEvent for TspSettingsScreen {
         // | Some(TspWalletAction::SentDidAssociationRequest { .. }) // handled in the TspVerifyUser widget
         // | Some(TspWalletAction::ErrorSendingDidAssociationRequest { .. }) // handled in the TspVerifyUser widget
         // | Some(TspWalletAction::ReceivedDidAssociationResponse { .. }) // handled in the TspVerifyUser widget
-        // | Some(TspWalletAction::ReceivedDidAssociationRequest(_)) // handled in the TspVerifyUser widget
+        // | Some(TspWalletAction::ReceivedDidAssociationRequest(_)) // handled in the TspVerificationModal widget
         // | Some(TspWalletAction::ReceiveLoopError { .. }) // handled in the top-level app
 
         if self.view.button(id!(create_wallet_button)).clicked(actions) {
