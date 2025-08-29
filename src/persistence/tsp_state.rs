@@ -46,6 +46,11 @@ impl SavedTspState {
             || self.default_wallet.is_some()
             || self.default_vid.is_some()
     }
+
+    pub fn num_wallets(&self) -> usize {
+        self.default_wallet.is_some() as usize
+            + self.wallets.len()
+    }
 }
 
 

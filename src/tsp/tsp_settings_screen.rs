@@ -278,7 +278,7 @@ impl MatchEvent for TspSettingsScreen {
                         // The user should then select another wallet as the default.
                         enqueue_popup_notification(PopupItem {
                             message: String::from("The default wallet was removed.\n\n\
-                                TSP wallet-related features will not work properly until you set a default wallet."),
+                                TSP features will not work properly until you set a default wallet."),
                             auto_dismissal_duration: None,
                             kind: PopupKind::Warning,
                         });

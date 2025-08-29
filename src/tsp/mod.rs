@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::BTreeMap, ops::Deref, path::{Path, PathBuf}, sync::{Mutex, OnceLock}};
+use std::{borrow::Cow, collections::BTreeMap, ops::Deref, path::Path, sync::{Mutex, OnceLock}};
 
 use anyhow::anyhow;
 use futures_util::StreamExt;
@@ -90,37 +90,38 @@ impl TspState {
             || self.current_local_vid.is_some()
     }
 
-    /// Opens all wallets in the given saved TSP state in order to populate this `TspState`.
-    pub async fn deserialize_and_open_default_wallet_from(
-        &mut self,
-        saved_state: SavedTspState,
-    ) -> Result<(), tsp_sdk::Error> {
+    /// Opens all wallets in the given saved TSP state in order to populate a new `TspState`.
+    pub async fn deserialize_from(saved_state: SavedTspState) -> Result<Self, tsp_sdk::Error> {
+        let mut current_wallet = None;
+        let mut other_wallets = Vec::with_capacity(saved_state.num_wallets());
+        let mut current_local_vid = None;
+
         for (idx, wallet_metadata) in saved_state.wallets.into_iter().enumerate() {
             if let Ok(opened_wallet) = wallet_metadata.open_wallet().await {
                 if saved_state.default_wallet == Some(idx) {
-                    self.current_wallet = Some(opened_wallet);
+                    current_wallet = Some(opened_wallet);
                 } else {
-                    self.other_wallets.push(TspWalletEntry::Opened(opened_wallet));
+                    other_wallets.push(TspWalletEntry::Opened(opened_wallet));
                 }
             } else {
-                self.other_wallets.push(TspWalletEntry::NotFound(wallet_metadata));
+                other_wallets.push(TspWalletEntry::NotFound(wallet_metadata));
             }
         }
-        match self.current_wallet.is_some() as usize + self.other_wallets.len() {
+        match current_wallet.is_some() as usize + other_wallets.len() {
             0 => log!("Restored no TSP wallets from saved TSP state."),
             1 => log!("Restored 1 TSP wallet from saved state."),
             n => log!("Restored {n} TSP wallets from saved state."),
         }
 
-        if let Some(current_local_vid) = saved_state.default_vid {
-            if let Some(cw) = self.current_wallet.as_ref() {
-                if cw.db.has_private_vid(&current_local_vid)? {
-                    log!("Restored current local VID {current_local_vid} from in default wallet.");
-                    self.current_local_vid = Some(current_local_vid);
+        if let Some(saved_local_vid) = saved_state.default_vid {
+            if let Some(cw) = current_wallet.as_ref() {
+                if cw.db.has_private_vid(&saved_local_vid)? {
+                    log!("Restored current local VID {saved_local_vid} from in default wallet.");
+                    current_local_vid = Some(saved_local_vid);
                 } else {
-                    warning!("Previously-saved local VID {current_local_vid} was not found in default wallet.");
+                    warning!("Previously-saved local VID {saved_local_vid} was not found in default wallet.");
                     enqueue_popup_notification(PopupItem {
-                        message: format!("Previously-saved local VID \"{current_local_vid}\" \
+                        message: format!("Previously-saved local VID \"{saved_local_vid}\" \
                             was not found in default wallet.\n\n\
                             Please select a default wallet and then a new default VID."),
                         auto_dismissal_duration: None,
@@ -128,9 +129,9 @@ impl TspState {
                     });
                 }
             } else {
-                warning!("Found a previously-saved local VID {current_local_vid}, but not the default wallet that contained it.");
+                warning!("Found a previously-saved local VID {saved_local_vid}, but not the default wallet that contained it.");
                 enqueue_popup_notification(PopupItem {
-                    message: format!("Found a previously-saved local VID \"{current_local_vid}\", \
+                    message: format!("Found a previously-saved local VID \"{saved_local_vid}\", \
                         but not the default wallet that contained it.\n\n\
                         Please select or create a default wallet and a new default VID."),
                     auto_dismissal_duration: None,
@@ -139,11 +140,18 @@ impl TspState {
             }
         }
 
-        if saved_state.default_wallet.is_some() && self.current_wallet.is_none() {
+        if saved_state.default_wallet.is_some() && current_wallet.is_none() {
             warning!("Saved TSP state had a default wallet, but it wasn't opened successfully.");
         }
 
-        Ok(())
+        Ok(Self {
+            current_wallet,
+            other_wallets,
+            current_local_vid,
+            associations: saved_state.associations,
+            receive_loop_tasks: BTreeMap::new(),
+            pending_verification_requests: SmallVec::new_const(),
+        })
     }
 
     /// Closes all opened wallets, serializing their state to persistent storage.
@@ -185,8 +193,9 @@ impl TspState {
     /// Gets or spawns a new receive loop that listens for messages for the given VID in the given wallet.
     ///
     /// Returns a sender that can be used to send requests to the receive loop.
-    async fn get_or_spawn_receive_loop(
+    fn get_or_spawn_receive_loop(
         &mut self,
+        rt_handle: Handle,
         wallet_db: &AsyncSecureStore,
         vid: &str,
     ) -> UnboundedSender<TspReceiveLoopRequest> {
@@ -195,10 +204,14 @@ impl TspState {
         }
 
         let (sender, receiver) = unbounded_channel::<TspReceiveLoopRequest>();
-        let join_handle = Handle::current().spawn(
+        let join_handle = rt_handle.spawn(
             receive_messages_for_vid(wallet_db.clone(), vid.to_string(), receiver)
         );
-        self.receive_loop_tasks.insert(vid.to_string(), (join_handle, sender.clone()));
+        let old = self.receive_loop_tasks.insert(vid.to_string(), (join_handle, sender.clone()));
+        if let Some(old) = old {
+            warning!("BUG: aborting previous receive loop for VID \"{}\".", vid);
+            old.0.abort();
+        }
         sender
     }
 }
@@ -394,12 +407,11 @@ pub fn tsp_init(rt_handle: tokio::runtime::Handle) -> anyhow::Result<()> {
 async fn inner_tsp_init() -> anyhow::Result<()> {
     // Load the TSP state from persistent storage.
     let saved_tsp_state = persistence::load_tsp_state().await?;
-    let mut new_tsp_state = TspState::new();
-    new_tsp_state.deserialize_and_open_default_wallet_from(saved_tsp_state).await?;
+    let mut new_tsp_state = TspState::deserialize_from(saved_tsp_state).await?;
     if new_tsp_state.has_content() && new_tsp_state.current_wallet.is_none() {
         enqueue_popup_notification(PopupItem {
             message: String::from("TSP wallet(s) were loaded successfully, but no default wallet was set.\n\n\
-                TSP wallet-related features will not work properly until you set a default wallet."),
+                TSP features will not work properly until you set a default wallet."),
             auto_dismissal_duration: None,
             kind: PopupKind::Warning,
         });
@@ -409,10 +421,12 @@ async fn inner_tsp_init() -> anyhow::Result<()> {
     if let (Some(private_vid), Some(cw)) =
         (new_tsp_state.current_local_vid.clone(), new_tsp_state.current_wallet.as_ref())
     {
+        log!("Starting receive loop for private VID \"{}\".", private_vid);
         new_tsp_state.get_or_spawn_receive_loop(
+            Handle::current(),
             &cw.db.clone(),
             &private_vid,
-        ).await;
+        );
     }
     *TSP_STATE.lock().unwrap() = new_tsp_state;
     Ok(())
@@ -777,8 +791,21 @@ async fn create_did_and_add_to_wallet(
         Adding private VID {new_vid} to current wallet...",
     );
     let did = store_did_in_wallet(&cw_db, private_vid, metadata, alias, did)?;
-    // If there's no default VID, set this new one as the default.
-    tsp_state_ref().lock().unwrap().current_local_vid.get_or_insert(new_vid);
+
+    {
+        // If there's no default VID, set this new one as the default
+        // and start a receive loop to listen for incoming requests for it.
+        let mut tsp_state = tsp_state_ref().lock().unwrap();
+        if tsp_state.current_local_vid.is_none() {
+            log!("Setting new VID \"{}\" (from DID \"{}\") as current local VID and starting receive loop...", new_vid, did);
+            tsp_state.current_local_vid = Some(new_vid.clone());
+            tsp_state.get_or_spawn_receive_loop(
+                Handle::current(),
+                &cw_db,
+                &new_vid,
+            );
+        }
+    }
     Ok(did)
 }
 
