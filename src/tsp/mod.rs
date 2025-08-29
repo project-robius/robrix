@@ -1149,6 +1149,8 @@ impl TspWalletSqliteUrl {
     pub fn to_url_encoded(&self) -> Cow<'_, str> {
         const DELIMITER_ABS: &str = ":///";
         const DELIMITER_REG: &str = "://";
+        const SEPARATOR: &str = "/";
+        const SEPARATOR_PE: &str = "%2F";
 
         let try_encode = |delim: &str| -> Option<String> {
             if let Some(idx) = self.0.find(delim) {
@@ -1158,6 +1160,9 @@ impl TspWalletSqliteUrl {
                 for component in Path::new(after).components() {
                     log!("### Got path component: {component:?}, as_os_str(): {}", component.as_os_str().to_string_lossy());
                     match component {
+                        std::path::Component::Prefix(prefix) => {
+                            after_encoded = format!("{}{}{}", after_encoded, SEPARATOR, prefix.as_os_str().to_string_lossy());
+                        }
                         std::path::Component::RootDir => {
                             // ignore, since we manually add '/' between components.
                         }
@@ -1166,10 +1171,10 @@ impl TspWalletSqliteUrl {
                                 p.as_encoded_bytes(),
                                 percent_encoding::NON_ALPHANUMERIC
                             );
-                            after_encoded = format!("{}/{}", after_encoded, percent_encoded);
+                            after_encoded = format!("{}{}{}", after_encoded, SEPARATOR_PE, percent_encoded);
                         }
                         other => {
-                            after_encoded = format!("{}/{}", after_encoded, other.as_os_str().to_string_lossy());
+                            after_encoded = format!("{}{}{}", after_encoded, SEPARATOR_PE, other.as_os_str().to_string_lossy());
                         }
                     }
                 }
