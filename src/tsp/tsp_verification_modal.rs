@@ -5,6 +5,8 @@ use tsp_sdk::AsyncSecureStore;
 use crate::{shared::styles::*, sliding_sync::current_user_id, tsp::{submit_tsp_request, TspRequest, TspVerificationDetails}};
 
 live_design! {
+    link tsp_enabled
+
     use link::theme::*;
     use link::widgets::*;
 

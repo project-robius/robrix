@@ -57,6 +57,9 @@ blurhash = { version = "0.2.3", default-features = false }
 tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", optional = true, features = ["async", "resolve"] }
 # tsp_sdk = { version = "0.8.0", optional = true, default-features = false, features = ["async", "resolve"] }
 quinn = { version = "0.11.8", default-features = false, optional = true }
+## We only include this such that we can specify the prebuilt-nasm features,
+## which is required to build this on Windows x86_64 without having to install NASM separately.
+aws-lc-rs ={ version = "1.13", optional = true, features = ["prebuilt-nasm"] }
 percent-encoding = { version = "2.3", optional = true }
 ## The following reqwest features were taken from the tsp_sdk's `Cargo.toml` file.
 ## I'm not sure if all of them are actually needed.
@@ -73,7 +76,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 [features]
 default = []
 ## Enables experimental support for using TSP wallets.
-tsp = ["dep:tsp_sdk", "dep:quinn", "dep:percent-encoding"]
+tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding"]
 
 ## Hides the command prompt console on Windows.
 hide_windows_console = []

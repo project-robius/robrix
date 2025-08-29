@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::BTreeMap, ops::Deref, path::Path, sync::{Mutex, OnceLock}};
+use std::{borrow::Cow, collections::BTreeMap, ops::Deref, path::{Path, PathBuf}, sync::{Mutex, OnceLock}};
 
 use anyhow::anyhow;
 use futures_util::StreamExt;
@@ -128,11 +128,11 @@ impl TspState {
                     });
                 }
             } else {
-                warning!("Found a previously-saved local VID {current_local_vid}, but no saved default wallet.");
+                warning!("Found a previously-saved local VID {current_local_vid}, but not the default wallet that contained it.");
                 enqueue_popup_notification(PopupItem {
-                    message: format!("Found a previously-saved local VID \"{current_local_vid}\",\
-                        but no saved default wallet.\n\n\
-                        Please select a default wallet and then a new default VID."),
+                    message: format!("Found a previously-saved local VID \"{current_local_vid}\", \
+                        but not the default wallet that contained it.\n\n\
+                        Please select or create a default wallet and a new default VID."),
                     auto_dismissal_duration: None,
                     kind: PopupKind::Warning
                 });
@@ -1136,22 +1136,44 @@ impl TspWalletSqliteUrl {
 
     /// Converts this wallet URL to a percent-encoded URL.
     ///
-    /// Note: this URL is suitable for use in `AskarSecureStorage` methods
+    /// ## Usage notes
+    /// The returned URL is suitable for use in `AskarSecureStorage` methods
     /// like `new()` and `open()`.
+    ///
+    /// ## Implementation notes
+    /// We cannot use the `Path`/`PathBuf` type because the sqlite backend
+    /// always expects URLs with filename paths encoded using Unix-style `/` path separators,
+    /// even on Windows. Therefore, we manually percent-encode each part of the path
+    /// and push them in between manually-added `/` separators, instead of using 
+    /// the Rust `std::path` functions like `Path::join()` or `PathBuf::push()`.
     pub fn to_url_encoded(&self) -> Cow<'_, str> {
         const DELIMITER_ABS: &str = ":///";
         const DELIMITER_REG: &str = "://";
-        let try_encode = |delim: &str| -> Option<Cow<str>> {
+
+        let try_encode = |delim: &str| -> Option<String> {
             if let Some(idx) = self.0.find(delim) {
                 let before = self.0.get(.. (idx + delim.len())).unwrap_or("");
                 let after  = self.0.get((idx + delim.len()) ..).unwrap_or("");
-                Some(format!("{}{}",
-                    before,
-                    percent_encoding::utf8_percent_encode(
-                        after,
-                        percent_encoding::NON_ALPHANUMERIC,
-                    )
-                ).into())
+                let mut after_encoded = String::new();
+                for component in Path::new(after).components() {
+                    log!("### Got path component: {component:?}, as_os_str(): {}", component.as_os_str().to_string_lossy());
+                    match component {
+                        std::path::Component::RootDir => {
+                            // ignore, since we manually add '/' between components.
+                        }
+                        std::path::Component::Normal(p) => {
+                            let percent_encoded = percent_encoding::percent_encode(
+                                p.as_encoded_bytes(),
+                                percent_encoding::NON_ALPHANUMERIC
+                            );
+                            after_encoded = format!("{}/{}", after_encoded, percent_encoded);
+                        }
+                        other => {
+                            after_encoded = format!("{}/{}", after_encoded, other.as_os_str().to_string_lossy());
+                        }
+                    }
+                }
+                Some(format!("{}{}", before, after_encoded))
             } else {
                 None
             }
@@ -1159,6 +1181,7 @@ impl TspWalletSqliteUrl {
 
         try_encode(DELIMITER_ABS)
             .or_else(|| try_encode(DELIMITER_REG))
+            .map(Cow::from)
             .unwrap_or_else(|| {
                 percent_encoding::utf8_percent_encode(
                     &self.0,

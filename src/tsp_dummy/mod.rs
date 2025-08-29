@@ -63,4 +63,8 @@ live_design! {
         height: 50
         width: Fill,
     }
+
+    pub TspVerificationModal = <View> {
+        visible: false
+    }
 }
