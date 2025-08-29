@@ -302,6 +302,7 @@ impl WidgetMatchEvent for TspVerificationModal {
                     }
                     cancel_button.set_visible(cx, false);
                     accept_button.apply_over(cx, live!(
+                        enabled: true,
                         text: "Okay",
                         draw_bg: {
                             color: (COLOR_ACTIVE_PRIMARY),

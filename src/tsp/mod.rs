@@ -1022,11 +1022,8 @@ async fn respond_to_did_association_request(
     wallet_db: &AsyncSecureStore,
     accepted: bool,
 ) -> Result<(), anyhow::Error> {
-    if wallet_db.has_verified_vid(&details.initiating_vid)? {
-        anyhow::bail!("Verification requestor's initiating DID {} already exists in your wallet.", details.initiating_vid);
-    }
     wallet_db.verify_vid(&details.initiating_vid, Some(details.initiating_user_id.to_string())).await?;
-    log!("Verification requestor's initiating DID {} was verified and added to your wallet.", details.initiating_vid);
+    log!("Verification requester's initiating DID {} was verified and added to your wallet.", details.initiating_vid);
 
     let response_msg = TspMessage::VerificationResponse {
         details: details.clone(),
