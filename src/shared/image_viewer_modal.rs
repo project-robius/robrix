@@ -231,7 +231,7 @@ impl Widget for ImageViewerModal {
                 Hit::FingerMove(fe) => {
                     if self.drag_state.is_dragging && self.drag_state.zoom_level != 0.0 {
                         let delta = fe.abs - self.drag_state.drag_start;
-                        let prev_pan_offet = round_to_3_decimal_places(self.drag_state.pan_offset);
+                        let prev_pan_offset = round_to_3_decimal_places(self.drag_state.pan_offset);
                         self.drag_state.pan_offset += delta * -0.001 * self.drag_state.zoom_level; // Scale movement by zoom level
 
                         // Restrict pan_offset to keep image within bounds
@@ -244,7 +244,7 @@ impl Widget for ImageViewerModal {
                             self.drag_state.pan_offset.y =
                                 self.drag_state.pan_offset.y.clamp(0.0, max_pan * 2.0);
                             if round_to_3_decimal_places(self.drag_state.pan_offset)
-                                != prev_pan_offet
+                                != prev_pan_offset
                             {
                                 self.update_image_shader(cx);
                             }
