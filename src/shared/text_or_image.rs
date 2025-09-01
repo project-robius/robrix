@@ -4,9 +4,9 @@
 //! or to display an error message if the image fails to load, etc.
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedMxcUri;
-
-use crate::shared::image_viewer_modal::get_global_image_viewer_modal;
+use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomId};
+use crate::shared::image_viewer_modal::{get_global_image_viewer_modal, update_state_views, LoadState};
+use crate::home::room_screen::RoomScreenProps;
 
 live_design! {
     use link::theme::*;
@@ -37,7 +37,7 @@ live_design! {
         }
         image_view = <View> {
             visible: false,
-            cursor: Hand,
+            cursor: Default, // Use `Hand` once we support clicking on the image
             width: Fill, height: Fit,
             image = <Image> {
                 width: Fill, height: Fit,
@@ -71,13 +71,22 @@ impl Widget for TextOrImage {
                     cx.set_key_focus(image_area);
                 }
                 Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                    // We run the check to see if the original image was already fetched or not.
-                    //
-                    // If `image_value` is `None`, it can tell that the image has not been fetched,
-                    // user actually clicks the blurhash,
-                    // so we do nothing this condition.
+                    // Open the image viewer modal
                     let image_viewer_modal = get_global_image_viewer_modal(cx);
-                    image_viewer_modal.open(cx, Some(mxc_uri.clone()));
+                    if let Some(image_modal) = image_viewer_modal.get_image_modal() {
+                        image_modal.open(cx);
+                    }
+                    let image_viewer_modal = get_global_image_viewer_modal(cx);
+                    if let Some(view_set) = image_viewer_modal.get_view_set() {
+                        // Display Loading spinner
+                        update_state_views(cx, view_set, LoadState::Loading);
+                    }
+                    // Get room_id from RoomScreenProps in scope
+                    if let Some(room_props) = scope.props.get::<RoomScreenProps>() {
+                        let room_id = room_props.room_id.clone();
+                        // Send an Action containing the room_id and MXC URI to the room_screen
+                        cx.widget_action(self.widget_uid(), &scope.path, TextOrImageAction::Clicked(room_id, mxc_uri.clone()));
+                    }
                 }
                 _ => { },
             }
@@ -170,5 +179,13 @@ impl TextOrImageRef {
 pub enum TextOrImageStatus {
     #[default]
     Text,
+    /// Image MxcUri stored in this variant to be used 
     Image(OwnedMxcUri),
+}
+
+/// Actions emitted by the `TextOrImage` based on user interaction with it.
+#[derive(Debug, Clone, DefaultNone)]
+pub enum TextOrImageAction {
+    Clicked(OwnedRoomId, OwnedMxcUri),
+    None
 }

@@ -17,15 +17,11 @@ use crate::{
     }, join_leave_room_modal::{
         JoinLeaveRoomModalAction,
         JoinLeaveRoomModalWidgetRefExt,
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, shared::callout_tooltip::{
-    },
-    login::login_screen::LoginAction,
-    persistence,
-    shared::{callout_tooltip::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, shared::{callout_tooltip::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, sliding_sync::current_user_id, utils::{
+    }, image_viewer_modal::ImageViewerModalWidgetRefExt}, sliding_sync::current_user_id, utils::{
         room_name_or_id,
         OwnedRoomIdRon,
     }, verification::VerificationAction, verification_modal::{
@@ -167,7 +163,7 @@ live_design! {
                         flow: Overlay,
 
                         home_screen_view = <View> {
-                            visible: true
+                            visible: false
                             home_screen = <HomeScreen> {}
                         }
                         join_leave_modal = <Modal> {
@@ -176,7 +172,7 @@ live_design! {
                             }
                         }
                         login_screen_view = <View> {
-                            visible: false
+                            visible: true
                             login_screen = <LoginScreen> {}
                         }
                         <PopupList> {}

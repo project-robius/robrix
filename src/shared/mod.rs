@@ -32,6 +32,7 @@ pub fn live_design(cx: &mut Cx) {
     room_filter_input_bar::live_design(cx);
     avatar::live_design(cx);
     text_or_image::live_design(cx);
+    image_viewer_modal::live_design(cx);
     html_or_plaintext::live_design(cx);
     typing_animation::live_design(cx);
     jump_to_bottom_button::live_design(cx);
