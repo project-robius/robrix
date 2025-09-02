@@ -179,7 +179,7 @@ impl MatchEvent for TspVerifyUser {
                     kind: PopupKind::Error,
                 });
             } else if let Some(user_id) = self.user_id.clone() {
-                let _ = submit_tsp_request(TspRequest::AssociateDidWithUserId { did, user_id });
+                submit_tsp_request(TspRequest::AssociateDidWithUserId { did, user_id });
                 verify_user_button.set_enabled(cx, false);
                 verify_user_button.set_text(cx, "Sending request...");
             }
@@ -244,7 +244,7 @@ impl TspVerifyUser {
             TspVerifiedInfo::Verified { did } => {
                 verified_tsp_view.set_visible(cx, true);
                 unverified_tsp_view.set_visible(cx, false);
-                verified_tsp_view.text_input(id!(tsp_did_read_only_input)).set_text(cx, &did);
+                verified_tsp_view.text_input(id!(tsp_did_read_only_input)).set_text(cx, did);
             }
             TspVerifiedInfo::Unverified => {
                 verified_tsp_view.set_visible(cx, false);

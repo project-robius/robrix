@@ -47,7 +47,7 @@ pub fn submit_tsp_request(req: TspRequest) {
         });
         return;
     };
-    if let Err(_) = sender.send(req) {
+    if sender.send(req).is_err() {
         enqueue_popup_notification(PopupItem {
             message: "Failed to submit TSP request: the background TSP worker task has died.\n\n\
                 Please restart Robrix to continue using TSP features.".into(),
@@ -55,6 +55,13 @@ pub fn submit_tsp_request(req: TspRequest) {
             kind: PopupKind::Error
         });
     }
+}
+
+/// A background loop task that receives messages for a specific VID.
+#[derive(Debug)]
+struct ReceiveLoopTask {
+    join_handle: JoinHandle<Result<(), anyhow::Error>>,
+    sender: UnboundedSender<TspReceiveLoopRequest>,
 }
 
 
@@ -79,10 +86,7 @@ pub struct TspState {
     ///
     /// This maps the private VID to a tuple of the running task and a sender
     /// that is used to send requests to the receive loop task.
-    receive_loop_tasks: BTreeMap<
-        String,
-        (JoinHandle<Result<(), anyhow::Error>>, UnboundedSender<TspReceiveLoopRequest>),
-    >,
+    receive_loop_tasks: BTreeMap<String, ReceiveLoopTask>,
     /// Verification requests that we have sent out and are awaiting responses for.
     pending_verification_requests: SmallVec<[TspVerificationDetails; 1]>,
 }
@@ -215,18 +219,21 @@ impl TspState {
         wallet_db: &AsyncSecureStore,
         vid: &str,
     ) -> UnboundedSender<TspReceiveLoopRequest> {
-        if let Some((_, sender)) = self.receive_loop_tasks.get(vid) {
-            return sender.clone();
+        if let Some(task) = self.receive_loop_tasks.get(vid) {
+            return task.sender.clone();
         }
 
         let (sender, receiver) = unbounded_channel::<TspReceiveLoopRequest>();
         let join_handle = rt_handle.spawn(
             receive_messages_for_vid(wallet_db.clone(), vid.to_string(), receiver)
         );
-        let old = self.receive_loop_tasks.insert(vid.to_string(), (join_handle, sender.clone()));
+        let old = self.receive_loop_tasks.insert(
+            vid.to_string(),
+            ReceiveLoopTask { join_handle, sender: sender.clone() }
+        );
         if let Some(old) = old {
             warning!("BUG: aborting previous receive loop for VID \"{}\".", vid);
-            old.0.abort();
+            old.join_handle.abort();
         }
         sender
     }
@@ -802,7 +809,7 @@ async fn create_did_and_add_to_wallet(
         .current_wallet.as_ref()
         .map(|w| w.db.clone())
         .ok_or_else(|| anyhow!("Please choose a default TSP wallet to hold the DID."))?;
-    let (did, private_vid, metadata) = create_did_web(&did_server, &server, &username, &client).await?;
+    let (did, private_vid, metadata) = create_did_web(&did_server, &server, &username, client).await?;
     let new_vid = private_vid.identifier().to_string();
     log!("Successfully created & published new DID: {did}.\n\
         Adding private VID {new_vid} to current wallet...",
