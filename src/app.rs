@@ -17,11 +17,11 @@ use crate::{
     }, join_leave_room_modal::{
         JoinLeaveRoomModalAction,
         JoinLeaveRoomModalWidgetRefExt,
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, shared::callout_tooltip::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, shared::{callout_tooltip::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, sliding_sync::current_user_id, utils::{
+    }, image_viewer_modal::ImageViewerModalWidgetRefExt}, sliding_sync::current_user_id, utils::{
         room_name_or_id,
         OwnedRoomIdRon,
     }, verification::VerificationAction, verification_modal::{
@@ -44,7 +44,84 @@ live_design! {
     use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
+    use crate::shared::image_viewer_modal::ImageViewerModal;
 
+    APP_TAB_COLOR = #344054
+    APP_TAB_COLOR_HOVER = #636e82
+    APP_TAB_COLOR_ACTIVE = #091
+
+    AppTab = <RadioButton> {
+        width: Fit,
+        height: Fill,
+        flow: Down,
+        align: {x: 0.5, y: 0.5},
+
+        icon_walk: {width: 20, height: 20, margin: 0.0}
+        label_walk: {margin: 0.0}
+
+        draw_bg: {
+            radio_type: Tab,
+
+            // Draws a horizontal line under the tab when selected or hovered.
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                sdf.box(
+                    20.0,
+                    self.rect_size.y - 2.5,
+                    self.rect_size.x - 40,
+                    self.rect_size.y - 4,
+                    0.5
+                );
+                sdf.fill(
+                    mix(
+                        mix(
+                            #0000,
+                            (APP_TAB_COLOR_HOVER),
+                            self.hover
+                        ),
+                        (APP_TAB_COLOR_ACTIVE),
+                        self.active
+                    )
+                );
+                return sdf.result;
+            }
+        }
+
+        draw_text: {
+            color: (APP_TAB_COLOR)
+            color_hover: (APP_TAB_COLOR_HOVER)
+            color_active: (APP_TAB_COLOR_ACTIVE)
+
+            fn get_color(self) -> vec4 {
+                return mix(
+                    mix(
+                        self.color,
+                        self.color_hover,
+                        self.hover
+                    ),
+                    self.color_active,
+                    self.active
+                )
+            }
+        }
+
+        draw_icon: {
+            instance color: (APP_TAB_COLOR)
+            instance color_hover: (APP_TAB_COLOR_HOVER)
+            instance color_active: (APP_TAB_COLOR_ACTIVE)
+            fn get_color(self) -> vec4 {
+                return mix(
+                    mix(
+                        self.color,
+                        self.color_hover,
+                        self.hover
+                    ),
+                    self.color_active,
+                    self.selected
+                )
+            }
+        }
+    }
 
     App = {{App}} {
         ui: <Root>{
@@ -122,6 +199,8 @@ live_design! {
                         // Tooltips must be shown in front of all other UI elements,
                         // since they can be shown as a hover atop any other widget.
                         app_tooltip = <CalloutTooltip> {}
+
+                        image_viewer_modal = <ImageViewerModal> {}
                     }
                 } // end of body
             }
@@ -184,6 +263,7 @@ impl LiveHook for App {
         // Here we set the global singleton for the PopupList widget,
         // which is used to access PopupList Widget from anywhere in the app.
         crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
+        crate::shared::image_viewer_modal::set_global_image_viewer_modal(cx, self.ui.image_viewer_modal(id!(image_viewer_modal)));
     }
 }
 

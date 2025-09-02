@@ -22,6 +22,7 @@ live_design! {
     pub ICON_LINK            = dep("crate://self/resources/icons/link.svg")
     pub ICON_PIN             = dep("crate://self/resources/icons/pin.svg")
     pub ICON_REPLY           = dep("crate://self/resources/icons/reply.svg")
+    pub ICON_SEARCH          = dep("crate://self/resources/icons/search.svg")
     pub ICON_SEND            = dep("crate://self/resources/icon_send.svg")
     pub ICON_TRASH           = dep("crate://self/resources/icons/trash.svg")
     pub ICON_UPLOAD          = dep("crate://self/resources/icons/upload.svg")
