@@ -493,7 +493,7 @@ impl Widget for UserProfileSlidingPane {
             || match event.hits_with_capture_overload(cx, area, true) {
                 Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
                 Hit::FingerDown(_fde) => {
-                    // cx.set_key_focus(area);
+                    cx.set_key_focus(area);
                     false
                 }
                 Hit::FingerUp(fue) if fue.is_over => {

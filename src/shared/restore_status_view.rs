@@ -14,7 +14,6 @@ live_design! {
     use crate::shared::styles::*;
 
     pub RestoreStatusView = {{RestoreStatusView}} {
-        visible: false,
         width: Fill, height: Fill,
         flow: Down,
         align: {x: 0.5, y: 0.5},
@@ -91,8 +90,7 @@ impl RestoreStatusViewRef {
     ///
     /// The `room_name` parameter is used to fill in the room name in the error message.
     pub fn set_content(&self, cx: &mut Cx, all_rooms_loaded: bool, room_name: &str) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.view.set_visible(cx, true);
+        let Some(inner) = self.borrow() else { return };      
         let restore_status_spinner = inner.view.view(id!(restore_status_spinner));
         let restore_status_label = inner.view.label(id!(restore_status_label));
         if all_rooms_loaded {

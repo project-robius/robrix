@@ -33,12 +33,28 @@ pub fn live_design(cx: &mut Cx) {
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
 static TSP_REQUEST_SENDER: OnceLock<UnboundedSender<TspRequest>> = OnceLock::new();
 
-/// Submits a TSP request to the worker thread to be executed asynchronously.
-pub fn submit_tsp_request(req: TspRequest) -> anyhow::Result<()> {
-    TSP_REQUEST_SENDER.get()
-        .ok_or(anyhow!("TSP request sender was not initialized."))?
-        .send(req)
-        .map_err(|_| anyhow!("TSP async worker task receiver has died!"))
+/// Submits a TSP request to the worker thread to be executed asynchronously
+///
+/// If an error occurs, a popup notification will be displayed to the user
+/// informing them of the error with a recommendation to restart the app.
+pub fn submit_tsp_request(req: TspRequest) {
+    let Some(sender) = TSP_REQUEST_SENDER.get() else {
+        enqueue_popup_notification(PopupItem {
+            message: "Failed to submit TSP request: TSP request sender was not initialized.\n\n\
+                Please restart Robrix to continue using TSP features.".into(),
+            auto_dismissal_duration: None,
+            kind: PopupKind::Error
+        });
+        return;
+    };
+    if let Err(_) = sender.send(req) {
+        enqueue_popup_notification(PopupItem {
+            message: "Failed to submit TSP request: the background TSP worker task has died.\n\n\
+                Please restart Robrix to continue using TSP features.".into(),
+            auto_dismissal_duration: None,
+            kind: PopupKind::Error
+        });
+    }
 }
 
 
@@ -324,6 +340,7 @@ impl TspWalletMetadata {
 }
 
 #[derive(Debug)]
+#[allow(unused)] // This is a placeholder, will be used later.
 enum TspReceiveLoopRequest {
     /// Stop receiving messages for the given private VID.
     Stop { vid: String },
@@ -561,7 +578,7 @@ async fn async_tsp_worker(
 ) -> anyhow::Result<()> {
     log!("Started async_tsp_worker task.");
 
-    // Allow lazily initialization of the reqwest client.
+    // Allow lazy initialization of the reqwest client.
     let mut __reqwest_client = None;
     let mut get_reqwest_client = || {
         __reqwest_client.get_or_insert_with(|| {

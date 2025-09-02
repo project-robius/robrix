@@ -366,7 +366,7 @@ impl WidgetMatchEvent for CreateDidModal {
                             alias,
                             server,
                             did_server
-                        }).unwrap();
+                        });
 
                         self.state = CreateDidModalState::WaitingForIdentityCreation;
                         self.is_showing_error = false;
