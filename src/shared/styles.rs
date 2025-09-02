@@ -199,30 +199,63 @@ live_design! {
             uniform color_empty_focus: #B,
 
             fn get_color(self) -> vec4 {
-                return
+                return mix(
                     mix(
                         mix(
                             mix(
+                                self.color,
                                 mix(
-                                    self.color,
-                                    mix(
-                                        self.color_hover,
-                                        self.color_down,
-                                        self.down
-                                    ),
-                                    self.hover
+                                    self.color_hover,
+                                    self.color_down,
+                                    self.down
                                 ),
-                                self.color_focus,
-                                self.focus
+                                self.hover
                             ),
-                            self.color_empty,
-                            self.empty
+                            self.color_focus,
+                            self.focus
                         ),
-                        self.color_disabled,
-                        self.disabled
-                    )
+                        self.color_empty,
+                        self.empty
+                    ),
+                    self.color_disabled,
+                    self.disabled
+                )
             }
         }
+    }
+
+    pub SimpleTextInput = <RobrixTextInput> {
+        padding: 10,
+        width: Fill, height: Fit
+        flow: RightWrap,
+        draw_bg: {
+            color: (COLOR_SECONDARY)
+            border_radius: 2.0
+            border_size: 1.0
+
+            // TODO: determine these other colors below
+            color_hover: (COLOR_PRIMARY)
+            color_focus: (COLOR_PRIMARY)
+            color_down: (COLOR_PRIMARY)
+            color_empty: (COLOR_SECONDARY)
+            color_disabled: (COLOR_BG_DISABLED)
+
+            border_color: (COLOR_SECONDARY)
+            border_color_hover: (COLOR_ACTIVE_PRIMARY)
+            border_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_disabled: (COLOR_FG_DISABLED)
+
+            border_color_2: (COLOR_SECONDARY)
+            border_color_2_hover: (COLOR_ACTIVE_PRIMARY)
+            border_color_2_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_2_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_2_disabled: (COLOR_FG_DISABLED)
+        }
+        draw_text: {
+            wrap: Word,
+        }
+        empty_text: "Add a display name..."
     }
 }
 

@@ -329,7 +329,7 @@ impl WidgetMatchEvent for CreateWalletModal {
                             password,
                         };
                         // Submit the wallet creation request to the TSP async worker thread.
-                        tsp::submit_tsp_request(tsp::TspRequest::CreateWallet { metadata }).unwrap();
+                        tsp::submit_tsp_request(tsp::TspRequest::CreateWallet { metadata });
                         self.state = CreateWalletModalState::WaitingForWalletCreation;
                         self.is_showing_error = false;
                         status_label.apply_over(cx, live!(

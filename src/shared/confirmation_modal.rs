@@ -84,7 +84,7 @@ live_design! {
                         color: (COLOR_BG_DANGER_RED)
                     }
                     text: "Cancel"
-                    draw_text:{
+                    draw_text: {
                         color: (COLOR_FG_DANGER_RED),
                     }
                 }
@@ -104,7 +104,7 @@ live_design! {
                         color: (COLOR_BG_ACCEPT_GREEN)
                     }
                     text: "Confirm"
-                    draw_text:{
+                    draw_text: {
                         color: (COLOR_FG_ACCEPT_GREEN),
                     }
                 }

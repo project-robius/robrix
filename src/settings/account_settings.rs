@@ -90,38 +90,9 @@ live_design! {
             text: "Your Display Name:"
         }
 
-        display_name_input = <RobrixTextInput> {
+        display_name_input = <SimpleTextInput> {
             margin: {top: 3, left: 5, right: 5, bottom: 8},
-            padding: 10,
             width: 216, height: Fit
-            flow: RightWrap,
-            draw_bg: {
-                color: (COLOR_SECONDARY)
-                border_radius: 2.0
-                border_size: 1.0
-
-                // TODO: determine these other colors below
-                color_hover: (COLOR_PRIMARY)
-                color_focus: (COLOR_PRIMARY)
-                color_down: (COLOR_PRIMARY)
-                color_empty: (COLOR_SECONDARY)
-                color_disabled: (COLOR_BG_DISABLED)
-
-                border_color: (COLOR_SECONDARY)
-                border_color_hover: (COLOR_ACTIVE_PRIMARY)
-                border_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
-                border_color_down: (COLOR_ACTIVE_PRIMARY_DARKER)
-                border_color_disabled: (COLOR_FG_DISABLED)
-
-                border_color_2: (COLOR_SECONDARY)
-                border_color_2_hover: (COLOR_ACTIVE_PRIMARY)
-                border_color_2_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
-                border_color_2_down: (COLOR_ACTIVE_PRIMARY_DARKER)
-                border_color_2_disabled: (COLOR_FG_DISABLED)
-            }
-            draw_text: {
-                wrap: Word,
-            }
             empty_text: "Add a display name..."
         }
 

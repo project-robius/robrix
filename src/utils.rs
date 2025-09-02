@@ -1,7 +1,7 @@
 // Ignore clippy warnings in `DeRon` macro derive bodies.
 #![allow(clippy::question_mark)]
 
-use std::{borrow::Cow, fmt::Display, ops::Deref, str::{Chars, FromStr}, time::SystemTime};
+use std::{borrow::Cow, fmt::Display, ops::{Deref, DerefMut}, str::{Chars, FromStr}, time::SystemTime};
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
@@ -11,6 +11,30 @@ use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetail
 
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
+
+/// A wrapper type that implements the `Debug` trait for non-`Debug` types.
+pub struct DebugWrapper<T>(T);
+impl<T> std::fmt::Debug for DebugWrapper<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({})", std::any::type_name::<T>())
+    }
+}
+impl<T> Deref for DebugWrapper<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl<T> DerefMut for DebugWrapper<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl<T> From<T> for DebugWrapper<T> {
+    fn from(value: T) -> Self {
+        DebugWrapper(value)
+    }
+}
 
 /// Returns true if the given event is an interactive hit-related event
 /// that should require a view/widget to be visible in order to handle/receive it.
