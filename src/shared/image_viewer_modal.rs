@@ -1,7 +1,11 @@
+use std::sync::Arc;
+
 use makepad_widgets::{image_cache::ImageError, *};
 use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomId};
 
 use crate::utils::load_png_or_jpg;
+use crate::media_cache::MediaCacheEntry;
+use matrix_sdk::media::MediaFormat;
 
 // Image loading timeout in seconds (10 seconds)
 pub const IMAGE_LOAD_TIMEOUT: f64 = 1.0;
@@ -552,4 +556,60 @@ pub enum LoadState {
     Loaded,
     Error,
     Timeout,
+}
+
+/// Initializes the image modal with a new MXC URI and starts the loading timeout
+pub fn initialize_image_modal_with_uri(cx: &mut Cx, timer: &mut Timer, mxc_uri: OwnedMxcUri, room_id: OwnedRoomId) {
+    *timer = cx.start_timeout(IMAGE_LOAD_TIMEOUT);
+    let image_viewer_modal = get_global_image_viewer_modal(cx);
+    image_viewer_modal.initialized(room_id, mxc_uri, *timer);
+}
+
+/// Handles loading and displaying image data in the modal
+pub fn handle_loaded_image_data(
+    cx: &mut Cx,
+    timer: &mut Timer,
+    image_ref: ImageRef,
+    view_set: ViewSet,
+    data: &Arc<[u8]>,
+) -> LoadState {
+    match load_image_data(cx, image_ref, view_set.clone(), data) {
+        Ok(_) => {
+            cx.stop_timer(*timer);
+            LoadState::Loaded
+        }
+        Err(_) => {
+            cx.stop_timer(*timer);
+            update_state_views(cx, view_set, LoadState::Error);
+            LoadState::Error
+        }
+    }
+}
+
+/// Handles media cache entry states for the image modal
+pub fn handle_media_cache_entry(
+    cx: &mut Cx,
+    timer: &mut Timer,
+    media_entry: (MediaCacheEntry, MediaFormat),
+    view_set: ViewSet,
+) -> LoadState {
+    match media_entry {
+        (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
+            let image_viewer_modal = get_global_image_viewer_modal(cx);
+            let Some(image_ref) = image_viewer_modal.get_zoomable_image() else {
+                return LoadState::Error; 
+            };
+            cx.stop_timer(*timer);
+            handle_loaded_image_data(cx, timer, image_ref, view_set, &data)
+        }
+        (MediaCacheEntry::Requested, _) | (MediaCacheEntry::Loaded(_), MediaFormat::Thumbnail(_)) => {
+            update_state_views(cx, view_set, LoadState::Loading);
+            LoadState::Loading
+        }
+        (MediaCacheEntry::Failed, _) => {
+            cx.stop_timer(*timer);
+            update_state_views(cx, view_set, LoadState::Error);
+            LoadState::Error
+        }
+    }
 }

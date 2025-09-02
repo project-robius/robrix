@@ -30,7 +30,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer_modal::{get_global_image_viewer_modal, load_image_data, update_state_views, LoadState, IMAGE_LOAD_TIMEOUT}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::COLOR_FG_DANGER_RED, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer_modal::{get_global_image_viewer_modal, handle_media_cache_entry, initialize_image_modal_with_uri, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::COLOR_FG_DANGER_RED, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -4413,54 +4413,41 @@ pub fn clear_timeline_states(_cx: &mut Cx) {
     });
 }
 
-/// Populates the image viewer modal with the given timeline item's image.
-///
-/// This function will return `LoadState::Loading` if the image is not yet
-/// available, `LoadState::Loaded` if the image is successfully loaded and
-/// displayed, or `LoadState::Error` if the image fails to load.
-///
-/// If the image is not yet available, the timer passed in as `timer` will be
-/// started with a timeout of `IMAGE_LOAD_TIMEOUT` seconds. When the timer
-/// is triggered, this function will be called again with the same arguments.
-///
-/// The `mxc_uri` argument should be set to `None` if the timeline item does
-/// not have an associated image.
-///
-/// The `tl` argument should point to the timeline state for the current room.
-fn populate_image_modal(cx: &mut Cx, timer: &mut Timer, mxc_uri: Option<OwnedMxcUri>, tl: &mut TimelineUiState) -> LoadState {
+/// Populates the image modal with media content and handles various loading states
+/// 
+/// This function manages the complete lifecycle of loading and displaying an image in the modal:
+/// 1. Optionally initializes the modal with a new MXC URI
+/// 2. Attempts to fetch or retrieve cached media
+/// 3. Updates the UI based on the current media state (loading, loaded, failed)
+fn populate_image_modal(
+    cx: &mut Cx, 
+    timer: &mut Timer, 
+    mxc_uri: Option<OwnedMxcUri>, 
+    tl: &mut TimelineUiState
+) -> LoadState {
+    // Initialize modal with new URI if provided
     if let Some(mxc_uri) = mxc_uri {
-        *timer = cx.start_timeout(IMAGE_LOAD_TIMEOUT);
-        let image_viewer_modal = get_global_image_viewer_modal(cx);
-        image_viewer_modal.initialized(tl.room_id.clone(), mxc_uri, *timer);
+        initialize_image_modal_with_uri(cx, timer, mxc_uri, tl.room_id.clone());
     }
+
     let image_viewer_modal = get_global_image_viewer_modal(cx);
-    if image_viewer_modal.get_media_or_fetch(tl.room_id.clone()) {
-        let Some(view_set) = image_viewer_modal.get_view_set() else { return LoadState::Error; };
-        let Some(mxc_uri) = image_viewer_modal.get_mxc_uri() else { return LoadState::Error; };
-        match tl.media_cache.try_get_media_or_fetch(mxc_uri, MediaFormat::File) {
-            (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
-                let Some(image_ref) = image_viewer_modal.get_zoomable_image() else { return LoadState::Error; };
-                match load_image_data(cx, image_ref.clone(), view_set.clone(), &data) {
-                    Ok(_) => {
-                        cx.stop_timer(*timer);
-                        return LoadState::Loaded;
-                    },
-                    Err(_) => {
-                        cx.stop_timer(*timer);
-                        update_state_views(cx, view_set, LoadState::Error);
-                        return LoadState::Error;
-                    }
-                }
-            }
-            (MediaCacheEntry::Requested, _)
-            | (MediaCacheEntry::Loaded(_), MediaFormat::Thumbnail(_)) => {
-                update_state_views(cx, view_set, LoadState::Loading);
-            }
-            (MediaCacheEntry::Failed, _) => {
-                cx.stop_timer(*timer);
-                update_state_views(cx, view_set, LoadState::Error);
-            }
-        }
+    
+    // Only proceed if media fetching is active
+    if !image_viewer_modal.get_media_or_fetch(tl.room_id.clone()) {
+        return LoadState::Loading;
     }
-    LoadState::Loading
+
+    // Get required modal components
+    let Some(view_set) = image_viewer_modal.get_view_set() else {
+        return LoadState::Error; 
+    };
+    let Some(mxc_uri) = image_viewer_modal.get_mxc_uri() else {
+        return LoadState::Error; 
+    };
+
+    // Try to get media from cache or trigger fetch
+    let media_entry = tl.media_cache.try_get_media_or_fetch(mxc_uri, MediaFormat::File);
+    
+    // Handle the different media states
+    handle_media_cache_entry(cx, timer, media_entry, view_set)
 }
