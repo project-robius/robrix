@@ -1185,7 +1185,6 @@ impl TspWalletSqliteUrl {
                 let after  = self.0.get((idx + delim.len()) ..).unwrap_or("");
                 let mut after_encoded = String::new();
                 for component in Path::new(after).components() {
-                    log!("### Got path component: {component:?}, as_os_str(): {}", component.as_os_str().to_string_lossy());
                     match component {
                         std::path::Component::Prefix(prefix) => {
                             // Windows drive prefixes must not be percent-encoded.

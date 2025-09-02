@@ -313,8 +313,9 @@ live_design! {
             visible: false,
             show_bg: true
             draw_bg: {
+                uniform bg_color: #000000BB
                 fn pixel(self) -> vec4 {
-                    return vec4(0., 0., 0., 0.7)
+                    return self.bg_color;
                 }
             }
         }
@@ -355,13 +356,23 @@ live_design! {
                     redraw: true,
                     from: {all: Forward {duration: 0.4}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    apply: {main_content = { width: 300, draw_bg: {opacity: 1.0} }}
+                    apply: {
+                        main_content = { margin: {right: 0} },
+                        bg_view = {
+                            draw_bg: { bg_color: #000000BB }
+                        }
+                    }
                 }
                 hide = {
                     redraw: true,
                     from: {all: Forward {duration: 0.5}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    apply: {main_content = { width: 0, draw_bg: {opacity: 0.0} }}
+                    apply: {
+                        main_content = { margin: {right: -300} },
+                        bg_view = {
+                            draw_bg: { bg_color: #x00000000 }
+                        }
+                    }
                 }
             }
         }
