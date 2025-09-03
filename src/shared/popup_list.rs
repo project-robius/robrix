@@ -183,7 +183,7 @@ live_design! {
             width: Fill,
             height: Fit,
             draw_text: {
-                color: (COLOR_TEXT_IDLE),
+                color: (#000000),
                 text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10 },
                 wrap: Word
             }
@@ -201,11 +201,11 @@ live_design! {
         width: Fill,
         height: Fit,
         flow: Down,
-        padding: { top: 3}
+        padding: { top: 3 }
         align: { x: 0.98 }
         
         <RoundedView> {
-            width: 24, height: 24,
+            width: Fit, height: Fit
             show_bg: true,
             draw_bg: {
                 color: (COLOR_BG_DISABLED)
@@ -214,7 +214,7 @@ live_design! {
             // The "X" close button on the top right
             close_button = <RobrixIconButton> {
                 width: Fit, height: Fit,
-                padding: 0
+                padding: { top: 5, bottom: 5, left: 8, right: 8 },
                 spacing: 0,
                 align: { x: 0.5, y: 0.5 }
                 draw_bg: {
@@ -503,34 +503,10 @@ impl RobrixPopupNotification {
         }
         // Apply popup item kind-specific styling
         if let Some(background_color) = background_color {
-            // Calculate relative luminance using WCAG 2.0 formula
-            // First apply gamma correction, then calculate weighted luminance
-            let gamma_correct = |c: f32| {
-                if c <= 0.03928 {
-                    c / 12.92
-                } else {
-                    ((c + 0.055) / 1.055).powf(2.4)
-                }
-            };
-            
-            let r_linear = gamma_correct(background_color.x);
-            let g_linear = gamma_correct(background_color.y);
-            let b_linear = gamma_correct(background_color.z);
-            
-            // WCAG 2.0 relative luminance formula: Y = 0.2126 * R + 0.7152 * G + 0.0722 * B
-            let luminance = 0.2126 * r_linear + 0.7152 * g_linear + 0.0722 * b_linear;
-            
-            // Use threshold with buffer to avoid edge cases near 0.5
-            const LUMINANCE_THRESHOLD: f32 = 0.5;
-            const THRESHOLD_BUFFER: f32 = 0.05;
-            
-            let text_color = if luminance > (LUMINANCE_THRESHOLD + THRESHOLD_BUFFER) {
-                vec4(0.0, 0.0, 0.0, 1.0) // Black text for light backgrounds
-            } else if luminance < (LUMINANCE_THRESHOLD - THRESHOLD_BUFFER) {
-                COLOR_WHITE // White text for dark backgrounds
+            let text_color = if popup_item.kind == PopupKind::Warning {
+                vec4(0.0, 0.0, 0.0, 1.0) // Black text for Warning
             } else {
-                // For colors very close to the threshold, prefer dark text for safety
-                vec4(0.0, 0.0, 0.0, 1.0)
+                COLOR_WHITE // White text for all other kinds
             };
             
             view.apply_over(
