@@ -25,6 +25,42 @@ live_design! {
         }
 
         <SubsectionLabel> {
+            text: "Your active identity:"
+        }
+
+        <View> {
+            width: Fill, height: Fit
+            flow: Right,
+            spacing: 10
+
+            copy_identity_button = <RobrixIconButton> {
+                margin: {left: 5}
+                padding: 12,
+                spacing: 0,
+                draw_bg: {
+                    color: (COLOR_SECONDARY)
+                }
+                draw_icon: {
+                    svg_file: (ICON_COPY)
+                }
+                icon_walk: {width: 16, height: 16, margin: {right: -2} }
+            }
+
+            current_identity_label = <Label> {
+                width: Fill, height: Fit
+                flow: RightWrap,
+                margin: {top: 10}
+                draw_text: {
+                    wrap: Line,
+                    color: (COLOR_FG_ACCEPT_GREEN),
+                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                }
+                text: "No default identity has been set."
+            }
+        }
+
+
+        <SubsectionLabel> {
             text: "Your Wallets:"
         }
 
@@ -141,6 +177,7 @@ live_design! {
 struct WalletState {
     active_wallet: Option<TspWalletMetadata>,
     other_wallets: Vec<(TspWalletMetadata, WalletStatus)>,
+    active_identity: Option<String>,
 }
 impl WalletState {
     fn is_empty(&self) -> bool {
@@ -215,6 +252,15 @@ impl Widget for TspSettingsScreen {
             self.refresh_wallets();
             log!("Wallets were refreshed: {:?}", self.wallets);
         }
+
+        // Update the current identity label.
+        self.view.label(id!(current_identity_label)).set_text(
+            cx,
+            self.wallets.as_ref()
+                .and_then(|ws| ws.active_identity.as_deref())
+                .unwrap_or("No default identity has been set."),
+        );
+
         // If we don't have any wallets, show the "no wallets" label.
         let is_wallets_empty = self.wallets.as_ref().is_none_or(|w| w.is_empty());
         self.view.view(id!(no_wallets_label)).set_visible(cx, is_wallets_empty);
@@ -267,7 +313,9 @@ impl MatchEvent for TspSettingsScreen {
                     else if let Some(pos) = wallets.other_wallets.iter().position(|(w, _)| w == metadata) {
                         wallets.other_wallets.remove(pos);
                     }
-                    else { continue; }
+                    else {
+                        continue;
+                    }
                     enqueue_popup_notification(PopupItem {
                         message: format!("Removed wallet \"{}\".", metadata.wallet_name),
                         auto_dismissal_duration: Some(4.0),
@@ -337,6 +385,23 @@ impl MatchEvent for TspSettingsScreen {
         // | Some(TspWalletAction::ReceivedDidAssociationRequest(_)) // handled in the TspVerificationModal widget
         // | Some(TspWalletAction::ReceiveLoopError { .. }) // handled in the top-level app
 
+        if self.view.button(id!(copy_identity_button)).clicked(actions) { 
+            if let Some(did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
+                cx.copy_to_clipboard(did);
+                enqueue_popup_notification(PopupItem {
+                    message: String::from("Copied your default TSP identity to the clipboard."),
+                    auto_dismissal_duration: Some(3.0),
+                    kind: PopupKind::Success,
+                });
+            } else {
+                enqueue_popup_notification(PopupItem {
+                    message: String::from("No default TSP identity has been set."),
+                    auto_dismissal_duration: Some(4.0),
+                    kind: PopupKind::Warning,
+                });
+            }
+        }
+
         if self.view.button(id!(create_wallet_button)).clicked(actions) {
             cx.action(CreateWalletModalAction::Open);
         }
@@ -373,6 +438,7 @@ impl TspSettingsScreen {
         self.wallets = Some(WalletState {
             active_wallet: current_wallet,
             other_wallets,
+            active_identity: tsp_state.current_local_vid.clone(),
         });
     }
 

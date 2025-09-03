@@ -11,6 +11,8 @@ live_design! {
     pub ICON_FORBIDDEN       = dep("crate://self/resources/icons/forbidden.svg")
     pub ICON_CHECKMARK       = dep("crate://self/resources/icons/checkmark.svg")
     pub ICON_CLOSE           = dep("crate://self/resources/icons/close.svg")
+    pub ICON_CLOUD_CHECKMARK = dep("crate://self/resources/icons/cloud_checkmark.svg")
+    pub ICON_CLOUD_OFFLINE   = dep("crate://self/resources/icons/cloud_offline.svg")
     pub ICON_COPY            = dep("crate://self/resources/icons/copy.svg")
     pub ICON_EDIT            = dep("crate://self/resources/icons/edit.svg")
     pub ICON_EXTERNAL_LINK   = dep("crate://self/resources/icons/external_link.svg")
