@@ -503,13 +503,34 @@ impl RobrixPopupNotification {
         }
         // Apply popup item kind-specific styling
         if let Some(background_color) = background_color {
-            // Calculate luminance to determine if background is light
-            // Using the relative luminance formula: 0.299*R + 0.587*G + 0.114*B
-            let luminance = 0.299 * background_color.x + 0.587 * background_color.y + 0.114 * background_color.z;
-            let text_color = if luminance > 0.5 { 
+            // Calculate relative luminance using WCAG 2.0 formula
+            // First apply gamma correction, then calculate weighted luminance
+            let gamma_correct = |c: f32| {
+                if c <= 0.03928 {
+                    c / 12.92
+                } else {
+                    ((c + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            
+            let r_linear = gamma_correct(background_color.x);
+            let g_linear = gamma_correct(background_color.y);
+            let b_linear = gamma_correct(background_color.z);
+            
+            // WCAG 2.0 relative luminance formula: Y = 0.2126 * R + 0.7152 * G + 0.0722 * B
+            let luminance = 0.2126 * r_linear + 0.7152 * g_linear + 0.0722 * b_linear;
+            
+            // Use threshold with buffer to avoid edge cases near 0.5
+            const LUMINANCE_THRESHOLD: f32 = 0.5;
+            const THRESHOLD_BUFFER: f32 = 0.05;
+            
+            let text_color = if luminance > (LUMINANCE_THRESHOLD + THRESHOLD_BUFFER) {
                 vec4(0.0, 0.0, 0.0, 1.0) // Black text for light backgrounds
-            } else {
+            } else if luminance < (LUMINANCE_THRESHOLD - THRESHOLD_BUFFER) {
                 COLOR_WHITE // White text for dark backgrounds
+            } else {
+                // For colors very close to the threshold, prefer dark text for safety
+                vec4(0.0, 0.0, 0.0, 1.0)
             };
             
             view.apply_over(
