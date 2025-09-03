@@ -2186,17 +2186,20 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
     Handle::current().spawn(async move {
         while let Some(state) = subscriber.next().await {
             log!("Received a sync service state update: {state:?}");
-            if state == sync_service::State::Error {
-                log!("Restarting sync service due to error.");
-                if let Some(ss) = get_sync_service() {
-                    ss.start().await;
-                } else {
-                    enqueue_popup_notification(PopupItem {
-                        message: "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.".into(),
-                        auto_dismissal_duration: None,
-                        kind: PopupKind::Error,
-                    });
+            match state {
+                sync_service::State::Error => {
+                    log!("Restarting sync service due to error.");
+                    if let Some(ss) = get_sync_service() {
+                        ss.start().await;
+                    } else {
+                        enqueue_popup_notification(PopupItem {
+                            message: "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.".into(),
+                            auto_dismissal_duration: None,
+                            kind: PopupKind::Error,
+                        });
+                    }
                 }
+                other => Cx::post_action(RoomsListHeaderAction::StateUpdate(other)),
             }
         }
     });
@@ -2335,7 +2338,8 @@ async fn timeline_subscriber_handler(
     let mut found_target_event_id: Option<(usize, OwnedEventId)> = None;
 
     loop { tokio::select! {
-        // we must check for new requests before handling new timeline updates.
+        // we should check for new requests before handling new timeline updates,
+        // because the request might influence how we handle a timeline update.
         biased;
 
         // Handle updates to the current backwards pagination requests.
