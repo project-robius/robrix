@@ -235,7 +235,7 @@ live_design! {
         width: 275
         height: Fit
         padding: 0,
-        flow: Overlay 
+        flow: Overlay
         show_bg: true,
         draw_bg: {
             uniform border_radius: 4.0
@@ -362,7 +362,8 @@ live_design! {
                 }
             }
             progress_bar = <ProgressBar> {
-                width: 10, height: Fill,
+                width: 10,
+                height: Fill,
                 draw_bg: {
                     uniform direction: 1.0,
                     uniform anim_time: 1.0,
