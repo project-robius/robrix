@@ -201,22 +201,31 @@ live_design! {
         width: Fill,
         height: Fit,
         flow: Down,
-        align: { x: 0.99, y: 0.01 }
-        // The "X" close button on the top right
-        close_button = <RobrixIconButton> {
-            width: Fit,
-            height: Fit,
-            padding: 0
-            spacing: 0,
-            align: { x: 0.5, y: 0.5 }
+        padding: { top: 3}
+        align: { x: 0.98 }
+        
+        <RoundedView> {
+            width: 24, height: 24,
+            show_bg: true,
             draw_bg: {
-                color: (COLOR_TRANSPARENT)
+                color: (COLOR_BG_DISABLED)
             }
-            draw_icon: {
-                svg_file: (ICON_CLOSE),
-                color: (COLOR_TEXT_IDLE),
+            align: { x: 0.5, y: 0.5 }
+            // The "X" close button on the top right
+            close_button = <RobrixIconButton> {
+                width: Fit, height: Fit,
+                padding: 0
+                spacing: 0,
+                align: { x: 0.5, y: 0.5 }
+                draw_bg: {
+                    color: (COLOR_BG_DISABLED)
+                }
+                draw_icon: {
+                    svg_file: (ICON_CLOSE),
+                    color: (COLOR_DIVIDER_DARK),
+                }
+                icon_walk: {width: 15, height: 15}
             }
-            icon_walk: {width: 12, height: 12}
         }
     }
     // Other possible color themes that is not too glaring.
@@ -226,7 +235,7 @@ live_design! {
         width: 275
         height: Fit
         padding: 0,
-        flow: Overlay
+        flow: Overlay 
         show_bg: true,
         draw_bg: {
             uniform border_radius: 4.0
@@ -256,29 +265,29 @@ live_design! {
         }
 
         popup_content = <View> {
-            width: Fill,
-            height: Fit,
+            width: Fill, height: Fit,
             flow: Down
             //Right side view with close button
             close_button_view = <CloseButtonView> {}
             padding: { right: 2, top: 2}
             inner = <View> {
-                width: Fill,
-                height: Fit,
+                width: Fill, height: Fit,
                 padding: { top: 0, right: 5, bottom: 0, left: 10 }
                 flow: Right,
                 align: {
-                    y: 0.5,
+                    y: 0,
                 }
                 // Left side with icon for popup kind.
-                <LeftSideView> {
-                    // To offset the height of the close button_view.
-                    margin: {top: -12,}
-                }
+                <LeftSideView> {}
                 // Main content area
                 main_content = <MainContent> {}
             }
             progress_bar = <ProgressBar> {}
+            // Add a small gap between the progress bar and the end of the popup 
+            // to ensure the progress bar is within the popup.
+            <View> {
+                height: 0.2
+            }
         }
 
         animator: {
@@ -353,8 +362,7 @@ live_design! {
                 }
             }
             progress_bar = <ProgressBar> {
-                width: 10,
-                height: Fill,
+                width: 10, height: Fill,
                 draw_bg: {
                     uniform direction: 1.0,
                     uniform anim_time: 1.0,
@@ -382,7 +390,8 @@ live_design! {
     pub PopupList = <View> {
         width: Fill,
         height: Fill,
-        align: {x: 0.99, y: 0.05}
+        margin: { top: 10 }
+        align: {x: 0.99, }
         popup_notification = <RobrixPopupNotificationRightToLeftProgress>{}
     }
     // A widget that displays a vertical list of popups at the top right corner of the screen.
@@ -493,6 +502,15 @@ impl RobrixPopupNotification {
         }
         // Apply popup item kind-specific styling
         if let Some(background_color) = background_color {
+            // Calculate luminance to determine if background is light
+            // Using the relative luminance formula: 0.299*R + 0.587*G + 0.114*B
+            let luminance = 0.299 * background_color.x + 0.587 * background_color.y + 0.114 * background_color.z;
+            let text_color = if luminance > 0.5 { 
+                vec4(0.0, 0.0, 0.0, 1.0) // Black text for light backgrounds
+            } else {
+                COLOR_WHITE // White text for dark backgrounds
+            };
+            
             view.apply_over(
                 cx,
                 live! {
@@ -501,7 +519,7 @@ impl RobrixPopupNotification {
                             main_content = {
                                 popup_label = {
                                     draw_text: {
-                                        color: (COLOR_WHITE),
+                                        color: (text_color),
                                     }
                                 }
                             }
@@ -509,7 +527,7 @@ impl RobrixPopupNotification {
                             close_button_view = {
                                 close_button = {
                                     draw_icon: {
-                                        color: (COLOR_WHITE),
+                                        color: (text_color),
                                     }
                                 }
                             }
@@ -518,7 +536,7 @@ impl RobrixPopupNotification {
                         close_button_view = {
                             close_button = {
                                 draw_icon: {
-                                    color: (COLOR_WHITE),
+                                    color: (text_color),
                                 }
                             }
                         }
