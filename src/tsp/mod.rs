@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::BTreeMap, ops::Deref, path::Path, sync::{Mutex, OnceLock}};
+use std::{borrow::Cow, collections::BTreeMap, ops::Deref, path::Path, sync::{Arc, Mutex, OnceLock}};
 
 use anyhow::anyhow;
 use futures_util::StreamExt;
@@ -15,8 +15,9 @@ use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, shared::popup_l
 
 pub mod create_did_modal;
 pub mod create_wallet_modal;
-pub mod tsp_settings_screen;
 pub mod sign_anycast_checkbox;
+pub mod tsp_settings_screen;
+pub mod tsp_sign_indicator;
 pub mod tsp_verification_modal;
 pub mod wallet_entry;
 pub mod verify_user;
@@ -27,6 +28,7 @@ pub fn live_design(cx: &mut Cx) {
     wallet_entry::live_design(cx);
     verify_user::live_design(cx);
     sign_anycast_checkbox::live_design(cx);
+    tsp_sign_indicator::live_design(cx);
     tsp_verification_modal::live_design(cx);
     tsp_settings_screen::live_design(cx);
 }
@@ -210,6 +212,20 @@ impl TspState {
     /// Returns the associated TSP DID for a given Matrix user ID, if it exists.
     pub fn get_associated_did(&self, user_id: &UserId) -> Option<&String> {
         self.associations.get(user_id)
+    }
+
+    /// Returns the verified VID for a given Matrix user ID, if the association exists
+    /// and the user's associated DID is in the current default wallet.
+    pub fn get_verified_vid_for(
+        &self,
+        user_id: &UserId,
+    ) -> Option<Arc<dyn VerifiedVid>> {
+        let did = self.get_associated_did(user_id)?;
+        self.current_wallet.as_ref()?
+            .db
+            .as_store()
+            .get_verified_vid(&did)
+            .ok()
     }
 
     /// Gets or spawns a new receive loop that listens for messages for the given VID in the given wallet.

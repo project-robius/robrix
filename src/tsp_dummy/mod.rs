@@ -71,4 +71,8 @@ live_design! {
     pub TspSignAnycastCheckbox = <View> {
         visible: false
     }
+
+    pub TspSignIndicator = <View> {
+        visible: false
+    }
 }

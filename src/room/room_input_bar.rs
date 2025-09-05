@@ -37,7 +37,7 @@ live_design! {
         // A checkbox that enables TSP signing for the outgoing message.
         // If TSP is not enabled, this will be an empty invisible view.
         tsp_sign_checkbox = <TspSignAnycastCheckbox> {
-            margin: {bottom: 9, left: 5}
+            margin: {bottom: 9, left: 6, right: 0}
         }
 
         message_input = <MentionableTextInput> {

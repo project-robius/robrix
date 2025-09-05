@@ -32,7 +32,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::COLOR_FG_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -45,8 +45,6 @@ use rangemap::RangeSet;
 use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, location_preview::LocationPreviewWidgetExt, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
-
-const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
 
 /// The maximum number of timeline items to search through
 /// when looking for a particular event.
@@ -84,6 +82,7 @@ live_design! {
     use crate::home::room_read_receipt::*;
     use crate::rooms_list::*;
     use crate::shared::restore_status_view::*;
+    use link::tsp_link::TspSignIndicator;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -317,7 +316,8 @@ live_design! {
                 timestamp = <Timestamp> {
                     margin: { top: 5.9 }
                 }
-                edited_indicator = <EditedIndicator> {}
+                edited_indicator = <EditedIndicator> { }
+                tsp_sign_indicator = <TspSignIndicator> { }
             }
             content = <View> {
                 width: Fill,
@@ -378,6 +378,7 @@ live_design! {
                     margin: {top: 2.5}
                 }
                 edited_indicator = <EditedIndicator> { }
+                tsp_sign_indicator = <TspSignIndicator> { }
             }
             content = <View> {
                 width: Fill,
@@ -3085,11 +3086,11 @@ fn populate_message_view(
                         html_or_plaintext_ref.apply_over(cx, live!(
                             html_view = {
                                 html = {
-                                    font_color: (MESSAGE_NOTICE_TEXT_COLOR),
-                                    draw_normal:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-                                    draw_italic:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-                                    draw_bold:        { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-                                    draw_bold_italic: { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                                    font_color: (COLOR_MESSAGE_NOTICE_TEXT),
+                                    draw_normal:      { color: (COLOR_MESSAGE_NOTICE_TEXT), }
+                                    draw_italic:      { color: (COLOR_MESSAGE_NOTICE_TEXT), }
+                                    draw_bold:        { color: (COLOR_MESSAGE_NOTICE_TEXT), }
+                                    draw_bold_italic: { color: (COLOR_MESSAGE_NOTICE_TEXT), }
                                 }
                             }
                         ));
@@ -3438,7 +3439,7 @@ fn populate_message_view(
             if is_notice {
                 username_label.apply_over(cx, live!(
                     draw_text: {
-                        color: (MESSAGE_NOTICE_TEXT_COLOR),
+                        color: (COLOR_MESSAGE_NOTICE_TEXT),
                     }
                 ));
             }
@@ -3489,6 +3490,34 @@ fn populate_message_view(
             cx,
             event_tl_item,
         );
+    }
+
+    #[cfg(feature = "tsp")] {
+        use crate::tsp::{self, tsp_sign_indicator::{TspSignState, TspSignIndicatorWidgetRefExt}};
+
+        if let Some(Some(mut tsp_sig)) = event_tl_item.latest_json()
+            // TODO: use base64 data instead of a vec of raw bytes
+            .and_then(|raw| raw.get_field::<Vec<u8>>("org.robius.tsp_signature").ok())
+        {
+            log!("Found event {:?} with TSP signature:\n{:X?}", event_tl_item.event_id(), tsp_sig);
+            let tsp_sign_state = if let Some(sender_vid) = tsp::tsp_state_ref().lock().unwrap()
+                .get_verified_vid_for(event_tl_item.sender())
+            {
+                tsp_sdk::crypto::verify(&*sender_vid, &mut tsp_sig).map_or(
+                    TspSignState::WrongSignature,
+                    |(msg, msg_type)| {
+                        log!("TSP signature verified successfully!\n    Msg type: {msg_type:?}\n    Message: {msg:X?}");
+                        TspSignState::Verified
+                    }
+                )
+            } else {
+                TspSignState::Unknown
+            };
+
+            log!("TSP signature state for event {:?} is {:?}", event_tl_item.event_id(), tsp_sign_state);
+            item.tsp_sign_indicator(id!(profile.tsp_sign_indicator))
+                .set_state(cx, tsp_sign_state);
+        }
     }
 
     (item, new_drawn_status)
