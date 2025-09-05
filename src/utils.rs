@@ -202,7 +202,7 @@ pub fn stringify_pagination_error(
 
     match error {
         TimelineError::PaginationError(PaginationError::NotSupported) => {
-            return format!("Failed to load earlier messages in \"{room_name}\":\
+            return format!("Failed to load earlier messages in \"{room_name}\": \
                 pagination is not supported in this timeline focus mode.");
         }
         TimelineError::PaginationError(PaginationError::Paginator(paginator_error)) => {

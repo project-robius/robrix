@@ -141,7 +141,7 @@ impl VerificationBadgeRef {
                 Some(COLOR_FG_ACCEPT_GREEN),
             ),
             Some(VerificationState::Unverified) => (
-                "This device is unverified. To view your encrypted message history,\
+                "This device is unverified. To view your encrypted message history, \
                 please verify Robrix from another client.",
                 Some(COLOR_FG_DANGER_RED),
             ),
