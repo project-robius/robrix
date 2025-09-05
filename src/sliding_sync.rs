@@ -336,7 +336,7 @@ async fn register_user(register_request: RegisterRequest) -> Result<(Client, Cli
         // This avoids duplicate session persistence
         Ok((client, client_session))
     } else {
-        let err_msg = format!("Registration completed but user is not logged in");
+        let err_msg = "Registration completed but user is not logged in".to_string();
         enqueue_popup_notification(PopupItem {
             message: err_msg.clone(),
             kind: PopupKind::Error,

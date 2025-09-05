@@ -575,21 +575,18 @@ impl MatchEvent for RegisterScreen {
                 _ => {}
             }
             
-            match action.downcast_ref::<RegisterAction>() {
-                Some(RegisterAction::RegistrationSuccess | RegisterAction::RegistrationFailure(_)) => {
-                    // Always hide modal regardless of result
-                    self.view.modal(id!(status_modal)).close(cx);
-                    
-                    // Re-enable register button for failure case (success will hide the screen)
-                    if matches!(action.downcast_ref::<RegisterAction>(), Some(RegisterAction::RegistrationFailure(_))) {
-                        let register_button = self.view.button(id!(register_button));
-                        register_button.set_enabled(cx, true);
-                        register_button.reset_hover(cx);
-                    }
-                    
-                    self.redraw(cx);
+            if let Some(RegisterAction::RegistrationSuccess | RegisterAction::RegistrationFailure(_)) = action.downcast_ref::<RegisterAction>() {
+                // Always hide modal regardless of result
+                self.view.modal(id!(status_modal)).close(cx);
+                
+                // Re-enable register button for failure case (success will hide the screen)
+                if matches!(action.downcast_ref::<RegisterAction>(), Some(RegisterAction::RegistrationFailure(_))) {
+                    let register_button = self.view.button(id!(register_button));
+                    register_button.set_enabled(cx, true);
+                    register_button.reset_hover(cx);
                 }
-                _ => {}
+                
+                self.redraw(cx);
             }
         }
     }
