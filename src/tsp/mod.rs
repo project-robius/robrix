@@ -16,6 +16,7 @@ use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, shared::popup_l
 pub mod create_did_modal;
 pub mod create_wallet_modal;
 pub mod tsp_settings_screen;
+pub mod sign_anycast_checkbox;
 pub mod tsp_verification_modal;
 pub mod wallet_entry;
 pub mod verify_user;
@@ -25,6 +26,7 @@ pub fn live_design(cx: &mut Cx) {
     create_wallet_modal::live_design(cx);
     wallet_entry::live_design(cx);
     verify_user::live_design(cx);
+    sign_anycast_checkbox::live_design(cx);
     tsp_verification_modal::live_design(cx);
     tsp_settings_screen::live_design(cx);
 }
@@ -371,7 +373,7 @@ pub fn tsp_init(rt_handle: tokio::runtime::Handle) -> anyhow::Result<()> {
                 error!("Failed to initialize TSP state: {e:?}");
                 enqueue_popup_notification(PopupItem {
                     message: format!(
-                        "Failed to initialize TSP state.\
+                        "Failed to initialize TSP state. \
                         Your TSP wallets may not be fully available. Error: {e}",
                     ),
                     auto_dismissal_duration: None,
@@ -1009,7 +1011,7 @@ fn no_default_wallet_error() -> anyhow::Error {
 }
 
 fn no_default_vid_error() -> anyhow::Error {
-    anyhow!("Please choose a default VID from your default\
+    anyhow!("Please choose a default VID from your default \
         TSP wallet to represent your own Matrix account.")
 }
 
@@ -1090,6 +1092,20 @@ async fn respond_to_did_association_request(
 
     Ok(())
 }
+
+/// Signs the given message using the default VID from the default wallet.
+pub fn sign_anycast_with_default_vid(message: &[u8]) -> Result<Vec<u8>, anyhow::Error> {
+    let (wallet_db, signing_vid) = {
+        let tsp_state = tsp_state_ref().lock().unwrap();
+        (
+            tsp_state.current_wallet.as_ref().ok_or_else(no_default_wallet_error)?.db.clone(),
+            tsp_state.current_local_vid.clone().ok_or_else(no_default_vid_error)?,
+        )
+    };
+    let signed = wallet_db.as_store().sign_anycast(&signing_vid, message)?;
+    Ok(signed)
+}
+
 
 /// The types/schema of messages that we send over the TSP protocol.
 #[derive(Debug, Serialize, Deserialize)]

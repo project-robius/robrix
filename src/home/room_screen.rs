@@ -1030,11 +1030,18 @@ impl Widget for RoomScreen {
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id: self.room_id.clone().unwrap(),
                         message,
-                        replied_to: self.tl_state.as_mut().and_then(
-                            |tl| tl.replying_to.take().and_then(|(event_timeline_item, _rep)| {
-                                event_timeline_item.event_id().map(|event_id| Reply { event_id: event_id.to_owned(), enforce_thread: EnforceThread::MaybeThreaded })
-                            })
+                        replied_to: self.tl_state.as_mut().and_then(|tl|
+                            tl.replying_to.take().and_then(|(event_tl_item, _rep)|
+                                event_tl_item.event_id().map(|event_id|
+                                    Reply {
+                                        event_id: event_id.to_owned(),
+                                        enforce_thread: EnforceThread::MaybeThreaded,
+                                    }
+                                )
+                            )
                         ),
+                        #[cfg(feature = "tsp")]
+                        sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
                     });
 
                     self.clear_replying_to(cx);
@@ -1046,9 +1053,7 @@ impl Widget for RoomScreen {
 
             // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
             if self.button(id!(send_message_button)).clicked(actions)
-                || text_input.returned(actions).is_some_and(
-                    |(_text, modifiers)| modifiers.is_primary()
-                )
+                || text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
             {
                 let entered_text = message_input.text().trim().to_string();
                 if !entered_text.is_empty() {
@@ -1060,10 +1065,18 @@ impl Widget for RoomScreen {
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
                         message: message_with_mentions,
-                        replied_to: self.tl_state.as_mut().and_then(
-                            |tl| tl.replying_to.take().and_then(|(event_timeline_item, _rep)| {
-                                event_timeline_item.event_id().map(|event_id| Reply { event_id: event_id.to_owned(), enforce_thread: EnforceThread::MaybeThreaded })
-                            })),
+                        replied_to: self.tl_state.as_mut().and_then(|tl|
+                            tl.replying_to.take().and_then(|(event_tl_item, _rep)|
+                                event_tl_item.event_id().map(|event_id|
+                                    Reply {
+                                        event_id: event_id.to_owned(),
+                                        enforce_thread: EnforceThread::MaybeThreaded,
+                                    }
+                                )
+                            )
+                        ),
+                        #[cfg(feature = "tsp")]
+                        sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
                     });
 
                     self.clear_replying_to(cx);
