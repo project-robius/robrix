@@ -24,6 +24,9 @@ on:
           - 'macos-14-aarch64'            # Build for MacOS 14 (Apple Silicon)
           - 'macos-13-x86_64'             # Build for MacOS 13 (Intel)
           - 'windows-2022-x86_64'         # Build for Windows 2022 x86_64
+          - 'android (API 33+)'           # Build for Android 33+
+          - 'ios (17.5+)'                 # Build for iOS
+          - 'ios-sim (17.5+)'             # Build for iOS Simulator
       release_tag:
         description: 'Release tag (required if creating release)'
         required: false
@@ -80,6 +83,7 @@ jobs:
     needs: check_tag_version
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
+      mobile_matrix: ${{ steps.set-mobile-matrix.outputs.mobile_matrix }}
     steps:
       - name: Set build matrix
         id: set-matrix
@@ -116,19 +120,51 @@ jobs:
               "windows-2022-x86_64")
                 matrix='{"include":[{"os":"windows-2022","arch":"x86_64"}]}'
                 ;;
+              *)
+                matrix='{"include":[]}'  # No desktop builds for mobile-only options
+                ;;
             esac
           else
             matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"},{"os":"ubuntu-24.04-arm","arch":"aarch64"},{"os":"ubuntu-22.04","arch":"x86_64"},{"os":"ubuntu-22.04-arm","arch":"aarch64"},{"os":"macos-14","arch":"aarch64"},{"os":"macos-13","arch":"x86_64"},{"os":"windows-2022","arch":"x86_64"}]}'
           fi
           echo "matrix=$matrix" >> $GITHUB_OUTPUT
 
-  release_robrix_for_desktop:
-    name: Release Robrix for Desktop (${{ matrix.os }}, ${{ matrix.arch }})
+      - name: Set mobile matrix
+        id: set-mobile-matrix
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            case "${{ github.event.inputs.target_platforms }}" in
+              "All")
+                mobile_matrix='{"include":[{"os":"macos-14","platform":"android","target":"android"},{"os":"macos-14","platform":"ios","target":"ios"},{"os":"macos-14","platform":"ios-sim","target":"ios-sim"}]}'
+                ;;
+              "android (API 33+)")
+                mobile_matrix='{"include":[{"os":"macos-14","platform":"android","target":"android"}]}'
+                ;;
+              "ios (17.5+)")
+                mobile_matrix='{"include":[{"os":"macos-14","platform":"ios","target":"ios"}]}'
+                ;;
+              "ios-sim (17.5+)")
+                mobile_matrix='{"include":[{"os":"macos-14","platform":"ios-sim","target":"ios-sim"}]}'
+                ;;
+              *)
+                mobile_matrix='{"include":[]}'  # No mobile builds for desktop-only options
+                ;;
+            esac
+          else
+            mobile_matrix='{"include":[{"os":"macos-14","platform":"android","target":"android"},{"os":"macos-14","platform":"ios","target":"ios"},{"os":"macos-14","platform":"ios-sim","target":"ios-sim"}]}'
+          fi
+          echo "mobile_matrix=$mobile_matrix" >> $GITHUB_OUTPUT
+
+  build_robrix_for_desktop:
+    name: Build Robrix for Desktop (${{ matrix.os }}, ${{ matrix.arch }})
     needs: determine_matrix
+    if: needs.determine_matrix.outputs.matrix != '{"include":[]}'
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.determine_matrix.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
+    outputs:
+      version: ${{ steps.set-version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -167,6 +203,7 @@ jobs:
           ls ./dist
 
       - name: Set Version
+        id: set-version
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.release_tag }}" ]]; then
             VERSION="${{ github.event.inputs.release_tag }}"
@@ -175,6 +212,7 @@ jobs:
             VERSION=$(cargo metadata --no-deps --format-version 1 --frozen | jq -r '.packages[0].version')
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
         shell: bash
 
       - name: Set Artifact and Upload Paths
@@ -183,7 +221,6 @@ jobs:
           VERSION=${{ env.VERSION }}
           OS=${{ matrix.os }}
           ARCH=${{ matrix.arch }}
-
 
           if [[ "$OS" == "ubuntu-22.04" || "$OS" == "ubuntu-24.04" ]]; then
             {
@@ -247,5 +284,169 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: robrix-${{ env.VERSION }}-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ env.UPLOAD_FILES }}
+          retention-days: 30
+
+  build_robrix_for_mobile:
+    name: Build Robrix for Mobile (${{ matrix.platform }})
+    needs: determine_matrix
+    if: needs.determine_matrix.outputs.mobile_matrix != '{"include":[]}'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.determine_matrix.outputs.mobile_matrix) }}
+    runs-on: ${{ matrix.os }}
+    outputs:
+      version: ${{ steps.set-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+     
+      - name: Install cargo-makepad
+        run: |
+          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
+
+      - name: Install toolchain
+        run: |
+          if [[ "${{ matrix.platform }}" == "android" ]]; then
+            cargo makepad android install-toolchain
+          elif [[ "${{ matrix.platform }}" == "ios" || "${{ matrix.platform }}" == "ios-sim" ]]; then
+            cargo makepad apple ios install-toolchain
+          else
+            echo "Unsupported platform: ${{ matrix.platform }}"
+            exit 1
+          fi
+
+      - name: Import Code-signing Certificates (IOS)
+        if: matrix.platform == 'ios'
+        uses: apple-actions/import-codesign-certs@v3
+        with: 
+          p12-file-base64: ${{ secrets.APPSTORE_CERTIFICATES_FILE_BASE64 }}
+          p12-password: ${{ secrets.APPSTORE_CERTIFICATES_PASSWORD }}
+  
+      - name: Install IOS Provisioning Profile
+        if: matrix.platform == 'ios'
+        run: |
+          set -euo pipefail
+          
+          echo "=== Checking provisioning profile secret ==="
+          if [[ -z "${{ secrets.IOS_MOBILEPROVISION }}" ]]; then
+            echo "Error: IOS_MOBILEPROVISION secret not found."
+            echo "Please add IOS_MOBILEPROVISION as a base64 encoded mobile provisioning profile to your repository secrets."
+            exit 1
+          fi
+
+          PROFILES_DIR="~/Library/MobileDevice/Provisioning Profiles"
+          PROFILE_FILE="robrix.mobileprovision"
+          PROFILE_PATH="$PROFILES_DIR/$PROFILE_FILE"
+
+          mkdir -p "$PROFILES_DIR"
+
+          echo "${{ secrets.IOS_MOBILEPROVISION }}" | base64 --decode > "$PROFILE_PATH"
+
+          echo "=== Validating provisioning profile ==="
+          if plutil -lint "$PROFILE_PATH" >/dev/null 2>&1; then
+            echo "PROFILE_PATH=$PROFILE_PATH" >> $GITHUB_ENV
+            echo "Provisioning profile is valid and installed successfully"
+          else
+            echo "Error: Provisioning profile is invalid."
+            exit 1
+          fi
+
+          echo "=== Install provisioning profile ==="
+          ls -la "$PROFILES_DIR"
+
+
+          echo "=== Available signing identities ==="
+          security find-identity -v -p codesigning
+
+          echo "=== Extracting certificate fingerprint ==="
+          CERT_FINGERPRINT=$(security find-identity -v -p codesigning | head -n1 | awk '{print $2}' | tr -d '"')
+
+          if [[ -n "$CERT_FINGERPRINT" ]]; then
+            echo "Certificate fingerprint: $CERT_FINGERPRINT"
+            echo "CERT_FINGERPRINT=$CERT_FINGERPRINT" >> $GITHUB_ENV
+          else
+            echo "Error: Could not extract certificate fingerprint"
+            exit 1
+          fi
+
+          echo "iOS provisioning profile setup completed successfully"
+
+      - name: Build Mobile Artifacts
+        run: |
+          if [[ "${{ matrix.platform }}" == "android" ]]; then
+            cargo makepad android build -p robrix --release                                   # makepad-android-apk/robrix/apk/robrix.apk
+          elif [[ "${{ matrix.platform }}" == "ios-sim" ]]; then
+            cargo makepad apple ios --org=org.robius --app=robrix run-sim -p robrix --release # makepad-apple-app/aarch64-apple-ios-sim/release/../.
+          elif [[ "${{ matrix.platform }}" == "ios" ]]; then
+            cargo makepad apple ios \
+              --org=org.robius \
+              --app=robrix \
+              --profile=$PROFILE_PATH \
+              --cert=$CERT_FINGERPRINT \
+              --device=IPhone \
+              run-device -p robrix --release  # makepad-apple-app/aarch64-apple-ios/release/../.
+          else
+            echo "Unsupported platform: ${{ matrix.platform }}"
+            exit 1
+          fi
+
+      - name: Set Version
+        id: set-version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.release_tag }}" ]]; then
+            VERSION="${{ github.event.inputs.release_tag }}"
+            VERSION="${VERSION#v}"  # Remove 'v' prefix if present
+          else
+            VERSION=$(cargo metadata --no-deps --format-version 1 --frozen | jq -r '.packages[0].version')
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Set Artifact and Upload Paths
+        run: |
+          VERSION=${{ env.VERSION }}
+
+          if [[ "${{matrix.platform}}" == "ios-sim" ]]; then
+            cd ./target/makepad-apple-app/aarch64-apple-ios-sim/release
+            zip -r "robrix-${VERSION}-ios-sim.zip" .
+            echo "UPLOAD_FILES=./target/makepad-apple-app/aarch64-apple-ios-sim/release/robrix-${VERSION}-ios-sim.zip" >> $GITHUB_ENV
+          elif [[ "${{matrix.platform}}" == "ios" ]]; then
+            cd ./target/makepad-apple-app/aarch64-apple-ios/release
+            mkdir Payload
+            cp -r robrix.app Payload/
+            zip -r "robrix-${VERSION}-ios.ipa" Payload
+            echo "UPLOAD_FILES=./target/makepad-apple-app/aarch64-apple-ios/release/robrix-${VERSION}-ios.ipa" >> $GITHUB_ENV
+          elif [[ "${{matrix.platform}}" == "android" ]]; then
+            cd ./target/makepad-android-apk/robrix/apk
+            mv robrix.apk "robrix-${VERSION}.apk"
+            echo "UPLOAD_FILES=./target/makepad-android-apk/robrix/apk/robrix-${VERSION}.apk" >> $GITHUB_ENV
+          else
+            echo "Unsupported platform: ${{ matrix.platform }}"
+            exit 1
+          fi
+
+      - name: Upload Release Artifacts
+        if: |
+          (github.event_name == 'push') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || format('v{0}', env.VERSION) }}
+          name: ${{ github.event_name == 'workflow_dispatch' && format('Robrix {0}', github.event.inputs.release_tag) || format('Robrix v{0}', env.VERSION) }}
+          token: ${{ secrets.ROBRIX_RELEASE }}
+          files: ${{ env.UPLOAD_FILES }}
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.pre_release == 'true' || contains(github.ref, '-') }}
+          draft: ${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Upload Artifacts (No Release)
+        if: |
+          github.event_name == 'workflow_dispatch' && github.event.inputs.create_release != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: robrix-${{ env.VERSION }}-${{ matrix.platform }}
           path: ${{ env.UPLOAD_FILES }}
           retention-days: 30
