@@ -10,10 +10,7 @@ use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
-        main_desktop_ui::MainDesktopUiAction,
-        new_message_context_menu::NewMessageContextMenuWidgetRefExt,
-        room_screen::{clear_timeline_states, MessageAction},
-        rooms_list::{clear_all_invited_rooms, RoomsListAction},
+        home_screen::MessageSearchInputAction, main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{clear_timeline_states, MessageAction}, rooms_list::{clear_all_invited_rooms, RoomsListAction}
     }, join_leave_room_modal::{
         JoinLeaveRoomModalAction,
         JoinLeaveRoomModalWidgetRefExt,
@@ -173,6 +170,7 @@ impl LiveRegister for App {
         crate::settings::live_design(cx);
         crate::room::live_design(cx);
         crate::join_leave_room_modal::live_design(cx);
+        crate::right_drawer::live_design(cx);
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
@@ -296,6 +294,11 @@ impl MatchEvent for App {
                     &Scope::default().path,
                     StackNavigationAction::Push(live_id!(main_content_view))
                 );
+                cx.widget_action(
+                    self.ui.widget_uid(),
+                    &Scope::default().path,
+                    MessageSearchInputAction::Show
+                );
                 self.ui.redraw(cx);
                 continue;
             }
@@ -304,10 +307,20 @@ impl MatchEvent for App {
             match action.as_widget_action().cast() {
                 AppStateAction::RoomFocused(selected_room) => {
                     self.app_state.selected_room = Some(selected_room.clone());
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        &Scope::default().path,
+                        MessageSearchInputAction::Show
+                    );
                     continue;
                 }
                 AppStateAction::FocusNone => {
                     self.app_state.selected_room = None;
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        &Scope::default().path,
+                        MessageSearchInputAction::Hide
+                    );
                     continue;
                 }
                 AppStateAction::UpgradedInviteToJoinedRoom(room_id) => {

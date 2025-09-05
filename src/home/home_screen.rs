@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::settings::{settings_screen::SettingsScreenWidgetRefExt, SettingsAction};
+use crate::{settings::{settings_screen::SettingsScreenWidgetRefExt, SettingsAction}, shared::message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef, MessageSearchInputBarWidgetExt}};
 
 live_design! {
     use link::theme::*;
@@ -12,8 +12,12 @@ live_design! {
     use crate::home::spaces_dock::SpacesDock;
     use crate::shared::styles::*;
     use crate::shared::room_filter_input_bar::RoomFilterInputBar;
+    use crate::shared::message_search_input_bar::MessageSearchInputBar;
+    use crate::shared::icon_button::RobrixIconButton;
     use crate::home::main_desktop_ui::MainDesktopUI;
+    use crate::home::search_message::SearchResultStackView;
     use crate::settings::settings_screen::SettingsScreen;
+    use crate::right_drawer::RightDrawer;
 
     NavigationWrapper = {{NavigationWrapper}} {
         view_stack = <StackNavigation> {}
@@ -52,10 +56,35 @@ live_design! {
                         width: Fill, height: Fill
                         flow: Down
 
-                        <CachedWidget> {
-                            room_filter_input_bar = <RoomFilterInputBar> {}
+                        <View> {
+                            width: Fill, height: Fit
+                            flow: Right,
+
+                            <CachedWidget> {
+                                room_filter_input_bar = <RoomFilterInputBar> {
+                                    align: {x: 0.0 }
+                                }
+                            }
+                            message_search_input_view = <View> {
+                                width: Fill, height: Fit,
+                                visible: false,
+                                align: {x: 1.0},
+
+                                <CachedWidget> {
+                                    message_search_input_bar = <MessageSearchInputBar> {
+                                        width: 300,
+                                    }
+                                }
+                            }
                         }
-                        <MainDesktopUI> {}
+
+                        <View> {
+                            width: Fill, height: Fill
+                            flow: Right
+                            
+                            <MainDesktopUI> {}
+                            <RightDrawer> {}
+                        }
                     }
 
                     settings_page = <View> {
@@ -128,10 +157,54 @@ live_design! {
                                             }
                                         }
                                     }
+                                    <View> {
+                                        height: Fit,
+                                        width: Fill,
+                                        align: {x: 1.0 }
+                                        <View> {
+                                            height: Fit,
+                                            width: 140,
+                                            <CachedWidget> {
+                                                message_search_input_bar = <MessageSearchInputBar> {
+                                                    width: 300
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                             body = {
                                 main_content = <MainMobileUI> {}
+                            }
+                        }
+                        search_result_view = <SearchResultStackView> {
+                            flow: Overlay
+                            header = {
+                                height: 50.0,
+                                margin: { top: 30.0 },
+                                content = {
+                                    flow: Right,
+                                    title_container = {
+                                        width: 0
+                                    }
+                                    button_container = <View> {
+                                        align: { y: 0.5 }
+                                        left_button = <RobrixIconButton> {
+                                            draw_icon: {
+                                                color: #666;
+                                            }
+                                            text: "Back"
+                                        }
+                                    }
+                                    <CachedWidget> {
+                                        message_search_input_bar = <MessageSearchInputBar> {
+                                            width: 300
+                                        }
+                                    }
+                                }
+                            }
+                            body = {
+                                margin: { top: 80.0 },
                             }
                         }
                     }
@@ -188,6 +261,29 @@ impl Widget for HomeScreen {
                     }
                     _ => {}
                 }
+                match action.as_widget_action().cast() {
+                    MessageSearchInputAction::Show => {
+                        if !cx.has_global::<MessageSearchInputBarRef>() {
+                            if self.view.message_search_input_bar(id!(message_search_input_bar)).borrow().is_some() {
+                                Cx::set_global(cx, self.view.message_search_input_bar(id!(message_search_input_bar)));
+                            }
+                        }
+                        self.view.view(id!(message_search_input_view)).set_visible(cx, true)
+                    },
+                    MessageSearchInputAction::Hide => self.view.view(id!(message_search_input_view)).set_visible(cx, false),
+                }
+
+                if let MessageSearchAction::Clicked = action.as_widget_action().cast() {
+                    if !self.view
+                        .stack_navigation(id!(view_stack))
+                        .stack_view_ids().contains(&live_id!(search_result_view)) {
+                            cx.widget_action(
+                                self.widget_uid(),
+                                &Scope::default().path,
+                                StackNavigationAction::Push(live_id!(search_result_view))
+                            );
+                        }
+                }
             }
         }
 
@@ -241,4 +337,12 @@ impl MatchEvent for NavigationWrapper {
         self.stack_navigation(id!(view_stack))
             .handle_stack_view_actions(cx, actions);
     }
+}
+
+/// An action that controls the visibility of the message search input bar.
+#[derive(Clone, Debug, Default)]
+pub enum MessageSearchInputAction {
+    #[default]
+    Show,
+    Hide,
 }

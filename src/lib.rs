@@ -28,6 +28,8 @@ pub mod shared;
 /// Generating text previews of timeline events/messages.
 mod event_preview;
 pub mod room;
+/// A drawer panel to be displayed on the right for the desktop view.
+pub mod right_drawer;
 
 
 /// All content related to TSP (Trust Spanning Protocol) wallets/identities.
