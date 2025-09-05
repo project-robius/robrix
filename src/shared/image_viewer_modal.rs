@@ -8,7 +8,7 @@ use crate::media_cache::MediaCacheEntry;
 use matrix_sdk::media::MediaFormat;
 
 // Image loading timeout in seconds (10 seconds)
-pub const IMAGE_LOAD_TIMEOUT: f64 = 1.0;
+pub const IMAGE_LOAD_TIMEOUT: f64 = 10.0;
 
 /// The Drag state of the image viewer modal
 struct DragState {
@@ -62,9 +62,10 @@ live_design! {
 
                 image_container = <View> {
                     width: Fill, height: Fill,
-                    flow: Down,
+                    // Overlay is required to center align the image.
+                    flow: Overlay
                     padding: {top: 50}
-                    align: {x: 0.5}
+                    align: {x: 0.5, y: 0.5}
 
                     zoomable_image = <Image> {
                         width: Fill, height: Fill
@@ -222,7 +223,7 @@ impl Widget for ImageViewerModal {
                         self.drag_state.is_dragging = true;
                     }
                 }
-                Hit::FingerUp(fe) => {
+                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                     if fe.is_primary_hit() {
                         self.drag_state.is_dragging = false;
                     }
@@ -283,7 +284,10 @@ impl Widget for ImageViewerModal {
 
         if self.timeout_timer.is_event(event).is_some() {
             cx.stop_timer(self.timeout_timer);
-            self.show_timeout_state(cx);
+            // Only show timeout if the image hasn't already loaded
+            if !self.image_loaded {
+                self.show_timeout_state(cx);
+            }
         }
 
         if let Event::Actions(actions) = event {
@@ -342,6 +346,8 @@ impl ImageViewerModal {
             .view_set(ids!(loading_view, error_label_view, timeout_label_view))
             .set_visible(cx, false);
         self.view.image(id!(zoomable_image)).set_visible(cx, false);
+        // Clear the image buffer. 
+        let _ = self.view.image(id!(zoomable_image)).load_jpg_from_data(cx, &[]);
         self.modal(id!(image_modal)).close(cx);
         cx.stop_timer(self.timeout_timer);
     }
@@ -576,6 +582,9 @@ pub fn handle_loaded_image_data(
     match load_image_data(cx, image_ref, view_set.clone(), data) {
         Ok(_) => {
             cx.stop_timer(*timer);
+            // Mark the image as loaded to prevent timeout from showing
+            let image_viewer_modal = get_global_image_viewer_modal(cx);
+            image_viewer_modal.set_image_loaded();
             LoadState::Loaded
         }
         Err(_) => {

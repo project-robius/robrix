@@ -88,6 +88,12 @@ impl Widget for TextOrImage {
                         cx.widget_action(self.widget_uid(), &scope.path, TextOrImageAction::Clicked(room_id, mxc_uri.clone()));
                     }
                 }
+                Hit::FingerHoverIn(_) => {
+                    cx.set_cursor(MouseCursor::Hand);
+                }
+                Hit::FingerHoverOut(_) => {
+                    cx.set_cursor(MouseCursor::Arrow);
+                }
                 _ => { },
             }
         }
