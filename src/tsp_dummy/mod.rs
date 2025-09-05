@@ -58,4 +58,13 @@ live_design! {
     pub CreateDidModal = <View> {
         visible: false,
     }
+
+    pub TspVerifyUser = <View> {
+        height: 50
+        width: Fill,
+    }
+
+    pub TspVerificationModal = <View> {
+        visible: false
+    }
 }

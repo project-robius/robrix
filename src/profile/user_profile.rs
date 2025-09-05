@@ -111,15 +111,18 @@ live_design! {
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
 
+    use link::tsp_link::TspVerifyUser;
+
     ICON_DOUBLE_CHAT = dep("crate://self/resources/icons/double_chat.svg")
 
     UserProfileView = <ScrollXYView> {
         width: Fill,
         height: Fill,
         align: {x: 0.5, y: 0},
-        padding: {left: 15., right: 15., top: 15.}
+        padding: {left: 15, right: 15, top: 15, bottom: 50}
         spacing: 20,
         flow: Down,
+        cursor: Default,
 
         show_bg: true,
         draw_bg: {
@@ -212,7 +215,7 @@ live_design! {
             width: Fill, height: Fit
             flow: Down,
             spacing: 10,
-            padding: {left: 10., right: 10, bottom: 50}
+            padding: {left: 10., right: 10, bottom: 10}
 
             <Label> {
                 width: Fill, height: Fit
@@ -290,6 +293,10 @@ live_design! {
                 }
             }
         }
+
+        // A view that allows the user to verify a new DID and associate it
+        // with a particular Matrix User ID.
+        tsp_verify_user = <TspVerifyUser> { }
     }
 
 
@@ -306,8 +313,9 @@ live_design! {
             visible: false,
             show_bg: true
             draw_bg: {
+                uniform bg_color: #000000BB
                 fn pixel(self) -> vec4 {
-                    return vec4(0., 0., 0., 0.7)
+                    return self.bg_color;
                 }
             }
         }
@@ -348,13 +356,23 @@ live_design! {
                     redraw: true,
                     from: {all: Forward {duration: 0.4}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    apply: {main_content = { width: 300, draw_bg: {opacity: 1.0} }}
+                    apply: {
+                        main_content = { margin: {right: 0} },
+                        bg_view = {
+                            draw_bg: { bg_color: #000000BB }
+                        }
+                    }
                 }
                 hide = {
                     redraw: true,
                     from: {all: Forward {duration: 0.5}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    apply: {main_content = { width: 0, draw_bg: {opacity: 0.0} }}
+                    apply: {
+                        main_content = { margin: {right: -300} },
+                        bg_view = {
+                            draw_bg: { bg_color: #x00000000 }
+                        }
+                    }
                 }
             }
         }
@@ -676,6 +694,14 @@ impl UserProfileSlidingPane {
                 info.avatar_state = AvatarState::Loaded(data);
             }
         }
+        
+        // If TSP is enabled, populate the TSP verification info for this user.
+        #[cfg(feature = "tsp")] {
+            use crate::tsp::verify_user::TspVerifyUserWidgetExt;
+            self.view.tsp_verify_user(id!(tsp_verify_user))
+                .show(_cx, info.user_id.clone());
+        }
+
         self.info = Some(info);
     }
 

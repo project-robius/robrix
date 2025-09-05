@@ -158,7 +158,7 @@ impl Widget for WalletEntry {
         let Some(metadata) = self.metadata.as_ref() else { return };
         if let Event::Actions(actions) = event {
             if self.view.button(id!(set_default_wallet_button)).clicked(actions) {
-                submit_tsp_request(TspRequest::SetDefaultWallet(metadata.clone())).unwrap();
+                submit_tsp_request(TspRequest::SetDefaultWallet(metadata.clone()));
             }
             if self.view.button(id!(remove_wallet_button)).clicked(actions) {
                 let metadata_clone = metadata.clone();
@@ -171,7 +171,7 @@ impl Widget for WalletEntry {
                     ).into(),
                     accept_button_text: Some("Remove".into()),
                     on_accept_clicked: Some(Box::new(move |_cx| {
-                        submit_tsp_request(TspRequest::RemoveWallet(metadata_clone)).unwrap();
+                        submit_tsp_request(TspRequest::RemoveWallet(metadata_clone));
                     })),
                     ..Default::default()
                 };
