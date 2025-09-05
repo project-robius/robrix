@@ -9,7 +9,9 @@ use std::collections::HashMap;
 use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
-    avatar_cache::clear_avatar_cache, home::{
+    avatar_cache::clear_avatar_cache,
+    register::register_screen::RegisterAction,
+    home::{
         main_desktop_ui::MainDesktopUiAction,
         new_message_context_menu::NewMessageContextMenuWidgetRefExt,
         room_screen::{clear_timeline_states, MessageAction},
@@ -40,6 +42,7 @@ live_design! {
     use crate::verification_modal::VerificationModal;
     use crate::join_leave_room_modal::JoinLeaveRoomModal;
     use crate::login::login_screen::LoginScreen;
+    use crate::register::register_screen::RegisterScreen;
     use crate::logout::logout_confirm_modal::LogoutConfirmModal;
     use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
@@ -97,6 +100,10 @@ live_design! {
                         login_screen_view = <View> {
                             visible: true
                             login_screen = <LoginScreen> {}
+                        }
+                        register_screen_view = <View> {
+                            visible: false
+                            register_screen = <RegisterScreen> {}
                         }
                         <PopupList> {}
                         
@@ -171,6 +178,7 @@ impl LiveRegister for App {
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
         crate::login::live_design(cx);
+        crate::register::live_design(cx);
         crate::logout::live_design(cx);
     }
 }
@@ -243,11 +251,47 @@ impl MatchEvent for App {
                 continue;
             }
 
-            if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
-                log!("Received LoginAction::LoginSuccess, hiding login view.");
-                self.app_state.logged_in = true;
-                self.update_login_visibility(cx);
-                self.ui.redraw(cx);
+            // Handle login-related actions
+            if let Some(login_action) = action.downcast_ref::<LoginAction>() {
+                match login_action {
+                    LoginAction::LoginSuccess => {
+                        log!("Received LoginAction::LoginSuccess, hiding login view.");
+                        self.app_state.logged_in = true;
+                        self.update_login_visibility(cx);
+                        self.ui.redraw(cx);
+                    }
+                    LoginAction::NavigateToRegister => {
+                        log!("Navigating from login to register screen");
+                        self.ui.view(id!(login_screen_view)).set_visible(cx, false);
+                        self.ui.view(id!(register_screen_view)).set_visible(cx, true);
+                        // Reset register button state when showing register screen
+                        let register_button = self.ui.button(id!(register_screen_view.register_screen.register_button));
+                        register_button.set_enabled(cx, true);
+                        register_button.reset_hover(cx);
+                        self.ui.redraw(cx);
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+
+            // Handle register-related actions
+            if let Some(register_action) = action.downcast_ref::<RegisterAction>() {
+                match register_action {
+                    RegisterAction::NavigateToLogin => {
+                        log!("Navigating from register to login screen");
+                        self.ui.view(id!(register_screen_view)).set_visible(cx, false);
+                        self.ui.view(id!(login_screen_view)).set_visible(cx, true);
+                        self.ui.redraw(cx);
+                    }
+                    RegisterAction::RegistrationSuccess => {
+                        log!("Registration successful, transitioning to logged in state");
+                        self.app_state.logged_in = true;
+                        self.update_login_visibility(cx);
+                        self.ui.redraw(cx);
+                    }
+                    _ => {}
+                }
                 continue;
             }
 
@@ -491,6 +535,7 @@ impl App {
                 .close(cx);
         }
         self.ui.view(id!(login_screen_view)).set_visible(cx, show_login);
+        self.ui.view(id!(register_screen_view)).set_visible(cx, false);
         self.ui.view(id!(home_screen_view)).set_visible(cx, !show_login);
     }
 }

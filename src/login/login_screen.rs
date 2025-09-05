@@ -286,8 +286,6 @@ live_design! {
     }
 }
 
-static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-for-im/#creating-a-matrix-account";
-
 #[derive(Live, LiveHook, Widget)]
 pub struct LoginScreen {
     #[deref] view: View,
@@ -321,8 +319,7 @@ impl MatchEvent for LoginScreen {
         let login_status_modal_inner = self.view.login_status_modal(id!(login_status_modal_inner));
 
         if signup_button.clicked(actions) {
-            log!("Opening URL \"{}\"", MATRIX_SIGN_UP_URL);
-            let _ = robius_open::Uri::new(MATRIX_SIGN_UP_URL).open();
+            cx.action(LoginAction::NavigateToRegister);
         }
 
         if login_button.clicked(actions)
@@ -493,5 +490,7 @@ pub enum LoginAction {
     /// When an SSO-based login is pendng, pressing the cancel button will send
     /// an HTTP request to this SSO server URL to gracefully shut it down.
     SsoSetRedirectUrl(Url),
+    /// Navigate to the register screen.
+    NavigateToRegister,
     None,
 }

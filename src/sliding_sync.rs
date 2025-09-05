@@ -39,6 +39,7 @@ use crate::{
         rooms_list_header::RoomsListHeaderAction,
     },
     login::login_screen::LoginAction,
+    register::register_screen::RegisterAction,
     logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{logout_with_state_machine, LogoutConfig, is_logout_in_progress}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
     persistence::{self, load_app_state, ClientSessionPersisted},
     profile::{
@@ -213,6 +214,138 @@ async fn login(
     }
 }
 
+/// Registers a new user on the given Matrix homeserver using the given username and password.
+///
+/// This function handles the Matrix User-Interactive Authentication (UIA) flow automatically:
+/// 1. First attempt: Send registration without auth to discover what authentication is required
+/// 2. If server returns 401 with UIA info:
+///    - Check what auth types are supported (dummy, registration_token, etc.)
+///    - Automatically handle supported types (currently only dummy)
+///    - Fail gracefully for unsupported types
+/// 3. Upon success, returns the registered client and session information
+///
+/// Supported UIA types:
+/// - `m.login.dummy`: Simple acknowledgment, handled automatically
+/// - `m.login.registration_token`: Requires pre-shared token from user (obtained out-of-band)
+/// - Others (captcha, email, etc.): Not supported
+async fn register_user(register_request: RegisterRequest) -> Result<(Client, ClientSessionPersisted)> {
+    // Create a Cli struct from the register request
+    let cli = Cli {
+        user_id: register_request.username.clone(),
+        password: register_request.password.clone(),
+        homeserver: register_request.homeserver,
+        ..Default::default()
+    };
+    
+    let (client, client_session) = build_client(&cli, app_data_dir()).await?;
+    
+    // Create the registration request
+    use matrix_sdk::ruma::api::client::account::register::v3::Request as RegisterRequest;
+    
+    // First attempt: send registration without auth to get UIA session
+    let mut req = RegisterRequest::new();
+    req.username = Some(cli.user_id.as_str().into());
+    req.password = Some(cli.password.as_str().into());
+    req.initial_device_display_name = Some("robrix-register".into());
+    
+    // Attempt initial registration
+    // Note: The Matrix SDK's register function has a built-in 60s timeout from RequestConfig
+    let register_result = client
+        .matrix_auth()
+        .register(req.clone())
+        .await;
+    
+    // Handle registration result
+    match register_result {
+        Ok(_) => {
+            // Registration succeeded without UIA (e.g., open registration)
+            log!("Registration succeeded without UIA");
+        }
+        Err(e) => {
+            // Check if it's a UIA error that we can handle
+            if let Some(uiaa_info) = e.as_uiaa_response() {
+                use matrix_sdk::ruma::api::client::uiaa::{AuthData, AuthType, Dummy, RegistrationToken};
+
+                // Check what authentication types are required
+                let has_registration_token = uiaa_info.flows.iter().any(|flow| 
+                    flow.stages.iter().any(|stage| matches!(stage, AuthType::RegistrationToken))
+                );
+                let has_dummy = uiaa_info.flows.iter().any(|flow|
+                    flow.stages.iter().any(|stage| matches!(stage, AuthType::Dummy))
+                );
+
+                if has_registration_token {
+                    // Server requires registration token authentication
+                    // Registration tokens are pre-shared tokens that must be obtained out-of-band
+                    // (e.g., from server administrator via email, chat, or other means)
+                    // Use the user-provided registration token if available
+
+                    let token = register_request.registration_token
+                        .filter(|t| !t.is_empty());
+
+                    if token.is_none() {
+                        // If no token provided, fail with a helpful error message
+                        bail!("This server requires a registration token. Please obtain one from the server administrator and try again.");
+                    }
+
+                    let mut auth_data = RegistrationToken::new(token.unwrap());
+                    auth_data.session = uiaa_info.session.clone();
+
+                    req.auth = Some(AuthData::RegistrationToken(auth_data));
+
+                    // Retry registration with token auth
+                    match client.matrix_auth().register(req).await {
+                        Ok(_) => {
+                            log!("Registration succeeded with registration token");
+                        }
+                        Err(e) if e.to_string().contains("Invalid registration token") => {
+                            bail!("Invalid registration token. Please check the token and try again.");
+                        }
+                        Err(e) => return Err(e.into()),
+                    }
+                } else if has_dummy {
+                    // Server requires dummy auth (just acknowledgment)
+                    let mut dummy = Dummy::new();
+                    dummy.session = uiaa_info.session.clone();
+
+                    req.auth = Some(AuthData::Dummy(dummy));
+
+                    // Retry registration with dummy auth
+                    client.matrix_auth().register(req).await?;
+                    log!("Registration succeeded with dummy auth");
+                } else {
+                    // Server requires authentication we don't support (captcha, email, etc.)
+                    bail!("This server requires verification steps that are not yet supported. Please use the web client to register.");
+                }
+            } else {
+                // Other registration errors
+                return Err(e.into());
+            }
+        }
+    }
+
+    // Check if the client is logged in after registration
+    // The Matrix SDK automatically logs in the user upon successful registration
+    // This check confirms that the registration was successful and the session is established
+    if client.matrix_auth().logged_in() {
+        log!("Registration successful for user: {}", cli.user_id);
+        let status = format!("Registered as {}.\n → Loading rooms...", cli.user_id);
+        enqueue_rooms_list_update(RoomsListUpdate::Status { status });
+
+        // Don't save the session here - it will be saved when we convert to LoginBySSOSuccess
+        // This avoids duplicate session persistence
+        Ok((client, client_session))
+    } else {
+        let err_msg = format!("Registration completed but user is not logged in");
+        enqueue_popup_notification(PopupItem {
+            message: err_msg.clone(),
+            kind: PopupKind::Error,
+            auto_dismissal_duration: None
+        });
+        bail!(err_msg);
+    }
+}
+
 
 /// Which direction to paginate in.
 ///
@@ -248,6 +381,8 @@ pub type OnMediaFetchedFn = fn(
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
     Login(LoginRequest),
+    /// Request from the register screen to create a new account with the given credentials.
+    Register(RegisterRequest),
     /// Request to logout.
     Logout{
         is_desktop: bool,
@@ -438,6 +573,15 @@ pub struct LoginByPassword {
     pub homeserver: Option<String>,
 }
 
+/// Information needed to register a new user on a Matrix homeserver.
+pub struct RegisterRequest {
+    pub username: String,
+    pub password: String,
+    pub homeserver: Option<String>,
+    /// Registration token if required by the server (configured in server's config)
+    pub registration_token: Option<String>,
+}
+
 
 /// The entry point for an async worker thread that can run async tasks.
 ///
@@ -458,6 +602,36 @@ async fn async_worker(
                         "BUG: failed to send login request to async worker thread."
                     )));
                 }
+            }
+
+            MatrixRequest::Register(register_request) => {
+                // Handle registration in a spawned task
+                let rt = Handle::current();
+                rt.spawn(async move {
+                    match register_user(register_request).await {
+                        Ok((client, client_session)) => {
+                            // After successful registration, we need to set up the client session
+                            // and initialize all the global state (CLIENT, SLIDING_SYNC, etc.)
+                            // The login flow already handles all of this setup properly,
+                            // so we reuse it by converting the registration success into a login success.
+                            // This ensures consistent state initialization regardless of whether
+                            // the user registered or logged in directly.
+                            let login_req = LoginRequest::LoginBySSOSuccess(client, client_session);
+                            submit_async_request(MatrixRequest::Login(login_req));
+                        }
+                        Err(e) => {
+                            error!("Registration failed: {e:?}");
+                            let error_msg = format!("Registration failed: {}", e);
+                            // Show error as popup notification
+                            enqueue_popup_notification(PopupItem {
+                                message: error_msg.clone(),
+                                kind: PopupKind::Error,
+                                auto_dismissal_duration: Some(5.0),
+                            });
+                            Cx::post_action(RegisterAction::RegistrationFailure(error_msg));
+                        }
+                    }
+                });
             }
 
             MatrixRequest::Logout { is_desktop } => {
