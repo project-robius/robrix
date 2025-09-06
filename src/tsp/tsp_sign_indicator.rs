@@ -139,6 +139,7 @@ impl TspSignIndicator {
             tsp_html.set_text(cx, text);
             tsp_html.font_color = font_color;
         }
+        self.state = state;
         self.visible = true;
         self.redraw(cx);
     }

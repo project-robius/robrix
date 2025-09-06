@@ -3495,18 +3495,21 @@ fn populate_message_view(
     #[cfg(feature = "tsp")] {
         use crate::tsp::{self, tsp_sign_indicator::{TspSignState, TspSignIndicatorWidgetRefExt}};
 
-        if let Some(Some(mut tsp_sig)) = event_tl_item.latest_json()
-            // TODO: use base64 data instead of a vec of raw bytes
-            .and_then(|raw| raw.get_field::<Vec<u8>>("org.robius.tsp_signature").ok())
+        if let Some(mut tsp_sig) = event_tl_item.latest_json()
+            .and_then(|raw| raw.get_field::<serde_json::Value>("content").ok())
+            .flatten()
+            .and_then(|content_obj| content_obj.get("org.robius.tsp_signature").cloned())
+            .and_then(|tsp_sig_value| serde_json::from_value::<Vec<u8>>(tsp_sig_value).ok())
         {
-            log!("Found event {:?} with TSP signature:\n{:X?}", event_tl_item.event_id(), tsp_sig);
+            log!("Found event {:?} with TSP signature.", event_tl_item.event_id());
             let tsp_sign_state = if let Some(sender_vid) = tsp::tsp_state_ref().lock().unwrap()
                 .get_verified_vid_for(event_tl_item.sender())
             {
+                log!("Found verified VID for sender {}: \"{}\"", event_tl_item.sender(), sender_vid.identifier());
                 tsp_sdk::crypto::verify(&*sender_vid, &mut tsp_sig).map_or(
                     TspSignState::WrongSignature,
                     |(msg, msg_type)| {
-                        log!("TSP signature verified successfully!\n    Msg type: {msg_type:?}\n    Message: {msg:X?}");
+                        log!("TSP signature verified successfully!\n    Msg type: {msg_type:?}\n    Message: {:?} ({msg:X?})", std::str::from_utf8(&msg));
                         TspSignState::Verified
                     }
                 )
