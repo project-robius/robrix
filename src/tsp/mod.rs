@@ -7,7 +7,7 @@ use matrix_sdk::ruma::{OwnedUserId, UserId};
 use quinn::rustls::crypto::{CryptoProvider, aws_lc_rs};
 use serde::{Deserialize, Serialize};
 use tokio::{task::JoinHandle, runtime::Handle, sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender}};
-use tsp_sdk::{vid::{verify_vid, VidError}, AskarSecureStorage, AsyncSecureStore, OwnedVid, ReceivedTspMessage, SecureStorage, VerifiedVid, Vid};
+use tsp_sdk::{definitions::{PublicKeyData, PublicVerificationKeyData, VidEncryptionKeyType, VidSignatureKeyType}, vid::{verify_vid, VidError}, AskarSecureStorage, AsyncSecureStore, OwnedVid, ReceivedTspMessage, SecureStorage, VerifiedVid, Vid};
 use url::Url;
 
 use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, tsp::tsp_verification_modal::TspVerificationModalAction, utils::DebugWrapper};
@@ -506,6 +506,10 @@ pub enum TspIdentityAction {
     ///
     /// If successful, the result contains the created DID string.
     DidCreationResult(Result<String, anyhow::Error>),
+    /// An existing identity (DID) was successfully republished or had an error.
+    ///
+    /// If successful, the result contains the republished DID string.
+    DidRepublishResult(Result<String, anyhow::Error>),
     /// We successfully sent a request to associate another user's DID
     /// with their Matrix user ID.
     ///
@@ -572,6 +576,12 @@ pub enum TspRequest {
         alias: Option<String>,
         server: String,
         did_server: String,
+    },
+    /// Request to re-publish/re-upload our own DID back up to the DID server.
+    ///
+    /// The given `did` must already exist in the current default wallet.
+    RepublishDid {
+        did: String,
     },
     /// Request to associate another user's identity (DID) with their Matrix User ID.
     ///
@@ -776,6 +786,17 @@ async fn async_tsp_worker(
             });
         }
 
+        TspRequest::RepublishDid { did } => {
+            log!("Received TspRequest::RepublishDid(did: {did})");
+            let client = get_reqwest_client();
+
+            Handle::current().spawn(async move {
+                let result = republish_did(&did, &client).await
+                    .map(|_| did);
+                Cx::post_action(TspIdentityAction::DidRepublishResult(result));
+            });
+        }
+
         TspRequest::AssociateDidWithUserId { did, user_id } => {
             log!("Received TspRequest::AssociateDidWithUserId(did: {did}, user_id: {user_id})");
             Handle::current().spawn(async move {
@@ -865,8 +886,9 @@ async fn create_did_web(
 ) -> Result<(String, OwnedVid, Option<serde_json::Value>), anyhow::Error> {
     // The following code is based on the TSP SDK's CLI example for creating a DID.
     let did = format!(
-        "did:web:{}:endpoint:{username}",
-        did_server.replace(":", "%3A").replace("/", ":")
+        "did:web:{}:endpoint:{}",
+        did_server.replace(":", "%3A").replace("/", ":"),
+        username,
     );
 
     let transport = Url::parse(
@@ -897,11 +919,11 @@ async fn create_did_web(
             if r.as_u16() == 500 {
                 return Err(anyhow!(
                     "The DID server returned error code 500. The DID username may already exist, \
-                     or the server had another problem.\n\nResponse: \"{text}\""
+                     or the server had another problem.\n\nResponse: \"{text}\"."
                 ));
             } else {
                 return Err(anyhow!(
-                    "The DID server returned error code {}.\n\nResponse: \"{text}\"",
+                    "The DID server returned error code {}.\n\nResponse: \"{text}\".",
                     r.as_u16()
                 ));
             }
@@ -939,6 +961,83 @@ fn store_did_in_wallet(
         log!("added alias {alias} -> {did}");
     }
     Ok(did)
+}
+
+
+/// Re-publishes/re-uploads our own DID to the DID server it was originally created on.
+async fn republish_did(
+    did: &str,
+    client: &reqwest::Client,
+) -> Result<(), anyhow::Error> {
+
+    /// A copy of the Vid struct that we can actually instantiate
+    /// from an existing VID in a local wallet.
+    ///
+    /// This is a hack because there is no way to create a `Vid` struct
+    /// instance from an existing VID in a local wallet.
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct VidDuplicate {
+        id: String,
+        transport: Url,
+        #[serde(default)]
+        sig_key_type: VidSignatureKeyType,
+        public_sigkey: PublicVerificationKeyData,
+        #[serde(default)]
+        enc_key_type: VidEncryptionKeyType,
+        public_enckey: PublicKeyData,
+    }
+
+
+    let our_vid = {
+        let tsp_state = tsp_state_ref().lock().unwrap();
+        tsp_state.current_wallet.as_ref()
+            .ok_or_else(no_default_wallet_error)?
+            .db
+            .as_store()
+            .get_verified_vid(did)
+            .map_err(|_e| anyhow!("The DID to republish \"{did}\" was not found in the current default wallet."))?
+    };
+
+    let vid_dup = VidDuplicate {
+        id: our_vid.identifier().to_owned(),
+        transport: our_vid.endpoint().to_owned(),
+        sig_key_type: our_vid.signature_key_type(),
+        public_sigkey: our_vid.verifying_key().to_owned(),
+        enc_key_type: our_vid.encryption_key_type(),
+        public_enckey: our_vid.encryption_key().to_owned(),
+    };
+
+    let did_transport_url = tsp_sdk::vid::did::get_resolve_url(&did)?;
+
+    let response = client
+        .post(format!("{}/add-vid", did_transport_url.origin().ascii_serialization()))
+        .json(&vid_dup)
+        .send()
+        .await
+        .inspect(|r| log!("DID server responded with status code {}", r.status()))
+        .map_err(|e| anyhow!("Could not republish VID. The DID server responded with error: {e}"))?;
+
+    match response.status() {
+        r if r.is_success() => {
+            log!("Successfully republished DID {did}.");
+            Ok(())
+        }
+        r => {
+            let text = response.text().await.unwrap_or_else(|_| "[Unknown]".to_string());
+            if r.as_u16() == 500 {
+                Err(anyhow!(
+                    "The DID server returned error code 500. The DID username may already exist, \
+                     or the server had another problem.\n\nResponse: \"{text}\"."
+                ))
+            } else {
+                Err(anyhow!(
+                    "The DID server returned error code {}.\n\nResponse: \"{text}\".",
+                    r.as_u16()
+                ))
+            }
+        }
+    }
 }
 
 

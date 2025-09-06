@@ -122,7 +122,7 @@ impl Widget for TspSignIndicator {
 
 impl TspSignIndicator {
     /// Sets this indicator to show given state of this message's TSP signature.
-    pub fn set_state(&mut self, cx: &mut Cx, state: TspSignState) {
+    pub fn show_with_state(&mut self, cx: &mut Cx, state: TspSignState) {
         let tsp_html_ref = self.view.html(id!(tsp_html));
         if let Some(mut tsp_html) = tsp_html_ref.borrow_mut() {
             let (text, font_color) = match state {
@@ -146,9 +146,9 @@ impl TspSignIndicator {
 
 impl TspSignIndicatorRef {
     /// See [`TspSignIndicator::set_state()`].
-    pub fn set_state(&self, cx: &mut Cx, state: TspSignState) {
+    pub fn show_with_state(&self, cx: &mut Cx, state: TspSignState) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_state(cx, state);
+            inner.show_with_state(cx, state);
         }
     }
 }

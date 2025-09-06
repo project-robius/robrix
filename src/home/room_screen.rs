@@ -3516,7 +3516,7 @@ fn populate_message_view(
 
             log!("TSP signature state for event {:?} is {:?}", event_tl_item.event_id(), tsp_sign_state);
             item.tsp_sign_indicator(id!(profile.tsp_sign_indicator))
-                .set_state(cx, tsp_sign_state);
+                .show_with_state(cx, tsp_sign_state);
         }
     }
 
