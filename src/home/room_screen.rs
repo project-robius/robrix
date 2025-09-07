@@ -3493,13 +3493,15 @@ fn populate_message_view(
     }
 
     #[cfg(feature = "tsp")] {
+        use matrix_sdk::ruma::serde::Base64;
         use crate::tsp::{self, tsp_sign_indicator::{TspSignState, TspSignIndicatorWidgetRefExt}};
 
         if let Some(mut tsp_sig) = event_tl_item.latest_json()
             .and_then(|raw| raw.get_field::<serde_json::Value>("content").ok())
             .flatten()
             .and_then(|content_obj| content_obj.get("org.robius.tsp_signature").cloned())
-            .and_then(|tsp_sig_value| serde_json::from_value::<Vec<u8>>(tsp_sig_value).ok())
+            .and_then(|tsp_sig_value| serde_json::from_value::<Base64>(tsp_sig_value).ok())
+            .map(|b64| b64.into_inner())
         {
             log!("Found event {:?} with TSP signature.", event_tl_item.event_id());
             let tsp_sign_state = if let Some(sender_vid) = tsp::tsp_state_ref().lock().unwrap()
