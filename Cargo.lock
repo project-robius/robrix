@@ -2717,7 +2717,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -4713,7 +4713,7 @@ dependencies = [
 [[package]]
 name = "ruma"
 version = "0.12.3"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ba7d4bab46f10f57b677846caee77070af3bc30e"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#1dae1428d7913a24e4c5a2714bbef9028df8a54d"
 dependencies = [
  "assign",
  "js_int",
@@ -4729,7 +4729,7 @@ dependencies = [
 [[package]]
 name = "ruma-client-api"
 version = "0.20.3"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ba7d4bab46f10f57b677846caee77070af3bc30e"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#1dae1428d7913a24e4c5a2714bbef9028df8a54d"
 dependencies = [
  "as_variant",
  "assign",
@@ -4752,7 +4752,7 @@ dependencies = [
 [[package]]
 name = "ruma-common"
 version = "0.15.2"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ba7d4bab46f10f57b677846caee77070af3bc30e"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#1dae1428d7913a24e4c5a2714bbef9028df8a54d"
 dependencies = [
  "as_variant",
  "base64",
@@ -4784,7 +4784,7 @@ dependencies = [
 [[package]]
 name = "ruma-events"
 version = "0.30.3"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ba7d4bab46f10f57b677846caee77070af3bc30e"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#1dae1428d7913a24e4c5a2714bbef9028df8a54d"
 dependencies = [
  "as_variant",
  "indexmap 2.7.1",
@@ -4809,7 +4809,7 @@ dependencies = [
 [[package]]
 name = "ruma-federation-api"
 version = "0.11.1"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ba7d4bab46f10f57b677846caee77070af3bc30e"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#1dae1428d7913a24e4c5a2714bbef9028df8a54d"
 dependencies = [
  "http",
  "js_int",
@@ -4823,7 +4823,7 @@ dependencies = [
 [[package]]
 name = "ruma-html"
 version = "0.4.1"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ba7d4bab46f10f57b677846caee77070af3bc30e"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#1dae1428d7913a24e4c5a2714bbef9028df8a54d"
 dependencies = [
  "as_variant",
  "html5ever",
@@ -4835,7 +4835,7 @@ dependencies = [
 [[package]]
 name = "ruma-identifiers-validation"
 version = "0.10.1"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ba7d4bab46f10f57b677846caee77070af3bc30e"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#1dae1428d7913a24e4c5a2714bbef9028df8a54d"
 dependencies = [
  "js_int",
  "thiserror 2.0.12",
@@ -4844,7 +4844,7 @@ dependencies = [
 [[package]]
 name = "ruma-macros"
 version = "0.15.1"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ba7d4bab46f10f57b677846caee77070af3bc30e"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#1dae1428d7913a24e4c5a2714bbef9028df8a54d"
 dependencies = [
  "cfg-if",
  "proc-macro-crate",
