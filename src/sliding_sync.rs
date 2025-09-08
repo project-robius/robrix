@@ -342,6 +342,8 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         message: RoomMessageEventContent,
         replied_to: Option<Reply>,
+        #[cfg(feature = "tsp")]
+        sign_with_tsp: bool,
     },
     /// Sends a notice to the given room that the current user is or is not typing.
     ///
@@ -988,7 +990,13 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::SendMessage { room_id, message, replied_to } => {
+            MatrixRequest::SendMessage {
+                room_id,
+                message,
+                replied_to,
+                #[cfg(feature = "tsp")]
+                sign_with_tsp,
+            } => {
                 let timeline = {
                     let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get(&room_id) else {
@@ -1001,7 +1009,51 @@ async fn async_worker(
                 // Spawn a new async task that will send the actual message.
                 let _send_message_task = Handle::current().spawn(async move {
                     log!("Sending message to room {room_id}: {message:?}...");
-                    // The message already contains mentions, no need to add them again
+                    let message = {
+                        #[cfg(not(feature = "tsp"))] {
+                            message
+                        }
+
+                        #[cfg(feature = "tsp")] {
+                            let mut message = message;
+                            if sign_with_tsp {
+                                log!("Signing message with TSP...");
+                                match serde_json::to_vec(&message) {
+                                    Ok(message_bytes) => {
+                                        log!("Serialized message to bytes, length {}", message_bytes.len());
+                                        match crate::tsp::sign_anycast_with_default_vid(&message_bytes) {
+                                            Ok(signed_msg) => {
+                                                use matrix_sdk::ruma::serde::Base64;
+
+                                                log!("Successfully signed message with TSP, length {}", signed_msg.len());
+                                                message.tsp_signature = Some(Base64::new(signed_msg));
+                                            }
+                                            Err(e) => {
+                                                error!("Failed to sign message with TSP: {e:?}");
+                                                enqueue_popup_notification(PopupItem {
+                                                    message: format!("Failed to sign message with TSP: {e}"),
+                                                    kind: PopupKind::Error,
+                                                    auto_dismissal_duration: None
+                                                });
+                                                return;
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to serialize message to bytes for TSP signing: {e:?}");
+                                        enqueue_popup_notification(PopupItem {
+                                            message: format!("Failed to serialize message for TSP signing: {e}"),
+                                            kind: PopupKind::Error,
+                                            auto_dismissal_duration: None
+                                        });
+                                        return;
+                                    }
+                                }
+                            }
+                            message
+                        }
+                    };
+
                     if let Some(replied_to_info) = replied_to {
                         match timeline.send_reply(message.into(), replied_to_info).await {
                             Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
@@ -2212,7 +2264,7 @@ fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
     const SYNC_INDICATOR_HIDE_DELAY: Duration = Duration::from_millis(200);
     let sync_indicator_stream = sync_service.room_list_service()
         .sync_indicator(
-            SYNC_INDICATOR_DELAY, 
+            SYNC_INDICATOR_DELAY,
             SYNC_INDICATOR_HIDE_DELAY
         );
     

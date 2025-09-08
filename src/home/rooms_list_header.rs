@@ -94,7 +94,6 @@ impl Widget for RoomsListHeader {
                         if self.sync_state == State::Offline {
                             continue;
                         }
-                        log!("Setting the RoomsListHeader to syncing: {}.", *is_syncing);
                         self.view.view(id!(loading_spinner)).set_visible(cx, *is_syncing);
                         self.view.view(id!(synced_icon)).set_visible(cx, !*is_syncing);
                         self.view.view(id!(offline_icon)).set_visible(cx, false);
@@ -104,15 +103,16 @@ impl Widget for RoomsListHeader {
                         if &self.sync_state == new_state {
                             continue;
                         }
-                        log!("Setting the RoomsListHeader to offline.");
-                        self.view.view(id!(loading_spinner)).set_visible(cx, false);
-                        self.view.view(id!(synced_icon)).set_visible(cx, false);
-                        self.view.view(id!(offline_icon)).set_visible(cx, true);
-                        enqueue_popup_notification(PopupItem {
-                            message: "Cannot reach the Matrix homeserver. Please check your connection.".into(),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Error,
-                        });
+                        if new_state == &State::Offline {
+                            self.view.view(id!(loading_spinner)).set_visible(cx, false);
+                            self.view.view(id!(synced_icon)).set_visible(cx, false);
+                            self.view.view(id!(offline_icon)).set_visible(cx, true);
+                            enqueue_popup_notification(PopupItem {
+                                message: "Cannot reach the Matrix homeserver. Please check your connection.".into(),
+                                auto_dismissal_duration: None,
+                                kind: PopupKind::Error,
+                            });
+                        }
                         self.sync_state = new_state.clone();
                         self.redraw(cx);
                     }
@@ -120,7 +120,7 @@ impl Widget for RoomsListHeader {
                 }
             }
         }
-        
+
         self.view.handle_event(cx, event, scope);
     }
 

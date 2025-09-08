@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::BTreeMap, ops::Deref, path::Path, sync::{Mutex, OnceLock}};
+use std::{borrow::Cow, collections::BTreeMap, ops::Deref, path::Path, sync::{Arc, Mutex, OnceLock}};
 
 use anyhow::anyhow;
 use futures_util::StreamExt;
@@ -7,7 +7,7 @@ use matrix_sdk::ruma::{OwnedUserId, UserId};
 use quinn::rustls::crypto::{CryptoProvider, aws_lc_rs};
 use serde::{Deserialize, Serialize};
 use tokio::{task::JoinHandle, runtime::Handle, sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender}};
-use tsp_sdk::{vid::{verify_vid, VidError}, AskarSecureStorage, AsyncSecureStore, OwnedVid, ReceivedTspMessage, SecureStorage, VerifiedVid, Vid};
+use tsp_sdk::{definitions::{PublicKeyData, PublicVerificationKeyData, VidEncryptionKeyType, VidSignatureKeyType}, vid::{verify_vid, VidError}, AskarSecureStorage, AsyncSecureStore, OwnedVid, ReceivedTspMessage, SecureStorage, VerifiedVid, Vid};
 use url::Url;
 
 use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, tsp::tsp_verification_modal::TspVerificationModalAction, utils::DebugWrapper};
@@ -15,7 +15,9 @@ use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, shared::popup_l
 
 pub mod create_did_modal;
 pub mod create_wallet_modal;
+pub mod sign_anycast_checkbox;
 pub mod tsp_settings_screen;
+pub mod tsp_sign_indicator;
 pub mod tsp_verification_modal;
 pub mod wallet_entry;
 pub mod verify_user;
@@ -25,6 +27,8 @@ pub fn live_design(cx: &mut Cx) {
     create_wallet_modal::live_design(cx);
     wallet_entry::live_design(cx);
     verify_user::live_design(cx);
+    sign_anycast_checkbox::live_design(cx);
+    tsp_sign_indicator::live_design(cx);
     tsp_verification_modal::live_design(cx);
     tsp_settings_screen::live_design(cx);
 }
@@ -210,6 +214,20 @@ impl TspState {
         self.associations.get(user_id)
     }
 
+    /// Returns the verified VID for a given Matrix user ID, if the association exists
+    /// and the user's associated DID is in the current default wallet.
+    pub fn get_verified_vid_for(
+        &self,
+        user_id: &UserId,
+    ) -> Option<Arc<dyn VerifiedVid>> {
+        let did = self.get_associated_did(user_id)?;
+        self.current_wallet.as_ref()?
+            .db
+            .as_store()
+            .get_verified_vid(did)
+            .ok()
+    }
+
     /// Gets or spawns a new receive loop that listens for messages for the given VID in the given wallet.
     ///
     /// Returns a sender that can be used to send requests to the receive loop.
@@ -371,7 +389,7 @@ pub fn tsp_init(rt_handle: tokio::runtime::Handle) -> anyhow::Result<()> {
                 error!("Failed to initialize TSP state: {e:?}");
                 enqueue_popup_notification(PopupItem {
                     message: format!(
-                        "Failed to initialize TSP state.\
+                        "Failed to initialize TSP state. \
                         Your TSP wallets may not be fully available. Error: {e}",
                     ),
                     auto_dismissal_duration: None,
@@ -488,6 +506,10 @@ pub enum TspIdentityAction {
     ///
     /// If successful, the result contains the created DID string.
     DidCreationResult(Result<String, anyhow::Error>),
+    /// An existing identity (DID) was successfully republished or had an error.
+    ///
+    /// If successful, the result contains the republished DID string.
+    DidRepublishResult(Result<String, anyhow::Error>),
     /// We successfully sent a request to associate another user's DID
     /// with their Matrix user ID.
     ///
@@ -554,6 +576,12 @@ pub enum TspRequest {
         alias: Option<String>,
         server: String,
         did_server: String,
+    },
+    /// Request to re-publish/re-upload our own DID back up to the DID server.
+    ///
+    /// The given `did` must already exist in the current default wallet.
+    RepublishDid {
+        did: String,
     },
     /// Request to associate another user's identity (DID) with their Matrix User ID.
     ///
@@ -758,6 +786,17 @@ async fn async_tsp_worker(
             });
         }
 
+        TspRequest::RepublishDid { did } => {
+            log!("Received TspRequest::RepublishDid(did: {did})");
+            let client = get_reqwest_client();
+
+            Handle::current().spawn(async move {
+                let result = republish_did(&did, &client).await
+                    .map(|_| did);
+                Cx::post_action(TspIdentityAction::DidRepublishResult(result));
+            });
+        }
+
         TspRequest::AssociateDidWithUserId { did, user_id } => {
             log!("Received TspRequest::AssociateDidWithUserId(did: {did}, user_id: {user_id})");
             Handle::current().spawn(async move {
@@ -847,8 +886,9 @@ async fn create_did_web(
 ) -> Result<(String, OwnedVid, Option<serde_json::Value>), anyhow::Error> {
     // The following code is based on the TSP SDK's CLI example for creating a DID.
     let did = format!(
-        "did:web:{}:endpoint:{username}",
-        did_server.replace(":", "%3A").replace("/", ":")
+        "did:web:{}:endpoint:{}",
+        did_server.replace(":", "%3A").replace("/", ":"),
+        username,
     );
 
     let transport = Url::parse(
@@ -879,11 +919,11 @@ async fn create_did_web(
             if r.as_u16() == 500 {
                 return Err(anyhow!(
                     "The DID server returned error code 500. The DID username may already exist, \
-                     or the server had another problem.\n\nResponse: \"{text}\""
+                     or the server had another problem.\n\nResponse: \"{text}\"."
                 ));
             } else {
                 return Err(anyhow!(
-                    "The DID server returned error code {}.\n\nResponse: \"{text}\"",
+                    "The DID server returned error code {}.\n\nResponse: \"{text}\".",
                     r.as_u16()
                 ));
             }
@@ -921,6 +961,83 @@ fn store_did_in_wallet(
         log!("added alias {alias} -> {did}");
     }
     Ok(did)
+}
+
+
+/// Re-publishes/re-uploads our own DID to the DID server it was originally created on.
+async fn republish_did(
+    did: &str,
+    client: &reqwest::Client,
+) -> Result<(), anyhow::Error> {
+
+    /// A copy of the Vid struct that we can actually instantiate
+    /// from an existing VID in a local wallet.
+    ///
+    /// This is a hack because there is no way to create a `Vid` struct
+    /// instance from an existing VID in a local wallet.
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct VidDuplicate {
+        id: String,
+        transport: Url,
+        #[serde(default)]
+        sig_key_type: VidSignatureKeyType,
+        public_sigkey: PublicVerificationKeyData,
+        #[serde(default)]
+        enc_key_type: VidEncryptionKeyType,
+        public_enckey: PublicKeyData,
+    }
+
+
+    let our_vid = {
+        let tsp_state = tsp_state_ref().lock().unwrap();
+        tsp_state.current_wallet.as_ref()
+            .ok_or_else(no_default_wallet_error)?
+            .db
+            .as_store()
+            .get_verified_vid(did)
+            .map_err(|_e| anyhow!("The DID to republish \"{did}\" was not found in the current default wallet."))?
+    };
+
+    let vid_dup = VidDuplicate {
+        id: our_vid.identifier().to_owned(),
+        transport: our_vid.endpoint().to_owned(),
+        sig_key_type: our_vid.signature_key_type(),
+        public_sigkey: our_vid.verifying_key().to_owned(),
+        enc_key_type: our_vid.encryption_key_type(),
+        public_enckey: our_vid.encryption_key().to_owned(),
+    };
+
+    let did_transport_url = tsp_sdk::vid::did::get_resolve_url(did)?;
+
+    let response = client
+        .post(format!("{}/add-vid", did_transport_url.origin().ascii_serialization()))
+        .json(&vid_dup)
+        .send()
+        .await
+        .inspect(|r| log!("DID server responded with status code {}", r.status()))
+        .map_err(|e| anyhow!("Could not republish VID. The DID server responded with error: {e}"))?;
+
+    match response.status() {
+        r if r.is_success() => {
+            log!("Successfully republished DID {did}.");
+            Ok(())
+        }
+        r => {
+            let text = response.text().await.unwrap_or_else(|_| "[Unknown]".to_string());
+            if r.as_u16() == 500 {
+                Err(anyhow!(
+                    "The DID server returned error code 500. The DID username may already exist, \
+                     or the server had another problem.\n\nResponse: \"{text}\"."
+                ))
+            } else {
+                Err(anyhow!(
+                    "The DID server returned error code {}.\n\nResponse: \"{text}\".",
+                    r.as_u16()
+                ))
+            }
+        }
+    }
 }
 
 
@@ -1009,7 +1126,7 @@ fn no_default_wallet_error() -> anyhow::Error {
 }
 
 fn no_default_vid_error() -> anyhow::Error {
-    anyhow!("Please choose a default VID from your default\
+    anyhow!("Please choose a default VID from your default \
         TSP wallet to represent your own Matrix account.")
 }
 
@@ -1090,6 +1207,20 @@ async fn respond_to_did_association_request(
 
     Ok(())
 }
+
+/// Signs the given message using the default VID from the default wallet.
+pub fn sign_anycast_with_default_vid(message: &[u8]) -> Result<Vec<u8>, anyhow::Error> {
+    let (wallet_db, signing_vid) = {
+        let tsp_state = tsp_state_ref().lock().unwrap();
+        (
+            tsp_state.current_wallet.as_ref().ok_or_else(no_default_wallet_error)?.db.clone(),
+            tsp_state.current_local_vid.clone().ok_or_else(no_default_vid_error)?,
+        )
+    };
+    let signed = wallet_db.as_store().sign_anycast(&signing_vid, message)?;
+    Ok(signed)
+}
+
 
 /// The types/schema of messages that we send over the TSP protocol.
 #[derive(Debug, Serialize, Deserialize)]
