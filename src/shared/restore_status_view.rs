@@ -14,9 +14,10 @@ live_design! {
     use crate::shared::styles::*;
 
     pub RestoreStatusView = {{RestoreStatusView}} {
-        width: Fill, height: Fill,
+        width: Fill, height: Fit,
         flow: Down,
         align: {x: 0.5, y: 0.5},
+        padding: 20,
 
         restore_status_spinner = <LoadingSpinner> {
             width: 50,
