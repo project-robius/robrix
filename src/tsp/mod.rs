@@ -224,7 +224,7 @@ impl TspState {
         self.current_wallet.as_ref()?
             .db
             .as_store()
-            .get_verified_vid(&did)
+            .get_verified_vid(did)
             .ok()
     }
 
@@ -1008,7 +1008,7 @@ async fn republish_did(
         public_enckey: our_vid.encryption_key().to_owned(),
     };
 
-    let did_transport_url = tsp_sdk::vid::did::get_resolve_url(&did)?;
+    let did_transport_url = tsp_sdk::vid::did::get_resolve_url(did)?;
 
     let response = client
         .post(format!("{}/add-vid", did_transport_url.origin().ascii_serialization()))

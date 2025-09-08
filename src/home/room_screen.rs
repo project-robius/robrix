@@ -3511,7 +3511,7 @@ fn populate_message_view(
                 tsp_sdk::crypto::verify(&*sender_vid, &mut tsp_sig).map_or(
                     TspSignState::WrongSignature,
                     |(msg, msg_type)| {
-                        log!("TSP signature verified successfully!\n    Msg type: {msg_type:?}\n    Message: {:?} ({msg:X?})", std::str::from_utf8(&msg));
+                        log!("TSP signature verified successfully!\n    Msg type: {msg_type:?}\n    Message: {:?} ({msg:X?})", std::str::from_utf8(msg));
                         TspSignState::Verified
                     }
                 )

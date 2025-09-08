@@ -123,14 +123,14 @@ impl RoomInputBarRef {
     /// Returns true if the TSP signing checkbox is checked, false otherwise.
     ///
     /// If TSP is not enabled, this will always return false.
-    pub fn is_tsp_signing_enabled(&self, cx: &mut Cx) -> bool {
+    pub fn is_tsp_signing_enabled(&self, _cx: &mut Cx) -> bool {
         #[cfg(not(feature = "tsp"))] {
             false
         }
 
         #[cfg(feature = "tsp")] {
             self.borrow().as_ref().is_some_and(|inner|
-                inner.view.check_box(id!(tsp_sign_checkbox)).active(cx)
+                inner.view.check_box(id!(tsp_sign_checkbox)).active(_cx)
             )
         }
     }
