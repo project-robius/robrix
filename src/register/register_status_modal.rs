@@ -12,51 +12,71 @@ live_design! {
     pub RegisterStatusModal = {{RegisterStatusModal}} {
         width: Fit,
         height: Fit,
+        align: {x: 0.5}
 
         <RoundedView> {
-            width: 300,
+            // Same width as LoginStatusModal for consistency
+            width: ((320+250)/2),
             height: Fit,
             flow: Down,
-            align: {x: 0.5},
+            align: {x: 0.5}
             padding: 25,
-            spacing: 15,
+            spacing: 10,
 
-            show_bg: true,
+            show_bg: true
             draw_bg: {
-                color: #FFFFFF
+                color: #CCC
+                border_radius: 3.0
+            }
+
+            <View> {
+                width: Fill,
+                height: Fit,
+                flow: Right
+                padding: {top: 0, bottom: 10}
+                align: {x: 0.5, y: 0.0}
+
+                title = <Label> {
+                    text: "Registration Status"
+                    draw_text: {
+                        text_style: <TITLE_TEXT>{font_size: 13},
+                        color: #000
+                    }
+                }
             }
 
             status = <Label> {
-                width: Fill,
-                align: {x: 0.5},
+                width: Fill
+                margin: {top: 5, bottom: 5}
                 draw_text: {
                     text_style: <REGULAR_TEXT>{
-                        font_size: 14,
+                        font_size: 11.5,
                     },
-                    color: (COLOR_TEXT),
+                    color: #000
                     wrap: Word
                 },
                 text: "Registering account, please wait..."
             }
-            
+
             <View> {
                 width: Fill,
                 height: Fit,
-                flow: Right,
-                align: {x: 1.0},
+                flow: Right
+                align: {x: 1.0}
                 margin: {top: 10}
-                
+
                 cancel_button = <RobrixIconButton> {
-                    width: Fit, height: Fit,
-                    padding: 10,
+                    align: {x: 0.5, y: 0.5}
+                    width: Fit, height: Fit
+                    padding: 12
                     draw_bg: {
                         color: (COLOR_ACTIVE_PRIMARY)
-                    },
-                    text: "Abort"
+                    }
                     draw_text: {
                         color: (COLOR_PRIMARY)
-                        text_style: <REGULAR_TEXT> {font_size: 12}
+                        text_style: <REGULAR_TEXT> {}
                     }
+                    text: "Cancel"
                 }
             }
         }
@@ -67,6 +87,7 @@ live_design! {
 pub struct RegisterStatusModal {
     #[deref] view: View,
 }
+
 
 impl Widget for RegisterStatusModal {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -81,16 +102,31 @@ impl Widget for RegisterStatusModal {
 
 impl MatchEvent for RegisterStatusModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        if self.view.button(id!(cancel_button)).clicked(actions) {
-            // Send action to close the modal
+        // Check if modal was dismissed (ESC key or click outside)
+        let modal_dismissed = actions
+            .iter()
+            .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
+
+        // Check if Abort button was clicked
+        let abort_clicked = self.view.button(id!(cancel_button)).clicked(actions);
+
+        if abort_clicked || modal_dismissed {
+            // Send action to close the modal with appropriate was_internal flag
             // Note: This doesn't actually cancel the registration request (still running in background)
-            cx.action(RegisterStatusModalAction::Close);
+            cx.action(RegisterStatusModalAction::Close {
+                was_internal: abort_clicked 
+            });
         }
     }
 }
 
 #[derive(Clone, DefaultNone, Debug)]
 pub enum RegisterStatusModalAction {
-    Close,
+    /// The modal requested to be closed
+    Close {
+        /// Whether the modal was closed by clicking an internal button (Abort)
+        /// or being dismissed externally (ESC or click outside)
+        was_internal: bool,
+    },
     None,
 }

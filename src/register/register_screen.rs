@@ -29,10 +29,27 @@
 //!        Registration Success                      Auto Login/Register
 //! ```
 //!
+//! # SSO Action Handling Design
+//!
+//! The register screen uses source-aware SSO handling:
+//!
+//! ## How It Works
+//! 1. Register screen sends `SpawnSSOServer` with `is_registration: true`
+//! 2. `sliding_sync.rs` sends appropriate actions based on this flag:
+//!    - For registration: `RegisterAction::SsoRegistrationPending/Status/Success/Failure`
+//!    - For login: `LoginAction::SsoPending/Status/LoginSuccess/LoginFailure`
+//! 3. Each screen only receives and handles its own actions
+//!
+//! ## Benefits
+//! - **Zero Coupling:** Login and register screens are completely independent
+//! - **Clear Intent:** The SSO flow knows its purpose from the start
+//! - **No Action Conversion:** No need to intercept and convert actions
+//! - **Maintainable:** Each screen has its own clear action flow
+//!
 //! # Implementation Notes
+//! - SSO at protocol level doesn't distinguish login/register - server decides based on account existence
 //! - Registration token support has been intentionally omitted for simplicity
 //! - Advanced UIA flows (captcha, email verification) are not supported
-//! - SSO state is synchronized with login screen for consistent UX
 
 use makepad_widgets::*;
 use crate::sliding_sync::{submit_async_request, MatrixRequest, RegisterRequest};
@@ -50,18 +67,29 @@ live_design! {
     use crate::register::register_status_modal::RegisterStatusModal;
 
     IMG_APP_LOGO = dep("crate://self/resources/robrix_logo_alpha.png")
+    
+    MaskableButton = <RobrixIconButton> {
+        draw_bg: {
+            instance mask: 0.0
+            fn pixel(self) -> vec4 {
+                let base_color = mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover);
+                let gray = dot(base_color.rgb, vec3(0.299, 0.587, 0.114));
+                return mix(base_color, vec4(gray, gray, gray, base_color.a), self.mask);
+            }
+        }
+    }
 
     pub RegisterScreen = {{RegisterScreen}} {
         width: Fill, height: Fill,
         align: {x: 0.5, y: 0.5}
         show_bg: true,
         draw_bg: {
-            color: (COLOR_PRIMARY)
+            color: #FFF
         }
-        flow: Overlay
 
         <ScrollXYView> {
             width: Fit, height: Fill,
+            // Note: *do NOT* vertically center this, it will break scrolling.
             align: {x: 0.5}
             show_bg: true,
             draw_bg: {
@@ -235,13 +263,14 @@ live_design! {
                         spacing: 10
                         visible: true
 
-                        sso_button = <RobrixIconButton> {
+                        sso_button = <MaskableButton> {
                             width: Fill, height: 40
                             padding: 10
                             margin: {top: 10}
                             align: {x: 0.5, y: 0.5}
                             draw_bg: {
                                 color: (COLOR_ACTIVE_PRIMARY)
+                                mask: 0.0
                             }
                             draw_text: {
                                 color: (COLOR_PRIMARY)
@@ -280,13 +309,14 @@ live_design! {
                             is_password: true,
                         }
 
-                        register_button = <RobrixIconButton> {
+                        register_button = <MaskableButton> {
                             width: Fill, height: 40
                             padding: 10
                             margin: {top: 5, bottom: 10}
                             align: {x: 0.5, y: 0.5}
                             draw_bg: {
                                 color: (COLOR_ACTIVE_PRIMARY)
+                                mask: 0.0
                             }
                             draw_text: {
                                 color: (COLOR_PRIMARY)
@@ -337,12 +367,13 @@ live_design! {
                         text: "Back to Login"
                     }
                 }
-            }
-        }
-        
-        status_modal = <Modal> {
-            content: {
-                status_modal_inner = <RegisterStatusModal> {}
+
+                // Modal for registration status (both password and SSO)
+                status_modal = <Modal> {
+                    content: {
+                        status_modal_inner = <RegisterStatusModal> {}
+                    }
+                }
             }
         }
     }
@@ -372,6 +403,20 @@ impl RegisterScreen {
         });
     }
     
+    fn update_button_mask(&self, button: &ButtonRef, cx: &mut Cx, mask: f32) {
+        button.apply_over(cx, live! {
+            draw_bg: { mask: (mask) }
+        });
+    }
+    
+    fn reset_modal_state(&mut self, cx: &mut Cx) {
+        let register_button = self.view.button(id!(register_button));
+        register_button.set_enabled(cx, true);
+        register_button.reset_hover(cx);
+        self.update_button_mask(&register_button, cx, 0.0);
+        self.redraw(cx);
+    }
+
     fn update_registration_mode(&mut self, cx: &mut Cx) {
         let is_matrix_org = self.selected_homeserver == "matrix.org" || self.selected_homeserver.is_empty();
         
@@ -421,16 +466,29 @@ impl MatchEvent for RegisterScreen {
         if edit_button.clicked(actions) {
             self.toggle_homeserver_options(cx);
         }
-        
+
         // Handle SSO button click for matrix.org
         if sso_button.clicked(actions) && !self.sso_pending {
+            // Mark SSO as pending for this screen
+            self.sso_pending = true;
+            self.update_button_mask(&sso_button, cx, 1.0);
+
+            // Show SSO registration modal immediately
+            let status_label = self.view.label(id!(status_modal_inner.status));
+            status_label.set_text(cx, "Opening your browser...\n\nPlease complete registration in your browser, then return to Robrix.");
+            let cancel_button = self.view.button(id!(status_modal_inner.cancel_button));
+            cancel_button.set_text(cx, "Cancel");
+            self.view.modal(id!(status_modal)).open(cx);
+            self.redraw(cx);
+
             // Use the same SSO flow as login screen - spawn SSO server with Google provider
             // This follows Element's implementation where SSO login and registration share the same OAuth flow
             // The Matrix server will handle whether to create a new account or login existing user
             submit_async_request(MatrixRequest::SpawnSSOServer{
                 identity_provider_id: "oidc-google".to_string(),
                 brand: "google".to_string(),
-                homeserver_url: String::new() // Use default matrix.org
+                homeserver_url: String::new(), // Use default matrix.org
+                is_registration: true,
             });
         }
         
@@ -520,8 +578,15 @@ impl MatchEvent for RegisterScreen {
 
             // Disable register button to prevent duplicate submissions
             register_button.set_enabled(cx, false);
+            self.update_button_mask(&register_button, cx, 1.0);
 
-            // Show registration status modal
+            // Show registration status modal with appropriate text for password registration
+            let status_label = self.view.label(id!(status_modal_inner.status));
+            status_label.set_text(cx, "Registering account, please wait...");
+            let title_label = self.view.label(id!(status_modal_inner.title));
+            title_label.set_text(cx, "Registration Status");
+            let cancel_button = self.view.button(id!(status_modal_inner.cancel_button));
+            cancel_button.set_text(cx, "Cancel");
             self.view.modal(id!(status_modal)).open(cx);
             self.redraw(cx);
 
@@ -535,73 +600,116 @@ impl MatchEvent for RegisterScreen {
 
             cx.action(RegisterAction::RegistrationSubmitted);
         }
-        
+
         // Handle modal closing for both success and failure in one place
         for action in actions {
             // Handle RegisterStatusModal close action
-            if let Some(RegisterStatusModalAction::Close) = action.as_widget_action().cast() {
-                self.view.modal(id!(status_modal)).close(cx);
-                // Re-enable register button when modal is closed manually
-                let register_button = self.view.button(id!(register_button));
-                register_button.set_enabled(cx, true);
+            if let Some(RegisterStatusModalAction::Close { was_internal }) = action.downcast_ref::<RegisterStatusModalAction>() {
+                if *was_internal {
+                    self.view.modal(id!(status_modal)).close(cx);
+                }
+                // Reset appropriate button based on registration type
+                if self.sso_pending {
+                    self.sso_pending = false;
+                    self.update_button_mask(&sso_button, cx, 0.0);
+                    sso_button.set_enabled(cx, true);
+                    sso_button.reset_hover(cx);
+                } else {
+                    // Password registration - reset register button
+                    self.reset_modal_state(cx);
+                }
                 self.redraw(cx);
             }
-            
-            // Handle SSO login actions
-            match action.downcast_ref::<LoginAction>() {
-                Some(LoginAction::SsoPending(pending)) => {
-                    self.sso_pending = *pending;
-                    // Update SSO button state
-                    sso_button.set_enabled(cx, !pending);
-                    self.redraw(cx);
-                }
-                Some(LoginAction::Status { .. }) => {
-                    // Show SSO status in modal
-                    self.view.modal(id!(status_modal)).open(cx);
-                    // Note: We can't easily update the modal text dynamically,
-                    // but the modal will show and user knows something is happening
-                    self.redraw(cx);
-                }
-                Some(LoginAction::LoginSuccess) | Some(LoginAction::LoginFailure(_)) => {
-                    // Handle both success and failure - close modal and reset SSO state
-                    if let Some(LoginAction::LoginFailure(error)) = action.downcast_ref::<LoginAction>() {
-                        self.show_warning(error);
-                    }
+
+            // Handle SSO completion from login flow
+            // SSO success ultimately goes through the login flow, so we listen for LoginSuccess
+            if self.sso_pending {
+                if let Some(LoginAction::LoginSuccess) = action.downcast_ref::<LoginAction>() {
+                    // SSO registration successful
                     self.view.modal(id!(status_modal)).close(cx);
                     self.sso_pending = false;
-                    sso_button.set_enabled(cx, true);
+                    self.update_button_mask(&sso_button, cx, 0.0);
+                    cx.action(RegisterAction::RegistrationSuccess);
                     self.redraw(cx);
+                }
+            }
+            
+            // Handle RegisterAction for SSO (now directly sent from sliding_sync.rs)
+            match action.downcast_ref::<RegisterAction>() {
+                Some(RegisterAction::SsoRegistrationPending(pending)) => {
+                    // Update pending state (modal already shown when button clicked)
+                    if !*pending {
+                        // SSO ended
+                        self.sso_pending = false;
+                        self.update_button_mask(&sso_button, cx, 0.0);
+                        self.view.modal(id!(status_modal)).close(cx);
+                    }
+                    self.redraw(cx);
+                }
+                Some(RegisterAction::SsoRegistrationStatus { status }) => {
+                    // Update SSO status in modal (only if our modal is already open)
+                    if self.sso_pending {
+                        let status_label = self.view.label(id!(status_modal_inner.status));
+                        status_label.set_text(cx, status);
+                        let cancel_button = self.view.button(id!(status_modal_inner.cancel_button));
+                        cancel_button.set_text(cx, "Cancel");
+                        self.redraw(cx);
+                    }
                 }
                 _ => {}
             }
-            
-            if let Some(RegisterAction::RegistrationSuccess | RegisterAction::RegistrationFailure(_)) = action.downcast_ref::<RegisterAction>() {
-                // Always hide modal regardless of result
-                self.view.modal(id!(status_modal)).close(cx);
-                
-                // Re-enable register button for failure case (success will hide the screen)
-                if matches!(action.downcast_ref::<RegisterAction>(), Some(RegisterAction::RegistrationFailure(_))) {
-                    let register_button = self.view.button(id!(register_button));
-                    register_button.set_enabled(cx, true);
-                    register_button.reset_hover(cx);
+
+            if let Some(reg_action) = action.downcast_ref::<RegisterAction>() {
+                match reg_action {
+                    RegisterAction::RegistrationSuccess => {
+                        // Close modal and let app.rs handle screen transition
+                        self.view.modal(id!(status_modal)).close(cx);
+                        if self.sso_pending {
+                            self.sso_pending = false;
+                            self.update_button_mask(&sso_button, cx, 0.0);
+                        }
+                        self.redraw(cx);
+                    }
+                    RegisterAction::RegistrationFailure(error) => {
+                        // Show error and reset buttons
+                        if self.sso_pending {
+                            self.show_warning(error);
+                            self.sso_pending = false;
+                            self.update_button_mask(&sso_button, cx, 0.0);
+                        }
+                        self.view.modal(id!(status_modal)).close(cx);
+                        let register_button = self.view.button(id!(register_button));
+                        register_button.set_enabled(cx, true);
+                        register_button.reset_hover(cx);
+                        self.redraw(cx);
+                    }
+                    _ => {}
                 }
-                
-                self.redraw(cx);
             }
         }
     }
 }
 
-/// Actions related to the register screen
+/// Actions for the registration screen.
+/// 
+/// These actions handle both password-based and SSO registration flows.
+/// SSO actions are completely independent from LoginAction to ensure
+/// no interference between login and register screens.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum RegisterAction {
-    /// Navigate back to the login screen
+    /// User requested to go back to the login screen
     NavigateToLogin,
-    /// Registration form was submitted (show loading indicator)
+    /// Password registration was submitted (internal use)
     RegistrationSubmitted,
-    /// Registration was successful
+    /// Registration completed successfully (both password and SSO)
     RegistrationSuccess,
-    /// Registration failed with an error message
+    /// Registration failed with error message (both password and SSO)
     RegistrationFailure(String),
+    /// SSO registration state changed
+    /// - `true`: SSO flow started, button should be disabled
+    /// - `false`: SSO flow ended, button should be re-enabled
+    SsoRegistrationPending(bool),
+    /// SSO registration progress update (e.g., "Opening browser...")
+    SsoRegistrationStatus { status: String },
     None,
 }

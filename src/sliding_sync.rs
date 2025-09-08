@@ -495,6 +495,8 @@ pub enum MatrixRequest {
         brand: String,
         homeserver_url: String,
         identity_provider_id: String,
+        /// Whether this SSO request is for registration (true) or login (false)
+        is_registration: bool,
     },
     /// Subscribe to typing notices for the given room.
     ///
@@ -620,13 +622,13 @@ async fn async_worker(
                             submit_async_request(MatrixRequest::Login(login_req));
                         }
                         Err(e) => {
-                            error!("Registration failed: {e:?}");
+                            error!("Registration failed: {e}");
                             let error_msg = format!("Registration failed: {}", e);
                             // Show error as popup notification
                             enqueue_popup_notification(PopupItem {
                                 message: error_msg.clone(),
                                 kind: PopupKind::Error,
-                                auto_dismissal_duration: Some(5.0),
+                                auto_dismissal_duration: None,
                             });
                             Cx::post_action(RegisterAction::RegistrationFailure(error_msg));
                         }
@@ -1125,8 +1127,8 @@ async fn async_worker(
                 });
                 tasks_list.insert(room_id.clone(), subscribe_own_read_receipt_task);
             }
-            MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
-                spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
+            MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id, is_registration } => {
+                spawn_sso_server(brand, homeserver_url, identity_provider_id, is_registration, login_sender.clone()).await;
             }
             MatrixRequest::ResolveRoomAlias(room_alias) => {
                 let Some(client) = get_client() else { continue };
@@ -2910,14 +2912,23 @@ async fn spawn_sso_server(
     brand: String,
     homeserver_url: String,
     identity_provider_id: String,
+    is_registration: bool,
     login_sender: Sender<LoginRequest>,
 ) {
-    Cx::post_action(LoginAction::SsoPending(true));
-    // Post a status update to inform the user that we're waiting for the client to be built.
-    Cx::post_action(LoginAction::Status {
-        title: "Initializing client...".into(),
-        status: "Please wait while Matrix builds and configures the client object for login.".into(),
-    });
+    // Post different actions based on whether it's registration or login
+    if is_registration {
+        Cx::post_action(RegisterAction::SsoRegistrationPending(true));
+        Cx::post_action(RegisterAction::SsoRegistrationStatus {
+            status: "Please wait while Matrix builds and configures the client object for registration.".into(),
+        });
+    } else {
+        Cx::post_action(LoginAction::SsoPending(true));
+        // Post a status update to inform the user that we're waiting for the client to be built.
+        Cx::post_action(LoginAction::Status {
+            title: "Initializing client...".into(),
+            status: "Please wait while Matrix builds and configures the client object for login.".into(),
+        });
+    }
 
     // Wait for the notification that the client has been built
     DEFAULT_SSO_CLIENT_NOTIFIER.notified().await;
@@ -2956,25 +2967,46 @@ async fn spawn_sso_server(
         }
 
         let Some((client, client_session)) = client_and_session else {
-            Cx::post_action(LoginAction::LoginFailure(
-                if let Some(err) = build_client_error {
-                    format!("Could not create client object. Please try to login again.\n\nError: {err}")
-                } else {
-                    String::from("Could not create client object. Please try to login again.")
-                }
-            ));
+            if is_registration {
+                Cx::post_action(RegisterAction::RegistrationFailure(
+                    if let Some(err) = build_client_error {
+                        format!("Could not create client object. Please try to register again.\n\nError: {err}")
+                    } else {
+                        String::from("Could not create client object. Please try to register again.")
+                    }
+                ));
+            } else {
+                Cx::post_action(LoginAction::LoginFailure(
+                    if let Some(err) = build_client_error {
+                        format!("Could not create client object. Please try to login again.\n\nError: {err}")
+                    } else {
+                        String::from("Could not create client object. Please try to login again.")
+                    }
+                ));
+            }
             // This ensures that the called to `DEFAULT_SSO_CLIENT_NOTIFIER.notified()`
             // at the top of this function will not block upon the next login attempt.
             DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
-            Cx::post_action(LoginAction::SsoPending(false));
+            if is_registration {
+                Cx::post_action(RegisterAction::SsoRegistrationPending(false));
+            } else {
+                Cx::post_action(LoginAction::SsoPending(false));
+            }
             return;
         };
 
         let mut is_logged_in = false;
-        Cx::post_action(LoginAction::Status {
-            title: "Opening your browser...".into(),
-            status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
-        });
+        if is_registration {
+            use crate::register::register_screen::RegisterAction;
+            Cx::post_action(RegisterAction::SsoRegistrationStatus {
+                status: "Please finish registration using your browser, and then come back to Robrix.".into(),
+            });
+        } else {
+            Cx::post_action(LoginAction::Status {
+                title: "Opening your browser...".into(),
+                status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
+            });
+        }
         match client
             .matrix_auth()
             .login_sso(|sso_url: String| async move {
@@ -3010,9 +3042,15 @@ async fn spawn_sso_server(
                 if !is_logged_in {
                     if let Err(e) = login_sender.send(LoginRequest::LoginBySSOSuccess(client, client_session)).await {
                         error!("Error sending login request to login_sender: {e:?}");
-                        Cx::post_action(LoginAction::LoginFailure(String::from(
-                            "BUG: failed to send login request to async worker thread."
-                        )));
+                        if is_registration {
+                            Cx::post_action(RegisterAction::RegistrationFailure(String::from(
+                                "BUG: failed to send login request to async worker thread."
+                            )));
+                        } else {
+                            Cx::post_action(LoginAction::LoginFailure(String::from(
+                                "BUG: failed to send login request to async worker thread."
+                            )));
+                        }
                     }
                     enqueue_rooms_list_update(RoomsListUpdate::Status {
                         status: format!(
@@ -3025,7 +3063,11 @@ async fn spawn_sso_server(
             Err(e) => {
                 if !is_logged_in {
                     error!("SSO Login failed: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(format!("SSO login failed: {e}")));
+                    if is_registration {
+                        Cx::post_action(RegisterAction::RegistrationFailure(format!("SSO registration failed: {e}")));
+                    } else {
+                        Cx::post_action(LoginAction::LoginFailure(format!("SSO login failed: {e}")));
+                    }
                 }
             }
         }
@@ -3033,7 +3075,11 @@ async fn spawn_sso_server(
         // This ensures that the called to `DEFAULT_SSO_CLIENT_NOTIFIER.notified()`
         // at the top of this function will not block upon the next login attempt.
         DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
-        Cx::post_action(LoginAction::SsoPending(false));
+        if is_registration {
+            Cx::post_action(RegisterAction::SsoRegistrationPending(false));
+        } else {
+            Cx::post_action(LoginAction::SsoPending(false));
+        }
     });
 }
 

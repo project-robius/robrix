@@ -367,6 +367,7 @@ impl MatchEvent for LoginScreen {
             }
 
             // Handle login-related actions received from background async tasks.
+            // Skip processing if the login screen is not visible (e.g., user is on register screen)
             match action.downcast_ref() {
                 Some(LoginAction::CliAutoLogin { user_id, homeserver }) => {
                     user_id_input.set_text(cx, user_id);
@@ -451,7 +452,8 @@ impl MatchEvent for LoginScreen {
                 submit_async_request(MatrixRequest::SpawnSSOServer{
                     identity_provider_id: format!("oidc-{}",brand),
                     brand: brand.to_string(),
-                    homeserver_url: homeserver_input.text()
+                    homeserver_url: homeserver_input.text(),
+                    is_registration: false,
                 });
             }
         }
