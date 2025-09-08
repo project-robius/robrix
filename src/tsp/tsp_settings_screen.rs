@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::{shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
+use crate::{shared::{popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
 const REPUBLISH_IDENTITY_BUTTON_TEXT: &str = "Republish Current Identity to DID Server";
 
@@ -56,17 +56,15 @@ live_design! {
                 margin: {top: 10}
                 draw_text: {
                     wrap: Line,
-                    color: (COLOR_FG_ACCEPT_GREEN),
                     text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
                 }
-                text: "No default identity has been set."
             }
         }
 
         republish_identity_button = <RobrixIconButton> {
             width: Fit, height: Fit,
             padding: 10,
-            margin: {top: 5, bottom: 10, left: 5},
+            margin: {top: 8, bottom: 10, left: 5},
 
             draw_bg: {
                 color: (COLOR_ACTIVE_PRIMARY),
@@ -96,7 +94,7 @@ live_design! {
                 flow: RightWrap,
                 draw_text: {
                     wrap: Line,
-                    color: #953800,
+                    color: (COLOR_WARNING_NOT_FOUND),
                     text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
                 }
                 text: "No wallets found. Create or import a wallet."
@@ -182,16 +180,18 @@ live_design! {
                 draw_bg: {
                     color: (COLOR_ACTIVE_PRIMARY)
                 }
-                draw_icon: {
-                    svg_file: (ICON_IMPORT)
-                    color: (COLOR_PRIMARY)
-                }
                 draw_text: {
                     color: (COLOR_PRIMARY)
                     text_style: <REGULAR_TEXT> {}
                 }
-                icon_walk: {width: 16, height: 16}
                 text: "Import Existing Wallet"
+                // TODO: fix this icon, or pick a different SVG
+                // draw_icon: {
+                //     svg_file: (ICON_IMPORT)
+                //     color: (COLOR_PRIMARY)
+                // }
+                // icon_walk: {width: 16, height: 16}
+                icon_walk: {width: 0, height: 0}
             }
         }
     }
@@ -277,13 +277,19 @@ impl Widget for TspSettingsScreen {
             log!("Wallets were refreshed: {:?}", self.wallets);
         }
 
-        // Update the current identity label.
-        self.view.label(id!(current_identity_label)).set_text(
-            cx,
-            self.wallets.as_ref()
-                .and_then(|ws| ws.active_identity.as_deref())
-                .unwrap_or("No default identity has been set."),
-        );
+        // Draw the current identity label and republish button based on the active identity.
+        let (current_did_text, current_did_text_color, show_republish_button) = match
+            self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref())
+        {
+            Some(current_did) => (current_did, COLOR_FG_ACCEPT_GREEN, true),
+            None => ("No default identity has been set.", COLOR_WARNING_NOT_FOUND, false),
+        };
+        self.view.label(id!(current_identity_label)).apply_over(cx, live!(
+            text: (current_did_text),
+            draw_text: { color: (current_did_text_color) },
+        ));
+        self.view.button(id!(republish_identity_button)).set_visible(cx, show_republish_button);
+
 
         // If we don't have any wallets, show the "no wallets" label.
         let is_wallets_empty = self.wallets.as_ref().is_none_or(|w| w.is_empty());

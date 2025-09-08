@@ -92,6 +92,7 @@ live_design! {
     pub COLOR_BG_DANGER_RED = #FFF0F0
     pub COLOR_FG_DISABLED = #B3B3B3
     pub COLOR_BG_DISABLED = #E0E0E0
+    pub COLOR_WARNING_NOT_FOUND = #953800
 
     pub COLOR_SELECT_TEXT = #A6CDFE
 
@@ -291,3 +292,5 @@ pub const COLOR_INFO_BLUE:             Vec4 = vec4(0.05, 0.53, 0.996, 1.0);
 pub const COLOR_WHITE:                 Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
 /// #888888
 pub const COLOR_MESSAGE_NOTICE_TEXT:   Vec4 = vec4(0.5, 0.5, 0.5, 1.0);
+/// #953800
+pub const COLOR_WARNING_NOT_FOUND:    Vec4 = vec4(0.584, 0.219, 0.0, 1.0);
