@@ -24,9 +24,9 @@ on:
           - 'macos-14-aarch64'            # Build for MacOS 14 (Apple Silicon)
           - 'macos-13-x86_64'             # Build for MacOS 13 (Intel)
           - 'windows-2022-x86_64'         # Build for Windows 2022 x86_64
-          - 'android (API 33+)'           # Build for Android 33+
-          - 'ios (17.5+)'                 # Build for iOS
-          - 'ios-sim (17.5+)'             # Build for iOS Simulator
+          - 'android'                     # Build for Android (API 33+)
+          - 'ios'                         # Build for iOS (17.5+)
+          - 'ios-sim'                     # Build for iOS Simulator
       release_tag:
         description: 'Release tag (required if creating release)'
         required: false
@@ -318,61 +318,37 @@ jobs:
             exit 1
           fi
 
-      - name: Import Code-signing Certificates (IOS)
-        if: matrix.platform == 'ios'
-        uses: apple-actions/import-codesign-certs@v3
-        with: 
-          p12-file-base64: ${{ secrets.APPSTORE_CERTIFICATES_FILE_BASE64 }}
-          p12-password: ${{ secrets.APPSTORE_CERTIFICATES_PASSWORD }}
-  
-      - name: Install IOS Provisioning Profile
-        if: matrix.platform == 'ios'
+      - name: Install the Apple certificate and provisioning profile
+        if: ${{ matrix.platform == 'ios' }}
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.IOS_BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_BUILD_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
         run: |
-          set -euo pipefail
-          
-          echo "=== Checking provisioning profile secret ==="
-          if [[ -z "${{ secrets.IOS_MOBILEPROVISION }}" ]]; then
-            echo "Error: IOS_MOBILEPROVISION secret not found."
-            echo "Please add IOS_MOBILEPROVISION as a base64 encoded mobile provisioning profile to your repository secrets."
-            exit 1
-          fi
+            CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+            PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
+            KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
 
-          PROFILES_DIR="~/Library/MobileDevice/Provisioning Profiles"
-          PROFILE_FILE="robrix.mobileprovision"
-          PROFILE_PATH="$PROFILES_DIR/$PROFILE_FILE"
+            echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+            echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
 
-          mkdir -p "$PROFILES_DIR"
+            security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+            security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
 
-          echo "${{ secrets.IOS_MOBILEPROVISION }}" | base64 --decode > "$PROFILE_PATH"
+            security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+            security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+            security list-keychain -d user -s $KEYCHAIN_PATH
 
-          echo "=== Validating provisioning profile ==="
-          if plutil -lint "$PROFILE_PATH" >/dev/null 2>&1; then
-            echo "PROFILE_PATH=$PROFILE_PATH" >> $GITHUB_ENV
-            echo "Provisioning profile is valid and installed successfully"
-          else
-            echo "Error: Provisioning profile is invalid."
-            exit 1
-          fi
+            mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+            cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
 
-          echo "=== Install provisioning profile ==="
-          ls -la "$PROFILES_DIR"
+            PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< $(security cms -D -i $PP_PATH))
+            echo "PROFILE_PATH=$PROFILE_UUID" >> $GITHUB_ENV
 
-
-          echo "=== Available signing identities ==="
-          security find-identity -v -p codesigning
-
-          echo "=== Extracting certificate fingerprint ==="
-          CERT_FINGERPRINT=$(security find-identity -v -p codesigning | head -n1 | awk '{print $2}' | tr -d '"')
-
-          if [[ -n "$CERT_FINGERPRINT" ]]; then
-            echo "Certificate fingerprint: $CERT_FINGERPRINT"
+            CERT_FINGERPRINT=$(security find-certificate -c "Apple Distribution" -a -Z $KEYCHAIN_PATH | grep SHA-1 | head -n 1 | awk '{print $3}')
             echo "CERT_FINGERPRINT=$CERT_FINGERPRINT" >> $GITHUB_ENV
-          else
-            echo "Error: Could not extract certificate fingerprint"
-            exit 1
-          fi
-
-          echo "iOS provisioning profile setup completed successfully"
 
       - name: Build Mobile Artifacts
         run: |
@@ -387,7 +363,7 @@ jobs:
               --profile=$PROFILE_PATH \
               --cert=$CERT_FINGERPRINT \
               --device=IPhone \
-              run-device -p robrix --release  # makepad-apple-app/aarch64-apple-ios/release/../.
+              run-device -p robrix --release # makepad-apple-app/aarch64-apple-ios/release/../.
           else
             echo "Unsupported platform: ${{ matrix.platform }}"
             exit 1
