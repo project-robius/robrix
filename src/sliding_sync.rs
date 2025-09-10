@@ -566,7 +566,6 @@ pub enum LoginRequest{
     LoginBySSOSuccess(Client, ClientSessionPersisted),
     LoginByCli,
     HomeserverLoginTypesQuery(String),
-
 }
 /// Information needed to log in to a Matrix homeserver.
 pub struct LoginByPassword {
@@ -612,12 +611,20 @@ async fn async_worker(
                 rt.spawn(async move {
                     match register_user(register_request).await {
                         Ok((client, client_session)) => {
-                            // After successful registration, we need to set up the client session
-                            // and initialize all the global state (CLIENT, SLIDING_SYNC, etc.)
-                            // The login flow already handles all of this setup properly,
-                            // so we reuse it by converting the registration success into a login success.
-                            // This ensures consistent state initialization regardless of whether
-                            // the user registered or logged in directly.
+                            // Send RegistrationSuccess action to close the registration modal
+                            Cx::post_action(RegisterAction::RegistrationSuccess);
+                            
+                            // After successful registration, we need to initialize all the global state
+                            // (CLIENT, SLIDING_SYNC, room lists, etc.) which is handled by the main login flow.
+                            // 
+                            // We use LoginBySSOSuccess (not LoginByPassword) because:
+                            // 1. Registration already authenticated us - we have a valid client and session
+                            // 2. We don't need to login again (which LoginByPassword would do)
+                            // 3. LoginBySSOSuccess simply passes through the already-authenticated client
+                            //    without making any network requests - it only saves the session locally
+                            // 
+                            // The name is misleading - it's really "UseAuthenticatedClient" that works for
+                            // any pre-authenticated client (SSO, registration, restored session, etc.)
                             let login_req = LoginRequest::LoginBySSOSuccess(client, client_session);
                             submit_async_request(MatrixRequest::Login(login_req));
                         }

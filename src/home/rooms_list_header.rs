@@ -104,15 +104,21 @@ impl Widget for RoomsListHeader {
                         if &self.sync_state == new_state {
                             continue;
                         }
-                        log!("Setting the RoomsListHeader to offline.");
-                        self.view.view(id!(loading_spinner)).set_visible(cx, false);
-                        self.view.view(id!(synced_icon)).set_visible(cx, false);
-                        self.view.view(id!(offline_icon)).set_visible(cx, true);
-                        enqueue_popup_notification(PopupItem {
-                            message: "Cannot reach the Matrix homeserver. Please check your connection.".into(),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Error,
-                        });
+                        
+                        // Only show offline notification for actual connection errors
+                        // States like Idle and Running are normal and shouldn't trigger error popups
+                        if matches!(new_state, State::Error | State::Terminated | State::Offline) {
+                            log!("Setting the RoomsListHeader to offline.");
+                            self.view.view(id!(loading_spinner)).set_visible(cx, false);
+                            self.view.view(id!(synced_icon)).set_visible(cx, false);
+                            self.view.view(id!(offline_icon)).set_visible(cx, true);
+                            enqueue_popup_notification(PopupItem {
+                                message: "Cannot reach the Matrix homeserver. Please check your connection.".into(),
+                                auto_dismissal_duration: None,
+                                kind: PopupKind::Error,
+                            });
+                        }
+                        // For all other states (Idle, Running, etc.), just update without error notification
                         self.sync_state = new_state.clone();
                         self.redraw(cx);
                     }
