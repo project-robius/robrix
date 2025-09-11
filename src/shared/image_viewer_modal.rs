@@ -43,7 +43,6 @@ impl Default for DragState {
 live_design! {
     use link::theme::*;
     use link::widgets::*;
-    IMAGE_DEFAULT = dep("crate://self/resources/img/default_image.png");
     use crate::shared::styles::*;
     use crate::shared::icon_button::RobrixIconButton;
 
