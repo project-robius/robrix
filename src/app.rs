@@ -121,7 +121,8 @@ live_design! {
                 )
             }
         }
-    }
+    }    use link::tsp_link::TspVerificationModal;
+
 
     App = {{App}} {
         ui: <Root>{
@@ -175,24 +176,29 @@ live_design! {
                             visible: true
                             login_screen = <LoginScreen> {}
                         }
+
                         <PopupList> {}
                         
                         // Context menus should be shown in front of other UI elements,
-                        // but behind the verification modal.
+                        // but behind verification modals.
                         new_message_context_menu = <NewMessageContextMenu> { }
 
-                        // We want the verification modal to always show up in front of
-                        // all other elements when an incoming verification request is received.
+                        // Show the logout confirmation modal.
+                        logout_confirm_modal = <Modal> {
+                            content: {
+                                logout_confirm_modal_inner = <LogoutConfirmModal> {}
+                            }
+                        }
+
+                        // Show incoming verification requests in front of the aforementioned UI elements.
                         verification_modal = <Modal> {
                             content: {
                                 verification_modal_inner = <VerificationModal> {}
                             }
                         }
-
-                        // Logout confirmation modal 
-                        logout_confirm_modal = <Modal> {
+                        tsp_verification_modal = <Modal> {
                             content: {
-                                logout_confirm_modal_inner = <LogoutConfirmModal> {}
+                                tsp_verification_modal_inner = <TspVerificationModal> {}
                             }
                         }
 
@@ -459,6 +465,23 @@ impl MatchEvent for App {
             if let Some(VerificationModalAction::Close) = action.downcast_ref() {
                 self.ui.modal(id!(verification_modal)).close(cx);
                 continue;
+            }
+
+            // Handle actions to open/close the TSP verification modal.
+            #[cfg(feature = "tsp")] {
+                use std::ops::Deref;
+                use crate::tsp::{tsp_verification_modal::{TspVerificationModalAction, TspVerificationModalWidgetRefExt}, TspIdentityAction};
+
+                if let Some(TspIdentityAction::ReceivedDidAssociationRequest { details, wallet_db }) = action.downcast_ref() {
+                    self.ui.tsp_verification_modal(id!(tsp_verification_modal_inner))
+                        .initialize_with_details(cx, details.clone(), wallet_db.deref().clone());
+                    self.ui.modal(id!(tsp_verification_modal)).open(cx);
+                    continue;
+                }
+                if let Some(TspVerificationModalAction::Close) = action.downcast_ref() {
+                    self.ui.modal(id!(tsp_verification_modal)).close(cx);
+                    continue;
+                }
             }
 
             // // message source modal handling.
