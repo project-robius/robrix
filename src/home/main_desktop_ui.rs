@@ -220,7 +220,7 @@ impl MainDesktopUI {
     /// Closes all tabs
     pub fn close_all_tabs(&mut self, cx: &mut Cx) {
         let dock = self.view.dock(id!(dock));
-        for tab_id in self.open_rooms.keys() {        
+        for tab_id in self.open_rooms.keys() {
             dock.close_tab(cx, *tab_id);
         }
 
@@ -236,6 +236,9 @@ impl MainDesktopUI {
         self.tab_to_close = None;
         self.room_order.clear();
         self.most_recently_selected_room = None;
+
+        // Reset state to prevent dock restoration on next login
+        self.drawn_previously = false;
     }
 
     /// Replaces an invite with a joined room in the dock.
