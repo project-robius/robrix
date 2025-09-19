@@ -285,12 +285,20 @@ impl MatchEvent for App {
                 match register_action {
                     RegisterAction::NavigateToLogin => {
                         log!("Navigating from register to login screen");
+                        // Reset the register screen state before hiding it
+                        if let Some(mut register_screen_ref) = self.ui.widget(id!(register_screen_view.register_screen)).borrow_mut::<crate::register::register_screen::RegisterScreen>() {
+                            register_screen_ref.reset_screen_state(cx);
+                        }
                         self.ui.view(id!(register_screen_view)).set_visible(cx, false);
                         self.ui.view(id!(login_screen_view)).set_visible(cx, true);
                         self.ui.redraw(cx);
                     }
                     RegisterAction::RegistrationSuccess => {
                         log!("Registration successful, transitioning to logged in state");
+                        // Clear register screen state after successful registration
+                        if let Some(mut register_screen_ref) = self.ui.widget(id!(register_screen_view.register_screen)).borrow_mut::<crate::register::register_screen::RegisterScreen>() {
+                            register_screen_ref.reset_screen_state(cx);
+                        }
                         self.app_state.logged_in = true;
                         self.update_login_visibility(cx);
                         self.ui.redraw(cx);

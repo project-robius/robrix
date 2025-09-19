@@ -419,11 +419,11 @@ impl RegisterScreen {
 
     fn update_registration_mode(&mut self, cx: &mut Cx) {
         let is_matrix_org = self.selected_homeserver == "matrix.org" || self.selected_homeserver.is_empty();
-        
+
         // Update UI based on homeserver selection
         self.view.view(id!(sso_area)).set_visible(cx, is_matrix_org);
         self.view.view(id!(password_area)).set_visible(cx, !is_matrix_org);
-        
+
         // Update description text
         let desc_label = self.view.label(id!(homeserver_description));
         if is_matrix_org {
@@ -431,7 +431,52 @@ impl RegisterScreen {
         } else {
             desc_label.set_text(cx, "Use your custom Matrix homeserver");
         }
-        
+
+        self.redraw(cx);
+    }
+
+    /// Reset the registration screen to its initial state
+    /// This should be called when navigating away from the registration screen
+    pub fn reset_screen_state(&mut self, cx: &mut Cx) {
+        // Reset internal state
+        self.is_homeserver_editing = false;
+        self.selected_homeserver = "matrix.org".to_string();
+        self.sso_pending = false;
+
+        // Reset homeserver selection UI
+        self.view.view(id!(homeserver_options)).set_visible(cx, false);
+        self.view.label(id!(selected_homeserver)).set_text(cx, "matrix.org");
+        self.view.view(id!(custom_homeserver)).set_visible(cx, false);
+
+        // Reset homeserver option buttons
+        let matrix_option_button = self.view.button(id!(matrix_option));
+        let other_option_button = self.view.button(id!(other_option));
+        matrix_option_button.set_text(cx, "● matrix.org");
+        other_option_button.set_text(cx, "○ Other homeserver");
+
+        // Clear input fields
+        self.view.text_input(id!(username_input)).set_text(cx, "");
+        self.view.text_input(id!(password_input)).set_text(cx, "");
+        self.view.text_input(id!(confirm_password_input)).set_text(cx, "");
+        self.view.text_input(id!(custom_homeserver_input)).set_text(cx, "");
+
+        // Reset button states
+        let register_button = self.view.button(id!(register_button));
+        register_button.set_enabled(cx, true);
+        register_button.reset_hover(cx);
+        self.update_button_mask(&register_button, cx, 0.0);
+
+        let sso_button = self.view.button(id!(sso_button));
+        sso_button.set_enabled(cx, true);
+        sso_button.reset_hover(cx);
+        self.update_button_mask(&sso_button, cx, 0.0);
+
+        // Close any open modals
+        self.view.modal(id!(status_modal)).close(cx);
+
+        // Update registration mode to show correct UI for matrix.org
+        self.update_registration_mode(cx);
+
         self.redraw(cx);
     }
 }
@@ -712,4 +757,12 @@ pub enum RegisterAction {
     /// SSO registration progress update (e.g., "Opening browser...")
     SsoRegistrationStatus { status: String },
     None,
+}
+
+impl RegisterScreenRef {
+    pub fn reset_screen_state(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.reset_screen_state(cx);
+        }
+    }
 }
