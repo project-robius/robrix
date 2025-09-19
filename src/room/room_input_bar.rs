@@ -11,6 +11,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::icon_button::*;
     use crate::shared::mentionable_text_input::MentionableTextInput;
+    use link::tsp_link::TspSignAnycastCheckbox;
 
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
     ICO_SEND = dep("crate://self/resources/icon_send.svg")
@@ -31,6 +32,12 @@ live_design! {
             draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
             icon_walk: {width: Fit, height: 23, margin: {bottom: -1}}
             text: "",
+        }
+
+        // A checkbox that enables TSP signing for the outgoing message.
+        // If TSP is not enabled, this will be an empty invisible view.
+        tsp_sign_checkbox = <TspSignAnycastCheckbox> {
+            margin: {bottom: 9, left: 6, right: 0}
         }
 
         message_input = <MentionableTextInput> {
@@ -83,6 +90,8 @@ impl Widget for RoomInputBar {
 
 impl RoomInputBar {
     /// Sets the send_message_button to be enabled and green, or disabled and gray.
+    ///
+    /// This should be called to update the button state when the message TextInput content changes.
     fn enable_send_message_button(&mut self, cx: &mut Cx, enable: bool) {
         let send_message_button = self.view.button(id!(send_message_button));
         let (fg_color, bg_color) = if enable {
@@ -104,9 +113,25 @@ impl RoomInputBar {
 }
 
 impl RoomInputBarRef {
+    /// See [`RoomInputBar::enable_send_message_button()`]
     pub fn enable_send_message_button(&self, cx: &mut Cx, enable: bool) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.enable_send_message_button(cx, enable);
+        }
+    }
+
+    /// Returns true if the TSP signing checkbox is checked, false otherwise.
+    ///
+    /// If TSP is not enabled, this will always return false.
+    pub fn is_tsp_signing_enabled(&self, _cx: &mut Cx) -> bool {
+        #[cfg(not(feature = "tsp"))] {
+            false
+        }
+
+        #[cfg(feature = "tsp")] {
+            self.borrow().as_ref().is_some_and(|inner|
+                inner.view.check_box(id!(tsp_sign_checkbox)).active(_cx)
+            )
         }
     }
 }

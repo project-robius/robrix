@@ -12,7 +12,7 @@ keywords = ["matrix", "chat", "client", "robrix", "robius"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/project-robius/robrix"
-version = "0.0.1-pre-alpha-3"
+version = "0.0.1-pre-alpha-4"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
@@ -109,6 +109,20 @@ sqlx = { git = "https://github.com/project-robius/sqlx.git", branch = "update_li
 askar-storage = { git = "https://github.com/openwallet-foundation/askar.git", rev = "0b919bb58205416df7cd2cc1a24ce52373cbe105" }
 
 
+## This is a temporary patch to add the TSP signature field to the `RoomMessageEventContent` type.
+##
+## Technically this is only needed when the `tsp` feature is enabled,
+## but Cargo does not support conditional patching based on features,
+## and it doesn't hurt anything to always use this patched version of ruma-events.
+##
+## Once the matrix-sdk-ui crate (and the Timeline type) supports sending/receiving custom messages,
+## we can create our own custom event type that includes the TSP signature,
+## and then we won't need to patch ruma-events anymore.
+## But that is a significant amount of work, so for now we just patch ruma-events.
+[patch."https://github.com/ruma/ruma"]
+ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
+
+
 [package.metadata.docs.rs]
 all-features = true
 
@@ -192,7 +206,7 @@ minimum_system_version = "11.0"
 frameworks = [ ]
 info_plist_path = "./packaging/Info.plist"
 entitlements = "./packaging/Entitlements.plist"
-signing_identity = "-"
+signing_identity = "Developer ID Application: AppChef Inc. (SFVQ5V48GD)"
 
 
 ## Configuration for `cargo packager`'s generation of a macOS `.dmg`.

@@ -67,4 +67,12 @@ live_design! {
     pub TspVerificationModal = <View> {
         visible: false
     }
+
+    pub TspSignAnycastCheckbox = <View> {
+        visible: false
+    }
+
+    pub TspSignIndicator = <View> {
+        visible: false
+    }
 }

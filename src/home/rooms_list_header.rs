@@ -94,7 +94,6 @@ impl Widget for RoomsListHeader {
                         if self.sync_state == State::Offline {
                             continue;
                         }
-                        log!("Setting the RoomsListHeader to syncing: {}.", *is_syncing);
                         self.view.view(id!(loading_spinner)).set_visible(cx, *is_syncing);
                         self.view.view(id!(synced_icon)).set_visible(cx, !*is_syncing);
                         self.view.view(id!(offline_icon)).set_visible(cx, false);
@@ -104,7 +103,7 @@ impl Widget for RoomsListHeader {
                         if &self.sync_state == new_state {
                             continue;
                         }
-                        
+
                         // Only show offline notification for actual connection errors
                         // States like Idle and Running are normal and shouldn't trigger error popups
                         if matches!(new_state, State::Error | State::Terminated | State::Offline) {
@@ -126,7 +125,7 @@ impl Widget for RoomsListHeader {
                 }
             }
         }
-        
+
         self.view.handle_event(cx, event, scope);
     }
 

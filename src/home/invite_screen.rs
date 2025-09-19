@@ -356,7 +356,7 @@ impl Widget for InviteScreen {
                     Some(LeaveRoomAction::Left { room_id }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::RoomLeft;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification(PopupItem { message: "Successfully rejected invite.".into(), kind: PopupKind::Success, auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem { message: "Successfully rejected invite.".into(), kind: PopupKind::Success, auto_dismissal_duration: Some(5.0) });
                         }
                         continue;
                     }
