@@ -7,7 +7,7 @@ use crate::{
     room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, RoomPreviewAvatar},
     shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
     jump_to_bottom_button::UnreadMessageCount, room_filter_input_bar::RoomFilterAction},
-    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}, utils::avatar_from_room_name,
+    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection},
 };
 use super::room_preview::RoomPreviewAction;
 

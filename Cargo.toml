@@ -12,7 +12,7 @@ keywords = ["matrix", "chat", "client", "robrix", "robius"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/project-robius/robrix"
-version = "0.0.1-pre-alpha-3"
+version = "0.0.1-pre-alpha-4"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
@@ -78,6 +78,9 @@ blurhash = { version = "0.2.3", default-features = false }
 tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", optional = true, features = ["async", "resolve"] }
 # tsp_sdk = { version = "0.8.0", optional = true, default-features = false, features = ["async", "resolve"] }
 quinn = { version = "0.11.8", default-features = false, optional = true }
+## We only include this such that we can specify the prebuilt-nasm features,
+## which is required to build this on Windows x86_64 without having to install NASM separately.
+aws-lc-rs ={ version = "1.13", optional = true, features = ["prebuilt-nasm"] }
 percent-encoding = { version = "2.3", optional = true }
 ## The following reqwest features were taken from the tsp_sdk's `Cargo.toml` file.
 ## I'm not sure if all of them are actually needed.
@@ -94,7 +97,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 [features]
 default = []
 ## Enables experimental support for using TSP wallets.
-tsp = ["dep:tsp_sdk", "dep:quinn", "dep:percent-encoding"]
+tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding"]
 
 ## Hides the command prompt console on Windows.
 hide_windows_console = []
@@ -125,6 +128,21 @@ sqlx = { git = "https://github.com/project-robius/sqlx.git", branch = "update_li
 ## more specifically, the updated `libsqlite3-sys` version (0.31.0).
 ## See <https://github.com/openwallet-foundation/askar/pull/386>
 askar-storage = { git = "https://github.com/openwallet-foundation/askar.git", rev = "0b919bb58205416df7cd2cc1a24ce52373cbe105" }
+
+
+## This is a temporary patch to add the TSP signature field to the `RoomMessageEventContent` type.
+##
+## Technically this is only needed when the `tsp` feature is enabled,
+## but Cargo does not support conditional patching based on features,
+## and it doesn't hurt anything to always use this patched version of ruma-events.
+##
+## Once the matrix-sdk-ui crate (and the Timeline type) supports sending/receiving custom messages,
+## we can create our own custom event type that includes the TSP signature,
+## and then we won't need to patch ruma-events anymore.
+## But that is a significant amount of work, so for now we just patch ruma-events.
+[patch."https://github.com/ruma/ruma"]
+ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
+
 
 [package.metadata.docs.rs]
 all-features = true
@@ -209,7 +227,7 @@ minimum_system_version = "11.0"
 frameworks = [ ]
 info_plist_path = "./packaging/Info.plist"
 entitlements = "./packaging/Entitlements.plist"
-signing_identity = "-"
+signing_identity = "Developer ID Application: AppChef Inc. (SFVQ5V48GD)"
 
 
 ## Configuration for `cargo packager`'s generation of a macOS `.dmg`.
