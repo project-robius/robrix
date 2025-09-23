@@ -7,8 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    room::{reply::{EnforceThread, Reply}, RoomMember},
-    ruma::{
+    room::{reply::{EnforceThread, Reply}, RoomMember}, ruma::{
         events::{
             receipt::Receipt,
             room::{
@@ -20,8 +19,7 @@ use matrix_sdk::{
             sticker::{StickerEventContent, StickerMediaSource},
         },
         matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
-    },
-    OwnedServerName, SuccessorRoom
+    }, OwnedServerName, SuccessorRoom
 };
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
@@ -33,7 +31,7 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -708,8 +706,10 @@ live_design! {
 
                 // Below that, display a preview of the current location that a user is about to send.
                 location_preview = <LocationPreview> { }
+
                 // Below that, display a button that allows the user to go to the successor room, if there is one.
                 tombstone_footer = <TombstoneFooter> { }
+
                 // Below that, display one of multiple possible views:
                 // * the message input bar
                 // * the slide-up editing pane
@@ -2318,12 +2318,20 @@ impl RoomScreen {
         let (mut tl_state, mut is_first_time_being_loaded) = if let Some(existing) = state_opt {
             (existing, false)
         } else {
-            let Some((update_sender, update_receiver, request_sender, tombstone_info)) = take_timeline_endpoints(&room_id) else {
+            let Some(timeline_endpoints) = take_timeline_endpoints(&room_id) else {
                 if !self.is_loaded && self.all_rooms_loaded {
-                    panic!("BUG: timeline is not loaded, but room_id {:?} was not waiting for its timeline to be loaded.", room_id);
+                    panic!("BUG: timeline is not loaded, but room_id {:?} \
+                    was not waiting for its timeline to be loaded.", room_id);
                 }
                 return;
             };
+            let TimelineEndpoints {
+                update_receiver,
+                update_sender,
+                request_sender,
+                successor_room,
+            } = timeline_endpoints;
+
             let tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // Initially, we assume the user has all power levels by default.
@@ -2348,7 +2356,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
-                tombstone_info,
+                tombstone_info: successor_room,
             };
             (tl_state, true)
         };
@@ -2428,8 +2436,10 @@ impl RoomScreen {
 
         // Now, restore the visual state of this timeline from its previously-saved state.
         self.restore_state(cx, &mut tl_state);
-        // Now, show the tl_state's tombstone info by displaying the tombstone footer.
+
+        // Show or hide the tombstone footer based on the timeline's UI state.
         self.show_tombstone_footer(cx, &tl_state);
+
         // As the final step, store the tl_state for this room into this RoomScreen widget,
         // such that it can be accessed in future event/draw handlers.
         self.tl_state = Some(tl_state);

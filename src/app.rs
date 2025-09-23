@@ -324,8 +324,7 @@ impl MatchEvent for App {
                     // Check if successor room is loaded, if not show join modal
                     let rooms_list_ref = cx.get_global::<RoomsListRef>();
                     if !rooms_list_ref.is_room_loaded(&destination_room_detail.room_id) {
-                        log!(
-                            "Destination room {} not loaded, showing join modal",
+                        log!("Destination room {} not loaded, showing join modal",
                             destination_room_detail.room_id
                         );
                         // Show join room modal for the successor room
@@ -335,47 +334,41 @@ impl MatchEvent for App {
                         continue;
                     }
 
-                    let new_selected_room = SelectedRoom::JoinedRoom {
-                        room_id: OwnedRoomIdRon(destination_room_detail.room_id.clone()),
-                        room_name: destination_room_detail.room_name.clone(),
-                    };
-
-                    log!(
-                        "Navigating from room: {} to destination room: {}",
+                    log!("Navigating from room: {} to destination room: {}",
                         current_room_id,
                         destination_room_detail.room_id
                     );
-                    
-                    // For mobile UI, navigate back to the root view.
-                    cx.widget_action(
-                        self.ui.widget_uid(),
-                        &Scope::default().path,
-                        StackNavigationAction::PopToRoot,
-                    );
+
+                    // Select and scroll to the destination room in the rooms list.
+                    let new_selected_room = SelectedRoom::JoinedRoom {
+                        room_id: destination_room_detail.room_id.clone().into(),
+                        room_name: destination_room_detail.room_name.clone(),
+                    };
+                    enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room_detail.room_id));
                     cx.widget_action(
                         self.ui.widget_uid(),
                         &Scope::default().path,
                         RoomsListAction::Selected(new_selected_room),
                     );
-                    enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(current_room_id.clone()));
-                    if let Some(tab_id) =
-                        self.app_state.saved_dock_state.open_rooms.iter().find_map(
-                            |(tab_id, room)| {
-                                if room.room_id() == &current_room_id {
-                                    Some(*tab_id)
-                                } else {
-                                    None
-                                }
-                            },
-                        )
+
+                    // Close the current room.
+                    // For the mobile UI, navigate back to the root view.
+                    // For the desktop UI, close the current room's tab if it's open.
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        &Scope::default().path,
+                        StackNavigationAction::PopToRoot,
+                    );
+                    if let Some(tab_id) = self.app_state.saved_dock_state.open_rooms.iter()
+                        .find_map(|(tab_id, room)| (room.room_id() == &current_room_id).then_some(*tab_id))
                     {
-                        // For desktop UI, close the tab.
                         cx.widget_action(
                             self.ui.widget_uid(),
                             &Scope::default().path,
                             DockAction::TabCloseWasPressed(tab_id),
                         );
                     }
+
                     continue;
                 }
                 _ => {}
