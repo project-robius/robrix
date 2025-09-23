@@ -13,7 +13,7 @@ use matrix_sdk::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
         }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState, SuccessorRoom
 };
 use matrix_sdk_ui::{
     room_list_service::{RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RoomExt, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
@@ -23,7 +23,6 @@ use tokio::{
     runtime::Handle,
     sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
-use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
 use std::io;
@@ -51,7 +50,7 @@ use crate::{
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{enqueue_popup_notification, PopupItem, PopupKind}
     },
-    utils::{self, AVATAR_THUMBNAIL_FORMAT},
+    utils::{self, avatar_from_room_name, AVATAR_THUMBNAIL_FORMAT},
     verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -1365,6 +1364,14 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
 /// to the corresponding background async task for that room (its `timeline_subscriber_handler`).
 pub type TimelineRequestSender = watch::Sender<Vec<BackwardsPaginateUntilEventRequest>>;
 
+/// The return type for `take_timeline_endpoints`, containing timeline channels and successor room info.
+pub type TimelineEndpoints = (
+    crossbeam_channel::Sender<TimelineUpdate>,
+    crossbeam_channel::Receiver<TimelineUpdate>,
+    TimelineRequestSender,
+    Option<SuccessorRoom>,
+);
+
 
 /// Backend-specific details about a joined room that our client currently knows about.
 struct JoinedRoomDetails {
@@ -1393,7 +1400,7 @@ struct JoinedRoomDetails {
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
     /// The ID of the old tombstoned room that this room has replaced, if any.
-    replaces_tombstoned_room: Option<OwnedRoomId>,
+    replaces_tombstoned_room: Option<SuccessorRoom>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
@@ -1403,7 +1410,7 @@ impl Drop for JoinedRoomDetails {
         if let Some(replaces_tombstoned_room) = self.replaces_tombstoned_room.take() {
             TOMBSTONED_ROOMS.lock().unwrap().insert(
                 self.room_id.clone(),
-                replaces_tombstoned_room,
+                (replaces_tombstoned_room.room_id, replaces_tombstoned_room.reason),
             );
         }
     }
@@ -1415,9 +1422,9 @@ static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex
 
 /// Information about all of the rooms that have been tombstoned.
 ///
-/// The map key is the **NEW** replacement room ID, and the value is the **OLD** tombstoned room ID.
+/// The map key is the **NEW** successor room ID, and the value is the **OLD** tombstoned room ID and the reason.
 /// This allows us to quickly query if a newly-encountered room is a replacement for an old tombstoned room.
-static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
+static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, (OwnedRoomId, Option<String>)>> = Mutex::new(BTreeMap::new());
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
@@ -1467,17 +1474,36 @@ pub fn is_user_ignored(user_id: &UserId) -> bool {
 /// This will only succeed once per room, as only a single channel receiver can exist.
 pub fn take_timeline_endpoints(
     room_id: &OwnedRoomId,
-) -> Option<(
-        crossbeam_channel::Sender<TimelineUpdate>,
-        crossbeam_channel::Receiver<TimelineUpdate>,
-        TimelineRequestSender,
-    )>
+) -> Option<TimelineEndpoints>
 {
+    let mut retrieved_successor_room = None;
+    for (room_id_key, joined_room_details) in ALL_JOINED_ROOMS.lock().unwrap().iter() {
+        if let Some(successor_room) = &joined_room_details.replaces_tombstoned_room {
+            if successor_room.room_id == *room_id {
+                retrieved_successor_room = Some(SuccessorRoom {
+                    room_id: room_id_key.clone(),
+                    reason: successor_room.reason.clone(),
+                });
+                break;
+            }
+        }
+    }
+    if retrieved_successor_room.is_none() {
+        for (new_successor_room_id_key, (old_room, reason)) in TOMBSTONED_ROOMS.lock().unwrap().iter() {
+            if old_room == room_id {
+                retrieved_successor_room = Some(SuccessorRoom {
+                    room_id: new_successor_room_id_key.clone(),
+                    reason: reason.clone(),
+                });
+                break;
+            }
+        }
+    }
     ALL_JOINED_ROOMS.lock().unwrap()
         .get_mut(room_id)
         .and_then(|ri| ri.timeline_singleton_endpoints.take()
             .map(|(receiver, request_sender)| {
-                (ri.timeline_update_sender.clone(), receiver, request_sender)
+                (ri.timeline_update_sender.clone(), receiver, request_sender, retrieved_successor_room)
             })
         )
 }
@@ -2069,24 +2095,22 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
     room_list_service.subscribe_to_rooms(&[&room_id]);
 
     // Do not add tombstoned rooms to the rooms list; they require special handling.
-    if let Some(tombstoned_info) = room.successor_room() {
-        log!("Room {room_id} has been tombstoned: {tombstoned_info:#?}");
+    if let Some(successor_room) = room.successor_room() {
+        log!("Room {room_id} has been tombstoned: {successor_room:#?}");
         // Since we don't know the order in which we'll learn about new rooms,
         // we need to first check to see if the replacement for this tombstoned room
-        // refers to an already-known room as its replacement.
-        // If so, we can immediately update the replacement room's room info
+        // refers to an already-known room as its successor.
+        // If so, we can immediately update the successor room's room info
         // to indicate that it replaces this tombstoned room.
-        let replacement_room_id = tombstoned_info.room_id;
-        if let Some(room_info) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&replacement_room_id) {
-            room_info.replaces_tombstoned_room = Some(replacement_room_id.clone());
+        if let Some(room_info) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&room_id) {
+            room_info.replaces_tombstoned_room = Some(successor_room);
         }
-        // But if we don't know about the replacement room yet, we need to save this tombstoned room
-        // in a separate list so that the replacement room we will discover in the future
+        // But if we don't know about the successor room yet, we need to save this tombstoned room
+        // in a separate list so that the successor room we will discover in the future
         // can know which old tombstoned room it replaces (see the bottom of this function).
         else {
-            TOMBSTONED_ROOMS.lock().unwrap().insert(replacement_room_id, room_id.clone());
+            TOMBSTONED_ROOMS.lock().unwrap().insert(successor_room.room_id, (room_id.clone(), successor_room.reason));
         }
-        return Ok(());
     }
 
     let timeline = Arc::new(
@@ -2125,7 +2149,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
             timeline_update_sender,
             timeline_subscriber_handler_task,
             typing_notice_subscriber: None,
-            replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
+            replaces_tombstoned_room: tombstoned_room_replaced_by_this_room.map(|(room_id, reason)| SuccessorRoom { room_id, reason }),
         },
     );
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can
@@ -2145,6 +2169,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         has_been_paginated: false,
         is_selected: false,
         is_direct,
+        is_tombstoned: room.is_tombstoned() || room.tombstone_content().is_some(),
     }));
 
     Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_id));
@@ -2707,6 +2732,35 @@ fn update_latest_event(
                         }
                     }
                 }
+                // Check for room tombstone status changes.
+                AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content, prev_content: _ }) => {
+                    {
+                        let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                        let mut tombstoned_rooms = TOMBSTONED_ROOMS.lock().unwrap();
+                        if let Some(room_info) = all_joined_rooms.get_mut(&content.replacement_room) {
+                            room_info.replaces_tombstoned_room = Some(SuccessorRoom { room_id: room_id.clone(), reason: Some(content.body.clone()) });
+                        } else {
+                            tombstoned_rooms.insert(content.replacement_room.clone(), (room_id.clone(), Some(content.body.clone())));
+                        }
+                    }
+                    enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room_id.clone() });
+                    if let (Some(sender), Some(room)) = (
+                        timeline_update_sender,
+                        get_client()
+                            .unwrap()
+                            .get_room(&room_id)
+                            .and_then(|room| room.successor_room()),
+                    ) {
+                        match sender.send(TimelineUpdate::Tombstoned(Some(room))) {
+                            Ok(_) => {
+                                SignalToUI::set_ui_signal();
+                            }
+                            Err(e) => {
+                                error!("Failed to send the new Tombstone event: {e}");
+                            }
+                        }
+                    }
+                }
                 _ => { }
             }
         }
@@ -2759,21 +2813,9 @@ async fn room_avatar(room: &Room, room_name: Option<&str>) -> RoomPreviewAvatar 
                     }
                 }
             }
-            avatar_from_room_name(room_name)
+            utils::avatar_from_room_name(room_name)
         }
     }
-}
-
-/// Returns a text avatar string containing the first character of the room name.
-///
-/// Skips the first character if it is a `#` or `!`, the sigils used for Room aliases and Room IDs.
-fn avatar_from_room_name(room_name: Option<&str>) -> RoomPreviewAvatar {
-    let first = room_name.and_then(|rn| rn
-        .graphemes(true)
-        .find(|&g| g != "#" && g != "!")
-        .map(ToString::to_string)
-    ).unwrap_or_else(|| String::from("?"));
-    RoomPreviewAvatar::Text(first)
 }
 
 /// Spawn an async task to login to the given Matrix homeserver using the given SSO identity provider ID.

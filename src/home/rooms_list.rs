@@ -155,6 +155,12 @@ pub enum RoomsListUpdate {
     Status {
         status: String,
     },
+    /// Mark the given room as tombstoned.
+    TombstonedRoom {
+        room_id: OwnedRoomId
+    },
+    /// Scroll to the given room.
+    ScrollToRoom(OwnedRoomId),
 }
 
 static PENDING_ROOM_UPDATES: SegQueue<RoomsListUpdate> = SegQueue::new();
@@ -218,6 +224,8 @@ pub struct JoinedRoomInfo {
     pub is_selected: bool,
     /// Whether this a direct room.
     pub is_direct: bool,
+    /// Whether this room is tombstoned (shut down and replaced with a successor room).
+    pub is_tombstoned: bool,
 }
 
 /// UI-related info about a room that the user has been invited to.
@@ -529,6 +537,55 @@ impl RoomsList {
                 RoomsListUpdate::Status { status } => {
                     self.status = status;
                 }
+                RoomsListUpdate::TombstonedRoom { room_id } => {
+                    if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
+                        let was_displayed = (self.display_filter)(room);
+                        room.is_tombstoned = true;
+                        let should_display = (self.display_filter)(room);
+                        match (was_displayed, should_display) {
+                            // No need to update the displayed rooms list.
+                            (true, true) | (false, false) => { }
+                            // Room was displayed but should no longer be displayed.
+                            (true, false) => {
+                                if room.is_direct {
+                                    self.displayed_direct_rooms.iter()
+                                        .position(|r| r == &room_id)
+                                        .map(|index| self.displayed_direct_rooms.remove(index));
+                                } else {
+                                    self.displayed_regular_rooms.iter()
+                                        .position(|r| r == &room_id)
+                                        .map(|index| self.displayed_regular_rooms.remove(index));
+                                }
+                            }
+                            // Room was not displayed but should now be displayed.
+                            (false, true) => {
+                                if room.is_direct {
+                                    self.displayed_direct_rooms.push(room_id);
+                                } else {
+                                    self.displayed_regular_rooms.push(room_id);
+                                }
+                            }
+                        }
+                    } else {
+                        warning!("Warning: couldn't find room {room_id} to update the tombstone status");
+                    }
+                }
+                RoomsListUpdate::ScrollToRoom(room_id) => {
+                    let portal_list = self.view.portal_list(id!(list));
+                    let speed = 50.0;
+                    // Check if the room is in displayed_direct_rooms
+                    if let Some(direct_index) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
+                        let (_, direct_rooms_indexes, _) = self.calculate_indexes();
+                        let portal_list_index = direct_rooms_indexes.first_room_index + direct_index;
+                        portal_list.smooth_scroll_to(cx, portal_list_index, speed, None);
+                    }
+                    // Check if the room is in displayed_regular_rooms
+                    else if let Some(regular_index) = self.displayed_regular_rooms.iter().position(|r| r == &room_id) {
+                        let (_, _, regular_rooms_indexes) = self.calculate_indexes();
+                        let portal_list_index = regular_rooms_indexes.first_room_index + regular_index;
+                        portal_list.smooth_scroll_to(cx, portal_list_index, speed, None);
+                    }
+                }
             }
         }
         if num_updates > 0 {
@@ -729,6 +786,16 @@ impl RoomsList {
             direct_rooms_indexes,
             regular_rooms_indexes,
         )
+    }
+
+    /// Returns a room's avatar and displayable name.
+    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
+        self.all_joined_rooms.get(room_id)
+            .map(|room_info| (room_info.avatar.clone(), room_info.room_name.clone()))
+            .or_else(|| {
+                self.invited_rooms.borrow().get(room_id)
+                    .map(|room_info| (room_info.room_avatar.clone(), room_info.room_name.clone()))
+            })
     }
 }
 
@@ -979,6 +1046,12 @@ impl RoomsListRef {
             return false;
         };
         inner.is_room_loaded(room_id)
+    }
+
+    /// See [`RoomsList::get_room_avatar_and_name()`].
+    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
+        let inner = self.borrow()?;
+        inner.get_room_avatar_and_name(room_id)
     }
 }
 pub struct RoomsListScopeProps {

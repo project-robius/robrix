@@ -13,11 +13,10 @@ use crate::{
         main_desktop_ui::MainDesktopUiAction,
         new_message_context_menu::NewMessageContextMenuWidgetRefExt,
         room_screen::{clear_timeline_states, MessageAction},
-        rooms_list::{clear_all_invited_rooms, RoomsListAction},
+        rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate},
     }, join_leave_room_modal::{
-        JoinLeaveRoomModalAction,
-        JoinLeaveRoomModalWidgetRefExt,
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, shared::callout_tooltip::{
+        JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::callout_tooltip::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
@@ -321,6 +320,64 @@ impl MatchEvent for App {
                     }
                     continue;
                 }
+                AppStateAction::NavigateToRoom { current_room_id, destination_room_detail } => {
+                    // Check if successor room is loaded, if not show join modal
+                    let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                    if !rooms_list_ref.is_room_loaded(&destination_room_detail.room_id) {
+                        log!(
+                            "Destination room {} not loaded, showing join modal",
+                            destination_room_detail.room_id
+                        );
+                        // Show join room modal for the successor room
+                        cx.action(JoinLeaveRoomModalAction::Open(
+                            JoinLeaveModalKind::JoinRoom(destination_room_detail.clone()),
+                        ));
+                        continue;
+                    }
+
+                    let new_selected_room = SelectedRoom::JoinedRoom {
+                        room_id: OwnedRoomIdRon(destination_room_detail.room_id.clone()),
+                        room_name: destination_room_detail.room_name.clone(),
+                    };
+
+                    log!(
+                        "Navigating from room: {} to destination room: {}",
+                        current_room_id,
+                        destination_room_detail.room_id
+                    );
+                    
+                    // For mobile UI, navigate back to the root view.
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        &Scope::default().path,
+                        StackNavigationAction::PopToRoot,
+                    );
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        &Scope::default().path,
+                        RoomsListAction::Selected(new_selected_room),
+                    );
+                    enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(current_room_id.clone()));
+                    if let Some(tab_id) =
+                        self.app_state.saved_dock_state.open_rooms.iter().find_map(
+                            |(tab_id, room)| {
+                                if room.room_id() == &current_room_id {
+                                    Some(*tab_id)
+                                } else {
+                                    None
+                                }
+                            },
+                        )
+                    {
+                        // For desktop UI, close the tab.
+                        cx.widget_action(
+                            self.ui.widget_uid(),
+                            &Scope::default().path,
+                            DockAction::TabCloseWasPressed(tab_id),
+                        );
+                    }
+                    continue;
+                }
                 _ => {}
             }
 
@@ -617,5 +674,11 @@ pub enum AppStateAction {
     ///
     /// The RoomScreen for this room can now fully display the room's timeline.
     RoomLoadedSuccessfully(OwnedRoomId),
+    /// Navigate to the room.
+    /// Contains the current room ID and destination room's room details.
+    NavigateToRoom {
+        current_room_id: OwnedRoomId,
+        destination_room_detail: BasicRoomDetails,
+    },
     None,
 }
