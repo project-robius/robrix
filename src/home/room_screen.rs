@@ -2305,6 +2305,8 @@ impl RoomScreen {
                 }
                 return;
             };
+            // Accessing the actual Matrix client object from the UI thread shouldn't really be done unless it's unavoidable.
+            // TODO: In the future PR, perhaps by redesigning take_timeline_endpoints() to return tombstone state
             let Some(client) = get_client() else { return };
             let tombstone_info = client.get_room(&room_id)
                 .and_then(|room| room.successor_room());
@@ -2413,7 +2415,7 @@ impl RoomScreen {
         // Now, restore the visual state of this timeline from its previously-saved state.
         self.restore_state(cx, &mut tl_state);
         // Now, process the tl_state's tombstone info to show/hide the tombstone footer.
-        self.process_tombstone_footer(cx, &tl_state);
+        self.show_tombstone_footer(cx, &tl_state);
         // As the final step, store the tl_state for this room into this RoomScreen widget,
         // such that it can be accessed in future event/draw handlers.
         self.tl_state = Some(tl_state);
@@ -2643,7 +2645,7 @@ impl RoomScreen {
 
     /// If the current room is tombstoned, show the tombstone footer and hide the message input bar.
     /// Otherwise, hide the tombstone footer and show the message input bar.
-    fn process_tombstone_footer(&mut self, cx: &mut Cx, tl_state: &TimelineUiState) {
+    fn show_tombstone_footer(&mut self, cx: &mut Cx, tl_state: &TimelineUiState) {
         if let Some(tombstone_info) = &tl_state.tombstone_info {
             self.view.tombstone_footer(id!(tombstone_footer)).show(cx, &tl_state.room_id, tombstone_info);
             self.view.view(id!(message_input_view)).set_visible(cx, false);

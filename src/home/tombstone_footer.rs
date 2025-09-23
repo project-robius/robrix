@@ -43,7 +43,6 @@ live_design! {
                 text_style: <REGULAR_TEXT>{font_size: 11}
                 wrap: Word,
             }
-            text: "This room has been replaced and is no longer active."
         }
         <View> {
             width: Fill, height: Fit,
@@ -53,7 +52,7 @@ live_design! {
                 align: {y: 0.5}
                 padding: 15,
                 draw_icon: {
-                    svg_file: (ICON_TOMBSTONE)
+                    svg_file: (ICON_ADD)
                     color: (COLOR_FG_ACCEPT_GREEN),
                 }
                 icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
@@ -106,9 +105,6 @@ pub struct TombstoneFooter {
 
 impl Widget for TombstoneFooter {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if !self.visible {
-            return;
-        }
         if let Event::Actions(actions) = event {
             if self
                 .view
@@ -122,9 +118,6 @@ impl Widget for TombstoneFooter {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if !self.visible {
-            return DrawStep::done();
-        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -132,10 +125,10 @@ impl Widget for TombstoneFooter {
 impl TombstoneFooter {
     /// Sets the tombstone information to be displayed by this screen.
     pub fn show(&mut self, cx: &mut Cx, room_id: &OwnedRoomId, successor_room: &SuccessorRoom) {
-        self.visible = true;
+        self.set_visible(cx, true);
         self.room_id = Some(room_id.clone());
         self.view.label(id!(replacement_reason))
-            .set_text(cx, successor_room.reason.as_deref().unwrap_or_default());
+            .set_text(cx, successor_room.reason.as_deref().unwrap_or("This room has been replaced and is no longer active."));
         let rooms_list_ref = cx.get_global::<RoomsListRef>();
         let Some((successor_avatar_preview, room_name)) = rooms_list_ref
             .get_room_avatar_and_name(&successor_room.room_id) else {
@@ -189,11 +182,11 @@ impl TombstoneFooter {
             return;
         };
 
-        // Trigger the NavigateToSuccessorRoom action which handles all the widget actions
+        // Trigger the NavigateToRoom action which handles all the widget actions
         cx.widget_action(
             self.widget_uid(),
             &scope.path,
-            AppStateAction::NavigateToSuccessorRoom {
+            AppStateAction::NavigateToRoom {
                 current_room_id: room_id.clone(),
                 successor_room_detail: successor_room_detail.clone(),
             }
@@ -202,7 +195,7 @@ impl TombstoneFooter {
 
     /// Hides the tombstone footer, making it invisible and clearing any successor room information.
     fn hide(&mut self, cx: &mut Cx) {
-        self.visible = false;
+        self.set_visible(cx, false);
         self.successor_info = None;
         self.view
             .label_set(ids![replacement_reason, successor_room_name])

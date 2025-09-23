@@ -314,7 +314,7 @@ impl MatchEvent for App {
                     }
                     continue;
                 }
-                AppStateAction::NavigateToSuccessorRoom { current_room_id, successor_room_detail } => {
+                AppStateAction::NavigateToRoom { current_room_id, successor_room_detail } => {
                     // Check if successor room is loaded, if not show join modal
                     let rooms_list_ref = cx.get_global::<RoomsListRef>();
                     if !rooms_list_ref.is_room_loaded(&successor_room_detail.room_id) {
@@ -653,7 +653,7 @@ pub enum AppStateAction {
     RoomLoadedSuccessfully(OwnedRoomId),
     /// Navigate to the successor room of a tombstoned room.
     /// Contains the current tombstoned room ID and successor room details.
-    NavigateToSuccessorRoom {
+    NavigateToRoom {
         current_room_id: OwnedRoomId,
         successor_room_detail: BasicRoomDetails,
     },

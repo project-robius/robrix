@@ -572,17 +572,18 @@ impl RoomsList {
                 }
                 RoomsListUpdate::ScrollToRoom(room_id) => {
                     let portal_list = self.view.portal_list(id!(list));
+                    let speed = 50.0;
                     // Check if the room is in displayed_direct_rooms
                     if let Some(direct_index) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
                         let (_, direct_rooms_indexes, _) = self.calculate_indexes();
                         let portal_list_index = direct_rooms_indexes.first_room_index + direct_index;
-                        portal_list.set_first_id_and_scroll(portal_list_index, 0.0);
+                        portal_list.smooth_scroll_to(cx, portal_list_index, speed, None);
                     }
                     // Check if the room is in displayed_regular_rooms
                     else if let Some(regular_index) = self.displayed_regular_rooms.iter().position(|r| r == &room_id) {
                         let (_, _, regular_rooms_indexes) = self.calculate_indexes();
                         let portal_list_index = regular_rooms_indexes.first_room_index + regular_index;
-                        portal_list.set_first_id_and_scroll(portal_list_index, 0.0);
+                        portal_list.smooth_scroll_to(cx, portal_list_index, speed, None);
                     }
                 }
             }
@@ -789,19 +790,12 @@ impl RoomsList {
 
     /// Returns information about room avatar and room namegiven its room ID.
     pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
-        let room_avatar = self.all_joined_rooms.get(room_id)
-            .map(|room_info| room_info.avatar.clone())
+        self.all_joined_rooms.get(room_id)
+            .map(|room_info| (room_info.avatar.clone(), room_info.room_name.clone()))
             .or_else(|| {
                 self.invited_rooms.borrow().get(room_id)
-                    .map(|room_info| room_info.room_avatar.clone())
-            });
-        let room_name = self.all_joined_rooms.get(room_id)
-            .map(|room_info| room_info.room_name.clone())
-            .or_else(|| {
-                self.invited_rooms.borrow().get(room_id)
-                    .map(|room_info| room_info.room_name.clone())
-            }).and_then(|room_name| room_name);
-        Some((room_avatar.unwrap_or_else(|| avatar_from_room_name(room_name.as_deref())), room_name))
+                    .map(|room_info| (room_info.room_avatar.clone(), room_info.room_name.clone()))
+            })
     }
 }
 
