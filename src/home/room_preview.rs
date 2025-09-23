@@ -26,11 +26,11 @@ live_design! {
         visible: false,
 
         <Icon> {
-            width: 25, height: 25,
+            width: 19, height: 19,
             align: {x: 0.5, y: 0.5}
             draw_icon: {
                 svg_file: (ICON_TOMBSTONE)
-                color: (COLOR_FG_DISABLED)
+                color: (COLOR_FG_DANGER_RED)
             }
             icon_walk: { width: 15, height: 15 }
         }

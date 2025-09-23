@@ -1365,13 +1365,12 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
 pub type TimelineRequestSender = watch::Sender<Vec<BackwardsPaginateUntilEventRequest>>;
 
 /// The return type for `take_timeline_endpoints`, containing timeline channels and successor room info.
-pub type TimelineEndpoints = (
-    crossbeam_channel::Sender<TimelineUpdate>,
-    crossbeam_channel::Receiver<TimelineUpdate>,
-    TimelineRequestSender,
-    Option<SuccessorRoom>,
-);
-
+pub struct TimelineEndpoints {
+    pub update_sender: crossbeam_channel::Sender<TimelineUpdate>,
+    pub update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
+    pub request_sender: TimelineRequestSender,
+    pub successor_room: Option<SuccessorRoom>,
+}
 
 /// Backend-specific details about a joined room that our client currently knows about.
 struct JoinedRoomDetails {
@@ -1476,36 +1475,44 @@ pub fn take_timeline_endpoints(
     room_id: &OwnedRoomId,
 ) -> Option<TimelineEndpoints>
 {
-    let mut retrieved_successor_room = None;
-    for (room_id_key, joined_room_details) in ALL_JOINED_ROOMS.lock().unwrap().iter() {
-        if let Some(successor_room) = &joined_room_details.replaces_tombstoned_room {
-            if successor_room.room_id == *room_id {
-                retrieved_successor_room = Some(SuccessorRoom {
-                    room_id: room_id_key.clone(),
-                    reason: successor_room.reason.clone(),
-                });
-                break;
+    let get_successor_room = |all_joined_rooms: &BTreeMap<OwnedRoomId, JoinedRoomDetails>| {
+        for (room_id_key, joined_room_details) in all_joined_rooms.iter() {
+            if let Some(successor_room) = &joined_room_details.replaces_tombstoned_room {
+                if successor_room.room_id == *room_id {
+                    return Some(SuccessorRoom {
+                        room_id: room_id_key.clone(),
+                        reason: successor_room.reason.clone(),
+                    });
+                }
             }
         }
-    }
-    if retrieved_successor_room.is_none() {
         for (new_successor_room_id_key, (old_room, reason)) in TOMBSTONED_ROOMS.lock().unwrap().iter() {
             if old_room == room_id {
-                retrieved_successor_room = Some(SuccessorRoom {
+                return Some(SuccessorRoom {
                     room_id: new_successor_room_id_key.clone(),
                     reason: reason.clone(),
                 });
-                break;
             }
         }
-    }
-    ALL_JOINED_ROOMS.lock().unwrap()
+        None
+    };
+
+    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+    all_joined_rooms
         .get_mut(room_id)
-        .and_then(|ri| ri.timeline_singleton_endpoints.take()
-            .map(|(receiver, request_sender)| {
-                (ri.timeline_update_sender.clone(), receiver, request_sender, retrieved_successor_room)
-            })
+        .and_then(|jrd| jrd.timeline_singleton_endpoints.take()
+            .map(|(update_receiver, request_sender)|
+                (jrd.timeline_update_sender.clone(), update_receiver, request_sender)
+            )
         )
+        .map(|(update_sender, update_receiver, request_sender)| {
+            TimelineEndpoints {
+                update_sender,
+                update_receiver,
+                request_sender,
+                successor_room: get_successor_room(&all_joined_rooms),
+            }
+        })
 }
 
 const DEFAULT_HOMESERVER: &str = "matrix.org";
