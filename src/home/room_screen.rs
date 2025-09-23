@@ -7,8 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    room::{reply::{EnforceThread, Reply}, RoomMember},
-    ruma::{
+    room::{reply::{EnforceThread, Reply}, RoomMember}, ruma::{
         events::{
             receipt::Receipt,
             room::{
@@ -20,8 +19,7 @@ use matrix_sdk::{
             sticker::{StickerEventContent, StickerMediaSource},
         },
         matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
-    },
-    OwnedServerName, SuccessorRoom
+    }, OwnedServerName, SuccessorRoom
 };
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
@@ -33,7 +31,7 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -2322,10 +2320,18 @@ impl RoomScreen {
         } else {
             let Some(timeline_endpoints) = take_timeline_endpoints(&room_id) else {
                 if !self.is_loaded && self.all_rooms_loaded {
-                    panic!("BUG: timeline is not loaded, but room_id {:?} was not waiting for its timeline to be loaded.", room_id);
+                    panic!("BUG: timeline is not loaded, but room_id {:?} \
+                    was not waiting for its timeline to be loaded.", room_id);
                 }
                 return;
             };
+            let TimelineEndpoints {
+                update_receiver,
+                update_sender,
+                request_sender,
+                successor_room,
+            } = timeline_endpoints;
+
             let tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // Initially, we assume the user has all power levels by default.
@@ -2340,9 +2346,9 @@ impl RoomScreen {
                 items: Vector::new(),
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
-                update_receiver: timeline_endpoints.update_receiver,
-                request_sender: timeline_endpoints.request_sender,
-                media_cache: MediaCache::new(Some(timeline_endpoints.update_sender)),
+                update_receiver,
+                request_sender,
+                media_cache: MediaCache::new(Some(update_sender)),
                 replying_to: None,
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
@@ -2350,7 +2356,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
-                tombstone_info: timeline_endpoints.successor_room,
+                tombstone_info: successor_room,
             };
             (tl_state, true)
         };
