@@ -320,30 +320,30 @@ impl MatchEvent for App {
                     }
                     continue;
                 }
-                AppStateAction::NavigateToRoom { current_room_id, successor_room_detail } => {
+                AppStateAction::NavigateToRoom { current_room_id, destination_room_detail } => {
                     // Check if successor room is loaded, if not show join modal
                     let rooms_list_ref = cx.get_global::<RoomsListRef>();
-                    if !rooms_list_ref.is_room_loaded(&successor_room_detail.room_id) {
+                    if !rooms_list_ref.is_room_loaded(&destination_room_detail.room_id) {
                         log!(
-                            "Successor room {} not loaded, showing join modal",
-                            successor_room_detail.room_id
+                            "Destination room {} not loaded, showing join modal",
+                            destination_room_detail.room_id
                         );
                         // Show join room modal for the successor room
                         cx.action(JoinLeaveRoomModalAction::Open(
-                            JoinLeaveModalKind::JoinRoom(successor_room_detail.clone()),
+                            JoinLeaveModalKind::JoinRoom(destination_room_detail.clone()),
                         ));
                         continue;
                     }
 
                     let new_selected_room = SelectedRoom::JoinedRoom {
-                        room_id: OwnedRoomIdRon(successor_room_detail.room_id.clone()),
-                        room_name: successor_room_detail.room_name.clone(),
+                        room_id: OwnedRoomIdRon(destination_room_detail.room_id.clone()),
+                        room_name: destination_room_detail.room_name.clone(),
                     };
 
                     log!(
-                        "Navigating from tombstoned room {} to successor room {}",
+                        "Navigating from room: {} to destination room: {}",
                         current_room_id,
-                        successor_room_detail.room_id
+                        destination_room_detail.room_id
                     );
                     
                     // For mobile UI, navigate back to the root view.
@@ -674,11 +674,11 @@ pub enum AppStateAction {
     ///
     /// The RoomScreen for this room can now fully display the room's timeline.
     RoomLoadedSuccessfully(OwnedRoomId),
-    /// Navigate to the successor room of a tombstoned room.
-    /// Contains the current tombstoned room ID and successor room details.
+    /// Navigate to the room.
+    /// Contains the current room ID and destination room's room details.
     NavigateToRoom {
         current_room_id: OwnedRoomId,
-        successor_room_detail: BasicRoomDetails,
+        destination_room_detail: BasicRoomDetails,
     },
     None,
 }

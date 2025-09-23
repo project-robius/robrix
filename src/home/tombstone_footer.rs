@@ -186,7 +186,7 @@ impl TombstoneFooter {
             &scope.path,
             AppStateAction::NavigateToRoom {
                 current_room_id: room_id.clone(),
-                successor_room_detail: successor_room_detail.clone(),
+                destination_room_detail: successor_room_detail.clone(),
             }
         );
     }

@@ -415,6 +415,7 @@ live_design! {
                     avatar_row = <AvatarRow> {}
                 }
             }
+
         }
     }
 
@@ -1938,7 +1939,7 @@ impl RoomScreen {
                             message: "Couldn't find message in timeline to react to.".to_string(),
                             kind: PopupKind::Error,
                             auto_dismissal_duration: None
-                        }); 
+                        });
                         error!("MessageAction::React: couldn't find event [{}] {:?} to react to in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
