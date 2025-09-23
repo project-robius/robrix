@@ -788,7 +788,7 @@ impl RoomsList {
         )
     }
 
-    /// Returns information about room avatar and room namegiven its room ID.
+    /// Returns a room's avatar and displayable name.
     pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
         self.all_joined_rooms.get(room_id)
             .map(|room_info| (room_info.avatar.clone(), room_info.room_name.clone()))
