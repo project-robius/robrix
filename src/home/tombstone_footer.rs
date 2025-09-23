@@ -130,11 +130,9 @@ impl TombstoneFooter {
         self.view.label(id!(replacement_reason))
             .set_text(cx, successor_room.reason.as_deref().unwrap_or("This room has been replaced and is no longer active."));
         let rooms_list_ref = cx.get_global::<RoomsListRef>();
-        let Some((successor_avatar_preview, room_name)) = rooms_list_ref
-            .get_room_avatar_and_name(&successor_room.room_id) else {
-            return;
-        };
-
+        let (successor_avatar_preview, room_name) = rooms_list_ref
+            .get_room_avatar_and_name(&successor_room.room_id)
+            .unwrap_or_else(|| (RoomPreviewAvatar::Text("?".to_string()), None));
         // Set the successor room avatar
         match &successor_avatar_preview {
             RoomPreviewAvatar::Text(text) => {

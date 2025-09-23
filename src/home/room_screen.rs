@@ -1938,7 +1938,7 @@ impl RoomScreen {
                             message: "Couldn't find message in timeline to react to.".to_string(),
                             kind: PopupKind::Error,
                             auto_dismissal_duration: None
-                        });
+                        }); 
                         error!("MessageAction::React: couldn't find event [{}] {:?} to react to in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -2317,17 +2317,12 @@ impl RoomScreen {
         let (mut tl_state, mut is_first_time_being_loaded) = if let Some(existing) = state_opt {
             (existing, false)
         } else {
-            let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
+            let Some((update_sender, update_receiver, request_sender, tombstone_info)) = take_timeline_endpoints(&room_id) else {
                 if !self.is_loaded && self.all_rooms_loaded {
                     panic!("BUG: timeline is not loaded, but room_id {:?} was not waiting for its timeline to be loaded.", room_id);
                 }
                 return;
             };
-            // Accessing the actual Matrix client object from the UI thread shouldn't really be done unless it's unavoidable.
-            // TODO: In the future PR, perhaps by redesigning take_timeline_endpoints() to return tombstone state
-            let Some(client) = get_client() else { return };
-            let tombstone_info = client.get_room(&room_id)
-                .and_then(|room| room.successor_room());
             let tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // Initially, we assume the user has all power levels by default.
@@ -2432,7 +2427,7 @@ impl RoomScreen {
 
         // Now, restore the visual state of this timeline from its previously-saved state.
         self.restore_state(cx, &mut tl_state);
-        // Now, process the tl_state's tombstone info to show/hide the tombstone footer.
+        // Now, show the tl_state's tombstone info by displaying the tombstone footer.
         self.show_tombstone_footer(cx, &tl_state);
         // As the final step, store the tl_state for this room into this RoomScreen widget,
         // such that it can be accessed in future event/draw handlers.
