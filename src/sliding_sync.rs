@@ -1364,6 +1364,14 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
 /// to the corresponding background async task for that room (its `timeline_subscriber_handler`).
 pub type TimelineRequestSender = watch::Sender<Vec<BackwardsPaginateUntilEventRequest>>;
 
+/// The return type for `take_timeline_endpoints`, containing timeline channels and successor room info.
+pub type TimelineEndpoints = (
+    crossbeam_channel::Sender<TimelineUpdate>,
+    crossbeam_channel::Receiver<TimelineUpdate>,
+    TimelineRequestSender,
+    Option<SuccessorRoom>,
+);
+
 
 /// Backend-specific details about a joined room that our client currently knows about.
 struct JoinedRoomDetails {
@@ -1466,18 +1474,13 @@ pub fn is_user_ignored(user_id: &UserId) -> bool {
 /// This will only succeed once per room, as only a single channel receiver can exist.
 pub fn take_timeline_endpoints(
     room_id: &OwnedRoomId,
-) -> Option<(
-        crossbeam_channel::Sender<TimelineUpdate>,
-        crossbeam_channel::Receiver<TimelineUpdate>,
-        TimelineRequestSender,
-        Option<SuccessorRoom>,
-    )>
+) -> Option<TimelineEndpoints>
 {
-    let mut retrived_succcessor_room = None;
+    let mut retrieved_successor_room = None;
     for (room_id_key, joined_room_details) in ALL_JOINED_ROOMS.lock().unwrap().iter() {
         if let Some(successor_room) = &joined_room_details.replaces_tombstoned_room {
             if successor_room.room_id == *room_id {
-                retrived_succcessor_room = Some(SuccessorRoom {
+                retrieved_successor_room = Some(SuccessorRoom {
                     room_id: room_id_key.clone(),
                     reason: successor_room.reason.clone(),
                 });
@@ -1485,10 +1488,10 @@ pub fn take_timeline_endpoints(
             }
         }
     }
-    if retrived_succcessor_room.is_none() {
+    if retrieved_successor_room.is_none() {
         for (new_successor_room_id_key, (old_room, reason)) in TOMBSTONED_ROOMS.lock().unwrap().iter() {
             if old_room == room_id {
-                retrived_succcessor_room = Some(SuccessorRoom {
+                retrieved_successor_room = Some(SuccessorRoom {
                     room_id: new_successor_room_id_key.clone(),
                     reason: reason.clone(),
                 });
@@ -1500,7 +1503,7 @@ pub fn take_timeline_endpoints(
         .get_mut(room_id)
         .and_then(|ri| ri.timeline_singleton_endpoints.take()
             .map(|(receiver, request_sender)| {
-                (ri.timeline_update_sender.clone(), receiver, request_sender, retrived_succcessor_room)
+                (ri.timeline_update_sender.clone(), receiver, request_sender, retrieved_successor_room)
             })
         )
 }
