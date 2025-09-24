@@ -58,10 +58,10 @@ live_design! {
         join_successor_button = <RobrixIconButton> {
             padding: 15,
             draw_icon: {
-                svg_file: (ICON_ADD)
+                svg_file: (ICON_JOIN_ROOM),
                 color: (COLOR_FG_ACCEPT_GREEN),
             }
-            icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+            icon_walk: {width: 17, height: 17, margin: {left: -2, right: -1} }
 
             draw_bg: {
                 border_color: (COLOR_FG_ACCEPT_GREEN),
@@ -130,10 +130,11 @@ impl TombstoneFooter {
             successor_room.reason.as_deref().unwrap_or(DEFAULT_TOMBSTONE_REASON),
         );
         let rooms_list_ref = cx.get_global::<RoomsListRef>();
-        let (successor_avatar_preview, room_name) = rooms_list_ref
+        let (successor_avatar_preview, room_name, is_joined) = rooms_list_ref
             .get_room_avatar_and_name(&successor_room.room_id)
-            .unwrap_or_else(|| (RoomPreviewAvatar::Text("?".to_string()), None));
-        // Set the successor room avatar
+            .map(|(avatar, name)| (avatar, name, true))
+            .unwrap_or_default();
+
         match &successor_avatar_preview {
             RoomPreviewAvatar::Text(text) => {
                 self.view
@@ -160,6 +161,13 @@ impl TombstoneFooter {
                 .as_ref()
                 .and_then(|f| f.room_name.as_ref())
                 .map_or("(Unknown room name)", |v| v),
+        );
+
+        let join_successor_button = self.view.button(id!(join_successor_button));
+        join_successor_button.reset_hover(cx);
+        join_successor_button.set_text(
+            cx,
+            if is_joined { "Go to the replacement room" } else { "Join the replacement room" },
         );
 
         self.successor_info = successor_info;

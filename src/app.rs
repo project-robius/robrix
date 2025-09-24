@@ -328,9 +328,10 @@ impl MatchEvent for App {
                             destination_room_detail.room_id
                         );
                         // Show join room modal for the successor room
-                        cx.action(JoinLeaveRoomModalAction::Open(
-                            JoinLeaveModalKind::JoinRoom(destination_room_detail.clone()),
-                        ));
+                        cx.action(JoinLeaveRoomModalAction::Open {
+                            kind: JoinLeaveModalKind::JoinRoom(destination_room_detail.clone()), 
+                            show_tip: false,
+                        });
                         continue;
                     }
 
@@ -408,8 +409,10 @@ impl MatchEvent for App {
 
             // Handle actions needed to open/close the join/leave room modal.
             match action.downcast_ref() {
-                Some(JoinLeaveRoomModalAction::Open(kind)) => {
-                    self.ui.join_leave_room_modal(id!(join_leave_modal_inner)).set_kind(cx, kind.clone());
+                Some(JoinLeaveRoomModalAction::Open { kind, show_tip }) => {
+                    self.ui
+                        .join_leave_room_modal(id!(join_leave_modal_inner))
+                        .set_kind(cx, kind.clone(), *show_tip);
                     self.ui.modal(id!(join_leave_modal)).open(cx);
                     continue;
                 }

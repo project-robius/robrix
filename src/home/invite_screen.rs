@@ -311,9 +311,10 @@ impl Widget for InviteScreen {
                     });
                     self.has_shown_confirmation = false;
                 } else {
-                    cx.action(JoinLeaveRoomModalAction::Open(
-                        JoinLeaveModalKind::RejectInvite(info.clone())
-                    ));
+                    cx.action(JoinLeaveRoomModalAction::Open {
+                        kind: JoinLeaveModalKind::RejectInvite(info.clone()),
+                        show_tip: true,
+                    });
                     self.has_shown_confirmation = true;
                 }
             }
@@ -325,9 +326,10 @@ impl Widget for InviteScreen {
                     });
                     self.has_shown_confirmation = false;
                 } else {
-                    cx.action(JoinLeaveRoomModalAction::Open(
-                        JoinLeaveModalKind::AcceptInvite(info.clone())
-                    ));
+                    cx.action(JoinLeaveRoomModalAction::Open {
+                        kind: JoinLeaveModalKind::AcceptInvite(info.clone()),
+                        show_tip: true,
+                    });
                     self.has_shown_confirmation = true;
                 }
             }
