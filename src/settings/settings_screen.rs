@@ -107,7 +107,7 @@ live_design! {
 
         remove_delete_wallet_modal = <Modal> {
             content: {
-                remove_delete_wallet_modal_inner = <ConfirmationModal> { }
+                remove_delete_wallet_modal_inner = <NegativeConfirmationModal> { }
             }
         }
     }
@@ -195,7 +195,6 @@ impl Widget for SettingsScreen {
             }
 
             if let Some(_accepted) = self.view.confirmation_modal(id!(remove_delete_wallet_modal_inner)).closed(actions) {
-                log!("Confirmation modal closed, did user accept? {}", _accepted);
                 self.view.modal(id!(remove_delete_wallet_modal)).close(cx);
             }
         }

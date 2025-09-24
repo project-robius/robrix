@@ -187,7 +187,10 @@ impl JoinLeaveModalKind {
 #[derive(Clone, Debug, DefaultNone)]
 pub enum JoinLeaveRoomModalAction {
     /// The modal should be opened by its parent widget.
-    Open(JoinLeaveModalKind),
+    Open {
+        kind: JoinLeaveModalKind,
+        show_tip: bool,
+    },
     /// The modal requested its parent widget to close.
     Close {
         /// `True` if the modal was closed after a successful join/leave action.
@@ -293,7 +296,6 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                 self.view.label(id!(title)).set_text(cx, title);
                 self.view.label(id!(description)).set_text(cx, &description);
                 self.view.view(id!(tip_view)).set_visible(cx, false);
-                self.view.label(id!(tip)).set_text(cx, "");
                 accept_button.set_text(cx, accept_button_text);
                 accept_button.set_enabled(cx, false);
                 needs_redraw = true;
@@ -415,6 +417,7 @@ impl JoinLeaveRoomModal {
         &mut self,
         cx: &mut Cx,
         kind: JoinLeaveModalKind,
+        show_tip: bool,
     ) {
         log!("Showing JoinLeaveRoomModal for {kind:?}");
         let title: &str;
@@ -462,10 +465,14 @@ impl JoinLeaveRoomModal {
 
         self.view.label(id!(title)).set_text(cx, title);
         self.view.label(id!(description)).set_text(cx, &description);
-        self.view.view(id!(tip_view)).set_visible(cx, true);
-        self.view.label(id!(tip)).set_text(cx, &format!(
-            "Tip: hold Shift when clicking the \"{tip_button}\" button to bypass this prompt.",
-        ));
+        if show_tip {
+            self.view.view(id!(tip_view)).set_visible(cx, true);
+            self.view.label(id!(tip)).set_text(cx, &format!(
+                "Tip: hold Shift when clicking the \"{tip_button}\" button to bypass this prompt.",
+            ));
+        } else {
+            self.view.view(id!(tip_view)).set_visible(cx, false);
+        }
 
         let accept_button = self.button(id!(accept_button));
         let cancel_button = self.button(id!(cancel_button));
@@ -488,9 +495,10 @@ impl JoinLeaveRoomModalRef {
         &self,
         cx: &mut Cx,
         kind: JoinLeaveModalKind,
+        show_tip: bool,
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_kind(cx, kind);
+            inner.set_kind(cx, kind, show_tip);
         }
     }
 }
