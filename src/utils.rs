@@ -35,6 +35,17 @@ impl<T> From<T> for DebugWrapper<T> {
         DebugWrapper(value)
     }
 }
+impl<T: Default> Default for DebugWrapper<T> {
+    fn default() -> Self {
+        DebugWrapper(T::default())
+    }
+}
+impl<T> DebugWrapper<T> {
+    /// Consumes the wrapper and returns the inner value.
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
 
 /// Returns true if the given event is an interactive hit-related event
 /// that should require a view/widget to be visible in order to handle/receive it.

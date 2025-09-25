@@ -10,10 +10,7 @@ use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
-        main_desktop_ui::MainDesktopUiAction,
-        new_message_context_menu::NewMessageContextMenuWidgetRefExt,
-        room_screen::{clear_timeline_states, MessageAction},
-        rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate},
+        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{clear_timeline_states, MessageAction}, rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::callout_tooltip::{
@@ -138,11 +135,12 @@ app_main!(App);
 
 #[derive(Live)]
 pub struct App {
-    #[live]
-    ui: WidgetRef,
-
-    #[rust]
-    app_state: AppState,
+    #[live] ui: WidgetRef,
+    /// The top-level app state, shared across various parts of the app.
+    #[rust] app_state: AppState,
+    /// The details of a room we're waiting on to be joined so that we can navigate to it.
+    /// Also includes an optional room ID to be closed once the awaited room is joined.
+    #[rust] waiting_to_navigate_to_joined_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
 }
 
 impl LiveRegister for App {
@@ -220,12 +218,14 @@ impl MatchEvent for App {
                 match logout_modal_action {
                     LogoutConfirmModalAction::Open => {
                         self.ui.logout_confirm_modal(id!(logout_confirm_modal_inner)).reset_state(cx);
-                        self.ui.modal(id!(logout_confirm_modal)).open(cx)
+                        self.ui.modal(id!(logout_confirm_modal)).open(cx);
+                        continue;
                     },
                     LogoutConfirmModalAction::Close { was_internal, .. } => {
                         if *was_internal {
                             self.ui.modal(id!(logout_confirm_modal)).close(cx);
                         }
+                        continue;
                     },
                     _ => {}
                 }
@@ -272,14 +272,6 @@ impl MatchEvent for App {
                 continue;
             }
 
-            if let Some(AppStateAction::RestoreAppStateFromPersistentState(app_state)) = action.downcast_ref() {
-                // Ignore the `logged_in` state that was stored persistently.
-                let logged_in_actual = self.app_state.logged_in;
-                self.app_state = app_state.clone();
-                self.app_state.logged_in = logged_in_actual;
-                cx.action(MainDesktopUiAction::LoadDockFromAppState);
-            }
-
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 let display_name = room_name_or_id(selected_room.room_name(), selected_room.room_id());
@@ -300,18 +292,18 @@ impl MatchEvent for App {
             }
 
             // Handle actions that instruct us to update the top-level app state.
-            match action.as_widget_action().cast() {
-                AppStateAction::RoomFocused(selected_room) => {
+            match action.downcast_ref() {
+                Some(AppStateAction::RoomFocused(selected_room)) => {
                     self.app_state.selected_room = Some(selected_room.clone());
                     continue;
                 }
-                AppStateAction::FocusNone => {
+                Some(AppStateAction::FocusNone) => {
                     self.app_state.selected_room = None;
                     continue;
                 }
-                AppStateAction::UpgradedInviteToJoinedRoom(room_id) => {
+                Some(AppStateAction::UpgradedInviteToJoinedRoom(room_id)) => {
                     if let Some(selected_room) = self.app_state.selected_room.as_mut() {
-                        let did_upgrade = selected_room.upgrade_invite_to_joined(&room_id);
+                        let did_upgrade = selected_room.upgrade_invite_to_joined(room_id);
                         // Updating the AppState's selected room and issuing a redraw
                         // will cause the MainMobileUI to redraw the newly-joined room.
                         if did_upgrade {
@@ -320,56 +312,27 @@ impl MatchEvent for App {
                     }
                     continue;
                 }
-                AppStateAction::NavigateToRoom { current_room_id, destination_room_detail } => {
-                    // Check if successor room is loaded, if not show join modal
-                    let rooms_list_ref = cx.get_global::<RoomsListRef>();
-                    if !rooms_list_ref.is_room_loaded(&destination_room_detail.room_id) {
-                        log!("Destination room {} not loaded, showing join modal",
-                            destination_room_detail.room_id
-                        );
-                        // Show join room modal for the successor room
-                        cx.action(JoinLeaveRoomModalAction::Open {
-                            kind: JoinLeaveModalKind::JoinRoom(destination_room_detail.clone()), 
-                            show_tip: false,
-                        });
-                        continue;
+                Some(AppStateAction::RestoreAppStateFromPersistentState(app_state)) => {
+                    // Ignore the `logged_in` state that was stored persistently.
+                    let logged_in_actual = self.app_state.logged_in;
+                    self.app_state = app_state.clone();
+                    self.app_state.logged_in = logged_in_actual;
+                    cx.action(MainDesktopUiAction::LoadDockFromAppState);
+                    continue;
+                }
+                Some(AppStateAction::NavigateToRoom { room_to_close, destination_room }) => {
+                    self.navigate_to_room(cx, room_to_close.as_ref(), destination_room);
+                    continue;
+                }
+                // If we successfully loaded a room that we were waiting to join,
+                // we can now navigate to it and optionally close a previous room.
+                Some(AppStateAction::RoomLoadedSuccessfully(room_id)) if
+                    self.waiting_to_navigate_to_joined_room.as_ref().is_some_and(|(dr, _)| &dr.room_id == room_id) =>
+                {
+                    log!("Joined awaited room {}, navigating to it now...", room_id);
+                    if let Some((dest_room, room_to_close)) = self.waiting_to_navigate_to_joined_room.take() {
+                        self.navigate_to_room(cx, room_to_close.as_ref(), &dest_room);
                     }
-
-                    log!("Navigating from room: {} to destination room: {}",
-                        current_room_id,
-                        destination_room_detail.room_id
-                    );
-
-                    // Select and scroll to the destination room in the rooms list.
-                    let new_selected_room = SelectedRoom::JoinedRoom {
-                        room_id: destination_room_detail.room_id.clone().into(),
-                        room_name: destination_room_detail.room_name.clone(),
-                    };
-                    enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room_detail.room_id));
-                    cx.widget_action(
-                        self.ui.widget_uid(),
-                        &Scope::default().path,
-                        RoomsListAction::Selected(new_selected_room),
-                    );
-
-                    // Close the current room.
-                    // For the mobile UI, navigate back to the root view.
-                    // For the desktop UI, close the current room's tab if it's open.
-                    cx.widget_action(
-                        self.ui.widget_uid(),
-                        &Scope::default().path,
-                        StackNavigationAction::PopToRoot,
-                    );
-                    if let Some(tab_id) = self.app_state.saved_dock_state.open_rooms.iter()
-                        .find_map(|(tab_id, room)| (room.room_id() == &current_room_id).then_some(*tab_id))
-                    {
-                        cx.widget_action(
-                            self.ui.widget_uid(),
-                            &Scope::default().path,
-                            DockAction::TabCloseWasPressed(tab_id),
-                        );
-                    }
-
                     continue;
                 }
                 _ => {}
@@ -569,6 +532,64 @@ impl App {
         self.ui.view(id!(login_screen_view)).set_visible(cx, show_login);
         self.ui.view(id!(home_screen_view)).set_visible(cx, !show_login);
     }
+
+    /// Navigates to the given `destination_room`, optionally closing the `room_to_close`.
+    fn navigate_to_room(
+        &mut self,
+        cx: &mut Cx,
+        room_to_close: Option<&OwnedRoomId>,
+        destination_room: &BasicRoomDetails,
+    ) {
+        // A closure that closes the given `room_to_close`, if it exists in an open tab.
+        let close_room_closure_opt = room_to_close.and_then(|to_close|
+            self.app_state.saved_dock_state.open_rooms
+                .iter()
+                .find_map(|(tab_id, r)| (r.room_id() == to_close).then_some(*tab_id))
+        ).map(|tab_id| {
+            let widget_uid = self.ui.widget_uid();
+            move |cx: &mut Cx| {
+                cx.widget_action(
+                    widget_uid,
+                    &Scope::default().path,
+                    DockAction::TabCloseWasPressed(tab_id),
+                );
+            }
+        });
+
+        // If the successor room is not loaded, show a join modal.
+        let rooms_list_ref = cx.get_global::<RoomsListRef>();
+        if !rooms_list_ref.is_room_loaded(&destination_room.room_id) {
+            log!("Destination room {} not loaded, showing join modal...", destination_room.room_id);
+            self.waiting_to_navigate_to_joined_room = Some((
+                destination_room.clone(),
+                room_to_close.cloned(),
+            ));
+            cx.action(JoinLeaveRoomModalAction::Open {
+                kind: JoinLeaveModalKind::JoinRoom(destination_room.clone()), 
+                show_tip: false,
+            });
+            return;
+        }
+
+        log!("Navigating to destination room: {}, closing room {room_to_close:?}", destination_room.room_id);
+
+        // Select and scroll to the destination room in the rooms list.
+        let new_selected_room = SelectedRoom::JoinedRoom {
+            room_id: destination_room.room_id.clone().into(),
+            room_name: destination_room.room_name.clone(),
+        };
+        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room.room_id.clone()));
+        cx.widget_action(
+            self.ui.widget_uid(),
+            &Scope::default().path,
+            RoomsListAction::Selected(new_selected_room),
+        );
+
+        // Close a previously/currently-open room if specified.
+        if let Some(closure) = close_room_closure_opt {
+            closure(cx);
+        }
+    }
 }
 
 /// App-wide state that is stored persistently across multiple app runs
@@ -654,7 +675,9 @@ impl PartialEq for SelectedRoom {
 impl Eq for SelectedRoom {}
 
 /// Actions sent to the top-level App in order to update / restore its [`AppState`].
-#[derive(Clone, Debug, DefaultNone)]
+///
+/// These are *NOT* widget actions.
+#[derive(Debug)]
 pub enum AppStateAction {
     /// The given room was focused (selected).
     RoomFocused(SelectedRoom),
@@ -670,11 +693,10 @@ pub enum AppStateAction {
     ///
     /// The RoomScreen for this room can now fully display the room's timeline.
     RoomLoadedSuccessfully(OwnedRoomId),
-    /// Navigate to the room.
-    /// Contains the current room ID and destination room's room details.
+    /// A request to navigate to a different room, optionally closing a prior/current room.
     NavigateToRoom {
-        current_room_id: OwnedRoomId,
-        destination_room_detail: BasicRoomDetails,
+        room_to_close: Option<OwnedRoomId>,
+        destination_room: BasicRoomDetails,
     },
     None,
 }

@@ -178,26 +178,16 @@ impl TombstoneFooter {
     /// If the successor room is not loaded, show a join room modal. Otherwise,
     /// close the tombstone room and show the successor room in the room list.
     ///
-    fn navigate_to_successor_room(&mut self, cx: &mut Cx, scope: &mut Scope) {
+    fn navigate_to_successor_room(&mut self, cx: &mut Cx, _scope: &mut Scope) {
         let Some(successor_room_detail) = self.successor_info.as_ref() else {
-            error!("Cannot navigate: no successor room information");
+            error!("BUG: cannot navigate to replacement room: no successor room information.");
             return;
         };
 
-        let Some(room_id) = self.room_id.as_ref() else {
-            error!("Cannot navigate to successor room: current room ID is not set");
-            return;
-        };
-
-        // Trigger the NavigateToRoom action which handles all the widget actions
-        cx.widget_action(
-            self.widget_uid(),
-            &scope.path,
-            AppStateAction::NavigateToRoom {
-                current_room_id: room_id.clone(),
-                destination_room_detail: successor_room_detail.clone(),
-            }
-        );
+        cx.action(AppStateAction::NavigateToRoom {
+            room_to_close: self.room_id.clone(),
+            destination_room: successor_room_detail.clone(),
+        });
     }
 
     /// Hides the tombstone footer, making it invisible and clearing any successor room information.
