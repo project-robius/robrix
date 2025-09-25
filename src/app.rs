@@ -303,7 +303,7 @@ impl MatchEvent for App {
                 }
                 Some(AppStateAction::UpgradedInviteToJoinedRoom(room_id)) => {
                     if let Some(selected_room) = self.app_state.selected_room.as_mut() {
-                        let did_upgrade = selected_room.upgrade_invite_to_joined(&room_id);
+                        let did_upgrade = selected_room.upgrade_invite_to_joined(room_id);
                         // Updating the AppState's selected room and issuing a redraw
                         // will cause the MainMobileUI to redraw the newly-joined room.
                         if did_upgrade {
