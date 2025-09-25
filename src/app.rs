@@ -431,7 +431,7 @@ impl MatchEvent for App {
             //     }
             //     _ => {}
             // }
-        }   
+        }
     }
 }
 
