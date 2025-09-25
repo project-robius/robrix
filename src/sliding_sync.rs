@@ -32,7 +32,7 @@ use crate::{
     avatar_cache::AvatarUpdate,
     event_preview::text_preview_of_timeline_item,
     home::{
-        invite_screen::{JoinRoomAction, LeaveRoomAction},
+        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction},
         room_screen::TimelineUpdate,
         rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate},
         rooms_list_header::RoomsListHeaderAction,
@@ -611,21 +611,25 @@ async fn async_worker(
                     let result_action = if let Some(room) = client.get_room(&room_id) {
                         match room.join().await {
                             Ok(()) => {
-                                log!("Successfully joined room {room_id}.");
-                                JoinRoomAction::Joined { room_id }
+                                log!("Successfully joined known room {room_id}.");
+                                JoinRoomResultAction::Joined { room_id }
                             }
                             Err(e) => {
-                                error!("Error joining room {room_id}: {e:?}");
-                                JoinRoomAction::Failed { room_id, error: e }
+                                error!("Error joining known room {room_id}: {e:?}");
+                                JoinRoomResultAction::Failed { room_id, error: e }
                             }
                         }
-                    } else {
-                        error!("BUG: client could not get room with ID {room_id}");
-                        JoinRoomAction::Failed {
-                            room_id,
-                            error: matrix_sdk::Error::UnknownError(
-                                String::from("Client couldn't locate room to join it.").into()
-                            ),
+                    }
+                    else {
+                        match client.join_room_by_id(&room_id).await {
+                            Ok(_room) => {
+                                log!("Successfully joined new unknown room {room_id}.");
+                                JoinRoomResultAction::Joined { room_id }
+                            }
+                            Err(e) => {
+                                error!("Error joining new unknown room {room_id}: {e:?}");
+                                JoinRoomResultAction::Failed { room_id, error: e }
+                            }
                         }
                     };
                     Cx::post_action(result_action);
@@ -640,16 +644,16 @@ async fn async_worker(
                         match room.leave().await {
                             Ok(()) => {
                                 log!("Successfully left room {room_id}.");
-                                LeaveRoomAction::Left { room_id }
+                                LeaveRoomResultAction::Left { room_id }
                             }
                             Err(e) => {
                                 error!("Error leaving room {room_id}: {e:?}");
-                                LeaveRoomAction::Failed { room_id, error: e }
+                                LeaveRoomResultAction::Failed { room_id, error: e }
                             }
                         }
                     } else {
                         error!("BUG: client could not get room with ID {room_id}");
-                        LeaveRoomAction::Failed {
+                        LeaveRoomResultAction::Failed {
                             room_id,
                             error: matrix_sdk::Error::UnknownError(
                                 String::from("Client couldn't locate room to leave it.").into()

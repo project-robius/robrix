@@ -188,11 +188,7 @@ impl MainDesktopUI {
                     if active_room == room_being_closed {
                         if let Some(new_focused_room) = self.room_order.last() {
                             // notify the app state about the new focused room
-                            cx.widget_action(
-                                self.widget_uid(),
-                                &HeapLiveIdPath::default(),
-                                AppStateAction::RoomFocused(new_focused_room.clone()),
-                            );
+                            cx.action(AppStateAction::RoomFocused(new_focused_room.clone()));
 
                             // Set the new selected room to be used in the current draw
                             self.most_recently_selected_room = Some(new_focused_room.clone());
@@ -201,12 +197,7 @@ impl MainDesktopUI {
                 }
             } else {
                 // If there is no room to focus, notify app to reset the selected room in the app state
-                cx.widget_action(
-                    self.widget_uid(),
-                    &HeapLiveIdPath::default(),
-                    AppStateAction::FocusNone,
-                );
-
+                cx.action(AppStateAction::FocusNone);
                 dock.select_tab(cx, live_id!(home_tab));
                 self.most_recently_selected_room = None;
             }
@@ -225,11 +216,7 @@ impl MainDesktopUI {
         }
 
         dock.select_tab(cx, live_id!(home_tab));
-        cx.widget_action(
-            self.widget_uid(),
-            &HeapLiveIdPath::default(),
-            AppStateAction::FocusNone,
-        );
+        cx.action(AppStateAction::FocusNone);
 
         // Clear tab-related dock UI state.
         self.open_rooms.clear();
@@ -242,7 +229,7 @@ impl MainDesktopUI {
     fn replace_invite_with_joined_room(
         &mut self,
         cx: &mut Cx,
-        scope: &mut Scope,
+        _scope: &mut Scope,
         room_id: OwnedRoomId,
         room_name: Option<String>,
     ) {
@@ -276,11 +263,7 @@ impl MainDesktopUI {
         }
 
         // Finally, emit an action to update the AppState with the new room.
-        cx.widget_action(
-            self.widget_uid(),
-            &scope.path,
-            AppStateAction::UpgradedInviteToJoinedRoom(room_id),
-        );
+        cx.action(AppStateAction::UpgradedInviteToJoinedRoom(room_id));
     }
 }
 
@@ -301,19 +284,11 @@ impl WidgetMatchEvent for MainDesktopUI {
                 // Whenever a tab (except for the home_tab) is pressed, notify the app state.
                 DockAction::TabWasPressed(tab_id) => {
                     if tab_id == live_id!(home_tab) {
-                        cx.widget_action(
-                            self.widget_uid(),
-                            &HeapLiveIdPath::default(),
-                            AppStateAction::FocusNone,
-                        );
+                        cx.action(AppStateAction::FocusNone);
                         self.most_recently_selected_room = None;
                     }
                     else if let Some(selected_room) = self.open_rooms.get(&tab_id) {
-                        cx.widget_action(
-                            self.widget_uid(),
-                            &HeapLiveIdPath::default(),
-                            AppStateAction::RoomFocused(selected_room.clone()),
-                        );
+                        cx.action(AppStateAction::RoomFocused(selected_room.clone()));
                         self.most_recently_selected_room = Some(selected_room.clone());
                     }
                     should_save_dock_action = true;
