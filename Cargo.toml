@@ -41,24 +41,28 @@ matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "
 matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "rustls-tls" ] }
 # List of features for ruma taken from "https://github.com/matrix-org/matrix-rust-sdk/blob/main/Cargo.toml".
 # Added "compat-optional" feature to allow missing body field in m.room.tombstone event.
-ruma = { git = "https://github.com/ruma/ruma", rev = "d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a", features = [
+ruma = { git = "https://github.com/ruma/ruma", rev = "2f64faeabb85950de27e9829faeb389d2779ac57", features = [
+    "compat-optional",
     "client-api-c",
     "compat-upload-signatures",
-    "compat-user-id",
     "compat-arbitrary-length-ids",
     "compat-tag-info",
-    "compat-optional",
     "compat-encrypted-stickers",
+    "compat-lax-room-create-deser",
+    "compat-lax-room-topic-deser",
     "unstable-msc3401",
-    "unstable-msc3266",
     "unstable-msc3488",
     "unstable-msc3489",
     "unstable-msc4075",
     "unstable-msc4140",
     "unstable-msc4143",
     "unstable-msc4171",
+    "unstable-msc4222",
     "unstable-msc4278",
     "unstable-msc4286",
+    "unstable-msc4306",
+    "unstable-msc4308",
+    "unstable-msc4310"
 ] }
 rand = "0.8.5"
 rangemap = "1.5.0"
@@ -75,11 +79,11 @@ indexmap = "2.6.0"
 blurhash = { version = "0.2.3", default-features = false }
 
 ## Dependencies for TSP support.
-# tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", optional = true, features = ["async", "resolve"] }
-quinn = { version = "0.11.8", default-features = false, optional = true }
+tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", optional = true, features = ["async", "resolve"] }
+quinn = { version = "0.11", default-features = false, optional = true }
 ## We only include this such that we can specify the prebuilt-nasm features,
 ## which is required to build this on Windows x86_64 without having to install NASM separately.
-aws-lc-rs ={ version = "1.13", optional = true, features = ["prebuilt-nasm"] }
+aws-lc-rs = { version = "1.13", optional = true, features = ["prebuilt-nasm"] }
 percent-encoding = { version = "2.3", optional = true }
 ## The following reqwest features were taken from the tsp_sdk's `Cargo.toml` file.
 ## I'm not sure if all of them are actually needed.
@@ -96,8 +100,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 [features]
 default = []
 ## Enables experimental support for using TSP wallets.
-# tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding"]
-tsp = [] ### TODO FIX PLACEHOLDER
+tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding"]
 
 ## Hides the command prompt console on Windows.
 hide_windows_console = []
@@ -113,21 +116,20 @@ log_timeline_diffs = []
 ## This is required to avoid a version conflict on the libsqlite3-sys crate,
 ## which is a native crate that can only exist once in the dependency graph.
 ## The `matrix-sdk` crate's dependencies require a specific version of `libsqlite3-sys`
-## (via rustsqlite which requires libsqlite3-sys 0.33.0),
+## (via rustsqlite which requires libsqlite3-sys 0.35.0),
 ## whereas the `tsp_sdk` crate depends on `sqlx`, which requires a different version
 ## of `libsqlite3-sys` (via `aries-askar`, which depends on `askar-storage`,
 ## which requires libsqlite3-sys 0.30.0).
-## So this patch is a custom version of sqlx that *pretends* to be 0.8.6
-## (even though in reality uses the newest commit of `sqlx`,
-## which recently was updated to allow for a *range* of versions of `libsqlite3-sys`).
+## So this patch is a custom version of sqlx 0.8.6 that updates the libsqlite3-sys
+## dependency to version 0.35.0, which is compatible with the version required by
+## the matrix-sdk crate.
 ## See <https://github.com/launchbadge/sqlx/pull/3928/files#diff-4f4849707ed063bc5de6d9f6d105f0e7baf62d1085b3c8aee4a547468b89248fR57>
-# sqlx = { git = "https://github.com/project-robius/sqlx.git", branch = "version_0.9_alpha_as_0.8.6" }
-# sqlx = { git = "https://github.com/project-robius/sqlx.git", branch = "update_libsqlite3-sys_version" }
+sqlx = { git = "https://github.com/project-robius/sqlx.git", branch = "update_libsqlite3-sys_version" }
 
-## This is required for the askar repos to work with the above-patched `sqlx` crate,
-## more specifically, the updated `libsqlite3-sys` version (0.31.0).
+## The main branch of the `tsp_sdk` repo already includes this patch, so we copy it here.
+## This is required for the askar repos to work with the above-patched `sqlx` crate.
 ## See <https://github.com/openwallet-foundation/askar/pull/386>
-# askar-storage = { git = "https://github.com/openwallet-foundation/askar.git", rev = "0b919bb58205416df7cd2cc1a24ce52373cbe105" }
+askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
 
 
 ## This is a temporary patch to add the TSP signature field to the `RoomMessageEventContent` type.

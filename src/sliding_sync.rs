@@ -1030,10 +1030,11 @@ async fn async_worker(
                                         log!("Serialized message to bytes, length {}", message_bytes.len());
                                         match crate::tsp::sign_anycast_with_default_vid(&message_bytes) {
                                             Ok(signed_msg) => {
-                                                use matrix_sdk::ruma::serde::Base64;
-
+                                                
                                                 log!("Successfully signed message with TSP, length {}", signed_msg.len());
-                                                message.tsp_signature = Some(Base64::new(signed_msg));
+                                                todo!("Add back in the setting of the tsp_signature field")
+                                                // use matrix_sdk::ruma::serde::Base64;
+                                                // message.tsp_signature = Some(Base64::new(signed_msg));
                                             }
                                             Err(e) => {
                                                 error!("Failed to sign message with TSP: {e:?}");
