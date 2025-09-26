@@ -7,8 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    room::{reply::{EnforceThread, Reply}, RoomMember},
-    ruma::{
+    room::{reply::{EnforceThread, Reply}, RoomMember}, ruma::{
         events::{
             receipt::Receipt,
             room::{
@@ -20,8 +19,7 @@ use matrix_sdk::{
             sticker::{StickerEventContent, StickerMediaSource},
         },
         matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
-    },
-    OwnedServerName,
+    }, OwnedServerName, SuccessorRoom
 };
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
@@ -29,12 +27,12 @@ use matrix_sdk_ui::timeline::{
 use tokio::sync::Notify;
 
 use crate::{
-    app::{AppStateAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::{RoomsListRef, RoomsListAction}}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::{RoomsListAction, RoomsListRef}, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::COLOR_FG_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -46,8 +44,6 @@ use rangemap::RangeSet;
 use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, location_preview::LocationPreviewWidgetExt, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
-
-const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
 
 /// Global HashMap tracking timeline loaded notifications for rooms
 /// Maps room IDs to their respective notify instances that signal when the room timeline is loaded
@@ -107,8 +103,10 @@ live_design! {
     use crate::home::location_preview::*;
     use crate::room::room_input_bar::*;
     use crate::home::room_read_receipt::*;
+    use crate::home::tombstone_footer::TombstoneFooter;
     use crate::rooms_list::*;
     use crate::shared::restore_status_view::*;
+    use link::tsp_link::TspSignIndicator;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -342,7 +340,8 @@ live_design! {
                 timestamp = <Timestamp> {
                     margin: { top: 5.9 }
                 }
-                edited_indicator = <EditedIndicator> {}
+                edited_indicator = <EditedIndicator> { }
+                tsp_sign_indicator = <TspSignIndicator> { }
             }
             content = <View> {
                 width: Fill,
@@ -425,6 +424,7 @@ live_design! {
                     margin: {top: 2.5}
                 }
                 edited_indicator = <EditedIndicator> { }
+                tsp_sign_indicator = <TspSignIndicator> { }
             }
             content = <View> {
                 width: Fill,
@@ -754,11 +754,14 @@ live_design! {
                 // Below that, display a preview of the current location that a user is about to send.
                 location_preview = <LocationPreview> { }
 
+                // Below that, display a button that allows the user to go to the successor room, if there is one.
+                tombstone_footer = <TombstoneFooter> { }
+
                 // Below that, display one of multiple possible views:
                 // * the message input bar
                 // * the slide-up editing pane
                 // * a notice that the user can't send messages to this room
-                <View> {
+                message_input_view = <View> {
                     width: Fill, height: Fit,
                     flow: Overlay,
 
@@ -1079,11 +1082,18 @@ impl Widget for RoomScreen {
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id: self.room_id.clone().unwrap(),
                         message,
-                        replied_to: self.tl_state.as_mut().and_then(
-                            |tl| tl.replying_to.take().and_then(|(event_timeline_item, _rep)| {
-                                event_timeline_item.event_id().map(|event_id| Reply { event_id: event_id.to_owned(), enforce_thread: EnforceThread::MaybeThreaded })
-                            })
+                        replied_to: self.tl_state.as_mut().and_then(|tl|
+                            tl.replying_to.take().and_then(|(event_tl_item, _rep)|
+                                event_tl_item.event_id().map(|event_id|
+                                    Reply {
+                                        event_id: event_id.to_owned(),
+                                        enforce_thread: EnforceThread::MaybeThreaded,
+                                    }
+                                )
+                            )
                         ),
+                        #[cfg(feature = "tsp")]
+                        sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
                     });
 
                     self.clear_replying_to(cx);
@@ -1095,9 +1105,7 @@ impl Widget for RoomScreen {
 
             // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
             if self.button(id!(send_message_button)).clicked(actions)
-                || text_input.returned(actions).is_some_and(
-                    |(_text, modifiers)| modifiers.is_primary()
-                )
+                || text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
             {
                 let entered_text = message_input.text().trim().to_string();
                 if !entered_text.is_empty() {
@@ -1109,10 +1117,18 @@ impl Widget for RoomScreen {
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
                         message: message_with_mentions,
-                        replied_to: self.tl_state.as_mut().and_then(
-                            |tl| tl.replying_to.take().and_then(|(event_timeline_item, _rep)| {
-                                event_timeline_item.event_id().map(|event_id| Reply { event_id: event_id.to_owned(), enforce_thread: EnforceThread::MaybeThreaded })
-                            })),
+                        replied_to: self.tl_state.as_mut().and_then(|tl|
+                            tl.replying_to.take().and_then(|(event_tl_item, _rep)|
+                                event_tl_item.event_id().map(|event_id|
+                                    Reply {
+                                        event_id: event_id.to_owned(),
+                                        enforce_thread: EnforceThread::MaybeThreaded,
+                                    }
+                                )
+                            )
+                        ),
+                        #[cfg(feature = "tsp")]
+                        sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
                     });
 
                     self.clear_replying_to(cx);
@@ -1177,11 +1193,15 @@ impl Widget for RoomScreen {
         let is_pane_shown: bool;
         if loading_pane.is_currently_shown(cx) {
             is_pane_shown = true;
-            loading_pane.handle_event(cx, event, scope);
+            if is_interactive_hit {
+                loading_pane.handle_event(cx, event, scope);
+            }
         }
         else if user_profile_sliding_pane.is_currently_shown(cx) {
             is_pane_shown = true;
-            user_profile_sliding_pane.handle_event(cx, event, scope);
+            if is_interactive_hit {
+                user_profile_sliding_pane.handle_event(cx, event, scope);
+            }
         }
         else {
             is_pane_shown = false;
@@ -1768,6 +1788,16 @@ impl RoomScreen {
 
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
+                }
+                TimelineUpdate::Tombstoned(tombstone_info) => {
+                    if let Some(tombstone_info) = &tombstone_info {
+                        self.view.tombstone_footer(id!(tombstone_footer)).show(cx, &tl.room_id, tombstone_info);
+                        self.view.view(id!(message_input_view)).set_visible(cx, false);
+                    } else {
+                        self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
+                        self.view.view(id!(message_input_view)).set_visible(cx, true);
+                    }
+                    tl.tombstone_info = tombstone_info;
                 }
                 TimelineUpdate::ScrollToMessage { event_id } => {
                     // Search through the timeline to find the message with the given event_id
@@ -2401,12 +2431,20 @@ impl RoomScreen {
         let (mut tl_state, mut is_first_time_being_loaded) = if let Some(existing) = state_opt {
             (existing, false)
         } else {
-            let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
+            let Some(timeline_endpoints) = take_timeline_endpoints(&room_id) else {
                 if !self.is_loaded && self.all_rooms_loaded {
-                    panic!("BUG: timeline is not loaded, but room_id {:?} was not waiting for its timeline to be loaded.", room_id);
+                    panic!("BUG: timeline is not loaded, but room_id {:?} \
+                    was not waiting for its timeline to be loaded.", room_id);
                 }
                 return;
             };
+            let TimelineEndpoints {
+                update_receiver,
+                update_sender,
+                request_sender,
+                successor_room,
+            } = timeline_endpoints;
+
             let tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // Initially, we assume the user has all power levels by default.
@@ -2431,6 +2469,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
+                tombstone_info: successor_room,
             };
             (tl_state, true)
         };
@@ -2503,13 +2542,16 @@ impl RoomScreen {
                 subscribe: true,
             });
             submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
-                room_id,
+                room_id: room_id.clone(),
                 subscribe: true,
             });
         }
 
         // Now, restore the visual state of this timeline from its previously-saved state.
         self.restore_state(cx, &mut tl_state);
+
+        // Show or hide the tombstone footer based on the timeline's UI state.
+        self.show_tombstone_footer(cx, &tl_state);
 
         // As the final step, store the tl_state for this room into this RoomScreen widget,
         // such that it can be accessed in future event/draw handlers.
@@ -2739,6 +2781,18 @@ impl RoomScreen {
         }
         tl.last_scrolled_index = first_index;
     }
+
+    /// If the current room is tombstoned, show the tombstone footer and hide the message input bar.
+    /// Otherwise, hide the tombstone footer and show the message input bar.
+    fn show_tombstone_footer(&mut self, cx: &mut Cx, tl_state: &TimelineUiState) {
+        if let Some(tombstone_info) = &tl_state.tombstone_info {
+            self.view.tombstone_footer(id!(tombstone_footer)).show(cx, &tl_state.room_id, tombstone_info);
+            self.view.view(id!(message_input_view)).set_visible(cx, false);
+        } else {
+            self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
+            self.view.view(id!(message_input_view)).set_visible(cx, true);
+        }
+    }
 }
 
 impl RoomScreenRef {
@@ -2875,7 +2929,10 @@ pub enum TimelineUpdate {
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
     OwnUserReadReceipt(Receipt),
-    /// Scroll the timeline to the given event.
+    /// A notice that the given room has been tombstoned,
+    /// includes a `SuccessorRoom` that contains the successor room.
+    /// If the room is not tombstoned, then the `SuccessorRoom` is `None`.
+    Tombstoned(Option<SuccessorRoom>),
     ScrollToMessage {
         event_id: OwnedEventId,
     }
@@ -2990,6 +3047,11 @@ struct TimelineUiState {
     /// When new message come in, this value is reset to `false`.
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
+
+    /// If this room has been tombstoned, this contains the details of the tombstone.
+    /// If the room is not tombstoned, then this is `None`.
+    ///
+    tombstone_info: Option<SuccessorRoom>,
 }
 
 #[derive(Default, Debug)]
@@ -3186,11 +3248,11 @@ fn populate_message_view(
                         html_or_plaintext_ref.apply_over(cx, live!(
                             html_view = {
                                 html = {
-                                    font_color: (MESSAGE_NOTICE_TEXT_COLOR),
-                                    draw_normal:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-                                    draw_italic:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-                                    draw_bold:        { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-                                    draw_bold_italic: { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                                    font_color: (COLOR_MESSAGE_NOTICE_TEXT),
+                                    draw_normal:      { color: (COLOR_MESSAGE_NOTICE_TEXT), }
+                                    draw_italic:      { color: (COLOR_MESSAGE_NOTICE_TEXT), }
+                                    draw_bold:        { color: (COLOR_MESSAGE_NOTICE_TEXT), }
+                                    draw_bold_italic: { color: (COLOR_MESSAGE_NOTICE_TEXT), }
                                 }
                             }
                         ));
@@ -3539,7 +3601,7 @@ fn populate_message_view(
             if is_notice {
                 username_label.apply_over(cx, live!(
                     draw_text: {
-                        color: (MESSAGE_NOTICE_TEXT_COLOR),
+                        color: (COLOR_MESSAGE_NOTICE_TEXT),
                     }
                 ));
             }
@@ -3590,6 +3652,39 @@ fn populate_message_view(
             cx,
             event_tl_item,
         );
+    }
+
+    #[cfg(feature = "tsp")] {
+        use matrix_sdk::ruma::serde::Base64;
+        use crate::tsp::{self, tsp_sign_indicator::{TspSignState, TspSignIndicatorWidgetRefExt}};
+
+        if let Some(mut tsp_sig) = event_tl_item.latest_json()
+            .and_then(|raw| raw.get_field::<serde_json::Value>("content").ok())
+            .flatten()
+            .and_then(|content_obj| content_obj.get("org.robius.tsp_signature").cloned())
+            .and_then(|tsp_sig_value| serde_json::from_value::<Base64>(tsp_sig_value).ok())
+            .map(|b64| b64.into_inner())
+        {
+            log!("Found event {:?} with TSP signature.", event_tl_item.event_id());
+            let tsp_sign_state = if let Some(sender_vid) = tsp::tsp_state_ref().lock().unwrap()
+                .get_verified_vid_for(event_tl_item.sender())
+            {
+                log!("Found verified VID for sender {}: \"{}\"", event_tl_item.sender(), sender_vid.identifier());
+                tsp_sdk::crypto::verify(&*sender_vid, &mut tsp_sig).map_or(
+                    TspSignState::WrongSignature,
+                    |(msg, msg_type)| {
+                        log!("TSP signature verified successfully!\n    Msg type: {msg_type:?}\n    Message: {:?} ({msg:X?})", std::str::from_utf8(msg));
+                        TspSignState::Verified
+                    }
+                )
+            } else {
+                TspSignState::Unknown
+            };
+
+            log!("TSP signature state for event {:?} is {:?}", event_tl_item.event_id(), tsp_sign_state);
+            item.tsp_sign_indicator(id!(profile.tsp_sign_indicator))
+                .show_with_state(cx, tsp_sign_state);
+        }
     }
 
     (item, new_drawn_status)

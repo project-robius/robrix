@@ -25,7 +25,7 @@ pub enum RoomPreviewAvatar {
 }
 impl Default for RoomPreviewAvatar {
     fn default() -> Self {
-        RoomPreviewAvatar::Text(String::new())
+        RoomPreviewAvatar::Text(String::from("?"))
     }
 }
 impl std::fmt::Debug for RoomPreviewAvatar {

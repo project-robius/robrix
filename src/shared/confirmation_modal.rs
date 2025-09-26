@@ -13,11 +13,13 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::icon_button::RobrixIconButton;
 
+    // A confirmation modal with no icons in the buttons.
+    // The accept button is blue and the cancel button is gray.
     pub ConfirmationModal = {{ConfirmationModal}} {
         width: Fit
         height: Fit
 
-        <RoundedView> {
+        wrapper = <RoundedView> {
             width: 400
             height: Fit
             align: {x: 0.5}
@@ -73,26 +75,52 @@ live_design! {
                     width: 120,
                     align: {x: 0.5, y: 0.5}
                     padding: 15,
-                    draw_icon: {
-                        svg_file: (ICON_FORBIDDEN)
-                        color: (COLOR_FG_DANGER_RED),
-                    }
-                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                    icon_walk: {width: 0, height: 0, margin: 0}
     
                     draw_bg: {
-                        border_color: (COLOR_FG_DANGER_RED),
-                        color: (COLOR_BG_DANGER_RED)
+                        border_size: 1.0
+                        border_color: (COLOR_BG_DISABLED),
+                        color: (COLOR_SECONDARY)
+                    }
+                    draw_text: {
+                        color: (COLOR_TEXT),
                     }
                     text: "Cancel"
-                    draw_text:{
-                        color: (COLOR_FG_DANGER_RED),
-                    }
                 }
 
                 accept_button = <RobrixIconButton> {
                     width: 120
                     align: {x: 0.5, y: 0.5}
                     padding: 15,
+                    icon_walk: {width: 0, height: 0, margin: 0}
+
+                    draw_bg: {
+                        border_size: 1.0
+                        border_color: (COLOR_ACTIVE_PRIMARY_DARKER),
+                        color: (COLOR_ACTIVE_PRIMARY)
+                    }
+                    draw_text: {
+                        color: (COLOR_PRIMARY),
+                    }
+                    text: "Confirm"
+                }
+            }
+        }
+    }
+
+    // A confirmation modal for a positive action.
+    // The accept button is green with a checkmark icon.
+    pub PositiveConfirmationModal = <ConfirmationModal> {
+        wrapper = { 
+            buttons_view = {
+                cancel_button = {
+                    draw_icon: {
+                        svg_file: (ICON_FORBIDDEN)
+                        color: (COLOR_TEXT),
+                    }
+                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                }
+                accept_button = {
                     draw_icon: {
                         svg_file: (ICON_CHECKMARK)
                         color: (COLOR_FG_ACCEPT_GREEN),
@@ -103,9 +131,39 @@ live_design! {
                         border_color: (COLOR_FG_ACCEPT_GREEN),
                         color: (COLOR_BG_ACCEPT_GREEN)
                     }
-                    text: "Confirm"
-                    draw_text:{
+                    draw_text: {
                         color: (COLOR_FG_ACCEPT_GREEN),
+                    }
+                }
+            }
+        }
+    }
+
+    // A confirmation modal for a negative action.
+    // The accept button is red with a forbidden icon.
+    pub NegativeConfirmationModal = <ConfirmationModal> {
+        wrapper = {
+            buttons_view = {
+                cancel_button = {
+                    draw_icon: {
+                        svg_file: (ICON_FORBIDDEN)
+                        color: (COLOR_TEXT),
+                    }
+                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                }
+                accept_button = {
+                    draw_icon: {
+                        svg_file: (ICON_CLOSE)
+                        color: (COLOR_FG_DANGER_RED),
+                    }
+                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+
+                    draw_bg: {
+                        border_color: (COLOR_FG_DANGER_RED),
+                        color: (COLOR_BG_DANGER_RED)
+                    }
+                    draw_text: {
+                        color: (COLOR_FG_DANGER_RED),
                     }
                 }
             }
@@ -226,7 +284,7 @@ impl WidgetMatchEvent for ConfirmationModal {
 
 impl ConfirmationModal {
     pub fn show(&mut self, cx: &mut Cx, content: ConfirmationModalContent) {
-        self.content = content  ;
+        self.content = content;
         self.apply_content(cx);
     }
 

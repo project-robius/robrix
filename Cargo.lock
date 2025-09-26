@@ -452,6 +452,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c953fe1ba023e6b7730c0d4b031d06f267f23a46167dcbd40316644b10a17ba"
 dependencies = [
  "aws-lc-sys",
+ "untrusted 0.7.1",
  "zeroize",
 ]
 
@@ -2716,7 +2717,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -4552,7 +4553,7 @@ dependencies = [
  "getrandom 0.2.15",
  "libc",
  "spin",
- "untrusted",
+ "untrusted 0.9.0",
  "windows-sys 0.52.0",
 ]
 
@@ -4642,9 +4643,10 @@ dependencies = [
 
 [[package]]
 name = "robrix"
-version = "0.0.1-pre-alpha-3"
+version = "0.0.1-pre-alpha-4"
 dependencies = [
  "anyhow",
+ "aws-lc-rs",
  "bitflags 2.9.0",
  "blurhash",
  "bytesize",
@@ -4673,6 +4675,7 @@ dependencies = [
  "robius-location",
  "robius-open",
  "robius-use-makepad",
+ "ruma",
  "sanitize-filename",
  "serde",
  "serde_json",
@@ -4712,7 +4715,7 @@ dependencies = [
 [[package]]
 name = "ruma"
 version = "0.12.3"
-source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ed6f74d3c22ca6e5d05bbd812801a04e364bb280"
 dependencies = [
  "assign",
  "js_int",
@@ -4728,7 +4731,7 @@ dependencies = [
 [[package]]
 name = "ruma-client-api"
 version = "0.20.3"
-source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ed6f74d3c22ca6e5d05bbd812801a04e364bb280"
 dependencies = [
  "as_variant",
  "assign",
@@ -4751,7 +4754,7 @@ dependencies = [
 [[package]]
 name = "ruma-common"
 version = "0.15.2"
-source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ed6f74d3c22ca6e5d05bbd812801a04e364bb280"
 dependencies = [
  "as_variant",
  "base64",
@@ -4783,7 +4786,7 @@ dependencies = [
 [[package]]
 name = "ruma-events"
 version = "0.30.3"
-source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ed6f74d3c22ca6e5d05bbd812801a04e364bb280"
 dependencies = [
  "as_variant",
  "indexmap 2.7.1",
@@ -4808,7 +4811,7 @@ dependencies = [
 [[package]]
 name = "ruma-federation-api"
 version = "0.11.1"
-source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ed6f74d3c22ca6e5d05bbd812801a04e364bb280"
 dependencies = [
  "http",
  "js_int",
@@ -4822,7 +4825,7 @@ dependencies = [
 [[package]]
 name = "ruma-html"
 version = "0.4.1"
-source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ed6f74d3c22ca6e5d05bbd812801a04e364bb280"
 dependencies = [
  "as_variant",
  "html5ever",
@@ -4834,7 +4837,7 @@ dependencies = [
 [[package]]
 name = "ruma-identifiers-validation"
 version = "0.10.1"
-source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ed6f74d3c22ca6e5d05bbd812801a04e364bb280"
 dependencies = [
  "js_int",
  "thiserror 2.0.12",
@@ -4843,7 +4846,7 @@ dependencies = [
 [[package]]
 name = "ruma-macros"
 version = "0.15.1"
-source = "git+https://github.com/ruma/ruma?rev=d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a#d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#ed6f74d3c22ca6e5d05bbd812801a04e364bb280"
 dependencies = [
  "cfg-if",
  "proc-macro-crate",
@@ -4964,7 +4967,7 @@ dependencies = [
  "aws-lc-rs",
  "ring",
  "rustls-pki-types",
- "untrusted",
+ "untrusted 0.9.0",
 ]
 
 [[package]]
@@ -6116,7 +6119,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "tsp_sdk"
 version = "0.8.1"
-source = "git+https://github.com/openwallet-foundation-labs/tsp.git#d24e3ea7214069dcfc991c69c8e3e7795e221efa"
+source = "git+https://github.com/openwallet-foundation-labs/tsp.git#8ab2cbc643834e92c64a0891d2eb8117817a27b9"
 dependencies = [
  "aries-askar",
  "async-stream",
@@ -6289,6 +6292,12 @@ name = "unsigned-varint"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb066959b24b5196ae73cb057f45598450d2c5f71460e98c49b738086eff9c06"
+
+[[package]]
+name = "untrusted"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
 
 [[package]]
 name = "untrusted"

@@ -1,7 +1,7 @@
 // Ignore clippy warnings in `DeRon` macro derive bodies.
 #![allow(clippy::question_mark)]
 
-use std::{borrow::Cow, fmt::Display, ops::Deref, str::{Chars, FromStr}, time::SystemTime};
+use std::{borrow::Cow, fmt::Display, ops::{Deref, DerefMut}, str::{Chars, FromStr}, time::SystemTime};
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
@@ -9,8 +9,43 @@ use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRo
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
-use crate::sliding_sync::{submit_async_request, MatrixRequest};
+use crate::{room::RoomPreviewAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
 
+
+/// A wrapper type that implements the `Debug` trait for non-`Debug` types.
+pub struct DebugWrapper<T>(T);
+impl<T> std::fmt::Debug for DebugWrapper<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({})", std::any::type_name::<T>())
+    }
+}
+impl<T> Deref for DebugWrapper<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl<T> DerefMut for DebugWrapper<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl<T> From<T> for DebugWrapper<T> {
+    fn from(value: T) -> Self {
+        DebugWrapper(value)
+    }
+}
+impl<T: Default> Default for DebugWrapper<T> {
+    fn default() -> Self {
+        DebugWrapper(T::default())
+    }
+}
+impl<T> DebugWrapper<T> {
+    /// Consumes the wrapper and returns the inner value.
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
 
 /// Returns true if the given event is an interactive hit-related event
 /// that should require a view/widget to be visible in order to handle/receive it.
@@ -178,7 +213,7 @@ pub fn stringify_pagination_error(
 
     match error {
         TimelineError::PaginationError(PaginationError::NotSupported) => {
-            return format!("Failed to load earlier messages in \"{room_name}\":\
+            return format!("Failed to load earlier messages in \"{room_name}\": \
                 pagination is not supported in this timeline focus mode.");
         }
         TimelineError::PaginationError(PaginationError::Paginator(paginator_error)) => {
@@ -650,6 +685,17 @@ impl Display for OwnedRoomIdRon {
     }
 }
 
+/// Returns a text avatar string containing the first character of the room name.
+///
+/// Skips the first character if it is a `#` or `!`, the sigils used for Room aliases and Room IDs.
+pub fn avatar_from_room_name(room_name: Option<&str>) -> RoomPreviewAvatar {
+    let first = room_name.and_then(|rn| rn
+        .graphemes(true)
+        .find(|&g| g != "#" && g != "!")
+        .map(ToString::to_string)
+    ).unwrap_or_else(|| String::from("?"));
+    RoomPreviewAvatar::Text(first)
+}
 
 #[cfg(test)]
 mod tests_human_readable_list {
