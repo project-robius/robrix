@@ -263,13 +263,13 @@ pub fn text_preview_of_message(
                         utils::linkify(
                             utils::trim_start_html_whitespace(&fb.body),
                             true,
-                        )
+                        ).0
                         .to_string()
                     )
                 )
                 .unwrap_or_else(|| match utils::linkify(&text.body, false) {
-                    Cow::Borrowed(plaintext) => htmlize::escape_text(plaintext).to_string(),
-                    Cow::Owned(linkified) => linkified,
+                    (Cow::Borrowed(plaintext), _) => htmlize::escape_text(plaintext).to_string(),
+                    (Cow::Owned(linkified), _) => linkified,
                 })
         }
         MessageType::VerificationRequest(verification) => format!(

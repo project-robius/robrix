@@ -24,9 +24,10 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
+use url::Url;
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, link_preview::{LinkPreviewCache, LinkPreviewCacheEntry, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -81,6 +82,7 @@ live_design! {
     use crate::home::tombstone_footer::TombstoneFooter;
     use crate::rooms_list::*;
     use crate::shared::restore_status_view::*;
+    use crate::home::link_preview::LinkPreview;
     use link::tsp_link::TspSignIndicator;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
@@ -342,6 +344,7 @@ live_design! {
                 }
 
                 message = <HtmlOrPlaintext> { }
+                link_preview_view = <LinkPreview> {}
 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
@@ -386,6 +389,7 @@ live_design! {
                 padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
+                link_preview_view = <LinkPreview> {}
                 <View> {
                     width: Fill,
                     height: Fit
@@ -1342,6 +1346,7 @@ impl Widget for RoomScreen {
                                         msg_like_content,
                                         prev_event,
                                         &mut tl_state.media_cache,
+                                        &mut tl_state.link_preview_cache,
                                         &tl_state.user_power,
                                         item_drawn_status,
                                         room_screen_widget_uid,
@@ -2348,7 +2353,8 @@ impl RoomScreen {
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
                 request_sender,
-                media_cache: MediaCache::new(Some(update_sender)),
+                media_cache: MediaCache::new(Some(update_sender.clone())),
+                link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
                 replying_to: None,
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
@@ -2889,6 +2895,8 @@ struct TimelineUiState {
     /// Currently this excludes avatars, as those are shared across multiple rooms.
     media_cache: MediaCache,
 
+    /// Cache for link preview data indexed by URL to avoid redundant network requests.
+    link_preview_cache: LinkPreviewCache,
     /// Info about the event currently being replied to, if any.
     replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
 
@@ -3057,6 +3065,7 @@ fn populate_message_view(
     msg_like_content: &MsgLikeContent,
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
+    link_preview_cache: &mut LinkPreviewCache,
     user_power_levels: &UserPowerLevels,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
@@ -3102,13 +3111,19 @@ fn populate_message_view(
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
-                        populate_text_message_content(
+                        let links = populate_text_message_content(
                             cx,
                             &item.html_or_plaintext(id!(content.message)),
                             body,
                             formatted.as_ref(),
                         );
-                        new_drawn_status.content_drawn = true;
+                        new_drawn_status.content_drawn = populate_link_previews_below_message(
+                            cx,
+                            &mut item.link_preview(id!(content.link_preview_view)),
+                            links,
+                            media_cache,
+                            link_preview_cache,
+                        );
                         (item, false)
                     }
                 }
@@ -3573,30 +3588,35 @@ fn populate_message_view(
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
-fn populate_text_message_content(
+/// Returns a list of links found in the message body.
+fn populate_text_message_content<'a>(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
-    body: &str,
-    formatted_body: Option<&FormattedBody>,
-) {
+    body: &'a str,
+    formatted_body: Option<&'a FormattedBody>,
+) -> Vec<Cow<'a, str>> {
     // The message was HTML-formatted rich text.
     if let Some(fb) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
+        let (linkified_html, links) = utils::linkify(
+            utils::trim_start_html_whitespace(&fb.body),
+            true,
+        );
         message_content_widget.show_html(
             cx,
-            utils::linkify(
-                utils::trim_start_html_whitespace(&fb.body),
-                true,
-            )
+            linkified_html
         );
+        links
     }
     // The message was non-HTML plaintext.
     else {
-        match utils::linkify(body, false) {
+        let (linkified_html, links) = utils::linkify(body, false);
+        match linkified_html {
             Cow::Owned(linkified_html) => message_content_widget.show_html(cx, &linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext),
         }
+        links
     }
 }
 
@@ -3898,6 +3918,61 @@ fn populate_location_message_content(
     true
 }
 
+/// Populates the given `link_preview_ref` with the given `links` and fetches the necessary thumbnails.
+///
+/// If all link previews are available, it returns `true`.
+///
+/// The given `media_cache` is used to fetch the thumbnails from cache.
+///
+/// The given `link_preview_cache` is used to fetch the link previews from cache.
+/// 
+/// Return true when the link preview is fully drawn
+fn populate_link_previews_below_message<'a>(
+    cx: &mut Cx2d,
+    link_preview_ref: &mut LinkPreviewRef,
+    links: Vec<Cow<'a, str>>,
+    media_cache: &mut MediaCache,
+    link_preview_cache: &mut LinkPreviewCache,
+) -> bool {
+    const SKIPPED_DOMAINS: &[&str] = &["matrix.to", "matrix.io"];
+    let mut fully_drawn_count = 0;
+    let mut accepted_link_count = 0;
+    let mut views = Vec::new();
+    for link in &links {
+        if link.is_empty() {
+            continue;
+        }
+        if let Ok(parsed_url) = Url::parse(link) {
+            if let Some(domain) = parsed_url.host_str() {
+                if SKIPPED_DOMAINS
+                    .iter()
+                    .any(|skip_domain| domain.ends_with(skip_domain))
+                {
+                    continue;
+                }
+            }
+        }
+        accepted_link_count += 1;
+        if let LinkPreviewCacheEntry::LoadedLinkPreview(link_preview_data) =
+            link_preview_cache.get_or_fetch_link_preview(link.to_string())
+        {
+            let (view_ref, was_image_drawn) = link_preview_ref.populate_link_preview_view(
+                cx,
+                &link_preview_data,
+                media_cache,
+                populate_image_message_content,
+            );
+            
+            if was_image_drawn {
+                fully_drawn_count += 1;
+            }
+            views.push(view_ref);
+        }
+    }
+    link_preview_ref.set_children(views);
+    fully_drawn_count == accepted_link_count
+}
+
 /// Draws a ReplyPreview above a message if it was in-reply to another message.
 ///
 /// If the given `in_reply_to` details are `None`,
@@ -4005,7 +4080,8 @@ fn populate_preview_of_timeline_item(
         match m.msgtype() {
             MessageType::Text(TextMessageEventContent { body, formatted, .. })
             | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
-                return populate_text_message_content(cx, widget_out, body, formatted.as_ref());
+                let _ = populate_text_message_content(cx, widget_out, body, formatted.as_ref());
+                return;
             }
             _ => { } // fall through to the general case for all timeline items below.
         }
