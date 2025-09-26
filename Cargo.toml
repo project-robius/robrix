@@ -143,8 +143,8 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
 ## and then we won't need to patch ruma-events anymore.
 ## But that is a significant amount of work, so for now we just patch ruma-events.
 ##
-# [patch."https://github.com/ruma/ruma"]
-# ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp"}
+[patch."https://github.com/ruma/ruma"]
+ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp"}
 
 
 [package.metadata.docs.rs]
