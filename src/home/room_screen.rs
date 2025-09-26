@@ -1,7 +1,7 @@
 //! A room screen is the UI view that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, cell::RefCell, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::{Arc, LazyLock, RwLock}};
+use std::{borrow::Cow, cell::RefCell, collections::BTreeMap, ops::{DerefMut, Range}, sync::Arc};
 
 use bytesize::ByteSize;
 use imbl::Vector;
@@ -24,7 +24,6 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
-use tokio::sync::Notify;
 
 use crate::{
     app::{AppStateAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::{RoomsListAction, RoomsListRef}, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
@@ -45,10 +44,6 @@ use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_react
 
 const GEO_URI_SCHEME: &str = "geo:";
 
-/// Global HashMap tracking timeline loaded notifications for rooms
-/// Maps room IDs to their respective notify instances that signal when the room timeline is loaded
-static ROOM_TIMELINE_LOADED_MAP: LazyLock<RwLock<HashMap<OwnedRoomId, Arc<Notify>>>> = LazyLock::new(|| RwLock::new(HashMap::new()));
-
 /// The maximum number of timeline items to search through
 /// when looking for a particular event.
 ///
@@ -63,22 +58,6 @@ const SMOOTH_SCROLL_TIME: NonZeroU32 = NonZeroU32::new(500).unwrap();
 
 /// The max size (width or height) of a blurhash image to decode.
 const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
-
-/// Gets the Arc<Notify> for signaling when a room's timeline is loaded and drawn, creating it if it doesn't exist
-pub fn get_timeline_loaded_notify(room_id: &OwnedRoomId) -> Option<Arc<Notify>> {
-    if let Ok(mut map) = ROOM_TIMELINE_LOADED_MAP.write() {
-        Some(map.entry(room_id.clone()).or_insert_with(|| Arc::new(Notify::new())).clone())
-    } else {
-        None
-    }
-}
-
-/// Removes the Arc<Notify> from the timeline loaded map for the given room
-pub fn remove_timeline_loaded_notify(room_id: &OwnedRoomId) {
-    if let Ok(mut map) = ROOM_TIMELINE_LOADED_MAP.write() {
-        map.remove(room_id);
-    }
-}
 
 live_design! {
     use link::theme::*;
@@ -1353,15 +1332,6 @@ impl Widget for RoomScreen {
             };
             let room_id = &tl_state.room_id;
             let tl_items = &tl_state.items;
-            if !tl_items.is_empty() && !self.timeline_loaded_notified {
-                // Signal waiting threads that this room's timeline has loaded and is ready to jump to specific messages.
-                if let Ok(map) = ROOM_TIMELINE_LOADED_MAP.read() {
-                    if let Some(notify) = map.get(room_id) {
-                        notify.notify_one();
-                        self.timeline_loaded_notified = true;
-                    }
-                }
-            }
 
             // Set the portal list's range based on the number of timeline items.
             let last_item_id = tl_items.len();
@@ -2933,6 +2903,7 @@ pub enum TimelineUpdate {
     /// includes a `SuccessorRoom` that contains the successor room.
     /// If the room is not tombstoned, then the `SuccessorRoom` is `None`.
     Tombstoned(Option<SuccessorRoom>),
+    /// A notice that portal list is required to scroll to the given event.
     ScrollToMessage {
         event_id: OwnedEventId,
     }
@@ -3721,7 +3692,7 @@ pub fn populate_text_message_content(
 /// Draws the given image message's content into the `message_content_widget`.
 ///
 /// Returns whether the image message content was fully drawn.
-pub fn populate_image_message_content(
+fn populate_image_message_content(
     cx: &mut Cx2d,
     text_or_image_ref: &TextOrImageRef,
     image_info_source: Option<Box<ImageInfo>>,
@@ -3859,7 +3830,7 @@ pub fn populate_image_message_content(
 /// Draws a file message's content into the given `message_content_widget`.
 ///
 /// Returns whether the file message content was fully drawn.
-pub fn populate_file_message_content(
+fn populate_file_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     file_content: &FileMessageEventContent,

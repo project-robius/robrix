@@ -21,7 +21,7 @@ use matrix_sdk_ui::{
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::{AbortHandle, JoinHandle}, time::{error::Elapsed, timeout},
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::{AbortHandle, JoinHandle}, time::error::Elapsed,
 };
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
@@ -33,7 +33,7 @@ use crate::{
     event_preview::text_preview_of_timeline_item,
     home::{
         invite_screen::{JoinRoomResultAction, LeaveRoomResultAction},
-        room_screen::{get_timeline_loaded_notify, remove_timeline_loaded_notify, TimelineUpdate},
+        room_screen::TimelineUpdate,
         rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate},
         rooms_list_header::RoomsListHeaderAction, search_message::{highlight_search_terms_in_message, SearchResultAction, SearchResultItem, SearchResultReceived},
     },
@@ -1377,35 +1377,24 @@ async fn async_worker(
                 search_task_abort_handler = Some(handle.abort_handle());
             }
             MatrixRequest::WaitForRoomTimelineLoadedToJump { room_id, event_id } => {
-                let sender = {
+                let (sender, timeline) = {
                     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         log!("Skipping pagination request for not-yet-known room {room_id}");
                         continue;
                     };
-                    room_info.timeline_update_sender.clone()
+                    
+                    (room_info.timeline_update_sender.clone(), room_info.timeline.clone())
                 };
                 Handle::current().spawn(async move {
-                    if let Some(room_notify) = get_timeline_loaded_notify(&room_id) {
-                        log!("Waiting for Room {room_id} timeline to be drawn before jumping to event {event_id}");
-                        let wait_result = timeout(ROOM_TIMELINE_JUMP_TIMEOUT, room_notify.notified()).await;
-                        remove_timeline_loaded_notify(&room_id);
-                        
-                        match wait_result {
-                            Ok(()) => {
-                                log!("Room {room_id} timeline loaded, jumping to event {event_id}");
-                                sender
-                                    .send(TimelineUpdate::ScrollToMessage { event_id })
-                                    .unwrap();
-                                SignalToUI::set_ui_signal();
-                            }
-                            Err(_) => {
-                                error!("Timeout waiting for Room {room_id} timeline to be drawn before jumping to event {event_id}");
-                            }
-                        }
-                    } else {
-                        error!("Unable to get timeline notification for room {room_id}, event {event_id}");
+                    // When first loading a room, back pagination will occur, resulting in scroll to message fail.
+                    if timeline.items().await.len() < 100 {
+                        let _ = timeline.paginate_backwards(50).await;
                     }
+                    sender
+                        .send(TimelineUpdate::ScrollToMessage { event_id })
+                        .unwrap();
+                    SignalToUI::set_ui_signal();
                 });
             }
         }
@@ -2555,8 +2544,6 @@ pub struct BackwardsPaginateUntilEventRequest {
 const LOG_TIMELINE_DIFFS: bool = cfg!(feature = "log_timeline_diffs");
 /// Whether to enable verbose logging of all room list service diff updates.
 const LOG_ROOM_LIST_DIFFS: bool = cfg!(feature = "log_room_list_diffs");
-/// Timeout duration for waiting for room timeline to be drawn before jumping to an event, in seconds.
-const ROOM_TIMELINE_JUMP_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A per-room async task that listens for timeline updates and sends them to the UI thread.
 ///
