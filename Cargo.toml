@@ -73,6 +73,7 @@ bytesize = "2.0"
 bitflags = "2.6.0"
 indexmap = "2.6.0"
 blurhash = { version = "0.2.3", default-features = false }
+regex = "1.11.1"
 
 ## Dependencies for TSP support.
 tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", optional = true, features = ["async", "resolve"] }

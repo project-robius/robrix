@@ -365,11 +365,14 @@ pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail
     }
 );
 
-/// Removes leading whitespace and HTML whitespace tags (`<p>` and `<br>`) from the given `text`.
+/// Removes leading whitespace and HTML whitespace tags (`<mx-reply>`, `<p>` and `<br>`) from the given `text`.
 pub fn trim_start_html_whitespace(mut text: &str) -> &str {
     let mut prev_text_len = text.len();
     loop {
         text = text
+        // Search result does not use matrix sdk ui's event timeline hence the body contains <mx-reply> for replied messages.
+        // Makepad html widget cannot display this tag for searched message. Hence <mx-reply> is removed.
+            .trim_start_matches("<mx-reply>")
             .trim_start_matches("<p>")
             .trim_start_matches("<br>")
             .trim_start_matches("<br/>")

@@ -10,7 +10,7 @@ use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
-        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{clear_timeline_states, MessageAction}, rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate}
+        home_screen::MessageSearchInputAction, main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{clear_timeline_states, MessageAction}, rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::callout_tooltip::{
@@ -170,6 +170,7 @@ impl LiveRegister for App {
         crate::settings::live_design(cx);
         crate::room::live_design(cx);
         crate::join_leave_room_modal::live_design(cx);
+        crate::right_drawer::live_design(cx);
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
@@ -287,6 +288,11 @@ impl MatchEvent for App {
                     &Scope::default().path,
                     StackNavigationAction::Push(live_id!(main_content_view))
                 );
+                cx.widget_action(
+                    self.ui.widget_uid(),
+                    &Scope::default().path,
+                    MessageSearchInputAction::Show
+                );
                 self.ui.redraw(cx);
                 continue;
             }
@@ -295,10 +301,20 @@ impl MatchEvent for App {
             match action.downcast_ref() {
                 Some(AppStateAction::RoomFocused(selected_room)) => {
                     self.app_state.selected_room = Some(selected_room.clone());
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        &Scope::default().path,
+                        MessageSearchInputAction::Show
+                    );
                     continue;
                 }
                 Some(AppStateAction::FocusNone) => {
                     self.app_state.selected_room = None;
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        &Scope::default().path,
+                        MessageSearchInputAction::Hide
+                    );
                     continue;
                 }
                 Some(AppStateAction::UpgradedInviteToJoinedRoom(room_id)) => {
@@ -677,7 +693,7 @@ impl Eq for SelectedRoom {}
 /// Actions sent to the top-level App in order to update / restore its [`AppState`].
 ///
 /// These are *NOT* widget actions.
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub enum AppStateAction {
     /// The given room was focused (selected).
     RoomFocused(SelectedRoom),
@@ -698,5 +714,6 @@ pub enum AppStateAction {
         room_to_close: Option<OwnedRoomId>,
         destination_room: BasicRoomDetails,
     },
+    #[default]
     None,
 }

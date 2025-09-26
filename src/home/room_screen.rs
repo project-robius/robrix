@@ -26,7 +26,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::{RoomsListAction, RoomsListRef}, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -37,7 +37,7 @@ use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::shared::mentionable_text_input::{MentionableTextInputWidgetRefExt, MentionableTextInputAction};
-
+use std::num::NonZeroU32;
 use rangemap::RangeSet;
 
 use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, location_preview::LocationPreviewWidgetExt, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
@@ -51,9 +51,13 @@ const GEO_URI_SCHEME: &str = "geo:";
 /// from getting into a long-running loop if an event cannot be found quickly.
 const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 
+/// The time required to scroll to the targeted message in milliseconds.
+/// 
+/// This value cannot be zero.
+const SMOOTH_SCROLL_TIME: NonZeroU32 = NonZeroU32::new(500).unwrap();
+
 /// The max size (width or height) of a blurhash image to decode.
 const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
-
 
 live_design! {
     use link::theme::*;
@@ -207,10 +211,10 @@ live_design! {
 
 
     // An empty view that takes up no space in the portal list.
-    Empty = <View> { }
+    pub Empty = <View> { }
 
     // The view used for each text-based message event in a room's timeline.
-    Message = {{Message}} {
+    pub Message = {{Message}} {
         width: Fill,
         height: Fit,
         margin: 0.0
@@ -339,6 +343,28 @@ live_design! {
                         }
                         text: "<Username not available>"
                     }
+
+                    jump_to_this_message = <View> {
+                        visible: false,
+                        width: Fit,
+                        height: Fit,
+
+                        jump_button = <Button> {
+                            width: Fit,
+                            draw_bg: {
+                                color_hover: (COLOR_FG_DISABLED)
+                            }
+                            draw_text: {
+                                text_style: <REGULAR_TEXT>{
+                                    font_size: 9,
+                                },
+                                color: (COLOR_TEXT),
+                                color_hover: (COLOR_TEXT_IDLE),
+                                color_focus: (COLOR_TEXT),
+                            }
+                            text: "Jump"
+                        }
+                    }
                 }
 
                 message = <HtmlOrPlaintext> { }
@@ -398,7 +424,7 @@ live_design! {
 
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
-    ImageMessage = <Message> {
+    pub ImageMessage = <Message> {
         body = {
             content = {
                 width: Fill,
@@ -815,6 +841,8 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
+    /// Whether the timeline loaded notification has been sent for the current room.
+    #[rust] timeline_loaded_notified: bool,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1462,6 +1490,7 @@ impl RoomScreen {
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
         let top_space = self.view(id!(top_space));
         let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
+        let loading_pane = self.loading_pane(id!(loading_pane));
         let curr_first_id = portal_list.first_id();
         let ui = self.widget_uid();
         let Some(tl) = self.tl_state.as_mut() else { return };
@@ -1739,6 +1768,60 @@ impl RoomScreen {
                         self.view.view(id!(message_input_view)).set_visible(cx, true);
                     }
                     tl.tombstone_info = tombstone_info;
+                }
+                TimelineUpdate::ScrollToMessage { event_id } => {
+                    // Search through the timeline to find the message with the given event_id
+                    let mut num_items_searched = 0;
+                    let target_msg_tl_index = tl.items
+                        .focus()
+                        .into_iter()
+                        .position(|item| {
+                            num_items_searched += 1;
+                            item.as_event()
+                                .and_then(|e| e.event_id())
+                                .is_some_and(|ev_id| ev_id == event_id)
+                        });
+                    if let Some(index) = target_msg_tl_index {
+                        let current_first_index = portal_list.first_id();
+                        let speed = index.saturating_sub(1).abs_diff(current_first_index) as f64 / (SMOOTH_SCROLL_TIME.get() as f64 * 0.001);
+                        portal_list.smooth_scroll_to(
+                            cx,
+                            index.saturating_sub(1),
+                            speed,
+                            None,
+                        );
+                        // start highlight animation.
+                        tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
+                            item_id: index
+                        };
+                    } else {
+                        log!("Message not found - trigger backwards pagination to find it");
+                        // Message not found - trigger backwards pagination to find it
+                        loading_pane.set_state(
+                            cx,
+                            LoadingPaneState::BackwardsPaginateUntilEvent {
+                                target_event_id: event_id.clone(),
+                                events_paginated: 0,
+                                request_sender: tl.request_sender.clone(),
+                            },
+                        );
+                        loading_pane.show(cx);
+
+                        tl.request_sender.send_if_modified(|requests| {
+                            if let Some(existing) = requests.iter_mut().find(|r| r.room_id == tl.room_id) {
+                                // Re-use existing request
+                                existing.target_event_id = event_id.clone();
+                            } else {
+                                requests.push(BackwardsPaginateUntilEventRequest {
+                                    room_id: tl.room_id.clone(),
+                                    target_event_id: event_id.clone(),
+                                    starting_index: 0, // Search from the beginning since we don't know where it is
+                                    current_tl_len: tl.items.len(),
+                                });
+                            }
+                            true
+                        });
+                    }
                 }
             }
         }
@@ -2557,6 +2640,8 @@ impl RoomScreen {
         self.loading_pane(id!(loading_pane)).take_state();
         self.room_name = room_name_or_id(room_name.into(), &room_id);
         self.room_id = Some(room_id.clone());
+        // Reset timeline loaded notification flag for the new room
+        self.timeline_loaded_notified = false;
 
         // We initially tell every MentionableTextInput widget that the current user
         // *does not* has privileges to notify the entire room;
@@ -2818,6 +2903,10 @@ pub enum TimelineUpdate {
     /// includes a `SuccessorRoom` that contains the successor room.
     /// If the room is not tombstoned, then the `SuccessorRoom` is `None`.
     Tombstoned(Option<SuccessorRoom>),
+    /// A notice that portal list is required to scroll to the given event.
+    ScrollToMessage {
+        event_id: OwnedEventId,
+    }
 }
 
 thread_local! {
@@ -3020,22 +3109,22 @@ fn find_new_item_matching_current_item(
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct ItemDrawnStatus {
+pub struct ItemDrawnStatus {
     /// Whether the profile info (avatar and displayable username) were drawn for this item.
-    profile_drawn: bool,
+    pub profile_drawn: bool,
     /// Whether the content of the item was drawn (e.g., the message text, image, video, sticker, etc).
-    content_drawn: bool,
+    pub content_drawn: bool,
 }
 impl ItemDrawnStatus {
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `false`.
-    const fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             profile_drawn: false,
             content_drawn: false,
         }
     }
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `true`.
-    const fn both_drawn() -> Self {
+    pub const fn both_drawn() -> Self {
         Self {
             profile_drawn: true,
             content_drawn: true,
@@ -3573,7 +3662,7 @@ fn populate_message_view(
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
-fn populate_text_message_content(
+pub fn populate_text_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     body: &str,
@@ -4332,6 +4421,16 @@ pub enum MessageAction {
     None,
 }
 
+/// Contains the information needed to jump to a specific message.
+/// Used primarily for search results to allow navigation to the original message location.
+#[derive(Clone, Debug)]
+pub struct JumpToMessageRequest {
+    /// The room ID where the target message is located.
+    pub room_id: OwnedRoomId,
+    /// The event ID of the target message.
+    pub event_id: OwnedEventId,
+}
+
 /// A widget representing a single message of any kind within a room timeline.
 #[derive(Live, LiveHook, Widget)]
 pub struct Message {
@@ -4339,6 +4438,9 @@ pub struct Message {
     #[animator] animator: Animator,
 
     #[rust] details: Option<MessageDetails>,
+    /// The jump option required for searched messages.
+    /// Contains the room ID, event ID for the message to jump to.
+    #[rust] jump_option: Option<JumpToMessageRequest>,
 }
 
 impl Widget for Message {
@@ -4352,7 +4454,35 @@ impl Widget for Message {
         {
             self.animator_play(cx, id!(highlight.off));
         }
-
+        // If this message is a search result with a jump option, handle clicks on the
+        // "Jump" button.
+        if let Some(jump_request) = &self.jump_option {
+            if let Event::Actions(actions) = event {
+                if self.view.button(id!(jump_to_this_message.jump_button)).clicked(actions) {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &Scope::default().path,
+                        StackNavigationAction::PopToRoot
+                    );
+                    let room_name: Option<String> = {
+                        let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                        rooms_list_ref.get_room_name(&jump_request.room_id)
+                    };
+                    let target_selected_room = SelectedRoom::JoinedRoom {
+                        room_id: jump_request.room_id.clone().into(),
+                        room_name,
+                    };
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        RoomsListAction::Selected(target_selected_room)
+                    );
+                    submit_async_request(MatrixRequest::WaitForRoomTimelineLoadedToJump { room_id: jump_request.room_id.clone(), event_id: jump_request.event_id.clone() });
+                }
+            }
+            self.view.handle_event(cx, event, scope);
+            return;
+        }
         let Some(details) = self.details.clone() else { return };
 
         // We first handle a click on the replied-to message preview, if present,
@@ -4474,12 +4604,27 @@ impl Message {
     fn set_data(&mut self, details: MessageDetails) {
         self.details = Some(details);
     }
+
+    /// If there is a jump option, show the jump button at the top right corner.
+    /// 
+    /// Used primarily for search results to allow navigation to the original message location.
+    pub fn set_jump_option(&mut self, cx: &mut Cx, jump_option: JumpToMessageRequest) {
+        self.jump_option = Some(jump_option);
+        self.view.view(id!(jump_to_this_message))
+            .set_visible(cx, true);
+    }
 }
 
 impl MessageRef {
     fn set_data(&self, details: MessageDetails) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_data(details);
+    }
+
+    /// See [`Message::set_jump_option()`].
+    pub fn set_jump_option(&self, cx: &mut Cx, jump_option: JumpToMessageRequest) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_jump_option(cx, jump_option);
     }
 }
 

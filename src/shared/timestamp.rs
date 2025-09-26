@@ -87,12 +87,34 @@ impl Timestamp {
         );
         self.dt = dt;
     }
+
+    /// Sets the timestamp label text with the given `DateTime` formatted according to the specified `format` string.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `cx` - A mutable reference to the context that allows modification of the GUI.
+    /// * `dt` - The `DateTime<Local>` object representing the date and time to display.
+    /// * `format` - A format string used to determine how the `DateTime` should be displayed.
+    pub fn set_date_time_with_format(&mut self, cx: &mut Cx, dt: DateTime<Local>, format: &str) {
+        self.label(id!(ts_label)).set_text(
+            cx,
+            &dt.format(format).to_string()
+        );
+        self.dt = dt;
+    }
 }
 
 impl TimestampRef {
     pub fn set_date_time(&self, cx: &mut Cx, dt: DateTime<Local>) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_date_time(cx, dt);
+        }
+    }
+
+    /// See [`Timestamp::set_date_time_with_format()`].
+    pub fn set_date_time_with_format(&self, cx: &mut Cx, dt: DateTime<Local>, format: &str) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_date_time_with_format(cx, dt, format);
         }
     }
 }

@@ -8,20 +8,20 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
-        api::client::receipt::create_receipt::v3::ReceiptType, events::{
+        api::client::{receipt::create_receipt::v3::ReceiptType, search}, events::{
             receipt::ReceiptThread, room::{
-                message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
-            }, FullStateEventContent, MessageLikeEventType, StateEventType
+                message::{Relation, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
+            }, AnyMessageLikeEventContent, AnyTimelineEvent, FullStateEventContent, MessageLikeEventType, StateEventType
         }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState, SuccessorRoom
 };
 use matrix_sdk_ui::{
-    room_list_service::{RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RoomExt, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::{RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, Profile, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::{AbortHandle, JoinHandle}, time::error::Elapsed,
 };
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
@@ -35,17 +35,15 @@ use crate::{
         invite_screen::{JoinRoomResultAction, LeaveRoomResultAction},
         room_screen::TimelineUpdate,
         rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate},
-        rooms_list_header::RoomsListHeaderAction,
+        rooms_list_header::RoomsListHeaderAction, search_message::{highlight_search_terms_in_message, SearchResultAction, SearchResultItem, SearchResultReceived},
     },
     login::login_screen::LoginAction,
-    logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{logout_with_state_machine, LogoutConfig, is_logout_in_progress}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
+    logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{is_logout_in_progress, logout_with_state_machine, LogoutConfig}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
     persistence::{self, load_app_state, ClientSessionPersisted},
     profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    },
-    room::RoomPreviewAvatar,
-    shared::{
+    }, room::RoomPreviewAvatar, shared::{
         html_or_plaintext::MatrixLinkPillState,
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{enqueue_popup_notification, PopupItem, PopupKind}
@@ -414,6 +412,22 @@ pub enum MatrixRequest {
         matrix_id: MatrixId,
         via: Vec<OwnedServerName>
     },
+    /// General Matrix Search API with given categories
+    SearchMessages {
+        /// The search criteria containing all search parameters
+        criteria: search::search_events::v3::Criteria,
+        /// Token for next batch of search results.
+        next_batch: Option<String>,
+        /// Abort previous search only when debouncing from typing search term.
+        abort_previous_search: bool,
+    },
+    /// Wait for a room's timeline to be loaded before jumping to a specific event.
+    WaitForRoomTimelineLoadedToJump {
+        /// The ID of the room to jump to.
+        room_id: OwnedRoomId,
+        /// The ID of the event to jump to.
+        event_id: OwnedEventId,
+    }
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -450,6 +464,7 @@ async fn async_worker(
 ) -> Result<()> {
     log!("Started async_worker task.");
     let mut tasks_list: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
+    let mut search_task_abort_handler: Option<AbortHandle> = None;
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
@@ -1222,6 +1237,164 @@ async fn async_worker(
                             }
                         };
                     }
+                });
+            }
+            MatrixRequest::SearchMessages {
+                criteria,
+                next_batch,
+                abort_previous_search,
+            } => {
+                log!("MatrixRequest::SearchMessages - search_term: '{}', next_batch: {:?}, abort_previous_search: {}",
+                    criteria.search_term, next_batch, abort_previous_search);
+                if abort_previous_search {
+                    if let Some(abort_handler) = search_task_abort_handler.take() {
+                        abort_handler.abort();
+                    }
+                }
+                if criteria.search_term.is_empty() {
+                    continue;
+                }
+                let Some(client) = get_client() else { continue };
+                let mut search_categories = search::search_events::v3::Categories::new();
+                let search_term = criteria.search_term.clone(); // Capture search term for async task
+                let room_filter = criteria.filter.rooms.clone(); // Capture room filter for async task
+                search_categories.room_events = Some(criteria);
+                let mut req = search::search_events::v3::Request::new(search_categories);
+                req.next_batch = next_batch.clone();
+                
+                let includes_all_rooms = room_filter.as_ref().is_none();
+                let room_name = room_filter.as_ref().and_then(
+                    |room_ids| room_ids.first()
+                ).and_then(
+                    |room_id| {
+                        client.get_room(room_id).and_then(|room| room.name().to_owned())
+                    }
+                );
+                
+                let handle = Handle::current().spawn(async move {
+                    match client.send(req).await {
+                        Ok(response) => {
+                            let next_batch =
+                                response.search_categories.room_events.next_batch.clone();
+                            let mut room_id_for_grouping = None;
+                            let result = response.search_categories;
+                            let mut items = Vector::new();
+                            let mut profile_infos = BTreeMap::new();
+                            let highlights = result.room_events.highlights;
+                            if highlights.is_empty() {
+                                log!("No highlights found in search results for term '{search_term}'");
+                            } else {
+                                log!("Found {} highlights in search results for term '{search_term}', highlighted string: {:?}", highlights.len(), highlights);
+                            }
+                            log!("Search results for term '{search_term}': {:?} events found", result.room_events.count);
+                            
+                            for item in result.room_events.results.iter() {
+                                let Some(event) =
+                                    item.result.as_ref().and_then(|f| f.deserialize().ok())
+                                else {
+                                    continue;
+                                };
+                                
+                                for (user_id, profile) in item.context.profile_info.iter() {
+                                    profile_infos.entry(user_id.clone()).or_insert_with(|| {
+                                        TimelineDetails::Ready(Profile {
+                                            display_name: profile.displayname.clone(),
+                                            display_name_ambiguous: false,
+                                            avatar_url: profile.avatar_url.clone(),
+                                        })
+                                    });
+                                }
+                                let mut message_option = None;
+                                if let AnyTimelineEvent::MessageLike(msg) = &event {
+                                    let mut content = msg.original_content();
+                                    if let Some(replace) = msg.relations().replace {
+                                        content = replace.original_content();
+                                    }
+                                    if let Some(AnyMessageLikeEventContent::RoomMessage(mut message)) = content {
+                                        // We clone the message here so we can inject HTML `<code>` tags
+                                        // for highlighting without modifying the original data in the timeline.
+                                        
+                                        if let Some(Relation::Replacement(replace)) = &message.relates_to {
+                                            let new_content = &replace.new_content;
+                                            message.msgtype = new_content.msgtype.clone();
+                                        }
+                                        highlight_search_terms_in_message(&mut message, &highlights);
+                                        message_option = Some(message);
+                                    }
+                                }
+                                let event_room_id = event.room_id().to_owned();
+                                // Include all rooms in the search results.
+                                if room_filter.is_none() {                                
+                                    if let Some(ref mut room_id_for_grouping) = room_id_for_grouping {
+                                        if room_id_for_grouping != &event_room_id {
+                                            *room_id_for_grouping = event_room_id.clone();
+                                            items.push_back(SearchResultItem::RoomHeader(event_room_id.clone()));
+                                        }
+                                    } else {
+                                        room_id_for_grouping = Some(event_room_id.clone());
+                                        items.push_back(SearchResultItem::RoomHeader(event_room_id.clone()));
+                                    }
+                                }
+                                items.push_back(SearchResultItem::Event{ event, formatted_content: message_option}
+                                );
+                            }
+                            let count = result
+                                .room_events
+                                .count
+                                .and_then(|f| f.to_string().parse().ok())
+                                .unwrap_or(0);
+                            
+                            Cx::post_action(SearchResultAction::Received(SearchResultReceived {
+                                items,
+                                count,
+                                search_term,
+                                profile_infos,
+                                next_batch,
+                                room_name,
+                                includes_all_rooms
+                            }));
+                        }
+                        Err(e) => {
+                            let context = if let Some(rooms) = &room_filter {
+                                if let Some(room_id) = rooms.first() {
+                                    format!("Failed to search messages in room {room_id}")
+                                } else {
+                                    "Failed to search messages".to_string()
+                                }
+                            } else {
+                                "Failed to search messages in all rooms".to_string()
+                            };
+                            error!("{context}: {e:?}");
+                            Cx::post_action(SearchResultAction::ErrorWithNextBatchToken(next_batch.clone()));
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("{context}. Please try again."),
+                                auto_dismissal_duration: None,
+                                kind: PopupKind::Error
+                            });
+                        }
+                    }
+                });
+                search_task_abort_handler = Some(handle.abort_handle());
+            }
+            MatrixRequest::WaitForRoomTimelineLoadedToJump { room_id, event_id } => {
+                let (sender, timeline) = {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                        log!("Skipping pagination request for not-yet-known room {room_id}");
+                        continue;
+                    };
+                    
+                    (room_info.timeline_update_sender.clone(), room_info.timeline.clone())
+                };
+                Handle::current().spawn(async move {
+                    // When first loading a room, back pagination will occur, resulting in scroll to message fail.
+                    if timeline.items().await.len() < 100 {
+                        let _ = timeline.paginate_backwards(50).await;
+                    }
+                    sender
+                        .send(TimelineUpdate::ScrollToMessage { event_id })
+                        .unwrap();
+                    SignalToUI::set_ui_signal();
                 });
             }
         }
@@ -2031,9 +2204,8 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
     let room_id = room.room_id().to_owned();
     // We must call `display_name()` here to calculate and cache the room's name.
     let room_name = room.display_name().await.map(|n| n.to_string()).ok();
-
+    let is_room_encrypted = room.encryption_state().is_encrypted();
     let is_direct = room.is_direct().await.unwrap_or(false);
-
     match room.state() {
         RoomState::Knocked => {
             // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
@@ -2181,6 +2353,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         is_selected: false,
         is_direct,
         is_tombstoned: room.is_tombstoned() || room.tombstone_content().is_some(),
+        is_room_encrypted: is_room_encrypted,
     }));
 
     Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_id));
@@ -2381,7 +2554,6 @@ async fn timeline_subscriber_handler(
     timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
     mut request_receiver: watch::Receiver<Vec<BackwardsPaginateUntilEventRequest>>,
 ) {
-
     /// An inner function that searches the given new timeline items for a target event.
     ///
     /// If the target event is found, it is removed from the `target_event_id_opt` and returned,

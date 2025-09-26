@@ -17,6 +17,7 @@ pub mod timestamp;
 pub mod typing_animation;
 pub mod unread_badge;
 pub mod verification_badge;
+pub mod message_search_input_bar;
 pub mod restore_status_view;
 
 
@@ -38,6 +39,7 @@ pub fn live_design(cx: &mut Cx) {
     verification_badge::live_design(cx);
     callout_tooltip::live_design(cx);
     mentionable_text_input::live_design(cx);
+    message_search_input_bar::live_design(cx);
     restore_status_view::live_design(cx);
     confirmation_modal::live_design(cx);
 }

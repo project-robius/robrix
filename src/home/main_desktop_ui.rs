@@ -3,7 +3,7 @@ use matrix_sdk::ruma::OwnedRoomId;
 use tokio::sync::Notify;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SelectedRoom}, utils::room_name_or_id};
+use crate::{app::{AppState, AppStateAction, SelectedRoom}, shared::message_search_input_bar::{MessageSearchAction, MessageSearchInputBarRef}, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 live_design! {
@@ -172,7 +172,13 @@ impl MainDesktopUI {
         }
 
         self.open_rooms.insert(room_id_as_live_id, room.clone());
-        self.most_recently_selected_room = Some(room);
+        self.most_recently_selected_room = Some(room.clone());
+        // Call AppStateAction::RoomFocused action to display the search message input box when a room is open.
+        cx.widget_action(
+            self.widget_uid(), 
+            &HeapLiveIdPath::default(), 
+            AppStateAction::RoomFocused(room)
+        );
     }
 
     /// Closes a tab in the dock and focuses on the latest open room.
@@ -206,6 +212,10 @@ impl MainDesktopUI {
         dock.close_tab(cx, tab_id);
         self.tab_to_close = None;
         self.open_rooms.remove(&tab_id);
+        // Clear the search input when a room is closed
+        cx.get_global::<MessageSearchInputBarRef>().set_text("");
+        // Clear the search results when a room is closed
+        cx.widget_action(self.widget_uid(), &Scope::empty().path, MessageSearchAction::Changed(String::new()));
     }
 
     /// Closes all tabs
@@ -384,6 +394,13 @@ impl WidgetMatchEvent for MainDesktopUI {
 
                     if let Some(ref selected_room) = &app_state.selected_room {
                         self.focus_or_create_tab(cx, selected_room.clone());
+                    } else {
+                        // If there is no selected room, focus on the home tab.
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &HeapLiveIdPath::default(),
+                            AppStateAction::FocusNone,
+                        );
                     }
                     self.view.redraw(cx);
                 }
