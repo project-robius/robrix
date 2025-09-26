@@ -30,11 +30,11 @@ chrono = "0.4"
 clap = { version = "4.0.16", features = ["derive"] }
 crossbeam-channel = "0.5.10"
 crossbeam-queue = "0.3.8"
-eyeball = { version = "0.8.8", features = ["tracing"] }    # same as matrix-sdk
-eyeball-im = { version = "0.7.0", features = ["tracing"] } # same as matrix-sdk
+eyeball = { version = "0.8.8", features = ["tracing"] }     # same as matrix-sdk-ui
+eyeball-im = { version = "0.8.0", features = ["tracing"] }  # same as matrix-sdk-ui
+imbl = { version = "6.1.0", features = ["serde"] }          # same as matrix-sdk-ui
 futures-util = "0.3"
 htmlize = "1.0.5"
-imbl = { version = "5.0.0", features = ["serde"] }         # same as matrix-sdk-ui
 imghdr = "0.7.0"
 linkify = "0.10.0"
 matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
@@ -75,8 +75,7 @@ indexmap = "2.6.0"
 blurhash = { version = "0.2.3", default-features = false }
 
 ## Dependencies for TSP support.
-tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", optional = true, features = ["async", "resolve"] }
-# tsp_sdk = { version = "0.8.0", optional = true, default-features = false, features = ["async", "resolve"] }
+# tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", optional = true, features = ["async", "resolve"] }
 quinn = { version = "0.11.8", default-features = false, optional = true }
 ## We only include this such that we can specify the prebuilt-nasm features,
 ## which is required to build this on Windows x86_64 without having to install NASM separately.
@@ -97,7 +96,8 @@ reqwest = { version = "0.12", default-features = false, features = [
 [features]
 default = []
 ## Enables experimental support for using TSP wallets.
-tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding"]
+# tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding"]
+tsp = [] ### TODO FIX PLACEHOLDER
 
 ## Hides the command prompt console on Windows.
 hide_windows_console = []
@@ -122,12 +122,12 @@ log_timeline_diffs = []
 ## which recently was updated to allow for a *range* of versions of `libsqlite3-sys`).
 ## See <https://github.com/launchbadge/sqlx/pull/3928/files#diff-4f4849707ed063bc5de6d9f6d105f0e7baf62d1085b3c8aee4a547468b89248fR57>
 # sqlx = { git = "https://github.com/project-robius/sqlx.git", branch = "version_0.9_alpha_as_0.8.6" }
-sqlx = { git = "https://github.com/project-robius/sqlx.git", branch = "update_libsqlite3-sys_version" }
+# sqlx = { git = "https://github.com/project-robius/sqlx.git", branch = "update_libsqlite3-sys_version" }
 
 ## This is required for the askar repos to work with the above-patched `sqlx` crate,
 ## more specifically, the updated `libsqlite3-sys` version (0.31.0).
 ## See <https://github.com/openwallet-foundation/askar/pull/386>
-askar-storage = { git = "https://github.com/openwallet-foundation/askar.git", rev = "0b919bb58205416df7cd2cc1a24ce52373cbe105" }
+# askar-storage = { git = "https://github.com/openwallet-foundation/askar.git", rev = "0b919bb58205416df7cd2cc1a24ce52373cbe105" }
 
 
 ## This is a temporary patch to add the TSP signature field to the `RoomMessageEventContent` type.
@@ -140,8 +140,9 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git", re
 ## we can create our own custom event type that includes the TSP signature,
 ## and then we won't need to patch ruma-events anymore.
 ## But that is a significant amount of work, so for now we just patch ruma-events.
-[patch."https://github.com/ruma/ruma"]
-ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp"}
+##
+# [patch."https://github.com/ruma/ruma"]
+# ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp"}
 
 
 [package.metadata.docs.rs]
