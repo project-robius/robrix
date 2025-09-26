@@ -431,6 +431,7 @@ impl UserProfilePaneInfo {
         self.room_member.as_ref().map_or(
             "Role: Unknown".into(),
             |member| match member.suggested_role_for_power_level() {
+                RoomMemberRole::Creator => "Role: Creator".into(),
                 RoomMemberRole::Administrator => "Role: Admin".into(),
                 RoomMemberRole::Moderator => "Role: Moderator".into(),
                 RoomMemberRole::User => "Role: Standard User".into(),

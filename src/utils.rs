@@ -191,7 +191,7 @@ pub fn stringify_pagination_error(
     error: &matrix_sdk_ui::timeline::Error,
     room_name: &str,
 ) -> String {
-    use matrix_sdk::event_cache::{paginator::PaginatorError, EventCacheError};
+    use matrix_sdk::{paginators::PaginatorError, event_cache::EventCacheError};
     use matrix_sdk_ui::timeline::Error as TimelineError;
 
     #[allow(clippy::single_match)]
@@ -221,10 +221,9 @@ pub fn stringify_pagination_error(
                 return message;
             }
         }
-        TimelineError::EventCacheError(EventCacheError::BackpaginationError(paginator_error)) => {
-            if let Some(message) = match_paginator_error(paginator_error) {
-                return message;
-            }
+        TimelineError::EventCacheError(EventCacheError::BackpaginationError(error)) => {
+            return format!("Failed to load earlier messages in \"{room_name}\": \
+                Back-pagination error in the event cache: {error}.");
         }
         _ => {}
     }

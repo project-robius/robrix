@@ -3,6 +3,8 @@
 //! This widget is designed to be reused across both Desktop and Mobile variants 
 //! of the RoomsSideBar to avoid code duplication.
 
+use std::mem::discriminant;
+
 use makepad_widgets::*;
 use matrix_sdk_ui::sync_service::State;
 
@@ -91,7 +93,7 @@ impl Widget for RoomsListHeader {
                     Some(RoomsListHeaderAction::SetSyncStatus(is_syncing)) => {
                         // If we are offline, keep showing the offline_icon,
                         // as showing the loading_spinner would be misleading if we're offline.
-                        if self.sync_state == State::Offline {
+                        if matches!(self.sync_state, State::Offline) {
                             continue;
                         }
                         self.view.view(id!(loading_spinner)).set_visible(cx, *is_syncing);
@@ -100,10 +102,10 @@ impl Widget for RoomsListHeader {
                         self.redraw(cx);
                     }
                     Some(RoomsListHeaderAction::StateUpdate(new_state)) => {
-                        if &self.sync_state == new_state {
+                        if discriminant(&self.sync_state) == discriminant(new_state) {
                             continue;
                         }
-                        if new_state == &State::Offline {
+                        if matches!(new_state, State::Offline) {
                             self.view.view(id!(loading_spinner)).set_visible(cx, false);
                             self.view.view(id!(synced_icon)).set_visible(cx, false);
                             self.view.view(id!(offline_icon)).set_visible(cx, true);
