@@ -33,13 +33,10 @@ use crate::{
     avatar_cache::AvatarUpdate,
     event_preview::text_preview_of_timeline_item,
     home::{
-        invite_screen::{JoinRoomAction, LeaveRoomAction},
-        room_screen::TimelineUpdate,
-        rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate},
-        rooms_list_header::RoomsListHeaderAction,
+        invite_screen::{JoinRoomAction, LeaveRoomAction}, link_preview::{LinkPreviewCacheEntry, LinkPreviewData}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction
     },
     login::login_screen::LoginAction,
-    logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{logout_with_state_machine, LogoutConfig, is_logout_in_progress}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
+    logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{is_logout_in_progress, logout_with_state_machine, LogoutConfig}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
     persistence::{self, load_app_state, ClientSessionPersisted},
     profile::{
         user_profile::{AvatarState, UserProfile},
@@ -242,6 +239,13 @@ pub type OnMediaFetchedFn = fn(
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
 
+/// The function signature for the callback that gets invoked when link preview data is fetched.
+pub type OnLinkPreviewFetchedFn = fn(
+    String,
+    Arc<Mutex<LinkPreviewCacheEntry>>,
+    anyhow::Result<LinkPreviewData>,
+    Option<crossbeam_channel::Sender<TimelineUpdate>>,
+);
 
 /// The set of requests for async work that can be made to the worker thread.
 #[allow(clippy::large_enum_variant)]
@@ -414,6 +418,13 @@ pub enum MatrixRequest {
     GetMatrixRoomLinkPillInfo {
         matrix_id: MatrixId,
         via: Vec<OwnedServerName>
+    },
+    /// Request to fetch URL preview from the Matrix homeserver.
+    GetUrlPreview {
+        url: String,
+        on_fetched: OnLinkPreviewFetchedFn,
+        destination: Arc<Mutex<LinkPreviewCacheEntry>>,
+        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
 }
 
@@ -1219,6 +1230,31 @@ async fn async_worker(
                             }
                         };
                     }
+                });
+            }
+            MatrixRequest::GetUrlPreview { url, on_fetched, destination, update_sender} => {
+                let _fetch_url_preview_task = Handle::current().spawn(async move {
+                    let result = async {
+                        let client = get_client().ok_or_else(|| anyhow!("Client not available"))?;
+                        let token = client.access_token().unwrap();
+                        let endpoint_url = client.homeserver().join("_matrix/media/v3/preview_url")?;
+                        
+                        let response = client
+                            .http_client()
+                            .get(endpoint_url)
+                            .bearer_auth(token)
+                            .query(&[("url", url.as_str())])
+                            .header("Content-Type", "application/json")
+                            .send()
+                            .await?;
+                            
+                        let text = response.text().await?;
+                        serde_json::from_str::<LinkPreviewData>(&text)
+                            .map_err(|e| anyhow!("Failed to parse JSON: {}", e))
+                    }.await;
+
+                    on_fetched(url, destination, result, update_sender);
+                    SignalToUI::set_ui_signal();
                 });
             }
         }

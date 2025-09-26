@@ -19,6 +19,7 @@ pub mod spaces_dock;
 pub mod welcome_screen;
 pub mod event_reaction_list;
 pub mod new_message_context_menu;
+pub mod link_preview;
 
 pub fn live_design(cx: &mut Cx) {
     home_screen::live_design(cx);
@@ -40,4 +41,5 @@ pub fn live_design(cx: &mut Cx) {
     welcome_screen::live_design(cx);
     light_themed_dock::live_design(cx);
     event_reaction_list::live_design(cx);
+    link_preview::live_design(cx);
 }
