@@ -9,7 +9,7 @@ use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRo
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
-use crate::sliding_sync::{submit_async_request, MatrixRequest};
+use crate::{room::RoomPreviewAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
 
 
 /// A wrapper type that implements the `Debug` trait for non-`Debug` types.
@@ -33,6 +33,17 @@ impl<T> DerefMut for DebugWrapper<T> {
 impl<T> From<T> for DebugWrapper<T> {
     fn from(value: T) -> Self {
         DebugWrapper(value)
+    }
+}
+impl<T: Default> Default for DebugWrapper<T> {
+    fn default() -> Self {
+        DebugWrapper(T::default())
+    }
+}
+impl<T> DebugWrapper<T> {
+    /// Consumes the wrapper and returns the inner value.
+    pub fn into_inner(self) -> T {
+        self.0
     }
 }
 
@@ -673,6 +684,17 @@ impl Display for OwnedRoomIdRon {
     }
 }
 
+/// Returns a text avatar string containing the first character of the room name.
+///
+/// Skips the first character if it is a `#` or `!`, the sigils used for Room aliases and Room IDs.
+pub fn avatar_from_room_name(room_name: Option<&str>) -> RoomPreviewAvatar {
+    let first = room_name.and_then(|rn| rn
+        .graphemes(true)
+        .find(|&g| g != "#" && g != "!")
+        .map(ToString::to_string)
+    ).unwrap_or_else(|| String::from("?"));
+    RoomPreviewAvatar::Text(first)
+}
 
 #[cfg(test)]
 mod tests_human_readable_list {

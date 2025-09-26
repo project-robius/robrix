@@ -39,6 +39,27 @@ imghdr = "0.7.0"
 linkify = "0.10.0"
 matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
 matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "rustls-tls" ] }
+# List of features for ruma taken from "https://github.com/matrix-org/matrix-rust-sdk/blob/main/Cargo.toml".
+# Added "compat-optional" feature to allow missing body field in m.room.tombstone event.
+ruma = { git = "https://github.com/ruma/ruma", rev = "d1d53e2b7aaf9190f11a5465b9edf6a19fc5b59a", features = [
+    "client-api-c",
+    "compat-upload-signatures",
+    "compat-user-id",
+    "compat-arbitrary-length-ids",
+    "compat-tag-info",
+    "compat-optional",
+    "compat-encrypted-stickers",
+    "unstable-msc3401",
+    "unstable-msc3266",
+    "unstable-msc3488",
+    "unstable-msc3489",
+    "unstable-msc4075",
+    "unstable-msc4140",
+    "unstable-msc4143",
+    "unstable-msc4171",
+    "unstable-msc4278",
+    "unstable-msc4286",
+] }
 rand = "0.8.5"
 rangemap = "1.5.0"
 sanitize-filename = "0.6"
@@ -120,7 +141,7 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git", re
 ## and then we won't need to patch ruma-events anymore.
 ## But that is a significant amount of work, so for now we just patch ruma-events.
 [patch."https://github.com/ruma/ruma"]
-ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
+ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp"}
 
 
 [package.metadata.docs.rs]

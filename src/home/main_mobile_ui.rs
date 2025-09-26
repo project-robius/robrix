@@ -58,12 +58,7 @@ impl Widget for MainMobileUI {
                     // Because the MainMobileUI is drawn based on the AppState only,
                     // all we need to do is update the AppState here.
                     RoomsListAction::InviteAccepted { room_id, .. } => {
-                        // Emit an action to update the AppState with the new room.
-                        cx.widget_action(
-                            self.widget_uid(),
-                            &scope.path,
-                            AppStateAction::UpgradedInviteToJoinedRoom(room_id),
-                        );
+                        cx.action(AppStateAction::UpgradedInviteToJoinedRoom(room_id));
                     }
                     RoomsListAction::None => {}
                 }
