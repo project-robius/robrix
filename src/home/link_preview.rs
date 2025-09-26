@@ -17,6 +17,7 @@ use crate::{
 };
 
 /// An entry in the Link Preview cache.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 pub enum LinkPreviewCacheEntry {
     Requested,
@@ -207,7 +208,7 @@ impl LinkPreviewRef {
             view_ref
                 .view(id!(content_view))
                 .label(id!(description_label))
-                .set_text(cx, &description);
+                .set_text(cx, description);
         }
 
         // Handle image through closure

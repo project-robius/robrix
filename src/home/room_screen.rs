@@ -3942,7 +3942,7 @@ fn populate_link_previews_below_message<'a>(
         if link.is_empty() {
             continue;
         }
-        if let Ok(parsed_url) = Url::parse(&link) {
+        if let Ok(parsed_url) = Url::parse(link) {
             if let Some(domain) = parsed_url.host_str() {
                 if SKIPPED_DOMAINS
                     .iter()
