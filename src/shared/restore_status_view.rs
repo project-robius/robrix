@@ -14,9 +14,10 @@ live_design! {
     use crate::shared::styles::*;
 
     pub RestoreStatusView = {{RestoreStatusView}} {
-        width: Fill, height: Fill,
+        width: Fill, height: Fit,
         flow: Down,
         align: {x: 0.5, y: 0.5},
+        padding: 20,
 
         restore_status_spinner = <LoadingSpinner> {
             width: 50,
@@ -97,7 +98,7 @@ impl RestoreStatusViewRef {
             restore_status_spinner.set_visible(cx, false);
             restore_status_label.set_text(
                 cx,
-                &format!("Room \"{room_name}\" was not found in the homeserver's list\
+                &format!("Room \"{room_name}\" was not found in the homeserver's list \
                     of all rooms.\n\nYou may close this screen.")
             );
         } else {

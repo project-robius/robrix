@@ -5,6 +5,7 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
+    pub ICON_ADD             = dep("crate://self/resources/icons/add.svg")
     pub ICON_ADD_REACTION    = dep("crate://self/resources/icons/add_reaction.svg")
     pub ICON_ADD_USER        = dep("crate://self/resources/icons/add_user.svg") // TODO: FIX
     pub ICON_ADD_WALLET      = dep("crate://self/resources/icons/add_wallet.svg")
@@ -19,12 +20,14 @@ live_design! {
     pub ICON_IMPORT          = dep("crate://self/resources/icons/import.svg") // TODO: FIX
     pub ICON_HTML_FILE       = dep("crate://self/resources/icons/html_file.svg")
     pub ICON_INFO            = dep("crate://self/resources/icons/info.svg")
+    pub ICON_JOIN_ROOM       = dep("crate://self/resources/icons/join_room.svg")
     pub ICON_JUMP            = dep("crate://self/resources/icons/go_back.svg")
     pub ICON_LOGOUT          = dep("crate://self/resources/icons/logout.svg")
     pub ICON_LINK            = dep("crate://self/resources/icons/link.svg")
     pub ICON_PIN             = dep("crate://self/resources/icons/pin.svg")
     pub ICON_REPLY           = dep("crate://self/resources/icons/reply.svg")
     pub ICON_SEND            = dep("crate://self/resources/icon_send.svg")
+    pub ICON_TOMBSTONE       = dep("crate://self/resources/icons/tombstone.svg")
     pub ICON_TRASH           = dep("crate://self/resources/icons/trash.svg")
     pub ICON_UPLOAD          = dep("crate://self/resources/icons/upload.svg")
     pub ICON_VIEW_SOURCE     = dep("crate://self/resources/icons/view_source.svg")
@@ -54,7 +57,7 @@ live_design! {
     pub MESSAGE_FONT_SIZE = 11
     pub MESSAGE_TEXT_COLOR = #x333
     // notices (automated messages from bots) use a lighter color
-    pub MESSAGE_NOTICE_TEXT_COLOR = #x888
+    pub COLOR_MESSAGE_NOTICE_TEXT = #x888
     pub MESSAGE_TEXT_LINE_SPACING = 1.3
     // This font should only be used for plaintext labels. Don't use this for Html content,
     // as the Html widget sets different fonts for different text styles (e.g., bold, italic).
@@ -92,6 +95,7 @@ live_design! {
     pub COLOR_BG_DANGER_RED = #FFF0F0
     pub COLOR_FG_DISABLED = #B3B3B3
     pub COLOR_BG_DISABLED = #E0E0E0
+    pub COLOR_WARNING_NOT_FOUND = #953800
 
     pub COLOR_SELECT_TEXT = #A6CDFE
 
@@ -261,17 +265,35 @@ live_design! {
     }
 }
 
-pub const COLOR_PRIMARY:               Vec4 = vec4(1.0, 1.0, 1.0, 1.0); // #FFFFFF
-pub const COLOR_ACTIVE_PRIMARY:        Vec4 = vec4(0.059, 0.533, 0.996, 1.0); // #0F88FE
-pub const COLOR_ACTIVE_PRIMARY_DARKER: Vec4 = vec4(0.063, 0.435, 0.682, 1.0); // #106FCC
-pub const COLOR_FG_ACCEPT_GREEN:       Vec4 = vec4(0.074, 0.533, 0.031, 1.0); // #138808
-pub const COLOR_BG_ACCEPT_GREEN:       Vec4 = vec4(0.941, 1.0, 0.941, 1.0); // #F0FFF0
-pub const COLOR_FG_DISABLED:           Vec4 = vec4(0.7, 0.7, 0.7, 1.0); // #B3B3B3
-pub const COLOR_BG_DISABLED:           Vec4 = vec4(0.878, 0.878, 0.878, 1.0); // #E0E0E0
-pub const COLOR_FG_DANGER_RED:         Vec4 = vec4(0.863, 0.0, 0.02, 1.0); // #DC0005
-pub const COLOR_BG_DANGER_RED:         Vec4 = vec4(1.0, 0.941, 0.941, 1.0); // #FFF0F0
-pub const COLOR_ROBRIX_PURPLE:         Vec4 = vec4(0.341, 0.176, 0.8, 1.0); // #572DCC
-pub const COLOR_UNKNOWN_ROOM_AVATAR:   Vec4 = vec4(1.0, 0.431, 0.0, 1.0); // #FF6e00
-pub const COLOR_WARNING_YELLOW:        Vec4 = vec4(0.988, 0.859, 0.01, 1.0); // #fcdb03
-pub const COLOR_INFO_BLUE:             Vec4 = vec4(0.05, 0.53, 0.996, 1.0);  // #0f88fe
-pub const COLOR_WHITE:                 Vec4 = vec4(1.0, 1.0, 1.0, 1.0);  // #FFFFFF
+/// #FFFFFF
+pub const COLOR_PRIMARY:               Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
+/// #0F88FE
+pub const COLOR_ACTIVE_PRIMARY:        Vec4 = vec4(0.059, 0.533, 0.996, 1.0);
+/// #106FCC
+pub const COLOR_ACTIVE_PRIMARY_DARKER: Vec4 = vec4(0.063, 0.435, 0.682, 1.0);
+/// #138808
+pub const COLOR_FG_ACCEPT_GREEN:       Vec4 = vec4(0.074, 0.533, 0.031, 1.0);
+/// #F0FFF0
+pub const COLOR_BG_ACCEPT_GREEN:       Vec4 = vec4(0.941, 1.0, 0.941, 1.0);
+/// #B3B3B3
+pub const COLOR_FG_DISABLED:           Vec4 = vec4(0.7, 0.7, 0.7, 1.0);
+/// #E0E0E0
+pub const COLOR_BG_DISABLED:           Vec4 = vec4(0.878, 0.878, 0.878, 1.0);
+/// #DC0005
+pub const COLOR_FG_DANGER_RED:         Vec4 = vec4(0.863, 0.0, 0.02, 1.0);
+/// #FFF0F0
+pub const COLOR_BG_DANGER_RED:         Vec4 = vec4(1.0, 0.941, 0.941, 1.0);
+/// #572DCC
+pub const COLOR_ROBRIX_PURPLE:         Vec4 = vec4(0.341, 0.176, 0.8, 1.0);
+/// #FF6e00
+pub const COLOR_UNKNOWN_ROOM_AVATAR:   Vec4 = vec4(1.0, 0.431, 0.0, 1.0);
+/// #fcdb03
+pub const COLOR_WARNING_YELLOW:        Vec4 = vec4(0.988, 0.859, 0.01, 1.0);
+/// #0f88fe
+pub const COLOR_INFO_BLUE:             Vec4 = vec4(0.05, 0.53, 0.996, 1.0);
+/// #FFFFFF
+pub const COLOR_WHITE:                 Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
+/// #888888
+pub const COLOR_MESSAGE_NOTICE_TEXT:   Vec4 = vec4(0.5, 0.5, 0.5, 1.0);
+/// #953800
+pub const COLOR_WARNING_NOT_FOUND:    Vec4 = vec4(0.584, 0.219, 0.0, 1.0);

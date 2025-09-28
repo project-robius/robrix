@@ -3,6 +3,8 @@
 //! This widget is designed to be reused across both Desktop and Mobile variants 
 //! of the RoomsSideBar to avoid code duplication.
 
+use std::mem::discriminant;
+
 use makepad_widgets::*;
 use matrix_sdk_ui::sync_service::State;
 
@@ -91,28 +93,28 @@ impl Widget for RoomsListHeader {
                     Some(RoomsListHeaderAction::SetSyncStatus(is_syncing)) => {
                         // If we are offline, keep showing the offline_icon,
                         // as showing the loading_spinner would be misleading if we're offline.
-                        if self.sync_state == State::Offline {
+                        if matches!(self.sync_state, State::Offline) {
                             continue;
                         }
-                        log!("Setting the RoomsListHeader to syncing: {}.", *is_syncing);
                         self.view.view(id!(loading_spinner)).set_visible(cx, *is_syncing);
                         self.view.view(id!(synced_icon)).set_visible(cx, !*is_syncing);
                         self.view.view(id!(offline_icon)).set_visible(cx, false);
                         self.redraw(cx);
                     }
                     Some(RoomsListHeaderAction::StateUpdate(new_state)) => {
-                        if &self.sync_state == new_state {
+                        if discriminant(&self.sync_state) == discriminant(new_state) {
                             continue;
                         }
-                        log!("Setting the RoomsListHeader to offline.");
-                        self.view.view(id!(loading_spinner)).set_visible(cx, false);
-                        self.view.view(id!(synced_icon)).set_visible(cx, false);
-                        self.view.view(id!(offline_icon)).set_visible(cx, true);
-                        enqueue_popup_notification(PopupItem {
-                            message: "Cannot reach the Matrix homeserver. Please check your connection.".into(),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Error,
-                        });
+                        if matches!(new_state, State::Offline) {
+                            self.view.view(id!(loading_spinner)).set_visible(cx, false);
+                            self.view.view(id!(synced_icon)).set_visible(cx, false);
+                            self.view.view(id!(offline_icon)).set_visible(cx, true);
+                            enqueue_popup_notification(PopupItem {
+                                message: "Cannot reach the Matrix homeserver. Please check your connection.".into(),
+                                auto_dismissal_duration: None,
+                                kind: PopupKind::Error,
+                            });
+                        }
                         self.sync_state = new_state.clone();
                         self.redraw(cx);
                     }
@@ -120,7 +122,7 @@ impl Widget for RoomsListHeader {
                 }
             }
         }
-        
+
         self.view.handle_event(cx, event, scope);
     }
 

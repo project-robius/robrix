@@ -220,8 +220,11 @@ impl Deref for InviteDetails {
 }
 
 /// Actions sent from the backend task as a result of a [`MatrixRequest::JoinRoom`].
+///
+/// Note that this *DOES NOT MEAN* that the room has actually been fully joined yet.
+/// For that, you must wait for a [`AppStateAction::RoomLoadedSuccessfully`] action to occur.
 #[derive(Debug)]
-pub enum JoinRoomAction {
+pub enum JoinRoomResultAction {
     /// The user has successfully joined the room.
     Joined {
         room_id: OwnedRoomId,
@@ -234,8 +237,10 @@ pub enum JoinRoomAction {
 }
 
 /// Actions sent from the backend task as a result of a [`MatrixRequest::LeaveRoom`].
+///
+/// Note that this *DOES NOT MEAN* that the room has actually been fully left yet.
 #[derive(Debug)]
-pub enum LeaveRoomAction {
+pub enum LeaveRoomResultAction {
     /// The user has successfully left the room.
     Left {
         room_id: OwnedRoomId,
@@ -311,9 +316,10 @@ impl Widget for InviteScreen {
                     });
                     self.has_shown_confirmation = false;
                 } else {
-                    cx.action(JoinLeaveRoomModalAction::Open(
-                        JoinLeaveModalKind::RejectInvite(info.clone())
-                    ));
+                    cx.action(JoinLeaveRoomModalAction::Open {
+                        kind: JoinLeaveModalKind::RejectInvite(info.clone()),
+                        show_tip: true,
+                    });
                     self.has_shown_confirmation = true;
                 }
             }
@@ -325,23 +331,24 @@ impl Widget for InviteScreen {
                     });
                     self.has_shown_confirmation = false;
                 } else {
-                    cx.action(JoinLeaveRoomModalAction::Open(
-                        JoinLeaveModalKind::AcceptInvite(info.clone())
-                    ));
+                    cx.action(JoinLeaveRoomModalAction::Open {
+                        kind: JoinLeaveModalKind::AcceptInvite(info.clone()),
+                        show_tip: true,
+                    });
                     self.has_shown_confirmation = true;
                 }
             }
 
             for action in actions {
                 match action.downcast_ref() {
-                    Some(JoinRoomAction::Joined { room_id }) if room_id == &info.room_id => {
+                    Some(JoinRoomResultAction::Joined { room_id }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingForJoinedRoom;
                         if !self.has_shown_confirmation {
                             enqueue_popup_notification(PopupItem{ message: "Successfully joined room.".into(), kind: PopupKind::Success, auto_dismissal_duration: None });
                         }
                         continue;
                     }
-                    Some(JoinRoomAction::Failed { room_id, error }) if room_id == &info.room_id => {
+                    Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
                             let msg = utils::stringify_join_leave_error(error, info.room_name.as_deref(), true, true);
@@ -353,14 +360,14 @@ impl Widget for InviteScreen {
                 }
 
                 match action.downcast_ref() {
-                    Some(LeaveRoomAction::Left { room_id }) if room_id == &info.room_id => {
+                    Some(LeaveRoomResultAction::Left { room_id }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::RoomLeft;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification(PopupItem { message: "Successfully rejected invite.".into(), kind: PopupKind::Success, auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem { message: "Successfully rejected invite.".into(), kind: PopupKind::Success, auto_dismissal_duration: Some(5.0) });
                         }
                         continue;
                     }
-                    Some(LeaveRoomAction::Failed { room_id, error }) if room_id == &info.room_id => {
+                    Some(LeaveRoomResultAction::Failed { room_id, error }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
                             enqueue_popup_notification(PopupItem { message: format!("Failed to reject invite: {error}"), kind: PopupKind::Error, auto_dismissal_duration: None });
