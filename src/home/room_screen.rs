@@ -1,7 +1,7 @@
 //! A room screen is the UI view that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, cell::RefCell, collections::BTreeMap, ops::{DerefMut, Range}, sync::Arc};
+use std::{borrow::Cow, cell::RefCell, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::Arc};
 
 use bytesize::ByteSize;
 use imbl::Vector;
@@ -960,7 +960,7 @@ impl Widget for RoomScreen {
                 // Handle collapsible button click in SmallStateEvent
                 if wr.button(id!(collapsible_button)).clicked(actions) {
                     if let Some(tl_state) = &mut self.tl_state {
-                        for (range, open) in &mut tl_state.small_state_groups {
+                        for (range, open, _123) in &mut tl_state.small_state_groups {
                             if range.start == item_id {
                                 // Toggle the group's open/closed state
                                 *open = !*open;
@@ -1673,7 +1673,7 @@ impl RoomScreen {
                         let new_len = new_items.len();
                         let shift = new_len as i32 - old_len as i32;
                         // Apply the shift to the small_state_groups.
-                        for (range, _) in &mut tl.small_state_groups {
+                        for (range, _, _123) in &mut tl.small_state_groups {
                             let new_start = (range.start as i32 + shift).max(0) as usize;
                             let new_end = (range.end as i32 + shift).max(0) as usize;
                             *range = new_start..new_end;
@@ -3025,10 +3025,10 @@ struct TimelineUiState {
     /// If the room is not tombstoned, then this is `None`.
     ///
     tombstone_info: Option<SuccessorRoom>,
-    /// A vector of ranges of small state items that are grouped together in the UI.
+    /// A vector of ranges of small state items that are grouped together in the UI and summary text.
     /// 
     /// There is a collapsible to the right of the message of the first item in the group. 
-    small_state_groups: Vec<(std::ops::Range<usize>, bool)>
+    small_state_groups: Vec<(std::ops::Range<usize>, bool, HashMap<String, Vec<Range<usize>>>)>
 }
 
 #[derive(Default, Debug)]
@@ -4115,19 +4115,42 @@ fn populate_preview_of_timeline_item(
 
 /// Checks if a event timeline item is a small state event.
 /// Returns true if the item is a small state event that can be grouped.
-fn is_small_state_event(
+fn is_small_state_event_and_type(
     event_tl_item: &EventTimelineItem,
-) -> bool {
-    matches!(
-        event_tl_item.content(),
-        TimelineItemContent::MembershipChange(_) |
-        TimelineItemContent::ProfileChange(_) |
-        TimelineItemContent::OtherState(_) |
+) -> (bool, String) {
+    match &event_tl_item.content() {
+        TimelineItemContent::MembershipChange(_) => {
+            return (true, String::from("Membership Change"))
+        }
+        TimelineItemContent::ProfileChange(_) => {
+            return (true, String::from("Profile Change"))
+        }
+        TimelineItemContent::OtherState(_) => {
+            return (true, String::from("Other State"))
+        }
         TimelineItemContent::MsgLike(MsgLikeContent {
-            kind: MsgLikeKind::Poll(_) | MsgLikeKind::Redacted | MsgLikeKind::UnableToDecrypt(_),
+            kind: MsgLikeKind::Poll(_) ,
             ..
-        })
-    )
+        }) => {
+            //| MsgLikeKind::Redacted | MsgLikeKind::UnableToDecrypt(_)
+            return (true, String::from("Poll"))
+        }
+        TimelineItemContent::MsgLike(MsgLikeContent {
+            kind: MsgLikeKind::Redacted,
+            ..
+        }) => {
+            //| MsgLikeKind::Redacted | MsgLikeKind::UnableToDecrypt(_)
+            return (true, String::from("Redacted"))
+        }
+        TimelineItemContent::MsgLike(MsgLikeContent {
+            kind: MsgLikeKind::UnableToDecrypt(_) ,
+            ..
+        }) => {
+            return (true, String::from("Unable to decrypt"))
+        }
+        _ => { return (false, String::from("")) }
+    }
+    
 }
 
 /// Dynamically updates small state groups as timeline items are processed.
@@ -4139,53 +4162,80 @@ fn update_small_state_groups_for_item(
     current_item: &EventTimelineItem,
     previous_item: Option<&Arc<TimelineItem>>,
     next_item: Option<&Arc<TimelineItem>>,
-    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool)>,
-) -> (bool, bool, bool) {
-    let current_item_is_small_state = is_small_state_event(current_item);
+    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, HashMap<String, Vec<std::ops::Range<usize>>>)>,
+) -> (bool, bool, bool, String) {
+    let (current_item_is_small_state, current_state_type) = is_small_state_event_and_type(current_item);
 
     if !current_item_is_small_state {
-        return (true, false, false); // Not a small state event, draw as individual item, no debug button
+        return (true, false, false, String::from("")); // Not a small state event, draw as individual item, no debug button
     }
 
     // check if the next item (item_id + 1) is a small state event to continue grouping
-    let next_item_is_small_state = next_item
+    let (next_item_is_small_state, _) = next_item
         .and_then(|timeline_item| match timeline_item.kind() {
             TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
             _ => None,
         })
-        .map(is_small_state_event)
-        .unwrap_or(false);
-    let previous_item_is_small_state = previous_item
+        .map(is_small_state_event_and_type)
+        .unwrap_or((false, String::from("")));
+    let (previous_item_is_small_state, _) = previous_item
         .and_then(|timeline_item| match timeline_item.kind() {
             TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
             _ => None,
         })
-        .map(is_small_state_event)
-        .unwrap_or(false);
+        .map(is_small_state_event_and_type)
+        .unwrap_or((false, String::from("")));
     if !previous_item_is_small_state && !next_item_is_small_state {
-        return (true, false, false); // Isolated small state event, no debug button
+        return (true, false, false, String::new()); // Isolated small state event, no debug button
     }
 
     // Check if this item is already part of an existing group or can extend one
-    for (range, is_open) in small_state_groups.iter_mut() {
+    for (range, is_open, _123) in small_state_groups.iter_mut() {
         if range.start == item_id {
-            return (true, true, *is_open); // Start of group, show debug button
+            _123.entry(current_state_type.clone()).or_insert_with(Vec::new).push(item_id..item_id+1);
+            let summary: Vec<String> = _123.iter().map(
+                |(state_type, ranges)| {
+                    format!("{}: {}", state_type, ranges.len())
+                }
+            ).collect();
+            return (true, true, *is_open, summary.join(", ")); // Start of group, show debug button
         }
         if range.contains(&item_id) {
-            return (*is_open, false, *is_open); // Item is in group but not at start, no debug button
+            if let Some(state_ranges) = _123.get_mut(&current_state_type) {
+                let mut to_insert = true;
+                for state_range in state_ranges.iter_mut() {
+                    if state_range.contains(&item_id) {
+                        to_insert = false;
+                        break
+                    }
+                    if state_range.start == item_id + 1{
+                        state_range.start = item_id;
+                    }
+                }
+                if to_insert {
+                    state_ranges.push(item_id..item_id+1);
+                }
+            }
+            let summary: Vec<String> = _123.iter().map(
+                |(state_type, ranges)| {
+                    format!("{}: {}", state_type, ranges.len())
+                }
+            ).collect();
+            return (*is_open, false, *is_open, summary.join(", ")); // Item is in group but not at start, no debug button
         }
         // Since we're iterating backwards (from highest to lowest item_id),
         if range.start == item_id + 1 {
             // Extend this group backwards to include current item
             *range = item_id..range.end;
-            return (*is_open, false, false); // Extended group, no debug button for this item
+            return (*is_open, false, false, String::from("")); // Extended group, no debug button for this item
         }
+        
     }
     if next_item_is_small_state {
-        // Plus to include the next item into the group.
-        small_state_groups.push((item_id..(item_id + 2), false));
+        // Plus two to include the next item into the group.
+        small_state_groups.push((item_id..(item_id + 2), false, HashMap::new()));
     }
-    (false, false, false) // Return collapsed state, no debug button
+    (false, false, false, String::from("")) // Return collapsed state, no debug button
 }
 
 /// A trait for abstracting over the different types of timeline events
@@ -4403,7 +4453,7 @@ fn populate_small_state_event(
     next_event: Option<&Arc<TimelineItem>>,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
-    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool)>,
+    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, HashMap<String, Vec<Range<usize>>>)>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
@@ -4445,7 +4495,7 @@ fn populate_small_state_event(
     // - opened: whether this individual item should be rendered (based on group state)
     // - show_collapsible_button: true if this item is the first in a collapsible group
     // - expanded: current expansion state of the group (for button text)
-    let (opened, show_collapsible_button, expanded) = update_small_state_groups_for_item(
+    let (opened, show_collapsible_button, expanded, summary_text) = update_small_state_groups_for_item(
         item_id,
         event_tl_item,
         prev_event,
@@ -4464,8 +4514,10 @@ fn populate_small_state_event(
             // ▲ = group is expanded (click to collapse)
             // ▼ = group is collapsed (click to expand)
             let button_text = if expanded { "▲" } else { "▼" };
+            // item.button(id!(collapsible_button))
+            //     .set_text(cx, button_text);
             item.button(id!(collapsible_button))
-                .set_text(cx, button_text);
+                .set_text(cx, &summary_text);
         }
 
         // Render the actual event content
