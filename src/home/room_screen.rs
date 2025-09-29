@@ -1528,10 +1528,6 @@ impl RoomScreen {
                     }
 
                     let prior_items_changed = clear_cache || changed_indices.start <= curr_first_id;
-                    log!("TimelineUpdate::NewItems: len {} -> {}, curr_first_id: {curr_first_id}, changed_indices: {changed_indices:?}, clear_cache? {clear_cache}, is_append? {is_append}, prior_items_changed? {prior_items_changed}",
-                        tl.items.len(),
-                        new_items.len(),
-                    );
 
                     if new_items.len() == tl.items.len() {
                         // log!("Timeline::handle_event(): no jump necessary for updated timeline of same length: {}", items.len());
@@ -1546,10 +1542,9 @@ impl RoomScreen {
                     // in the timeline viewport so that we can maintain the scroll position of that item,
                     // which ensures that the timeline doesn't jump around unexpectedly and ruin the user's experience.
                     else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
-                        prior_items_changed.then(|| {
-                            log!("Looking for new item matching current item, starting at curr_first_id {curr_first_id} of {}, clear_cache? {clear_cache}, changed_indices: {changed_indices:?}", tl.items.len());
+                        prior_items_changed.then(||
                             find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items)
-                        })
+                        )
                         .flatten()
                     {
                         if curr_item_idx != new_item_idx {
