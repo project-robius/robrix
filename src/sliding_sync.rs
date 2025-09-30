@@ -1982,8 +1982,19 @@ async fn update_room(
         }
 
         if let Some(new_room_name) = new_room_name {
-            if old_room.room.cached_display_name().map(|room_name| room_name.to_string()).as_ref() != Some(&new_room_name) {
-                log!("Updating room name for room {} to {}", new_room_id, new_room_name);
+            let old_cached_name = old_room.room.cached_display_name().map(|n| n.to_string());
+
+            // For invited rooms, always send update if the name is not "Empty Room"
+            // because we might have initially set the name to None in add_new_room,
+            // but the Matrix SDK's cached_display_name() already reflects the updated name
+            // (since old_room.room is a reference to SDK's internal object, not a snapshot).
+            let should_update = if new_room_state == RoomState::Invited {
+                new_room_name != "Empty Room"
+            } else {
+                old_cached_name.as_ref() != Some(&new_room_name)
+            };
+
+            if should_update {
                 enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                     room_id: new_room_id.clone(),
                     new_room_name,
@@ -2035,6 +2046,7 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
 /// Invoked when the room list service has received an update with a brand new room.
 async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListService) -> Result<()> {
     let room_id = room.room_id().to_owned();
+
     // We must call `display_name()` here to calculate and cache the room's name.
     let room_name = room.display_name().await.map(|n| n.to_string()).ok();
 
@@ -2062,6 +2074,14 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
             return Ok(());
         }
         RoomState::Invited => {
+            // For invited rooms with "Empty Room" name, set it to None so UI shows "Invite to unnamed room"
+            // The name will be updated later when we receive room state events
+            let room_name = if room_name.as_deref() == Some("Empty Room") {
+                None
+            } else {
+                room_name
+            };
+
             let invite_details = room.invite_details().await.ok();
             let Some(client) = get_client() else {
                 return Ok(());
@@ -2090,6 +2110,9 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
             } else {
                 None
             };
+            // Subscribe to this invited room to receive state updates (like room name changes)
+            room_list_service.subscribe_to_rooms(&[&room_id]).await;
+
             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddInvitedRoom(InvitedRoomInfo {
                 room_id: room_id.clone(),
                 room_name,
