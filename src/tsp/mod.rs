@@ -623,10 +623,7 @@ async fn async_tsp_worker(
     // Allow lazy initialization of the reqwest client.
     let mut __reqwest_client = None;
     let mut get_reqwest_client = || {
-        __reqwest_client.get_or_insert_with(
-            || create_reqwest_client().unwrap()
-        )
-        .clone()
+        __reqwest_client.get_or_insert_with(|| create_reqwest_client().unwrap()).clone()
     };
 
     while let Some(req) = request_receiver.recv().await { match req {
