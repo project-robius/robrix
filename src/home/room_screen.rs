@@ -1527,9 +1527,7 @@ impl RoomScreen {
                         //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
                     }
 
-                    // Maybe todo?: we can often avoid the following loops that iterate over the `items` list
-                    //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
-                    //       any index that comes before (is less than) the above `curr_first_id`.
+                    let prior_items_changed = clear_cache || changed_indices.start <= curr_first_id;
 
                     if new_items.len() == tl.items.len() {
                         // log!("Timeline::handle_event(): no jump necessary for updated timeline of same length: {}", items.len());
@@ -1540,8 +1538,14 @@ impl RoomScreen {
                         portal_list.set_tail_range(true);
                         jump_to_bottom.update_visibility(cx, true);
                     }
+                    // If the prior items changed, we need to find the new index of an item that was visible
+                    // in the timeline viewport so that we can maintain the scroll position of that item,
+                    // which ensures that the timeline doesn't jump around unexpectedly and ruin the user's experience.
                     else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
-                        find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items)
+                        prior_items_changed.then(||
+                            find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items)
+                        )
+                        .flatten()
                     {
                         if curr_item_idx != new_item_idx {
                             log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
@@ -1549,9 +1553,8 @@ impl RoomScreen {
                             tl.prev_first_index = Some(new_item_idx);
                             // Set scrolled_past_read_marker false when we jump to a new event
                             tl.scrolled_past_read_marker = false;
-                            // When the tooltip is up, the timeline may jump. This may take away the hover out event to required to clear the tooltip
+                            // Hide the tooltip when the timeline jumps, as a hover-out event won't occur.
                             cx.widget_action(ui, &Scope::empty().path, RoomScreenTooltipActions::HoverOut);
-
                         }
                     }
                     //
@@ -1568,11 +1571,7 @@ impl RoomScreen {
                         submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: tl.room_id.clone() });
                     }
 
-                    if clear_cache {
-                        tl.content_drawn_since_last_update.clear();
-                        tl.profile_drawn_since_last_update.clear();
-                        tl.fully_paginated = false;
-
+                    if prior_items_changed {
                         // If this RoomScreen is showing the loading pane and has an ongoing backwards pagination request,
                         // then we should update the status message in that loading pane
                         // and then continue paginating backwards until we find the target event.
@@ -1583,7 +1582,7 @@ impl RoomScreen {
                             ref mut events_paginated, target_event_id, ..
                         } = &mut loading_pane_state {
                             *events_paginated += new_items.len().saturating_sub(tl.items.len());
-                            log!("While finding target event {target_event_id}, loaded {events_paginated} messages...");
+                            log!("While finding target event {target_event_id}, we have now loaded {events_paginated} messages...");
                             // Here, we assume that we have not yet found the target event,
                             // so we need to continue paginating backwards.
                             // If the target event has already been found, it will be handled
@@ -1593,6 +1592,12 @@ impl RoomScreen {
                             should_continue_backwards_pagination = true;
                         }
                         loading_pane.set_state(cx, loading_pane_state);
+                    }
+
+                    if clear_cache {
+                        tl.content_drawn_since_last_update.clear();
+                        tl.profile_drawn_since_last_update.clear();
+                        tl.fully_paginated = false;
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
