@@ -484,6 +484,8 @@ impl RoomsList {
                                 }
                             }
                         }
+                    } else if let Some(invited_room) = self.invited_rooms.borrow_mut().get_mut(&room_id) {
+                        invited_room.room_name = Some(new_room_name);
                     } else {
                         error!("Error: couldn't find room {room_id} to update room name");
                     }
