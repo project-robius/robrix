@@ -527,7 +527,7 @@ impl InviteScreen {
             self.info = Some(InviteDetails {
                 room_info: BasicRoomDetails {
                     room_id: room_id.clone(),
-                    room_name: invite.room_name.clone(),
+                    room_name: invite.room_name.as_ref().map(|n| n.to_string()),
                     room_avatar: invite.room_avatar.clone(),
                 },
                 inviter: invite.inviter_info.clone(),
