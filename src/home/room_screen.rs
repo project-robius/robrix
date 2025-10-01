@@ -2106,7 +2106,7 @@ impl RoomScreen {
                 MessageAction::JumpToRelated(details) => {
                     let Some(tl) = self.tl_state.as_mut() else { continue };
                     let Some(related_event_id) = details.related_event_id.as_ref() else {
-                        error!("BUG: MessageAction::JumpToRelated had not related event ID.");
+                        error!("BUG: MessageAction::JumpToRelated had no related event ID.\n{details:#?}");
                         continue;
                     };
                     let tl_idx = details.item_id;
@@ -3447,9 +3447,9 @@ fn populate_message_view(
         }
     };
 
-    let mut replied_to_event_id = None;
-
-    // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
+    // If we didn't use a cached item, we need to draw all other message content:
+    // the reactions, the read receipts avatar row, and the reply preview.
+    // We also must set the message details/metadata for the `item` widget representing this message.
     if !used_cached_item {
         item.reaction_list(id!(content.reaction_list)).set_list(
             cx,
@@ -3458,16 +3458,31 @@ fn populate_message_view(
             event_tl_item.identifier(),
             item_id,
         );
-
         populate_read_receipts(&item, cx, room_id, event_tl_item);
-        let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
+        let (is_reply_fully_drawn, replied_to_event_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
             room_id,
             msg_like_content.in_reply_to.as_ref(),
             event_tl_item.event_id(),
         );
-        replied_to_event_id = replied_to_ev_id;
+
+        // Set the Message widget's metadata for reply-handling purposes.
+        let message_details = MessageDetails {
+            event_id: event_tl_item.event_id().map(|id| id.to_owned()),
+            item_id,
+            related_event_id: replied_to_event_id,
+            room_screen_widget_uid,
+            abilities: MessageAbilities::from_user_power_and_event(
+                user_power_levels,
+                event_tl_item,
+                msg_like_content,
+                has_html_body,
+            ),
+            should_be_highlighted: event_tl_item.is_highlighted(),
+        };
+        item.as_message().set_data(message_details);
+
         // The content is only considered to be fully drawn if the logic above marked it as such
         // *and* if the reply preview was also fully drawn.
         new_drawn_status.content_drawn &= is_reply_fully_drawn;
@@ -3484,7 +3499,6 @@ fn populate_message_view(
         let username_label = item.label(id!(content.username));
 
         if !is_server_notice { // the normal case
-
             let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
                 item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
                     cx,
@@ -3523,26 +3537,12 @@ fn populate_message_view(
         return (item, new_drawn_status);
     }
 
-    // Set the Message widget's metadata for reply-handling purposes.
-    item.as_message().set_data(MessageDetails {
-        event_id: event_tl_item.event_id().map(|id| id.to_owned()),
-        item_id,
-        related_event_id: replied_to_event_id,
-        room_screen_widget_uid,
-        abilities: MessageAbilities::from_user_power_and_event(
-            user_power_levels,
-            event_tl_item,
-            msg_like_content,
-            has_html_body,
-        ),
-        should_be_highlighted: event_tl_item.is_highlighted()
-    });
-
     // Set the timestamp.
     if let Some(dt) = unix_time_millis_to_datetime(ts_millis) {
         item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
     }
 
+    // Set the "edited" indicator if this message was edited.
     if msg_like_content.as_message().is_some_and(|m| m.is_edited()) {
         item.edited_indicator(id!(profile.edited_indicator)).set_latest_edit(
             cx,
