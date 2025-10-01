@@ -258,7 +258,7 @@ impl Avatar {
         event_id: Option<&EventId>,
     ) -> (String, bool) {
         // Get the display name and avatar URL from the user's profile, if available,
-        // or if the profile isn't ready, fall back to qeurying our user profile cache.
+        // or if the profile isn't ready, fall back to querying our user profile cache.
         let (username_opt, avatar_state) = match avatar_profile_opt {
             Some(TimelineDetails::Ready(profile)) => (
                 profile.display_name.clone(),
