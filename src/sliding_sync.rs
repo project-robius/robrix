@@ -7,16 +7,16 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
-        api::client::receipt::create_receipt::v3::ReceiptType, events::{
-            receipt::ReceiptThread, room::{
+    config::RequestConfig, crypto::{DecryptionSettings, TrustRequirement}, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
+        api::client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
+            room::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
         }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState, SuccessorRoom
 };
 use matrix_sdk_ui::{
-    room_list_service::{RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RoomExt, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RoomExt, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
@@ -24,7 +24,7 @@ use tokio::{
     sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
 use std::io;
 use crate::{
     app::AppStateAction,
@@ -122,7 +122,9 @@ async fn build_client(
         .sqlite_store(&db_path, Some(&passphrase))
         // The sliding sync proxy has now been deprecated in favor of native sliding sync.
         .sliding_sync_version_builder(VersionBuilder::DiscoverNative)
-        .with_decryption_trust_requirement(matrix_sdk::crypto::TrustRequirement::Untrusted)
+        .with_decryption_settings(DecryptionSettings {
+            sender_device_trust_requirement: TrustRequirement::Untrusted,
+        })
         .with_encryption_settings(EncryptionSettings {
             auto_enable_cross_signing: true,
             backup_download_strategy: matrix_sdk::encryption::BackupDownloadStrategy::OneShot,
@@ -747,9 +749,11 @@ async fn async_worker(
                             if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
                                 update = Some(UserProfileUpdate::UserProfileOnly(
                                     UserProfile {
-                                        username: response.displayname,
+                                        username: response.get_static::<DisplayName>().ok().flatten(),
                                         user_id: user_id.clone(),
-                                        avatar_state: AvatarState::Known(response.avatar_url),
+                                        avatar_state: response.get_static::<AvatarUrl>()
+                                            .ok()
+                                            .map_or(AvatarState::Unknown, AvatarState::Known),
                                     }
                                 ));
                             } else {
@@ -760,7 +764,7 @@ async fn async_worker(
                         match update.as_mut() {
                             Some(UserProfileUpdate::Full { new_profile: UserProfile { username, .. }, .. }) if username.is_none() => {
                                 if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
-                                    *username = response.displayname;
+                                    *username = response.get_static::<DisplayName>().ok().flatten();
                                 }
                             }
                             _ => { }
@@ -1037,9 +1041,8 @@ async fn async_worker(
                                         log!("Serialized message to bytes, length {}", message_bytes.len());
                                         match crate::tsp::sign_anycast_with_default_vid(&message_bytes) {
                                             Ok(signed_msg) => {
-                                                use matrix_sdk::ruma::serde::Base64;
-
                                                 log!("Successfully signed message with TSP, length {}", signed_msg.len());
+                                                use matrix_sdk::ruma::serde::Base64;
                                                 message.tsp_signature = Some(Base64::new(signed_msg));
                                             }
                                             Err(e) => {
@@ -1069,7 +1072,7 @@ async fn async_worker(
                     };
 
                     if let Some(replied_to_info) = replied_to {
-                        match timeline.send_reply(message.into(), replied_to_info).await {
+                        match timeline.send_reply(message.into(), replied_to_info.event_id).await {
                             Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send reply message to room {room_id}: {_e:?}");
@@ -1099,7 +1102,7 @@ async fn async_worker(
                     room_info.timeline.clone()
                 };
                 let _send_rr_task = Handle::current().spawn(async move {
-                    match timeline.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id.clone()).await {
+                    match timeline.send_single_receipt(ReceiptType::Read, event_id.clone()).await {
                         Ok(sent) => log!("{} read receipt to room {room_id} for event {event_id}", if sent { "Sent" } else { "Already sent" }),
                         Err(_e) => error!("Failed to send read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
                     }
@@ -1122,7 +1125,7 @@ async fn async_worker(
                     room_info.timeline.clone()
                 };
                 let _send_frr_task = Handle::current().spawn(async move {
-                    match timeline.send_single_receipt(ReceiptType::FullyRead, ReceiptThread::Unthreaded, event_id.clone()).await {
+                    match timeline.send_single_receipt(ReceiptType::FullyRead, event_id.clone()).await {
                         Ok(sent) => log!("{} fully read receipt to room {room_id} for event {event_id}",
                             if sent { "Sent" } else { "Already sent" }
                         ),
@@ -1764,7 +1767,7 @@ async fn async_main_loop(
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append {_num_new_rooms}"); }
                     for new_room in new_rooms {
                         add_new_room(&new_room, &room_list_service).await?;
-                        all_known_rooms.push_back(new_room.into());
+                        all_known_rooms.push_back(new_room.into_inner().into());
                     }
                 }
                 VectorDiff::Clear => {
@@ -1776,12 +1779,12 @@ async fn async_main_loop(
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
                     add_new_room(&new_room, &room_list_service).await?;
-                    all_known_rooms.push_front(new_room.into());
+                    all_known_rooms.push_front(new_room.into_inner().into());
                 }
                 VectorDiff::PushBack { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
                     add_new_room(&new_room, &room_list_service).await?;
-                    all_known_rooms.push_back(new_room.into());
+                    all_known_rooms.push_back(new_room.into_inner().into());
                 }
                 remove_diff @ VectorDiff::PopFront => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopFront"); }
@@ -1810,7 +1813,7 @@ async fn async_main_loop(
                 VectorDiff::Insert { index, value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
                     add_new_room(&new_room, &room_list_service).await?;
-                    all_known_rooms.insert(index, new_room.into());
+                    all_known_rooms.insert(index, new_room.into_inner().into());
                 }
                 VectorDiff::Set { index, value: changed_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Set at {index}"); }
@@ -1819,7 +1822,7 @@ async fn async_main_loop(
                     } else {
                         error!("BUG: room list diff: Set index {index} was out of bounds.");
                     }
-                    all_known_rooms.set(index, changed_room.into());
+                    all_known_rooms.set(index, changed_room.into_inner().into());
                 }
                 remove_diff @ VectorDiff::Remove { index: remove_index } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Remove at {remove_index}"); }
@@ -1858,9 +1861,12 @@ async fn async_main_loop(
                     ALL_JOINED_ROOMS.lock().unwrap().clear();
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
                     for room in &new_rooms {
-                        add_new_room(room, &room_list_service).await?;
+                        add_new_room(room.deref(), &room_list_service).await?;
                     }
-                    all_known_rooms = new_rooms.into_iter().map(|r| r.into()).collect();
+                    all_known_rooms = new_rooms
+                        .into_iter()
+                        .map(|r| r.into_inner().into())
+                        .collect();
                 }
             }
         }
@@ -1880,9 +1886,9 @@ async fn async_main_loop(
 /// This tends to happen frequently in order to change the room's state
 /// or to "sort" the room list by changing its positional order.
 async fn optimize_remove_then_add_into_update(
-    remove_diff: VectorDiff<Room>,
+    remove_diff: VectorDiff<RoomListItem>,
     room: &RoomListServiceRoomInfo,
-    peekable_diffs: &mut Peekable<impl Iterator<Item = VectorDiff<matrix_sdk::Room>>>,
+    peekable_diffs: &mut Peekable<impl Iterator<Item = VectorDiff<RoomListItem>>>,
     all_known_rooms: &mut Vector<RoomListServiceRoomInfo>,
     room_list_service: &RoomListService,
 ) -> Result<()> {
@@ -1895,7 +1901,7 @@ async fn optimize_remove_then_add_into_update(
                 log!("Optimizing {remove_diff:?} + Insert({insert_index}) into Update for room {}", room.room_id);
             }
             update_room(room, new_room, room_list_service).await?;
-            all_known_rooms.insert(*insert_index, new_room.clone().into());
+            all_known_rooms.insert(*insert_index, new_room.deref().clone().into());
             next_diff_was_handled = true;
         }
         Some(VectorDiff::PushFront { value: new_room })
@@ -1905,7 +1911,7 @@ async fn optimize_remove_then_add_into_update(
                 log!("Optimizing {remove_diff:?} + PushFront into Update for room {}", room.room_id);
             }
             update_room(room, new_room, room_list_service).await?;
-            all_known_rooms.push_front(new_room.clone().into());
+            all_known_rooms.push_front(new_room.deref().clone().into());
             next_diff_was_handled = true;
         }
         Some(VectorDiff::PushBack { value: new_room })
@@ -1915,7 +1921,7 @@ async fn optimize_remove_then_add_into_update(
                 log!("Optimizing {remove_diff:?} + PushBack into Update for room {}", room.room_id);
             }
             update_room(room, new_room, room_list_service).await?;
-            all_known_rooms.push_back(new_room.clone().into());
+            all_known_rooms.push_back(new_room.deref().clone().into());
             next_diff_was_handled = true;
         }
         _ => next_diff_was_handled = false,
@@ -2000,7 +2006,7 @@ async fn update_room(
                     if new_latest_event.timestamp() > old_latest_event.timestamp() {
                         log!("Updating latest event for room {}", new_room_id);
                         room_avatar_changed =
-                            update_latest_event(new_room_id.clone(), &new_latest_event, None);
+                            update_latest_event(new_room, &new_latest_event, None);
                     }
                 }
             }
@@ -2139,7 +2145,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
     }
 
     // Subscribe to all updates for this room in order to properly receive all of its states.
-    room_list_service.subscribe_to_rooms(&[&room_id]);
+    room_list_service.subscribe_to_rooms(&[&room_id]).await;
 
     // Do not add tombstoned rooms to the rooms list; they require special handling.
     if let Some(successor_room) = room.successor_room() {
@@ -2311,8 +2317,8 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
         while let Some(state) = subscriber.next().await {
             log!("Received a sync service state update: {state:?}");
             match state {
-                sync_service::State::Error => {
-                    log!("Restarting sync service due to error.");
+                sync_service::State::Error(e) => {
+                    log!("Restarting sync service due to error: {e}.");
                     if let Some(ss) = get_sync_service() {
                         ss.start().await;
                     } else {
@@ -2707,7 +2713,7 @@ async fn timeline_subscriber_handler(
                 // Update the latest event for this room.
                 // We always do this in case a redaction or other event has changed the latest event.
                 if let Some(new_latest) = new_latest_event {
-                    let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest, Some(&timeline_update_sender));
+                    let room_avatar_changed = update_latest_event(&room, &new_latest, Some(&timeline_update_sender));
                     if room_avatar_changed {
                         spawn_fetch_room_avatar(room.clone());
                     }
@@ -2742,12 +2748,13 @@ async fn timeline_subscriber_handler(
 ///
 /// Returns `true` if room avatar has changed and should be fetched and updated.
 fn update_latest_event(
-    room_id: OwnedRoomId,
+    room: &Room,
     event_tl_item: &EventTimelineItem,
     timeline_update_sender: Option<&crossbeam_channel::Sender<TimelineUpdate>>
 ) -> bool {
     let mut room_avatar_changed = false;
 
+    let room_id = room.room_id().to_owned();
     let (timestamp, latest_message_text) = get_latest_event_details(event_tl_item, &room_id);
     match event_tl_item.content() {
         // Check for relevant state events.
@@ -2764,17 +2771,21 @@ fn update_latest_event(
                 AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
                     room_avatar_changed = true;
                 }
-                // Check for if can user send message.
+                // Check for an update to the current user's power levels in this room.
                 AnyOtherFullStateEventContent::RoomPowerLevels(FullStateEventContent::Original { content, prev_content: _ }) => {
                     if let (Some(sender), Some(user_id)) = (timeline_update_sender, current_user_id()) {
-                        match sender.send(TimelineUpdate::UserPowerLevels(
-                            UserPowerLevels::from(&content.clone().into(), &user_id)
-                        )) {
-                            Ok(_) => {
-                                SignalToUI::set_ui_signal();
-                            }
-                            Err(e) => {
-                                error!("Failed to send the new RoomPowerLevels from an updated latest event: {e}");
+                        if let Some(authorization_rules) = room.version().and_then(|v| v.rules().map(|r| r.authorization)) {
+                            let user_power_levels = UserPowerLevels::from(
+                                &RoomPowerLevels::new(
+                                    content.clone().into(),
+                                    &authorization_rules,
+                                    room.creators().unwrap_or_default(),
+                                ),
+                                &user_id,
+                            );
+                            match sender.send(TimelineUpdate::UserPowerLevels(user_power_levels)) {
+                                Ok(_) => SignalToUI::set_ui_signal(),
+                                Err(e) => error!("Failed to send the new RoomPowerLevels from an updated latest event: {e}"),
                             }
                         }
                     }

@@ -22,12 +22,12 @@ use matrix_sdk::{
     }, OwnedServerName, SuccessorRoom
 };
 use matrix_sdk_ui::timeline::{
-    self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use url::Url;
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, link_preview::{LinkPreviewCache, LinkPreviewCacheEntry, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, link_preview::{LinkPreviewCache, LinkPreviewCacheEntry, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -1378,6 +1378,15 @@ impl Widget for RoomScreen {
                                     room_id,
                                     event_tl_item,
                                     utd,
+                                    item_drawn_status,
+                                ),
+                                MsgLikeKind::Other(other) => populate_small_state_event(
+                                    cx,
+                                    list,
+                                    item_id,
+                                    room_id,
+                                    event_tl_item,
+                                    other,
                                     item_drawn_status,
                                 ),
                             },
@@ -4169,6 +4178,28 @@ impl SmallStateEventContent for EncryptedMessage {
         item.label(id!(content)).set_text(
             cx,
             &text_preview_of_encrypted_message(self).format_with(username, false),
+        );
+        new_drawn_status.content_drawn = true;
+        (item, new_drawn_status)
+    }
+}
+
+// For other message-like content (custom message-like events).
+impl SmallStateEventContent for OtherMessageLike {
+    fn populate_item_content(
+        &self,
+        cx: &mut Cx,
+        _list: &mut PortalList,
+        _item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventTimelineItem,
+        username: &str,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
+        item.label(id!(content)).set_text(
+            cx,
+            &text_preview_of_other_message_like(self).format_with(username, false),
         );
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
