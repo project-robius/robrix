@@ -1,4 +1,4 @@
-//! A link preview widget that provides a template and.
+//! A link preview widget that provides a method to populate link preview view for setting its' children.
 
 use std::{
     collections::{btree_map::Entry, BTreeMap},
@@ -68,7 +68,7 @@ live_design! {
     pub LinkPreview = {{LinkPreview}} {
         width: Fill, height: Fit,
         flow: Down,
-        item: <RoundedView> {
+        item_template: <RoundedView> {
             flow: Right,
             spacing: 4.0,
             width: Fill, height: Fit,
@@ -144,7 +144,7 @@ pub struct LinkPreview {
     #[deref]
     view: View,
     #[live]
-    item: Option<LivePtr>,
+    item_template: Option<LivePtr>,
     #[rust]
     children: Vec<ViewRef>,
     #[layout]
@@ -181,18 +181,25 @@ impl Widget for LinkPreview {
 }
 
 impl LinkPreview {
-    pub fn item_template(&self) -> Option<LivePtr> {
-        self.item
+    fn item_template(&self) -> Option<LivePtr> {
+        self.item_template
     }
 }
 
 impl LinkPreviewRef {
-    pub fn item_template(&self) -> Option<LivePtr> {
+    fn item_template(&self) -> Option<LivePtr> {
         if let Some(inner) = self.borrow() {
             return inner.item_template();
         }
         None
     }
+    /// Sets the children of the LinkPreview widget.
+    ///
+    /// This function will replace all existing children of the LinkPreview widget with the provided views.
+    ///
+    /// # Parameters
+    ///
+    /// * `views`: A vector of ViewRef objects to be set as the children of the LinkPreview widget.
     pub fn set_children(&mut self, views: Vec<ViewRef>) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.children = views;
@@ -200,7 +207,7 @@ impl LinkPreviewRef {
     }
 
     /// Populates a link preview view with data and handles image population through a closure.
-    /// Returns whether the image was fully drawn.
+    /// Returns whether the link preview is fully drawn.
     pub fn populate_link_preview_view<F>(
         &mut self,
         cx: &mut Cx2d,
@@ -261,7 +268,7 @@ impl LinkPreviewRef {
             let owned_mxc_uri = OwnedMxcUri::from(image.clone());
             let text_or_image_ref = view_ref.text_or_image(id!(image));
             let original_source = MediaSource::Plain(owned_mxc_uri);
-            // Call the closure with the image populate function
+            // Calls the closure with the image populate function
             fully_drawn = image_populate_fn(
                 cx,
                 &text_or_image_ref,
@@ -312,6 +319,7 @@ pub struct LinkPreviewData {
     pub title: Option<String>,
 }
 
+/// The cache for link previews.
 pub struct LinkPreviewCache {
     /// The actual cached data.
     cache: BTreeMap<String, Arc<Mutex<TimestampedCacheEntry>>>,
@@ -331,6 +339,7 @@ impl LinkPreviewCache {
         }
     }
 
+    /// Fetches the link preview for the specified URL.
     pub fn get_or_fetch_link_preview(&mut self, url: String) -> LinkPreviewCacheEntry {
         // Clean up old entries periodically
         if self.cache.len() > MAX_CACHE_ENTRIES_BEFORE_CLEANUP {
@@ -387,6 +396,7 @@ fn insert_into_cache(
                 UrlPreviewError::Json(_) => LinkPreviewError::ParseError(e.to_string()),
                 UrlPreviewError::Request(_) | 
                 UrlPreviewError::ClientNotAvailable | 
+                UrlPreviewError::AccessTokenNotAvailable |
                 UrlPreviewError::UrlParse(_) |
                 UrlPreviewError::HttpStatus(_) => LinkPreviewError::NetworkError(e.to_string()),
             };

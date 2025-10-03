@@ -249,6 +249,8 @@ pub enum UrlPreviewError {
     Json(serde_json::Error),
     /// Client not available.
     ClientNotAvailable,
+    /// Access token not available.
+    AccessTokenNotAvailable,
     /// HTTP error status.
     HttpStatus(u16),
     /// URL parsing error.
@@ -261,6 +263,7 @@ impl std::fmt::Display for UrlPreviewError {
             UrlPreviewError::Request(e) => write!(f, "HTTP request failed: {}", e),
             UrlPreviewError::Json(e) => write!(f, "JSON parsing failed: {}", e),
             UrlPreviewError::ClientNotAvailable => write!(f, "Matrix client not available"),
+            UrlPreviewError::AccessTokenNotAvailable => write!(f, "Access token not available"),
             UrlPreviewError::HttpStatus(status) => write!(f, "HTTP {} error", status),
             UrlPreviewError::UrlParse(e) => write!(f, "URL parsing failed: {}", e),
         }
@@ -1279,7 +1282,10 @@ async fn async_worker(
                             UrlPreviewError::ClientNotAvailable
                         })?;
                         
-                        let token = client.access_token().unwrap();
+                        let token = client.access_token().ok_or_else(|| {
+                            error!("Access token not available for URL preview: {}", url);
+                            UrlPreviewError::AccessTokenNotAvailable
+                        })?;
                         let endpoint_url = client.homeserver().join("_matrix/media/v3/preview_url")
                             .map_err(UrlPreviewError::UrlParse)?;
                         log!("Fetching URL preview from endpoint: {} for URL: {}", endpoint_url, url);
