@@ -2,6 +2,7 @@
 #![allow(clippy::question_mark)]
 
 use std::{borrow::Cow, fmt::Display, ops::{Deref, DerefMut}, str::{Chars, FromStr}, time::SystemTime};
+use url::Url;
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
@@ -70,12 +71,15 @@ pub fn is_interactive_hit_event(event: &Event) -> bool {
 pub enum ImageFormat {
     Png,
     Jpeg,
+    XIcon,
 }
+
 impl ImageFormat {
     pub fn from_mimetype(mimetype: &str) -> Option<Self> {
         match mimetype {
             "image/png" => Some(Self::Png),
             "image/jpeg" => Some(Self::Jpeg),
+            "image/x-icon" => Some(Self::XIcon),
             _ => None,
         }
     }
@@ -384,13 +388,13 @@ pub fn trim_start_html_whitespace(mut text: &str) -> &str {
 }
 
 /// Looks for bare links in the given `text` and converts them into proper HTML links and returns them.
-pub fn linkify(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Cow<'_, str>>){
+pub fn linkify(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
     use linkify::{LinkFinder, LinkKind};
     let mut links = LinkFinder::new()
         .links(text)
         .peekable();
     if links.peek().is_none() {
-        return (Cow::Borrowed(text), vec![]);
+        return (Cow::Borrowed(text), Vec::new());
     }
 
     // A closure to escape text if it's not HTML.
@@ -404,7 +408,7 @@ pub fn linkify(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Cow<'_, str>>){
 
     let mut linkified_text = String::new();
     let mut last_end_index = 0;
-    let mut url_links = vec![];
+    let mut url_links = Vec::new();
     for link in links {
         let link_txt = link.as_str();
         // Only linkify the URL if it's not already part of an HTML href attribute.
@@ -427,7 +431,9 @@ pub fn linkify(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Cow<'_, str>>){
                         htmlize::escape_attribute(link_txt),
                         htmlize::escape_text(link_txt),
                     );
-                    url_links.push(Cow::Borrowed(link_txt));
+                    if let Ok(url) = Url::parse(link_txt) {
+                        url_links.push(url);
+                    }
                 }
                 LinkKind::Email => {
                     linkified_text = format!(

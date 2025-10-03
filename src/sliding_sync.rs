@@ -32,7 +32,7 @@ use crate::{
     avatar_cache::AvatarUpdate,
     event_preview::text_preview_of_timeline_item,
     home::{
-        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewCacheEntry, LinkPreviewData}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction
+        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction
     },
     login::login_screen::LoginAction,
     logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{is_logout_in_progress, logout_with_state_machine, LogoutConfig}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
@@ -243,7 +243,7 @@ pub type OnMediaFetchedFn = fn(
 /// The function signature for the callback that gets invoked when link preview data is fetched.
 pub type OnLinkPreviewFetchedFn = fn(
     String,
-    Arc<Mutex<LinkPreviewCacheEntry>>,
+    Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
     anyhow::Result<LinkPreviewData>,
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
@@ -424,7 +424,7 @@ pub enum MatrixRequest {
     GetUrlPreview {
         url: String,
         on_fetched: OnLinkPreviewFetchedFn,
-        destination: Arc<Mutex<LinkPreviewCacheEntry>>,
+        destination: Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
 }
@@ -1238,26 +1238,72 @@ async fn async_worker(
                     }
                 });
             }
-            MatrixRequest::GetUrlPreview { url, on_fetched, destination, update_sender} => {
+            MatrixRequest::GetUrlPreview { url, on_fetched, destination, update_sender } => {
+                const MAX_LOG_RESPONSE_BODY_LENGTH: usize = 1000;
+                
+                log!("Starting URL preview fetch for: {}", url);
                 let _fetch_url_preview_task = Handle::current().spawn(async move {
                     let result = async {
-                        let client = get_client().ok_or_else(|| anyhow!("Client not available"))?;
+                        log!("Getting Matrix client for URL preview: {}", url);
+                        let client = get_client().ok_or_else(|| {
+                            error!("Matrix client not available for URL preview: {}", url);
+                            anyhow!("Client not available")
+                        })?;
+                        
                         let token = client.access_token().unwrap();
                         let endpoint_url = client.homeserver().join("_matrix/media/v3/preview_url")?;
+                        log!("Fetching URL preview from endpoint: {} for URL: {}", endpoint_url, url);
                         
                         let response = client
                             .http_client()
-                            .get(endpoint_url)
+                            .get(endpoint_url.clone())
                             .bearer_auth(token)
                             .query(&[("url", url.as_str())])
                             .header("Content-Type", "application/json")
                             .send()
-                            .await?;
+                            .await
+                            .map_err(|e| {
+                                error!("HTTP request failed for URL preview {}: {}", url, e);
+                                anyhow!("HTTP request failed: {}", e)
+                            })?;
+                        
+                        let status = response.status();
+                        log!("URL preview response status for {}: {}", url, status);
+                        
+                        if !status.is_success() {
+                            error!("URL preview request failed with status {} for URL: {}", status, url);
+                            return Err(anyhow!("HTTP {} error", status));
+                        }
                             
-                        let text = response.text().await?;
+                        let text = response.text().await.map_err(|e| {
+                            error!("Failed to read response text for URL preview {}: {}", url, e);
+                            anyhow!("Failed to read response: {}", e)
+                        })?;
+                        
+                        log!("URL preview response body length for {}: {} bytes", url, text.len());
+                        if text.len() > MAX_LOG_RESPONSE_BODY_LENGTH {
+                            log!("URL preview response body preview for {}: {}...", url, &text[..MAX_LOG_RESPONSE_BODY_LENGTH]);
+                        } else {
+                            log!("URL preview response body for {}: {}", url, text);
+                        }
+                        
                         serde_json::from_str::<LinkPreviewData>(&text)
-                            .map_err(|e| anyhow!("Failed to parse JSON: {}", e))
+                            .map_err(|e| {
+                                error!("Failed to parse JSON response for URL preview {}: {}", url, e);
+                                error!("Response body that failed to parse: {}", text);
+                                anyhow!("Failed to parse JSON: {}", e)
+                            })
                     }.await;
+
+                    match &result {
+                        Ok(preview_data) => {
+                            log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}", 
+                                 url, preview_data.title, preview_data.site_name);
+                        }
+                        Err(e) => {
+                            error!("URL preview fetch failed for {}: {}", url, e);
+                        }
+                    }
 
                     on_fetched(url, destination, result, update_sender);
                     SignalToUI::set_ui_signal();

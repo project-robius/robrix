@@ -24,7 +24,6 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
-use url::Url;
 
 use crate::{
     app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, link_preview::{LinkPreviewCache, LinkPreviewCacheEntry, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
@@ -3598,12 +3597,12 @@ fn populate_message_view(
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
 /// Returns a list of links found in the message body.
-fn populate_text_message_content<'a>(
+fn populate_text_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
-    body: &'a str,
-    formatted_body: Option<&'a FormattedBody>,
-) -> Vec<Cow<'a, str>> {
+    body: &str,
+    formatted_body: Option<&FormattedBody>,
+) -> Vec<url::Url> {
     // The message was HTML-formatted rich text.
     if let Some(fb) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
@@ -3652,7 +3651,7 @@ fn populate_image_message_content(
         if ImageFormat::from_mimetype(mime).is_none() {
             text_or_image_ref.show_text(
                 cx,
-                format!("{body}\n\nImages/Stickers of type {mime:?} are not yet supported."),
+                format!("{body}Images/Stickers of type {mime:?} are not yet supported."),
             );
             return true; // consider this as fully drawn
         }
@@ -3936,10 +3935,10 @@ fn populate_location_message_content(
 /// The given `link_preview_cache` is used to fetch the link previews from cache.
 /// 
 /// Return true when the link preview is fully drawn
-fn populate_link_previews_below_message<'a>(
+fn populate_link_previews_below_message(
     cx: &mut Cx2d,
     link_preview_ref: &mut LinkPreviewRef,
-    links: Vec<Cow<'a, str>>,
+    links: Vec<url::Url>,
     media_cache: &mut MediaCache,
     link_preview_cache: &mut LinkPreviewCache,
 ) -> bool {
@@ -3948,17 +3947,12 @@ fn populate_link_previews_below_message<'a>(
     let mut accepted_link_count = 0;
     let mut views = Vec::new();
     for link in &links {
-        if link.is_empty() {
-            continue;
-        }
-        if let Ok(parsed_url) = Url::parse(link) {
-            if let Some(domain) = parsed_url.host_str() {
-                if SKIPPED_DOMAINS
-                    .iter()
-                    .any(|skip_domain| domain.ends_with(skip_domain))
-                {
-                    continue;
-                }
+        if let Some(domain) = link.host_str() {
+            if SKIPPED_DOMAINS
+                .iter()
+                .any(|skip_domain| domain.ends_with(skip_domain))
+            {
+                continue;
             }
         }
         accepted_link_count += 1;
@@ -3968,6 +3962,7 @@ fn populate_link_previews_below_message<'a>(
             let (view_ref, was_image_drawn) = link_preview_ref.populate_link_preview_view(
                 cx,
                 &link_preview_data,
+                link.clone(),
                 media_cache,
                 populate_image_message_content,
             );

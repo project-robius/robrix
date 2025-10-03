@@ -3,11 +3,13 @@
 use std::{
     collections::{btree_map::Entry, BTreeMap},
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::room::{ImageInfo, MediaSource}, OwnedMxcUri, UInt};
 use serde::Deserialize;
+use url::Url;
 
 use crate::{
     home::room_screen::TimelineUpdate,
@@ -16,13 +18,39 @@ use crate::{
     sliding_sync::{submit_async_request, MatrixRequest},
 };
 
+/// Maximum length for link preview descriptions before truncation
+const MAX_DESCRIPTION_LENGTH: usize = 200;
+/// Maximum number of cache entries before cleanup is triggered
+const MAX_CACHE_ENTRIES_BEFORE_CLEANUP: usize = 100;
+/// Maximum age for cache entries in seconds (1 hour)
+const CACHE_ENTRY_MAX_AGE_SECS: u64 = 3600;
+
+/// Specific error types for link preview failures
+#[derive(Clone, Debug)]
+pub enum LinkPreviewError {
+    NetworkError(String),
+    ParseError(String),
+    Forbidden,
+    NotFound,
+    RateLimited,
+    InvalidUrl,
+}
+
+/// An entry in the Link Preview cache with timestamp for cleanup.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone)]
+pub struct TimestampedCacheEntry {
+    pub entry: LinkPreviewCacheEntry,
+    pub timestamp: Instant,
+}
+
 /// An entry in the Link Preview cache.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 pub enum LinkPreviewCacheEntry {
     Requested,
     LoadedLinkPreview(LinkPreviewData),
-    Failed,
+    Failed(LinkPreviewError),
 }
 
 live_design! {
@@ -51,7 +79,7 @@ live_design! {
             }
             align: { y: 0.0 }
             <View>{
-                width: 2, height: 80,
+                width: 2, height: 100,
                 show_bg: true,
                 draw_bg: {
                     color: #666666,
@@ -61,7 +89,7 @@ live_design! {
                 visible: true,
                 width: Fit, height: Fit,
                 image = <TextOrImage> {
-                    width: 80, height: 80,
+                    width: 100, height: 100,
                 }
             }
 
@@ -177,6 +205,7 @@ impl LinkPreviewRef {
         &mut self,
         cx: &mut Cx2d,
         link_preview_data: &LinkPreviewData,
+        link: Url,
         media_cache: &mut MediaCache,
         image_populate_fn: F,
     ) -> (ViewRef, bool)
@@ -185,13 +214,18 @@ impl LinkPreviewRef {
     {
         let view_ref = WidgetRef::new_from_ptr(cx, self.item_template()).as_view();
         let mut fully_drawn = true;
-
         // Set title and URL
-        if let (Some(url), Some(title)) = (&link_preview_data.url, &link_preview_data.title) {
-            let title_link = view_ref.link_label(id!(content_view.title_label));
+        let title_link = view_ref.link_label(id!(content_view.title_label));
+        if let Some(url) = &link_preview_data.url {
             if let Some(mut title_link) = title_link.borrow_mut() {
                 title_link.url = url.clone();
             }
+        } else {
+            if let Some(mut title_link) = title_link.borrow_mut() {
+                title_link.url = link.to_string();
+            }
+        }
+        if let Some(title) = &link_preview_data.title {
             title_link.set_text(cx, title);
         }
 
@@ -203,12 +237,17 @@ impl LinkPreviewRef {
                 .set_text(cx, site_name);
         }
 
-        // Set description
+        // Set description with size limit
         if let Some(description) = &link_preview_data.description {
+            let truncated_description = if description.len() > MAX_DESCRIPTION_LENGTH {
+                format!("{}...", &description[..(MAX_DESCRIPTION_LENGTH - 3)])
+            } else {
+                description.clone()
+            };
             view_ref
                 .view(id!(content_view))
                 .label(id!(description_label))
-                .set_text(cx, description);
+                .set_text(cx, &truncated_description);
         }
 
         // Handle image through closure
@@ -222,7 +261,6 @@ impl LinkPreviewRef {
             let owned_mxc_uri = OwnedMxcUri::from(image.clone());
             let text_or_image_ref = view_ref.text_or_image(id!(image));
             let original_source = MediaSource::Plain(owned_mxc_uri);
-            
             // Call the closure with the image populate function
             fully_drawn = image_populate_fn(
                 cx,
@@ -232,6 +270,8 @@ impl LinkPreviewRef {
                 "",
                 media_cache,
             );
+            // When the image is too small, the text is not displayed fully.
+            // TODO: Properly wrap text in text_or_image widget.
         }
 
         (view_ref, fully_drawn)
@@ -274,7 +314,7 @@ pub struct LinkPreviewData {
 
 pub struct LinkPreviewCache {
     /// The actual cached data.
-    cache: BTreeMap<String, Arc<Mutex<LinkPreviewCacheEntry>>>,
+    cache: BTreeMap<String, Arc<Mutex<TimestampedCacheEntry>>>,
     /// A channel to send updates to a particular timeline when a link preview request has completed.
     timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
@@ -292,9 +332,17 @@ impl LinkPreviewCache {
     }
 
     pub fn get_or_fetch_link_preview(&mut self, url: String) -> LinkPreviewCacheEntry {
+        // Clean up old entries periodically
+        if self.cache.len() > MAX_CACHE_ENTRIES_BEFORE_CLEANUP {
+            self.cleanup_old_entries(Duration::from_secs(CACHE_ENTRY_MAX_AGE_SECS));
+        }
+
         match self.cache.entry(url.clone()) {
             Entry::Vacant(vacant) => {
-                let entry_ref = Arc::new(Mutex::new(LinkPreviewCacheEntry::Requested));
+                let entry_ref = Arc::new(Mutex::new(TimestampedCacheEntry {
+                    entry: LinkPreviewCacheEntry::Requested,
+                    timestamp: Instant::now(),
+                }));
                 vacant.insert(entry_ref.clone());
                 submit_async_request(MatrixRequest::GetUrlPreview {
                     url,
@@ -305,26 +353,54 @@ impl LinkPreviewCache {
 
                 LinkPreviewCacheEntry::Requested
             }
-            Entry::Occupied(occupied) => occupied.get().lock().unwrap().clone(),
+            Entry::Occupied(occupied) => occupied.get().lock().unwrap().entry.clone(),
         }
+    }
+
+    /// Removes cache entries older than the specified duration
+    pub fn cleanup_old_entries(&mut self, max_age: Duration) {
+        let now = Instant::now();
+        self.cache.retain(|_url, entry| {
+            if let Ok(timestamped_entry) = entry.lock() {
+                now.duration_since(timestamped_entry.timestamp) < max_age
+            } else {
+                true // Keep entries we can't lock
+            }
+        });
     }
 }
 
 /// Insert data into a previously-requested media cache entry.
 fn insert_into_cache(
     url: String,
-    value_ref: Arc<Mutex<LinkPreviewCacheEntry>>,
+    value_ref: Arc<Mutex<TimestampedCacheEntry>>,
     data: anyhow::Result<LinkPreviewData>,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
-    let new_value = match data {
+    let new_entry = match data {
         Ok(data) => LinkPreviewCacheEntry::LoadedLinkPreview(data),
         Err(e) => {
+            let error_type = if e.to_string().contains("403") || e.to_string().contains("Forbidden") {
+                LinkPreviewError::Forbidden
+            } else if e.to_string().contains("404") || e.to_string().contains("Not Found") {
+                LinkPreviewError::NotFound
+            } else if e.to_string().contains("429") || e.to_string().contains("rate limit") {
+                LinkPreviewError::RateLimited
+            } else if e.to_string().contains("parse") || e.to_string().contains("JSON") {
+                LinkPreviewError::ParseError(e.to_string())
+            } else {
+                LinkPreviewError::NetworkError(e.to_string())
+            };
             error!("Failed to fetch link preview data for {url}: {e:?}");
-            LinkPreviewCacheEntry::Failed
+            LinkPreviewCacheEntry::Failed(error_type)
         }
     };
-    *value_ref.lock().unwrap() = new_value;
+    
+    if let Ok(mut timestamped_entry) = value_ref.lock() {
+        timestamped_entry.entry = new_entry;
+        timestamped_entry.timestamp = Instant::now();
+    }
+    
     if let Some(sender) = update_sender {
         // Reuse TimelineUpdate MediaFetched to trigger redraw in the timeline.
         let _ = sender.send(TimelineUpdate::MediaFetched);
