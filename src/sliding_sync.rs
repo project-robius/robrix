@@ -240,11 +240,40 @@ pub type OnMediaFetchedFn = fn(
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
 
+/// Error types for URL preview operations.
+#[derive(Debug)]
+pub enum UrlPreviewError {
+    /// HTTP request failed.
+    Request(reqwest::Error),
+    /// JSON parsing failed.
+    Json(serde_json::Error),
+    /// Client not available.
+    ClientNotAvailable,
+    /// HTTP error status.
+    HttpStatus(u16),
+    /// URL parsing error.
+    UrlParse(url::ParseError),
+}
+
+impl std::fmt::Display for UrlPreviewError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UrlPreviewError::Request(e) => write!(f, "HTTP request failed: {}", e),
+            UrlPreviewError::Json(e) => write!(f, "JSON parsing failed: {}", e),
+            UrlPreviewError::ClientNotAvailable => write!(f, "Matrix client not available"),
+            UrlPreviewError::HttpStatus(status) => write!(f, "HTTP {} error", status),
+            UrlPreviewError::UrlParse(e) => write!(f, "URL parsing failed: {}", e),
+        }
+    }
+}
+
+impl std::error::Error for UrlPreviewError {}
+
 /// The function signature for the callback that gets invoked when link preview data is fetched.
 pub type OnLinkPreviewFetchedFn = fn(
     String,
     Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
-    anyhow::Result<LinkPreviewData>,
+    Result<LinkPreviewData, UrlPreviewError>,
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
 
@@ -1243,15 +1272,16 @@ async fn async_worker(
                 
                 log!("Starting URL preview fetch for: {}", url);
                 let _fetch_url_preview_task = Handle::current().spawn(async move {
-                    let result = async {
+                    let result: Result<LinkPreviewData, UrlPreviewError> = async {
                         log!("Getting Matrix client for URL preview: {}", url);
                         let client = get_client().ok_or_else(|| {
                             error!("Matrix client not available for URL preview: {}", url);
-                            anyhow!("Client not available")
+                            UrlPreviewError::ClientNotAvailable
                         })?;
                         
                         let token = client.access_token().unwrap();
-                        let endpoint_url = client.homeserver().join("_matrix/media/v3/preview_url")?;
+                        let endpoint_url = client.homeserver().join("_matrix/media/v3/preview_url")
+                            .map_err(UrlPreviewError::UrlParse)?;
                         log!("Fetching URL preview from endpoint: {} for URL: {}", endpoint_url, url);
                         
                         let response = client
@@ -1264,7 +1294,7 @@ async fn async_worker(
                             .await
                             .map_err(|e| {
                                 error!("HTTP request failed for URL preview {}: {}", url, e);
-                                anyhow!("HTTP request failed: {}", e)
+                                UrlPreviewError::Request(e)
                             })?;
                         
                         let status = response.status();
@@ -1272,12 +1302,12 @@ async fn async_worker(
                         
                         if !status.is_success() {
                             error!("URL preview request failed with status {} for URL: {}", status, url);
-                            return Err(anyhow!("HTTP {} error", status));
+                            return Err(UrlPreviewError::HttpStatus(status.as_u16()));
                         }
                             
                         let text = response.text().await.map_err(|e| {
                             error!("Failed to read response text for URL preview {}: {}", url, e);
-                            anyhow!("Failed to read response: {}", e)
+                            UrlPreviewError::Request(e)
                         })?;
                         
                         log!("URL preview response body length for {}: {} bytes", url, text.len());
@@ -1291,7 +1321,7 @@ async fn async_worker(
                             .map_err(|e| {
                                 error!("Failed to parse JSON response for URL preview {}: {}", url, e);
                                 error!("Response body that failed to parse: {}", text);
-                                anyhow!("Failed to parse JSON: {}", e)
+                                UrlPreviewError::Json(e)
                             })
                     }.await;
 

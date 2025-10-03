@@ -15,7 +15,7 @@ use crate::{
     home::room_screen::TimelineUpdate,
     media_cache::MediaCache,
     shared::text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
-    sliding_sync::{submit_async_request, MatrixRequest},
+    sliding_sync::{submit_async_request, MatrixRequest, UrlPreviewError},
 };
 
 /// Maximum length for link preview descriptions before truncation
@@ -79,7 +79,7 @@ live_design! {
             }
             align: { y: 0.0 }
             <View>{
-                width: 2, height: 100,
+                width: 2, height: 120,
                 show_bg: true,
                 draw_bg: {
                     color: #666666,
@@ -89,7 +89,7 @@ live_design! {
                 visible: true,
                 width: Fit, height: Fit,
                 image = <TextOrImage> {
-                    width: 100, height: 100,
+                    width: 120, height: 120,
                 }
             }
 
@@ -122,7 +122,7 @@ live_design! {
                     }
                 }
                 <View> {
-                    width: Fill, height: 48,
+                    width: Fill, height: 50,
                     description_label = <Label> {
                         width: Fill, height: Fit,
                         draw_text: {
@@ -374,22 +374,21 @@ impl LinkPreviewCache {
 fn insert_into_cache(
     url: String,
     value_ref: Arc<Mutex<TimestampedCacheEntry>>,
-    data: anyhow::Result<LinkPreviewData>,
+    data: Result<LinkPreviewData, UrlPreviewError>,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
     let new_entry = match data {
         Ok(data) => LinkPreviewCacheEntry::LoadedLinkPreview(data),
         Err(e) => {
-            let error_type = if e.to_string().contains("403") || e.to_string().contains("Forbidden") {
-                LinkPreviewError::Forbidden
-            } else if e.to_string().contains("404") || e.to_string().contains("Not Found") {
-                LinkPreviewError::NotFound
-            } else if e.to_string().contains("429") || e.to_string().contains("rate limit") {
-                LinkPreviewError::RateLimited
-            } else if e.to_string().contains("parse") || e.to_string().contains("JSON") {
-                LinkPreviewError::ParseError(e.to_string())
-            } else {
-                LinkPreviewError::NetworkError(e.to_string())
+            let error_type = match e {
+                UrlPreviewError::HttpStatus(403) => LinkPreviewError::Forbidden,
+                UrlPreviewError::HttpStatus(404) => LinkPreviewError::NotFound,
+                UrlPreviewError::HttpStatus(429) => LinkPreviewError::RateLimited,
+                UrlPreviewError::Json(_) => LinkPreviewError::ParseError(e.to_string()),
+                UrlPreviewError::Request(_) | 
+                UrlPreviewError::ClientNotAvailable | 
+                UrlPreviewError::UrlParse(_) |
+                UrlPreviewError::HttpStatus(_) => LinkPreviewError::NetworkError(e.to_string()),
             };
             error!("Failed to fetch link preview data for {url}: {e:?}");
             LinkPreviewCacheEntry::Failed(error_type)
