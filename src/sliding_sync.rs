@@ -2603,8 +2603,10 @@ async fn timeline_subscriber_handler(
                         SignalToUI::set_ui_signal();
                     }
                     else {
-                        // log!("Target event not in timeline. Starting backwards pagination in room {room_id} to find target event {new_target_event_id} starting from index {starting_index}.");
-
+                        log!("Target event not in timeline. Starting backwards pagination \
+                            in room {room_id} to find target event {new_target_event_id} \
+                            starting from index {starting_index}.",
+                        );
                         // If we didn't find the target event in the current timeline items,
                         // we need to start loading previous items into the timeline.
                         submit_async_request(MatrixRequest::PaginateRoomTimeline {
@@ -2759,6 +2761,15 @@ async fn timeline_subscriber_handler(
                 } else {
                     None
                 };
+
+                // Handle the case where back pagination inserts items at the beginning of the timeline
+                // (meaning the entire timeline needs to be re-drawn),
+                // but there is a virtual event at index 0 (e.g., a day divider).
+                // When that happens, we want the RoomScreen to treat this as if *all* events changed.
+                if index_of_first_change == 1 && timeline_items.front().and_then(|item| item.as_virtual()).is_some() {
+                    index_of_first_change = 0;
+                    clear_cache = true;
+                }
 
                 let changed_indices = index_of_first_change..index_of_last_change;
 

@@ -1531,9 +1531,7 @@ impl RoomScreen {
                         //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
                     }
 
-                    // Maybe todo?: we can often avoid the following loops that iterate over the `items` list
-                    //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
-                    //       any index that comes before (is less than) the above `curr_first_id`.
+                    let prior_items_changed = clear_cache || changed_indices.start <= curr_first_id;
 
                     if new_items.len() == tl.items.len() {
                         // log!("Timeline::handle_event(): no jump necessary for updated timeline of same length: {}", items.len());
@@ -1544,8 +1542,14 @@ impl RoomScreen {
                         portal_list.set_tail_range(true);
                         jump_to_bottom.update_visibility(cx, true);
                     }
+                    // If the prior items changed, we need to find the new index of an item that was visible
+                    // in the timeline viewport so that we can maintain the scroll position of that item,
+                    // which ensures that the timeline doesn't jump around unexpectedly and ruin the user's experience.
                     else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
-                        find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items)
+                        prior_items_changed.then(||
+                            find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items)
+                        )
+                        .flatten()
                     {
                         if curr_item_idx != new_item_idx {
                             log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
@@ -1553,9 +1557,8 @@ impl RoomScreen {
                             tl.prev_first_index = Some(new_item_idx);
                             // Set scrolled_past_read_marker false when we jump to a new event
                             tl.scrolled_past_read_marker = false;
-                            // When the tooltip is up, the timeline may jump. This may take away the hover out event to required to clear the tooltip
+                            // Hide the tooltip when the timeline jumps, as a hover-out event won't occur.
                             cx.widget_action(ui, &Scope::empty().path, RoomScreenTooltipActions::HoverOut);
-
                         }
                     }
                     //
@@ -1572,11 +1575,7 @@ impl RoomScreen {
                         submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: tl.room_id.clone() });
                     }
 
-                    if clear_cache {
-                        tl.content_drawn_since_last_update.clear();
-                        tl.profile_drawn_since_last_update.clear();
-                        tl.fully_paginated = false;
-
+                    if prior_items_changed {
                         // If this RoomScreen is showing the loading pane and has an ongoing backwards pagination request,
                         // then we should update the status message in that loading pane
                         // and then continue paginating backwards until we find the target event.
@@ -1587,7 +1586,7 @@ impl RoomScreen {
                             ref mut events_paginated, target_event_id, ..
                         } = &mut loading_pane_state {
                             *events_paginated += new_items.len().saturating_sub(tl.items.len());
-                            log!("While finding target event {target_event_id}, loaded {events_paginated} messages...");
+                            log!("While finding target event {target_event_id}, we have now loaded {events_paginated} messages...");
                             // Here, we assume that we have not yet found the target event,
                             // so we need to continue paginating backwards.
                             // If the target event has already been found, it will be handled
@@ -1597,6 +1596,12 @@ impl RoomScreen {
                             should_continue_backwards_pagination = true;
                         }
                         loading_pane.set_state(cx, loading_pane_state);
+                    }
+
+                    if clear_cache {
+                        tl.content_drawn_since_last_update.clear();
+                        tl.profile_drawn_since_last_update.clear();
+                        tl.fully_paginated = false;
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
@@ -2105,7 +2110,7 @@ impl RoomScreen {
                 MessageAction::JumpToRelated(details) => {
                     let Some(tl) = self.tl_state.as_mut() else { continue };
                     let Some(related_event_id) = details.related_event_id.as_ref() else {
-                        error!("BUG: MessageAction::JumpToRelated had not related event ID.");
+                        error!("BUG: MessageAction::JumpToRelated had no related event ID.\n{details:#?}");
                         continue;
                     };
                     let tl_idx = details.item_id;
@@ -3456,9 +3461,9 @@ fn populate_message_view(
         }
     };
 
-    let mut replied_to_event_id = None;
-
-    // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
+    // If we didn't use a cached item, we need to draw all other message content:
+    // the reactions, the read receipts avatar row, and the reply preview.
+    // We also must set the message details/metadata for the `item` widget representing this message.
     if !used_cached_item {
         item.reaction_list(id!(content.reaction_list)).set_list(
             cx,
@@ -3467,16 +3472,31 @@ fn populate_message_view(
             event_tl_item.identifier(),
             item_id,
         );
-
         populate_read_receipts(&item, cx, room_id, event_tl_item);
-        let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
+        let (is_reply_fully_drawn, replied_to_event_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
             room_id,
             msg_like_content.in_reply_to.as_ref(),
             event_tl_item.event_id(),
         );
-        replied_to_event_id = replied_to_ev_id;
+
+        // Set the Message widget's metadata for reply-handling purposes.
+        let message_details = MessageDetails {
+            event_id: event_tl_item.event_id().map(|id| id.to_owned()),
+            item_id,
+            related_event_id: replied_to_event_id,
+            room_screen_widget_uid,
+            abilities: MessageAbilities::from_user_power_and_event(
+                user_power_levels,
+                event_tl_item,
+                msg_like_content,
+                has_html_body,
+            ),
+            should_be_highlighted: event_tl_item.is_highlighted(),
+        };
+        item.as_message().set_data(message_details);
+
         // The content is only considered to be fully drawn if the logic above marked it as such
         // *and* if the reply preview was also fully drawn.
         new_drawn_status.content_drawn &= is_reply_fully_drawn;
@@ -3493,7 +3513,6 @@ fn populate_message_view(
         let username_label = item.label(id!(content.username));
 
         if !is_server_notice { // the normal case
-
             let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
                 item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
                     cx,
@@ -3532,26 +3551,12 @@ fn populate_message_view(
         return (item, new_drawn_status);
     }
 
-    // Set the Message widget's metadata for reply-handling purposes.
-    item.as_message().set_data(MessageDetails {
-        event_id: event_tl_item.event_id().map(|id| id.to_owned()),
-        item_id,
-        related_event_id: replied_to_event_id,
-        room_screen_widget_uid,
-        abilities: MessageAbilities::from_user_power_and_event(
-            user_power_levels,
-            event_tl_item,
-            msg_like_content,
-            has_html_body,
-        ),
-        should_be_highlighted: event_tl_item.is_highlighted()
-    });
-
     // Set the timestamp.
     if let Some(dt) = unix_time_millis_to_datetime(ts_millis) {
         item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
     }
 
+    // Set the "edited" indicator if this message was edited.
     if msg_like_content.as_message().is_some_and(|m| m.is_edited()) {
         item.edited_indicator(id!(profile.edited_indicator)).set_latest_edit(
             cx,
@@ -4426,7 +4431,7 @@ pub enum MessageAction {
     ActionBarOpen {
         /// At the given timeline item index
         item_id: usize,
-        /// The message rect, so the action bar can be possitioned relative to it
+        /// The message rect, so the action bar can be positioned relative to it
         message_rect: Rect,
     },
     /// The user requested closing the message action bar
