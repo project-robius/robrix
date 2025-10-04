@@ -3612,7 +3612,7 @@ fn populate_text_message_content(
     if let Some(fb) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
-        let (linkified_html, links) = utils::linkify(
+        let (linkified_html, links) = utils::linkify_get_urls(
             utils::trim_start_html_whitespace(&fb.body),
             true,
         );
@@ -3624,7 +3624,7 @@ fn populate_text_message_content(
     }
     // The message was non-HTML plaintext.
     else {
-        let (linkified_html, links) = utils::linkify(body, false);
+        let (linkified_html, links) = utils::linkify_get_urls(body, false);
         match linkified_html {
             Cow::Owned(linkified_html) => message_content_widget.show_html(cx, &linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext),
