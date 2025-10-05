@@ -3124,18 +3124,14 @@ fn populate_message_view(
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
-                        let links = populate_text_message_content(
+                        new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &item.html_or_plaintext(id!(content.message)),
                             body,
                             formatted.as_ref(),
-                        );
-                        new_drawn_status.content_drawn = populate_link_previews_below_message(
-                            cx,
-                            &mut item.link_preview(id!(content.link_preview_view)),
-                            links,
-                            media_cache,
-                            link_preview_cache,
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
                         (item, false)
                     }
@@ -3166,13 +3162,15 @@ fn populate_message_view(
                                 }
                             }
                         ));
-                        populate_text_message_content(
+                        new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &html_or_plaintext_ref,
                             body,
                             formatted.as_ref(),
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
-                        new_drawn_status.content_drawn = true;
                         (item, false)
                     }
                 }
@@ -3206,7 +3204,7 @@ fn populate_message_view(
                                 .map(|c| format!("\n<i>Admin contact:</i> {}", c))
                                 .unwrap_or_default(),
                         );
-                        populate_text_message_content(
+                        new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &html_or_plaintext_ref,
                             &sn.body,
@@ -3214,8 +3212,10 @@ fn populate_message_view(
                                 format: MessageFormat::Html,
                                 body: formatted,
                             }),
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
-                        new_drawn_status.content_drawn = true;
                         (item, false)
                     }
                 }
@@ -3253,14 +3253,17 @@ fn populate_message_view(
                         } else {
                             (Cow::from(format!("* {} {}", &username, body)), None)
                         };
-                        populate_text_message_content(
+                        let link_previews_drawn = populate_text_message_content(
                             cx,
                             &item.html_or_plaintext(id!(content.message)),
                             &body,
                             formatted.as_ref(),
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
                         set_username_and_get_avatar_retval = Some((username, profile_drawn));
-                        new_drawn_status.content_drawn = true;
+                        new_drawn_status.content_drawn = link_previews_drawn;
                         (item, false)
                     }
                 }
@@ -3387,13 +3390,15 @@ fn populate_message_view(
                             ),
                         };
 
-                        populate_text_message_content(
+                        new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &item.html_or_plaintext(id!(content.message)),
                             &verification.body,
                             Some(&formatted),
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
-                        new_drawn_status.content_drawn = true;
                         (item, false)
                     }
                 }
@@ -3601,15 +3606,19 @@ fn populate_message_view(
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
-/// Returns a list of links found in the message body.
+/// Also populates link previews if a link_preview_ref is provided.
+/// Returns whether the text items were fully drawn.
 fn populate_text_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     body: &str,
     formatted_body: Option<&FormattedBody>,
-) -> Vec<url::Url> {
+    link_preview_ref: Option<&mut LinkPreviewRef>,
+    media_cache: Option<&mut MediaCache>,
+    link_preview_cache: Option<&mut LinkPreviewCache>,
+) -> bool {
     // The message was HTML-formatted rich text.
-    if let Some(fb) = formatted_body.as_ref()
+    let links = if let Some(fb) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
         let (linkified_html, links) = utils::linkify_get_urls(
@@ -3630,6 +3639,20 @@ fn populate_text_message_content(
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext),
         }
         links
+    };
+
+    // Populate link previews if all required parameters are provided
+    if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) = 
+        (link_preview_ref, media_cache, link_preview_cache) {
+        populate_link_previews_below_message(
+            cx,
+            link_preview_ref,
+            links,
+            media_cache,
+            link_preview_cache,
+        )
+    } else {
+        true
     }
 }
 
@@ -3637,7 +3660,7 @@ fn populate_text_message_content(
 ///
 /// Returns whether the image message content was fully drawn.
 fn populate_image_message_content(
-    cx: &mut Cx2d,
+    cx: &mut Cx,
     text_or_image_ref: &TextOrImageRef,
     image_info_source: Option<Box<ImageInfo>>,
     original_source: MediaSource,
@@ -3666,7 +3689,7 @@ fn populate_image_message_content(
 
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
+    let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
@@ -3739,7 +3762,7 @@ fn populate_image_message_content(
         }
     };
 
-    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource, image_info: Box<ImageInfo>| {
+    let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: Box<ImageInfo>| {
         match media_source {
             MediaSource::Encrypted(encrypted) => {
                 // We consider this as "fully drawn" since we don't yet support encryption.
@@ -3941,7 +3964,7 @@ fn populate_location_message_content(
 /// 
 /// Return true when the link preview is fully drawn
 fn populate_link_previews_below_message(
-    cx: &mut Cx2d,
+    cx: &mut Cx,
     link_preview_ref: &mut LinkPreviewRef,
     links: Vec<url::Url>,
     media_cache: &mut MediaCache,
@@ -4089,7 +4112,7 @@ fn populate_preview_of_timeline_item(
         match m.msgtype() {
             MessageType::Text(TextMessageEventContent { body, formatted, .. })
             | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
-                let _ = populate_text_message_content(cx, widget_out, body, formatted.as_ref());
+                let _ = populate_text_message_content(cx, widget_out, body, formatted.as_ref(), None, None, None);
                 return;
             }
             _ => { } // fall through to the general case for all timeline items below.

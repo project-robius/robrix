@@ -210,14 +210,14 @@ impl LinkPreviewRef {
     /// Returns whether the link preview is fully drawn.
     pub fn populate_link_preview_view<F>(
         &mut self,
-        cx: &mut Cx2d,
+        cx: &mut Cx,
         link_preview_data: &LinkPreviewData,
         link: Url,
         media_cache: &mut MediaCache,
         image_populate_fn: F,
     ) -> (ViewRef, bool)
     where
-        F: FnOnce(&mut Cx2d, &TextOrImageRef, Option<Box<ImageInfo>>, MediaSource, &str, &mut MediaCache) -> bool,
+        F: FnOnce(&mut Cx, &TextOrImageRef, Option<Box<ImageInfo>>, MediaSource, &str, &mut MediaCache) -> bool,
     {
         let view_ref = WidgetRef::new_from_ptr(cx, self.item_template()).as_view();
         let mut fully_drawn = true;
