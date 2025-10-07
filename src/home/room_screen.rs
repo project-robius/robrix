@@ -3647,7 +3647,7 @@ fn populate_text_message_content(
         populate_link_previews_below_message(
             cx,
             link_preview_ref,
-            links,
+            &links,
             media_cache,
             link_preview_cache,
         )
@@ -3966,15 +3966,27 @@ fn populate_location_message_content(
 fn populate_link_previews_below_message(
     cx: &mut Cx,
     link_preview_ref: &mut LinkPreviewRef,
-    links: Vec<url::Url>,
+    links: &Vec<url::Url>,
     media_cache: &mut MediaCache,
     link_preview_cache: &mut LinkPreviewCache,
 ) -> bool {
     const SKIPPED_DOMAINS: &[&str] = &["matrix.to", "matrix.io"];
+    const MAX_LINK_PREVIEWS: usize = 3;
     let mut fully_drawn_count = 0;
     let mut accepted_link_count = 0;
     let mut views = Vec::new();
-    for link in &links {
+    let mut seen_urls = std::collections::HashSet::new();
+    
+    for link in links {
+        if accepted_link_count >= MAX_LINK_PREVIEWS {
+            break;
+        }
+        
+        let url_string = link.to_string();
+        if seen_urls.contains(&url_string) {
+            continue;
+        }
+        
         if let Some(domain) = link.host_str() {
             if SKIPPED_DOMAINS
                 .iter()
@@ -3983,22 +3995,41 @@ fn populate_link_previews_below_message(
                 continue;
             }
         }
+        
+        seen_urls.insert(url_string.clone());
         accepted_link_count += 1;
-        if let LinkPreviewCacheEntry::LoadedLinkPreview(link_preview_data) =
-            link_preview_cache.get_or_fetch_link_preview(link.to_string())
-        {
-            let (view_ref, was_image_drawn) = link_preview_ref.populate_link_preview_view(
-                cx,
-                &link_preview_data,
-                link.clone(),
-                media_cache,
-                populate_image_message_content,
-            );
-            
-            if was_image_drawn {
-                fully_drawn_count += 1;
+        match link_preview_cache.get_or_fetch_link_preview(url_string) {
+            LinkPreviewCacheEntry::LoadedLinkPreview(link_preview_data) => {
+                let (view_ref, was_image_drawn) = link_preview_ref.populate_link_preview_view(
+                    cx,
+                    Some(link_preview_data),
+                    link,
+                    media_cache,
+                    populate_image_message_content,
+                );
+                
+                if was_image_drawn {
+                    fully_drawn_count += 1;
+                }
+                views.push(view_ref);
             }
-            views.push(view_ref);
+            LinkPreviewCacheEntry::Requested => {
+                let (view_ref, was_image_drawn) = link_preview_ref.populate_link_preview_view(
+                    cx,
+                    None,
+                    link,
+                    media_cache,
+                    populate_image_message_content,
+                );
+                
+                if was_image_drawn {
+                    fully_drawn_count += 1;
+                }
+                views.push(view_ref);
+            }
+            _ => {
+
+            }
         }
     }
     link_preview_ref.set_children(views);

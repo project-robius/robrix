@@ -422,6 +422,11 @@ pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
                 "{linkified_text}{}",
                 text.get(last_end_index..link.end()).unwrap_or_default(),
             );
+            if let Some(link) = text.get(link.start()..link.end()) {
+                if let Ok(url) = Url::parse(link) {
+                    url_links.push(url);
+                }
+            }
         } else {
             match link.kind() {
                 LinkKind::Url => {

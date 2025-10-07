@@ -78,8 +78,8 @@ live_design! {
                 color: #f5f5f5,
             }
             align: { y: 0.0 }
-            <View>{
-                width: 2, height: 120,
+            black_rect = <View> {
+                width: 2, height: 80,
                 show_bg: true,
                 draw_bg: {
                     color: #666666,
@@ -87,14 +87,14 @@ live_design! {
             }
             image_view = <View> {
                 visible: true,
-                width: Fit, height: Fit,
+                width: Fit, height: Fill,
                 image = <TextOrImage> {
-                    width: 120, height: 120,
+                    width: 120, height: Fill,
                 }
             }
 
             content_view = <View> {
-                width: Fill, height: Fit,
+                width: Fill, height: Fill,
                 flow: Down,
                 spacing: 0.0
                 <View> {
@@ -122,7 +122,7 @@ live_design! {
                     }
                 }
                 <View> {
-                    width: Fill, height: 50,
+                    width: Fill, height: Fit,
                     description_label = <Label> {
                         width: Fill, height: Fit,
                         draw_text: {
@@ -135,6 +135,7 @@ live_design! {
                     }
                 }
             }
+            
         }
     }
 }
@@ -211,8 +212,8 @@ impl LinkPreviewRef {
     pub fn populate_link_preview_view<F>(
         &mut self,
         cx: &mut Cx,
-        link_preview_data: &LinkPreviewData,
-        link: Url,
+        link_preview_data: Option<LinkPreviewData>,
+        link: &Url,
         media_cache: &mut MediaCache,
         image_populate_fn: F,
     ) -> (ViewRef, bool)
@@ -223,6 +224,9 @@ impl LinkPreviewRef {
         let mut fully_drawn = true;
         // Set title and URL
         let title_link = view_ref.link_label(id!(content_view.title_label));
+        let Some(link_preview_data) = link_preview_data else {
+            return (view_ref, false);
+        };
         if let Some(url) = &link_preview_data.url {
             if let Some(mut title_link) = title_link.borrow_mut() {
                 title_link.url = url.clone();
@@ -285,7 +289,7 @@ impl LinkPreviewRef {
     }
 }
 
-/// The data we get from the link preview API, "_matrix/media/v3/preview_url"
+/// The data structure from the link preview API, "_matrix/media/v3/preview_url"
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct LinkPreviewData {
     #[serde(rename = "og:description")]
