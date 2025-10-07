@@ -113,7 +113,6 @@ impl TypingNotice {
         self.animator_play(cx, id!(typing_notice_animator.show));
         // Start the typing notice text animation of bouncing dots.
         self.view.bouncing_dots(id!(bouncing_dots)).start_animation(cx);
-        log!("Showing typing notice: {}", typing_notice_text);
     }
 }
 
@@ -121,7 +120,6 @@ impl TypingNoticeRef {
     /// Shows or hides the typing notice based on whether there are any typing users.
     pub fn show_or_hide(&self, cx: &mut Cx, typing_users: &[String]) {
         if let Some(mut inner) = self.borrow_mut() {
-            log!("Inner show_or_hide with users: {:?}", typing_users);
             inner.show_or_hide(cx, typing_users);
         }
     }
