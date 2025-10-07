@@ -3998,38 +3998,22 @@ fn populate_link_previews_below_message(
         
         seen_urls.insert(url_string.clone());
         accepted_link_count += 1;
-        match link_preview_cache.get_or_fetch_link_preview(url_string) {
-            LinkPreviewCacheEntry::LoadedLinkPreview(link_preview_data) => {
-                let (view_ref, was_image_drawn) = link_preview_ref.populate_link_preview_view(
-                    cx,
-                    Some(link_preview_data),
-                    link,
-                    media_cache,
-                    populate_image_message_content,
-                );
-                
-                if was_image_drawn {
-                    fully_drawn_count += 1;
-                }
-                views.push(view_ref);
-            }
-            LinkPreviewCacheEntry::Requested => {
-                let (view_ref, was_image_drawn) = link_preview_ref.populate_link_preview_view(
-                    cx,
-                    None,
-                    link,
-                    media_cache,
-                    populate_image_message_content,
-                );
-                
-                if was_image_drawn {
-                    fully_drawn_count += 1;
-                }
-                views.push(view_ref);
-            }
-            _ => {
-
-            }
+        let link_preview_data_opt = match link_preview_cache.get_or_fetch_link_preview(url_string) {
+            LinkPreviewCacheEntry::LoadedLinkPreview(link_preview_data) => Some(Some(link_preview_data)),
+            LinkPreviewCacheEntry::Requested => Some(None),
+            _ => None,
+        };
+        if let Some(lpd) = link_preview_data_opt {
+            let (view_ref, was_image_drawn) = link_preview_ref.populate_link_preview_view(
+                cx,
+                lpd,
+                link,
+                media_cache,
+                populate_image_message_content,
+            );
+            fully_drawn_count += was_image_drawn as usize;
+            views.push(view_ref);
+        }
         }
     }
     link_preview_ref.set_children(views);
