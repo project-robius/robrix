@@ -201,7 +201,7 @@ impl LinkPreviewRef {
     /// # Parameters
     ///
     /// * `views`: A vector of ViewRef objects to be set as the children of the LinkPreview widget.
-    pub fn set_children(&mut self, views: Vec<ViewRef>) {
+    fn set_children(&mut self, views: Vec<ViewRef>) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.children = views;
         }
@@ -209,7 +209,7 @@ impl LinkPreviewRef {
 
     /// Populates a link preview view with data and handles image population through a closure.
     /// Returns whether the link preview is fully drawn.
-    pub fn populate_link_preview_view<F>(
+    fn populate_view<F>(
         &mut self,
         cx: &mut Cx,
         link_preview_data: Option<LinkPreviewData>,
@@ -286,6 +286,75 @@ impl LinkPreviewRef {
         }
 
         (view_ref, fully_drawn)
+    }
+
+    /// Populates link previews below a message.
+    ///
+    /// The given `media_cache` is used to fetch the thumbnails from cache.
+    ///
+    /// The given `link_preview_cache` is used to fetch the link previews from cache.
+    /// 
+    /// Return true when the link preview is fully drawn
+    pub fn populate_below_message<F>(
+        &mut self,
+        cx: &mut Cx,
+        links: &Vec<url::Url>,
+        media_cache: &mut MediaCache,
+        link_preview_cache: &mut LinkPreviewCache,
+        populate_image_fn: &F,
+    ) -> bool 
+    where
+        F: Fn(&mut Cx, &TextOrImageRef, Option<Box<ImageInfo>>, MediaSource, &str, &mut MediaCache) -> bool,
+    {
+        const SKIPPED_DOMAINS: &[&str] = &["matrix.to", "matrix.io"];
+        const MAX_LINK_PREVIEWS: usize = 3;
+        let mut fully_drawn_count = 0;
+        let mut accepted_link_count = 0;
+        let mut views = Vec::new();
+        let mut seen_urls = std::collections::HashSet::new();
+        
+        for link in links {
+            if accepted_link_count >= MAX_LINK_PREVIEWS {
+                break;
+            }
+            
+            let url_string = link.to_string();
+            if seen_urls.contains(&url_string) {
+                continue;
+            }
+            
+            if let Some(domain) = link.host_str() {
+                if SKIPPED_DOMAINS
+                    .iter()
+                    .any(|skip_domain| domain.ends_with(skip_domain))
+                {
+                    continue;
+                }
+            }
+            
+            seen_urls.insert(url_string.clone());
+            accepted_link_count += 1;
+            let link_preview_data_opt = match link_preview_cache.get_or_fetch_link_preview(url_string) {
+                LinkPreviewCacheEntry::LoadedLinkPreview(link_preview_data) => Some(Some(link_preview_data)),
+                LinkPreviewCacheEntry::Requested => Some(None),
+                _ => None,
+            };
+            if let Some(lpd) = link_preview_data_opt {
+                let (view_ref, was_image_drawn) = self.populate_view(
+                    cx,
+                    lpd,
+                    link,
+                    media_cache,
+                    |cx, text_or_image_ref, image_info_source, original_source, body, media_cache| {
+                        populate_image_fn(cx, text_or_image_ref, image_info_source, original_source, body, media_cache)
+                    },
+                );
+                fully_drawn_count += was_image_drawn as usize;
+                views.push(view_ref);
+            }
+        }
+        self.set_children(views);
+        fully_drawn_count == accepted_link_count
     }
 }
 
@@ -420,3 +489,4 @@ fn insert_into_cache(
     }
     SignalToUI::set_ui_signal();
 }
+

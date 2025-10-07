@@ -26,7 +26,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, link_preview::{LinkPreviewCache, LinkPreviewCacheEntry, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -3644,12 +3644,12 @@ fn populate_text_message_content(
     // Populate link previews if all required parameters are provided
     if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) = 
         (link_preview_ref, media_cache, link_preview_cache) {
-        populate_link_previews_below_message(
+        link_preview_ref.populate_below_message(
             cx,
-            link_preview_ref,
             &links,
             media_cache,
             link_preview_cache,
+            &populate_image_message_content,
         )
     } else {
         true
@@ -3679,7 +3679,7 @@ fn populate_image_message_content(
         if ImageFormat::from_mimetype(mime).is_none() {
             text_or_image_ref.show_text(
                 cx,
-                format!("{body}Images/Stickers of type {mime:?} are not yet supported."),
+                format!("{body}\n\nImages/Stickers of type {mime:?} are not yet supported."),
             );
             return true; // consider this as fully drawn
         }
@@ -3954,71 +3954,6 @@ fn populate_location_message_content(
     true
 }
 
-/// Populates the given `link_preview_ref` with the given `links` and fetches the necessary thumbnails.
-///
-/// If all link previews are available, it returns `true`.
-///
-/// The given `media_cache` is used to fetch the thumbnails from cache.
-///
-/// The given `link_preview_cache` is used to fetch the link previews from cache.
-/// 
-/// Return true when the link preview is fully drawn
-fn populate_link_previews_below_message(
-    cx: &mut Cx,
-    link_preview_ref: &mut LinkPreviewRef,
-    links: &Vec<url::Url>,
-    media_cache: &mut MediaCache,
-    link_preview_cache: &mut LinkPreviewCache,
-) -> bool {
-    const SKIPPED_DOMAINS: &[&str] = &["matrix.to", "matrix.io"];
-    const MAX_LINK_PREVIEWS: usize = 3;
-    let mut fully_drawn_count = 0;
-    let mut accepted_link_count = 0;
-    let mut views = Vec::new();
-    let mut seen_urls = std::collections::HashSet::new();
-    
-    for link in links {
-        if accepted_link_count >= MAX_LINK_PREVIEWS {
-            break;
-        }
-        
-        let url_string = link.to_string();
-        if seen_urls.contains(&url_string) {
-            continue;
-        }
-        
-        if let Some(domain) = link.host_str() {
-            if SKIPPED_DOMAINS
-                .iter()
-                .any(|skip_domain| domain.ends_with(skip_domain))
-            {
-                continue;
-            }
-        }
-        
-        seen_urls.insert(url_string.clone());
-        accepted_link_count += 1;
-        let link_preview_data_opt = match link_preview_cache.get_or_fetch_link_preview(url_string) {
-            LinkPreviewCacheEntry::LoadedLinkPreview(link_preview_data) => Some(Some(link_preview_data)),
-            LinkPreviewCacheEntry::Requested => Some(None),
-            _ => None,
-        };
-        if let Some(lpd) = link_preview_data_opt {
-            let (view_ref, was_image_drawn) = link_preview_ref.populate_link_preview_view(
-                cx,
-                lpd,
-                link,
-                media_cache,
-                populate_image_message_content,
-            );
-            fully_drawn_count += was_image_drawn as usize;
-            views.push(view_ref);
-        }
-        }
-    }
-    link_preview_ref.set_children(views);
-    fully_drawn_count == accepted_link_count
-}
 
 /// Draws a ReplyPreview above a message if it was in-reply to another message.
 ///
