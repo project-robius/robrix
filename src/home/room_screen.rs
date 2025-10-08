@@ -1427,8 +1427,9 @@ impl RoomScreen {
 
         let mut done_loading = false;
         let mut should_continue_backwards_pagination = false;
-        let mut num_updates = 0;
         let mut typing_users = None;
+        let mut did_tombstone_change = false;
+        let mut num_updates = 0;
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
@@ -1695,14 +1696,10 @@ impl RoomScreen {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
                 TimelineUpdate::Tombstoned(tombstone_info) => {
-                    if let Some(tombstone_info) = &tombstone_info {
-                        self.view.tombstone_footer(id!(tombstone_footer)).show(cx, &tl.room_id, tombstone_info);
-                        self.view.view(id!(message_input_view)).set_visible(cx, false);
-                    } else {
-                        self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
-                        self.view.view(id!(message_input_view)).set_visible(cx, true);
-                    }
                     tl.tombstone_info = tombstone_info;
+                    // Because `tl` borrows `self` here, we can't call `self.show_tombstone_footer()`
+                    // until later when the borrow ends.
+                    did_tombstone_change = true;
                 }
             }
         }
@@ -1723,6 +1720,10 @@ impl RoomScreen {
             self.view
                 .typing_notice(id!(typing_notice))
                 .show_or_hide(cx, &users);
+        }
+
+        if did_tombstone_change {
+            self.update_tombstone_footer(cx);
         }
 
         if num_updates > 0 {
@@ -2378,12 +2379,12 @@ impl RoomScreen {
         // Now, restore the visual state of this timeline from its previously-saved state.
         self.restore_state(cx, &mut tl_state);
 
-        // Show or hide the tombstone footer based on the timeline's UI state.
-        self.show_tombstone_footer(cx, &tl_state);
-
-        // As the final step, store the tl_state for this room into this RoomScreen widget,
-        // such that it can be accessed in future event/draw handlers.
+        // Store the tl_state for this room into this RoomScreen widget,
+        // such that it can be accessed in future functions like event/draw handlers.
         self.tl_state = Some(tl_state);
+
+        // Show or hide the tombstone footer based on the timeline's UI state.
+        self.update_tombstone_footer(cx);
 
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
         // we can proceed to processing pending background updates.
@@ -2608,16 +2609,17 @@ impl RoomScreen {
         tl.last_scrolled_index = first_index;
     }
 
-    /// If the current room is tombstoned, show the tombstone footer and hide the message input bar.
-    /// Otherwise, hide the tombstone footer and show the message input bar.
-    fn show_tombstone_footer(&mut self, cx: &mut Cx, tl_state: &TimelineUiState) {
-        if let Some(tombstone_info) = &tl_state.tombstone_info {
-            self.view.tombstone_footer(id!(tombstone_footer)).show(cx, &tl_state.room_id, tombstone_info);
-            self.view.view(id!(message_input_view)).set_visible(cx, false);
-        } else {
-            self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
-            self.view.view(id!(message_input_view)).set_visible(cx, true);
+    /// Updates this room's tombstone footer visibility based on the timeline's tombstoned state.
+    fn update_tombstone_footer(&self, cx: &mut Cx) {
+        if let Some(tl_state) = self.tl_state.as_ref() {
+            if let Some(tombstone_info) = &tl_state.tombstone_info {
+                self.view.tombstone_footer(id!(tombstone_footer)).show(cx, &tl_state.room_id, tombstone_info);
+                self.view.view(id!(message_input_view)).set_visible(cx, false);
+                return;
+            }
         }
+        self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
+        self.view.view(id!(message_input_view)).set_visible(cx, true);
     }
 }
 
