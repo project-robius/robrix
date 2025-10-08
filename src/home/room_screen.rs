@@ -3682,6 +3682,10 @@ fn populate_image_message_content(
                 fully_drawn = false;
             }
             (MediaCacheEntry::Failed, _media_format) => {
+                if text_or_image_ref.view(id!(default_image_view)).visible() {
+                    fully_drawn = true;
+                    return;
+                }
                 text_or_image_ref
                     .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
                 // For now, we consider this as being "complete". In the future, we could support

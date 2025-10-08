@@ -267,7 +267,8 @@ pub fn text_preview_of_message(
                         utils::linkify(
                             utils::trim_start_html_whitespace(&fb.body),
                             true,
-                        ).to_string()
+                        )
+                        .to_string()
                     )
                 )
                 .unwrap_or_else(|| match utils::linkify(&text.body, false) {

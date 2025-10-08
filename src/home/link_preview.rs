@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// Maximum length for link preview descriptions before truncation
-const MAX_DESCRIPTION_LENGTH: usize = 200;
+const MAX_DESCRIPTION_LENGTH: usize = 180;
 /// Maximum number of cache entries before cleanup is triggered
 const MAX_CACHE_ENTRIES_BEFORE_CLEANUP: usize = 100;
 /// Maximum age for cache entries in seconds (1 hour)
@@ -64,7 +64,7 @@ live_design! {
         font_size: (16),
         line_spacing: (1.2),
     }
-
+    DEFAULT_IMAGE = dep("crate://self/resources/img/default_image.png")
     pub LinkPreview = {{LinkPreview}} {
         width: Fill, height: Fit,
         flow: Down,
@@ -90,6 +90,14 @@ live_design! {
                 width: Fit, height: Fill,
                 image = <TextOrImage> {
                     width: 120, height: Fill,
+                    default_image_view = {
+                        image = {
+                            margin: {
+                                // Default image is a square, but the viewport is 80x120. Move the image up by 20px to center it.
+                                top: -20.0
+                            }
+                        }
+                    }
                 }
             }
 
@@ -220,10 +228,14 @@ impl LinkPreviewRef {
     where
         F: FnOnce(&mut Cx, &TextOrImageRef, Option<Box<ImageInfo>>, MediaSource, &str, &mut MediaCache) -> bool,
     {
+        const VIEWPORT_HEIGHT: f32 = 80.0;
+        const VIEWPORT_WIDTH: f32 = 120.0;
         let view_ref = WidgetRef::new_from_ptr(cx, self.item_template()).as_view();
         let mut fully_drawn = true;
         // Set title and URL
         let title_link = view_ref.link_label(id!(content_view.title_label));
+        let text_or_image_ref = view_ref.text_or_image(id!(image));
+        text_or_image_ref.show_default_image(cx);
         let Some(link_preview_data) = link_preview_data else {
             return (view_ref, false);
         };
@@ -250,10 +262,12 @@ impl LinkPreviewRef {
 
         // Set description with size limit
         if let Some(description) = &link_preview_data.description {
+            let mut description = description.clone();
+            description = description.replace("\n\n", " ");
             let truncated_description = if description.len() > MAX_DESCRIPTION_LENGTH {
                 format!("{}...", &description[..(MAX_DESCRIPTION_LENGTH - 3)])
             } else {
-                description.clone()
+                description
             };
             view_ref
                 .view(id!(content_view))
@@ -264,13 +278,25 @@ impl LinkPreviewRef {
         // Handle image through closure
         if let Some(image) = &link_preview_data.image {
             let mut image_info = ImageInfo::default();
-            image_info.height = link_preview_data.image_height;
-            image_info.width = link_preview_data.image_width;
             image_info.mimetype = link_preview_data.image_type.clone();
             image_info.size = link_preview_data.image_size;
             let image_info_source = Some(Box::new(image_info));
             let owned_mxc_uri = OwnedMxcUri::from(image.clone());
             let text_or_image_ref = view_ref.text_or_image(id!(image));
+            let size = (link_preview_data.image_width.unwrap_or_default().try_into().unwrap_or(0usize), link_preview_data.image_height.unwrap_or_default().try_into().unwrap_or(0usize));
+            if size.1 >= size.0 {
+                // Portrait / Square image (height >= width): center horizontally in 120px width
+                let aspect_ratio = size.1 as f32 / size.0 as f32;
+                let scaled_height = VIEWPORT_WIDTH * aspect_ratio;
+                let top_margin = (VIEWPORT_HEIGHT - scaled_height) / 2.0;
+                // Move the image up to center it in 80px height
+                text_or_image_ref.image(id!(image_view.image)).apply_over(cx, live!(
+                    margin: {
+                        top: (top_margin)
+                    }
+                ));
+            }
+
             let original_source = MediaSource::Plain(owned_mxc_uri);
             // Calls the closure with the image populate function
             fully_drawn = image_populate_fn(
@@ -281,8 +307,6 @@ impl LinkPreviewRef {
                 "",
                 media_cache,
             );
-            // When the image is too small, the text is not displayed fully.
-            // TODO: Properly wrap text in text_or_image widget.
         }
 
         (view_ref, fully_drawn)
