@@ -190,13 +190,10 @@ impl TombstoneFooter {
         });
     }
 
-    /// Hides the tombstone footer, making it invisible and clearing any successor room information.
+    /// Hides the tombstone footer and clears any successor room information.
     fn hide(&mut self, cx: &mut Cx) {
         self.set_visible(cx, false);
         self.successor_info = None;
-        self.view
-            .label_set(ids![replacement_reason, successor_room_name])
-            .set_text(cx, "");
     }
 }
 
