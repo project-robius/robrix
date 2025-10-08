@@ -5,7 +5,7 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
-    pub TypingAnimation = {{TypingAnimation}} {
+    pub BouncingDots = {{BouncingDots}} {
         width: 24,
         height: 12,
         flow: Down,
@@ -66,11 +66,11 @@ live_design! {
 }
 
 #[derive(Live, LiveHook, Widget)]
-pub struct TypingAnimation {
+pub struct BouncingDots {
     #[deref] view: View,
     #[animator] animator: Animator,
 }
-impl Widget for TypingAnimation {
+impl Widget for BouncingDots {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.animator_handle_event(cx, event);
         self.view.handle_event(cx, event, scope);
@@ -82,7 +82,7 @@ impl Widget for TypingAnimation {
 }
 
 
-impl TypingAnimationRef {
+impl BouncingDotsRef {
     /// Starts animation of the bouncing dots.
     pub fn start_animation(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {

@@ -29,8 +29,8 @@ use crate::{
     app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
-    }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
+    }, room::typing_notice::TypingNoticeWidgetExt, shared::{
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -67,7 +67,6 @@ live_design! {
     use crate::shared::timestamp::*;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::icon_button::*;
-    use crate::shared::typing_animation::TypingAnimation;
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
     use crate::profile::user_profile::UserProfileSlidingPane;
@@ -77,6 +76,7 @@ live_design! {
     use crate::home::loading_pane::*;
     use crate::home::location_preview::*;
     use crate::room::room_input_bar::*;
+    use crate::room::typing_notice::*;
     use crate::home::room_read_receipt::*;
     use crate::home::tombstone_footer::TombstoneFooter;
     use crate::rooms_list::*;
@@ -91,8 +91,6 @@ live_design! {
     COLOR_BG = #xfff8ee
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
-
-    TYPING_NOTICE_ANIMATION_DURATION = 0.3
 
     CAN_NOT_SEND_NOTICE = "You don't have permission to post to this room."
 
@@ -611,7 +609,6 @@ live_design! {
             }
             
             restore_status_view = <RestoreStatusView> {}
-            
 
             keyboard_view = <KeyboardView> {
                 width: Fill, height: Fill,
@@ -621,35 +618,7 @@ live_design! {
                 timeline = <Timeline> {}
 
                 // Below that, display a typing notice when other users in the room are typing.
-                typing_notice = <View> {
-                    visible: false
-                    width: Fill
-                    height: 30
-                    flow: Right
-                    padding: {left: 12.0, top: 8.0, bottom: 8.0, right: 10.0}
-                    show_bg: true,
-                    draw_bg: {
-                        color: #e8f4ff,
-                    }
-
-                    typing_label = <Label> {
-                        align: {x: 0.0, y: 0.5},
-                        padding: {left: 5.0, right: 0.0, top: 0.0, bottom: 0.0}
-                        draw_text: {
-                            color: (TYPING_NOTICE_TEXT_COLOR),
-                            text_style: <REGULAR_TEXT>{font_size: 9}
-                        }
-                        text: "Someone is typing"
-                    }
-
-                    typing_animation = <TypingAnimation> {
-                        margin: {top: 1.1, left: -4 }
-                        padding: 0.0,
-                        draw_bg: {
-                            color: (TYPING_NOTICE_TEXT_COLOR),
-                        }
-                    }
-                }
+                typing_notice = <TypingNotice> { }
 
                 // Below that, display an optional preview of the message that the user
                 // is currently drafting a replied to.
@@ -718,7 +687,8 @@ live_design! {
                 // * the slide-up editing pane
                 // * a notice that the user can't send messages to this room
                 message_input_view = <View> {
-                    width: Fill, height: Fit,
+                    width: Fill,
+                    height: Fit,
                     flow: Overlay,
 
                     // Below that, display a view that holds the message input bar and send button.
@@ -783,22 +753,6 @@ live_design! {
             }
             */
         }
-
-        animator: {
-            typing_notice_animator = {
-                default: show,
-                show = {
-                    redraw: true,
-                    from: { all: Forward { duration: (TYPING_NOTICE_ANIMATION_DURATION) } }
-                    apply: { room_screen_wrapper = { keyboard_view = { typing_notice = { height: 30 } } } }
-                }
-                hide = {
-                    redraw: true,
-                    from: { all: Forward { duration: (TYPING_NOTICE_ANIMATION_DURATION) } }
-                    apply: { room_screen_wrapper = { keyboard_view = { typing_notice = { height: 0 } } } }
-                }
-            }
-        }
     }
 }
 
@@ -806,7 +760,6 @@ live_design! {
 #[derive(Live, Widget)]
 pub struct RoomScreen {
     #[deref] view: View,
-    #[animator] animator: Animator,
 
     /// The room ID of the currently-shown room.
     #[rust] room_id: Option<OwnedRoomId>,
@@ -1133,9 +1086,6 @@ impl Widget for RoomScreen {
             }
         }
 
-        if self.animator_handle_event(cx, event).must_redraw() {
-            self.redraw(cx);
-        }
 
         // We only forward "interactive hit" events to the inner timeline view
         // if none of the various overlay views are visible.
@@ -1481,8 +1431,9 @@ impl RoomScreen {
 
         let mut done_loading = false;
         let mut should_continue_backwards_pagination = false;
+        let mut typing_users = None;
+        let mut did_tombstone_change = false;
         let mut num_updates = 0;
-        let mut typing_users = Vec::new();
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
@@ -1725,7 +1676,7 @@ impl RoomScreen {
                     // Then, we "process" it later (by turning it into a string) after the
                     // update loop has completed, which avoids unnecessary expensive work
                     // if the list of typing users gets updated many times in a row.
-                    typing_users = users;
+                    typing_users = Some(users);
                 }
 
                 TimelineUpdate::UserPowerLevels(user_power_level) => {
@@ -1749,14 +1700,10 @@ impl RoomScreen {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
                 TimelineUpdate::Tombstoned(tombstone_info) => {
-                    if let Some(tombstone_info) = &tombstone_info {
-                        self.view.tombstone_footer(id!(tombstone_footer)).show(cx, &tl.room_id, tombstone_info);
-                        self.view.view(id!(message_input_view)).set_visible(cx, false);
-                    } else {
-                        self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
-                        self.view.view(id!(message_input_view)).set_visible(cx, true);
-                    }
                     tl.tombstone_info = tombstone_info;
+                    // Because `tl` borrows `self` here, we can't call `self.show_tombstone_footer()`
+                    // until later when the borrow ends.
+                    did_tombstone_change = true;
                 }
             }
         }
@@ -1773,33 +1720,14 @@ impl RoomScreen {
             top_space.set_visible(cx, false);
         }
 
-        if !typing_users.is_empty() {
-            let typing_notice_text = match typing_users.as_slice() {
-                [] => String::new(),
-                [user] => format!("{user} is typing "),
-                [user1, user2] => format!("{user1} and {user2} are typing "),
-                [user1, user2, others @ ..] => {
-                    if others.len() > 1 {
-                        format!("{user1}, {user2}, and {} are typing ", &others[0])
-                    } else {
-                        format!(
-                            "{user1}, {user2}, and {} others are typing ",
-                            others.len()
-                        )
-                    }
-                }
-            };
-            // Set the typing notice text and make its view visible.
-            self.view.label(id!(typing_label)).set_text(cx, &typing_notice_text);
-            self.view.view(id!(typing_notice)).set_visible(cx, true);
-            // Animate in the typing notice view (sliding it up from the bottom).
-            self.animator_play(cx, id!(typing_notice_animator.show));
-            // Start the typing notice text animation of bouncing dots.
-            self.view.typing_animation(id!(typing_animation)).start_animation(cx);
-        } else {
-            // Animate out the typing notice view (sliding it out towards the bottom).
-            self.animator_play(cx, id!(typing_notice_animator.hide));
-            self.view.typing_animation(id!(typing_animation)).stop_animation(cx);
+        if let Some(users) = typing_users {
+            self.view
+                .typing_notice(id!(typing_notice))
+                .show_or_hide(cx, &users);
+        }
+
+        if did_tombstone_change {
+            self.update_tombstone_footer(cx);
         }
 
         if num_updates > 0 {
@@ -2456,12 +2384,12 @@ impl RoomScreen {
         // Now, restore the visual state of this timeline from its previously-saved state.
         self.restore_state(cx, &mut tl_state);
 
-        // Show or hide the tombstone footer based on the timeline's UI state.
-        self.show_tombstone_footer(cx, &tl_state);
-
-        // As the final step, store the tl_state for this room into this RoomScreen widget,
-        // such that it can be accessed in future event/draw handlers.
+        // Store the tl_state for this room into this RoomScreen widget,
+        // such that it can be accessed in future functions like event/draw handlers.
         self.tl_state = Some(tl_state);
+
+        // Show or hide the tombstone footer based on the timeline's UI state.
+        self.update_tombstone_footer(cx);
 
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
         // we can proceed to processing pending background updates.
@@ -2686,16 +2614,17 @@ impl RoomScreen {
         tl.last_scrolled_index = first_index;
     }
 
-    /// If the current room is tombstoned, show the tombstone footer and hide the message input bar.
-    /// Otherwise, hide the tombstone footer and show the message input bar.
-    fn show_tombstone_footer(&mut self, cx: &mut Cx, tl_state: &TimelineUiState) {
-        if let Some(tombstone_info) = &tl_state.tombstone_info {
-            self.view.tombstone_footer(id!(tombstone_footer)).show(cx, &tl_state.room_id, tombstone_info);
-            self.view.view(id!(message_input_view)).set_visible(cx, false);
-        } else {
-            self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
-            self.view.view(id!(message_input_view)).set_visible(cx, true);
+    /// Updates this room's tombstone footer visibility based on the timeline's tombstoned state.
+    fn update_tombstone_footer(&self, cx: &mut Cx) {
+        if let Some(tl_state) = self.tl_state.as_ref() {
+            if let Some(tombstone_info) = &tl_state.tombstone_info {
+                self.view.tombstone_footer(id!(tombstone_footer)).show(cx, &tl_state.room_id, tombstone_info);
+                self.view.view(id!(message_input_view)).set_visible(cx, false);
+                return;
+            }
         }
+        self.view.tombstone_footer(id!(tombstone_footer)).hide(cx);
+        self.view.view(id!(message_input_view)).set_visible(cx, true);
     }
 }
 
