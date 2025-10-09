@@ -68,6 +68,24 @@ live_design! {
     pub LinkPreview = {{LinkPreview}} {
         width: Fill, height: Fit,
         flow: Down,
+        collapsible_button = <View> {
+            width: Fill, height: Fit,
+            flow: Right,
+            align: {x: 0.5, y: 0.5},
+            padding: {top: 4},
+            visible: false,
+            expand_collapse_button = <Button> {
+                width: Fit, height: Fit,
+                padding: {top: 2, bottom: 2, left: 8, right: 8},
+                draw_text: {
+                    text_style: <MESSAGE_TEXT_STYLE> {
+                        font_size: 10.0,
+                    },
+                    color: #666666,
+                }
+                text: "▼ Show more"
+            }
+        }
         item_template: <RoundedView> {
             flow: Right,
             spacing: 4.0,
@@ -133,7 +151,6 @@ live_design! {
                     }
                 }
             }
-            
         }
     }
 }
@@ -148,10 +165,26 @@ pub struct LinkPreview {
     children: Vec<ViewRef>,
     #[layout]
     layout: Layout,
+    #[rust]
+    show_collapsible_button: bool,
+    #[rust]
+    is_expanded: bool,
+    #[rust]
+    hidden_links_count: usize,
 }
 
 impl Widget for LinkPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Handle collapsible button clicks
+        if let Event::Actions(actions) = event {
+            let expand_button = self.view.button(id!(collapsible_button.expand_collapse_button));
+            if expand_button.clicked(actions) {
+                self.is_expanded = !self.is_expanded;
+                self.update_button_and_visibility(cx);
+                cx.redraw_all();
+            }
+        }
+
         for view in self.children.iter() {
             if let Some(html_link) = view.link_label(id!(content_view.title_label)).borrow() {
                 if let Event::Actions(actions) = event {
@@ -169,12 +202,19 @@ impl Widget for LinkPreview {
             }
             view.handle_event(cx, event, scope);
         }
+        self.view.handle_event(cx, event, scope);
     }
 
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, _walk: Walk) -> DrawStep {
-        for view in self.children.iter_mut() {
-            let _ = view.draw(cx, scope);
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Draw children (link preview items)
+        let max_visible = if self.is_expanded { self.children.len() } else { 2 };
+        for (index, view) in self.children.iter_mut().enumerate() {
+            if index < max_visible {
+                let _ = view.draw(cx, scope);
+            }
         }
+        // Draw the main view which includes the collapsible button
+        let _ = self.view.draw_walk(cx, scope, walk);
         DrawStep::done()
     }
 }
@@ -182,6 +222,20 @@ impl Widget for LinkPreview {
 impl LinkPreview {
     fn item_template(&self) -> Option<LivePtr> {
         self.item_template
+    }
+
+    fn update_button_and_visibility(&mut self, cx: &mut Cx) {
+        if self.show_collapsible_button {
+            self.view.view(id!(collapsible_button)).set_visible(cx, true);
+            let button_ref = self.view.button(id!(collapsible_button.expand_collapse_button));
+            if self.is_expanded {
+                button_ref.set_text(cx, "▲ Show less");
+            } else {
+                button_ref.set_text(cx, &format!("▼ Show {} more", self.hidden_links_count));
+            }
+        } else {
+            self.view.view(id!(collapsible_button)).set_visible(cx, false);
+        }
     }
 }
 
@@ -202,6 +256,21 @@ impl LinkPreviewRef {
     fn set_children(&mut self, views: Vec<ViewRef>) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.children = views;
+        }
+    }
+
+    /// Shows the collapsible button for the link preview.
+    /// 
+    /// This function is usually called when the link preview is updated.
+    /// If the link preview is updated, and the collapsible button should be shown,
+    /// this function should be called.
+    fn show_collapsible_button(&mut self, cx: &mut Cx, hidden_count: usize) {
+         if let Some(mut inner) = self.borrow_mut() {
+            inner.show_collapsible_button = true;
+            inner.hidden_links_count = hidden_count;
+            let button_ref = inner.view.button(id!(collapsible_button.expand_collapse_button));
+            button_ref.set_text(cx, &format!("▼ Show {} more", inner.hidden_links_count));
+            inner.view.view(id!(collapsible_button)).set_visible(cx, true);
         }
     }
 
@@ -307,17 +376,13 @@ impl LinkPreviewRef {
         F: Fn(&mut Cx, &TextOrImageRef, Option<Box<ImageInfo>>, MediaSource, &str, &mut MediaCache) -> bool,
     {
         const SKIPPED_DOMAINS: &[&str] = &["matrix.to", "matrix.io"];
-        const MAX_LINK_PREVIEWS: usize = 3;
+        const MAX_LINK_PREVIEWS_BY_EXPAND: usize = 2;
         let mut fully_drawn_count = 0;
         let mut accepted_link_count = 0;
         let mut views = Vec::new();
         let mut seen_urls = std::collections::HashSet::new();
         
         for link in links {
-            if accepted_link_count >= MAX_LINK_PREVIEWS {
-                break;
-            }
-            
             let url_string = link.to_string();
             if seen_urls.contains(&url_string) {
                 continue;
@@ -345,6 +410,10 @@ impl LinkPreviewRef {
             );
             fully_drawn_count += was_image_drawn as usize;
             views.push(view_ref);
+        }
+        if views.len() > MAX_LINK_PREVIEWS_BY_EXPAND {
+            let hidden_count = views.len() - MAX_LINK_PREVIEWS_BY_EXPAND;
+            self.show_collapsible_button(cx, hidden_count);
         }
         self.set_children(views);
         fully_drawn_count == accepted_link_count
