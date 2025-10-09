@@ -64,10 +64,13 @@ live_design! {
         font_size: (16),
         line_spacing: (1.2),
     }
+
     DEFAULT_IMAGE = dep("crate://self/resources/img/default_image.png")
+
     pub LinkPreview = {{LinkPreview}} {
         width: Fill, height: Fit,
         flow: Down,
+
         collapsible_button = <View> {
             width: Fill, height: Fit,
             flow: Right,
@@ -83,20 +86,24 @@ live_design! {
                     },
                     color: #666666,
                 }
-                text: "▼ Show more"
+                text: "▼ Show more links"
             }
         }
+
         item_template: <RoundedView> {
             flow: Right,
             spacing: 4.0,
             width: Fill, height: Fit,
-            margin: { top: 3 }
+            margin: { top: 7 }
             padding: { top: 8, bottom: 8, left: 12, right: 12 },
+            spacing: 10
             show_bg: true,
             draw_bg: {
                 color: #f5f5f5,
+                border_radius: 4.0
             }
             align: { y: 0.5 }
+
             image_view = <View> {
                 visible: true,
                 width: Fit, height: 80,
@@ -110,10 +117,11 @@ live_design! {
             content_view = <View> {
                 width: Fill, height: Fill,
                 flow: Down,
-                spacing: 0.0
+
                 <View> {
                     width: Fit, height: Fit,
                     flow: RightWrap,
+
                     title_label = <LinkLabel> {
                         width: Fit, height: Fit,
                         draw_text: {
@@ -122,9 +130,10 @@ live_design! {
                             },
                             color: #x0000EE,
                             wrap: Word,
-                            uniform color_hover: (COLOR_HOVER_LINK_PREVIEW),
+                            uniform color_hover: (COLOR_LINK_HOVER),
                         }
                     }
+
                     site_name_label = <Label> {
                         width: Fit, height: Fit,
                         draw_text: {
@@ -136,8 +145,10 @@ live_design! {
                         }
                     }
                 }
+
                 <View> {
                     width: Fill, height: Fit,
+
                     description_label = <Label> {
                         width: Fill, height: Fit,
                         padding: { left: 0.0 }
@@ -229,9 +240,9 @@ impl LinkPreview {
             self.view.view(id!(collapsible_button)).set_visible(cx, true);
             let button_ref = self.view.button(id!(collapsible_button.expand_collapse_button));
             if self.is_expanded {
-                button_ref.set_text(cx, "▲ Show less");
+                button_ref.set_text(cx, "▲ Show fewer links");
             } else {
-                button_ref.set_text(cx, &format!("▼ Show {} more", self.hidden_links_count));
+                button_ref.set_text(cx, &format!("▼ Show {} more links", self.hidden_links_count));
             }
         } else {
             self.view.view(id!(collapsible_button)).set_visible(cx, false);
@@ -269,7 +280,7 @@ impl LinkPreviewRef {
             inner.show_collapsible_button = true;
             inner.hidden_links_count = hidden_count;
             let button_ref = inner.view.button(id!(collapsible_button.expand_collapse_button));
-            button_ref.set_text(cx, &format!("▼ Show {} more", inner.hidden_links_count));
+            button_ref.set_text(cx, &format!("▼ Show {} more links", inner.hidden_links_count));
             inner.view.view(id!(collapsible_button)).set_visible(cx, true);
         }
     }

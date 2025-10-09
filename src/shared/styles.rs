@@ -119,7 +119,8 @@ live_design! {
     pub COLOR_TRANSPARENT = #00000000
     pub COLOR_WARNING = #fcdb03
 
-    pub COLOR_HOVER_LINK_PREVIEW = #f003fc
+    pub COLOR_LINK_HOVER = #21B070
+
     // An icon that can be rotated at a custom angle.
     pub IconRotated = <Icon> {
         draw_icon: {
