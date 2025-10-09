@@ -1337,7 +1337,7 @@ async fn async_worker(
                                         tokio::time::sleep(Duration::from_millis(retry_after.into())).await;
                                         submit_async_request(MatrixRequest::GetUrlPreview{
                                             url: url.clone(),
-                                            on_fetched: on_fetched,
+                                            on_fetched,
                                             destination: destination.clone(),
                                             update_sender: update_sender.clone(),
                                         });
