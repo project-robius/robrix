@@ -32,7 +32,7 @@ use crate::{
     avatar_cache::AvatarUpdate,
     event_preview::text_preview_of_timeline_item,
     home::{
-        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction
+        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction
     },
     login::login_screen::LoginAction,
     logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{is_logout_in_progress, logout_with_state_machine, LogoutConfig}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
@@ -1286,7 +1286,9 @@ async fn async_worker(
                             error!("Access token not available for URL preview: {}", url);
                             UrlPreviewError::AccessTokenNotAvailable
                         })?;
-                        let endpoint_url = client.homeserver().join("_matrix/media/v3/preview_url")
+                        // Offical Doc: https://spec.matrix.org/v1.11/client-server-api/#get_matrixclientv1mediapreview_url
+                        // Element desktop is using /_matrix/media/v3/preview_url
+                        let endpoint_url = client.homeserver().join("/_matrix/client/v1/media/preview_url")
                             .map_err(UrlPreviewError::UrlParse)?;
                         log!("Fetching URL preview from endpoint: {} for URL: {}", endpoint_url, url);
                         
@@ -1324,6 +1326,11 @@ async fn async_worker(
                         }
                         
                         serde_json::from_str::<LinkPreviewData>(&text)
+                            .or_else(|_first_error| {
+                                log!("Failed to parse as LinkPreviewData, trying LinkPreviewDataNonNumeric for URL: {}", url);
+                                serde_json::from_str::<LinkPreviewDataNonNumeric>(&text)
+                                    .map(|non_numeric| non_numeric.into())
+                            })
                             .map_err(|e| {
                                 error!("Failed to parse JSON response for URL preview {}: {}", url, e);
                                 error!("Response body that failed to parse: {}", text);

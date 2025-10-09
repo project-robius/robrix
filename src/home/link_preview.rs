@@ -72,32 +72,20 @@ live_design! {
             flow: Right,
             spacing: 4.0,
             width: Fill, height: Fit,
-            padding: {top: 8, bottom: 8, left: 12, right: 12},
+            margin: { top: 3 }
+            padding: { top: 8, bottom: 8, left: 12, right: 12 },
             show_bg: true,
             draw_bg: {
                 color: #f5f5f5,
             }
-            align: { y: 0.0 }
-            black_rect = <View> {
-                width: 2, height: 80,
-                show_bg: true,
-                draw_bg: {
-                    color: #666666,
-                }
-            }
+            align: { y: 0.5 }
             image_view = <View> {
                 visible: true,
-                width: Fit, height: Fill,
+                width: Fit, height: 80,
+                flow: Down
                 image = <TextOrImage> {
                     width: 120, height: Fill,
-                    default_image_view = {
-                        image = {
-                            margin: {
-                                // Default image is a square, but the viewport is 80x120. Move the image up by 20px to center it.
-                                top: -20.0
-                            }
-                        }
-                    }
+                    align: { y: 0.5 }
                 }
             }
 
@@ -116,6 +104,7 @@ live_design! {
                             },
                             color: #x0000EE,
                             wrap: Word,
+                            uniform color_hover: (COLOR_HOVER_LINK_PREVIEW),
                         }
                     }
                     site_name_label = <Label> {
@@ -133,6 +122,7 @@ live_design! {
                     width: Fill, height: Fit,
                     description_label = <Label> {
                         width: Fill, height: Fit,
+                        padding: { left: 0.0 }
                         draw_text: {
                             text_style: <MESSAGE_TEXT_STYLE> {
                                 font_size: 11.0,
@@ -228,8 +218,6 @@ impl LinkPreviewRef {
     where
         F: FnOnce(&mut Cx, &TextOrImageRef, Option<Box<ImageInfo>>, MediaSource, &str, &mut MediaCache) -> bool,
     {
-        const VIEWPORT_HEIGHT: f32 = 80.0;
-        const VIEWPORT_WIDTH: f32 = 120.0;
         let view_ref = WidgetRef::new_from_ptr(cx, self.item_template()).as_view();
         let mut fully_drawn = true;
         // Set title and URL
@@ -285,20 +273,6 @@ impl LinkPreviewRef {
             let image_info_source = Some(Box::new(image_info));
             let owned_mxc_uri = OwnedMxcUri::from(image.clone());
             let text_or_image_ref = view_ref.text_or_image(id!(image));
-            let size = (link_preview_data.image_width.unwrap_or_default().try_into().unwrap_or(0usize), link_preview_data.image_height.unwrap_or_default().try_into().unwrap_or(0usize));
-            if size.1 >= size.0 {
-                // Portrait / Square image (height >= width): center horizontally in 120px width
-                let aspect_ratio = size.1 as f32 / size.0 as f32;
-                let scaled_height = VIEWPORT_WIDTH * aspect_ratio;
-                let top_margin = (VIEWPORT_HEIGHT - scaled_height) / 2.0;
-                // Move the image up to center it in 80px height
-                text_or_image_ref.image(id!(image_view.image)).apply_over(cx, live!(
-                    margin: {
-                        top: (top_margin)
-                    }
-                ));
-            }
-
             let original_source = MediaSource::Plain(owned_mxc_uri);
             // Calls the closure with the image populate function
             fully_drawn = image_populate_fn(
@@ -409,6 +383,57 @@ pub struct LinkPreviewData {
     /// The title of the site
     #[serde(rename = "og:title")]
     pub title: Option<String>,
+}
+
+/// The data structure from the link preview API, "_matrix/media/v3/preview_url"
+#[derive(Clone, Debug, Deserialize, Default)]
+pub struct LinkPreviewDataNonNumeric {
+    #[serde(rename = "og:description")]
+    pub description: Option<String>,
+    /// The size of the image in bytes, if available
+    #[serde(rename = "matrix:image:size")]
+    pub image_size: Option<String>,
+    /// The URL of the image
+    #[serde(rename = "og:image")]
+    pub image: Option<String>,
+    /// The height of the image
+    #[serde(rename = "og:image:height")]
+    pub image_height: Option<String>,
+    /// The width of the image
+    #[serde(rename = "og:image:width")]
+    pub image_width: Option<String>,
+    /// The type of the image
+    #[serde(rename = "og:image:type")]
+    pub image_type: Option<String>,
+    /// The locale of the link preview
+    #[serde(rename = "og:locale")]
+    pub locale: Option<String>,
+    /// The name of the site
+    #[serde(rename = "og:site_name")]
+    pub site_name: Option<String>,
+    /// The URL of the site
+    #[serde(rename = "og:url")]
+    pub url: Option<String>,
+    /// The title of the site
+    #[serde(rename = "og:title")]
+    pub title: Option<String>,
+}
+
+impl From<LinkPreviewDataNonNumeric> for LinkPreviewData {
+    fn from(non_numeric: LinkPreviewDataNonNumeric) -> Self {
+        Self {
+            description: non_numeric.description,
+            image_size: non_numeric.image_size.and_then(|s| s.parse().ok()),
+            image: non_numeric.image,
+            image_height: non_numeric.image_height.and_then(|s| s.parse().ok()),
+            image_width: non_numeric.image_width.and_then(|s| s.parse().ok()),
+            image_type: non_numeric.image_type,
+            locale: non_numeric.locale,
+            site_name: non_numeric.site_name,
+            url: non_numeric.url,
+            title: non_numeric.title,
+        }
+    }
 }
 
 /// The cache for link previews.
