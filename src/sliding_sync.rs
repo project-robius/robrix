@@ -1334,8 +1334,7 @@ async fn async_worker(
                             match link_preview_429_res {
                                 Ok(link_preview_429_res) => {
                                     if let Some(retry_after) = link_preview_429_res.retry_after_ms {
-                                        let Ok(retry_after) = retry_after.try_into();
-                                        tokio::time::sleep(Duration::from_millis(retry_after)).await;
+                                        tokio::time::sleep(Duration::from_millis(retry_after.into())).await;
                                         submit_async_request(MatrixRequest::GetUrlPreview{
                                             url: url.clone(),
                                             on_fetched: on_fetched,
