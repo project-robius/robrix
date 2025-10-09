@@ -1286,7 +1286,7 @@ async fn async_worker(
                             error!("Access token not available for URL preview: {}", url);
                             UrlPreviewError::AccessTokenNotAvailable
                         })?;
-                        // Offical Doc: https://spec.matrix.org/v1.11/client-server-api/#get_matrixclientv1mediapreview_url
+                        // Official Doc: https://spec.matrix.org/v1.11/client-server-api/#get_matrixclientv1mediapreview_url
                         // Element desktop is using /_matrix/media/v3/preview_url
                         let endpoint_url = client.homeserver().join("/_matrix/client/v1/media/preview_url")
                             .map_err(UrlPreviewError::UrlParse)?;
