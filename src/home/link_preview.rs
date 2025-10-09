@@ -351,7 +351,7 @@ impl LinkPreviewRef {
     }
 }
 
-/// The data structure from the link preview API, "_matrix/media/v3/preview_url"
+/// The data structure from the link preview API, "/_matrix/client/v1/media/preview_url"
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct LinkPreviewData {
     #[serde(rename = "og:description")]
@@ -385,7 +385,7 @@ pub struct LinkPreviewData {
     pub title: Option<String>,
 }
 
-/// The data structure from the link preview API, "_matrix/media/v3/preview_url"
+/// The data structure from the link preview API whereby numeric values are strings, "/_matrix/client/v1/media/preview_url"
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct LinkPreviewDataNonNumeric {
     #[serde(rename = "og:description")]
@@ -434,6 +434,17 @@ impl From<LinkPreviewDataNonNumeric> for LinkPreviewData {
             title: non_numeric.title,
         }
     }
+}
+
+/// The rate limit data structure from the 429 response code
+#[derive(Clone, Debug, Deserialize, Default)]
+pub struct LinkPreviewRateLimitResponse {
+    /// The M_LIMIT_EXCEEDED error code
+    pub errcode: String,
+    /// A human-readable error message.
+    pub error: Option<String>,
+    /// The amount of time in milliseconds the client should wait before trying the request again.
+    pub retry_after_ms: Option<UInt>,
 }
 
 /// The cache for link previews.
@@ -517,8 +528,12 @@ fn insert_into_cache(
                 UrlPreviewError::UrlParse(_) |
                 UrlPreviewError::HttpStatus(_) => LinkPreviewError::NetworkError(e.to_string()),
             };
-            error!("Failed to fetch link preview data for {url}: {e:?}");
-            LinkPreviewCacheEntry::Failed(error_type)
+            if let LinkPreviewError::RateLimited = error_type {
+                LinkPreviewCacheEntry::Requested
+            } else {
+                error!("Failed to fetch link preview data for {url}: {e:?}");
+                LinkPreviewCacheEntry::Failed(error_type)
+            }
         }
     };
     

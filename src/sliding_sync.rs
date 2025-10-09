@@ -32,7 +32,7 @@ use crate::{
     avatar_cache::AvatarUpdate,
     event_preview::text_preview_of_timeline_item,
     home::{
-        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction
+        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewRateLimitResponse, LinkPreviewDataNonNumeric}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction
     },
     login::login_screen::LoginAction,
     logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{is_logout_in_progress, logout_with_state_machine, LogoutConfig}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
@@ -1270,9 +1270,9 @@ async fn async_worker(
                     }
                 });
             }
-            MatrixRequest::GetUrlPreview { url, on_fetched, destination, update_sender } => {
+            MatrixRequest::GetUrlPreview { url, on_fetched, destination, update_sender,} => {
                 const MAX_LOG_RESPONSE_BODY_LENGTH: usize = 1000;
-                
+
                 log!("Starting URL preview fetch for: {}", url);
                 let _fetch_url_preview_task = Handle::current().spawn(async move {
                     let result: Result<LinkPreviewData, UrlPreviewError> = async {
@@ -1308,11 +1308,11 @@ async fn async_worker(
                         let status = response.status();
                         log!("URL preview response status for {}: {}", url, status);
                         
-                        if !status.is_success() {
+                        if !status.is_success() && status.as_u16() != 429 {
                             error!("URL preview request failed with status {} for URL: {}", status, url);
                             return Err(UrlPreviewError::HttpStatus(status.as_u16()));
                         }
-                            
+                        
                         let text = response.text().await.map_err(|e| {
                             error!("Failed to read response text for URL preview {}: {}", url, e);
                             UrlPreviewError::Request(e)
@@ -1324,7 +1324,33 @@ async fn async_worker(
                         } else {
                             log!("URL preview response body for {}: {}", url, text);
                         }
-                        
+                        // This request is rate limited, retry after a duration we get from the server.
+                        if status.as_u16() == 429 {
+                            let link_preview_429_res = serde_json::from_str::<LinkPreviewRateLimitResponse>(&text)
+                                .map_err(|e| {
+                                    error!("Failed to parse as LinkPreviewRateLimitResponse for URL preview {}: {}", url, e);
+                                    UrlPreviewError::Json(e)
+                            });
+                            match link_preview_429_res {
+                                Ok(link_preview_429_res) => {
+                                    if let Some(retry_after) = link_preview_429_res.retry_after_ms {
+                                        let Ok(retry_after) = retry_after.try_into();
+                                        tokio::time::sleep(Duration::from_millis(retry_after)).await;
+                                        submit_async_request(MatrixRequest::GetUrlPreview{
+                                            url: url.clone(),
+                                            on_fetched: on_fetched,
+                                            destination: destination.clone(),
+                                            update_sender: update_sender.clone(),
+                                        });
+                                        
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Failed to parse as LinkPreviewRateLimitResponse for URL preview {}: {}", url, e);
+                                }
+                            }
+                            return Err(UrlPreviewError::HttpStatus(429));
+                        }
                         serde_json::from_str::<LinkPreviewData>(&text)
                             .or_else(|_first_error| {
                                 log!("Failed to parse as LinkPreviewData, trying LinkPreviewDataNonNumeric for URL: {}", url);
