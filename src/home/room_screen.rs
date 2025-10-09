@@ -26,7 +26,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, room::typing_notice::TypingNoticeWidgetExt, shared::{
@@ -81,6 +81,7 @@ live_design! {
     use crate::home::tombstone_footer::TombstoneFooter;
     use crate::rooms_list::*;
     use crate::shared::restore_status_view::*;
+    use crate::home::link_preview::LinkPreview;
     use link::tsp_link::TspSignIndicator;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
@@ -340,6 +341,7 @@ live_design! {
                 }
 
                 message = <HtmlOrPlaintext> { }
+                link_preview_view = <LinkPreview> {}
 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
@@ -384,6 +386,7 @@ live_design! {
                 padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
+                link_preview_view = <LinkPreview> {}
                 <View> {
                     width: Fill,
                     height: Fit
@@ -1292,6 +1295,7 @@ impl Widget for RoomScreen {
                                         msg_like_content,
                                         prev_event,
                                         &mut tl_state.media_cache,
+                                        &mut tl_state.link_preview_cache,
                                         &tl_state.user_power,
                                         item_drawn_status,
                                         room_screen_widget_uid,
@@ -2290,7 +2294,8 @@ impl RoomScreen {
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
                 request_sender,
-                media_cache: MediaCache::new(Some(update_sender)),
+                media_cache: MediaCache::new(Some(update_sender.clone())),
+                link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
                 replying_to: None,
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
@@ -2832,6 +2837,8 @@ struct TimelineUiState {
     /// Currently this excludes avatars, as those are shared across multiple rooms.
     media_cache: MediaCache,
 
+    /// Cache for link preview data indexed by URL to avoid redundant network requests.
+    link_preview_cache: LinkPreviewCache,
     /// Info about the event currently being replied to, if any.
     replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
 
@@ -3000,6 +3007,7 @@ fn populate_message_view(
     msg_like_content: &MsgLikeContent,
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
+    link_preview_cache: &mut LinkPreviewCache,
     user_power_levels: &UserPowerLevels,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
@@ -3045,13 +3053,15 @@ fn populate_message_view(
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
-                        populate_text_message_content(
+                        new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &item.html_or_plaintext(id!(content.message)),
                             body,
                             formatted.as_ref(),
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
-                        new_drawn_status.content_drawn = true;
                         (item, false)
                     }
                 }
@@ -3081,13 +3091,15 @@ fn populate_message_view(
                                 }
                             }
                         ));
-                        populate_text_message_content(
+                        new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &html_or_plaintext_ref,
                             body,
                             formatted.as_ref(),
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
-                        new_drawn_status.content_drawn = true;
                         (item, false)
                     }
                 }
@@ -3121,7 +3133,7 @@ fn populate_message_view(
                                 .map(|c| format!("\n<i>Admin contact:</i> {}", c))
                                 .unwrap_or_default(),
                         );
-                        populate_text_message_content(
+                        new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &html_or_plaintext_ref,
                             &sn.body,
@@ -3129,8 +3141,10 @@ fn populate_message_view(
                                 format: MessageFormat::Html,
                                 body: formatted,
                             }),
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
-                        new_drawn_status.content_drawn = true;
                         (item, false)
                     }
                 }
@@ -3168,14 +3182,17 @@ fn populate_message_view(
                         } else {
                             (Cow::from(format!("* {} {}", &username, body)), None)
                         };
-                        populate_text_message_content(
+                        let link_previews_drawn = populate_text_message_content(
                             cx,
                             &item.html_or_plaintext(id!(content.message)),
                             &body,
                             formatted.as_ref(),
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
                         set_username_and_get_avatar_retval = Some((username, profile_drawn));
-                        new_drawn_status.content_drawn = true;
+                        new_drawn_status.content_drawn = link_previews_drawn;
                         (item, false)
                     }
                 }
@@ -3302,13 +3319,15 @@ fn populate_message_view(
                             ),
                         };
 
-                        populate_text_message_content(
+                        new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &item.html_or_plaintext(id!(content.message)),
                             &verification.body,
                             Some(&formatted),
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
-                        new_drawn_status.content_drawn = true;
                         (item, false)
                     }
                 }
@@ -3516,30 +3535,53 @@ fn populate_message_view(
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
+/// Also populates link previews if a link_preview_ref is provided.
+/// Returns whether the text items were fully drawn.
 fn populate_text_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     body: &str,
     formatted_body: Option<&FormattedBody>,
-) {
+    link_preview_ref: Option<&mut LinkPreviewRef>,
+    media_cache: Option<&mut MediaCache>,
+    link_preview_cache: Option<&mut LinkPreviewCache>,
+) -> bool {
     // The message was HTML-formatted rich text.
-    if let Some(fb) = formatted_body.as_ref()
+    let links = if let Some(fb) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
+        let (linkified_html, links) = utils::linkify_get_urls(
+            utils::trim_start_html_whitespace(&fb.body),
+            true,
+        );
         message_content_widget.show_html(
             cx,
-            utils::linkify(
-                utils::trim_start_html_whitespace(&fb.body),
-                true,
-            )
+            linkified_html
         );
+        links
     }
     // The message was non-HTML plaintext.
     else {
-        match utils::linkify(body, false) {
+        let (linkified_html, links) = utils::linkify_get_urls(body, false);
+        match linkified_html {
             Cow::Owned(linkified_html) => message_content_widget.show_html(cx, &linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext),
         }
+        links
+    };
+
+    // Populate link previews if all required parameters are provided
+    if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) = 
+        (link_preview_ref, media_cache, link_preview_cache) {
+        link_preview_ref.populate_below_message(
+            cx,
+            &links,
+            media_cache,
+            link_preview_cache,
+            &populate_image_message_content,
+        )
+    } else {
+        true
     }
 }
 
@@ -3547,7 +3589,7 @@ fn populate_text_message_content(
 ///
 /// Returns whether the image message content was fully drawn.
 fn populate_image_message_content(
-    cx: &mut Cx2d,
+    cx: &mut Cx,
     text_or_image_ref: &TextOrImageRef,
     image_info_source: Option<Box<ImageInfo>>,
     original_source: MediaSource,
@@ -3576,7 +3618,7 @@ fn populate_image_message_content(
 
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
+    let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
@@ -3640,6 +3682,10 @@ fn populate_image_message_content(
                 fully_drawn = false;
             }
             (MediaCacheEntry::Failed, _media_format) => {
+                if text_or_image_ref.view(id!(default_image_view)).visible() {
+                    fully_drawn = true;
+                    return;
+                }
                 text_or_image_ref
                     .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
                 // For now, we consider this as being "complete". In the future, we could support
@@ -3649,7 +3695,7 @@ fn populate_image_message_content(
         }
     };
 
-    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource, image_info: Box<ImageInfo>| {
+    let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: Box<ImageInfo>| {
         match media_source {
             MediaSource::Encrypted(encrypted) => {
                 // We consider this as "fully drawn" since we don't yet support encryption.
@@ -3841,6 +3887,7 @@ fn populate_location_message_content(
     true
 }
 
+
 /// Draws a ReplyPreview above a message if it was in-reply to another message.
 ///
 /// If the given `in_reply_to` details are `None`,
@@ -3948,7 +3995,8 @@ fn populate_preview_of_timeline_item(
         match m.msgtype() {
             MessageType::Text(TextMessageEventContent { body, formatted, .. })
             | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
-                return populate_text_message_content(cx, widget_out, body, formatted.as_ref());
+                let _ = populate_text_message_content(cx, widget_out, body, formatted.as_ref(), None, None, None);
+                return;
             }
             _ => { } // fall through to the general case for all timeline items below.
         }
