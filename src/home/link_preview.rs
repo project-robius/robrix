@@ -220,7 +220,7 @@ impl LinkPreviewRef {
     fn populate_view<F>(
         &mut self,
         cx: &mut Cx,
-        link_preview_data: Option<LinkPreviewData>,
+        link_preview_cache_entry: LinkPreviewCacheEntry,
         link: &Url,
         media_cache: &mut MediaCache,
         image_populate_fn: F,
@@ -234,18 +234,20 @@ impl LinkPreviewRef {
         let mut fully_drawn = true;
         // Set title and URL
         let title_link = view_ref.link_label(id!(content_view.title_label));
+        title_link.set_text(cx, link.as_str());
+        if let Some(mut title_link) = title_link.borrow_mut() {
+            title_link.url = link.to_string();
+        }
         let text_or_image_ref = view_ref.text_or_image(id!(image));
         text_or_image_ref.show_default_image(cx);
-        let Some(link_preview_data) = link_preview_data else {
-            return (view_ref, false);
+        let link_preview_data = match link_preview_cache_entry {
+            LinkPreviewCacheEntry::LoadedLinkPreview(link_preview_data) => link_preview_data,
+            LinkPreviewCacheEntry::Failed(_) => return (view_ref, true),
+            LinkPreviewCacheEntry::Requested => return (view_ref, false),
         };
         if let Some(url) = &link_preview_data.url {
             if let Some(mut title_link) = title_link.borrow_mut() {
                 title_link.url = url.clone();
-            }
-        } else {
-            if let Some(mut title_link) = title_link.borrow_mut() {
-                title_link.url = link.to_string();
             }
         }
         if let Some(title) = &link_preview_data.title {
@@ -358,24 +360,17 @@ impl LinkPreviewRef {
             
             seen_urls.insert(url_string.clone());
             accepted_link_count += 1;
-            let link_preview_data_opt = match link_preview_cache.get_or_fetch_link_preview(url_string) {
-                LinkPreviewCacheEntry::LoadedLinkPreview(link_preview_data) => Some(Some(link_preview_data)),
-                LinkPreviewCacheEntry::Requested => Some(None),
-                _ => None,
-            };
-            if let Some(lpd) = link_preview_data_opt {
-                let (view_ref, was_image_drawn) = self.populate_view(
-                    cx,
-                    lpd,
-                    link,
-                    media_cache,
-                    |cx, text_or_image_ref, image_info_source, original_source, body, media_cache| {
-                        populate_image_fn(cx, text_or_image_ref, image_info_source, original_source, body, media_cache)
-                    },
-                );
-                fully_drawn_count += was_image_drawn as usize;
-                views.push(view_ref);
-            }
+            let (view_ref, was_image_drawn) = self.populate_view(
+                cx,
+                link_preview_cache.get_or_fetch_link_preview(url_string),
+                link,
+                media_cache,
+                |cx, text_or_image_ref, image_info_source, original_source, body, media_cache| {
+                    populate_image_fn(cx, text_or_image_ref, image_info_source, original_source, body, media_cache)
+                },
+            );
+            fully_drawn_count += was_image_drawn as usize;
+            views.push(view_ref);
         }
         self.set_children(views);
         fully_drawn_count == accepted_link_count
