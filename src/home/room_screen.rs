@@ -1,7 +1,7 @@
 //! A room screen is the UI view that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, cell::RefCell, collections::BTreeMap, ops::{DerefMut, Range}, sync::Arc};
+use std::{borrow::Cow, cell::RefCell, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::Arc};
 
 use bytesize::ByteSize;
 use imbl::Vector;
@@ -318,6 +318,7 @@ live_design! {
                 edited_indicator = <EditedIndicator> { }
                 tsp_sign_indicator = <TspSignIndicator> { }
             }
+
             content = <View> {
                 width: Fill,
                 height: Fit
@@ -379,6 +380,7 @@ live_design! {
                 edited_indicator = <EditedIndicator> { }
                 tsp_sign_indicator = <TspSignIndicator> { }
             }
+
             content = <View> {
                 width: Fill,
                 height: Fit,
@@ -441,12 +443,47 @@ live_design! {
     SmallStateEvent = <View> {
         width: Fill,
         height: Fit,
-        flow: Right,
+        flow: Down,
         margin: { top: 4.0, bottom: 4.0}
         padding: { top: 1.0, bottom: 1.0, right: 10.0 }
         spacing: 0.0
         cursor: Default
-
+        small_state_header = <View> {
+            width: Fill,
+            height: Fit
+            visible: false
+            padding: { left: 7.0, top: 2.0, bottom: 2.0 }
+            summary_text = <Label> {
+                width: Fill,
+                flow: Right, // do not wrap
+                padding: 0,
+                draw_text: {
+                    wrap: Word,
+                    text_style: <SMALL_STATE_TEXT_STYLE> {},
+                    color: (SMALL_STATE_TEXT_COLOR)
+                }
+            }
+            // Collapsible button for small state event groups
+            // Shows on the first item of each group to toggle expansion
+            // Text is dynamically updated: ▼ (collapsed) or ▲ (expanded)
+            collapsible_button = <Button> {
+                width: Fit,
+                height: Fit,
+                margin: { left: 5, right: 5 }
+                padding: { left: 4, right: 4, top: 2, bottom: 2 }
+                text: "▼"  // Default to collapsed state
+                draw_text: {
+                    text_style: <SMALL_STATE_TEXT_STYLE> {},
+                    color: #666
+                }
+                draw_bg: {
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        return sdf.result
+                    }
+                }
+            }
+        }
         body = <View> {
             width: Fill,
             height: Fit
@@ -473,7 +510,7 @@ live_design! {
                     text_style: <TITLE_TEXT>{ font_size: 7.0 }
                 }}}
             }
-
+            
             content = <Label> {
                 width: Fill,
                 height: Fit
@@ -486,26 +523,7 @@ live_design! {
                 text: ""
             }
             
-            // Collapsible button for small state event groups
-            // Shows on the first item of each group to toggle expansion
-            // Text is dynamically updated: ▼ (collapsed) or ▲ (expanded)
-            collapsible_button = <Button> {
-                width: Fit,
-                height: Fit,
-                margin: { left: 5, right: 5 }
-                padding: { left: 4, right: 4, top: 2, bottom: 2 }
-                text: "▼"  // Default to collapsed state
-                draw_text: {
-                    text_style: <SMALL_STATE_TEXT_STYLE> {},
-                    color: #666
-                }
-                draw_bg: {
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        return sdf.result
-                    }
-                }
-            }
+            
             
             // Center the Avatar vertically with respect to the SmallStateEvent content.
             avatar_row = <AvatarRow> { margin: {top: -1.0} }
@@ -960,7 +978,7 @@ impl Widget for RoomScreen {
                 // Handle collapsible button click in SmallStateEvent
                 if wr.button(id!(collapsible_button)).clicked(actions) {
                     if let Some(tl_state) = &mut self.tl_state {
-                        for (range, open) in &mut tl_state.small_state_groups {
+                        for (range, open, _state_type_group) in &mut tl_state.small_state_groups {
                             if range.start == item_id {
                                 // Toggle the group's open/closed state
                                 *open = !*open;
@@ -1564,6 +1582,7 @@ impl RoomScreen {
                     done_loading = true;
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
+                    println!("changed_indices: {changed_indices:?}");
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
@@ -1666,17 +1685,31 @@ impl RoomScreen {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
                     }
-                    // Handles item_id changes whenever there is a backward pagination.  
+                    // Handles item_id changes whenever there is a backward pagination.
+                    // If is_append is true, append to the end of the timeline.
                     if !is_append {
+                        //tl.small_state_groups.clear();
                         // Calculate the shift amount based on the difference between old and new lengths
                         let old_len = tl.items.len();
                         let new_len = new_items.len();
                         let shift = new_len as i32 - old_len as i32;
+                        if shift < 0 {
+                            println!("shift is neg");
+                        }
+                        println!("shift is {} changed_indices {changed_indices:?}", shift);
                         // Apply the shift to the small_state_groups.
-                        for (range, _) in &mut tl.small_state_groups {
+                        for (range, _, state_type_group) in &mut tl.small_state_groups {
                             let new_start = (range.start as i32 + shift).max(0) as usize;
                             let new_end = (range.end as i32 + shift).max(0) as usize;
                             *range = new_start..new_end;
+                            for (_state_type, group) in state_type_group.iter_mut() {
+                                for range in group.iter_mut() {
+                                    let new_start = (range.start as i32 + shift).max(0) as usize;
+                                    let new_end = (range.end as i32 + shift).max(0) as usize;
+                                    *range = new_start..new_end;
+                                }
+                            }
+                            //state_type_group.clear();
                         }
                     }
                     tl.items = new_items;
@@ -3025,10 +3058,10 @@ struct TimelineUiState {
     /// If the room is not tombstoned, then this is `None`.
     ///
     tombstone_info: Option<SuccessorRoom>,
-    /// A vector of ranges of small state items that are grouped together in the UI.
+    /// A vector of ranges of small state items that are grouped together in the UI and summary text.
     /// 
     /// There is a collapsible to the right of the message of the first item in the group. 
-    small_state_groups: Vec<(std::ops::Range<usize>, bool)>
+    small_state_groups: Vec<(std::ops::Range<usize>, bool, HashMap<String, Vec<Range<usize>>>)>
 }
 
 #[derive(Default, Debug)]
@@ -4115,77 +4148,146 @@ fn populate_preview_of_timeline_item(
 
 /// Checks if a event timeline item is a small state event.
 /// Returns true if the item is a small state event that can be grouped.
-fn is_small_state_event(
+fn is_small_state_event_and_type(
     event_tl_item: &EventTimelineItem,
-) -> bool {
-    matches!(
-        event_tl_item.content(),
-        TimelineItemContent::MembershipChange(_) |
-        TimelineItemContent::ProfileChange(_) |
-        TimelineItemContent::OtherState(_) |
-        TimelineItemContent::MsgLike(MsgLikeContent {
-            kind: MsgLikeKind::Poll(_) | MsgLikeKind::Redacted | MsgLikeKind::UnableToDecrypt(_),
-            ..
-        })
-    )
+) -> (bool, String) {
+    // match &event_tl_item.content() {
+    //     TimelineItemContent::MembershipChange(_) => {
+    //         return (true, String::from("Membership Change"))
+    //     }
+    //     TimelineItemContent::ProfileChange(_) => {
+    //         return (true, String::from("Profile Change"))
+    //     }
+    //     TimelineItemContent::OtherState(_) => {
+    //         return (true, String::from("Other State"))
+    //     }
+    //     TimelineItemContent::MsgLike(MsgLikeContent {
+    //         kind: MsgLikeKind::Poll(_) ,
+    //         ..
+    //     }) => {
+    //         //| MsgLikeKind::Redacted | MsgLikeKind::UnableToDecrypt(_)
+    //         return (true, String::from("Poll"))
+    //     }
+    //     TimelineItemContent::MsgLike(MsgLikeContent {
+    //         kind: MsgLikeKind::Redacted,
+    //         ..
+    //     }) => {
+    //         //| MsgLikeKind::Redacted | MsgLikeKind::UnableToDecrypt(_)
+    //         return (true, String::from("Redacted"))
+    //     }
+    //     TimelineItemContent::MsgLike(MsgLikeContent {
+    //         kind: MsgLikeKind::UnableToDecrypt(_) ,
+    //         ..
+    //     }) => {
+    //         return (true, String::from("Unable to decrypt"))
+    //     }
+    //     _ => { return (false, String::from("")) }
+    // }
+    let s = event_tl_item.content().as_message().map(
+        |f| f.body().to_owned()
+    );
+    (true, s.unwrap_or_default())
+    
 }
 
 /// Dynamically updates small state groups as timeline items are processed.
 /// This function is called during populate_small_state_event to build groups on-demand.
 /// Since iteration starts from the biggest item_id and goes backwards, we handle reverse grouping.
-/// Returns a tuple whether to display the message, and whether to display the collapsible button and whether collapsible list is expanded.
+/// Returns a tuple whether to display the message, and whether to display the collapsible button, whether collapsible list is expanded and summary text.
 fn update_small_state_groups_for_item(
+    list: &mut PortalList,
     item_id: usize,
     current_item: &EventTimelineItem,
     previous_item: Option<&Arc<TimelineItem>>,
     next_item: Option<&Arc<TimelineItem>>,
-    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool)>,
-) -> (bool, bool, bool) {
-    let current_item_is_small_state = is_small_state_event(current_item);
+    skip_redrawing_profile: bool,
+    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, HashMap<String, Vec<std::ops::Range<usize>>>)>,
+) -> (bool, bool, bool, String) {
+    let (current_item_is_small_state, current_state_type) = is_small_state_event_and_type(current_item);
 
     if !current_item_is_small_state {
-        return (true, false, false); // Not a small state event, draw as individual item, no debug button
+        return (true, false, false, String::from("")); // Not a small state event, draw as individual item, no debug button
     }
 
     // check if the next item (item_id + 1) is a small state event to continue grouping
-    let next_item_is_small_state = next_item
+    let (next_item_is_small_state, _) = next_item
         .and_then(|timeline_item| match timeline_item.kind() {
             TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
             _ => None,
         })
-        .map(is_small_state_event)
-        .unwrap_or(false);
-    let previous_item_is_small_state = previous_item
+        .map(is_small_state_event_and_type)
+        .unwrap_or((false, String::from("")));
+    let (previous_item_is_small_state, _) = previous_item
         .and_then(|timeline_item| match timeline_item.kind() {
             TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
             _ => None,
         })
-        .map(is_small_state_event)
-        .unwrap_or(false);
+        .map(is_small_state_event_and_type)
+        .unwrap_or((false, String::from("")));
     if !previous_item_is_small_state && !next_item_is_small_state {
-        return (true, false, false); // Isolated small state event, no debug button
+        return (true, false, false, String::new()); // Isolated small state event, no debug button
     }
 
     // Check if this item is already part of an existing group or can extend one
-    for (range, is_open) in small_state_groups.iter_mut() {
+    for (range, is_open, state_type_group) in small_state_groups.iter_mut() {
+        println!("item_drawn_status.content_drawn: item_id:{} skip_redrawing_profile:{}", item_id, skip_redrawing_profile);
+        if range.contains(&item_id) {
+            if let Some(state_ranges) = state_type_group.get_mut(&current_state_type) {
+                let mut to_insert = true;
+                for state_range in state_ranges.iter_mut() {
+                    if state_range.contains(&item_id) {
+                        to_insert = false;
+                        break
+                    }
+                    if state_range.start == item_id + 1 {
+                        state_range.start = item_id;
+                        to_insert = false;
+                        break
+                    }
+                    if state_range.end == item_id {
+                        state_range.end = item_id + 1;
+                        to_insert = false;
+                        break
+                    }
+                }
+                if to_insert {
+                    state_ranges.push(item_id..item_id+1);
+                }
+            } else {
+                state_type_group.insert(current_state_type.clone(), vec![item_id..item_id+1]);
+            }
+        }
         if range.start == item_id {
-            return (true, true, *is_open); // Start of group, show debug button
+            let summary: Vec<String> = state_type_group.iter().map(
+                |(state_type, ranges)| {
+                    let total_length = ranges.iter().fold(0, |acc, range| acc + (range.end - range.start));
+                    format!("{}: {} {:?}", state_type, total_length, ranges)
+                }
+            ).collect();
+            return (true, true, *is_open, summary.join(", ")); // Start of group, show debug button
         }
         if range.contains(&item_id) {
-            return (*is_open, false, *is_open); // Item is in group but not at start, no debug button
+            let summary: Vec<String> = state_type_group.iter().map(
+                |(state_type, ranges)| {
+                    let total_length = ranges.iter().fold(0, |acc, range| acc + (range.end - range.start));
+                    format!("{}: {} {:?}", state_type, total_length, ranges)
+                }
+            ).collect();
+            return (*is_open, false, *is_open, summary.join(", ")); // Item is in group but not at start, no debug button
         }
         // Since we're iterating backwards (from highest to lowest item_id),
         if range.start == item_id + 1 {
             // Extend this group backwards to include current item
             *range = item_id..range.end;
-            return (*is_open, false, false); // Extended group, no debug button for this item
+            return (*is_open, false, false, String::from("")); // Extended group, no debug button for this item
         }
+        
     }
     if next_item_is_small_state {
-        // Plus to include the next item into the group.
-        small_state_groups.push((item_id..(item_id + 2), false));
+        // Plus two to include the next item into the group.
+        small_state_groups.push((item_id..(item_id + 2), false, HashMap::new()));
     }
-    (false, false, false) // Return collapsed state, no debug button
+    (false, false, false, String::from("")) // Return collapsed state, no debug button
 }
 
 /// A trait for abstracting over the different types of timeline events
@@ -4233,6 +4335,7 @@ impl SmallStateEventContent for RedactedMessageEventMarker {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
+        println!("redacted message item {:?}", _item_id);
         item.label(id!(content)).set_text(
             cx,
             &text_preview_of_redacted_message(
@@ -4259,6 +4362,7 @@ impl SmallStateEventContent for EncryptedMessage {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
+        println!("encrypted message item {:?}", _item_id);
         item.label(id!(content)).set_text(
             cx,
             &text_preview_of_encrypted_message(self).format_with(username, false),
@@ -4281,6 +4385,7 @@ impl SmallStateEventContent for OtherMessageLike {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
+        println!("OtherMessageLike message item {:?}", _item_id);
         item.label(id!(content)).set_text(
             cx,
             &text_preview_of_other_message_like(self).format_with(username, false),
@@ -4304,6 +4409,7 @@ impl SmallStateEventContent for PollState {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
+        println!("pollstate message item {:?}", _item_id);
         item.label(id!(content)).set_text(
             cx,
             self.fallback_text().unwrap_or_else(|| self.results().question).as_str(),
@@ -4325,6 +4431,7 @@ impl SmallStateEventContent for timeline::OtherState {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
+        println!("other state message item {:?}", item_id);
         let item = if let Some(text_preview) = text_preview_of_other_state(self, false) {
             item.label(id!(content))
                 .set_text(cx, &text_preview.format_with(username, false));
@@ -4403,7 +4510,7 @@ fn populate_small_state_event(
     next_event: Option<&Arc<TimelineItem>>,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
-    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool)>,
+    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, HashMap<String, Vec<Range<usize>>>)>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
@@ -4411,10 +4518,63 @@ fn populate_small_state_event(
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
     let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
     let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
-    populate_read_receipts(&item, cx, room_id, event_tl_item);
-    if skip_redrawing_content {
-        return (item, new_drawn_status);
+    
+    // Dynamically determine group membership and update groups
+    // Returns: (opened, show_collapsible_button, expanded)
+    // - opened: whether this individual item should be rendered (based on group state)
+    // - show_collapsible_button: true if this item is the first in a collapsible group
+    // - expanded: current expansion state of the group (for button text)
+    
+    let (opened, show_collapsible_button, expanded, summary_text) = update_small_state_groups_for_item(
+        list,
+        item_id,
+        event_tl_item,
+        prev_event,
+        next_event,
+        item_drawn_status.content_drawn,
+        small_state_groups,
+    );
+    if item_id == 12 {
+        let b = event_tl_item.original_json();
     }
+    if item_id > 0 {
+        println!("{} {} {} {}", item_id, item_drawn_status.profile_drawn, item_drawn_status.content_drawn, existed);
+        println!("{} - {} {}", item_id, skip_redrawing_profile, skip_redrawing_content);
+        println!("{} - opened {} {} expanded {:?}", item_id, opened, show_collapsible_button, expanded);
+    }
+    // Only show the collapsible button on the first item of each group
+    item.button(id!(collapsible_button))
+        .set_visible(cx, show_collapsible_button);
+    // Render logic based on group state
+    // if opened {
+    //     // This item should be visible - set appropriate button text if this is a group leader
+    //     if show_collapsible_button {
+    //         let avatar_ref = item.avatar(id!(avatar));
+    //         let button_text = if expanded { "▲" } else { "▼" };
+    //         item.button(id!(collapsible_button))
+    //             .set_text(cx, button_text);
+    //         item.view(id!(small_state_header)).set_visible(cx, true);
+    //         item.label(id!(small_state_header.summary_text))
+    //             .set_text(cx, &summary_text);
+    //         new_drawn_status.content_drawn = true;
+    //         if !expanded {
+    //             avatar_ref.set_visible(cx, false);
+    //             item.label(id!(content)).set_text(cx, "");
+    //             item.view(id!(left_container)).set_visible(cx, false);
+    //             println!(" vvv !expanded {}", item_id);
+    //             return (item, new_drawn_status)
+    //         }
+    //         avatar_ref.set_visible(cx, true);
+    //         item.view(id!(left_container)).set_visible(cx, true);
+    //     }
+    // } else {
+    //     let (item, _existed) = list.item_with_existed(cx, item_id, live_id!(Empty));
+    //     return (item, new_drawn_status)
+    // }
+    populate_read_receipts(&item, cx, room_id, event_tl_item);
+    // if skip_redrawing_content {
+    //     return (item, new_drawn_status);
+    // }
 
     // If the profile has been drawn, we can just quickly grab the user's display name
     // instead of having to call `set_avatar_and_get_username` again.
@@ -4440,50 +4600,44 @@ fn populate_small_state_event(
         new_drawn_status.profile_drawn = profile_drawn;
         username
     });
-    // Dynamically determine group membership and update groups
-    // Returns: (opened, show_collapsible_button, expanded)
-    // - opened: whether this individual item should be rendered (based on group state)
-    // - show_collapsible_button: true if this item is the first in a collapsible group
-    // - expanded: current expansion state of the group (for button text)
-    let (opened, show_collapsible_button, expanded) = update_small_state_groups_for_item(
-        item_id,
-        event_tl_item,
-        prev_event,
-        next_event,
-        small_state_groups,
-    );
-    // Only show the collapsible button on the first item of each group
-    item.button(id!(collapsible_button))
-        .set_visible(cx, show_collapsible_button);
 
-    // Render logic based on group state
+    let (item, new_drawn_status) = event_content.populate_item_content(
+        cx,
+        list,
+        item_id,
+        item,
+        event_tl_item,
+        &username,
+        item_drawn_status,
+        new_drawn_status,
+    );
     if opened {
-        // This item should be visible - set appropriate button text if this is a group leader
         if show_collapsible_button {
-            // Update button text to show current group state:
-            // ▲ = group is expanded (click to collapse)
-            // ▼ = group is collapsed (click to expand)
+            let avatar_ref = item.avatar(id!(avatar));
             let button_text = if expanded { "▲" } else { "▼" };
             item.button(id!(collapsible_button))
                 .set_text(cx, button_text);
+            item.view(id!(small_state_header)).set_visible(cx, true);
+            item.label(id!(small_state_header.summary_text))
+                .set_text(cx, &summary_text);
+            if !expanded {
+                //small_state_header
+                println!("body {} visible {}", item_id, false);
+                avatar_ref.set_visible(cx, false);
+                item.view(id!(body)).set_visible(cx, false);
+            } else {
+                avatar_ref.set_visible(cx, false);
+                item.view(id!(body)).set_visible(cx, true);
+            }
+        } else {
+            item.view(id!(body)).set_visible(cx, false);
         }
-
-        // Render the actual event content
-        event_content.populate_item_content(
-            cx,
-            list,
-            item_id,
-            item,
-            event_tl_item,
-            &username,
-            item_drawn_status,
-            new_drawn_status,
-        )
-    } else {
-        // This item is part of a collapsed group - render as empty placeholder
-        let (item, _existed) = list.item_with_existed(cx, item_id, live_id!(Empty));
-        (item, new_drawn_status)
     }
+    
+    let mut v = item.label(id!(content)).text();
+    v.push_str(item_id.to_string().as_str());
+    item.label(id!(content)).set_text(cx, &v);
+    (item, new_drawn_status)
 }
 
 
