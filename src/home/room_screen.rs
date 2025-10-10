@@ -1,7 +1,7 @@
 //! A room screen is the UI view that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, cell::RefCell, collections::BTreeMap, ops::{DerefMut, Range}, sync::Arc};
+use std::{borrow::Cow, cell::RefCell, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::Arc};
 
 use bytesize::ByteSize;
 use imbl::Vector;
@@ -206,7 +206,21 @@ live_design! {
 
 
     // An empty view that takes up no space in the portal list.
-    Empty = <View> { }
+    Empty = <View> {
+        content = <Label> {
+            width: Fill,
+            height: Fit
+            padding: { top: 0.0, bottom: 0.0, left: 0.0, right: 0.0 }
+            draw_text: {
+                wrap: Word,
+                text_style: <THEME_FONT_REGULAR>{
+                    font_size: (0),
+                },
+                color: (SMALL_STATE_TEXT_COLOR)
+            }
+            text: ""
+        }
+    }
 
     // The view used for each text-based message event in a room's timeline.
     Message = {{Message}} {
@@ -442,12 +456,49 @@ live_design! {
     SmallStateEvent = <View> {
         width: Fill,
         height: Fit,
-        flow: Right,
+        flow: Down,
         margin: { top: 4.0, bottom: 4.0}
         padding: { top: 1.0, bottom: 1.0, right: 10.0 }
         spacing: 0.0
         cursor: Default
-
+        small_state_header = <View> {
+            width: Fill,
+            height: Fit
+            visible: false
+            padding: { left: 7.0, top: 2.0, bottom: 2.0 }
+            summary_text = <Label> {
+                width: Fill, height: Fit
+                flow: RightWrap,
+                padding: 0,
+                draw_text: {
+                    wrap: Word,
+                    text_style: <THEME_FONT_REGULAR>{
+                        font_size: (SMALL_STATE_FONT_SIZE),
+                    },
+                    color: (SMALL_STATE_TEXT_COLOR)
+                }
+            }
+            // Collapsible button for small state event groups
+            // Shows on the first item of each group to toggle expansion
+            // Text is dynamically updated: ▼ (collapsed) or ▲ (expanded)
+            // collapsible_button = <Button> {
+            //     width: Fit,
+            //     height: Fit,
+            //     margin: { left: 5, right: 5 }
+            //     padding: { left: 4, right: 4, top: 2, bottom: 2 }
+            //     text: "▼"  // Default to collapsed state
+            //     draw_text: {
+            //         text_style: <SMALL_STATE_TEXT_STYLE> {},
+            //         color: #666
+            //     }
+            //     draw_bg: {
+            //         fn pixel(self) -> vec4 {
+            //             let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+            //             return sdf.result
+            //         }
+            //     }
+            // }
+        }
         body = <View> {
             width: Fill,
             height: Fit
@@ -920,10 +971,10 @@ impl Widget for RoomScreen {
                             if range.start == item_id {
                                 // Toggle the group's open/closed state
                                 *open = !*open;
-                                
+                                let omit_first_range = (range.start+1)..range.end;
                                 // Force redraw of all items in this group by clearing their cached drawn status
-                                tl_state.content_drawn_since_last_update.remove(range.clone());
-                                tl_state.profile_drawn_since_last_update.remove(range.clone());
+                                tl_state.content_drawn_since_last_update.remove(omit_first_range.clone());
+                                tl_state.profile_drawn_since_last_update.remove(omit_first_range.clone());
                                 
                                 // Update button text to reflect new state:
                                 // ▲ (up arrow) = expanded/open - items are visible
@@ -4448,6 +4499,34 @@ fn populate_small_state_event(
             let button_text = if expanded { "▲" } else { "▼" };
             item.button(id!(collapsible_button))
                 .set_text(cx, button_text);
+            for (range, _) in small_state_groups.clone() {
+                println!("range {:?} ", range);
+                if range.start == item_id {
+                    let mut same_event_hashmap = HashMap::new();
+                    for entry_id in range {
+                        if let Some((_, widget_ref)) = list.get_item(entry_id) {
+                            let s = widget_ref.label(id!(content)).text();
+                            if let Some(count) = same_event_hashmap.get_mut(&s) {
+                                *count += 1;
+                            } else {
+                                same_event_hashmap.insert(s, 1);
+                            }
+                        }
+                    }
+                    let mut summary_text = String::new();
+                    for (s, count) in same_event_hashmap {
+                        if count > 1 {
+                            summary_text.push_str(&format!("{}", count));
+                        }
+                        summary_text.push_str(&s);
+                        summary_text.push_str(", ");
+                    }
+                    item.view(id!(small_state_header)).set_visible(cx, true);
+                    item.label(id!(small_state_header.summary_text)).set_text(cx, &summary_text);
+                    break;
+                }
+            }
+            
         }
 
         // Render the actual event content
@@ -4464,7 +4543,16 @@ fn populate_small_state_event(
     } else {
         // This item is part of a collapsed group - render as empty placeholder
         let (item, _existed) = list.item_with_existed(cx, item_id, live_id!(Empty));
-        (item, new_drawn_status)
+        event_content.populate_item_content(
+            cx,
+            list,
+            item_id,
+            item,
+            event_tl_item,
+            &username,
+            item_drawn_status,
+            new_drawn_status,
+        )
     }
 }
 
