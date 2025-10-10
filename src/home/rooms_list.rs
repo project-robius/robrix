@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
+use matrix_sdk::{RoomDisplayName, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
 use crate::{
     app::{AppState, SelectedRoom},
     room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, RoomPreviewAvatar},
@@ -133,7 +133,7 @@ pub enum RoomsListUpdate {
     /// Update the displayable name for the given room.
     UpdateRoomName {
         room_id: OwnedRoomId,
-        new_room_name: String,
+        new_room_name: RoomDisplayName,
     },
     /// Update the avatar (image) for the given room.
     UpdateRoomAvatar {
@@ -197,7 +197,7 @@ pub struct JoinedRoomInfo {
     /// The matrix ID of this room.
     pub room_id: OwnedRoomId,
     /// The displayable name of this room, if known.
-    pub room_name: Option<String>,
+    pub room_name: Option<RoomDisplayName>,
     /// The number of unread messages in this room.
     pub num_unread_messages: u64,
     /// The number of unread mentions in this room.
@@ -236,7 +236,7 @@ pub struct InvitedRoomInfo {
     /// The matrix ID of this room.
     pub room_id: OwnedRoomId,
     /// The displayable name of this room, if known.
-    pub room_name: Option<String>,
+    pub room_name: Option<RoomDisplayName>,
     /// The canonical alias for this room, if any.
     pub canonical_alias: Option<OwnedRoomAliasId>,
     /// The alternative aliases for this room, if any.
@@ -395,7 +395,7 @@ impl RoomsList {
                 RoomsListUpdate::AddJoinedRoom(joined_room) => {
                     let room_id = joined_room.room_id.clone();
                     let is_direct = joined_room.is_direct;
-                    let room_name = joined_room.room_name.clone();
+                    let room_name = joined_room.room_name.as_ref().map(|n| n.to_string());
                     let should_display = (self.display_filter)(&joined_room);
                     let replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
                     if replaced.is_none() {
@@ -484,6 +484,8 @@ impl RoomsList {
                                 }
                             }
                         }
+                    } else if let Some(invited_room) = self.invited_rooms.borrow_mut().get_mut(&room_id) {
+                        invited_room.room_name = Some(new_room_name);
                     } else {
                         error!("Error: couldn't find room {room_id} to update room name");
                     }
@@ -790,10 +792,10 @@ impl RoomsList {
     /// Returns a room's avatar and displayable name.
     pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
         self.all_joined_rooms.get(room_id)
-            .map(|room_info| (room_info.avatar.clone(), room_info.room_name.clone()))
+            .map(|room_info| (room_info.avatar.clone(), room_info.room_name.as_ref().map(|n| n.to_string())))
             .or_else(|| {
                 self.invited_rooms.borrow().get(room_id)
-                    .map(|room_info| (room_info.room_avatar.clone(), room_info.room_name.clone()))
+                    .map(|room_info| (room_info.room_avatar.clone(), room_info.room_name.as_ref().map(|n| n.to_string())))
             })
     }
 }
@@ -818,12 +820,12 @@ impl Widget for RoomsList {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
                     SelectedRoom::JoinedRoom {
                         room_id: jr.room_id.clone().into(),
-                        room_name: jr.room_name.clone(),
+                        room_name: jr.room_name.as_ref().map(|n| n.to_string()),
                     }
                 } else if let Some(ir) = self.invited_rooms.borrow().get(&clicked_room_id) {
                     SelectedRoom::InvitedRoom {
                         room_id: ir.room_id.to_owned().into(),
-                        room_name: ir.room_name.clone(),
+                        room_name: ir.room_name.as_ref().map(|n| n.to_string()),
                     }
                 } else {
                     error!("BUG: couldn't find clicked room details for room {clicked_room_id}");

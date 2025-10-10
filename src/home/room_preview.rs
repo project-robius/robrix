@@ -297,7 +297,7 @@ impl RoomPreviewContent {
         room_info: &JoinedRoomInfo,
     ) {
         if let Some(ref name) = room_info.room_name {
-            self.view.label(id!(room_name)).set_text(cx, name);
+            self.view.label(id!(room_name)).set_text(cx, &name.to_string());
         }
         if let Some((ts, msg)) = room_info.latest.as_ref() {
             if let Some(human_readable_date) = relative_format(*ts) {
@@ -326,8 +326,9 @@ impl RoomPreviewContent {
     ) {
         self.view.label(id!(room_name)).set_text(
             cx,
-            room_info.room_name.as_deref()
-                .unwrap_or("Invite to unnamed room"),
+            &room_info.room_name.as_ref()
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| String::from("Invite to unnamed room")),
         );
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(id!(timestamp)).set_text(cx, "");

@@ -29,7 +29,7 @@ impl FilterableRoom for JoinedRoomInfo {
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        self.room_name.as_deref().map(Into::into).unwrap_or_default()
+        self.room_name.as_ref().map(|n| n.to_string()).map(Into::into).unwrap_or_default()
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -63,7 +63,7 @@ impl FilterableRoom for InvitedRoomInfo {
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        self.room_name.as_deref().map(Into::into).unwrap_or_default()
+        self.room_name.as_ref().map(|n| n.to_string()).map(Into::into).unwrap_or_default()
     }
 
     fn unread_mentions(&self) -> u64 {
