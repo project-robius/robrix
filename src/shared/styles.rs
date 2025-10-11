@@ -99,7 +99,6 @@ live_design! {
 
     pub COLOR_SELECT_TEXT = #A6CDFE
 
-
     pub COLOR_PRIMARY = #ffffff
     pub COLOR_PRIMARY_DARKER = #fefefe
     pub COLOR_SECONDARY = #eef2f4

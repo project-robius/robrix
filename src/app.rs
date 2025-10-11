@@ -284,7 +284,7 @@ impl MatchEvent for App {
                 // Navigate to the main content view
                 cx.widget_action(
                     self.ui.widget_uid(),
-                    &Scope::default().path,
+                    &HeapLiveIdPath::default(),
                     StackNavigationAction::Push(live_id!(main_content_view))
                 );
                 self.ui.redraw(cx);
@@ -550,7 +550,7 @@ impl App {
             move |cx: &mut Cx| {
                 cx.widget_action(
                     widget_uid,
-                    &Scope::default().path,
+                    &HeapLiveIdPath::default(),
                     DockAction::TabCloseWasPressed(tab_id),
                 );
             }
@@ -581,7 +581,7 @@ impl App {
         enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room.room_id.clone()));
         cx.widget_action(
             self.ui.widget_uid(),
-            &Scope::default().path,
+            &HeapLiveIdPath::default(),
             RoomsListAction::Selected(new_selected_room),
         );
 

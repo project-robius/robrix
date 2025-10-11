@@ -424,7 +424,7 @@ impl EditingPane {
     /// Shows the editing pane and sets it up to edit the given `event`'s content.
     pub fn show(&mut self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
         if !event_tl_item.is_editable() {
-            enqueue_popup_notification(PopupItem { message: "That message cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
+            enqueue_popup_notification(PopupItem {message: "That message cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
             return;
         }
 
@@ -517,6 +517,16 @@ impl EditingPaneRef {
         inner.handle_edit_result(cx, timeline_event_item_id, edit_result);
     }
 
+    /// Returns whether this `EditingPane` was hidden by the given actions, i.e.,
+    /// `true` if `actions` contains an `EditingPaneAction::Hide` for this widget.
+    pub fn was_hidden(&self, actions: &Actions) -> bool {
+        if let EditingPaneAction::Hide = actions.find_widget_action(self.widget_uid()).cast_ref() {
+            true
+        } else {
+            false
+        }
+    }
+
     /// See [`EditingPane::show()`].
     pub fn show(&self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
         let Some(mut inner) = self.borrow_mut() else {
@@ -539,9 +549,8 @@ impl EditingPaneRef {
         editing_pane_state: EditingPaneState,
         room_id: OwnedRoomId,
     ) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.restore_state(cx, editing_pane_state, room_id);
-        }
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.restore_state(cx, editing_pane_state, room_id);
     }
 
     /// Hides the editing pane immediately and clears its state without animating it out.
