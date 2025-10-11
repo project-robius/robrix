@@ -1,7 +1,7 @@
 //! A room screen is the UI view that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, cell::RefCell, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::Arc};
+use std::{any::Any, borrow::Cow, cell::RefCell, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::Arc};
 
 use bytesize::ByteSize;
 use imbl::Vector;
@@ -24,13 +24,14 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
+use ruma::events::{MessageLikeEventContent, MessageLikeEventType};
 
 use crate::{
     app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, room::typing_notice::TypingNoticeWidgetExt, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, membership_transitions::{generate_summary, get_transition_from_membership_change, get_transition_from_other_events, TransitionType, UserEvent}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -967,7 +968,7 @@ impl Widget for RoomScreen {
                 // Handle collapsible button click in SmallStateEvent
                 if wr.button(id!(collapsible_button)).clicked(actions) {
                     if let Some(tl_state) = &mut self.tl_state {
-                        for (range, open) in &mut tl_state.small_state_groups {
+                        for (range, open, _user_events) in &mut tl_state.small_state_groups {
                             if range.start == item_id {
                                 // Toggle the group's open/closed state
                                 *open = !*open;
@@ -1684,10 +1685,15 @@ impl RoomScreen {
                         let new_len = new_items.len();
                         let shift = new_len as i32 - old_len as i32;
                         // Apply the shift to the small_state_groups.
-                        for (range, _) in &mut tl.small_state_groups {
+                        for (range, _, user_events) in &mut tl.small_state_groups {
                             let new_start = (range.start as i32 + shift).max(0) as usize;
                             let new_end = (range.end as i32 + shift).max(0) as usize;
                             *range = new_start..new_end;
+                            for user_events in user_events.values_mut() {
+                                for user_event in user_events.iter_mut() {
+                                    user_event.index = (user_event.index as i32 + shift).max(0) as usize;
+                                }
+                            }
                         }
                     }
                     tl.items = new_items;
@@ -3020,7 +3026,7 @@ struct TimelineUiState {
     /// A vector of ranges of small state items that are grouped together in the UI.
     /// 
     /// There is a collapsible to the right of the message of the first item in the group. 
-    small_state_groups: Vec<(std::ops::Range<usize>, bool)>
+    small_state_groups: Vec<(std::ops::Range<usize>, bool, HashMap<String, Vec<UserEvent>>)>
 }
 
 #[derive(Default, Debug)]
@@ -4150,17 +4156,67 @@ fn populate_preview_of_timeline_item(
 /// Returns true if the item is a small state event that can be grouped.
 fn is_small_state_event(
     event_tl_item: &EventTimelineItem,
-) -> bool {
-    matches!(
-        event_tl_item.content(),
-        TimelineItemContent::MembershipChange(_) |
-        TimelineItemContent::ProfileChange(_) |
-        TimelineItemContent::OtherState(_) |
+) -> (bool, TransitionType) {
+    match event_tl_item.content() {
+        TimelineItemContent::MembershipChange(change) => (true, change.change().map(
+            |f| get_transition_from_membership_change(&f)
+            ).unwrap_or_default()
+        ),
+        TimelineItemContent::ProfileChange(change) => {
+            let transition_type = if let Some(_) = change.avatar_url_change() {
+                TransitionType::ChangedAvatar
+            } else if let Some(_) = change.displayname_change() {
+                TransitionType::ChangedName
+            } else {
+                TransitionType::NoChange
+            };
+            (true, transition_type)
+        }
+        TimelineItemContent::OtherState(other_state) => (true, get_transition_from_other_events(other_state.content(), other_state.state_key())),
         TimelineItemContent::MsgLike(MsgLikeContent {
-            kind: MsgLikeKind::Poll(_) | MsgLikeKind::Redacted | MsgLikeKind::UnableToDecrypt(_),
+            kind: MsgLikeKind::Poll(_),
             ..
-        })
-    )
+        }) => (true, TransitionType::NoChange),
+        TimelineItemContent::MsgLike(MsgLikeContent {
+            kind: MsgLikeKind::Redacted,
+            ..
+        }) => (true, TransitionType::MessageRemoved),
+        TimelineItemContent::MsgLike(MsgLikeContent {
+            kind: MsgLikeKind::UnableToDecrypt(_),
+            ..
+        }) => (true, TransitionType::UnableToDecrypt),
+        _ => {
+            (false, TransitionType::NoChange)
+        }
+    }
+    // matches!(
+    //     event_tl_item.content(),
+    //     TimelineItemContent::MembershipChange(_) |
+    //     TimelineItemContent::ProfileChange(_) |
+    //     TimelineItemContent::OtherState(_) |
+    //     TimelineItemContent::MsgLike(MsgLikeContent {
+    //         kind: MsgLikeKind::Poll(_) | MsgLikeKind::Redacted | MsgLikeKind::UnableToDecrypt(_),
+    //         ..
+    //     })
+    // )
+}
+
+fn append_user_event(index: usize, user_id: &UserId, username: String, transition: TransitionType, user_events: &mut HashMap<String, Vec<UserEvent>>) {
+    let user_event = UserEvent{
+        user_id: user_id.to_string(),
+        display_name: username.clone(),
+        transition,
+        index,
+    };
+    println!("append_user_event: index: {}, user_id: {}, username: {}, transition: {:?}", index, user_id, username, transition);
+    if let Some(mut events) = user_events.get_mut(&user_id.to_string()) {
+        println!("append_user_event: events: {:?}", events);
+        if events.iter().filter(|user_event| user_event.index == index).count() == 0 {
+            events.push(user_event);
+        }
+    } else {
+        user_events.insert(user_id.to_string(), vec![user_event]);
+    }
 }
 
 /// Dynamically updates small state groups as timeline items are processed.
@@ -4169,54 +4225,61 @@ fn is_small_state_event(
 /// Returns a tuple whether to display the message, and whether to display the collapsible button and whether collapsible list is expanded.
 fn update_small_state_groups_for_item(
     item_id: usize,
+    username: String,
     current_item: &EventTimelineItem,
     previous_item: Option<&Arc<TimelineItem>>,
     next_item: Option<&Arc<TimelineItem>>,
-    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool)>,
+    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, HashMap<String, Vec<UserEvent>>)>,
 ) -> (bool, bool, bool) {
-    let current_item_is_small_state = is_small_state_event(current_item);
-
+    let (current_item_is_small_state, transition) = is_small_state_event(current_item);
+    //println!("update_small_state_groups_for_item: item_id: {}, transition_type: {:?}, current_item_is_small_state: {}", item_id, transition_type, current_item_is_small_state);
     if !current_item_is_small_state {
         return (true, false, false); // Not a small state event, draw as individual item, no debug button
     }
 
     // check if the next item (item_id + 1) is a small state event to continue grouping
-    let next_item_is_small_state = next_item
+    let (next_item_is_small_state, _) = next_item
         .and_then(|timeline_item| match timeline_item.kind() {
             TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
             _ => None,
         })
         .map(is_small_state_event)
-        .unwrap_or(false);
-    let previous_item_is_small_state = previous_item
+        .unwrap_or((false, TransitionType::NoChange));
+    let (previous_item_is_small_state, _) = previous_item
         .and_then(|timeline_item| match timeline_item.kind() {
             TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
             _ => None,
         })
         .map(is_small_state_event)
-        .unwrap_or(false);
+        .unwrap_or((false, TransitionType::NoChange));
     if !previous_item_is_small_state && !next_item_is_small_state {
         return (true, false, false); // Isolated small state event, no debug button
     }
 
     // Check if this item is already part of an existing group or can extend one
-    for (range, is_open) in small_state_groups.iter_mut() {
+    for (range, is_open, user_events) in small_state_groups.iter_mut() {
+        
         if range.start == item_id {
+            append_user_event(item_id, &current_item.sender(), username, transition, user_events);
             return (true, true, *is_open); // Start of group, show debug button
         }
         if range.contains(&item_id) {
+            append_user_event(item_id, &current_item.sender(), username, transition, user_events);
             return (*is_open, false, *is_open); // Item is in group but not at start, no debug button
         }
         // Since we're iterating backwards (from highest to lowest item_id),
         if range.start == item_id + 1 {
             // Extend this group backwards to include current item
             *range = item_id..range.end;
+            append_user_event(item_id, &current_item.sender(), username, transition, user_events);
             return (*is_open, false, false); // Extended group, no debug button for this item
         }
     }
     if next_item_is_small_state {
-        // Plus to include the next item into the group.
-        small_state_groups.push((item_id..(item_id + 2), false));
+        let mut user_events = HashMap::new();
+        append_user_event(item_id, &current_item.sender(), username, transition, &mut user_events);
+        // Plus 2 to include the next item into the group.
+        small_state_groups.push((item_id..(item_id + 2), false, user_events));
     }
     (false, false, false) // Return collapsed state, no debug button
 }
@@ -4239,6 +4302,18 @@ trait SmallStateEventContent {
     /// ## Return
     /// Returns a tuple of the drawn `item` and its `new_drawn_status`.
     fn populate_item_content(
+        &self,
+        cx: &mut Cx,
+        list: &mut PortalList,
+        item_id: usize,
+        item: WidgetRef,
+        event_tl_item: &EventTimelineItem,
+        username: &str,
+        item_drawn_status: ItemDrawnStatus,
+        new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus);
+
+    fn populate_transition_type(
         &self,
         cx: &mut Cx,
         list: &mut PortalList,
@@ -4277,6 +4352,19 @@ impl SmallStateEventContent for RedactedMessageEventMarker {
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
     }
+    fn populate_transition_type(
+        &self,
+        cx: &mut Cx,
+        list: &mut PortalList,
+        item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventTimelineItem,
+        username: &str,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus
+        ) -> (WidgetRef, ItemDrawnStatus) {
+        (item, new_drawn_status)
+    }
 }
 
 // For unable to decrypt messages.
@@ -4297,6 +4385,19 @@ impl SmallStateEventContent for EncryptedMessage {
             &text_preview_of_encrypted_message(self).format_with(username, false),
         );
         new_drawn_status.content_drawn = true;
+        (item, new_drawn_status)
+    }
+    fn populate_transition_type(
+        &self,
+        cx: &mut Cx,
+        _list: &mut PortalList,
+        _item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventTimelineItem,
+        username: &str,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
         (item, new_drawn_status)
     }
 }
@@ -4321,6 +4422,19 @@ impl SmallStateEventContent for OtherMessageLike {
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
     }
+    fn populate_transition_type(
+        &self,
+        cx: &mut Cx,
+        _list: &mut PortalList,
+        _item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventTimelineItem,
+        username: &str,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
+        (item, new_drawn_status)
+    }
 }
 
 // TODO: once we properly display polls, we should remove this,
@@ -4342,6 +4456,19 @@ impl SmallStateEventContent for PollState {
             self.fallback_text().unwrap_or_else(|| self.results().question).as_str(),
         );
         new_drawn_status.content_drawn = true;
+        (item, new_drawn_status)
+    }
+    fn populate_transition_type(
+        &self,
+        cx: &mut Cx,
+        _list: &mut PortalList,
+        _item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventTimelineItem,
+        username: &str,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
         (item, new_drawn_status)
     }
 }
@@ -4370,6 +4497,22 @@ impl SmallStateEventContent for timeline::OtherState {
         };
         (item, new_drawn_status)
     }
+
+    fn populate_transition_type(
+        &self,
+        cx: &mut Cx,
+        _list: &mut PortalList,
+        _item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventTimelineItem,
+        username: &str,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
+        
+        let transition_type = get_transition_from_other_events(self.content(), self.state_key());
+        (item, new_drawn_status)
+    }
 }
 
 impl SmallStateEventContent for MemberProfileChange {
@@ -4390,6 +4533,35 @@ impl SmallStateEventContent for MemberProfileChange {
                 .format_with(username, false),
         );
         new_drawn_status.content_drawn = true;
+        (item, new_drawn_status)
+    }
+    // fn transition_type(&self) -> TransitionType {
+    //     if let Some(_) = self.avatar_url_change() {
+    //         TransitionType::ChangedAvatar
+    //     } else if let Some(_) = self.displayname_change() {
+    //         TransitionType::ChangedName
+    //     } else {
+    //         TransitionType::NoChange
+    //     }
+    // }
+    fn populate_transition_type(
+        &self,
+        cx: &mut Cx,
+        _list: &mut PortalList,
+        _item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventTimelineItem,
+        username: &str,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
+        let transition_type = if let Some(_) = self.avatar_url_change() {
+            TransitionType::ChangedAvatar
+        } else if let Some(_) = self.displayname_change() {
+            TransitionType::ChangedName
+        } else {
+            TransitionType::NoChange
+        };
         (item, new_drawn_status)
     }
 }
@@ -4419,6 +4591,25 @@ impl SmallStateEventContent for RoomMembershipChange {
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
     }
+
+    fn populate_transition_type(
+        &self,
+        cx: &mut Cx,
+        _list: &mut PortalList,
+        _item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventTimelineItem,
+        username: &str,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
+        let transition_type = if let Some(change) = self.change() {
+            get_transition_from_membership_change(&change)
+        } else {
+            TransitionType::HiddenEvent
+        };
+        (item, new_drawn_status)
+    }
 }
 
 /// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
@@ -4436,7 +4627,7 @@ fn populate_small_state_event(
     next_event: Option<&Arc<TimelineItem>>,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
-    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool)>,
+    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, HashMap<String, Vec<UserEvent>>)>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
@@ -4480,6 +4671,7 @@ fn populate_small_state_event(
     // - expanded: current expansion state of the group (for button text)
     let (opened, show_collapsible_button, expanded) = update_small_state_groups_for_item(
         item_id,
+        username.clone(),
         event_tl_item,
         prev_event,
         next_event,
@@ -4499,34 +4691,43 @@ fn populate_small_state_event(
             let button_text = if expanded { "▲" } else { "▼" };
             item.button(id!(collapsible_button))
                 .set_text(cx, button_text);
-            for (range, _) in small_state_groups.clone() {
-                println!("range {:?} ", range);
+            for (range, _, user_events) in small_state_groups.clone() {
                 if range.start == item_id {
-                    let mut same_event_hashmap = HashMap::new();
-                    for entry_id in range {
-                        if let Some((_, widget_ref)) = list.get_item(entry_id) {
-                            let s = widget_ref.label(id!(content)).text();
-                            if let Some(count) = same_event_hashmap.get_mut(&s) {
-                                *count += 1;
-                            } else {
-                                same_event_hashmap.insert(s, 1);
-                            }
-                        }
-                    }
-                    let mut summary_text = String::new();
-                    for (s, count) in same_event_hashmap {
-                        if count > 1 {
-                            summary_text.push_str(&format!("{}", count));
-                        }
-                        summary_text.push_str(&s);
-                        summary_text.push_str(", ");
-                    }
+                    
+                    let summary_text = generate_summary(&user_events, 4);
+                    println!("range {:?} user_events {:?} summary_text {:?}", range, user_events, summary_text);
                     item.view(id!(small_state_header)).set_visible(cx, true);
                     item.label(id!(small_state_header.summary_text)).set_text(cx, &summary_text);
                     break;
                 }
             }
-            
+            // for (range, _) in small_state_groups.clone() {
+            //     println!("range {:?} ", range);
+            //     if range.start == item_id {
+            //         let mut same_event_hashmap = HashMap::new();
+            //         for entry_id in range {
+            //             if let Some((_, widget_ref)) = list.get_item(entry_id) {
+            //                 let s = widget_ref.label(id!(content)).text();
+            //                 if let Some(count) = same_event_hashmap.get_mut(&s) {
+            //                     *count += 1;
+            //                 } else {
+            //                     same_event_hashmap.insert(s, 1);
+            //                 }
+            //             }
+            //         }
+            //         let mut summary_text = String::new();
+            //         for (s, count) in same_event_hashmap {
+            //             if count > 1 {
+            //                 summary_text.push_str(&format!("{}", count));
+            //             }
+            //             summary_text.push_str(&s);
+            //             summary_text.push_str(", ");
+            //         }
+            //         item.view(id!(small_state_header)).set_visible(cx, true);
+            //         item.label(id!(small_state_header.summary_text)).set_text(cx, &summary_text);
+            //         break;
+            //     }
+            // }
         }
 
         // Render the actual event content
@@ -4543,16 +4744,17 @@ fn populate_small_state_event(
     } else {
         // This item is part of a collapsed group - render as empty placeholder
         let (item, _existed) = list.item_with_existed(cx, item_id, live_id!(Empty));
-        event_content.populate_item_content(
-            cx,
-            list,
-            item_id,
-            item,
-            event_tl_item,
-            &username,
-            item_drawn_status,
-            new_drawn_status,
-        )
+        // event_content.populate_transition_type(
+        //     cx,
+        //     list,
+        //     item_id,
+        //     item,
+        //     event_tl_item,
+        //     &username,
+        //     item_drawn_status,
+        //     new_drawn_status,
+        // )
+        (item, new_drawn_status)
     }
 }
 

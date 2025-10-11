@@ -8,6 +8,8 @@ pub mod helpers;
 pub mod html_or_plaintext;
 pub mod icon_button;
 pub mod jump_to_bottom_button;
+pub mod membership_transitions;
+pub mod membership_example;
 pub mod mentionable_text_input;
 pub mod popup_list;
 pub mod room_filter_input_bar;
