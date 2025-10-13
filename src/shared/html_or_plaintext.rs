@@ -66,7 +66,7 @@ live_design! {
             flow: RightWrap,
 
             html_link = <HtmlLink> {
-                hover_color: #21b070
+                hover_color: (COLOR_LINK_HOVER)
                 grab_key_focus: false,
                 padding: {left: 1.0, right: 1.5},
             }
