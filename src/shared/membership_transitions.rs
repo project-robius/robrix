@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, MembershipChange};
 use ruma::UserId;
 
@@ -208,12 +209,17 @@ pub fn append_user_event(index: usize, user_id: &UserId, username: String, trans
 
 /// Summarize all user transitions into a single string
 pub fn generate_summary(
-    user_events: &Vec<(String, Vec<UserEvent>)>,
+    user_events: &HashMap<usize, (String, Vec<UserEvent>)>,
     summary_length: usize,
 ) -> String {
     // Aggregate by transition sequence
     let mut aggregates: Vec<(String, Vec<String>)> = Vec::new();
-    for (user_id, events) in user_events.iter().rev() {
+    // Sort keys in ascending order for consistent iteration
+    let mut sorted_keys: Vec<&usize> = user_events.keys().collect();
+    sorted_keys.sort();
+    
+    for &index in sorted_keys {
+        let (user_id, events) = &user_events[&index];
         let mut transitions: Vec<_> = events.iter().map(|e| e.transition).collect();
         // transitions.reverse();
         
@@ -227,8 +233,8 @@ pub fn generate_summary(
         let sequence_key = canonical.iter().map(|t| format!("{:?}", t)).collect::<Vec<_>>().join(",");
         println!("sequence_key for {}: {}", user_id, sequence_key);
         let name = events.first().map(|e| e.display_name.clone()).unwrap_or(user_id.clone());
-        if let Some((_, events)) = aggregates.iter_mut().find(|(id, _)| id == &sequence_key) {
-            events.push(name);
+        if let Some((_, names)) = aggregates.iter_mut().find(|(id, _)| id == &sequence_key) {
+            names.push(name);
         } else {
             aggregates.push((sequence_key.clone(), vec![name]));
         }
@@ -273,18 +279,20 @@ mod tests {
 
     #[test]
     fn test_generate_summary() {
-        let user_events: Vec<(String, Vec<UserEvent>)> = vec![
-            ("alice".into(), vec![
-                UserEvent { user_id: "alice".into(), display_name: "Alice".into(), transition: TransitionType::Joined, index: 0 },
-                UserEvent { user_id: "alice".into(), display_name: "Alice".into(), transition: TransitionType::Left, index: 1 },
-            ]),
-            ("bob".into(), vec![
-                UserEvent { user_id: "bob".into(), display_name: "Bob".into(), transition: TransitionType::ChangedAvatar, index: 2 },
-            ]),
-            ("charlie".into(), vec![
-                UserEvent { user_id: "charlie".into(), display_name: "Charlie".into(), transition: TransitionType::Joined, index: 3 },
-            ]),
-        ];
+        let mut user_events: HashMap<usize, (String, Vec<UserEvent>)> = HashMap::new();
+        
+        user_events.insert(0, ("alice".into(), vec![
+            UserEvent { user_id: "alice".into(), display_name: "Alice".into(), transition: TransitionType::Joined, index: 0 },
+            UserEvent { user_id: "alice".into(), display_name: "Alice".into(), transition: TransitionType::Left, index: 1 },
+        ]));
+        
+        user_events.insert(2, ("bob".into(), vec![
+            UserEvent { user_id: "bob".into(), display_name: "Bob".into(), transition: TransitionType::ChangedAvatar, index: 2 },
+        ]));
+        
+        user_events.insert(3, ("charlie".into(), vec![
+            UserEvent { user_id: "charlie".into(), display_name: "Charlie".into(), transition: TransitionType::Joined, index: 3 },
+        ]));
 
         let summary = generate_summary(&user_events, 2);
         println!("summary: {}", summary);
