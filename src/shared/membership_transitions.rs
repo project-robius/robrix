@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, MembershipChange, RoomMembershipChange};
+use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, MembershipChange};
+use ruma::UserId;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TransitionType {
@@ -25,7 +25,7 @@ pub enum TransitionType {
     HiddenEvent,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UserEvent {
     pub user_id: String,
     pub display_name: String,
@@ -87,15 +87,15 @@ fn describe_transition(t: TransitionType, user_count: usize, repeats: usize) -> 
     match t {
         TransitionType::CreateRoom => format!("created and configured the room"),
         TransitionType::Joined => {
-            if plural { format!("joined{}", count_str) } else { format!("joined{}", count_str) }
+            if plural { format!("joined{}", count_str) } else { format!("joined the room{}", count_str) }
         }
         TransitionType::Left => {
-            if plural { format!("left{}", count_str) } else { format!("left{}", count_str) }
+            if plural { format!("left{}", count_str) } else { format!("left the room{}", count_str) }
         }
         TransitionType::JoinedAndLeft => format!("joined and left{}", count_str),
         TransitionType::LeftAndJoined => format!("left and rejoined{}", count_str),
-        TransitionType::ChangedName => format!("changed name{}", count_str),
-        TransitionType::ChangedAvatar => format!("changed avatar{}", count_str),
+        TransitionType::ChangedName => format!("changed their name{}", count_str),
+        TransitionType::ChangedAvatar => format!("changed their profile picture{}", count_str),
         TransitionType::Invited => format!("was invited{}", count_str),
         TransitionType::Banned => format!("was banned{}", count_str),
         TransitionType::Unbanned => format!("was unbanned{}", count_str),
@@ -173,36 +173,70 @@ pub fn get_transition_from_other_events(content: &AnyOtherFullStateEventContent,
     }
 }
 
+/// Appends a new user event to the given list of user events.
+///
+/// If the given transition is `HiddenEvent`, this function does nothing.
+///
+/// Otherwise, it appends a new `UserEvent` to the list of user events for the given user ID.
+/// If the user ID is not found in the list, a new entry is created.
+///
+/// If the user ID is found, but there is no existing `UserEvent` with the same index,
+/// a new `UserEvent` is appended to the list of user events for that user ID.
+///
+/// The function prints debug messages to help with debugging.
+pub fn append_user_event(index: usize, user_id: &UserId, username: String, transition: TransitionType, user_events: &mut Vec<(String, Vec<UserEvent>)>) {
+    if let TransitionType::HiddenEvent = transition {
+        return;
+    }
+    let user_event = UserEvent{
+        user_id: user_id.to_string(),
+        display_name: username.clone(),
+        transition,
+        index,
+    };
+    println!("appending user event: user_id: {}, display_name: {}, transition: {:?}, index: {}", user_id, username, transition, index);
+    let user_id_str = user_id.to_string();
+    if let Some((_, events)) = user_events.iter_mut().find(|(id, _)| id == &user_id_str) {
+        if events.iter().filter(|user_event| user_event.index == index).count() == 0 {
+            events.push(user_event);
+        }
+    } else {
+        user_events.push((user_id_str, vec![user_event]));
+    }
+    println!("user_events after append: {:#?}", user_events.into_iter().map(|(u,_e)|{u.clone()}).collect::<Vec<_>>());
+}
+
 /// Summarize all user transitions into a single string
 pub fn generate_summary(
-    user_events: &HashMap<String, Vec<UserEvent>>,
+    user_events: &Vec<(String, Vec<UserEvent>)>,
     summary_length: usize,
 ) -> String {
     // Aggregate by transition sequence
-    let mut aggregates: HashMap<String, Vec<String>> = HashMap::new();
-    for (user_id, events) in user_events {
+    let mut aggregates: Vec<(String, Vec<String>)> = Vec::new();
+    for (user_id, events) in user_events.iter().rev() {
         let mut transitions: Vec<_> = events.iter().map(|e| e.transition).collect();
-        transitions.reverse();
+        // transitions.reverse();
         
         // Filter out Joined transitions for room creators
         if transitions.contains(&TransitionType::CreateRoom) {
             transitions.retain(|&t| t != TransitionType::Joined);
         }
-        
+        println!("transitions user_id {:?} transitions {:?}", user_id, transitions);
         let canonical = canonicalize_transitions(&transitions);
+        println!("canonical for {}: {}", user_id, canonical.iter().map(|t| format!("{:?}", t)).collect::<Vec<_>>().join(","));
         let sequence_key = canonical.iter().map(|t| format!("{:?}", t)).collect::<Vec<_>>().join(",");
-
+        println!("sequence_key for {}: {}", user_id, sequence_key);
         let name = events.first().map(|e| e.display_name.clone()).unwrap_or(user_id.clone());
-        aggregates.entry(sequence_key).or_default().push(name);
+        if let Some((_, events)) = aggregates.iter_mut().find(|(id, _)| id == &sequence_key) {
+            events.push(name);
+        } else {
+            aggregates.push((sequence_key.clone(), vec![name]));
+        }
     }
-
-    // Order by first appearance (optional; just lexical sort for now)
-    let mut sequences: Vec<_> = aggregates.into_iter().collect();
-    sequences.sort_by_key(|(k, _)| k.clone());
 
     // Build text
     let mut summary_parts = Vec::new();
-    for (seq, names) in sequences {
+    for (seq, names) in aggregates {
         let transitions: Vec<_> = seq
             .split(',')
             .filter_map(|s| match s.trim() {
@@ -239,22 +273,21 @@ mod tests {
 
     #[test]
     fn test_generate_summary() {
-        let mut user_events: HashMap<String, Vec<UserEvent>> = HashMap::new();
-
-        user_events.insert("alice".into(), vec![
-            UserEvent { user_id: "alice".into(), display_name: "Alice".into(), transition: TransitionType::Joined, index: 0 },
-            UserEvent { user_id: "alice".into(), display_name: "Alice".into(), transition: TransitionType::Left, index: 1 },
-        ]);
-
-        user_events.insert("bob".into(), vec![
-            UserEvent { user_id: "bob".into(), display_name: "Bob".into(), transition: TransitionType::ChangedAvatar, index: 2 },
-        ]);
-
-        user_events.insert("charlie".into(), vec![
-            UserEvent { user_id: "charlie".into(), display_name: "Charlie".into(), transition: TransitionType::Joined, index: 3 },
-        ]);
+        let user_events: Vec<(String, Vec<UserEvent>)> = vec![
+            ("alice".into(), vec![
+                UserEvent { user_id: "alice".into(), display_name: "Alice".into(), transition: TransitionType::Joined, index: 0 },
+                UserEvent { user_id: "alice".into(), display_name: "Alice".into(), transition: TransitionType::Left, index: 1 },
+            ]),
+            ("bob".into(), vec![
+                UserEvent { user_id: "bob".into(), display_name: "Bob".into(), transition: TransitionType::ChangedAvatar, index: 2 },
+            ]),
+            ("charlie".into(), vec![
+                UserEvent { user_id: "charlie".into(), display_name: "Charlie".into(), transition: TransitionType::Joined, index: 3 },
+            ]),
+        ];
 
         let summary = generate_summary(&user_events, 2);
+        println!("summary: {}", summary);
         assert!(summary.contains("Alice"));
         assert!(summary.contains("Bob"));
         assert!(summary.contains("Charlie"));

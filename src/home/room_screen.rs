@@ -1,7 +1,7 @@
 //! A room screen is the UI view that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{any::Any, borrow::Cow, cell::RefCell, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::Arc};
+use std::{borrow::Cow, cell::RefCell, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::Arc};
 
 use bytesize::ByteSize;
 use imbl::Vector;
@@ -24,14 +24,13 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
-use ruma::events::{MessageLikeEventContent, MessageLikeEventType};
 
 use crate::{
     app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, room::typing_notice::TypingNoticeWidgetExt, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, membership_transitions::{generate_summary, get_transition_from_membership_change, get_transition_from_other_events, TransitionType, UserEvent}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, membership_transitions::{append_user_event, generate_summary, get_transition_from_membership_change, get_transition_from_other_events, TransitionType, UserEvent}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -215,7 +214,7 @@ live_design! {
             draw_text: {
                 wrap: Word,
                 text_style: <THEME_FONT_REGULAR>{
-                    font_size: (0),
+                    font_size: (10),
                 },
                 color: (SMALL_STATE_TEXT_COLOR)
             }
@@ -1689,11 +1688,12 @@ impl RoomScreen {
                             let new_start = (range.start as i32 + shift).max(0) as usize;
                             let new_end = (range.end as i32 + shift).max(0) as usize;
                             *range = new_start..new_end;
-                            for user_events in user_events.values_mut() {
-                                for user_event in user_events.iter_mut() {
-                                    user_event.index = (user_event.index as i32 + shift).max(0) as usize;
-                                }
-                            }
+                            user_events.clear();
+                            // for (_, user_events_list) in user_events.iter_mut() {
+                            //     for user_event in user_events_list.iter_mut() {
+                            //         user_event.index = (user_event.index as i32 + shift).max(0) as usize;
+                            //     }
+                            // }
                         }
                     }
                     tl.items = new_items;
@@ -3026,7 +3026,7 @@ struct TimelineUiState {
     /// A vector of ranges of small state items that are grouped together in the UI.
     /// 
     /// There is a collapsible to the right of the message of the first item in the group. 
-    small_state_groups: Vec<(std::ops::Range<usize>, bool, HashMap<String, Vec<UserEvent>>)>
+    small_state_groups: Vec<(std::ops::Range<usize>, bool, Vec<(String, Vec<UserEvent>)>)>
 }
 
 #[derive(Default, Debug)]
@@ -4201,23 +4201,7 @@ fn is_small_state_event(
     // )
 }
 
-fn append_user_event(index: usize, user_id: &UserId, username: String, transition: TransitionType, user_events: &mut HashMap<String, Vec<UserEvent>>) {
-    let user_event = UserEvent{
-        user_id: user_id.to_string(),
-        display_name: username.clone(),
-        transition,
-        index,
-    };
-    println!("append_user_event: index: {}, user_id: {}, username: {}, transition: {:?}", index, user_id, username, transition);
-    if let Some(mut events) = user_events.get_mut(&user_id.to_string()) {
-        println!("append_user_event: events: {:?}", events);
-        if events.iter().filter(|user_event| user_event.index == index).count() == 0 {
-            events.push(user_event);
-        }
-    } else {
-        user_events.insert(user_id.to_string(), vec![user_event]);
-    }
-}
+
 
 /// Dynamically updates small state groups as timeline items are processed.
 /// This function is called during populate_small_state_event to build groups on-demand.
@@ -4229,7 +4213,7 @@ fn update_small_state_groups_for_item(
     current_item: &EventTimelineItem,
     previous_item: Option<&Arc<TimelineItem>>,
     next_item: Option<&Arc<TimelineItem>>,
-    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, HashMap<String, Vec<UserEvent>>)>,
+    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, Vec<(String, Vec<UserEvent>)>)>,
 ) -> (bool, bool, bool) {
     let (current_item_is_small_state, transition) = is_small_state_event(current_item);
     //println!("update_small_state_groups_for_item: item_id: {}, transition_type: {:?}, current_item_is_small_state: {}", item_id, transition_type, current_item_is_small_state);
@@ -4258,8 +4242,8 @@ fn update_small_state_groups_for_item(
 
     // Check if this item is already part of an existing group or can extend one
     for (range, is_open, user_events) in small_state_groups.iter_mut() {
-        
         if range.start == item_id {
+            println!("range.start");
             append_user_event(item_id, &current_item.sender(), username, transition, user_events);
             return (true, true, *is_open); // Start of group, show debug button
         }
@@ -4276,7 +4260,7 @@ fn update_small_state_groups_for_item(
         }
     }
     if next_item_is_small_state {
-        let mut user_events = HashMap::new();
+        let mut user_events = Vec::new();
         append_user_event(item_id, &current_item.sender(), username, transition, &mut user_events);
         // Plus 2 to include the next item into the group.
         small_state_groups.push((item_id..(item_id + 2), false, user_events));
@@ -4433,6 +4417,12 @@ impl SmallStateEventContent for OtherMessageLike {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
+        println!("populate_transition_type OtherMessageLike");
+        item.label(id!(content)).set_text(
+            cx,
+            &text_preview_of_other_message_like(self).format_with(username, false),
+        );
+        new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
     }
 }
@@ -4485,6 +4475,7 @@ impl SmallStateEventContent for timeline::OtherState {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
+        println!("populate_transition_type OtherState");
         let item = if let Some(text_preview) = text_preview_of_other_state(self, false) {
             item.label(id!(content))
                 .set_text(cx, &text_preview.format_with(username, false));
@@ -4501,16 +4492,26 @@ impl SmallStateEventContent for timeline::OtherState {
     fn populate_transition_type(
         &self,
         cx: &mut Cx,
-        _list: &mut PortalList,
-        _item_id: usize,
+        list: &mut PortalList,
+        item_id: usize,
         item: WidgetRef,
         _event_tl_item: &EventTimelineItem,
         username: &str,
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        
-        let transition_type = get_transition_from_other_events(self.content(), self.state_key());
+        // let transition_type = get_transition_from_other_events(self.content(), self.state_key());
+        println!("populate_transition_type OtherState");
+        let item = if let Some(text_preview) = text_preview_of_other_state(self, false) {
+            item.label(id!(content))
+                .set_text(cx, &text_preview.format_with(username, false));
+            new_drawn_status.content_drawn = true;
+            item
+        } else {
+            let item = list.item(cx, item_id, live_id!(Empty));
+            new_drawn_status = ItemDrawnStatus::new();
+            item
+        };
         (item, new_drawn_status)
     }
 }
@@ -4548,20 +4549,27 @@ impl SmallStateEventContent for MemberProfileChange {
         &self,
         cx: &mut Cx,
         _list: &mut PortalList,
-        _item_id: usize,
+        item_id: usize,
         item: WidgetRef,
         _event_tl_item: &EventTimelineItem,
         username: &str,
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        let transition_type = if let Some(_) = self.avatar_url_change() {
-            TransitionType::ChangedAvatar
-        } else if let Some(_) = self.displayname_change() {
-            TransitionType::ChangedName
-        } else {
-            TransitionType::NoChange
-        };
+        // let transition_type = if let Some(_) = self.avatar_url_change() {
+        //     TransitionType::ChangedAvatar
+        // } else if let Some(_) = self.displayname_change() {
+        //     TransitionType::ChangedName
+        // } else {
+        //     TransitionType::NoChange
+        // };
+        println!("item_id: {:?}, populate_transition_type MemberProfileChange username  {:?}", item_id, username);
+        item.label(id!(content)).set_text(
+            cx,
+            &text_preview_of_member_profile_change(self, username, false)
+                .format_with(username, false),
+        );
+        new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
     }
 }
@@ -4627,10 +4635,16 @@ fn populate_small_state_event(
     next_event: Option<&Arc<TimelineItem>>,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
-    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, HashMap<String, Vec<UserEvent>>)>,
+    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, Vec<(String, Vec<UserEvent>)>)>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
-    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
+    let (item, mut existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
+    println!("existed: {} SmallStateEvent", existed);
+    if !existed {
+        let (item, existed_in_empty) = list.item_with_existed(cx, item_id, live_id!(Empty));
+        println!("item_id: {:?} existed_in_empty: {} text {:?}", item_id, existed_in_empty,  item.label(id!(content)).text());
+        existed = existed_in_empty;
+    }
     // The content of a small state event view may depend on the profile info,
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
     let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
@@ -4691,9 +4705,8 @@ fn populate_small_state_event(
             let button_text = if expanded { "▲" } else { "▼" };
             item.button(id!(collapsible_button))
                 .set_text(cx, button_text);
-            for (range, _, user_events) in small_state_groups.clone() {
+            for (range, _, user_events) in small_state_groups {
                 if range.start == item_id {
-                    
                     let summary_text = generate_summary(&user_events, 4);
                     println!("range {:?} user_events {:?} summary_text {:?}", range, user_events, summary_text);
                     item.view(id!(small_state_header)).set_visible(cx, true);
@@ -4742,18 +4755,22 @@ fn populate_small_state_event(
             new_drawn_status,
         )
     } else {
+        println!("empty placeholder item_id {:?}", item_id);
         // This item is part of a collapsed group - render as empty placeholder
-        let (item, _existed) = list.item_with_existed(cx, item_id, live_id!(Empty));
-        // event_content.populate_transition_type(
-        //     cx,
-        //     list,
-        //     item_id,
-        //     item,
-        //     event_tl_item,
-        //     &username,
-        //     item_drawn_status,
-        //     new_drawn_status,
-        // )
+        //let (item, _existed) = list.item_with_existed(cx, item_id, live_id!(Empty));
+        let item = list.item(cx, item_id, live_id!(Empty));
+        //let (item, _existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
+        let (item, _existed) = event_content.populate_transition_type(
+            cx,
+            list,
+            item_id,
+            item,
+            event_tl_item,
+            &username,
+            item_drawn_status,
+            new_drawn_status,
+        );
+        new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
     }
 }
