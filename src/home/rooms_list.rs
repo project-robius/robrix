@@ -485,7 +485,23 @@ impl RoomsList {
                             }
                         }
                     } else if let Some(invited_room) = self.invited_rooms.borrow_mut().get_mut(&room_id) {
+                        let was_displayed = (self.display_filter)(invited_room);
                         invited_room.room_name = Some(new_room_name);
+                        let should_display = (self.display_filter)(invited_room);
+                        match (was_displayed, should_display) {
+                            // No need to update the displayed rooms list.
+                            (true, true) | (false, false) => { }
+                            // Room was displayed but should no longer be displayed.
+                            (true, false) => {
+                                self.displayed_invited_rooms.iter()
+                                    .position(|r| r == &room_id)
+                                    .map(|index| self.displayed_invited_rooms.remove(index));
+                            }
+                            // Room was not displayed but should now be displayed.
+                            (false, true) => {
+                                self.displayed_invited_rooms.push(room_id);
+                            }
+                        }
                     } else {
                         error!("Error: couldn't find room {room_id} to update room name");
                     }
