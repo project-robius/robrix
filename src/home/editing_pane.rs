@@ -516,11 +516,10 @@ impl EditingPaneRef {
     /// Returns whether this `EditingPane` was hidden by the given actions, i.e.,
     /// `true` if `actions` contains an [`EditingPaneAction::Hidden`] for this widget.
     pub fn was_hidden(&self, actions: &Actions) -> bool {
-        if let EditingPaneAction::Hidden = actions.find_widget_action(self.widget_uid()).cast_ref() {
-            true
-        } else {
-            false
-        }
+        matches!(
+            actions.find_widget_action(self.widget_uid()).cast_ref(),
+            EditingPaneAction::Hidden,
+        )
     }
 
     /// See [`EditingPane::show()`].

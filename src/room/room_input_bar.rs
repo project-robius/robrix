@@ -585,7 +585,7 @@ impl RoomInputBarRef {
 
         // 2. Restore the state of the replying-to preview.
         if let Some(replying_to) = replying_to {
-            inner.show_replying_to(cx, replying_to, &room_id, false);
+            inner.show_replying_to(cx, replying_to, room_id, false);
         } else {
             inner.clear_replying_to(cx);
         }

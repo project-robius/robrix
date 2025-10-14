@@ -1712,8 +1712,8 @@ impl RoomScreen {
                         cx,
                         related_event_id,
                         Some(details.item_id),
-                        &portal_list,
-                        &loading_pane
+                        portal_list,
+                        loading_pane
                     );
                 }
                 MessageAction::JumpToEvent(event_id) => {
@@ -1721,8 +1721,8 @@ impl RoomScreen {
                         cx,
                         &event_id,
                         None,
-                        &portal_list,
-                        &loading_pane
+                        portal_list,
+                        loading_pane
                     );
                 }
                 MessageAction::Redact { details, reason } => {
