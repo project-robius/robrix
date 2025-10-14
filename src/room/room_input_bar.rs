@@ -40,7 +40,7 @@ live_design! {
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
 
 
-    pub RoomInputBar = <View> {
+    pub RoomInputBar = {{RoomInputBar}} {
         width: Fill,
         height: Fit,
         flow: Down,
@@ -56,7 +56,7 @@ live_design! {
         // * a notice that the user can't send messages to this room.
         // * if this room was tombstoned, a "footer" view showing the successor room info.
         // * the EditingPane, which slides up as an overlay in front of the other views below.
-        <View> {
+        overlay_wrapper = <View> {
             width: Fill,
             height: Fit,
             flow: Overlay,
@@ -327,11 +327,15 @@ impl RoomInputBar {
 
     /// Shows a preview of the given event that the user is currently replying to
     /// above the message input bar.
+    ///
+    /// If `grab_key_focus` is true, this will also automatically focus the keyboard
+    /// on the message input box so that the user can immediately start typing their reply.
     fn show_replying_to(
         &mut self,
         cx: &mut Cx,
         replying_to: (EventTimelineItem, EmbeddedEvent),
         room_id: &OwnedRoomId,
+        grab_key_focus: bool,
     ) {
         // When the user clicks the reply button next to a message, we need to:
         // 1. Populate and show the ReplyingPreview, of course.
@@ -364,10 +368,13 @@ impl RoomInputBar {
         // 2. Hide other views that are irrelevant to a reply, e.g.,
         //    the `EditingPane` would improperly cover up the ReplyPreview.
         self.editing_pane(id!(editing_pane)).force_reset_hide(cx);
+        self.on_editing_pane_hidden(cx);
         // 3. Automatically focus the keyboard on the message input box
         //    so that the user can immediately start typing their reply
         //    without having to manually click on the message input box.
-        self.text_input(id!(input_bar.mentionable_text_input.text_input)).set_key_focus(cx);
+        if grab_key_focus {
+            self.text_input(id!(input_bar.mentionable_text_input.text_input)).set_key_focus(cx);
+        }
         self.redraw(cx);
     }
 
@@ -382,7 +389,7 @@ impl RoomInputBar {
     fn show_editing_pane(
         &mut self,
         cx: &mut Cx,
-        event_tl_item: EventTimelineItem,
+        behavior: ShowEditingPaneBehavior,
         room_id: OwnedRoomId,
     ) {
         // We must hide the input_bar while the editing pane is shown,
@@ -397,11 +404,16 @@ impl RoomInputBar {
         replying_preview.set_visible(cx, false);
         self.view.location_preview(id!(location_preview)).clear();
 
-        self.view.editing_pane(id!(editing_pane)).show(
-            cx,
-            event_tl_item,
-            room_id,
-        );
+        let editing_pane = self.view.editing_pane(id!(editing_pane));
+        match behavior {
+            ShowEditingPaneBehavior::ShowNew { event_tl_item } => {
+                editing_pane.show(cx, event_tl_item, room_id);
+            }
+            ShowEditingPaneBehavior::RestoreExisting { editing_pane_state } => {
+                editing_pane.restore_state(cx, editing_pane_state, room_id);
+            }
+        };
+
         self.redraw(cx);
     }
 
@@ -428,6 +440,7 @@ impl RoomInputBar {
     ) {
         let tombstone_footer = self.tombstone_footer(id!(tombstone_footer));
         let input_bar = self.view(id!(input_bar));
+
         if let Some(sr) = successor_room {
             tombstone_footer.show(cx, room_id, sr);
             input_bar.set_visible(cx, false);
@@ -480,7 +493,7 @@ impl RoomInputBarRef {
         room_id: &OwnedRoomId,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show_replying_to(cx, replying_to, room_id);
+        inner.show_replying_to(cx, replying_to, room_id, true);
     }
 
     /// Shows the editing pane to allow the user to edit the given event.
@@ -491,7 +504,11 @@ impl RoomInputBarRef {
         room_id: OwnedRoomId,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show_editing_pane(cx, event_tl_item, room_id);
+        inner.show_editing_pane(
+            cx,
+            ShowEditingPaneBehavior::ShowNew { event_tl_item },
+            room_id,
+        );
     }
 
     // Updates the visibility of select views based on the user's new power levels.
@@ -553,18 +570,21 @@ impl RoomInputBarRef {
 
         // 2. Restore the state of the replying-to preview.
         if let Some(replying_to) = replying_to {
-            inner.show_replying_to(cx, replying_to, &room_id);
+            inner.show_replying_to(cx, replying_to, &room_id, false);
         } else {
             inner.clear_replying_to(cx);
         }
         inner.was_replying_preview_visible = was_replying_preview_visible;
 
         // 3. Restore the state of the editing pane.
-        let editing_pane = inner.editing_pane(id!(editing_pane));
-        if let Some(state) = editing_pane_state {
-            editing_pane.restore_state(cx, state, room_id.clone());
+        if let Some(editing_pane_state) = editing_pane_state {
+            inner.show_editing_pane(
+                cx,
+                ShowEditingPaneBehavior::RestoreExisting { editing_pane_state },
+                room_id.clone(),
+            );
         } else {
-            editing_pane.force_reset_hide(cx);
+            inner.editing_pane(id!(editing_pane)).force_reset_hide(cx);
             inner.on_editing_pane_hidden(cx);
         }
 
@@ -585,4 +605,17 @@ pub struct RoomInputBarState {
     replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
     /// The state of the `EditingPane`, if any message was being edited.
     editing_pane_state: Option<EditingPaneState>,
+}
+
+/// Defines what to do when showing the `EditingPane`.
+enum ShowEditingPaneBehavior {
+    /// Show a new edit session, e.g., when first clicking "edit" on a message.
+    ShowNew {
+        event_tl_item: EventTimelineItem,
+    },
+    /// Restore the state of an `EditingPane` that already existed, e.g., when
+    /// reopening a room that had an `EditingPane` open when it was closed.
+    RestoreExisting {
+        editing_pane_state: EditingPaneState,
+    },
 }

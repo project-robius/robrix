@@ -588,35 +588,11 @@ impl Widget for RoomScreen {
         let user_profile_sliding_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(id!(loading_pane));
 
-        // Currently, a Signal event is only used to tell this widget:
-        // 1. to check if the room has been loaded from the homeserver yet, or
-        // 2. that its timeline events have been updated in the background.
-        if let Event::Signal = event {
-            if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
-                let rooms_list_ref = cx.get_global::<RoomsListRef>();
-                if rooms_list_ref.is_room_loaded(room_id) {
-                    let same_room_id = room_id.clone();
-                    // This room has been loaded now, so we call `set_displayed_room()`
-                    // to fully display it. That function does nothing if the room_id is unchanged,
-                    // so we clear it first.
-                    self.room_id = None;
-                    self.set_displayed_room(cx, same_room_id, self.room_name.clone());
-                } else {
-                    self.all_rooms_loaded = rooms_list_ref.all_known_rooms_loaded();
-                    return;
-                }
-            }
-
-            self.process_timeline_updates(cx, &portal_list);
-
-            // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
-            // but it doesn't hurt to do it here.
-            // TODO: move this up a layer to something higher in the UI tree,
-            //       and wrap it in a `if let Event::Signal` conditional.
-            user_profile_cache::process_user_profile_updates(cx);
-            avatar_cache::process_avatar_updates(cx);
-        }
-
+        // Handle actions here before processing timeline updates.
+        // Normally (in most other widgets), the order of event handling doesn't matter much.
+        // However, since actions may refer to a specific timeline item's index,
+        // we want to handle those before processing any updates that might change
+        // the set of timeline indices (which would invalidate the index values in any actions).
         if let Event::Actions(actions) = event {
             for (_, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
@@ -742,6 +718,35 @@ impl Widget for RoomScreen {
                 &portal_list,
                 actions,
             );
+        }
+
+        // Currently, a Signal event is only used to tell this widget:
+        // 1. to check if the room has been loaded from the homeserver yet, or
+        // 2. that its timeline events have been updated in the background.
+        if let Event::Signal = event {
+            if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
+                let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                if rooms_list_ref.is_room_loaded(room_id) {
+                    let same_room_id = room_id.clone();
+                    // This room has been loaded now, so we call `set_displayed_room()`
+                    // to fully display it. That function does nothing if the room_id is unchanged,
+                    // so we clear it first.
+                    self.room_id = None;
+                    self.set_displayed_room(cx, same_room_id, self.room_name.clone());
+                } else {
+                    self.all_rooms_loaded = rooms_list_ref.all_known_rooms_loaded();
+                    return;
+                }
+            }
+
+            self.process_timeline_updates(cx, &portal_list);
+
+            // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
+            // but it doesn't hurt to do it here.
+            // TODO: move this up a layer to something higher in the UI tree,
+            //       and wrap it in a `if let Event::Signal` conditional.
+            user_profile_cache::process_user_profile_updates(cx);
+            avatar_cache::process_avatar_updates(cx);
         }
 
         // We only forward "interactive hit" events to the inner timeline view
@@ -883,6 +888,7 @@ impl Widget for RoomScreen {
             cx.extend_actions(actions_generated_within_this_room_screen);
         }
     }
+
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // If the room isn't loaded yet, we show the restore status label only.

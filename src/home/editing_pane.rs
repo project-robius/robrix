@@ -153,7 +153,7 @@ live_design! {
 #[derive(Clone, DefaultNone, Debug)]
 pub enum EditingPaneAction {
     /// The editing pane has been closed/hidden.
-    Hide,
+    Hidden,
     None,
 }
 
@@ -181,9 +181,7 @@ impl Widget for EditingPane {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
-        if !self.visible {
-            return;
-        }
+        if !self.visible { return; }
 
         let animator_action = self.animator_handle_event(cx, event);
         if animator_action.must_redraw() {
@@ -196,7 +194,7 @@ impl Widget for EditingPane {
                 (true, false) => {
                     self.visible = false;
                     self.info = None;
-                    cx.widget_action(self.widget_uid(), &scope.path, EditingPaneAction::Hide);
+                    cx.widget_action(self.widget_uid(), &scope.path, EditingPaneAction::Hidden);
                     cx.revert_key_focus();
                     self.redraw(cx);
                     return;
@@ -518,9 +516,9 @@ impl EditingPaneRef {
     }
 
     /// Returns whether this `EditingPane` was hidden by the given actions, i.e.,
-    /// `true` if `actions` contains an `EditingPaneAction::Hide` for this widget.
+    /// `true` if `actions` contains an [`EditingPaneAction::Hidden`] for this widget.
     pub fn was_hidden(&self, actions: &Actions) -> bool {
-        if let EditingPaneAction::Hide = actions.find_widget_action(self.widget_uid()).cast_ref() {
+        if let EditingPaneAction::Hidden = actions.find_widget_action(self.widget_uid()).cast_ref() {
             true
         } else {
             false
@@ -554,6 +552,8 @@ impl EditingPaneRef {
     }
 
     /// Hides the editing pane immediately and clears its state without animating it out.
+    ///
+    /// This function *DOES NOT* emit an [`EditingPaneAction::Hidden`] action.
     pub fn force_reset_hide(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.visible = false;
