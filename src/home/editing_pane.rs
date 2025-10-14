@@ -509,9 +509,7 @@ impl EditingPaneRef {
         timeline_event_item_id: TimelineEventItemId,
         edit_result: Result<(), matrix_sdk_ui::timeline::Error>,
     ) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
+        let Some(mut inner) = self.borrow_mut() else { return };
         inner.handle_edit_result(cx, timeline_event_item_id, edit_result);
     }
 

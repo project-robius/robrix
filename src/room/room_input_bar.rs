@@ -17,7 +17,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::{room::reply::{EnforceThread, Reply}, SuccessorRoom};
-use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem};
+use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
 
@@ -534,6 +534,20 @@ impl RoomInputBarRef {
         inner.update_tombstone_footer(cx, room_id, successor_room);
     }
 
+    /// Forwards the result of an edit request to the `EditingPane` widget
+    /// within this `RoomInputBar`.
+    pub fn handle_edit_result(
+        &self,
+        cx: &mut Cx,
+        timeline_event_item_id: TimelineEventItemId,
+        edit_result: Result<(), matrix_sdk_ui::timeline::Error>,
+    ) {
+        let Some(inner) = self.borrow_mut() else { return };
+        inner.editing_pane(id!(editing_pane))
+            .handle_edit_result(cx, timeline_event_item_id, edit_result);
+    }
+
+    /// Save a snapshot of the UI state of this `RoomInputBar`.
     pub fn save_state(&self) -> RoomInputBarState {
         let Some(inner) = self.borrow() else { return Default::default() };
         // Clear the location preview. We don't save this state because the
@@ -547,6 +561,7 @@ impl RoomInputBarRef {
         }
     }
 
+    /// Restore the UI state of this `RoomInputBar` from the given state snapshot.
     pub fn restore_state(
         &self,
         cx: &mut Cx,
@@ -607,7 +622,7 @@ pub struct RoomInputBarState {
     editing_pane_state: Option<EditingPaneState>,
 }
 
-/// Defines what to do when showing the `EditingPane`.
+/// Defines what to do when showing the `EditingPane` from the `RoomInputBar`.
 enum ShowEditingPaneBehavior {
     /// Show a new edit session, e.g., when first clicking "edit" on a message.
     ShowNew {
