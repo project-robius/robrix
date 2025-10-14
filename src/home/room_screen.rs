@@ -206,21 +206,7 @@ live_design! {
 
 
     // An empty view that takes up no space in the portal list.
-    Empty = <View> {
-        content = <Label> {
-            width: Fill,
-            height: Fit
-            padding: { top: 0.0, bottom: 0.0, left: 0.0, right: 0.0 }
-            draw_text: {
-                wrap: Word,
-                text_style: <THEME_FONT_REGULAR>{
-                    font_size: (10),
-                },
-                color: (SMALL_STATE_TEXT_COLOR)
-            }
-            text: ""
-        }
-    }
+    Empty = <View> { }
 
     // The view used for each text-based message event in a room's timeline.
     Message = {{Message}} {
@@ -1695,7 +1681,7 @@ impl RoomScreen {
                                 for user_event in &mut user_events {
                                     user_event.index = (user_event.index as i32 + shift).max(0) as usize;
                                 }
-                                user_events_map.insert(group_id + shift as usize, (user_id.clone(), user_events.clone()));
+                                user_events_map.insert((group_id as i32 + shift).max(0) as usize, (user_id.clone(), user_events.clone()));
                             }
                             // Note: If we want to preserve events during shifts, we would need to
                             // update the HashMap keys and UserEvent indices here

@@ -221,7 +221,7 @@ pub fn generate_summary(
     for &index in sorted_keys {
         let (user_id, events) = &user_events[&index];
         let mut transitions: Vec<_> = events.iter().map(|e| e.transition).collect();
-        // transitions.reverse();
+        transitions.reverse();
         
         // Filter out Joined transitions for room creators
         if transitions.contains(&TransitionType::CreateRoom) {
@@ -295,9 +295,6 @@ mod tests {
         ]));
 
         let summary = generate_summary(&user_events, 2);
-        println!("summary: {}", summary);
-        assert!(summary.contains("Alice"));
-        assert!(summary.contains("Bob"));
-        assert!(summary.contains("Charlie"));
+        assert_eq!(summary, "Alice joined and left, Bob changed their profile picture, Charlie joined the room");
     }
 }
