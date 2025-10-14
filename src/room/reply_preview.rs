@@ -1,6 +1,7 @@
 //! Widgets that represent a preview of a message that was (or is being) replied to.
 //!
-//! This is used in both the `RepliedToMessage` and `ReplyingPreview` views.
+//! The core view is private, `ReplyPreviewContent`, which is used by both of the public views
+//! exported by this module: `RepliedToMessage` and `ReplyingPreview`.
 
 use makepad_widgets::*;
 
