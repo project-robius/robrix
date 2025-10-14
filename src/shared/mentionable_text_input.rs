@@ -336,7 +336,7 @@ impl Widget for MentionableTextInput {
         // Best practice: Always check Scope first to get current context
         // Scope represents the current widget context as passed down from parents
         let scope_room_id = scope.props.get::<RoomScreenProps>()
-            .expect("RoomScreenProps should be available in scope for MentionableTextInput")
+            .expect("BUG: RoomScreenProps should be available in Scope::props for MentionableTextInput")
             .room_id
             .clone();
 

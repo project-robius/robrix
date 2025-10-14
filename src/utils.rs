@@ -12,6 +12,9 @@ use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetail
 
 use crate::{room::RoomPreviewAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
 
+/// The scheme for GEO links, used for location messages in Matrix.
+pub const GEO_URI_SCHEME: &str = "geo:";
+
 
 /// A wrapper type that implements the `Debug` trait for non-`Debug` types.
 pub struct DebugWrapper<T>(T);

@@ -153,7 +153,7 @@ live_design! {
 #[derive(Clone, DefaultNone, Debug)]
 pub enum EditingPaneAction {
     /// The editing pane has been closed/hidden.
-    Hide,
+    Hidden,
     None,
 }
 
@@ -181,9 +181,7 @@ impl Widget for EditingPane {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
-        if !self.visible {
-            return;
-        }
+        if !self.visible { return; }
 
         let animator_action = self.animator_handle_event(cx, event);
         if animator_action.must_redraw() {
@@ -196,7 +194,7 @@ impl Widget for EditingPane {
                 (true, false) => {
                     self.visible = false;
                     self.info = None;
-                    cx.widget_action(self.widget_uid(), &scope.path, EditingPaneAction::Hide);
+                    cx.widget_action(self.widget_uid(), &scope.path, EditingPaneAction::Hidden);
                     cx.revert_key_focus();
                     self.redraw(cx);
                     return;
@@ -424,7 +422,7 @@ impl EditingPane {
     /// Shows the editing pane and sets it up to edit the given `event`'s content.
     pub fn show(&mut self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
         if !event_tl_item.is_editable() {
-            enqueue_popup_notification(PopupItem { message: "That message cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
+            enqueue_popup_notification(PopupItem {message: "That message cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
             return;
         }
 
@@ -511,10 +509,17 @@ impl EditingPaneRef {
         timeline_event_item_id: TimelineEventItemId,
         edit_result: Result<(), matrix_sdk_ui::timeline::Error>,
     ) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
+        let Some(mut inner) = self.borrow_mut() else { return };
         inner.handle_edit_result(cx, timeline_event_item_id, edit_result);
+    }
+
+    /// Returns whether this `EditingPane` was hidden by the given actions, i.e.,
+    /// `true` if `actions` contains an [`EditingPaneAction::Hidden`] for this widget.
+    pub fn was_hidden(&self, actions: &Actions) -> bool {
+        matches!(
+            actions.find_widget_action(self.widget_uid()).cast_ref(),
+            EditingPaneAction::Hidden,
+        )
     }
 
     /// See [`EditingPane::show()`].
@@ -539,12 +544,13 @@ impl EditingPaneRef {
         editing_pane_state: EditingPaneState,
         room_id: OwnedRoomId,
     ) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.restore_state(cx, editing_pane_state, room_id);
-        }
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.restore_state(cx, editing_pane_state, room_id);
     }
 
     /// Hides the editing pane immediately and clears its state without animating it out.
+    ///
+    /// This function *DOES NOT* emit an [`EditingPaneAction::Hidden`] action.
     pub fn force_reset_hide(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.visible = false;
