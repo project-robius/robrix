@@ -3664,7 +3664,7 @@ fn populate_message_view(
                 .show_with_state(cx, tsp_sign_state);
         }
     }
-
+    item.as_view().set_visible(cx, true);
     (item, new_drawn_status)
 }
 
@@ -4328,7 +4328,6 @@ trait SmallStateEventContent {
         item_drawn_status: ItemDrawnStatus,
         new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus);
-
 }
 
 /// An empty marker struct used for populating redacted messages.
@@ -4451,7 +4450,6 @@ impl SmallStateEventContent for timeline::OtherState {
         };
         (item, new_drawn_status)
     }
-
 }
 
 impl SmallStateEventContent for MemberProfileChange {
@@ -4521,7 +4519,7 @@ fn populate_small_state_event(
     small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, HashMap<usize, (String, Vec<UserEvent>)>)>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
-    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
+    let (item, mut existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
     // The content of a small state event view may depend on the profile info,
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
     let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
@@ -4571,7 +4569,16 @@ fn populate_small_state_event(
     // Only show the collapsible button on the first item of each group
     item.button(id!(collapsible_button))
         .set_visible(cx, show_collapsible_button);
-
+    let (item, new_drawn_status) = event_content.populate_item_content(
+        cx,
+        list,
+        item_id,
+        item,
+        event_tl_item,
+        &username,
+        item_drawn_status,
+        new_drawn_status,
+    );
     // Render logic based on group state
     if opened {
         // This item should be visible - set appropriate button text if this is a group leader
@@ -4592,23 +4599,12 @@ fn populate_small_state_event(
                 }
             }
         }
-
+        item.as_view().set_visible(cx, true);
         // Render the actual event content
-        event_content.populate_item_content(
-            cx,
-            list,
-            item_id,
-            item,
-            event_tl_item,
-            &username,
-            item_drawn_status,
-            new_drawn_status,
-        )
     } else {
-        let (item, _existed) = list.item_with_existed(cx, item_id, live_id!(Empty));
-        new_drawn_status.content_drawn = true;
-        (item, new_drawn_status)
+       item.as_view().set_visible(cx, false);
     }
+    (item, new_drawn_status)
 }
 
 
