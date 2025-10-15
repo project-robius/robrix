@@ -4267,16 +4267,13 @@ fn update_small_state_groups_for_item(
             // Add user event to the HashMap using item_id as key with userId and Vec<UserEvent>
             println!("range {:?} username: {}", range, username);
             append_user_event(user_event, user_events_map);
-            return (true, true, *is_open); // Start of group, show debug button
+            return (true, range.len() > 2, *is_open); // Start of group, show debug button
         }
         if range.contains(&item_id) {
             // Add user event to the HashMap using item_id as key with userId and Vec<UserEvent>
             println!("range {:?} username: {}", range, username);
             append_user_event(user_event, user_events_map);
-            if username == "Jack S" || username == "Florian Heese" {
-                println!("user_events_map: {:#?}", user_events_map);
-            }
-            return (*is_open, false, *is_open); // Item is in group but not at start, no debug button
+            return (*is_open || range.len() <= 2, false, *is_open); // Item is in group but not at start, no debug button
         }
         // Since we're iterating backwards (from highest to lowest item_id),
         if range.start == item_id + 1 {
@@ -4285,7 +4282,7 @@ fn update_small_state_groups_for_item(
             *range = item_id..range.end;
             println!("after range {:?} username: {}", range, username);
             append_user_event(user_event, user_events_map);
-            return (*is_open, false, false); // Extended group, no debug button for this item
+            return (*is_open || range.len() <= 2, false, false); // Extended group, no debug button for this item
         }
     }
     if next_item_is_small_state {
@@ -4525,7 +4522,6 @@ fn populate_small_state_event(
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
-
     // The content of a small state event view may depend on the profile info,
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
     let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
