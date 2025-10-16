@@ -1281,7 +1281,7 @@ async fn async_worker(
                             error!("Matrix client not available for URL preview: {}", url);
                             UrlPreviewError::ClientNotAvailable
                         })?;
-                        
+
                         let token = client.access_token().ok_or_else(|| {
                             error!("Access token not available for URL preview: {}", url);
                             UrlPreviewError::AccessTokenNotAvailable
@@ -1291,7 +1291,7 @@ async fn async_worker(
                         let endpoint_url = client.homeserver().join("/_matrix/client/v1/media/preview_url")
                             .map_err(UrlPreviewError::UrlParse)?;
                         log!("Fetching URL preview from endpoint: {} for URL: {}", endpoint_url, url);
-                        
+
                         let response = client
                             .http_client()
                             .get(endpoint_url.clone())
@@ -1304,20 +1304,20 @@ async fn async_worker(
                                 error!("HTTP request failed for URL preview {}: {}", url, e);
                                 UrlPreviewError::Request(e)
                             })?;
-                        
+
                         let status = response.status();
                         log!("URL preview response status for {}: {}", url, status);
-                        
+
                         if !status.is_success() && status.as_u16() != 429 {
                             error!("URL preview request failed with status {} for URL: {}", status, url);
                             return Err(UrlPreviewError::HttpStatus(status.as_u16()));
                         }
-                        
+
                         let text = response.text().await.map_err(|e| {
                             error!("Failed to read response text for URL preview {}: {}", url, e);
                             UrlPreviewError::Request(e)
                         })?;
-                        
+
                         log!("URL preview response body length for {}: {} bytes", url, text.len());
                         if text.len() > MAX_LOG_RESPONSE_BODY_LENGTH {
                             log!("URL preview response body preview for {}: {}...", url, &text[..MAX_LOG_RESPONSE_BODY_LENGTH]);
@@ -1341,7 +1341,7 @@ async fn async_worker(
                                             destination: destination.clone(),
                                             update_sender: update_sender.clone(),
                                         });
-                                        
+
                                     }
                                 }
                                 Err(e) => {
@@ -1365,7 +1365,7 @@ async fn async_worker(
 
                     match &result {
                         Ok(preview_data) => {
-                            log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}", 
+                            log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}",
                                  url, preview_data.title, preview_data.site_name);
                         }
                         Err(e) => {
@@ -2096,18 +2096,10 @@ async fn update_room(
         }
 
         if let Some(new_room_name) = new_room_name {
-            let old_cached_name = old_room.room.cached_display_name();
-
-            // For invited rooms, skip updates if the name is Empty or EmptyWas placeholder
-            // because we might have initially set the name to None in add_new_room,
-            // but the Matrix SDK's cached_display_name() already reflects the updated name
-            // (since old_room.room is a reference to SDK's internal object, not a snapshot).
-            let should_update = if new_room_state == RoomState::Invited {
-                !matches!(new_room_name, RoomDisplayName::Empty | RoomDisplayName::EmptyWas(_))
-            } else {
-                // For joined rooms, update if the name actually changed
-                !old_cached_name.is_some_and(|old_name| old_name == new_room_name)
-            };
+            // Always update the room name if it's not a placeholder.
+            // We can't reliably compare old vs new because old_room.room is a reference
+            // to the SDK's internal object which may have already been updated.
+            let should_update = !matches!(new_room_name, RoomDisplayName::Empty | RoomDisplayName::EmptyWas(_));
 
             if should_update {
                 enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
@@ -2163,7 +2155,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
     let room_id = room.room_id().to_owned();
 
     // We must call `display_name()` here to calculate and cache the room's name.
-    let mut room_name = room.display_name().await.ok();
+    let room_name = room.display_name().await.ok();
 
     let is_direct = room.is_direct().await.unwrap_or(false);
 
@@ -2189,14 +2181,6 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
             return Ok(());
         }
         RoomState::Invited => {
-            // For invited rooms with Empty or EmptyWas placeholder, set to None
-            // so UI shows "Invite to unnamed room". The name will be updated later
-            // when we receive actual room state events with the real name.
-            room_name = match room_name {
-                Some(RoomDisplayName::Empty | RoomDisplayName::EmptyWas(_)) => None,
-                other => other,
-            };
-
             let invite_details = room.invite_details().await.ok();
             let Some(client) = get_client() else {
                 return Ok(());
@@ -2244,14 +2228,8 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
             return Ok(());
         }
         RoomState::Joined => {
-            // For joined rooms with Empty or EmptyWas placeholder (can happen with tombstoned rooms
-            // or rooms joined from another client), keep it as None temporarily.
-            // The name will be updated when we receive actual room state events.
-            room_name = match room_name {
-                Some(RoomDisplayName::Empty | RoomDisplayName::EmptyWas(_)) => None,
-                other => other,
-            };
-        } // Fall through to adding the joined room below.
+            // Fall through to adding the joined room below.
+        }
     }
 
     // Subscribe to all updates for this room in order to properly receive all of its states.
@@ -2432,7 +2410,7 @@ fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
             SYNC_INDICATOR_DELAY,
             SYNC_INDICATOR_HIDE_DELAY
         );
-    
+
     Handle::current().spawn(async move {
        let mut sync_indicator_stream = std::pin::pin!(sync_indicator_stream);
 
@@ -3261,19 +3239,19 @@ pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
     // This prevents memory leaks when users logout and login again without closing the app
     CLIENT.lock().unwrap().take();
     log!("Client cleared during logout");
-    
+
     SYNC_SERVICE.lock().unwrap().take();
     log!("Sync service cleared during logout");
-    
+
     REQUEST_SENDER.lock().unwrap().take();
     log!("Request sender cleared during logout");
-    
+
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
-    
+
     let on_clear_appstate = Arc::new(Notify::new());
     Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });
-    
+
     match tokio::time::timeout(config.app_state_cleanup_timeout, on_clear_appstate.notified()).await {
         Ok(_) => {
             log!("Received signal that app state was cleaned successfully");

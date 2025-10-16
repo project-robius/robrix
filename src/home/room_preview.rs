@@ -296,9 +296,29 @@ impl RoomPreviewContent {
         cx: &mut Cx,
         room_info: &JoinedRoomInfo,
     ) {
-        if let Some(ref name) = room_info.room_name {
-            self.view.label(id!(room_name)).set_text(cx, &name.to_string());
-        }
+        use matrix_sdk::RoomDisplayName;
+
+        // Handle room name display, including Empty/EmptyWas placeholders
+        let room_name_text = match &room_info.room_name {
+            Some(name) => match name {
+                RoomDisplayName::Empty | RoomDisplayName::EmptyWas(_) => {
+                    // For Empty placeholders, try to use canonical alias or a default
+                    room_info.canonical_alias
+                        .as_ref()
+                        .map(|alias| alias.to_string())
+                        .unwrap_or_else(|| String::from("Room"))
+                }
+                other => other.to_string(),
+            },
+            None => {
+                // For None (invited rooms that haven't loaded yet), use canonical alias or default
+                room_info.canonical_alias
+                    .as_ref()
+                    .map(|alias| alias.to_string())
+                    .unwrap_or_else(|| String::from("Room"))
+            }
+        };
+        self.view.label(id!(room_name)).set_text(cx, &room_name_text);
         if let Some((ts, msg)) = room_info.latest.as_ref() {
             if let Some(human_readable_date) = relative_format(*ts) {
                 self.view
