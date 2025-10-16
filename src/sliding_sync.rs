@@ -1281,7 +1281,7 @@ async fn async_worker(
                             error!("Matrix client not available for URL preview: {}", url);
                             UrlPreviewError::ClientNotAvailable
                         })?;
-
+                        
                         let token = client.access_token().ok_or_else(|| {
                             error!("Access token not available for URL preview: {}", url);
                             UrlPreviewError::AccessTokenNotAvailable
@@ -1291,7 +1291,7 @@ async fn async_worker(
                         let endpoint_url = client.homeserver().join("/_matrix/client/v1/media/preview_url")
                             .map_err(UrlPreviewError::UrlParse)?;
                         log!("Fetching URL preview from endpoint: {} for URL: {}", endpoint_url, url);
-
+                        
                         let response = client
                             .http_client()
                             .get(endpoint_url.clone())
@@ -1304,20 +1304,20 @@ async fn async_worker(
                                 error!("HTTP request failed for URL preview {}: {}", url, e);
                                 UrlPreviewError::Request(e)
                             })?;
-
+                        
                         let status = response.status();
                         log!("URL preview response status for {}: {}", url, status);
-
+                        
                         if !status.is_success() && status.as_u16() != 429 {
                             error!("URL preview request failed with status {} for URL: {}", status, url);
                             return Err(UrlPreviewError::HttpStatus(status.as_u16()));
                         }
-
+                        
                         let text = response.text().await.map_err(|e| {
                             error!("Failed to read response text for URL preview {}: {}", url, e);
                             UrlPreviewError::Request(e)
                         })?;
-
+                        
                         log!("URL preview response body length for {}: {} bytes", url, text.len());
                         if text.len() > MAX_LOG_RESPONSE_BODY_LENGTH {
                             log!("URL preview response body preview for {}: {}...", url, &text[..MAX_LOG_RESPONSE_BODY_LENGTH]);
@@ -1341,7 +1341,7 @@ async fn async_worker(
                                             destination: destination.clone(),
                                             update_sender: update_sender.clone(),
                                         });
-
+                                        
                                     }
                                 }
                                 Err(e) => {
@@ -1365,7 +1365,7 @@ async fn async_worker(
 
                     match &result {
                         Ok(preview_data) => {
-                            log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}",
+                            log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}", 
                                  url, preview_data.title, preview_data.site_name);
                         }
                         Err(e) => {
@@ -2153,7 +2153,6 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
 /// Invoked when the room list service has received an update with a brand new room.
 async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListService) -> Result<()> {
     let room_id = room.room_id().to_owned();
-
     // We must call `display_name()` here to calculate and cache the room's name.
     let room_name = room.display_name().await.ok();
 
@@ -2195,6 +2194,9 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
             );
             let room_avatar = room_avatar(room, room_name.as_ref().map(|n| n.to_string()).as_deref()).await;
 
+            // Subscribe to this invited room to receive state updates (like room name changes)
+            room_list_service.subscribe_to_rooms(&[&room_id]).await;
+
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
                 Some(InviterInfo {
                     user_id: inviter.user_id().to_owned(),
@@ -2209,9 +2211,6 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
             } else {
                 None
             };
-            // Subscribe to this invited room to receive state updates (like room name changes)
-            room_list_service.subscribe_to_rooms(&[&room_id]).await;
-
             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddInvitedRoom(InvitedRoomInfo {
                 room_id: room_id.clone(),
                 room_name,
@@ -2227,9 +2226,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
             Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_id));
             return Ok(());
         }
-        RoomState::Joined => {
-            // Fall through to adding the joined room below.
-        }
+        RoomState::Joined => { } // Fall through to adding the joined room below.
     }
 
     // Subscribe to all updates for this room in order to properly receive all of its states.
@@ -2410,7 +2407,7 @@ fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
             SYNC_INDICATOR_DELAY,
             SYNC_INDICATOR_HIDE_DELAY
         );
-
+    
     Handle::current().spawn(async move {
        let mut sync_indicator_stream = std::pin::pin!(sync_indicator_stream);
 
@@ -3239,19 +3236,19 @@ pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
     // This prevents memory leaks when users logout and login again without closing the app
     CLIENT.lock().unwrap().take();
     log!("Client cleared during logout");
-
+    
     SYNC_SERVICE.lock().unwrap().take();
     log!("Sync service cleared during logout");
-
+    
     REQUEST_SENDER.lock().unwrap().take();
     log!("Request sender cleared during logout");
-
+    
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
-
+    
     let on_clear_appstate = Arc::new(Notify::new());
     Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });
-
+    
     match tokio::time::timeout(config.app_state_cleanup_timeout, on_clear_appstate.notified()).await {
         Ok(_) => {
             log!("Received signal that app state was cleaned successfully");
