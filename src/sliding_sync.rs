@@ -1555,32 +1555,18 @@ struct JoinedRoomDetails {
     timeline_subscriber_handler_task: JoinHandle<()>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
-    /// The ID of the old tombstoned room that this room has replaced, if any.
-    replaces_tombstoned_room: Option<SuccessorRoom>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
         log!("Dropping JoinedRoomDetails for room {}", self.room_id);
         self.timeline_subscriber_handler_task.abort();
         drop(self.typing_notice_subscriber.take());
-        if let Some(replaces_tombstoned_room) = self.replaces_tombstoned_room.take() {
-            TOMBSTONED_ROOMS.lock().unwrap().insert(
-                self.room_id.clone(),
-                (replaces_tombstoned_room.room_id, replaces_tombstoned_room.reason),
-            );
-        }
     }
 }
 
 
 /// Information about all joined rooms that our client currently know about.
 static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
-
-/// Information about all of the rooms that have been tombstoned.
-///
-/// The map key is the **NEW** successor room ID, and the value is the **OLD** tombstoned room ID and the reason.
-/// This allows us to quickly query if a newly-encountered room is a replacement for an old tombstoned room.
-static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, (OwnedRoomId, Option<String>)>> = Mutex::new(BTreeMap::new());
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
@@ -1632,42 +1618,20 @@ pub fn take_timeline_endpoints(
     room_id: &OwnedRoomId,
 ) -> Option<TimelineEndpoints>
 {
-    let get_successor_room = |all_joined_rooms: &BTreeMap<OwnedRoomId, JoinedRoomDetails>| {
-        for (room_id_key, joined_room_details) in all_joined_rooms.iter() {
-            if let Some(successor_room) = &joined_room_details.replaces_tombstoned_room {
-                if successor_room.room_id == *room_id {
-                    return Some(SuccessorRoom {
-                        room_id: room_id_key.clone(),
-                        reason: successor_room.reason.clone(),
-                    });
-                }
-            }
-        }
-        for (new_successor_room_id_key, (old_room, reason)) in TOMBSTONED_ROOMS.lock().unwrap().iter() {
-            if old_room == room_id {
-                return Some(SuccessorRoom {
-                    room_id: new_successor_room_id_key.clone(),
-                    reason: reason.clone(),
-                });
-            }
-        }
-        None
-    };
-
     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
     all_joined_rooms
         .get_mut(room_id)
         .and_then(|jrd| jrd.timeline_singleton_endpoints.take()
             .map(|(update_receiver, request_sender)|
-                (jrd.timeline_update_sender.clone(), update_receiver, request_sender)
+                (jrd.timeline_update_sender.clone(), update_receiver, request_sender, jrd.timeline.room().successor_room())
             )
         )
-        .map(|(update_sender, update_receiver, request_sender)| {
+        .map(|(update_sender, update_receiver, request_sender, successor_room)| {
             TimelineEndpoints {
                 update_sender,
                 update_receiver,
                 request_sender,
-                successor_room: get_successor_room(&all_joined_rooms),
+                successor_room,
             }
         })
 }
@@ -2261,24 +2225,6 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
     // Subscribe to all updates for this room in order to properly receive all of its states.
     room_list_service.subscribe_to_rooms(&[&room_id]).await;
 
-    // Do not add tombstoned rooms to the rooms list; they require special handling.
-    if let Some(successor_room) = room.successor_room() {
-        log!("Room {room_id} has been tombstoned: {successor_room:#?}");
-        // Since we don't know the order in which we'll learn about new rooms,
-        // we need to first check to see if the replacement for this tombstoned room
-        // refers to an already-known room as its successor.
-        // If so, we can immediately update the successor room's room info
-        // to indicate that it replaces this tombstoned room.
-        if let Some(room_info) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&room_id) {
-            room_info.replaces_tombstoned_room = Some(successor_room);
-        }
-        // But if we don't know about the successor room yet, we need to save this tombstoned room
-        // in a separate list so that the successor room we will discover in the future
-        // can know which old tombstoned room it replaces (see the bottom of this function).
-        else {
-            TOMBSTONED_ROOMS.lock().unwrap().insert(successor_room.room_id, (room_id.clone(), successor_room.reason));
-        }
-    }
 
     let timeline = Arc::new(
         room.timeline_builder()
@@ -2302,11 +2248,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         |ev| get_latest_event_details(ev, &room_id)
     );
 
-    let tombstoned_room_replaced_by_this_room = TOMBSTONED_ROOMS.lock()
-        .unwrap()
-        .remove(&room_id);
-
-    log!("Adding new joined room {room_id}. Replaces tombstoned room: {tombstoned_room_replaced_by_this_room:?}");
+    log!("Adding new joined room {room_id}.");
     ALL_JOINED_ROOMS.lock().unwrap().insert(
         room_id.clone(),
         JoinedRoomDetails {
@@ -2316,7 +2258,6 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
             timeline_update_sender,
             timeline_subscriber_handler_task,
             typing_notice_subscriber: None,
-            replaces_tombstoned_room: tombstoned_room_replaced_by_this_room.map(|(room_id, reason)| SuccessorRoom { room_id, reason }),
         },
     );
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can
@@ -2916,17 +2857,8 @@ fn update_latest_event(
                     }
                 }
                 // Check for room tombstone status changes.
-                AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content, prev_content: _ }) => {
-                    {
-                        let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                        let mut tombstoned_rooms = TOMBSTONED_ROOMS.lock().unwrap();
-                        if let Some(room_info) = all_joined_rooms.get_mut(&content.replacement_room) {
-                            room_info.replaces_tombstoned_room = Some(SuccessorRoom { room_id: room_id.clone(), reason: Some(content.body.clone()) });
-                        } else {
-                            tombstoned_rooms.insert(content.replacement_room.clone(), (room_id.clone(), Some(content.body.clone())));
-                        }
-                    }
-                    enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room_id.clone() });
+                AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content: _, prev_content: _ }) => {
+                    enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room_id.clone()});
                     if let (Some(sender), Some(room)) = (
                         timeline_update_sender,
                         get_client()
@@ -3304,7 +3236,6 @@ pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
     REQUEST_SENDER.lock().unwrap().take();
     log!("Request sender cleared during logout");
     
-    TOMBSTONED_ROOMS.lock().unwrap().clear();
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
     
