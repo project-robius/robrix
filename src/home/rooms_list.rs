@@ -796,34 +796,6 @@ impl RoomsList {
                     .map(|room_info| (room_info.room_avatar.clone(), room_info.room_name.clone()))
             })
     }
-<<<<<<< HEAD
-=======
-
-    /// If the given room has been tombstoned, this returns its successor room.
-    ///
-    /// Works for both regular joined rooms and invited rooms.
-    pub fn get_successor_room(&self, room_id: &OwnedRoomId) -> Option<SuccessorRoom> {
-        // Check in all_joined_rooms first
-        if let Some(joined_room) = self.all_joined_rooms.get(room_id) {
-            if joined_room.is_tombstoned {
-                return joined_room.successor_room.as_ref().map(|sr| SuccessorRoom {
-                    room_id: sr.room_id.clone(),
-                    reason: sr.reason.clone(),
-                });
-            }
-        }
-        
-        // Check in invited_rooms
-        if let Some(invited_room) = self.invited_rooms.borrow().get(room_id) {
-            return invited_room.successor_room.as_ref().map(|sr| SuccessorRoom {
-                room_id: sr.room_id.clone(),
-                reason: sr.reason.clone(),
-            });
-        }
-
-        None
-    }
->>>>>>> 8531a4c7cf4d449d2ce59b9247ffecdc9a17b67b
 }
 
 impl Widget for RoomsList {
