@@ -186,7 +186,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
 - [x] User settings screen
 - [ ] Dedicated view of spaces
-- [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
+- [x] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81, https://github.com/project-robius/robrix/pull/585
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
 - [ ] Room browser, search for public rooms
 - [x] Accept/reject room invites
