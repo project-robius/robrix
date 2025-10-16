@@ -443,8 +443,6 @@ live_design! {
         width: Fill,
         height: Fit,
         flow: Down,
-        margin: { top: 4.0, bottom: 4.0}
-        padding: { top: 1.0, bottom: 1.0, right: 10.0 }
         spacing: 0.0
         cursor: Default
         small_state_header = <View> {
@@ -467,29 +465,30 @@ live_design! {
             // Collapsible button for small state event groups
             // Shows on the first item of each group to toggle expansion
             // Text is dynamically updated: ▼ (collapsed) or ▲ (expanded)
-            // collapsible_button = <Button> {
-            //     width: Fit,
-            //     height: Fit,
-            //     margin: { left: 5, right: 5 }
-            //     padding: { left: 4, right: 4, top: 2, bottom: 2 }
-            //     text: "▼"  // Default to collapsed state
-            //     draw_text: {
-            //         text_style: <SMALL_STATE_TEXT_STYLE> {},
-            //         color: #666
-            //     }
-            //     draw_bg: {
-            //         fn pixel(self) -> vec4 {
-            //             let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-            //             return sdf.result
-            //         }
-            //     }
-            // }
+            collapsible_button = <Button> {
+                width: Fit,
+                height: Fit,
+                margin: { left: 5, right: 5 }
+                padding: { left: 4, right: 4, top: 2, bottom: 2 }
+                text: "▼"  // Default to collapsed state
+                draw_text: {
+                    text_style: <SMALL_STATE_TEXT_STYLE> {},
+                    color: #666
+                }
+                draw_bg: {
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        return sdf.result
+                    }
+                }
+            }
         }
         body = <View> {
             width: Fill,
             height: Fit
             flow: Right,
-            padding: { left: 7.0, top: 2.0, bottom: 2.0 }
+            margin: { top: 4.0, bottom: 4.0}
+            padding: { left: 7.0, top: 2.0, bottom: 2.0, right: 10.0 }
             spacing: 5.0
 
             left_container = <View> {
@@ -524,26 +523,6 @@ live_design! {
                 text: ""
             }
             
-            // Collapsible button for small state event groups
-            // Shows on the first item of each group to toggle expansion
-            // Text is dynamically updated: ▼ (collapsed) or ▲ (expanded)
-            collapsible_button = <Button> {
-                width: Fit,
-                height: Fit,
-                margin: { left: 5, right: 5 }
-                padding: { left: 4, right: 4, top: 2, bottom: 2 }
-                text: "▼"  // Default to collapsed state
-                draw_text: {
-                    text_style: <SMALL_STATE_TEXT_STYLE> {},
-                    color: #666
-                }
-                draw_bg: {
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        return sdf.result
-                    }
-                }
-            }
             
             // Center the Avatar vertically with respect to the SmallStateEvent content.
             avatar_row = <AvatarRow> { margin: {top: -1.0} }
@@ -1398,6 +1377,7 @@ impl Widget for RoomScreen {
                                     poll_state,
                                     item_drawn_status,
                                     &mut tl_state.small_state_groups,
+                                    &mut tl_state.content_drawn_since_last_update
                                 ),
                                 MsgLikeKind::Redacted => populate_small_state_event(
                                     cx,
@@ -1410,6 +1390,7 @@ impl Widget for RoomScreen {
                                     &RedactedMessageEventMarker,
                                     item_drawn_status,
                                     &mut tl_state.small_state_groups,
+                                    &mut tl_state.content_drawn_since_last_update
                                 ),
                                 MsgLikeKind::UnableToDecrypt(utd) => populate_small_state_event(
                                     cx,
@@ -1422,6 +1403,7 @@ impl Widget for RoomScreen {
                                     utd,
                                     item_drawn_status,
                                     &mut tl_state.small_state_groups,
+                                    &mut tl_state.content_drawn_since_last_update
                                 ),
                                 MsgLikeKind::Other(other) => populate_small_state_event(
                                     cx,
@@ -1434,6 +1416,7 @@ impl Widget for RoomScreen {
                                     other,
                                     item_drawn_status,
                                     &mut tl_state.small_state_groups,
+                                    &mut tl_state.content_drawn_since_last_update
                                 ),
                             },
                             TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
@@ -1447,6 +1430,7 @@ impl Widget for RoomScreen {
                                 membership_change,
                                 item_drawn_status,
                                 &mut tl_state.small_state_groups,
+                                &mut tl_state.content_drawn_since_last_update
                             ),
                             TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
                                 cx,
@@ -1459,6 +1443,7 @@ impl Widget for RoomScreen {
                                 profile_change,
                                 item_drawn_status,
                                 &mut tl_state.small_state_groups,
+                                &mut tl_state.content_drawn_since_last_update
                             ),
                             TimelineItemContent::OtherState(other) => populate_small_state_event(
                                 cx,
@@ -1471,6 +1456,7 @@ impl Widget for RoomScreen {
                                 other,
                                 item_drawn_status,
                                 &mut tl_state.small_state_groups,
+                                &mut tl_state.content_drawn_since_last_update
                             ),
                             unhandled => {
                                 let item = list.item(cx, item_id, live_id!(SmallStateEvent));
@@ -4180,16 +4166,6 @@ fn is_small_state_event(
             (false, TransitionType::NoChange)
         }
     }
-    // matches!(
-    //     event_tl_item.content(),
-    //     TimelineItemContent::MembershipChange(_) |
-    //     TimelineItemContent::ProfileChange(_) |
-    //     TimelineItemContent::OtherState(_) |
-    //     TimelineItemContent::MsgLike(MsgLikeContent {
-    //         kind: MsgLikeKind::Poll(_) | MsgLikeKind::Redacted | MsgLikeKind::UnableToDecrypt(_),
-    //         ..
-    //     })
-    // )
 }
 
 fn append_user_event(user_event: UserEvent, user_events: &mut HashMap<usize, (String, Vec<UserEvent>)>) {
@@ -4207,9 +4183,7 @@ fn append_user_event(user_event: UserEvent, user_events: &mut HashMap<usize, (St
         }
     }
     if let Some(old_group_id) = old_group_id {
-        println!("old_group_id: {} display_name: {}", old_group_id, user_event.display_name);
         if let Some(data) = user_events.remove(&old_group_id) {
-             println!("old_group_id: removed {} replacement {:?} user_events: {:#?}", old_group_id, item_id, user_events);
             user_events.insert(item_id, data);
             return;
         }
@@ -4220,7 +4194,7 @@ fn append_user_event(user_event: UserEvent, user_events: &mut HashMap<usize, (St
 /// Dynamically updates small state groups as timeline items are processed.
 /// This function is called during populate_small_state_event to build groups on-demand.
 /// Since iteration starts from the biggest item_id and goes backwards, we handle reverse grouping.
-/// Returns a tuple whether to display the message, and whether to display the collapsible button and whether collapsible list is expanded.
+/// Returns a tuple whether to display the message, and whether to display the collapsible button and whether collapsible list is expanded and range to redraw
 fn update_small_state_groups_for_item(
     item_id: usize,
     username: String,
@@ -4228,11 +4202,10 @@ fn update_small_state_groups_for_item(
     previous_item: Option<&Arc<TimelineItem>>,
     next_item: Option<&Arc<TimelineItem>>,
     small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, HashMap<usize, (String, Vec<UserEvent>)>)>,
-) -> (bool, bool, bool) {
+) -> (bool, bool, bool, Range<usize>) {
     let (current_item_is_small_state, transition) = is_small_state_event(current_item);
-    //println!("update_small_state_groups_for_item: item_id: {}, transition_type: {:?}, current_item_is_small_state: {}", item_id, transition_type, current_item_is_small_state);
     if !current_item_is_small_state {
-        return (true, false, false); // Not a small state event, draw as individual item, no debug button
+        return (true, false, false, Range::default()); // Not a small state event, draw as individual item, no debug button
     }
 
     // check if the next item (item_id + 1) is a small state event to continue grouping
@@ -4251,7 +4224,7 @@ fn update_small_state_groups_for_item(
         .map(is_small_state_event)
         .unwrap_or((false, TransitionType::NoChange));
     if !previous_item_is_small_state && !next_item_is_small_state {
-        return (true, false, false); // Isolated small state event, no debug button
+        return (true, false, false,  Range::default()); // Isolated small state event, no debug button
     }
 
     // Check if this item is already part of an existing group or can extend one
@@ -4263,26 +4236,24 @@ fn update_small_state_groups_for_item(
             index: item_id,
         };
         if range.start == item_id {
-            println!("range.start");
             // Add user event to the HashMap using item_id as key with userId and Vec<UserEvent>
+            println!("range.start");
             println!("range {:?} username: {}", range, username);
             append_user_event(user_event, user_events_map);
-            return (true, range.len() > 2, *is_open); // Start of group, show debug button
+            return (true, range.len() > 2, *is_open, range.clone()); // Start of group, show debug button
         }
         if range.contains(&item_id) {
             // Add user event to the HashMap using item_id as key with userId and Vec<UserEvent>
             println!("range {:?} username: {}", range, username);
             append_user_event(user_event, user_events_map);
-            return (*is_open || range.len() <= 2, false, *is_open); // Item is in group but not at start, no debug button
+            return (*is_open || range.len() <= 2, false, *is_open,  range.clone()); // Item is in group but not at start, no debug button
         }
         // Since we're iterating backwards (from highest to lowest item_id),
         if range.start == item_id + 1 {
-            println!("range {:?} username: {}", range, username);
             // Extend this group backwards to include current item
             *range = item_id..range.end;
-            println!("after range {:?} username: {}", range, username);
             append_user_event(user_event, user_events_map);
-            return (*is_open || range.len() <= 2, false, false); // Extended group, no debug button for this item
+            return (*is_open || range.len() <= 2, false, false,  range.clone()); // Extended group, no debug button for this item
         }
     }
     if next_item_is_small_state {
@@ -4296,8 +4267,9 @@ fn update_small_state_groups_for_item(
         append_user_event(user_event, &mut user_events_map);
         // Plus 2 to include the next item into the group.
         small_state_groups.push((item_id..(item_id + 2), false, user_events_map));
+        return (false, false, false, item_id..(item_id + 2));
     }
-    (false, false, false) // Return collapsed state, no debug button
+    (false, false, false,  Range::default()) // Return collapsed state, no debug button
 }
 
 /// A trait for abstracting over the different types of timeline events
@@ -4437,7 +4409,6 @@ impl SmallStateEventContent for timeline::OtherState {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        println!("populate_transition_type OtherState");
         let item = if let Some(text_preview) = text_preview_of_other_state(self, false) {
             item.label(id!(content))
                 .set_text(cx, &text_preview.format_with(username, false));
@@ -4517,9 +4488,10 @@ fn populate_small_state_event(
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
     small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, HashMap<usize, (String, Vec<UserEvent>)>)>,
+    content_drawn_since_last_update: &mut RangeSet<usize>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
-    let (item, mut existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
+    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
     // The content of a small state event view may depend on the profile info,
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
     let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
@@ -4558,7 +4530,7 @@ fn populate_small_state_event(
     // - opened: whether this individual item should be rendered (based on group state)
     // - show_collapsible_button: true if this item is the first in a collapsible group
     // - expanded: current expansion state of the group (for button text)
-    let (opened, show_collapsible_button, expanded) = update_small_state_groups_for_item(
+    let (opened, show_collapsible_button, expanded, to_redraw) = update_small_state_groups_for_item(
         item_id,
         username.clone(),
         event_tl_item,
@@ -4566,10 +4538,11 @@ fn populate_small_state_event(
         next_event,
         small_state_groups,
     );
+    println!("populate_small_state_event: item_id: {}, opened: {}, show_collapsible_button: {}, expanded: {} small_state_groups {:?}", item_id, opened, show_collapsible_button, expanded, small_state_groups);
     // Only show the collapsible button on the first item of each group
     item.button(id!(collapsible_button))
         .set_visible(cx, show_collapsible_button);
-    let (item, new_drawn_status) = event_content.populate_item_content(
+    let (item, mut new_drawn_status) = event_content.populate_item_content(
         cx,
         list,
         item_id,
@@ -4598,12 +4571,21 @@ fn populate_small_state_event(
                     break;
                 }
             }
+            item.view(id!(body)).set_visible(cx, expanded);
+        } else {
+            item.view(id!(body)).set_visible(cx, true);
         }
-        item.as_view().set_visible(cx, true);
-        // Render the actual event content
     } else {
-       item.as_view().set_visible(cx, false);
+       item.view(id!(body)).set_visible(cx, false);
     }
+    println!("to_redraw: {:?} item_id: {} content_drawn_since_last_update:{:?}", to_redraw, item_id ,content_drawn_since_last_update);
+    if !to_redraw.is_empty() {
+        content_drawn_since_last_update.remove(to_redraw.clone());
+        if to_redraw.contains(&item_id) {
+            new_drawn_status.content_drawn = false; // Force redraw if part of a group that changed
+        }     
+    }
+   
     (item, new_drawn_status)
 }
 
