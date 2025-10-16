@@ -1887,8 +1887,9 @@ impl RoomScreen {
                 update_receiver,
                 update_sender,
                 request_sender,
+                successor_room,
             } = timeline_endpoints;
-            let successor_room = cx.get_global::<RoomsListRef>().get_successor_room(&room_id);
+
             let tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // Initially, we assume the user has all power levels by default.
@@ -2069,12 +2070,11 @@ impl RoomScreen {
         // 2. Restore the state of the room input bar.
         let room_input_bar = self.view.room_input_bar(id!(room_input_bar));
         let saved_room_input_bar_state = std::mem::take(room_input_bar_state);
-        let successor_room = cx.get_global::<RoomsListRef>().get_successor_room(&tl_state.room_id);
         room_input_bar.restore_state(
             cx,
             &tl_state.room_id,
             saved_room_input_bar_state,
-            successor_room.as_ref(),
+            tl_state.tombstone_info.as_ref(),
         );
     }
 

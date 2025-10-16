@@ -1526,6 +1526,7 @@ pub struct TimelineEndpoints {
     pub update_sender: crossbeam_channel::Sender<TimelineUpdate>,
     pub update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
     pub request_sender: TimelineRequestSender,
+    pub successor_room: Option<SuccessorRoom>,
 }
 
 /// Backend-specific details about a joined room that our client currently knows about.
@@ -1622,14 +1623,15 @@ pub fn take_timeline_endpoints(
         .get_mut(room_id)
         .and_then(|jrd| jrd.timeline_singleton_endpoints.take()
             .map(|(update_receiver, request_sender)|
-                (jrd.timeline_update_sender.clone(), update_receiver, request_sender)
+                (jrd.timeline_update_sender.clone(), update_receiver, request_sender, jrd.timeline.room().successor_room())
             )
         )
-        .map(|(update_sender, update_receiver, request_sender)| {
+        .map(|(update_sender, update_receiver, request_sender, successor_room)| {
             TimelineEndpoints {
                 update_sender,
                 update_receiver,
                 request_sender,
+                successor_room,
             }
         })
 }
@@ -2213,7 +2215,6 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
                 invite_state: Default::default(),
                 is_selected: false,
                 is_direct,
-                successor_room: room.successor_room(),
             }));
             Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_id));
             return Ok(());
@@ -2277,7 +2278,6 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         is_selected: false,
         is_direct,
         is_tombstoned: room.is_tombstoned() || room.tombstone_content().is_some(),
-        successor_room: room.successor_room()
     }));
 
     Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_id));
@@ -2858,6 +2858,7 @@ fn update_latest_event(
                 }
                 // Check for room tombstone status changes.
                 AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content: _, prev_content: _ }) => {
+                    enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room_id.clone()});
                     if let (Some(sender), Some(room)) = (
                         timeline_update_sender,
                         get_client()
@@ -2865,7 +2866,6 @@ fn update_latest_event(
                             .get_room(&room_id)
                             .and_then(|room| room.successor_room()),
                     ) {
-                        enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room_id.clone(), successor_room: SuccessorRoom { room_id: room.room_id.clone(), reason: room.reason.clone() } });
                         match sender.send(TimelineUpdate::Tombstoned(Some(room))) {
                             Ok(_) => {
                                 SignalToUI::set_ui_signal();

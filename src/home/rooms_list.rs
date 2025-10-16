@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState, SuccessorRoom};
+use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
 use crate::{
     app::{AppState, SelectedRoom},
     room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, RoomPreviewAvatar},
@@ -155,10 +155,9 @@ pub enum RoomsListUpdate {
     Status {
         status: String,
     },
-    /// Mark the given room as tombstoned and save the successor room.
+    /// Mark the given room as tombstoned.
     TombstonedRoom {
-        room_id: OwnedRoomId,
-        successor_room: SuccessorRoom
+        room_id: OwnedRoomId
     },
     /// Scroll to the given room.
     ScrollToRoom(OwnedRoomId),
@@ -227,7 +226,6 @@ pub struct JoinedRoomInfo {
     pub is_direct: bool,
     /// Whether this room is tombstoned (shut down and replaced with a successor room).
     pub is_tombstoned: bool,
-    pub successor_room: Option<SuccessorRoom>,
 }
 
 /// UI-related info about a room that the user has been invited to.
@@ -260,7 +258,6 @@ pub struct InvitedRoomInfo {
     pub is_selected: bool,
     /// Whether this is an invite to a direct room.
     pub is_direct: bool,
-    pub successor_room: Option<SuccessorRoom>,
 }
 
 /// Info about the user who invited us to a room.
@@ -540,11 +537,10 @@ impl RoomsList {
                 RoomsListUpdate::Status { status } => {
                     self.status = status;
                 }
-                RoomsListUpdate::TombstonedRoom { room_id, successor_room } => {
+                RoomsListUpdate::TombstonedRoom { room_id } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         let was_displayed = (self.display_filter)(room);
                         room.is_tombstoned = true;
-                        room.successor_room = Some(successor_room);
                         let should_display = (self.display_filter)(room);
                         match (was_displayed, should_display) {
                             // No need to update the displayed rooms list.
@@ -799,30 +795,6 @@ impl RoomsList {
                 self.invited_rooms.borrow().get(room_id)
                     .map(|room_info| (room_info.room_avatar.clone(), room_info.room_name.clone()))
             })
-    }
-
-    /// Gets the successor room based on room_id from invited_rooms and all_joined_rooms.
-    /// Returns the successor room if the given room_id is tombstoned and has a successor.
-    pub fn get_successor_room(&self, room_id: &OwnedRoomId) -> Option<SuccessorRoom> {
-        // Check in all_joined_rooms first
-        if let Some(joined_room) = self.all_joined_rooms.get(room_id) {
-            if joined_room.is_tombstoned {
-                return joined_room.successor_room.as_ref().map(|sr| SuccessorRoom {
-                    room_id: sr.room_id.clone(),
-                    reason: sr.reason.clone(),
-                });
-            }
-        }
-        
-        // Check in invited_rooms
-        if let Some(invited_room) = self.invited_rooms.borrow().get(room_id) {
-            return invited_room.successor_room.as_ref().map(|sr| SuccessorRoom {
-                room_id: sr.room_id.clone(),
-                reason: sr.reason.clone(),
-            });
-        }
-
-        None
     }
 }
 
@@ -1079,12 +1051,6 @@ impl RoomsListRef {
     pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
         let inner = self.borrow()?;
         inner.get_room_avatar_and_name(room_id)
-    }
-
-    /// See [`RoomsList::get_successor_room()`].
-    pub fn get_successor_room(&self, room_id: &OwnedRoomId) -> Option<SuccessorRoom> {
-        let inner = self.borrow()?;
-        inner.get_successor_room(room_id)
     }
 }
 pub struct RoomsListScopeProps {
