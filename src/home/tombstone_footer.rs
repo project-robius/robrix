@@ -199,16 +199,14 @@ impl TombstoneFooter {
 
 impl TombstoneFooterRef {
     /// See [`TombstoneFooter::show()`].
-    pub fn show(&mut self, cx: &mut Cx, room_id: &OwnedRoomId, successor_room: &SuccessorRoom) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.show(cx, room_id, successor_room);
-        }
+    pub fn show(&self, cx: &mut Cx, room_id: &OwnedRoomId, successor_room: &SuccessorRoom) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.show(cx, room_id, successor_room);
     }
 
     /// See [`TombstoneFooter::hide()`].
-    pub fn hide(&mut self, cx: &mut Cx) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.hide(cx);
-        }
+    pub fn hide(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.hide(cx);
     }
 }
