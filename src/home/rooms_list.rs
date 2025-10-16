@@ -801,8 +801,9 @@ impl RoomsList {
             })
     }
 
-    /// Gets the successor room based on room_id from invited_rooms and all_joined_rooms.
-    /// Returns the successor room if the given room_id is tombstoned and has a successor.
+    /// If the given room has been tombstoned, this returns its successor room.
+    ///
+    /// Works for both regular joined rooms and invited rooms.
     pub fn get_successor_room(&self, room_id: &OwnedRoomId) -> Option<SuccessorRoom> {
         // Check in all_joined_rooms first
         if let Some(joined_room) = self.all_joined_rooms.get(room_id) {
