@@ -186,11 +186,11 @@ pub fn convert_to_timeline_event(event_item: EventTimelineItem, user_name: Strin
         }
         _ => (None, None),
     };
-    let (_, transistion_type, _) = is_small_state_event(&event_item);
+    let (_, transistion_type, _, display_name_from_state) = is_small_state_event(&event_item);
     //println!("state_key: {:?}, membership: {:?}, transistion_type: {:?}, event_type: {}", state_key, membership, transistion_type, event_type);
     UserEvent {
         index,
-        display_name: user_name,
+        display_name: display_name_from_state.unwrap_or(user_name),
         event_type,
         transition: transistion_type,
         is_state: matches!(event_item.content(), 
@@ -285,13 +285,15 @@ pub fn append_user_event(user_event: UserEvent, user_events: &mut Vec<(String, V
 
 /// Checks if a event timeline item is a small state event.
 /// Returns true if the item is a small state event that can be grouped.
+/// return state key
+/// return Display name
 pub fn is_small_state_event(
     event_tl_item: &EventTimelineItem,
-) -> (bool, TransitionType, Option<String>) {
+) -> (bool, TransitionType, Option<String>, Option<String>) {
     match event_tl_item.content() {
         TimelineItemContent::MembershipChange(change) => (true, change.change().map(
             |f| get_transition_from_membership_change(&f)
-            ).unwrap_or_default(), None
+            ).unwrap_or_default(), None, change.display_name()
         ),
         TimelineItemContent::ProfileChange(change) => {
             let transition_type = if let Some(_) = change.avatar_url_change() {
@@ -301,23 +303,23 @@ pub fn is_small_state_event(
             } else {
                 TransitionType::NoChange
             };
-            (true, transition_type, None)
+            (true, transition_type, None, None)
         }
-        TimelineItemContent::OtherState(other_state) => (true, get_transition_from_other_events(other_state.content(), other_state.state_key()), Some(other_state.state_key().to_string())),
+        TimelineItemContent::OtherState(other_state) => (true, get_transition_from_other_events(other_state.content(), other_state.state_key()), Some(other_state.state_key().to_string()), None),
         TimelineItemContent::MsgLike(MsgLikeContent {
             kind: MsgLikeKind::Poll(_),
             ..
-        }) => (true, TransitionType::NoChange, None),
+        }) => (true, TransitionType::NoChange, None, None),
         TimelineItemContent::MsgLike(MsgLikeContent {
             kind: MsgLikeKind::Redacted,
             ..
-        }) => (true, TransitionType::MessageRemoved, None),
+        }) => (true, TransitionType::MessageRemoved, None, None),
         TimelineItemContent::MsgLike(MsgLikeContent {
             kind: MsgLikeKind::UnableToDecrypt(_),
             ..
-        }) => (true, TransitionType::UnableToDecrypt, None),
+        }) => (true, TransitionType::UnableToDecrypt, None, None),
         _ => {
-            (false, TransitionType::NoChange, None)
+            (false, TransitionType::NoChange, None, None)
         }
     }
 }
@@ -366,6 +368,7 @@ pub fn generate_summary(
                 "ChangedName" => Some(TransitionType::ChangedName),
                 "ChangedAvatar" => Some(TransitionType::ChangedAvatar),
                 "Invited" => Some(TransitionType::Invited),
+                "UnableToDecrypt" => Some(TransitionType::UnableToDecrypt),
                 _ => None,
             })
             .collect();

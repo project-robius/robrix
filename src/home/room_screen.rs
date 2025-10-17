@@ -4178,10 +4178,19 @@ fn populate_preview_of_timeline_item(
 
 
 fn append_user_event(user_event: UserEvent, user_events: &mut HashMap<usize, (String, Vec<UserEvent>)>) {
+    if user_event.transition == TransitionType::UnableToDecrypt {
+        println!("unable to decrypt user event {:?}", user_event);
+    }
     let item_id = user_event.index;
     let mut old_group_id = None;
+    let user_state_key = user_event.state_key.clone().unwrap_or_default();
+    let user_state_key = if user_state_key.is_empty() {
+        user_event.sender.clone()
+    } else {
+        user_state_key
+    };
     for (group_id, (user_id, user_events_vec)) in user_events.iter_mut() {
-        if user_event.sender == user_id.clone() {
+        if user_state_key == *user_id {
             if user_events_vec.iter().filter(|user_event| user_event.index == item_id).count() == 0 {
                 user_events_vec.push(user_event.clone());
             }
@@ -4191,13 +4200,15 @@ fn append_user_event(user_event: UserEvent, user_events: &mut HashMap<usize, (St
             old_group_id = Some(group_id.clone());
         }
     }
+    
+    
     if let Some(old_group_id) = old_group_id {
         if let Some(data) = user_events.remove(&old_group_id) {
             user_events.insert(item_id, data);
             return;
         }
     }
-    user_events.insert(item_id, (user_event.sender.clone(), vec![user_event]));
+    user_events.insert(item_id, (user_state_key.clone(), vec![user_event]));
 }
 
 /// Dynamically updates small state groups as timeline items are processed.
@@ -4213,26 +4224,26 @@ fn update_small_state_groups_for_item(
     small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, HashMap<usize, (String, Vec<UserEvent>)>)>,
     creation_event: &mut (HashMap<String,std::ops::Range<usize>>, Option<UserEvent>, bool),
 ) -> (bool, bool, bool, Range<usize>) {
-    let (current_item_is_small_state, transition, state_key) = is_small_state_event(current_item);
+    let (current_item_is_small_state, transition, state_key, _) = is_small_state_event(current_item);
     if !current_item_is_small_state {
         return (true, false, false, Range::default()); // Not a small state event, draw as individual item, no debug button
     }
 
     // check if the next item (item_id + 1) is a small state event to continue grouping
-    let (next_item_is_small_state, _, _) = next_item
+    let (next_item_is_small_state, _, _, _) = next_item
         .and_then(|timeline_item| match timeline_item.kind() {
             TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
             _ => None,
         })
         .map(is_small_state_event)
-        .unwrap_or((false, TransitionType::NoChange, None));
-    let (previous_item_is_small_state, _, _) = previous_item
+        .unwrap_or((false, TransitionType::NoChange, None, None));
+    let (previous_item_is_small_state, _, _, _) = previous_item
         .and_then(|timeline_item| match timeline_item.kind() {
             TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
             _ => None,
         })
         .map(is_small_state_event)
-        .unwrap_or((false, TransitionType::NoChange, None));
+        .unwrap_or((false, TransitionType::NoChange, None, None));
     if !previous_item_is_small_state && !next_item_is_small_state {
         return (true, false, false,  Range::default()); // Isolated small state event, no debug button
     }
@@ -4256,7 +4267,7 @@ fn update_small_state_groups_for_item(
         return (true, true, false, Range::default());
     }
     if user_event.membership.as_ref().unwrap_or(&"".to_string()) == "join" || 
-        user_event.event_type == "m.room.state" || user_event.event_type == "m.room.name"
+        user_event.event_type == "m.room.state" || user_event.event_type == "m.room.name" && creation_user_event.is_none()
     {
         for (user_id, join_range) in creation_events_map.iter_mut() {
             if user_id == &user_event.sender {
@@ -4269,7 +4280,9 @@ fn update_small_state_groups_for_item(
                         }
                     }
                 }
-                return (*is_open, false, false, Range::default()); // Continue creation group
+                // if join_range.contains(&item_id) {
+                //     return (*is_open, false, false, Range::default()); // Continue creation group
+                // }
             }
         }
         creation_events_map.insert(user_event.sender.clone(), item_id..(item_id + 2));
@@ -4604,6 +4617,9 @@ fn populate_small_state_event(
         small_state_groups,
         creation_event
     );
+    if item_id == 55 {
+        println!("populate_small_state_event: item_id: {} opened: {} show_collapsible_button: {} expanded: {} to_redraw: {:?} small_state_groups: {:?} creation_event: {:?}", item_id, opened, show_collapsible_button, expanded, to_redraw, small_state_groups, creation_event);
+    }
     //println!("populate_small_state_event: item_id: {}, opened: {}, show_collapsible_button: {} creation_event: {:?}", item_id, opened, show_collapsible_button, creation_event);
     // Only show the collapsible button on the first item of each group
     item.button(id!(collapsible_button))
@@ -4641,7 +4657,7 @@ fn populate_small_state_event(
                     }
                 }
             }
-            println!("small_state_groups item_id: {} small_state_groups: {:?} ", item_id, small_state_groups);
+            println!("small_state_groups item_id: {} small_state_groups: {:?} ", item_id, 2);
             for (range, _, user_events_map) in small_state_groups {
                 if range.start == item_id {
                     // Pass HashMap directly to generate_summary
@@ -4653,10 +4669,12 @@ fn populate_small_state_event(
             }
             item.view(id!(body)).set_visible(cx, expanded);
         } else {
+            item.view(id!(small_state_header)).set_visible(cx, false);
             item.view(id!(body)).set_visible(cx, true);
         }
     } else {
-       item.view(id!(body)).set_visible(cx, false);
+        item.view(id!(small_state_header)).set_visible(cx, false);
+        item.view(id!(body)).set_visible(cx, false);
     }
     println!("to_redraw: {:?} item_id: {} content_drawn_since_last_update:{:?}", to_redraw, item_id ,content_drawn_since_last_update);
     if !to_redraw.is_empty() && to_redraw.end > to_redraw.start {
