@@ -2096,17 +2096,15 @@ async fn update_room(
         }
 
         if let Some(new_room_name) = new_room_name {
-            // Always update the room name if it's not a placeholder.
-            // We can't reliably compare old vs new because old_room.room is a reference
-            // to the SDK's internal object which may have already been updated.
-            let should_update = !matches!(new_room_name, RoomDisplayName::Empty | RoomDisplayName::EmptyWas(_));
-
-            if should_update {
-                enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
-                    room_id: new_room_id.clone(),
-                    new_room_name,
-                });
-            }
+            // Always propagate the room name, even if it's an Empty/EmptyWas placeholder.
+            // Those placeholders bubble up whenever an invite hasn't loaded details yet,
+            // a tombstoned room hands you off to a successor, or a room name gets cleared
+            // (including joins performed from other clients). The UI needs the signal so it
+            // can fall back to aliases or default labels instead of showing a stale name.
+            enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
+                room_id: new_room_id.clone(),
+                new_room_name,
+            });
         }
 
         // We only update tags or unread count for joined rooms.
