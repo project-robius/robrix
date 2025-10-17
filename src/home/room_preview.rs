@@ -298,24 +298,26 @@ impl RoomPreviewContent {
     ) {
         use matrix_sdk::RoomDisplayName;
 
-        // Handle room name display, including Empty/EmptyWas placeholders
+        let fallback_name = || {
+            room_info.canonical_alias
+                .as_ref()
+                .map(|alias| alias.to_string())
+                .or_else(|| room_info.alt_aliases.first().map(|alias| alias.to_string()))
+                .unwrap_or_else(|| room_info.room_id.to_string())
+        };
+
+        // Handle room name display, including Empty placeholders
         let room_name_text = match &room_info.room_name {
             Some(name) => match name {
-                RoomDisplayName::Empty | RoomDisplayName::EmptyWas(_) => {
-                    // For Empty placeholders, try to use canonical alias or a default
-                    room_info.canonical_alias
-                        .as_ref()
-                        .map(|alias| alias.to_string())
-                        .unwrap_or_else(|| String::from("Room"))
+                RoomDisplayName::Empty => {
+                    // For Empty placeholders, fall back to aliases or room ID.
+                    fallback_name()
                 }
                 other => other.to_string(),
             },
             None => {
-                // For None (invited rooms that haven't loaded yet), use canonical alias or default
-                room_info.canonical_alias
-                    .as_ref()
-                    .map(|alias| alias.to_string())
-                    .unwrap_or_else(|| String::from("Room"))
+                // For None (invited rooms that haven't loaded yet), fall back to aliases or room ID.
+                fallback_name()
             }
         };
         self.view.label(id!(room_name)).set_text(cx, &room_name_text);

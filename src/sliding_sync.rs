@@ -2101,6 +2101,11 @@ async fn update_room(
             // a tombstoned room hands you off to a successor, or a room name gets cleared
             // (including joins performed from other clients). The UI needs the signal so it
             // can fall back to aliases or default labels instead of showing a stale name.
+            //
+            // NOTE: we intentionally skip comparing against `old_room.room.cached_display_name()`
+            // here. `old_room.room` is a live reference to the SDK's internal room object, so by
+            // the time this function runs that cache has already been updated to the new name.
+            // Comparing the two would always report “no change” and suppress legitimate updates.
             enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                 room_id: new_room_id.clone(),
                 new_room_name,
