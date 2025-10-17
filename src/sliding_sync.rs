@@ -2857,22 +2857,19 @@ fn update_latest_event(
                     }
                 }
                 // Check for room tombstone status changes.
-                AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content: _, prev_content: _ }) => {
+                AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content, prev_content: _ }) => {
+                    // Inform the RoomsList that this room is now tombstoned.
                     enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room_id.clone()});
-                    if let (Some(sender), Some(room)) = (
-                        timeline_update_sender,
-                        get_client()
-                            .unwrap()
-                            .get_room(&room_id)
-                            .and_then(|room| room.successor_room()),
-                    ) {
-                        match sender.send(TimelineUpdate::Tombstoned(Some(room))) {
-                            Ok(_) => {
-                                SignalToUI::set_ui_signal();
-                            }
-                            Err(e) => {
-                                error!("Failed to send the new Tombstone event: {e}");
-                            }
+                    // Also, send the tombstoned room's RoomScreen an update about its new successor room.
+                    if let Some(sender) = timeline_update_sender {
+                        let reason = content.body.trim();
+                        let successor_room = SuccessorRoom {
+                            room_id: content.replacement_room.clone(),
+                            reason: reason.is_empty().not().then(|| reason.to_string()),
+                        };
+                        match sender.send(TimelineUpdate::Tombstoned(Some(successor_room))) {
+                            Ok(_) => SignalToUI::set_ui_signal(),
+                            Err(e) => error!("Failed to send the new Tombstone event: {e}"),
                         }
                     }
                 }
