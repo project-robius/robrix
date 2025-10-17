@@ -1670,6 +1670,7 @@ struct RoomListServiceRoomInfo {
     room: matrix_sdk::Room,
     room_id: OwnedRoomId,
     room_state: RoomState,
+    room_display_name: Option<RoomDisplayName>,
 }
 impl From<&matrix_sdk::Room> for RoomListServiceRoomInfo {
     fn from(room: &matrix_sdk::Room) -> Self {
@@ -1681,6 +1682,7 @@ impl From<matrix_sdk::Room> for RoomListServiceRoomInfo {
         Self {
             room_id: room.room_id().to_owned(),
             room_state: room.state(),
+            room_display_name: room.cached_display_name(),
             room,
         }
     }
@@ -2096,20 +2098,15 @@ async fn update_room(
         }
 
         if let Some(new_room_name) = new_room_name {
-            // Always propagate the room name, even if it's an Empty/EmptyWas placeholder.
-            // Those placeholders bubble up whenever an invite hasn't loaded details yet,
-            // a tombstoned room hands you off to a successor, or a room name gets cleared
-            // (including joins performed from other clients). The UI needs the signal so it
-            // can fall back to aliases or default labels instead of showing a stale name.
-            //
-            // NOTE: we intentionally skip comparing against `old_room.room.cached_display_name()`
-            // here. `old_room.room` is a live reference to the SDK's internal room object, so by
-            // the time this function runs that cache has already been updated to the new name.
-            // Comparing the two would always report “no change” and suppress legitimate updates.
-            enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
-                room_id: new_room_id.clone(),
-                new_room_name,
-            });
+            // Compare with the cached name we store in `RoomListServiceRoomInfo`. We cannot
+            // rely on `old_room.room.cached_display_name()` because `old_room.room` points to
+            // the same SDK object that was just mutated, so its cache already reflects the new value.
+            if old_room.room_display_name.as_ref() != Some(&new_room_name) {
+                enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
+                    room_id: new_room_id.clone(),
+                    new_room_name,
+                });
+            }
         }
 
         // We only update tags or unread count for joined rooms.
