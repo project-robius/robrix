@@ -4280,39 +4280,12 @@ fn update_small_state_groups_for_item(
                         }
                     }
                 }
-                // if join_range.contains(&item_id) {
-                //     return (*is_open, false, false, Range::default()); // Continue creation group
-                // }
             }
         }
         creation_events_map.insert(user_event.sender.clone(), item_id..(item_id + 2));
         return (true, false, false, item_id..(item_id + 2)); // New creation group created
     }
-    
-    // if let Some((creation_event, creation_group_range, is_open)) = creation_event {
-    //     if user_event.sender == creation_event.sender && user_event.membership == Some("join".to_string()) {
-    //         println!("Continuing creation group: {:?} item_id: {}", creation_group_range, item_id);
-    //         if creation_group_range.start == item_id + 1 {
-    //             *creation_group_range = item_id..creation_group_range.end;
-    //             return (*is_open, false, false, Range::default()); // Continue creation group
-    //         }
-    //     }
-    //     if let Some(state_key) = &user_event.state_key {
-    //         println!("state_key: {}", state_key);
-    //         if state_key == &creation_event.sender {
-    //             println!("creation_group_range: {:?} item_id: {} small_state_groups: {:?}", creation_group_range, item_id, small_state_groups);
-    //             if creation_group_range.start == item_id + 1 {
-    //                 *creation_group_range = item_id..creation_group_range.end;
-    //                 return (*is_open, false, false, creation_group_range.clone()); // Continue creation group
-    //             }
-    //         }
-    //     }
-    // } else {
-    //     if user_event.event_type == "m.room.create" {
-    //         *creation_event = Some((user_event.clone(), item_id..(item_id + 2), true));
-    //         return (true, true, true, item_id..(item_id + 2)); // New creation group created
-    //     }
-    // }
+
     // Check if this item is already part of an existing group or can extend one
     for (range, is_open, user_events_map) in small_state_groups.iter_mut() {
         if range.start == item_id {
@@ -4617,9 +4590,6 @@ fn populate_small_state_event(
         small_state_groups,
         creation_event
     );
-    if item_id == 55 {
-        println!("populate_small_state_event: item_id: {} opened: {} show_collapsible_button: {} expanded: {} to_redraw: {:?} small_state_groups: {:?} creation_event: {:?}", item_id, opened, show_collapsible_button, expanded, to_redraw, small_state_groups, creation_event);
-    }
     //println!("populate_small_state_event: item_id: {}, opened: {}, show_collapsible_button: {} creation_event: {:?}", item_id, opened, show_collapsible_button, creation_event);
     // Only show the collapsible button on the first item of each group
     item.button(id!(collapsible_button))

@@ -1,8 +1,5 @@
 use std::collections::HashMap;
-use makepad_widgets::event;
-use matrix_sdk::crypto::types::events;
 use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, MsgLikeContent, MsgLikeKind, TimelineItemContent};
-use ruma::UserId;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TransitionType {
@@ -26,6 +23,57 @@ pub enum TransitionType {
     MessageRemoved,
     UnableToDecrypt,
     HiddenEvent,
+}
+
+impl TransitionType {
+    const fn as_str(self) -> &'static str {
+        match self {
+            TransitionType::CreateRoom => "CreateRoom",
+            TransitionType::Joined => "Joined",
+            TransitionType::Left => "Left",
+            TransitionType::JoinedAndLeft => "JoinedAndLeft",
+            TransitionType::LeftAndJoined => "LeftAndJoined",
+            TransitionType::InviteReject => "InviteReject",
+            TransitionType::InviteWithdrawal => "InviteWithdrawal",
+            TransitionType::Invited => "Invited",
+            TransitionType::Banned => "Banned",
+            TransitionType::Unbanned => "Unbanned",
+            TransitionType::Kicked => "Kicked",
+            TransitionType::ChangedName => "ChangedName",
+            TransitionType::ChangedAvatar => "ChangedAvatar",
+            TransitionType::NoChange => "NoChange",
+            TransitionType::ServerAcl => "ServerAcl",
+            TransitionType::ChangedPins => "ChangedPins",
+            TransitionType::MessageRemoved => "MessageRemoved",
+            TransitionType::UnableToDecrypt => "UnableToDecrypt",
+            TransitionType::HiddenEvent => "HiddenEvent",
+        }
+    }
+
+    fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "CreateRoom" => Some(TransitionType::CreateRoom),
+            "Joined" => Some(TransitionType::Joined),
+            "Left" => Some(TransitionType::Left),
+            "JoinedAndLeft" => Some(TransitionType::JoinedAndLeft),
+            "LeftAndJoined" => Some(TransitionType::LeftAndJoined),
+            "InviteReject" => Some(TransitionType::InviteReject),
+            "InviteWithdrawal" => Some(TransitionType::InviteWithdrawal),
+            "Invited" => Some(TransitionType::Invited),
+            "Banned" => Some(TransitionType::Banned),
+            "Unbanned" => Some(TransitionType::Unbanned),
+            "Kicked" => Some(TransitionType::Kicked),
+            "ChangedName" => Some(TransitionType::ChangedName),
+            "ChangedAvatar" => Some(TransitionType::ChangedAvatar),
+            "NoChange" => Some(TransitionType::NoChange),
+            "ServerAcl" => Some(TransitionType::ServerAcl),
+            "ChangedPins" => Some(TransitionType::ChangedPins),
+            "MessageRemoved" => Some(TransitionType::MessageRemoved),
+            "UnableToDecrypt" => Some(TransitionType::UnableToDecrypt),
+            "HiddenEvent" => Some(TransitionType::HiddenEvent),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -88,35 +136,38 @@ fn coalesce_repeated_transitions(transitions: &[TransitionType]) -> Vec<(Transit
 /// Determine the textual description for a transition
 fn describe_transition(t: TransitionType, user_count: usize, repeats: usize) -> String {
     let plural = user_count > 1;
-    let count_str = if repeats > 1 {
-        format!(" (×{})", repeats)
-    } else {
-        "".to_string()
-    };
     match t {
-        TransitionType::CreateRoom => format!("created and configured the room"),
+        TransitionType::CreateRoom => "created and configured the room".to_string(),
         TransitionType::Joined => {
-            if plural { format!("joined{}", count_str) } else { format!("joined the room{}", count_str) }
+            if repeats > 1 {
+                if plural { format!("joined (×{})", repeats) } else { format!("joined the room (×{})", repeats) }
+            } else {
+                if plural { "joined".to_string() } else { "joined the room".to_string() }
+            }
         }
         TransitionType::Left => {
-            if plural { format!("left{}", count_str) } else { format!("left the room{}", count_str) }
+            if repeats > 1 {
+                if plural { format!("left (×{})", repeats) } else { format!("left the room (×{})", repeats) }
+            } else {
+                if plural { "left".to_string() } else { "left the room".to_string() }
+            }
         }
-        TransitionType::JoinedAndLeft => format!("joined and left{}", count_str),
-        TransitionType::LeftAndJoined => format!("left and rejoined{}", count_str),
-        TransitionType::ChangedName => format!("changed their name{}", count_str),
-        TransitionType::ChangedAvatar => format!("changed their profile picture{}", count_str),
-        TransitionType::Invited => format!("was invited{}", count_str),
-        TransitionType::Banned => format!("was banned{}", count_str),
-        TransitionType::Unbanned => format!("was unbanned{}", count_str),
-        TransitionType::InviteReject => format!("rejected invite{}", count_str),
-        TransitionType::InviteWithdrawal => format!("invite withdrawn{}", count_str),
-        TransitionType::Kicked => format!("was kicked{}", count_str),
-        TransitionType::ServerAcl => format!("updated server ACLs{}", count_str),
-        TransitionType::ChangedPins => format!("changed pinned messages{}", count_str),
-        TransitionType::MessageRemoved => format!("removed a message{}", count_str),
-        TransitionType::HiddenEvent => format!("did a hidden event{}", count_str),
-        TransitionType::NoChange => format!("made no changes{}", count_str),
-        TransitionType::UnableToDecrypt => format!("decryption failed{}", count_str),
+        TransitionType::JoinedAndLeft => if repeats > 1 { format!("joined and left (×{})", repeats) } else { "joined and left".to_string() },
+        TransitionType::LeftAndJoined => if repeats > 1 { format!("left and rejoined (×{})", repeats) } else { "left and rejoined".to_string() },
+        TransitionType::ChangedName => if repeats > 1 { format!("changed their name (×{})", repeats) } else { "changed their name".to_string() },
+        TransitionType::ChangedAvatar => if repeats > 1 { format!("changed their profile picture (×{})", repeats) } else { "changed their profile picture".to_string() },
+        TransitionType::Invited => if repeats > 1 { format!("was invited (×{})", repeats) } else { "was invited".to_string() },
+        TransitionType::Banned => if repeats > 1 { format!("was banned (×{})", repeats) } else { "was banned".to_string() },
+        TransitionType::Unbanned => if repeats > 1 { format!("was unbanned (×{})", repeats) } else { "was unbanned".to_string() },
+        TransitionType::InviteReject => if repeats > 1 { format!("rejected invite (×{})", repeats) } else { "rejected invite".to_string() },
+        TransitionType::InviteWithdrawal => if repeats > 1 { format!("invite withdrawn (×{})", repeats) } else { "invite withdrawn".to_string() },
+        TransitionType::Kicked => if repeats > 1 { format!("was kicked (×{})", repeats) } else { "was kicked".to_string() },
+        TransitionType::ServerAcl => if repeats > 1 { format!("updated server ACLs (×{})", repeats) } else { "updated server ACLs".to_string() },
+        TransitionType::ChangedPins => if repeats > 1 { format!("changed pinned messages (×{})", repeats) } else { "changed pinned messages".to_string() },
+        TransitionType::MessageRemoved => if repeats > 1 { format!("removed a message (×{})", repeats) } else { "removed a message".to_string() },
+        TransitionType::HiddenEvent => if repeats > 1 { format!("did a hidden event (×{})", repeats) } else { "did a hidden event".to_string() },
+        TransitionType::NoChange => if repeats > 1 { format!("made no changes (×{})", repeats) } else { "made no changes".to_string() },
+        TransitionType::UnableToDecrypt => if repeats > 1 { format!("decryption failed (×{})", repeats) } else { "decryption failed".to_string() },
     }
 }
 
@@ -164,18 +215,18 @@ pub fn convert_to_timeline_event(event_item: EventTimelineItem, user_name: Strin
             }
         }
         _ => "unknown",
-    }.to_string();
+    };
 
     let (state_key, membership) = match event_item.content() {
         TimelineItemContent::MembershipChange(change) => {
             let state_key = Some(change.user_id().to_string());
             let membership = match change.change() {
-                Some(MembershipChange::Joined) => Some("join".to_string()),
-                Some(MembershipChange::Left) => Some("leave".to_string()),
-                Some(MembershipChange::Invited) => Some("invite".to_string()),
-                Some(MembershipChange::Banned) => Some("ban".to_string()),
+                Some(MembershipChange::Joined) => Some("join"),
+                Some(MembershipChange::Left) => Some("leave"),
+                Some(MembershipChange::Invited) => Some("invite"),
+                Some(MembershipChange::Banned) => Some("ban"),
                 _ => None,
-            };
+            }.map(|s| s.to_string());
             (state_key, membership)
         }
         TimelineItemContent::OtherState(other) => {
@@ -191,7 +242,7 @@ pub fn convert_to_timeline_event(event_item: EventTimelineItem, user_name: Strin
     UserEvent {
         index,
         display_name: display_name_from_state.unwrap_or(user_name),
-        event_type,
+        event_type: event_type.to_string(),
         transition: transistion_type,
         is_state: matches!(event_item.content(), 
             TimelineItemContent::MembershipChange(_) | 
@@ -273,13 +324,12 @@ pub fn append_user_event(user_event: UserEvent, user_events: &mut Vec<(String, V
     if let TransitionType::HiddenEvent = user_event.transition {
         return;
     }
-    let user_id_str = user_event.sender.to_string();
-    if let Some((_, events)) = user_events.iter_mut().find(|(id, _)| id == &user_id_str) {
+    if let Some((_, events)) = user_events.iter_mut().find(|(id, _)| id == &user_event.sender) {
         if events.iter().filter(|inner_user_event| inner_user_event.index == user_event.index).count() == 0 {
             events.push(user_event);
         }
     } else {
-        user_events.push((user_id_str, vec![user_event]));
+        user_events.push((user_event.sender.clone(), vec![user_event]));
     }
 }
 
@@ -329,7 +379,7 @@ pub fn generate_summary(
     summary_length: usize,
 ) -> String {
     // Aggregate by transition sequence
-    let mut aggregates: Vec<(String, Vec<String>)> = Vec::new();
+    let mut aggregates: Vec<(Vec<TransitionType>, Vec<String>)> = Vec::new();
     // Sort keys in ascending order for consistent iteration
     let mut sorted_keys: Vec<&usize> = user_events.keys().collect();
     sorted_keys.sort();
@@ -345,35 +395,17 @@ pub fn generate_summary(
             transitions.retain(|&t| t != TransitionType::Joined);
         }
         let canonical = canonicalize_transitions(&transitions);
-        let sequence_key = canonical.iter().map(|t| format!("{:?}", t)).collect::<Vec<_>>().join(",");
         let name = events.first().map(|e| e.display_name.clone()).unwrap_or(user_id.clone());
-        if let Some((_, names)) = aggregates.iter_mut().find(|(id, _)| id == &sequence_key) {
+        if let Some((_, names)) = aggregates.iter_mut().find(|(seq, _)| seq == &canonical) {
             names.push(name);
         } else {
-            aggregates.push((sequence_key.clone(), vec![name]));
+            aggregates.push((canonical, vec![name]));
         }
     }
     println!("Aggregates: {:?}", aggregates);
     // Build text
     let mut summary_parts = Vec::new();
-    for (seq, names) in aggregates {
-        let transitions: Vec<_> = seq
-            .split(',')
-            .filter_map(|s| match s.trim() {
-                "CreateRoom" => Some(TransitionType::CreateRoom),
-                "Joined" => Some(TransitionType::Joined),
-                "Left" => Some(TransitionType::Left),
-                "JoinedAndLeft" => Some(TransitionType::JoinedAndLeft),
-                "LeftAndJoined" => Some(TransitionType::LeftAndJoined),
-                "ChangedName" => Some(TransitionType::ChangedName),
-                "ChangedAvatar" => Some(TransitionType::ChangedAvatar),
-                "Invited" => Some(TransitionType::Invited),
-                "UnableToDecrypt" => Some(TransitionType::UnableToDecrypt),
-                _ => None,
-            })
-            .collect();
-
-        let canonical = canonicalize_transitions(&transitions);
+    for (canonical, names) in aggregates {
         let coalesced = coalesce_repeated_transitions(&canonical);
 
         let descs: Vec<String> = coalesced
