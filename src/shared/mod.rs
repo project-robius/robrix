@@ -7,6 +7,7 @@ pub mod confirmation_modal;
 pub mod helpers;
 pub mod html_or_plaintext;
 pub mod icon_button;
+pub mod image_viewer_modal;
 pub mod jump_to_bottom_button;
 pub mod mentionable_text_input;
 pub mod popup_list;
@@ -31,6 +32,7 @@ pub fn live_design(cx: &mut Cx) {
     room_filter_input_bar::live_design(cx);
     avatar::live_design(cx);
     text_or_image::live_design(cx);
+    image_viewer_modal::live_design(cx);
     html_or_plaintext::live_design(cx);
     bouncing_dots::live_design(cx);
     jump_to_bottom_button::live_design(cx);
