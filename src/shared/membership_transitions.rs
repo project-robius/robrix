@@ -26,7 +26,7 @@ pub enum TransitionType {
 }
 
 impl TransitionType {
-    const fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             TransitionType::CreateRoom => "CreateRoom",
             TransitionType::Joined => "Joined",
@@ -50,7 +50,7 @@ impl TransitionType {
         }
     }
 
-    fn from_str(s: &str) -> Option<Self> {
+    pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "CreateRoom" => Some(TransitionType::CreateRoom),
             "Joined" => Some(TransitionType::Joined),
@@ -237,11 +237,11 @@ pub fn convert_to_timeline_event(event_item: EventTimelineItem, user_name: Strin
         }
         _ => (None, None),
     };
-    let (_, transistion_type, _, display_name_from_state) = is_small_state_event(&event_item);
+    let (_, transistion_type, _, _display_name_from_state) = is_small_state_event(&event_item);
     //println!("state_key: {:?}, membership: {:?}, transistion_type: {:?}, event_type: {}", state_key, membership, transistion_type, event_type);
     UserEvent {
         index,
-        display_name: display_name_from_state.unwrap_or(user_name),
+        display_name: user_name,
         event_type: event_type.to_string(),
         transition: transistion_type,
         is_state: matches!(event_item.content(), 
