@@ -13,7 +13,7 @@ use matrix_sdk::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
         }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState, SuccessorRoom
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
 };
 use matrix_sdk_ui::{
     room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RoomExt, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
@@ -1670,6 +1670,7 @@ struct RoomListServiceRoomInfo {
     room: matrix_sdk::Room,
     room_id: OwnedRoomId,
     room_state: RoomState,
+    room_display_name: Option<RoomDisplayName>,
 }
 impl From<&matrix_sdk::Room> for RoomListServiceRoomInfo {
     fn from(room: &matrix_sdk::Room) -> Self {
@@ -1681,6 +1682,7 @@ impl From<matrix_sdk::Room> for RoomListServiceRoomInfo {
         Self {
             room_id: room.room_id().to_owned(),
             room_state: room.state(),
+            room_display_name: room.cached_display_name(),
             room,
         }
     }
@@ -2021,7 +2023,7 @@ async fn update_room(
 ) -> Result<()> {
     let new_room_id = new_room.room_id().to_owned();
     if old_room.room_id == new_room_id {
-        let new_room_name = new_room.display_name().await.map(|n| n.to_string()).ok();
+        let new_room_name = new_room.display_name().await.ok();
         let mut room_avatar_changed = false;
 
         // Handle state transitions for a room.
@@ -2096,8 +2098,10 @@ async fn update_room(
         }
 
         if let Some(new_room_name) = new_room_name {
-            if old_room.room.cached_display_name().map(|room_name| room_name.to_string()).as_ref() != Some(&new_room_name) {
-                log!("Updating room name for room {} to {}", new_room_id, new_room_name);
+            // Compare with the cached name we store in `RoomListServiceRoomInfo`. We cannot
+            // rely on `old_room.room.cached_display_name()` because `old_room.room` points to
+            // the same SDK object that was just mutated, so its cache already reflects the new value.
+            if old_room.room_display_name.as_ref() != Some(&new_room_name) {
                 enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                     room_id: new_room_id.clone(),
                     new_room_name,
@@ -2150,7 +2154,7 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
 async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListService) -> Result<()> {
     let room_id = room.room_id().to_owned();
     // We must call `display_name()` here to calculate and cache the room's name.
-    let room_name = room.display_name().await.map(|n| n.to_string()).ok();
+    let room_name = room.display_name().await.ok();
 
     let is_direct = room.is_direct().await.unwrap_or(false);
 
@@ -2188,7 +2192,10 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
             let latest = latest_event.as_ref().map(
                 |ev| get_latest_event_details(ev, &room_id)
             );
-            let room_avatar = room_avatar(room, room_name.as_deref()).await;
+            let room_avatar = room_avatar(room, room_name.as_ref().map(|n| n.to_string()).as_deref()).await;
+
+            // Subscribe to this invited room to receive state updates (like room name changes)
+            room_list_service.subscribe_to_rooms(&[&room_id]).await;
 
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
                 Some(InviterInfo {
@@ -2270,7 +2277,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
         num_unread_messages: room.num_unread_messages(),
         num_unread_mentions: room.num_unread_mentions(),
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
-        avatar: avatar_from_room_name(room_name.as_deref()),
+        avatar: avatar_from_room_name(room_name.as_ref().map(|n| n.to_string()).as_deref()),
         room_name,
         canonical_alias: room.canonical_alias(),
         alt_aliases: room.alt_aliases(),
@@ -2830,7 +2837,7 @@ fn update_latest_event(
                 AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
                     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                         room_id: room_id.clone(),
-                        new_room_name: content.name.clone(),
+                        new_room_name: RoomDisplayName::Named(content.name.clone()),
                     });
                 }
                 // Check for room avatar changes.

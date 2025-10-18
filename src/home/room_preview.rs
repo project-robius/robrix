@@ -296,9 +296,20 @@ impl RoomPreviewContent {
         cx: &mut Cx,
         room_info: &JoinedRoomInfo,
     ) {
-        if let Some(ref name) = room_info.room_name {
-            self.view.label(id!(room_name)).set_text(cx, name);
-        }
+        use matrix_sdk::RoomDisplayName;
+
+        // Handle room name display, including Empty placeholders.
+        let room_name_text = match &room_info.room_name {
+            Some(RoomDisplayName::Empty) | None => {
+                room_info.canonical_alias
+                    .as_ref()
+                    .map(|alias| alias.to_string())
+                    .or_else(|| room_info.alt_aliases.first().map(|alias| alias.to_string()))
+                    .unwrap_or_else(|| room_info.room_id.to_string())
+            }
+            Some(name) => name.to_string(),
+        };
+        self.view.label(id!(room_name)).set_text(cx, &room_name_text);
         if let Some((ts, msg)) = room_info.latest.as_ref() {
             if let Some(human_readable_date) = relative_format(*ts) {
                 self.view
@@ -326,8 +337,9 @@ impl RoomPreviewContent {
     ) {
         self.view.label(id!(room_name)).set_text(
             cx,
-            room_info.room_name.as_deref()
-                .unwrap_or("Invite to unnamed room"),
+            &room_info.room_name.as_ref()
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| String::from("Invite to unnamed room")),
         );
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(id!(timestamp)).set_text(cx, "");
