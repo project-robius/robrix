@@ -3,7 +3,7 @@
 //!
 use crate::avatar_cache::*;
 use crate::shared::avatar::AvatarWidgetRefExt;
-use crate::shared::typing_animation::TypingAnimationWidgetRefExt;
+use crate::shared::bouncing_dots::BouncingDotsWidgetRefExt;
 use crate::shared::styles::COLOR_UNKNOWN_ROOM_AVATAR;
 use crate::utils;
 
@@ -27,7 +27,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::avatar::Avatar;
     use crate::shared::helpers::FillerX;
-    use crate::shared::typing_animation::TypingAnimation;
+    use crate::shared::bouncing_dots::BouncingDots;
 
     pub FOCUS_HOVER_COLOR = #C
     pub KEYBOARD_FOCUS_OR_COLOR_HOVER = #1C274C
@@ -192,7 +192,7 @@ live_design! {
             text: "Loading members"
         }
 
-        loading_animation = <TypingAnimation> {
+        loading_animation = <BouncingDots> {
             width: 60,
             height: 24,
             draw_bg: {
@@ -336,7 +336,7 @@ impl Widget for MentionableTextInput {
         // Best practice: Always check Scope first to get current context
         // Scope represents the current widget context as passed down from parents
         let scope_room_id = scope.props.get::<RoomScreenProps>()
-            .expect("RoomScreenProps should be available in scope for MentionableTextInput")
+            .expect("BUG: RoomScreenProps should be available in Scope::props for MentionableTextInput")
             .room_id
             .clone();
 
@@ -1004,7 +1004,7 @@ impl MentionableTextInput {
         let loading_item = WidgetRef::new_from_ptr(cx, Some(ptr));
 
         // Start the loading animation
-        loading_item.typing_animation(id!(loading_animation)).start_animation(cx);
+        loading_item.bouncing_dots(id!(loading_animation)).start_animation(cx);
 
         // Add the loading indicator to the popup
         self.cmd_text_input.add_item(loading_item);

@@ -5,7 +5,7 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{home::invite_screen::{InviteDetails, JoinRoomAction, LeaveRoomAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
+use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
 
 live_design! {
     use link::theme::*;
@@ -184,10 +184,15 @@ impl JoinLeaveModalKind {
 }
 
 /// Actions handled by the parent widget of the [`JoinLeaveRoomModal`].
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Debug)]
 pub enum JoinLeaveRoomModalAction {
     /// The modal should be opened by its parent widget.
-    Open(JoinLeaveModalKind),
+    Open {
+        /// The kind of action to be performed.
+        kind: JoinLeaveModalKind,
+        /// Whether to show the tip about holding Shift to bypass the prompt.
+        show_tip: bool,
+    },
     /// The modal requested its parent widget to close.
     Close {
         /// `True` if the modal was closed after a successful join/leave action.
@@ -196,7 +201,6 @@ pub enum JoinLeaveRoomModalAction {
         /// Whether the modal was dismissed by the user clicking an internal button.
         was_internal: bool,
     },
-    None,
 }
 
 
@@ -293,7 +297,6 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                 self.view.label(id!(title)).set_text(cx, title);
                 self.view.label(id!(description)).set_text(cx, &description);
                 self.view.view(id!(tip_view)).set_visible(cx, false);
-                self.view.label(id!(tip)).set_text(cx, "");
                 accept_button.set_text(cx, accept_button_text);
                 accept_button.set_enabled(cx, false);
                 needs_redraw = true;
@@ -302,7 +305,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
 
         for action in actions {
             match action.downcast_ref() {
-                Some(JoinRoomAction::Joined { room_id }) if room_id == kind.room_id() => {
+                Some(JoinRoomResultAction::Joined { room_id }) if room_id == kind.room_id() => {
                     enqueue_popup_notification(PopupItem {
                         message: "Successfully joined room.".into(),
                         kind: PopupKind::Success,
@@ -319,7 +322,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     self.final_success = Some(true);
                     needs_redraw = true;
                 }
-                Some(JoinRoomAction::Failed { room_id, error }) if room_id == kind.room_id() => {
+                Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == kind.room_id() => {
                     self.view.label(id!(title)).set_text(cx, "Error joining room!");
                     let was_invite = matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_));
                     let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, was_invite);
@@ -338,7 +341,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                 _ => {}
             }
             match action.downcast_ref() {
-                Some(LeaveRoomAction::Left { room_id }) if room_id == kind.room_id() => {
+                Some(LeaveRoomResultAction::Left { room_id }) if room_id == kind.room_id() => {
                     let title: &str;
                     let description: String;
                     let popup_msg: String;
@@ -369,7 +372,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     self.final_success = Some(true);
                     needs_redraw = true;
                 }
-                Some(LeaveRoomAction::Failed { room_id, error }) if room_id == kind.room_id() => {
+                Some(LeaveRoomResultAction::Failed { room_id, error }) if room_id == kind.room_id() => {
                     let title: &str;
                     let description: String;
                     let popup_msg: String;
@@ -415,6 +418,7 @@ impl JoinLeaveRoomModal {
         &mut self,
         cx: &mut Cx,
         kind: JoinLeaveModalKind,
+        show_tip: bool,
     ) {
         log!("Showing JoinLeaveRoomModal for {kind:?}");
         let title: &str;
@@ -462,10 +466,14 @@ impl JoinLeaveRoomModal {
 
         self.view.label(id!(title)).set_text(cx, title);
         self.view.label(id!(description)).set_text(cx, &description);
-        self.view.view(id!(tip_view)).set_visible(cx, true);
-        self.view.label(id!(tip)).set_text(cx, &format!(
-            "Tip: hold Shift when clicking the \"{tip_button}\" button to bypass this prompt.",
-        ));
+        if show_tip {
+            self.view.view(id!(tip_view)).set_visible(cx, true);
+            self.view.label(id!(tip)).set_text(cx, &format!(
+                "Tip: hold Shift when clicking the \"{tip_button}\" button to bypass this prompt.",
+            ));
+        } else {
+            self.view.view(id!(tip_view)).set_visible(cx, false);
+        }
 
         let accept_button = self.button(id!(accept_button));
         let cancel_button = self.button(id!(cancel_button));
@@ -484,13 +492,15 @@ impl JoinLeaveRoomModal {
 }
 
 impl JoinLeaveRoomModalRef {
+    /// Sets the details of this join/leave modal.
     pub fn set_kind(
         &self,
         cx: &mut Cx,
         kind: JoinLeaveModalKind,
+        show_tip: bool,
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_kind(cx, kind);
+            inner.set_kind(cx, kind, show_tip);
         }
     }
 }

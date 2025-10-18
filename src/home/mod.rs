@@ -4,7 +4,8 @@ pub mod edited_indicator;
 pub mod editing_pane;
 pub mod home_screen;
 pub mod invite_screen;
-pub mod light_themed_dock;  
+pub mod light_themed_dock;
+pub mod tombstone_footer;
 pub mod loading_pane;
 pub mod location_preview;
 pub mod main_desktop_ui;
@@ -19,6 +20,7 @@ pub mod spaces_dock;
 pub mod welcome_screen;
 pub mod event_reaction_list;
 pub mod new_message_context_menu;
+pub mod link_preview;
 
 pub fn live_design(cx: &mut Cx) {
     home_screen::live_design(cx);
@@ -31,6 +33,7 @@ pub fn live_design(cx: &mut Cx) {
     editing_pane::live_design(cx);
     new_message_context_menu::live_design(cx);
     invite_screen::live_design(cx);
+    tombstone_footer::live_design(cx);
     room_screen::live_design(cx);
     room_read_receipt::live_design(cx);
     rooms_sidebar::live_design(cx);
@@ -40,4 +43,5 @@ pub fn live_design(cx: &mut Cx) {
     welcome_screen::live_design(cx);
     light_themed_dock::live_design(cx);
     event_reaction_list::live_design(cx);
+    link_preview::live_design(cx);
 }

@@ -15,7 +15,7 @@ pub mod room_filter_input_bar;
 pub mod styles;
 pub mod text_or_image;
 pub mod timestamp;
-pub mod typing_animation;
+pub mod bouncing_dots;
 pub mod unread_badge;
 pub mod verification_badge;
 pub mod restore_status_view;
@@ -34,7 +34,7 @@ pub fn live_design(cx: &mut Cx) {
     text_or_image::live_design(cx);
     image_viewer_modal::live_design(cx);
     html_or_plaintext::live_design(cx);
-    typing_animation::live_design(cx);
+    bouncing_dots::live_design(cx);
     jump_to_bottom_button::live_design(cx);
     popup_list::live_design(cx);
     verification_badge::live_design(cx);

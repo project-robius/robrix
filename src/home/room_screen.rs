@@ -7,42 +7,43 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    media::MediaFormat, room::{reply::{EnforceThread, Reply}, RoomMember}, ruma::{
+    media::MediaFormat, room::RoomMember, ruma::{
         events::{
             receipt::Receipt,
             room::{
                 message::{
-                    AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent
+                    AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
                 },
                 ImageInfo, MediaSource
             },
             sticker::{StickerEventContent, StickerMediaSource},
         },
         matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
-    }, OwnedServerName
+    }, OwnedServerName, SuccessorRoom
 };
 use matrix_sdk_ui::timeline::{
-    self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, editing_pane::EditingPaneState, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, location::init_location_subscriber, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
-    }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer_modal::{get_global_image_viewer_modal, handle_media_cache_entry, initialize_image_modal_with_uri, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+    },
+    room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
+    shared::{
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer_modal::{get_global_image_viewer_modal, handle_media_cache_entry, initialize_image_modal_with_uri, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+    },
+    sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
-use crate::shared::mentionable_text_input::{MentionableTextInputWidgetRefExt, MentionableTextInputAction};
+use crate::shared::mentionable_text_input::MentionableTextInputAction;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, location_preview::LocationPreviewWidgetExt, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
-
-const GEO_URI_SCHEME: &str = "geo:";
+use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 /// The maximum number of timeline items to search through
 /// when looking for a particular event.
@@ -67,142 +68,25 @@ live_design! {
     use crate::shared::timestamp::*;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::icon_button::*;
-    use crate::shared::typing_animation::TypingAnimation;
-    use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
     use crate::profile::user_profile::UserProfileSlidingPane;
     use crate::home::edited_indicator::*;
-    use crate::home::editing_pane::*;
     use crate::home::event_reaction_list::*;
     use crate::home::loading_pane::*;
-    use crate::home::location_preview::*;
     use crate::room::room_input_bar::*;
+    use crate::room::reply_preview::RepliedToMessage;
+    use crate::room::typing_notice::*;
     use crate::home::room_read_receipt::*;
     use crate::rooms_list::*;
     use crate::shared::restore_status_view::*;
+    use crate::home::link_preview::LinkPreview;
     use link::tsp_link::TspSignIndicator;
-
-    IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
-
-    ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
 
     COLOR_BG = #xfff8ee
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
 
-    TYPING_NOTICE_ANIMATION_DURATION = 0.3
-
-    CAN_NOT_SEND_NOTICE = "You don't have permission to post to this room."
-
     REACTION_TEXT_COLOR = #4c00b0
-
-    // The content of a reply preview, which shows a small preview
-    // of a message that was replied to.
-    //
-    // This is used in both the `RepliedToMessage` and `ReplyPreview` views.
-    ReplyPreviewContent = <View> {
-        width: Fill
-        height: Fit
-        flow: Down
-        padding: {left: 10.0, bottom: 5.0, top: 5.0}
-
-        <View> {
-            width: Fill
-            height: Fit
-            flow: Right
-            margin: { bottom: 10.0, top: 0.0, right: 5.0 }
-            align: {y: 0.5}
-
-            reply_preview_avatar = <Avatar> {
-                width: 19.,
-                height: 19.,
-                text_view = { text = { draw_text: {
-                    text_style: { font_size: 6.0 }
-                }}}
-            }
-
-            reply_preview_username = <Label> {
-                width: Fill,
-                flow: Right, // do not wrap
-                margin: { left: 5.0 }
-                draw_text: {
-                    text_style: <USERNAME_TEXT_STYLE> { font_size: 10 },
-                    color: (USERNAME_TEXT_COLOR)
-                    wrap: Ellipsis,
-                }
-                text: "<Username not available>"
-            }
-        }
-
-        reply_preview_body = <HtmlOrPlaintext> {
-            margin: {left: 1.5}
-            html_view = { html = {
-                font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
-                    draw_normal:      { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
-                    draw_italic:      { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
-                    draw_bold:        { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
-                    draw_bold_italic: { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
-                    draw_fixed:       { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
-                    // a = { draw_text:  { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } } },
-            } }
-            plaintext_view = { pt_label = {
-                draw_text: {
-                    text_style: <MESSAGE_TEXT_STYLE> { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) },
-                }
-            } }
-        }
-    }
-
-    // A small inline preview of a message that was replied to by another message
-    // within the room timeline.
-    // That is, this view contains a preview of the earlier message
-    // that is shown above the "in-reply-to" message.
-    RepliedToMessage = <View> {
-        visible: false
-        width: Fill
-        height: Fit
-        flow: Down
-
-        padding: {top: 0.0, right: 12.0, bottom: 0.0, left: 12.0}
-
-        // A reply preview with a vertical bar drawn in the background.
-        replied_to_message_content = <ReplyPreviewContent> {
-            cursor: Hand
-            show_bg: true
-            draw_bg: {
-                instance vertical_bar_color: (USERNAME_TEXT_COLOR)
-                instance vertical_bar_width: 2.0
-                instance border_radius: 0.0
-
-                fn get_color(self) -> vec4 {
-                    return self.color;
-                }
-
-                fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-
-                    sdf.box(
-                        0.0,
-                        0.0,
-                        self.rect_size.x,
-                        self.rect_size.y,
-                        max(1.0, self.border_radius)
-                    );
-                    sdf.fill(self.get_color());
-
-                    sdf.rect(
-                        0.0,
-                        0.0,
-                        self.vertical_bar_width,
-                        self.rect_size.y
-                    );
-                    sdf.fill(self.vertical_bar_color);
-
-                    return sdf.result;
-                }
-            }
-        }
-    }
 
 
     // An empty view that takes up no space in the portal list.
@@ -341,6 +225,7 @@ live_design! {
                 }
 
                 message = <HtmlOrPlaintext> { }
+                link_preview_view = <LinkPreview> {}
 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
@@ -385,6 +270,7 @@ live_design! {
                 padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
+                link_preview_view = <LinkPreview> {}
                 <View> {
                     width: Fill,
                     height: Fit
@@ -607,8 +493,8 @@ live_design! {
             }
             
             restore_status_view = <RestoreStatusView> {}
-            
 
+            // Widgets within this view will get shifted upwards when the on-screen keyboard is shown.
             keyboard_view = <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
@@ -617,129 +503,9 @@ live_design! {
                 timeline = <Timeline> {}
 
                 // Below that, display a typing notice when other users in the room are typing.
-                typing_notice = <View> {
-                    visible: false
-                    width: Fill
-                    height: 30
-                    flow: Right
-                    padding: {left: 12.0, top: 8.0, bottom: 8.0, right: 10.0}
-                    show_bg: true,
-                    draw_bg: {
-                        color: #e8f4ff,
-                    }
+                typing_notice = <TypingNotice> { }
 
-                    typing_label = <Label> {
-                        align: {x: 0.0, y: 0.5},
-                        padding: {left: 5.0, right: 0.0, top: 0.0, bottom: 0.0}
-                        draw_text: {
-                            color: (TYPING_NOTICE_TEXT_COLOR),
-                            text_style: <REGULAR_TEXT>{font_size: 9}
-                        }
-                        text: "Someone is typing"
-                    }
-
-                    typing_animation = <TypingAnimation> {
-                        margin: {top: 1.1, left: -4 }
-                        padding: 0.0,
-                        draw_bg: {
-                            color: (TYPING_NOTICE_TEXT_COLOR),
-                        }
-                    }
-                }
-
-                // Below that, display an optional preview of the message that the user
-                // is currently drafting a replied to.
-                replying_preview = <View> {
-                    visible: false
-                    width: Fill
-                    height: Fit
-                    flow: Down
-                    padding: {left: 20, right: 20}
-
-                    // Displays a "Replying to" label and a cancel button
-                    // above the preview of the message being replied to.
-                    <View> {
-                        width: Fill
-                        height: Fit
-                        flow: Right
-                        align: {y: 0.5}
-                        padding: {left: 10, right: 5, top: 10, bottom: 10}
-
-                        <Label> {
-                            width: Fill,
-                            flow: Right, // do not wrap
-                            draw_text: {
-                                text_style: <USERNAME_TEXT_STYLE> {},
-                                color: #222,
-                                wrap: Ellipsis,
-                            }
-                            text: "Replying to:"
-                        }
-
-                        cancel_reply_button = <RobrixIconButton> {
-                            width: Fit,
-                            height: Fit,
-                            padding: 13,
-                            spacing: 0,
-                            margin: {left: 5, right: 5},
-
-                            draw_bg: {
-                                border_color: (COLOR_FG_DANGER_RED),
-                                color: (COLOR_BG_DANGER_RED)
-                                border_radius: 5
-                            }
-                            draw_icon: {
-                                svg_file: (ICON_CLOSE),
-                                color: (COLOR_FG_DANGER_RED)
-                            }
-                            icon_walk: {width: 16, height: 16, margin: 0}
-                        }
-                    }
-
-                    <LineH> {
-                        margin: {bottom: 5.0}
-                    }
-
-                    reply_preview_content = <ReplyPreviewContent> { }
-                }
-
-                // Below that, display a preview of the current location that a user is about to send.
-                location_preview = <LocationPreview> { }
-
-                // Below that, display one of multiple possible views:
-                // * the message input bar
-                // * the slide-up editing pane
-                // * a notice that the user can't send messages to this room
-                <View> {
-                    width: Fill, height: Fit,
-                    flow: Overlay,
-
-                    // Below that, display a view that holds the message input bar and send button.
-                    input_bar = <RoomInputBar> {}
-
-                    can_not_send_message_notice = <View> {
-                        visible: false
-                        show_bg: true
-                        draw_bg: {
-                            color: (COLOR_SECONDARY)
-                        }
-                        padding: {left: 50, right: 50, top: 20, bottom: 20}
-                        align: {y: 0.5}
-                        width: Fill, height: Fit
-
-                        text = <Label> {
-                            width: Fill,
-                            draw_text: {
-                                color: (COLOR_TEXT)
-                                text_style: <THEME_FONT_ITALIC>{font_size: 12.2}
-                                wrap: Word,
-                            }
-                            text: (CAN_NOT_SEND_NOTICE)
-                        }
-                    }
-
-                    editing_pane = <EditingPane> { }
-                }
+                room_input_bar = <RoomInputBar> { }
             }
 
             // Note: here, we're within a View that has an Overlay flow,
@@ -776,22 +542,6 @@ live_design! {
             }
             */
         }
-
-        animator: {
-            typing_notice_animator = {
-                default: show,
-                show = {
-                    redraw: true,
-                    from: { all: Forward { duration: (TYPING_NOTICE_ANIMATION_DURATION) } }
-                    apply: { room_screen_wrapper = { keyboard_view = { typing_notice = { height: 30 } } } }
-                }
-                hide = {
-                    redraw: true,
-                    from: { all: Forward { duration: (TYPING_NOTICE_ANIMATION_DURATION) } }
-                    apply: { room_screen_wrapper = { keyboard_view = { typing_notice = { height: 0 } } } }
-                }
-            }
-        }
     }
 }
 
@@ -799,7 +549,6 @@ live_design! {
 #[derive(Live, Widget)]
 pub struct RoomScreen {
     #[deref] view: View,
-    #[animator] animator: Animator,
 
     /// The room ID of the currently-shown room.
     #[rust] room_id: Option<OwnedRoomId>,
@@ -843,35 +592,11 @@ impl Widget for RoomScreen {
         let user_profile_sliding_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(id!(loading_pane));
 
-        // Currently, a Signal event is only used to tell this widget:
-        // 1. to check if the room has been loaded from the homeserver yet, or
-        // 2. that its timeline events have been updated in the background.
-        if let Event::Signal = event {
-            if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
-                let rooms_list_ref = cx.get_global::<RoomsListRef>();
-                if rooms_list_ref.is_room_loaded(room_id) {
-                    let same_room_id = room_id.clone();
-                    // This room has been loaded now, so we call `set_displayed_room()`
-                    // to fully display it. That function does nothing if the room_id is unchanged,
-                    // so we clear it first.
-                    self.room_id = None;
-                    self.set_displayed_room(cx, same_room_id, self.room_name.clone());
-                } else {
-                    self.all_rooms_loaded = rooms_list_ref.all_known_rooms_loaded();
-                    return;
-                }
-            }
-
-            self.process_timeline_updates(cx, &portal_list);
-
-            // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
-            // but it doesn't hurt to do it here.
-            // TODO: move this up a layer to something higher in the UI tree,
-            //       and wrap it in a `if let Event::Signal` conditional.
-            user_profile_cache::process_user_profile_updates(cx);
-            avatar_cache::process_avatar_updates(cx);
-        }
-
+        // Handle actions here before processing timeline updates.
+        // Normally (in most other widgets), the order of event handling doesn't matter much.
+        // However, since actions may refer to a specific timeline item's index,
+        // we want to handle those before processing any updates that might change
+        // the set of timeline indices (which would invalidate the index values in any actions).
         if let Event::Actions(actions) = event {
             for (_, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
@@ -889,7 +614,7 @@ impl Widget for RoomScreen {
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.reaction));
                     cx.widget_action(
-                        self.widget_uid(),
+                        room_screen_widget_uid,
                         &scope.path,
                         TooltipAction::HoverIn {
                             widget_rect,
@@ -901,7 +626,7 @@ impl Widget for RoomScreen {
                 }
                 if reaction_list.hover_out(actions) {
                     cx.widget_action(
-                        self.widget_uid(),
+                        room_screen_widget_uid,
                         &scope.path,
                         TooltipAction::HoverOut
                     );
@@ -915,7 +640,7 @@ impl Widget for RoomScreen {
                     let Some(room_id) = &self.room_id else { return; };
                     let tooltip_text= room_read_receipt::populate_tooltip(cx, read_receipts, room_id);
                     cx.widget_action(
-                        self.widget_uid(),
+                        room_screen_widget_uid,
                         &scope.path,
                         TooltipAction::HoverIn {
                             widget_rect,
@@ -927,7 +652,7 @@ impl Widget for RoomScreen {
                 }
                 if avatar_row_ref.hover_out(actions) {
                     cx.widget_action(
-                        self.widget_uid(),
+                        room_screen_widget_uid,
                         &scope.path,
                         TooltipAction::HoverOut
                     );
@@ -935,10 +660,6 @@ impl Widget for RoomScreen {
             }
 
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
-
-            let room_input_bar = self.view.room_input_bar(id!(input_bar));
-            let message_input = room_input_bar.mentionable_text_input(id!(message_input));
-            let text_input = message_input.text_input_ref();
 
             for action in actions {
                 // Handle actions related to restoring the previously-saved state of rooms.
@@ -1004,141 +725,41 @@ impl Widget for RoomScreen {
             // Handle sending any read receipts for the current logged-in user.
             self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
 
-            // Clear the replying-to preview pane if the "cancel reply" button was clicked
-            // or if the `Escape` key was pressed within the message input box.
-            if self.button(id!(cancel_reply_button)).clicked(actions)
-                || text_input.escaped(actions)
-            {
-                self.clear_replying_to(cx);
-                self.redraw(cx);
-            }
-
-            // Handle the add location button being clicked.
-            if self.button(id!(location_button)).clicked(actions) {
-                log!("Add location button clicked; requesting current location...");
-                if let Err(_e) = init_location_subscriber(cx) {
-                    error!("Failed to initialize location subscriber");
-                    enqueue_popup_notification(PopupItem {
-                        message: String::from("Failed to initialize location services."),
-                        kind: PopupKind::Error,
-                        auto_dismissal_duration: None
-                    });
-                }
-                self.show_location_preview(cx);
-            }
-
-            // Handle the send location button being clicked.
-            if self.button(id!(location_preview.send_location_button)).clicked(actions) {
-                let location_preview = self.location_preview(id!(location_preview));
-                if let Some((coords, _system_time_opt)) = location_preview.get_current_data() {
-                    let geo_uri = format!("{}{},{}", GEO_URI_SCHEME, coords.latitude, coords.longitude);
-                    let message = RoomMessageEventContent::new(
-                        MessageType::Location(
-                            LocationMessageEventContent::new(geo_uri.clone(), geo_uri)
-                        )
-                    );
-                    submit_async_request(MatrixRequest::SendMessage {
-                        room_id: self.room_id.clone().unwrap(),
-                        message,
-                        replied_to: self.tl_state.as_mut().and_then(|tl|
-                            tl.replying_to.take().and_then(|(event_tl_item, _rep)|
-                                event_tl_item.event_id().map(|event_id|
-                                    Reply {
-                                        event_id: event_id.to_owned(),
-                                        enforce_thread: EnforceThread::MaybeThreaded,
-                                    }
-                                )
-                            )
-                        ),
-                        #[cfg(feature = "tsp")]
-                        sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
-                    });
-
-                    self.clear_replying_to(cx);
-                    location_preview.clear();
-                    location_preview.redraw(cx);
-                }
-            }
-
-
-            // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
-            if self.button(id!(send_message_button)).clicked(actions)
-                || text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
-            {
-                let entered_text = message_input.text().trim().to_string();
-                if !entered_text.is_empty() {
-                    let room_id = self.room_id.clone().unwrap();
-
-                    // Create message with mentions using the unified API
-                    let message_with_mentions = message_input.create_message_with_mentions(&entered_text);
-
-                    submit_async_request(MatrixRequest::SendMessage {
-                        room_id,
-                        message: message_with_mentions,
-                        replied_to: self.tl_state.as_mut().and_then(|tl|
-                            tl.replying_to.take().and_then(|(event_tl_item, _rep)|
-                                event_tl_item.event_id().map(|event_id|
-                                    Reply {
-                                        event_id: event_id.to_owned(),
-                                        enforce_thread: EnforceThread::MaybeThreaded,
-                                    }
-                                )
-                            )
-                        ),
-                        #[cfg(feature = "tsp")]
-                        sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
-                    });
-
-                    self.clear_replying_to(cx);
-                    message_input.set_text(cx, "");
-                    room_input_bar.enable_send_message_button(cx, false);
-                }
-            }
-
-            let is_message_input_empty = message_input.text().is_empty();
-            room_input_bar.enable_send_message_button(cx, !is_message_input_empty);
-
-            // Handle the user pressing the up arrow in an empty message input box
-            // to edit their latest sent message.
-            if is_message_input_empty {
-                if let Some(KeyEvent {
-                    key_code: KeyCode::ArrowUp,
-                    modifiers: KeyModifiers { shift: false, control: false, alt: false, logo: false },
-                    ..
-                }) = text_input.key_down_unhandled(actions) {
-                    let Some(tl) = self.tl_state.as_mut() else { return };
-                    if let Some(latest_sent_msg) = tl.items
-                        .iter()
-                        .rev()
-                        .take(MAX_ITEMS_TO_SEARCH_THROUGH)
-                        .find_map(|item| item.as_event().filter(|ev| ev.is_editable()).cloned())
-                    {
-                        let room_id = tl.room_id.clone();
-                        self.show_editing_pane(cx, latest_sent_msg, room_id);
-                    } else {
-                        enqueue_popup_notification(PopupItem { message: "No recent message available to edit.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: Some(3.0) });
-                    }
-                }
-            }
-
             // Handle the jump to bottom button: update its visibility, and handle clicks.
             self.jump_to_bottom_button(id!(jump_to_bottom)).update_from_actions(
                 cx,
                 &portal_list,
                 actions,
             );
-
-            // Handle a typing action on the message input box.
-            if let Some(new_text) = text_input.changed(actions) {
-                submit_async_request(MatrixRequest::SendTypingNotice {
-                    room_id: self.room_id.clone().unwrap(),
-                    typing: !new_text.is_empty(),
-                });
-            }
         }
 
-        if self.animator_handle_event(cx, event).must_redraw() {
-            self.redraw(cx);
+        // Currently, a Signal event is only used to tell this widget:
+        // 1. to check if the room has been loaded from the homeserver yet, or
+        // 2. that its timeline events have been updated in the background.
+        if let Event::Signal = event {
+            if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
+                let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                if rooms_list_ref.is_room_loaded(room_id) {
+                    let same_room_id = room_id.clone();
+                    // This room has been loaded now, so we call `set_displayed_room()`
+                    // to fully display it. That function does nothing if the room_id is unchanged,
+                    // so we clear it first.
+                    self.room_id = None;
+                    self.set_displayed_room(cx, same_room_id, self.room_name.clone());
+                } else {
+                    self.all_rooms_loaded = rooms_list_ref.all_known_rooms_loaded();
+                    return;
+                }
+            }
+
+            self.process_timeline_updates(cx, &portal_list);
+
+            // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
+            // but it doesn't hurt to do it here.
+            // TODO: move this up a layer to something higher in the UI tree,
+            //       and wrap it in a `if let Event::Signal` conditional.
+            user_profile_cache::process_user_profile_updates(cx);
+            avatar_cache::process_avatar_updates(cx);
         }
 
         // We only forward "interactive hit" events to the inner timeline view
@@ -1165,57 +786,61 @@ impl Widget for RoomScreen {
             is_pane_shown = false;
         }
 
-        // TODO: once we use the `hits()` API, we can remove the above conditionals, because
+        // TODO: once we use the `hits()` API, should be able to remove the above conditionals
+        //       about whether the loading pane or user profile pane are shown, because
         //       Makepad already delivers most events to all views regardless of visibility,
         //       so the only thing we'd need here is the conditional below.
 
-        // Create a Scope with RoomScreenProps containing the room members.
-        // This scope is needed by child widgets like MentionableTextInput during event handling.
-        let room_props = if let Some(tl) = self.tl_state.as_ref() {
-            let room_id = tl.room_id.clone();
-            let room_members = tl.room_members.clone();
-
-            // Fetch room data once to avoid duplicate expensive lookups
-            let (room_display_name, room_avatar_url) = get_client()
-                .and_then(|client| client.get_room(&room_id))
-                .map(|room| (
-                    room.cached_display_name().map(|name| name.to_string()),
-                    room.avatar_url()
-                ))
-                .unwrap_or((None, None));
-
-            RoomScreenProps {
-                room_id,
-                room_members,
-                room_display_name,
-                room_avatar_url,
-            }
-        } else if let Some(room_id) = self.room_id.clone() {
-            // Fallback case: we have a room_id but no tl_state yet
-            // log!("RoomScreen handling event with room_id {} but no tl_state, using empty member list", room_id);
-            RoomScreenProps {
-                room_id,
-                room_members: None,
-                room_display_name: None,
-                room_avatar_url: None,
-            }
-        } else {
-            // No room selected yet, skip event handling that requires room context
-            log!("RoomScreen handling event with no room_id and no tl_state, skipping room-dependent event handling");
-            if !is_pane_shown || !is_interactive_hit {
-                return;
-            }
-            // Use a dummy room props for non-room-specific events
-            RoomScreenProps {
-                room_id: matrix_sdk::ruma::OwnedRoomId::try_from("!dummy:matrix.org").unwrap(),
-                room_members: None,
-                room_display_name: None,
-                room_avatar_url: None,
-            }
-        };
-        let mut room_scope = Scope::with_props(&room_props);
-
         if !is_pane_shown || !is_interactive_hit {
+            // Create a Scope with RoomScreenProps containing the room members.
+            // This scope is needed by child widgets like MentionableTextInput during event handling.
+            let room_props = if let Some(tl) = self.tl_state.as_ref() {
+                let room_id = tl.room_id.clone();
+                let room_members = tl.room_members.clone();
+
+                // Fetch room data once to avoid duplicate expensive lookups
+                let (room_display_name, room_avatar_url) = get_client()
+                    .and_then(|client| client.get_room(&room_id))
+                    .map(|room| (
+                        room.cached_display_name().map(|name| name.to_string()),
+                        room.avatar_url()
+                    ))
+                    .unwrap_or((None, None));
+
+                RoomScreenProps {
+                    room_screen_widget_uid,
+                    room_id,
+                    room_members,
+                    room_display_name,
+                    room_avatar_url,
+                }
+            } else if let Some(room_id) = self.room_id.clone() {
+                // Fallback case: we have a room_id but no tl_state yet
+                RoomScreenProps {
+                    room_screen_widget_uid,
+                    room_id,
+                    room_members: None,
+                    room_display_name: None,
+                    room_avatar_url: None,
+                }
+            } else {
+                // No room selected yet, skip event handling that requires room context
+                log!("RoomScreen handling event with no room_id and no tl_state, skipping room-dependent event handling");
+                if !is_pane_shown || !is_interactive_hit {
+                    return;
+                }
+                // Use a dummy room props for non-room-specific events
+                RoomScreenProps {
+                    room_screen_widget_uid,
+                    room_id: matrix_sdk::ruma::OwnedRoomId::try_from("!dummy:matrix.org").unwrap(),
+                    room_members: None,
+                    room_display_name: None,
+                    room_avatar_url: None,
+                }
+            };
+            let mut room_scope = Scope::with_props(&room_props);
+
+
             // Forward the event to the inner timeline view, but capture any actions it produces
             // such that we can handle the ones relevant to only THIS RoomScreen widget right here and now,
             // ensuring they are not mistakenly handled by other RoomScreen widget instances.
@@ -1226,12 +851,6 @@ impl Widget for RoomScreen {
             // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
             actions_generated_within_this_room_screen.retain(|action| {
                 if self.handle_link_clicked(cx, action, &user_profile_sliding_pane) {
-                    return false;
-                }
-
-                // When the EditingPane has been hidden, re-show the input bar.
-                if let EditingPaneAction::Hide = action.as_widget_action().cast() {
-                    self.on_hide_editing_pane(cx);
                     return false;
                 }
 
@@ -1282,6 +901,7 @@ impl Widget for RoomScreen {
             cx.extend_actions(actions_generated_within_this_room_screen);
         }
     }
+
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // If the room isn't loaded yet, we show the restore status label only.
@@ -1349,6 +969,7 @@ impl Widget for RoomScreen {
                                         msg_like_content,
                                         prev_event,
                                         &mut tl_state.media_cache,
+                                        &mut tl_state.link_preview_cache,
                                         &tl_state.user_power,
                                         item_drawn_status,
                                         room_screen_widget_uid,
@@ -1380,6 +1001,15 @@ impl Widget for RoomScreen {
                                     room_id,
                                     event_tl_item,
                                     utd,
+                                    item_drawn_status,
+                                ),
+                                MsgLikeKind::Other(other) => populate_small_state_event(
+                                    cx,
+                                    list,
+                                    item_id,
+                                    room_id,
+                                    event_tl_item,
+                                    other,
                                     item_drawn_status,
                                 ),
                             },
@@ -1475,8 +1105,8 @@ impl RoomScreen {
 
         let mut done_loading = false;
         let mut should_continue_backwards_pagination = false;
+        let mut typing_users = None;
         let mut num_updates = 0;
-        let mut typing_users = Vec::new();
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
@@ -1495,7 +1125,7 @@ impl RoomScreen {
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
-                            log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
+                            log!("process_timeline_updates(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
                             // For now, we paginate a cleared timeline in order to be able to show something at least.
                             // A proper solution would be what's described below, which would be to save a few event IDs
                             // and then either focus on them (if we're not close to the end of the timeline)
@@ -1525,31 +1155,34 @@ impl RoomScreen {
                         //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
                     }
 
-                    // Maybe todo?: we can often avoid the following loops that iterate over the `items` list
-                    //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
-                    //       any index that comes before (is less than) the above `curr_first_id`.
+                    let prior_items_changed = clear_cache || changed_indices.start <= curr_first_id;
 
                     if new_items.len() == tl.items.len() {
-                        // log!("Timeline::handle_event(): no jump necessary for updated timeline of same length: {}", items.len());
+                        // log!("process_timeline_updates(): no jump necessary for updated timeline of same length: {}", items.len());
                     }
                     else if curr_first_id > new_items.len() {
-                        log!("Timeline::handle_event(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
+                        log!("process_timeline_updates(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
                         portal_list.set_first_id_and_scroll(new_items.len().saturating_sub(1), 0.0);
                         portal_list.set_tail_range(true);
                         jump_to_bottom.update_visibility(cx, true);
                     }
+                    // If the prior items changed, we need to find the new index of an item that was visible
+                    // in the timeline viewport so that we can maintain the scroll position of that item,
+                    // which ensures that the timeline doesn't jump around unexpectedly and ruin the user's experience.
                     else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
-                        find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items)
+                        prior_items_changed.then(||
+                            find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items)
+                        )
+                        .flatten()
                     {
                         if curr_item_idx != new_item_idx {
-                            log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
+                            log!("process_timeline_updates(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
                             portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
                             tl.prev_first_index = Some(new_item_idx);
                             // Set scrolled_past_read_marker false when we jump to a new event
                             tl.scrolled_past_read_marker = false;
-                            // When the tooltip is up, the timeline may jump. This may take away the hover out event to required to clear the tooltip
-                            cx.widget_action(ui, &Scope::empty().path, RoomScreenTooltipActions::HoverOut);
-
+                            // Hide the tooltip when the timeline jumps, as a hover-out event won't occur.
+                            cx.widget_action(ui, &HeapLiveIdPath::default(), RoomScreenTooltipActions::HoverOut);
                         }
                     }
                     //
@@ -1566,11 +1199,7 @@ impl RoomScreen {
                         submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: tl.room_id.clone() });
                     }
 
-                    if clear_cache {
-                        tl.content_drawn_since_last_update.clear();
-                        tl.profile_drawn_since_last_update.clear();
-                        tl.fully_paginated = false;
-
+                    if prior_items_changed {
                         // If this RoomScreen is showing the loading pane and has an ongoing backwards pagination request,
                         // then we should update the status message in that loading pane
                         // and then continue paginating backwards until we find the target event.
@@ -1581,7 +1210,7 @@ impl RoomScreen {
                             ref mut events_paginated, target_event_id, ..
                         } = &mut loading_pane_state {
                             *events_paginated += new_items.len().saturating_sub(tl.items.len());
-                            log!("While finding target event {target_event_id}, loaded {events_paginated} messages...");
+                            log!("While finding target event {target_event_id}, we have now loaded {events_paginated} messages...");
                             // Here, we assume that we have not yet found the target event,
                             // so we need to continue paginating backwards.
                             // If the target event has already been found, it will be handled
@@ -1591,10 +1220,16 @@ impl RoomScreen {
                             should_continue_backwards_pagination = true;
                         }
                         loading_pane.set_state(cx, loading_pane_state);
+                    }
+
+                    if clear_cache {
+                        tl.content_drawn_since_last_update.clear();
+                        tl.profile_drawn_since_last_update.clear();
+                        tl.fully_paginated = false;
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
-                        // log!("Timeline::handle_event(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
+                        // log!("process_timeline_updates(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
                     tl.items = new_items;
                     done_loading = true;
@@ -1691,7 +1326,7 @@ impl RoomScreen {
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
                 TimelineUpdate::RoomMembersSynced => {
-                    // log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
+                    // log!("process_timeline_updates(): room members fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
@@ -1700,7 +1335,7 @@ impl RoomScreen {
                     tl.room_members = Some(Arc::new(members));
                 },
                 TimelineUpdate::MediaFetched => {
-                    log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
+                    log!("process_timeline_updates(): media fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                     if let LoadState::Loaded = populate_image_modal(cx, &mut self.image_viewer_timeout_timer, None, tl) {
@@ -1709,7 +1344,7 @@ impl RoomScreen {
                     }
                 }
                 TimelineUpdate::MessageEdited { timeline_event_id, result } => {
-                    self.view.editing_pane(id!(editing_pane))
+                    self.view.room_input_bar(id!(room_input_bar))
                         .handle_edit_result(cx, timeline_event_id, result);
                 }
                 TimelineUpdate::TypingUsers { users } => {
@@ -1718,28 +1353,25 @@ impl RoomScreen {
                     // Then, we "process" it later (by turning it into a string) after the
                     // update loop has completed, which avoids unnecessary expensive work
                     // if the list of typing users gets updated many times in a row.
-                    typing_users = users;
+                    typing_users = Some(users);
                 }
-
-                TimelineUpdate::UserPowerLevels(user_power_level) => {
-                    tl.user_power = user_power_level;
-
-                    // Update the visibility of the message input bar based on the new power levels.
-                    let can_send_message = user_power_level.can_send_message();
-                    self.view.view(id!(input_bar))
-                        .set_visible(cx, can_send_message);
-                    self.view.view(id!(can_not_send_message_notice))
-                        .set_visible(cx, !can_send_message);
-
+                TimelineUpdate::UserPowerLevels(user_power_levels) => {
+                    tl.user_power = user_power_levels;
+                    self.view.room_input_bar(id!(room_input_bar))
+                        .update_user_power_levels(cx, user_power_levels);
                     // Update the @room mention capability based on the user's power level
                     cx.action(MentionableTextInputAction::PowerLevelsUpdated {
                         room_id: tl.room_id.clone(),
-                        can_notify_room: user_power_level.can_notify_room(),
+                        can_notify_room: user_power_levels.can_notify_room(),
                     });
                 }
-
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
+                }
+                TimelineUpdate::Tombstoned(successor_room) => {
+                    self.view.room_input_bar(id!(room_input_bar))
+                        .update_tombstone_footer(cx, &tl.room_id, successor_room.as_ref());
+                    tl.tombstone_info = successor_room;
                 }
             }
         }
@@ -1756,33 +1388,10 @@ impl RoomScreen {
             top_space.set_visible(cx, false);
         }
 
-        if !typing_users.is_empty() {
-            let typing_notice_text = match typing_users.as_slice() {
-                [] => String::new(),
-                [user] => format!("{user} is typing "),
-                [user1, user2] => format!("{user1} and {user2} are typing "),
-                [user1, user2, others @ ..] => {
-                    if others.len() > 1 {
-                        format!("{user1}, {user2}, and {} are typing ", &others[0])
-                    } else {
-                        format!(
-                            "{user1}, {user2}, and {} others are typing ",
-                            others.len()
-                        )
-                    }
-                }
-            };
-            // Set the typing notice text and make its view visible.
-            self.view.label(id!(typing_label)).set_text(cx, &typing_notice_text);
-            self.view.view(id!(typing_notice)).set_visible(cx, true);
-            // Animate in the typing notice view (sliding it up from the bottom).
-            self.animator_play(cx, id!(typing_notice_animator.show));
-            // Start the typing notice text animation of bouncing dots.
-            self.view.typing_animation(id!(typing_animation)).start_animation(cx);
-        } else {
-            // Animate out the typing notice view (sliding it out towards the bottom).
-            self.animator_play(cx, id!(typing_notice_animator.hide));
-            self.view.typing_animation(id!(typing_animation)).stop_animation(cx);
+        if let Some(users) = typing_users {
+            self.view
+                .typing_notice(id!(typing_notice))
+                .show_or_hide(cx, &users);
         }
 
         if num_updates > 0 {
@@ -1920,7 +1529,7 @@ impl RoomScreen {
         for action in actions {
             match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
                 MessageAction::React { details, reaction } => {
-                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    let Some(tl) = self.tl_state.as_ref() else { return };
                     let mut success = false;
                     if let Some(timeline_item) = tl.items.get(details.item_id) {
                         if let Some(event_tl_item) = timeline_item.as_event() {
@@ -1949,18 +1558,17 @@ impl RoomScreen {
                     }
                 }
                 MessageAction::Reply(details) => {
-                    let mut success = false;
-                    if let Some(event_tl_item) = self.tl_state.as_ref()
-                        .and_then(|tl| tl.items.get(details.item_id))
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    if let Some(event_tl_item) = tl.items.get(details.item_id)
                         .and_then(|tl_item| tl_item.as_event().cloned())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
                         let replied_to_info = EmbeddedEvent::from_timeline_item(&event_tl_item);
-                        success = true;
-                        self.show_replying_to(cx, (event_tl_item, replied_to_info));
+                        self.view.room_input_bar(id!(room_input_bar))
+                            .show_replying_to(cx, (event_tl_item, replied_to_info), &tl.room_id);
                     }
-                    if !success {
-                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to reply to.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                    else {
+                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to reply to. Please try again!".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
                         error!("MessageAction::Reply: couldn't find event [{}] {:?} to reply to in room {:?}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -1974,15 +1582,35 @@ impl RoomScreen {
                         .and_then(|tl_item| tl_item.as_event().cloned())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
-                        self.show_editing_pane(cx, event_tl_item, tl.room_id.clone());
+                        self.view.room_input_bar(id!(room_input_bar))
+                            .show_editing_pane(cx, event_tl_item, tl.room_id.clone());
                     }
                     else {
-                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to edit.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to edit. Please try again!".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
                         error!("MessageAction::Edit: couldn't find event [{}] {:?} to edit in room {:?}",
                             details.item_id,
                             details.event_id.as_deref(),
                             self.room_id,
                         );
+                    }
+                }
+                MessageAction::EditLatest => {
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    if let Some(latest_sent_msg) = tl.items
+                        .iter()
+                        .rev()
+                        .take(MAX_ITEMS_TO_SEARCH_THROUGH)
+                        .find_map(|item| item.as_event().filter(|ev| ev.is_editable()).cloned())
+                    {
+                        self.view.room_input_bar(id!(room_input_bar))
+                            .show_editing_pane(cx, latest_sent_msg, tl.room_id.clone());
+                    }
+                    else {
+                        enqueue_popup_notification(PopupItem {
+                            message: "No recent message available to edit.".to_string(),
+                            kind: PopupKind::Warning,
+                            auto_dismissal_duration: Some(3.0),
+                        });
                     }
                 }
                 MessageAction::Pin(_details) => {
@@ -1994,7 +1622,7 @@ impl RoomScreen {
                     enqueue_popup_notification(PopupItem { message: "Unpinning messages is not yet implemented.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
                 }
                 MessageAction::CopyText(details) => {
-                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    let Some(tl) = self.tl_state.as_ref() else { return };
                     if let Some(text) = tl.items
                         .get(details.item_id)
                         .and_then(|tl_item| tl_item.as_event().map(plaintext_body_of_timeline_item))
@@ -2002,7 +1630,7 @@ impl RoomScreen {
                         cx.copy_to_clipboard(&text);
                     }
                     else {
-                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to copy text from.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None});
+                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to copy text from. Please try again!".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None});
                         error!("MessageAction::CopyText: couldn't find event [{}] {:?} to copy text from in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -2039,7 +1667,7 @@ impl RoomScreen {
                         }
                     }
                     if !success {
-                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to copy HTML from.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                        enqueue_popup_notification(PopupItem { message: "Could not find message in timeline to copy HTML from. Please try again!".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
                         error!("MessageAction::CopyHtml: couldn't find event [{}] {:?} to copy HTML from in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -2048,7 +1676,7 @@ impl RoomScreen {
                     }
                 }
                 MessageAction::CopyLink(details) => {
-                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    let Some(tl) = self.tl_state.as_ref() else { return };
                     if let Some(event_id) = details.event_id {
                         let matrix_to_uri = tl.room_id.matrix_to_event_uri(event_id);
                         cx.copy_to_clipboard(&matrix_to_uri.to_string());
@@ -2091,83 +1719,29 @@ impl RoomScreen {
                     // );
                 }
                 MessageAction::JumpToRelated(details) => {
-                    let Some(tl) = self.tl_state.as_mut() else { continue };
                     let Some(related_event_id) = details.related_event_id.as_ref() else {
-                        error!("BUG: MessageAction::JumpToRelated had not related event ID.");
+                        error!("BUG: MessageAction::JumpToRelated had no related event ID.\n{details:#?}");
                         continue;
                     };
-                    let tl_idx = details.item_id;
-
-                    // Attempt to find the index of replied-to message in the timeline.
-                    // Start from the current item's index (`tl_idx`)and search backwards,
-                    // since we know the related message must come before the current item.
-                    let mut num_items_searched = 0;
-                    let related_msg_tl_index = tl.items
-                        .focus()
-                        .narrow(..tl_idx)
-                        .into_iter()
-                        .rev()
-                        .take(MAX_ITEMS_TO_SEARCH_THROUGH)
-                        .position(|i| {
-                            num_items_searched += 1;
-                            i.as_event()
-                                .and_then(|e| e.event_id())
-                                .is_some_and(|ev_id| ev_id == related_event_id)
-                        })
-                        .map(|position| tl_idx.saturating_sub(position).saturating_sub(1));
-
-                    if let Some(index) = related_msg_tl_index {
-                        // log!("The related message {replied_to_event} was immediately found in room {}, scrolling to from index {reply_message_item_id} --> {index} (first ID {}).", tl.room_id, portal_list.first_id());
-                        let speed = 50.0;
-                        // Scroll to the message right *before* the replied-to message.
-                        // FIXME: `smooth_scroll_to` should accept a "scroll offset" (first scroll) parameter too,
-                        //       so that we can scroll to the replied-to message and have it
-                        //       appear beneath the top of the viewport.
-                        portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
-                        // start highlight animation.
-                        tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
-                            item_id: index
-                        };
-                    } else {
-                        // log!("The replied-to message {replied_to_event} wasn't immediately available in room {}, searching for it in the background...", tl.room_id);
-                        // Here, we set the state of the loading pane and display it to the user.
-                        // The main logic will be handled in `process_timeline_updates()`, which is the only
-                        // place where we can receive updates to the timeline from the background tasks.
-                        loading_pane.set_state(
-                            cx,
-                            LoadingPaneState::BackwardsPaginateUntilEvent {
-                                target_event_id: related_event_id.clone(),
-                                events_paginated: 0,
-                                request_sender: tl.request_sender.clone(),
-                            },
-                        );
-                        loading_pane.show(cx);
-
-                        tl.request_sender.send_if_modified(|requests| {
-                            if let Some(existing) = requests.iter_mut().find(|r| r.room_id == tl.room_id) {
-                                warning!("Unexpected: room {} already had an existing timeline request in progress, event: {:?}", tl.room_id, existing.target_event_id);
-                                // We might as well re-use this existing request...
-                                existing.target_event_id = related_event_id.clone();
-                            } else {
-                                requests.push(BackwardsPaginateUntilEventRequest {
-                                    room_id: tl.room_id.clone(),
-                                    target_event_id: related_event_id.clone(),
-                                    // avoid re-searching through items we already searched through.
-                                    starting_index: tl_idx.saturating_sub(num_items_searched),
-                                    current_tl_len: tl.items.len(),
-                                });
-                            }
-                            true
-                        });
-
-                        // Don't unconditionally start backwards pagination here, because we want to give the
-                        // background `timeline_subscriber_handler` task a chance to process the request first
-                        // and search our locally-known timeline history for the replied-to message.
-                    }
-                    self.redraw(cx);
+                    self.jump_to_event(
+                        cx,
+                        related_event_id,
+                        Some(details.item_id),
+                        portal_list,
+                        loading_pane
+                    );
+                }
+                MessageAction::JumpToEvent(event_id) => {
+                    self.jump_to_event(
+                        cx,
+                        &event_id,
+                        None,
+                        portal_list,
+                        loading_pane
+                    );
                 }
                 MessageAction::Redact { details, reason } => {
-                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    let Some(tl) = self.tl_state.as_ref() else { return };
                     let mut success = false;
                     if let Some(timeline_item) = tl.items.get(details.item_id) {
                         if let Some(event_tl_item) = timeline_item.as_event() {
@@ -2209,6 +1783,92 @@ impl RoomScreen {
         }
     }
 
+    /// Jumps to the target event ID in this timeline by smooth scrolling to it.
+    ///
+    /// This function searches backwards from the given `max_tl_idx` in the timeline
+    /// for the given `event_id`. If found, it smooth-scrolls the portal list to that event.
+    /// If not found, it displays the loading pane and starts a background search for the event.
+    fn jump_to_event(
+        &mut self,
+        cx: &mut Cx,
+        target_event_id: &OwnedEventId,
+        max_tl_idx: Option<usize>,
+        portal_list: &PortalListRef,
+        loading_pane: &LoadingPaneRef,
+    ) {
+        let Some(tl) = self.tl_state.as_mut() else { return };
+        let max_tl_idx = max_tl_idx.unwrap_or_else(|| tl.items.len());
+
+        // Attempt to find the index of replied-to message in the timeline.
+        // Start from the current item's index (`tl_idx`) and search backwards,
+        // since we know the related message must come before the current item.
+        let mut num_items_searched = 0;
+        let related_msg_tl_index = tl.items
+            .focus()
+            .narrow(..max_tl_idx)
+            .into_iter()
+            .rev()
+            .take(MAX_ITEMS_TO_SEARCH_THROUGH)
+            .position(|i| {
+                num_items_searched += 1;
+                i.as_event()
+                    .and_then(|e| e.event_id())
+                    .is_some_and(|ev_id| ev_id == target_event_id)
+            })
+            .map(|position| max_tl_idx.saturating_sub(position).saturating_sub(1));
+
+        if let Some(index) = related_msg_tl_index {
+            // log!("The related message {replied_to_event} was immediately found in room {}, scrolling to from index {reply_message_item_id} --> {index} (first ID {}).", tl.room_id, portal_list.first_id());
+            let speed = 50.0;
+            // Scroll to the message right *before* the replied-to message.
+            // FIXME: `smooth_scroll_to` should accept a "scroll offset" (first scroll) parameter too,
+            //       so that we can scroll to the replied-to message and have it
+            //       appear beneath the top of the viewport.
+            portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
+            // start highlight animation.
+            tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
+                item_id: index
+            };
+        } else {
+            log!("The related event {target_event_id} wasn't immediately available in room {}, searching for it in the background...", tl.room_id);
+            // Here, we set the state of the loading pane and display it to the user.
+            // The main logic will be handled in `process_timeline_updates()`, which is the only
+            // place where we can receive updates to the timeline from the background tasks.
+            loading_pane.set_state(
+                cx,
+                LoadingPaneState::BackwardsPaginateUntilEvent {
+                    target_event_id: target_event_id.clone(),
+                    events_paginated: 0,
+                    request_sender: tl.request_sender.clone(),
+                },
+            );
+            loading_pane.show(cx);
+
+            tl.request_sender.send_if_modified(|requests| {
+                if let Some(existing) = requests.iter_mut().find(|r| r.room_id == tl.room_id) {
+                    warning!("Unexpected: room {} already had an existing timeline request in progress, event: {:?}", tl.room_id, existing.target_event_id);
+                    // We might as well re-use this existing request...
+                    existing.target_event_id = target_event_id.clone();
+                } else {
+                    requests.push(BackwardsPaginateUntilEventRequest {
+                        room_id: tl.room_id.clone(),
+                        target_event_id: target_event_id.clone(),
+                        // avoid re-searching through items we already searched through.
+                        starting_index: max_tl_idx.saturating_sub(num_items_searched),
+                        current_tl_len: tl.items.len(),
+                    });
+                }
+                true
+            });
+
+            // Don't unconditionally start backwards pagination here, because we want to give the
+            // background `timeline_subscriber_handler` task a chance to process the request first
+            // and search our locally-known timeline history for the replied-to message.
+        }
+        self.redraw(cx);
+       
+    }
+
     /// Shows the user profile sliding pane with the given avatar info.
     fn show_user_profile(
         &mut self,
@@ -2218,94 +1878,6 @@ impl RoomScreen {
     ) {
         pane.set_info(cx, info);
         pane.show(cx);
-        self.redraw(cx);
-    }
-
-    /// Shows the editing pane to allow the user to edit the given event.
-    fn show_editing_pane(
-        &mut self,
-        cx: &mut Cx,
-        event_tl_item: EventTimelineItem,
-        room_id: OwnedRoomId,
-    ) {
-        // We must hide the input_bar while the editing pane is shown,
-        // otherwise a very-tall input bar might show up underneath a shorter editing pane.
-        self.view.room_input_bar(id!(input_bar)).set_visible(cx, false);
-
-        self.editing_pane(id!(editing_pane)).show(
-            cx,
-            event_tl_item,
-            room_id,
-        );
-        self.redraw(cx);
-    }
-
-    /// Handles the EditingPane in this RoomScreen being fully hidden.
-    fn on_hide_editing_pane(&mut self, cx: &mut Cx) {
-        // In `show_editing_pane()` above, we hid the input_bar while the editing pane
-        // is being shown, so here we need to make it visible again.
-        self.view.room_input_bar(id!(input_bar)).set_visible(cx, true);
-        self.redraw(cx);
-        // We don't need to do anything with the editing pane itself here,
-        // because it has already been hidden by the time this function gets called.
-    }
-
-    /// Shows a preview of the given event that the user is currently replying to
-    /// above the message input bar.
-    fn show_replying_to(
-        &mut self,
-        cx: &mut Cx,
-        replying_to: (EventTimelineItem, EmbeddedEvent),
-    ) {
-        let replying_preview_view = self.view(id!(replying_preview));
-
-        let (replying_preview_username, _) = replying_preview_view
-            .avatar(id!(reply_preview_content.reply_preview_avatar))
-            .set_avatar_and_get_username(
-                cx,
-                self.room_id.as_ref().unwrap(),
-                replying_to.0.sender(),
-                Some(replying_to.0.sender_profile()),
-                replying_to.0.event_id(),
-            );
-
-        replying_preview_view
-            .label(id!(reply_preview_content.reply_preview_username))
-            .set_text(cx, replying_preview_username.as_str());
-
-        populate_preview_of_timeline_item(
-            cx,
-            &replying_preview_view.html_or_plaintext(id!(reply_preview_content.reply_preview_body)),
-            replying_to.0.content(),
-            replying_to.0.sender(),
-            &replying_preview_username,
-        );
-
-        self.view(id!(replying_preview)).set_visible(cx, true);
-        if let Some(tl) = self.tl_state.as_mut() {
-            tl.replying_to = Some(replying_to);
-        }
-
-        // After the user clicks the reply button next to a message,
-        // and we get to this point where the replying-to preview is shown,
-        // we should automatically focus the keyboard on the message input box
-        // so that the user can immediately start typing their reply
-        // without having to manually click on the message input box.
-        self.text_input(id!(input_bar.message_input.text_input)).set_key_focus(cx);
-        self.redraw(cx);
-    }
-
-    /// Clears (and makes invisible) the preview of the message
-    /// that the user is currently replying to.
-    fn clear_replying_to(&mut self, cx: &mut Cx) {
-        self.view(id!(replying_preview)).set_visible(cx, false);
-        if let Some(tl) = self.tl_state.as_mut() {
-            tl.replying_to = None;
-        }
-    }
-
-    fn show_location_preview(&mut self, cx: &mut Cx) {
-        self.location_preview(id!(location_preview)).show();
         self.redraw(cx);
     }
 
@@ -2319,12 +1891,20 @@ impl RoomScreen {
         let (mut tl_state, mut is_first_time_being_loaded) = if let Some(existing) = state_opt {
             (existing, false)
         } else {
-            let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
+            let Some(timeline_endpoints) = take_timeline_endpoints(&room_id) else {
                 if !self.is_loaded && self.all_rooms_loaded {
-                    panic!("BUG: timeline is not loaded, but room_id {:?} was not waiting for its timeline to be loaded.", room_id);
+                    panic!("BUG: timeline is not loaded, but room_id {:?} \
+                    was not waiting for its timeline to be loaded.", room_id);
                 }
                 return;
             };
+            let TimelineEndpoints {
+                update_receiver,
+                update_sender,
+                request_sender,
+                successor_room,
+            } = timeline_endpoints;
+
             let tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // Initially, we assume the user has all power levels by default.
@@ -2341,14 +1921,15 @@ impl RoomScreen {
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
                 request_sender,
-                media_cache: MediaCache::new(Some(update_sender)),
-                replying_to: None,
+                media_cache: MediaCache::new(Some(update_sender.clone())),
+                link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
                 last_scrolled_index: usize::MAX,
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
+                tombstone_info: successor_room,
             };
             (tl_state, true)
         };
@@ -2421,7 +2002,7 @@ impl RoomScreen {
                 subscribe: true,
             });
             submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
-                room_id,
+                room_id: room_id.clone(),
                 subscribe: true,
             });
         }
@@ -2429,8 +2010,8 @@ impl RoomScreen {
         // Now, restore the visual state of this timeline from its previously-saved state.
         self.restore_state(cx, &mut tl_state);
 
-        // As the final step, store the tl_state for this room into this RoomScreen widget,
-        // such that it can be accessed in future event/draw handlers.
+        // Store the tl_state for this room into this RoomScreen widget,
+        // such that it can be accessed in future functions like event/draw handlers.
         self.tl_state = Some(tl_state);
 
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
@@ -2449,9 +2030,7 @@ impl RoomScreen {
         // When closing a room view, we do the following with non-persistent states:
         // * Unsubscribe from typing notices, since we don't care about them
         //   when a given room isn't visible.
-        // * Clear the location preview. We don't save this to the TimelineUiState
-        //   because the location might change by the next time the user opens this same room.
-        self.location_preview(id!(location_preview)).clear();
+        // * Unsubscribe from updates to our own user's read receipts, for the same reason.
         submit_async_request(MatrixRequest::SubscribeToTypingNotices {
             room_id: room_id.clone(),
             subscribe: false,
@@ -2473,16 +2052,12 @@ impl RoomScreen {
         };
 
         let portal_list = self.portal_list(id!(list));
-        let message_input = self.text_input(id!(input_bar.message_input.text_input));
-        let editing_pane_state = self.editing_pane(id!(editing_pane)).save_state();
         let state = SavedState {
             first_index_and_scroll: Some((portal_list.first_id(), portal_list.scroll_position())),
-            message_input_state: message_input.save_state(),
-            replying_to: tl.replying_to.clone(),
-            editing_pane_state,
+            room_input_bar_state: self.room_input_bar(id!(room_input_bar)).save_state(),
         };
         tl.saved_state = state;
-        // Clear room_members to prevent memory leaks when state is stored long-term
+        // Clear room_members to avoid wasting memory (in case this room is never re-opened).
         tl.room_members = None;
         // Store this Timeline's `TimelineUiState` in the global map of states.
         TIMELINE_STATES.with_borrow_mut(|ts| ts.insert(tl.room_id.clone(), tl));
@@ -2495,9 +2070,7 @@ impl RoomScreen {
     fn restore_state(&mut self, cx: &mut Cx, tl_state: &mut TimelineUiState) {
         let SavedState {
             first_index_and_scroll,
-            message_input_state,
-            replying_to,
-            editing_pane_state,
+            room_input_bar_state,
         } = &mut tl_state.saved_state;
         // 1. Restore the position of the timeline.
         if let Some((first_index, scroll_from_first_id)) = first_index_and_scroll {
@@ -2509,26 +2082,15 @@ impl RoomScreen {
             self.portal_list(id!(timeline.list)).set_tail_range(true);
         }
 
-        // 2. Restore the state of the message input box.
-        let saved_message_input_state = std::mem::take(message_input_state);
-        self.text_input(id!(input_bar.message_input.text_input))
-            .restore_state(cx, saved_message_input_state);
-
-        // 3. Restore the state of the replying-to preview.
-        if let Some(replying_to_event) = replying_to.take() {
-            self.show_replying_to(cx, replying_to_event);
-        } else {
-            self.clear_replying_to(cx);
-        }
-
-        // 4. Restore the state of the editing pane.
-        let editing_pane = self.editing_pane(id!(editing_pane));
-        if let Some(state) = editing_pane_state.take() {
-            editing_pane.restore_state(cx, state, tl_state.room_id.clone());
-        } else {
-            editing_pane.force_reset_hide(cx);
-            self.on_hide_editing_pane(cx);
-        }
+        // 2. Restore the state of the room input bar.
+        let room_input_bar = self.view.room_input_bar(id!(room_input_bar));
+        let saved_room_input_bar_state = std::mem::take(room_input_bar_state);
+        room_input_bar.restore_state(
+            cx,
+            &tl_state.room_id,
+            saved_room_input_bar_state,
+            tl_state.tombstone_info.as_ref(),
+        );
     }
 
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
@@ -2670,16 +2232,15 @@ impl RoomScreenRef {
     }
 }
 
-/// RoomScreenProps serves as an interface between RoomScreen and its child components.
-/// Child components only need to know the structure of RoomScreenProps,
-/// without understanding the internal details of TimelineUiState.
+/// Immutable RoomScreen states passed via Scope props
+/// from a RoomScreen widget to its child widgets for event/draw handlers.
 pub struct RoomScreenProps {
+    pub room_screen_widget_uid: WidgetUid,
     pub room_id: OwnedRoomId,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
     pub room_display_name: Option<String>,
     pub room_avatar_url: Option<OwnedMxcUri>,
 }
-
 
 
 /// Actions for the room screen's tooltip.
@@ -2791,7 +2352,10 @@ pub enum TimelineUpdate {
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
     OwnUserReadReceipt(Receipt),
-
+    /// A notice that the given room has been tombstoned,
+    /// includes a `SuccessorRoom` that contains the successor room.
+    /// If the room is not tombstoned, then the `SuccessorRoom` is `None`.
+    Tombstoned(Option<SuccessorRoom>),
 }
 
 thread_local! {
@@ -2863,8 +2427,8 @@ struct TimelineUiState {
     /// Currently this excludes avatars, as those are shared across multiple rooms.
     media_cache: MediaCache,
 
-    /// Info about the event currently being replied to, if any.
-    replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+    /// Cache for link preview data indexed by URL to avoid redundant network requests.
+    link_preview_cache: LinkPreviewCache,
 
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
@@ -2903,6 +2467,10 @@ struct TimelineUiState {
     /// When new message come in, this value is reset to `false`.
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
+
+    /// If this room has been tombstoned, this has details of its successor room.
+    /// If the room is not tombstoned, this is `None`.
+    tombstone_info: Option<SuccessorRoom>,
 }
 
 #[derive(Default, Debug)]
@@ -2923,12 +2491,8 @@ struct SavedState {
     /// If this is `None`, then the timeline has not yet been scrolled by the user
     /// and the portal list will be set to "tail" (track) the bottom of the list.
     first_index_and_scroll: Option<(usize, f64)>,
-    /// The content of the message input box.
-    message_input_state: TextInputState,
-    /// The event that the user is currently replying to, if any.
-    replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
-    /// The state of the `EditingPane`, if any message was being edited.
-    editing_pane_state: Option<EditingPaneState>,
+    /// The state of all UI elements in the `RoomInputBar`.
+    room_input_bar_state: RoomInputBarState,
 }
 
 /// Returns info about the item in the list of `new_items` that matches the event ID
@@ -3026,6 +2590,7 @@ fn populate_message_view(
     msg_like_content: &MsgLikeContent,
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
+    link_preview_cache: &mut LinkPreviewCache,
     user_power_levels: &UserPowerLevels,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
@@ -3071,13 +2636,15 @@ fn populate_message_view(
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
-                        populate_text_message_content(
+                        new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &item.html_or_plaintext(id!(content.message)),
                             body,
                             formatted.as_ref(),
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
-                        new_drawn_status.content_drawn = true;
                         (item, false)
                     }
                 }
@@ -3107,13 +2674,15 @@ fn populate_message_view(
                                 }
                             }
                         ));
-                        populate_text_message_content(
+                        new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &html_or_plaintext_ref,
                             body,
                             formatted.as_ref(),
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
-                        new_drawn_status.content_drawn = true;
                         (item, false)
                     }
                 }
@@ -3147,7 +2716,7 @@ fn populate_message_view(
                                 .map(|c| format!("\n<i>Admin contact:</i> {}", c))
                                 .unwrap_or_default(),
                         );
-                        populate_text_message_content(
+                        new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &html_or_plaintext_ref,
                             &sn.body,
@@ -3155,8 +2724,10 @@ fn populate_message_view(
                                 format: MessageFormat::Html,
                                 body: formatted,
                             }),
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
-                        new_drawn_status.content_drawn = true;
                         (item, false)
                     }
                 }
@@ -3194,14 +2765,17 @@ fn populate_message_view(
                         } else {
                             (Cow::from(format!("* {} {}", &username, body)), None)
                         };
-                        populate_text_message_content(
+                        let link_previews_drawn = populate_text_message_content(
                             cx,
                             &item.html_or_plaintext(id!(content.message)),
                             &body,
                             formatted.as_ref(),
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
                         set_username_and_get_avatar_retval = Some((username, profile_drawn));
-                        new_drawn_status.content_drawn = true;
+                        new_drawn_status.content_drawn = link_previews_drawn;
                         (item, false)
                     }
                 }
@@ -3328,13 +2902,15 @@ fn populate_message_view(
                             ),
                         };
 
-                        populate_text_message_content(
+                        new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &item.html_or_plaintext(id!(content.message)),
                             &verification.body,
                             Some(&formatted),
+                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(media_cache),
+                            Some(link_preview_cache),
                         );
-                        new_drawn_status.content_drawn = true;
                         (item, false)
                     }
                 }
@@ -3402,9 +2978,9 @@ fn populate_message_view(
         }
     };
 
-    let mut replied_to_event_id = None;
-
-    // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
+    // If we didn't use a cached item, we need to draw all other message content:
+    // the reactions, the read receipts avatar row, and the reply preview.
+    // We also must set the message details/metadata for the `item` widget representing this message.
     if !used_cached_item {
         item.reaction_list(id!(content.reaction_list)).set_list(
             cx,
@@ -3413,16 +2989,32 @@ fn populate_message_view(
             event_tl_item.identifier(),
             item_id,
         );
-
         populate_read_receipts(&item, cx, room_id, event_tl_item);
-        let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
+        let replied_to_message_view = item.view(id!(replied_to_message));
+        let (is_reply_fully_drawn, replied_to_event_id) = draw_replied_to_message(
             cx,
-            &item.view(id!(replied_to_message)),
+            &replied_to_message_view,
             room_id,
             msg_like_content.in_reply_to.as_ref(),
             event_tl_item.event_id(),
         );
-        replied_to_event_id = replied_to_ev_id;
+
+        // Set the message details/metadata for the Message widget so that it can handle events.
+        let message_details = MessageDetails {
+            event_id: event_tl_item.event_id().map(|id| id.to_owned()),
+            item_id,
+            related_event_id: replied_to_event_id,
+            room_screen_widget_uid,
+            abilities: MessageAbilities::from_user_power_and_event(
+                user_power_levels,
+                event_tl_item,
+                msg_like_content,
+                has_html_body,
+            ),
+            should_be_highlighted: event_tl_item.is_highlighted(),
+        };
+        item.as_message().set_data(message_details);
+
         // The content is only considered to be fully drawn if the logic above marked it as such
         // *and* if the reply preview was also fully drawn.
         new_drawn_status.content_drawn &= is_reply_fully_drawn;
@@ -3439,7 +3031,6 @@ fn populate_message_view(
         let username_label = item.label(id!(content.username));
 
         if !is_server_notice { // the normal case
-
             let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
                 item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
                     cx,
@@ -3478,26 +3069,12 @@ fn populate_message_view(
         return (item, new_drawn_status);
     }
 
-    // Set the Message widget's metadata for reply-handling purposes.
-    item.as_message().set_data(MessageDetails {
-        event_id: event_tl_item.event_id().map(|id| id.to_owned()),
-        item_id,
-        related_event_id: replied_to_event_id,
-        room_screen_widget_uid,
-        abilities: MessageAbilities::from_user_power_and_event(
-            user_power_levels,
-            event_tl_item,
-            msg_like_content,
-            has_html_body,
-        ),
-        should_be_highlighted: event_tl_item.is_highlighted()
-    });
-
     // Set the timestamp.
     if let Some(dt) = unix_time_millis_to_datetime(ts_millis) {
         item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
     }
 
+    // Set the "edited" indicator if this message was edited.
     if msg_like_content.as_message().is_some_and(|m| m.is_edited()) {
         item.edited_indicator(id!(profile.edited_indicator)).set_latest_edit(
             cx,
@@ -3542,30 +3119,53 @@ fn populate_message_view(
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
+/// Also populates link previews if a link_preview_ref is provided.
+/// Returns whether the text items were fully drawn.
 fn populate_text_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     body: &str,
     formatted_body: Option<&FormattedBody>,
-) {
+    link_preview_ref: Option<&mut LinkPreviewRef>,
+    media_cache: Option<&mut MediaCache>,
+    link_preview_cache: Option<&mut LinkPreviewCache>,
+) -> bool {
     // The message was HTML-formatted rich text.
-    if let Some(fb) = formatted_body.as_ref()
+    let links = if let Some(fb) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
+        let (linkified_html, links) = utils::linkify_get_urls(
+            utils::trim_start_html_whitespace(&fb.body),
+            true,
+        );
         message_content_widget.show_html(
             cx,
-            utils::linkify(
-                utils::trim_start_html_whitespace(&fb.body),
-                true,
-            )
+            linkified_html
         );
+        links
     }
     // The message was non-HTML plaintext.
     else {
-        match utils::linkify(body, false) {
+        let (linkified_html, links) = utils::linkify_get_urls(body, false);
+        match linkified_html {
             Cow::Owned(linkified_html) => message_content_widget.show_html(cx, &linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext),
         }
+        links
+    };
+
+    // Populate link previews if all required parameters are provided
+    if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) = 
+        (link_preview_ref, media_cache, link_preview_cache) {
+        link_preview_ref.populate_below_message(
+            cx,
+            &links,
+            media_cache,
+            link_preview_cache,
+            &populate_image_message_content,
+        )
+    } else {
+        true
     }
 }
 
@@ -3573,7 +3173,7 @@ fn populate_text_message_content(
 ///
 /// Returns whether the image message content was fully drawn.
 fn populate_image_message_content(
-    cx: &mut Cx2d,
+    cx: &mut Cx,
     text_or_image_ref: &TextOrImageRef,
     image_info_source: Option<Box<ImageInfo>>,
     original_source: MediaSource,
@@ -3602,7 +3202,7 @@ fn populate_image_message_content(
 
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
+    let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
                 let show_image_result = text_or_image_ref.show_image(cx, mxc_uri.clone(), |cx, img| {
@@ -3666,6 +3266,10 @@ fn populate_image_message_content(
                 fully_drawn = false;
             }
             (MediaCacheEntry::Failed, _media_format) => {
+                if text_or_image_ref.view(id!(default_image_view)).visible() {
+                    fully_drawn = true;
+                    return;
+                }
                 text_or_image_ref
                     .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
                 // For now, we consider this as being "complete". In the future, we could support
@@ -3675,7 +3279,7 @@ fn populate_image_message_content(
         }
     };
 
-    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource, image_info: Box<ImageInfo>| {
+    let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: Box<ImageInfo>| {
         match media_source {
             MediaSource::Encrypted(encrypted) => {
                 // We consider this as "fully drawn" since we don't yet support encryption.
@@ -3832,7 +3436,7 @@ fn populate_location_message_content(
     location: &LocationMessageEventContent,
 ) -> bool {
     let coords = location.geo_uri
-        .get(GEO_URI_SCHEME.len() ..)
+        .get(utils::GEO_URI_SCHEME.len() ..)
         .and_then(|s| {
             let mut iter = s.split(',');
             if let (Some(lat), Some(long)) = (iter.next(), iter.next()) {
@@ -3867,13 +3471,18 @@ fn populate_location_message_content(
     true
 }
 
+
 /// Draws a ReplyPreview above a message if it was in-reply to another message.
 ///
-/// If the given `in_reply_to` details are `None`,
-/// this function will mark the ReplyPreview as non-visible and consider it fully drawn.
+/// ## Arguments
+/// * `replied_to_message_view`: the destination `RepliedToMessage` view that will be populated.
+/// * `in_reply_to`: if `Some`, the details that will be used to populate the `replied_to_message_view`.
+///   If `None`, this function will mark it as non-visible and consider it fully drawn.
+/// * `message_event_id`: the [`EventId`] of the message that is the reply itself (the response).
+///   This is needed to fetch the details of the replied-to message (if not yet available).
 ///
 /// Returns whether the in-reply-to information was available and fully drawn,
-/// i.e., whether it can be considered as cached and not needing to be redrawn later.
+/// i.e., whether it can be considered cached and not needing to be redrawn later.
 fn draw_replied_to_message(
     cx: &mut Cx2d,
     replied_to_message_view: &ViewRef,
@@ -3963,7 +3572,9 @@ fn draw_replied_to_message(
     (fully_drawn, replied_to_event_id)
 }
 
-fn populate_preview_of_timeline_item(
+/// Generates a rich HTML text preview of the given `timeline_item_content`
+/// and populates the given `widget_out` with that content.
+pub fn populate_preview_of_timeline_item(
     cx: &mut Cx,
     widget_out: &HtmlOrPlaintextRef,
     timeline_item_content: &TimelineItemContent,
@@ -3974,7 +3585,8 @@ fn populate_preview_of_timeline_item(
         match m.msgtype() {
             MessageType::Text(TextMessageEventContent { body, formatted, .. })
             | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
-                return populate_text_message_content(cx, widget_out, body, formatted.as_ref());
+                let _ = populate_text_message_content(cx, widget_out, body, formatted.as_ref(), None, None, None);
+                return;
             }
             _ => { } // fall through to the general case for all timeline items below.
         }
@@ -4062,6 +3674,28 @@ impl SmallStateEventContent for EncryptedMessage {
         item.label(id!(content)).set_text(
             cx,
             &text_preview_of_encrypted_message(self).format_with(username, false),
+        );
+        new_drawn_status.content_drawn = true;
+        (item, new_drawn_status)
+    }
+}
+
+// For other message-like content (custom message-like events).
+impl SmallStateEventContent for OtherMessageLike {
+    fn populate_item_content(
+        &self,
+        cx: &mut Cx,
+        _list: &mut PortalList,
+        _item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventTimelineItem,
+        username: &str,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
+        item.label(id!(content)).set_text(
+            cx,
+            &text_preview_of_other_message_like(self).format_with(username, false),
         );
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
@@ -4253,6 +3887,8 @@ pub enum MessageAction {
     Reply(MessageDetails),
     /// The user clicked the "edit" button on a message.
     Edit(MessageDetails),
+    /// The user requested to edit their latest message in this room.
+    EditLatest,
     /// The user clicked the "pin" button on a message.
     Pin(MessageDetails),
     /// The user clicked the "unpin" button on a message.
@@ -4269,6 +3905,8 @@ pub enum MessageAction {
     /// indicating that they want to auto-scroll back to the related message,
     /// e.g., a replied-to message.
     JumpToRelated(MessageDetails),
+    /// The user requested to jump to a specific event in this room.
+    JumpToEvent(OwnedEventId),
     /// The user clicked the "delete" button on a message.
     #[doc(alias("delete"))]
     Redact {
@@ -4293,7 +3931,7 @@ pub enum MessageAction {
     ActionBarOpen {
         /// At the given timeline item index
         item_id: usize,
-        /// The message rect, so the action bar can be possitioned relative to it
+        /// The message rect, so the action bar can be positioned relative to it
         message_rect: Rect,
     },
     /// The user requested closing the message action bar
@@ -4329,7 +3967,6 @@ impl Widget for Message {
         // clickable or otherwise interactive.
         match event.hits(cx, self.view(id!(replied_to_message)).area()) {
             Hit::FingerDown(fe) => {
-                cx.set_key_focus(self.view(id!(replied_to_message)).area());
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                     cx.widget_action(
                         details.room_screen_widget_uid,
@@ -4353,9 +3990,6 @@ impl Widget for Message {
             }
             // If the hit occurred on the replied-to message preview, jump to it.
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                // TODO: move this to the event handler for any reply preview content,
-                //       since we also want this jump-to-reply behavior for the reply preview
-                //       that appears above the message input box when you click the reply button.
                 cx.widget_action(
                     details.room_screen_widget_uid,
                     &scope.path,

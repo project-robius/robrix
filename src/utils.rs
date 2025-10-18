@@ -2,6 +2,7 @@
 #![allow(clippy::question_mark)]
 
 use std::{borrow::Cow, fmt::Display, ops::{Deref, DerefMut}, str::{Chars, FromStr}, time::SystemTime};
+use url::Url;
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
@@ -9,7 +10,10 @@ use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRo
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
-use crate::sliding_sync::{submit_async_request, MatrixRequest};
+use crate::{room::RoomPreviewAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
+
+/// The scheme for GEO links, used for location messages in Matrix.
+pub const GEO_URI_SCHEME: &str = "geo:";
 
 
 /// A wrapper type that implements the `Debug` trait for non-`Debug` types.
@@ -33,6 +37,17 @@ impl<T> DerefMut for DebugWrapper<T> {
 impl<T> From<T> for DebugWrapper<T> {
     fn from(value: T) -> Self {
         DebugWrapper(value)
+    }
+}
+impl<T: Default> Default for DebugWrapper<T> {
+    fn default() -> Self {
+        DebugWrapper(T::default())
+    }
+}
+impl<T> DebugWrapper<T> {
+    /// Consumes the wrapper and returns the inner value.
+    pub fn into_inner(self) -> T {
+        self.0
     }
 }
 
@@ -59,12 +74,15 @@ pub fn is_interactive_hit_event(event: &Event) -> bool {
 pub enum ImageFormat {
     Png,
     Jpeg,
+    XIcon,
 }
+
 impl ImageFormat {
     pub fn from_mimetype(mimetype: &str) -> Option<Self> {
         match mimetype {
             "image/png" => Some(Self::Png),
             "image/jpeg" => Some(Self::Jpeg),
+            "image/x-icon" => Some(Self::XIcon),
             _ => None,
         }
     }
@@ -180,7 +198,7 @@ pub fn stringify_pagination_error(
     error: &matrix_sdk_ui::timeline::Error,
     room_name: &str,
 ) -> String {
-    use matrix_sdk::event_cache::{paginator::PaginatorError, EventCacheError};
+    use matrix_sdk::{paginators::PaginatorError, event_cache::EventCacheError};
     use matrix_sdk_ui::timeline::Error as TimelineError;
 
     #[allow(clippy::single_match)]
@@ -210,10 +228,9 @@ pub fn stringify_pagination_error(
                 return message;
             }
         }
-        TimelineError::EventCacheError(EventCacheError::BackpaginationError(paginator_error)) => {
-            if let Some(message) = match_paginator_error(paginator_error) {
-                return message;
-            }
+        TimelineError::EventCacheError(EventCacheError::BackpaginationError(error)) => {
+            return format!("Failed to load earlier messages in \"{room_name}\": \
+                Back-pagination error in the event cache: {error}.");
         }
         _ => {}
     }
@@ -373,14 +390,14 @@ pub fn trim_start_html_whitespace(mut text: &str) -> &str {
     text
 }
 
-/// Looks for bare links in the given `text` and converts them into proper HTML links.
-pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
+/// Looks for bare links in the given `text` and converts them into proper HTML links and returns them.
+pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
     use linkify::{LinkFinder, LinkKind};
     let mut links = LinkFinder::new()
         .links(text)
         .peekable();
     if links.peek().is_none() {
-        return Cow::Borrowed(text);
+        return (Cow::Borrowed(text), Vec::new());
     }
 
     // A closure to escape text if it's not HTML.
@@ -394,6 +411,7 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
 
     let mut linkified_text = String::new();
     let mut last_end_index = 0;
+    let mut url_links = Vec::new();
     for link in links {
         let link_txt = link.as_str();
         // Only linkify the URL if it's not already part of an HTML href attribute.
@@ -407,6 +425,11 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
                 "{linkified_text}{}",
                 text.get(last_end_index..link.end()).unwrap_or_default(),
             );
+            if let Some(link) = text.get(link.start()..link.end()) {
+                if let Ok(url) = Url::parse(link) {
+                    url_links.push(url);
+                }
+            }
         } else {
             match link.kind() {
                 LinkKind::Url => {
@@ -416,6 +439,9 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
                         htmlize::escape_attribute(link_txt),
                         htmlize::escape_text(link_txt),
                     );
+                    if let Ok(url) = Url::parse(link_txt) {
+                        url_links.push(url);
+                    }
                 }
                 LinkKind::Email => {
                     linkified_text = format!(
@@ -425,7 +451,7 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
                         htmlize::escape_text(link_txt),
                     );
                 }
-                _ => return Cow::Borrowed(text), // unreachable
+                _ => return (Cow::Borrowed(text), url_links), // unreachable
             }
         }
         last_end_index = link.end();
@@ -434,9 +460,14 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
         &escaped(text.get(last_end_index..).unwrap_or_default())
     );
     // makepad_widgets::log!("Original text:\n{:?}\nLinkified text:\n{:?}", text, linkified_text);
-    Cow::Owned(linkified_text)
+    (Cow::Owned(linkified_text), url_links)
 }
 
+/// Looks for bare links in the given `text` and converts them into proper HTML links.
+/// This is a wrapper around `linkify_get_urls` that only returns the converted text.
+pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
+    linkify_get_urls(text, is_html).0
+}
 
 /// Returns true if the given `text` string ends with a valid href attribute opener.
 ///
@@ -671,6 +702,17 @@ impl Display for OwnedRoomIdRon {
     }
 }
 
+/// Returns a text avatar string containing the first character of the room name.
+///
+/// Skips the first character if it is a `#` or `!`, the sigils used for Room aliases and Room IDs.
+pub fn avatar_from_room_name(room_name: Option<&str>) -> RoomPreviewAvatar {
+    let first = room_name.and_then(|rn| rn
+        .graphemes(true)
+        .find(|&g| g != "#" && g != "!")
+        .map(ToString::to_string)
+    ).unwrap_or_else(|| String::from("?"));
+    RoomPreviewAvatar::Text(first)
+}
 
 #[cfg(test)]
 mod tests_human_readable_list {

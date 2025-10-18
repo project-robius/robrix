@@ -5,6 +5,7 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
+    pub ICON_ADD             = dep("crate://self/resources/icons/add.svg")
     pub ICON_ADD_REACTION    = dep("crate://self/resources/icons/add_reaction.svg")
     pub ICON_ADD_USER        = dep("crate://self/resources/icons/add_user.svg") // TODO: FIX
     pub ICON_ADD_WALLET      = dep("crate://self/resources/icons/add_wallet.svg")
@@ -19,6 +20,7 @@ live_design! {
     pub ICON_IMPORT          = dep("crate://self/resources/icons/import.svg") // TODO: FIX
     pub ICON_HTML_FILE       = dep("crate://self/resources/icons/html_file.svg")
     pub ICON_INFO            = dep("crate://self/resources/icons/info.svg")
+    pub ICON_JOIN_ROOM       = dep("crate://self/resources/icons/join_room.svg")
     pub ICON_JUMP            = dep("crate://self/resources/icons/go_back.svg")
     pub ICON_LOGOUT          = dep("crate://self/resources/icons/logout.svg")
     pub ICON_LINK            = dep("crate://self/resources/icons/link.svg")
@@ -26,6 +28,7 @@ live_design! {
     pub ICON_REPLY           = dep("crate://self/resources/icons/reply.svg")
     pub ICON_SEARCH          = dep("crate://self/resources/icons/search.svg")
     pub ICON_SEND            = dep("crate://self/resources/icon_send.svg")
+    pub ICON_TOMBSTONE       = dep("crate://self/resources/icons/tombstone.svg")
     pub ICON_TRASH           = dep("crate://self/resources/icons/trash.svg")
     pub ICON_UPLOAD          = dep("crate://self/resources/icons/upload.svg")
     pub ICON_VIEW_SOURCE     = dep("crate://self/resources/icons/view_source.svg")
@@ -97,7 +100,6 @@ live_design! {
 
     pub COLOR_SELECT_TEXT = #A6CDFE
 
-
     pub COLOR_PRIMARY = #ffffff
     pub COLOR_PRIMARY_DARKER = #fefefe
     pub COLOR_SECONDARY = #eef2f4
@@ -116,6 +118,9 @@ live_design! {
 
     pub COLOR_TRANSPARENT = #00000000
     pub COLOR_WARNING = #fcdb03
+
+    pub COLOR_LINK_HOVER = #21B070
+
     // An icon that can be rotated at a custom angle.
     pub IconRotated = <Icon> {
         draw_icon: {
