@@ -405,7 +405,7 @@ pub enum MatrixRequest {
     /// This request does not return a response or notify the UI thread.
     SubscribeToTypingNotices {
         room_id: OwnedRoomId,
-        /// Whether to subscribe or unsubscribe from typing notices for this room.
+        /// Whether to subscribe or unsubscribe.
         subscribe: bool,
     },
     /// Subscribe to changes in the read receipts of our own user.
@@ -413,7 +413,13 @@ pub enum MatrixRequest {
     /// This request does not return a response or notify the UI thread.
     SubscribeToOwnUserReadReceiptsChanged {
         room_id: OwnedRoomId,
-        /// Whether to subscribe or unsubscribe to changes in the read receipts of our own user for this room
+        /// Whether to subscribe or unsubscribe.
+        subscribe: bool,
+    },
+    /// Subscribe to changes in the set of pinned events for the given room.
+    SubscribeToPinnedEvents {
+        room_id: OwnedRoomId,
+        /// Whether to subscribe or unsubscribe.
         subscribe: bool,
     },
     /// Sends a read receipt for the given event in the given room.
@@ -444,6 +450,13 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
+    },
+    /// Pin or unpin the given event in the given room.
+    #[doc(alias("unpin"))]
+    PinEvent {
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
+        pin: bool,
     },
     /// Sends a request to obtain the room's pill link info for the given Matrix ID.
     ///
@@ -494,7 +507,9 @@ async fn async_worker(
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started async_worker task.");
-    let mut tasks_list: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
+    let mut subscribers_own_user_read_receipts: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
+    let mut subscribers_pinned_events: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
+
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
@@ -952,7 +967,7 @@ async fn async_worker(
             }
             MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
                 if !subscribe {
-                    if let Some(task_handler) = tasks_list.remove(&room_id) {
+                    if let Some(task_handler) = subscribers_own_user_read_receipts.remove(&room_id) {
                         task_handler.abort();
                     }
                     continue;
@@ -980,7 +995,7 @@ async fn async_worker(
                         while (update_receiver.next().await).is_some() {
                             if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
                                 if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
-                                    error!("Failed to get own user read receipt: {e:?}");
+                                    error!("Failed to send own user read receipt: {e:?}");
                                 }
                                 // When read receipts change (from other devices), update unread count
                                 let unread_count = timeline.room().num_unread_messages();
@@ -1001,7 +1016,42 @@ async fn async_worker(
                         }
                     }
                 });
-                tasks_list.insert(room_id.clone(), subscribe_own_read_receipt_task);
+                subscribers_own_user_read_receipts.insert(room_id, subscribe_own_read_receipt_task);
+            }
+            MatrixRequest::SubscribeToPinnedEvents { room_id, subscribe } => {
+                if !subscribe {
+                    if let Some(task_handler) = subscribers_pinned_events.remove(&room_id) {
+                        task_handler.abort();
+                    }
+                    continue;
+                }
+                let (timeline, sender) = {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                        log!("BUG: room info not found for subscribe to pinned events request, room {room_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+                let room_id2 = room_id.clone();
+                let subscribe_pinned_events_task = Handle::current().spawn(async move {
+                    // Send an initial update, as the stream may not update immediately.
+                    let pinned_events = timeline.room().pinned_event_ids().unwrap_or_default();
+                    match sender.send(TimelineUpdate::PinnedEvents(pinned_events)) {
+                        Ok(()) => SignalToUI::set_ui_signal(),
+                        Err(e) => log!("Failed to send initial pinned events update: {e:?}"),
+                    }
+                    let update_receiver = timeline.room().pinned_event_ids_stream();
+                    pin_mut!(update_receiver);
+                    while let Some(pinned_events) = update_receiver.next().await {
+                        log!("Got pinned events update for room {room_id2:?}: {pinned_events:?}");
+                        match sender.send(TimelineUpdate::PinnedEvents(pinned_events)) {
+                            Ok(()) => SignalToUI::set_ui_signal(),
+                            Err(e) => log!("Failed to send pinned events update: {e:?}"),
+                        }
+                    }
+                });
+                subscribers_pinned_events.insert(room_id, subscribe_pinned_events_task);
             }
             MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
                 spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
@@ -1244,6 +1294,28 @@ async fn async_worker(
                     }
                 });
             },
+            MatrixRequest::PinEvent { room_id, event_id, pin } => {
+                let (timeline, sender) = {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                        log!("BUG: room info not found for pin message {room_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                let _pin_task = Handle::current().spawn(async move {
+                    let result = if pin {
+                        timeline.pin_event(&event_id).await
+                    } else {
+                        timeline.unpin_event(&event_id).await
+                    };
+                    match sender.send(TimelineUpdate::PinResult { event_id, pin, result }) {
+                        Ok(_) => SignalToUI::set_ui_signal(),
+                        Err(e) => log!("Failed to send timeline update for pin event: {e:?}"),
+                    }
+                });
+            }
             MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
                 let Some(client) = get_client() else { continue };
                 let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {
@@ -1555,12 +1627,15 @@ struct JoinedRoomDetails {
     timeline_subscriber_handler_task: JoinHandle<()>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
+    /// A drop guard for the event handler that represents a subscription to pinned events for this room.
+    pinned_events_subscriber: Option<EventHandlerDropGuard>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
         log!("Dropping JoinedRoomDetails for room {}", self.room_id);
         self.timeline_subscriber_handler_task.abort();
         drop(self.typing_notice_subscriber.take());
+        drop(self.pinned_events_subscriber.take());
     }
 }
 
@@ -2258,6 +2333,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
             timeline_update_sender,
             timeline_subscriber_handler_task,
             typing_notice_subscriber: None,
+            pinned_events_subscriber: None,
         },
     );
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can
