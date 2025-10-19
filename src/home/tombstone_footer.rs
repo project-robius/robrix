@@ -141,7 +141,7 @@ impl TombstoneFooter {
                     .avatar(id!(successor_room_avatar))
                     .show_text(cx, None, None, text);
             }
-            RoomPreviewAvatar::Image(ref image_data) => {
+            RoomPreviewAvatar::Image(image_data) => {
                 let _ = self.view.avatar(id!(successor_room_avatar)).show_image(
                     cx,
                     None,

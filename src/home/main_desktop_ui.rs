@@ -382,7 +382,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                     }
                     // Note: the borrow of `dock` must end here *before* we call `self.focus_or_create_tab()`.
 
-                    if let Some(ref selected_room) = &app_state.selected_room {
+                    if let Some(selected_room) = &app_state.selected_room {
                         self.focus_or_create_tab(cx, selected_room.clone());
                     }
                     self.view.redraw(cx);

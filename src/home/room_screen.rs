@@ -556,6 +556,8 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+    /// The set of pinned events in this room.
+    #[rust] pinned_events: Vec<OwnedEventId>,
     /// Whether this room has been successfully loaded (received from the homeserver).
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
@@ -960,6 +962,7 @@ impl Widget for RoomScreen {
                                         &mut tl_state.media_cache,
                                         &mut tl_state.link_preview_cache,
                                         &tl_state.user_power,
+                                        &self.pinned_events,
                                         item_drawn_status,
                                         room_screen_widget_uid,
                                     )
@@ -1196,7 +1199,7 @@ impl RoomScreen {
                         let loading_pane = self.view.loading_pane(id!(loading_pane));
                         let mut loading_pane_state = loading_pane.take_state();
                         if let LoadingPaneState::BackwardsPaginateUntilEvent {
-                            ref mut events_paginated, target_event_id, ..
+                            events_paginated, target_event_id, ..
                         } = &mut loading_pane_state {
                             *events_paginated += new_items.len().saturating_sub(tl.items.len());
                             log!("While finding target event {target_event_id}, we have now loaded {events_paginated} messages...");
@@ -1339,6 +1342,9 @@ impl RoomScreen {
                     // update loop has completed, which avoids unnecessary expensive work
                     // if the list of typing users gets updated many times in a row.
                     typing_users = Some(users);
+                }
+                TimelineUpdate::PinnedEvents(pinned_events) => {
+                    self.pinned_events = pinned_events;
                 }
                 TimelineUpdate::UserPowerLevels(user_power_levels) => {
                     tl.user_power = user_power_levels;
@@ -1990,6 +1996,10 @@ impl RoomScreen {
                 room_id: room_id.clone(),
                 subscribe: true,
             });
+            submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
+                room_id: room_id.clone(),
+                subscribe: true,
+            });
         }
 
         // Now, restore the visual state of this timeline from its previously-saved state.
@@ -2016,11 +2026,16 @@ impl RoomScreen {
         // * Unsubscribe from typing notices, since we don't care about them
         //   when a given room isn't visible.
         // * Unsubscribe from updates to our own user's read receipts, for the same reason.
+        // * Unsubscribe from updates to this room's pinned events, for the same reason.
         submit_async_request(MatrixRequest::SubscribeToTypingNotices {
             room_id: room_id.clone(),
             subscribe: false,
         });
         submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
+            room_id: room_id.clone(),
+            subscribe: false,
+        });
+        submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
             room_id,
             subscribe: false,
         });
@@ -2333,6 +2348,8 @@ pub enum TimelineUpdate {
         /// The list of users (their displayable name) who are currently typing in this room.
         users: Vec<String>,
     },
+    /// An update containing the set of pinned events in this room.
+    PinnedEvents(Vec<OwnedEventId>),
     /// An update containing the currently logged-in user's power levels for this room.
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
@@ -2577,6 +2594,7 @@ fn populate_message_view(
     media_cache: &mut MediaCache,
     link_preview_cache: &mut LinkPreviewCache,
     user_power_levels: &UserPowerLevels,
+    pinned_events: &[OwnedEventId],
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
 ) -> (WidgetRef, ItemDrawnStatus) {
@@ -2994,6 +3012,7 @@ fn populate_message_view(
                 user_power_levels,
                 event_tl_item,
                 msg_like_content,
+                pinned_events,
                 has_html_body,
             ),
             should_be_highlighted: event_tl_item.is_highlighted(),

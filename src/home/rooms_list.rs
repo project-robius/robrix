@@ -926,9 +926,8 @@ impl Widget for RoomsList {
                     item.draw_all(cx, &mut scope);
                 }
                 else if let Some(invited_room_id) = get_invited_room_id(portal_list_index) {
-                    if let Some(invited_room) =
-                        self.invited_rooms.borrow_mut().get_mut(invited_room_id)
-                    {
+                    let mut invited_rooms_mut = self.invited_rooms.borrow_mut();
+                    if let Some(invited_room) = invited_rooms_mut.get_mut(invited_room_id) {
                         let item = list.item(cx, portal_list_index, live_id!(room_preview));
                         invited_room.is_selected =
                             self.current_active_room.as_deref() == Some(invited_room_id);
