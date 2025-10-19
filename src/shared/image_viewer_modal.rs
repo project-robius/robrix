@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use makepad_widgets::{image_cache::ImageError, *};
 use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomId};
 
@@ -48,6 +46,7 @@ live_design! {
 
     pub ImageViewerModal = {{ImageViewerModal}} {
         width: Fill, height: Fill
+    
         image_modal = <Modal> {
             content: <View> {
                 width: Fill, height: Fill,
@@ -71,6 +70,7 @@ live_design! {
                         fit: Smallest,
                     }
                 }
+
                 <View> {
                     width: Fill, height: Fill,
                     flow: Down,
@@ -96,10 +96,11 @@ live_design! {
                             }
                             icon_walk: {width: 14, height: 14}
                         }
+
                         close_button = <RobrixIconButton> {
                             width: Fit, height: Fit,
                             spacing: 0,
-                            margin: 7,
+                            margin: 8,
                             draw_bg: {
                                 color: (COLOR_SECONDARY)
                             }
@@ -130,6 +131,7 @@ live_design! {
                                     border_size: 3.0,
                                 }
                             }
+
                             <Label> {
                                 width: Fit, height: 30,
                                 text: "Loading image...",
@@ -139,6 +141,7 @@ live_design! {
                                 }
                             }
                         }
+
                         error_label_view = <View> {
                             width: Fill, height: Fit,
                             flow: Down,
@@ -152,6 +155,7 @@ live_design! {
                                 }
                                 icon_walk: { width: 50, height: 50 }
                             }
+
                             loading_label = <Label> {
                                 width: Fit, height: Fit,
                                 text: "Failed to load image",
@@ -161,6 +165,7 @@ live_design! {
                                 }
                             }
                         }
+
                         timeout_label_view = <View> {
                             width: Fill, height: Fit,
                             flow: Down,
@@ -174,6 +179,7 @@ live_design! {
                                 }
                                 icon_walk: { width: 50, height: 50 }
                             }
+
                             loading_label = <Label> {
                                 width: Fit, height: Fit,
                                 text: "Timeout loading image",
@@ -208,9 +214,6 @@ struct ImageViewerModal {
 
 impl Widget for ImageViewerModal {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if !self.visible {
-            return;
-        }
         if self.image_loaded && self.drag_state.is_panning {
             let zoomable_image = self.view.image(id!(zoomable_image));
 
@@ -308,20 +311,11 @@ impl Widget for ImageViewerModal {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if !self.visible {
-            return DrawStep::done();
-        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
 
 impl ImageViewerModal {
-    /// Set the image to display in the modal
-    fn set_image(&mut self, room_id: OwnedRoomId, mxc_uri: OwnedMxcUri) {
-        self.mxc_uri = Some(mxc_uri.clone());
-        self.image_loaded = false;
-        self.room_id = Some(room_id.clone());
-    }
 
     /// Show timeout state
     pub fn show_timeout_state(&mut self, cx: &mut Cx) {
@@ -411,28 +405,10 @@ impl ImageViewerModal {
 }
 
 impl ImageViewerModalRef {
-    /// Open the modal with the given image URI.
-    pub fn open(&self, room_id: OwnedRoomId, mxc_uri: Option<OwnedMxcUri>) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.visible = true;
-            if let Some(uri) = mxc_uri {
-                inner.set_image(room_id, uri);
-            }
-        }
-    }
-
-    /// Close the modal
-    pub fn close(&self, cx: &mut Cx) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.close(cx);
-            inner.visible = false;
-        }
-    }
-
     /// Returns whether to call mediacache's get_media_or_fetch function.
     pub fn get_media_or_fetch(&self, room_id: OwnedRoomId) -> bool {
         if let Some(inner) = self.borrow() {
-            inner.visible && inner.room_id == Some(room_id) && !inner.image_loaded
+            inner.room_id == Some(room_id) && !inner.image_loaded
         } else {
             false
         }
@@ -449,7 +425,7 @@ impl ImageViewerModalRef {
     }
 
     /// Returns a reference to the zoomable image widget that is used to display the image
-    /// in the image viewer modal, or None if the image viewer modal is not visible.
+    /// in the image viewer modal
     pub fn get_zoomable_image(&self) -> Option<ImageRef> {
         if let Some(inner) = self.borrow() {
             Some(inner.view.image(id!(zoomable_image)))
@@ -458,14 +434,12 @@ impl ImageViewerModalRef {
         }
     }
 
-    /// Returns a reference to the modal widget that is used to display the image viewer modal, or None if the
-    /// image viewer modal is not visible.
+    /// Returns a reference to the modal widget that is used to display the image viewer modal
     pub fn get_image_modal(&mut self) -> Option<ModalRef> {
         self.borrow().map(|inner| inner.modal(id!(image_modal)))
     }
 
-    /// Returns the current media URI of the image viewer modal, or None if the
-    /// modal is not visible.
+    /// Returns the current media URI of the image viewer modal
     pub fn get_mxc_uri(&self) -> Option<OwnedMxcUri> {
         if let Some(inner) = self.borrow() {
             inner.mxc_uri.clone()
@@ -525,12 +499,25 @@ fn round_to_3_decimal_places(dvec2: DVec2) -> DVec2 {
     }
 }
 
+/// Loads the image data into the given `image_ref` and displays it.
+///
+/// Shows the `image_ref` and hides all views in the given `view_set`.
+///
+/// If the image fails to load, an `ImageError` is returned.
+fn load_image_data(cx: &mut Cx, image_ref: ImageRef, view_set: ViewSet, data: &[u8]) -> Result<(), ImageError> {
+    load_png_or_jpg(&image_ref, cx, data)?;
+    view_set
+        .set_visible(cx, false);
+    image_ref.set_visible(cx, true);
+    Ok(())
+}
+
 /// Shows the view at the given load state in the provided view set,
 /// and hides all other views in the set. The zoomable image is also
 /// hidden.
 /// 
 /// The ViewSet is in this order: the loading, error and timeout views.
-pub fn update_state_views(cx: &mut Cx, view_set: ViewSet, load_state: LoadState) {
+pub fn show_image_modal_view(cx: &mut Cx, view_set: ViewSet, load_state: LoadState) {
     for (i, view_ref) in view_set.iter().enumerate() {
         let should_show = match load_state {
             LoadState::Loading => i == 0,
@@ -540,19 +527,6 @@ pub fn update_state_views(cx: &mut Cx, view_set: ViewSet, load_state: LoadState)
         };
         view_ref.set_visible(cx, should_show);
     }
-}
-
-/// Loads the image data into the given `image_ref` and displays it.
-///
-/// Shows the `image_ref` and hides all views in the given `view_set`.
-///
-/// If the image fails to load, an `ImageError` is returned.
-pub fn load_image_data(cx: &mut Cx, image_ref: ImageRef, view_set: ViewSet, data: &[u8]) -> Result<(), ImageError> {
-    load_png_or_jpg(&image_ref, cx, data)?;
-    view_set
-        .set_visible(cx, false);
-    image_ref.set_visible(cx, true);
-    Ok(())
 }
 
 /// Represents the possible states of an image load operation.
@@ -570,30 +544,6 @@ pub fn initialize_image_modal_with_uri(cx: &mut Cx, timer: &mut Timer, mxc_uri: 
     image_viewer_modal.initialized(room_id, mxc_uri, *timer);
 }
 
-/// Handles loading and displaying image data in the modal
-pub fn handle_loaded_image_data(
-    cx: &mut Cx,
-    timer: &mut Timer,
-    image_ref: ImageRef,
-    view_set: ViewSet,
-    data: &Arc<[u8]>,
-) -> LoadState {
-    match load_image_data(cx, image_ref, view_set.clone(), data) {
-        Ok(_) => {
-            cx.stop_timer(*timer);
-            // Mark the image as loaded to prevent timeout from showing
-            let image_viewer_modal = get_global_image_viewer_modal(cx);
-            image_viewer_modal.set_image_loaded();
-            LoadState::Loaded
-        }
-        Err(_) => {
-            cx.stop_timer(*timer);
-            update_state_views(cx, view_set, LoadState::Error);
-            LoadState::Error
-        }
-    }
-}
-
 /// Handles media cache entry states for the image modal
 pub fn handle_media_cache_entry(
     cx: &mut Cx,
@@ -608,15 +558,28 @@ pub fn handle_media_cache_entry(
                 return LoadState::Error; 
             };
             cx.stop_timer(*timer);
-            handle_loaded_image_data(cx, timer, image_ref, view_set, &data)
+            match load_image_data(cx, image_ref, view_set.clone(), &data) {
+                Ok(_) => {
+                    cx.stop_timer(*timer);
+                    // Mark the image as loaded to prevent timeout from showing
+                    let image_viewer_modal = get_global_image_viewer_modal(cx);
+                    image_viewer_modal.set_image_loaded();
+                    LoadState::Loaded
+                }
+                Err(_) => {
+                    cx.stop_timer(*timer);
+                    show_image_modal_view(cx, view_set, LoadState::Error);
+                    LoadState::Error
+                }
+            }
         }
         (MediaCacheEntry::Requested, _) | (MediaCacheEntry::Loaded(_), MediaFormat::Thumbnail(_)) => {
-            update_state_views(cx, view_set, LoadState::Loading);
+            show_image_modal_view(cx, view_set, LoadState::Loading);
             LoadState::Loading
         }
         (MediaCacheEntry::Failed, _) => {
             cx.stop_timer(*timer);
-            update_state_views(cx, view_set, LoadState::Error);
+            show_image_modal_view(cx, view_set, LoadState::Error);
             LoadState::Error
         }
     }

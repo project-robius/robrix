@@ -5,7 +5,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomId};
-use crate::shared::image_viewer_modal::{get_global_image_viewer_modal, update_state_views, LoadState};
+use crate::shared::image_viewer_modal::{get_global_image_viewer_modal, show_image_modal_view, LoadState};
 use crate::home::room_screen::RoomScreenProps;
 
 live_design! {
@@ -90,7 +90,7 @@ impl Widget for TextOrImage {
                     let image_viewer_modal = get_global_image_viewer_modal(cx);
                     if let Some(view_set) = image_viewer_modal.get_view_set() {
                         // Display Loading spinner
-                        update_state_views(cx, view_set, LoadState::Loading);
+                        show_image_modal_view(cx, view_set, LoadState::Loading);
                     }
                     // Get room_id from RoomScreenProps in scope
                     if let Some(room_props) = scope.props.get::<RoomScreenProps>() {

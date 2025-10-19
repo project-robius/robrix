@@ -4103,7 +4103,7 @@ pub fn clear_timeline_states(_cx: &mut Cx) {
 /// This function manages the complete lifecycle of loading and displaying an image in the modal:
 /// 1. Optionally initializes the modal with a new MXC URI
 /// 2. Attempts to fetch or retrieve cached media
-/// 3. Updates the UI based on the current media state (loading, loaded, failed)
+/// 3. Updates the UI based on the current media state: loading, loaded and failed.
 fn populate_image_modal(
     cx: &mut Cx, 
     timer: &mut Timer, 
