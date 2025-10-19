@@ -451,6 +451,13 @@ pub enum MatrixRequest {
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
     },
+    /// Pin or unpin the given event in the given room.
+    #[doc(alias("unpin"))]
+    PinEvent {
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
+        pin: bool,
+    },
     /// Sends a request to obtain the room's pill link info for the given Matrix ID.
     ///
     /// The MatrixLinkPillInfo::Loaded variant is sent back to the main UI thread via.
@@ -1287,6 +1294,28 @@ async fn async_worker(
                     }
                 });
             },
+            MatrixRequest::PinEvent { room_id, event_id, pin } => {
+                let (timeline, sender) = {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                        log!("BUG: room info not found for pin message {room_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                let _pin_task = Handle::current().spawn(async move {
+                    let result = if pin {
+                        timeline.pin_event(&event_id).await
+                    } else {
+                        timeline.unpin_event(&event_id).await
+                    };
+                    match sender.send(TimelineUpdate::PinResult { event_id, pin, result }) {
+                        Ok(_) => SignalToUI::set_ui_signal(),
+                        Err(e) => log!("Failed to send timeline update for pin event: {e:?}"),
+                    }
+                });
+            }
             MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
                 let Some(client) = get_client() else { continue };
                 let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {

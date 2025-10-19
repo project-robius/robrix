@@ -1335,6 +1335,26 @@ impl RoomScreen {
                     self.view.room_input_bar(id!(room_input_bar))
                         .handle_edit_result(cx, timeline_event_id, result);
                 }
+                TimelineUpdate::PinResult { result, pin, .. } => {
+                    let (message, auto_dismissal_duration, kind) = match &result {
+                        Ok(true) => (
+                            format!("Successfully {} event.", if pin { "pinned" } else { "unpinned" }),
+                            Some(4.0),
+                            PopupKind::Success
+                        ),
+                        Ok(false) => (
+                            format!("Message was already {}.", if pin { "pinned" } else { "unpinned" }),
+                            Some(4.0),
+                            PopupKind::Info
+                        ),
+                        Err(e) => (
+                            format!("Failed to {} event. Error: {e}", if pin { "pin" } else { "unpin" }),
+                            None,
+                            PopupKind::Error
+                        ),
+                    };
+                    enqueue_popup_notification(PopupItem { message, auto_dismissal_duration, kind, });
+                }
                 TimelineUpdate::TypingUsers { users } => {
                     // This update loop should be kept tight & fast, so all we do here is
                     // save the list of typing users for future use after the loop exits.
@@ -1345,6 +1365,12 @@ impl RoomScreen {
                 }
                 TimelineUpdate::PinnedEvents(pinned_events) => {
                     self.pinned_events = pinned_events;
+                    // We need to redraw any events that might have been pinned or unpinned
+                    // in order to have all events properly reflect their pinned state.
+                    // However, it's intractable to find exactly which events in the timeline
+                    // had a change in their pinned state, so we just clear all draw caches.
+                    tl.content_drawn_since_last_update.clear();
+                    tl.profile_drawn_since_last_update.clear();
                 }
                 TimelineUpdate::UserPowerLevels(user_power_levels) => {
                     tl.user_power = user_power_levels;
@@ -1604,13 +1630,37 @@ impl RoomScreen {
                         });
                     }
                 }
-                MessageAction::Pin(_details) => {
-                    // TODO
-                    enqueue_popup_notification(PopupItem { message: "Pinning messages is not yet implemented.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                MessageAction::Pin(details) => {
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    if let Some(event_id) = details.event_id {
+                        submit_async_request(MatrixRequest::PinEvent {
+                            event_id,
+                            room_id: tl.room_id.clone(),
+                            pin: true,
+                        });
+                    } else {
+                        enqueue_popup_notification(PopupItem {
+                            message: String::from("This event cannot be pinned."),
+                            auto_dismissal_duration: None,
+                            kind: PopupKind::Error,
+                        });
+                    }
                 }
-                MessageAction::Unpin(_details) => {
-                    // TODO
-                    enqueue_popup_notification(PopupItem { message: "Unpinning messages is not yet implemented.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                MessageAction::Unpin(details) => {
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    if let Some(event_id) = details.event_id {
+                        submit_async_request(MatrixRequest::PinEvent {
+                            event_id,
+                            room_id: tl.room_id.clone(),
+                            pin: false,
+                        });
+                    } else {
+                        enqueue_popup_notification(PopupItem {
+                            message: String::from("This event cannot be unpinned."),
+                            auto_dismissal_duration: None,
+                            kind: PopupKind::Error,
+                        });
+                    }
                 }
                 MessageAction::CopyText(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
@@ -2347,6 +2397,12 @@ pub enum TimelineUpdate {
     TypingUsers {
         /// The list of users (their displayable name) who are currently typing in this room.
         users: Vec<String>,
+    },
+    /// The result of a pin/unpin request ([`MatrixRequest::PinEvent`]).
+    PinResult {
+        event_id: OwnedEventId,
+        result: Result<bool, matrix_sdk::Error>,
+        pin: bool,
     },
     /// An update containing the set of pinned events in this room.
     PinnedEvents(Vec<OwnedEventId>),
