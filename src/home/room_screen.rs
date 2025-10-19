@@ -1381,6 +1381,10 @@ impl RoomScreen {
                         room_id: tl.room_id.clone(),
                         can_notify_room: user_power_levels.can_notify_room(),
                     });
+                    // We need to redraw all events in order to reflect the new power levels,
+                    // e.g., for the message context menu to be correctly populated.
+                    tl.content_drawn_since_last_update.clear();
+                    tl.profile_drawn_since_last_update.clear();
                 }
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
