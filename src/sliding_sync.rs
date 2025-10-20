@@ -1739,25 +1739,25 @@ fn username_to_full_user_id(
 /// determine if the room has changed state.
 /// We can't just store the `matrix_sdk::Room` object itself,
 /// because that is a shallow reference to an inner room object within
-/// the room list service
+/// the room list service.
 #[derive(Clone)]
 struct RoomListServiceRoomInfo {
-    room: matrix_sdk::Room,
     room_id: OwnedRoomId,
     room_state: RoomState,
+    is_direct: bool,
+    room: matrix_sdk::Room,
 }
-impl From<&matrix_sdk::Room> for RoomListServiceRoomInfo {
-    fn from(room: &matrix_sdk::Room) -> Self {
-        room.clone().into()
-    }
-}
-impl From<matrix_sdk::Room> for RoomListServiceRoomInfo {
-    fn from(room: matrix_sdk::Room) -> Self {
+impl RoomListServiceRoomInfo {
+    async fn from_room(room: matrix_sdk::Room) -> Self {
         Self {
             room_id: room.room_id().to_owned(),
             room_state: room.state(),
+            is_direct: room.is_direct().await.unwrap_or(false),
             room,
         }
+    }
+    async fn from_room_ref(room: &matrix_sdk::Room) -> Self {
+        Self::from_room(room.clone()).await
     }
 }
 
@@ -1920,7 +1920,7 @@ async fn async_main_loop(
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append {_num_new_rooms}"); }
                     for new_room in new_rooms {
                         add_new_room(&new_room, &room_list_service).await?;
-                        all_known_rooms.push_back(new_room.into_inner().into());
+                        all_known_rooms.push_back(RoomListServiceRoomInfo::from_room(new_room.into_inner()).await);
                     }
                 }
                 VectorDiff::Clear => {
@@ -1932,12 +1932,12 @@ async fn async_main_loop(
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
                     add_new_room(&new_room, &room_list_service).await?;
-                    all_known_rooms.push_front(new_room.into_inner().into());
+                    all_known_rooms.push_front(RoomListServiceRoomInfo::from_room(new_room.into_inner()).await);
                 }
                 VectorDiff::PushBack { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
                     add_new_room(&new_room, &room_list_service).await?;
-                    all_known_rooms.push_back(new_room.into_inner().into());
+                    all_known_rooms.push_back(RoomListServiceRoomInfo::from_room(new_room.into_inner()).await);
                 }
                 remove_diff @ VectorDiff::PopFront => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopFront"); }
@@ -1966,7 +1966,7 @@ async fn async_main_loop(
                 VectorDiff::Insert { index, value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
                     add_new_room(&new_room, &room_list_service).await?;
-                    all_known_rooms.insert(index, new_room.into_inner().into());
+                    all_known_rooms.insert(index, RoomListServiceRoomInfo::from_room(new_room.into_inner()).await);
                 }
                 VectorDiff::Set { index, value: changed_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Set at {index}"); }
@@ -1975,7 +1975,7 @@ async fn async_main_loop(
                     } else {
                         error!("BUG: room list diff: Set index {index} was out of bounds.");
                     }
-                    all_known_rooms.set(index, changed_room.into_inner().into());
+                    all_known_rooms.set(index, RoomListServiceRoomInfo::from_room(changed_room.into_inner()).await);
                 }
                 remove_diff @ VectorDiff::Remove { index: remove_index } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Remove at {remove_index}"); }
@@ -2016,10 +2016,9 @@ async fn async_main_loop(
                     for room in &new_rooms {
                         add_new_room(room.deref(), &room_list_service).await?;
                     }
-                    all_known_rooms = new_rooms
-                        .into_iter()
-                        .map(|r| r.into_inner().into())
-                        .collect();
+                    for new_room in new_rooms.into_iter() {
+                        all_known_rooms.push_back(RoomListServiceRoomInfo::from_room(new_room.into_inner()).await);
+                    }
                 }
             }
         }
@@ -2054,7 +2053,7 @@ async fn optimize_remove_then_add_into_update(
                 log!("Optimizing {remove_diff:?} + Insert({insert_index}) into Update for room {}", room.room_id);
             }
             update_room(room, new_room, room_list_service).await?;
-            all_known_rooms.insert(*insert_index, new_room.deref().clone().into());
+            all_known_rooms.insert(*insert_index, RoomListServiceRoomInfo::from_room_ref(new_room.deref()).await);
             next_diff_was_handled = true;
         }
         Some(VectorDiff::PushFront { value: new_room })
@@ -2064,7 +2063,7 @@ async fn optimize_remove_then_add_into_update(
                 log!("Optimizing {remove_diff:?} + PushFront into Update for room {}", room.room_id);
             }
             update_room(room, new_room, room_list_service).await?;
-            all_known_rooms.push_front(new_room.deref().clone().into());
+            all_known_rooms.push_front(RoomListServiceRoomInfo::from_room_ref(new_room.deref()).await);
             next_diff_was_handled = true;
         }
         Some(VectorDiff::PushBack { value: new_room })
@@ -2074,7 +2073,7 @@ async fn optimize_remove_then_add_into_update(
                 log!("Optimizing {remove_diff:?} + PushBack into Update for room {}", room.room_id);
             }
             update_room(room, new_room, room_list_service).await?;
-            all_known_rooms.push_back(new_room.deref().clone().into());
+            all_known_rooms.push_back(RoomListServiceRoomInfo::from_room_ref(new_room.deref()).await);
             next_diff_was_handled = true;
         }
         _ => next_diff_was_handled = false,
@@ -2110,7 +2109,7 @@ async fn update_room(
                 RoomState::Banned => {
                     // TODO: handle rooms that this user has been banned from.
                     log!("Removing Banned room: {new_room_name:?} ({new_room_id})");
-                    remove_room(&new_room.into());
+                    remove_room(&RoomListServiceRoomInfo::from_room_ref(new_room).await);
                     return Ok(());
                 }
                 RoomState::Left => {
@@ -2120,7 +2119,7 @@ async fn update_room(
                     //       Upon clicking a left room, we could show a splash page
                     //       that prompts the user to rejoin the room or forget it permanently.
                     //       Currently, we just remove it and do not show left rooms at all.
-                    remove_room(&new_room.into());
+                    remove_room(&RoomListServiceRoomInfo::from_room_ref(new_room).await);
                     return Ok(());
                 }
                 RoomState::Joined => {
@@ -2180,7 +2179,8 @@ async fn update_room(
             }
         }
 
-        // We only update tags or unread count for joined rooms.
+        // Below, we update room data that is only relevant to joined rooms:
+        // tags, unread count, is_direct, etc.
         // Invited or left rooms don't care about these details.
         if matches!(new_room_state, RoomState::Joined) {
             if let Ok(new_tags) = new_room.tags().await {
@@ -2195,6 +2195,15 @@ async fn update_room(
                 count: UnreadMessageCount::Known(new_room.num_unread_messages()),
                 unread_mentions: new_room.num_unread_mentions()
             });
+
+            if let Ok(is_new_room_direct) = new_room.is_direct().await {
+                if old_room.is_direct != is_new_room_direct {
+                    enqueue_rooms_list_update(RoomsListUpdate::UpdateIsDirect {
+                        room_id: new_room_id.clone(),
+                        is_direct: is_new_room_direct,
+                    });
+                }
+            }
         }
 
         Ok(())

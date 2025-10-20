@@ -344,7 +344,7 @@ impl Widget for InviteScreen {
                     Some(JoinRoomResultAction::Joined { room_id }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingForJoinedRoom;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification(PopupItem{ message: "Successfully joined room.".into(), kind: PopupKind::Success, auto_dismissal_duration: None });
+                            enqueue_popup_notification(PopupItem{ message: "Successfully joined room.".into(), kind: PopupKind::Success, auto_dismissal_duration: Some(5.0) });
                         }
                         continue;
                     }
