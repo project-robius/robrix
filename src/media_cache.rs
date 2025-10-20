@@ -168,7 +168,7 @@ impl MediaCache {
 /// Insert data into a previously-requested media cache entry.
 fn insert_into_cache<D: Into<Arc<[u8]>>>(
     value_ref: &Mutex<MediaCacheEntry>,
-    _request: MediaRequestParameters,
+    request: MediaRequestParameters,
     data: matrix_sdk::Result<D>,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
@@ -178,7 +178,7 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
 
             // debugging: dump out the media image to disk
             if false {
-                if let MediaSource::Plain(mxc_uri) = _request.source {
+                if let MediaSource::Plain(mxc_uri) = &request.source {
                     log!("Fetched media for {mxc_uri}");
                     let mut path = crate::temp_storage::get_temp_dir_path().clone();
                     let filename = format!("{}_{}_{}",
@@ -195,7 +195,7 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
             MediaCacheEntry::Loaded(data)
         }
         Err(e) => {
-            error!("Failed to fetch media for {:?}: {e:?}", _request.source);
+            error!("Failed to fetch media for {:?}: {e:?}", request.source);
             MediaCacheEntry::Failed
         }
     };
@@ -203,7 +203,11 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
     *value_ref.lock().unwrap() = new_value;
 
     if let Some(sender) = update_sender {
-        let _ = sender.send(TimelineUpdate::MediaFetched);
+        let source = match &request.source {
+            MediaSource::Plain(mxc_uri) => mxc_uri.to_string(),
+            _ => "<unsupported source>".to_string(),
+        };
+        let _ = sender.send(TimelineUpdate::MediaFetched(source));
     }
     SignalToUI::set_ui_signal();
 }

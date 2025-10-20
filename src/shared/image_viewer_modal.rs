@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use makepad_widgets::{image_cache::ImageError, *};
 use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomId};
 
@@ -196,6 +198,19 @@ live_design! {
     }
 }
 
+/// Actions handled by the `ImageViewer` widget.
+#[derive(Clone, Debug, DefaultNone)]
+pub enum ImageViewerModalAction {
+    /// Initialize the ImageViewer widget with a source URI
+    Initialize(String),
+    /// Make the ImageViewer widget visible.
+    Show(LoadState),
+    /// Set the image being displayed by the ImageViewer. (given the image data)
+    SetImage(Arc<[u8]>),
+    DrawImage,
+    None,
+}
+
 #[derive(Live, Widget, LiveHook)]
 struct ImageViewerModal {
     #[deref]
@@ -210,6 +225,8 @@ struct ImageViewerModal {
     drag_state: DragState,
     #[rust]
     room_id: Option<OwnedRoomId>,
+    #[rust]
+    unqiue_id: Option<String>,
 }
 
 impl Widget for ImageViewerModal {
@@ -292,26 +309,55 @@ impl Widget for ImageViewerModal {
             }
         }
 
-        if let Event::Actions(actions) = event {
-            if self.view.button(id!(close_button)).clicked(actions) {
-                self.close(cx);
-            }
-            if self.view.button(id!(magnify_button)).clicked(actions) {
-                if self.drag_state.zoom_level == 1.0 {
-                    self.drag_state.zoom_level = 1.0 / 1.2;
-                    self.drag_state.is_panning = true;
-                    self.drag_state.pan_offset.x = (1.0 - self.drag_state.zoom_level) * 0.5;
-                    self.drag_state.pan_offset.y = (1.0 - self.drag_state.zoom_level) * 0.5;
-                } else {
-                    self.reset_drag_state(cx);
-                }
-                self.update_image_shader(cx);
-            }
-        }
+        self.match_event(cx, event);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl MatchEvent for ImageViewerModal {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        if self.view.button(id!(close_button)).clicked(actions) {
+            self.close(cx);
+        }
+        if self.view.button(id!(magnify_button)).clicked(actions) {
+            if self.drag_state.zoom_level == 1.0 {
+                self.drag_state.zoom_level = 1.0 / 1.2;
+                self.drag_state.is_panning = true;
+                self.drag_state.pan_offset.x = (1.0 - self.drag_state.zoom_level) * 0.5;
+                self.drag_state.pan_offset.y = (1.0 - self.drag_state.zoom_level) * 0.5;
+            } else {
+                self.reset_drag_state(cx);
+            }
+            self.update_image_shader(cx);
+        }
+        for action in actions {
+            match action.downcast_ref::<ImageViewerModalAction>() {
+                Some(ImageViewerModalAction::Initialize(source)) => {
+                    self.image_loaded = false;
+                    self.unqiue_id = Some(source.clone());
+                }
+                Some(ImageViewerModalAction::Show(load_state)) => {
+                    cx.stop_timer(self.timeout_timer);
+                    if load_state == &LoadState::Loading {
+                        self.modal(id!(image_modal)).open(cx);
+                        self.timeout_timer = cx.start_timeout(IMAGE_LOAD_TIMEOUT);
+                    }
+                    show_image_modal_view(cx, self.view_set(), *load_state);
+                }
+                Some(ImageViewerModalAction::SetImage(data)) => {
+                    cx.stop_timer(self.timeout_timer);   
+                    self.image_loaded = true;
+                    let _ = load_image_data(cx, self.view.image(id!(zoomable_image)), self.view_set(), &data);
+                }
+                Some(ImageViewerModalAction::DrawImage) => {
+                    self.image_loaded = true;
+                }
+                _ => {}
+            }
+        }
     }
 }
 
@@ -402,6 +448,9 @@ impl ImageViewerModal {
         self.drag_state = DragState::default();
         self.update_image_shader(cx);
     }
+    fn view_set(&mut self) -> ViewSet {
+        self.view.view_set(ids!(loading_view, error_label_view, timeout_label_view))
+    }
 }
 
 impl ImageViewerModalRef {
@@ -460,12 +509,26 @@ impl ImageViewerModalRef {
     /// URI. This function is called when the image viewer modal is opened or
     /// reopened with a new media URI. It is used to set the correct image URI,
     /// room ID, and timer for the modal. It also reset the image loaded flag to false.
-    pub fn initialized(&self, room_id: OwnedRoomId, mxc_uri: OwnedMxcUri, timer: Timer) {
+    // pub fn initialized(&self, room_id: OwnedRoomId, mxc_uri: OwnedMxcUri, timer: Timer) {
+    //     if let Some(mut inner) = self.borrow_mut() {
+    //         inner.image_loaded = false;
+    //         inner.mxc_uri = Some(mxc_uri);
+    //         inner.room_id = Some(room_id);
+    //         inner.timeout_timer = timer;
+    //     }
+    // }
+    pub fn initialized(&self, unqiue_id: String) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.image_loaded = false;
-            inner.mxc_uri = Some(mxc_uri);
-            inner.room_id = Some(room_id);
-            inner.timeout_timer = timer;
+            inner.unqiue_id = Some(unqiue_id);
+        }
+    }
+
+    pub fn unique_key(&self) -> Option<String> {
+        if let Some(inner) = self.borrow() {
+            inner.unqiue_id.clone()
+        } else {
+            None
         }
     }
 }
@@ -517,7 +580,7 @@ fn load_image_data(cx: &mut Cx, image_ref: ImageRef, view_set: ViewSet, data: &[
 /// hidden.
 /// 
 /// The ViewSet is in this order: the loading, error and timeout views.
-pub fn show_image_modal_view(cx: &mut Cx, view_set: ViewSet, load_state: LoadState) {
+fn show_image_modal_view(cx: &mut Cx, view_set: ViewSet, load_state: LoadState) {
     for (i, view_ref) in view_set.iter().enumerate() {
         let should_show = match load_state {
             LoadState::Loading => i == 0,
@@ -530,6 +593,7 @@ pub fn show_image_modal_view(cx: &mut Cx, view_set: ViewSet, load_state: LoadSta
 }
 
 /// Represents the possible states of an image load operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LoadState {
     Loading,
     Loaded,
@@ -537,49 +601,22 @@ pub enum LoadState {
     Timeout,
 }
 
-/// Initializes the image modal with a new MXC URI and starts the loading timeout
-pub fn initialize_image_modal_with_uri(cx: &mut Cx, timer: &mut Timer, mxc_uri: OwnedMxcUri, room_id: OwnedRoomId) {
-    *timer = cx.start_timeout(IMAGE_LOAD_TIMEOUT);
-    let image_viewer_modal = get_global_image_viewer_modal(cx);
-    image_viewer_modal.initialized(room_id, mxc_uri, *timer);
-}
-
 /// Handles media cache entry states for the image modal
 pub fn handle_media_cache_entry(
     cx: &mut Cx,
-    timer: &mut Timer,
+    mxc_uri: OwnedMxcUri,
     media_entry: (MediaCacheEntry, MediaFormat),
-    view_set: ViewSet,
 ) -> LoadState {
     match media_entry {
         (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
-            let image_viewer_modal = get_global_image_viewer_modal(cx);
-            let Some(image_ref) = image_viewer_modal.get_zoomable_image() else {
-                return LoadState::Error; 
-            };
-            cx.stop_timer(*timer);
-            match load_image_data(cx, image_ref, view_set.clone(), &data) {
-                Ok(_) => {
-                    cx.stop_timer(*timer);
-                    // Mark the image as loaded to prevent timeout from showing
-                    let image_viewer_modal = get_global_image_viewer_modal(cx);
-                    image_viewer_modal.set_image_loaded();
-                    LoadState::Loaded
-                }
-                Err(_) => {
-                    cx.stop_timer(*timer);
-                    show_image_modal_view(cx, view_set, LoadState::Error);
-                    LoadState::Error
-                }
-            }
+            cx.action(ImageViewerModalAction::SetImage(data));
+            LoadState::Loaded
         }
         (MediaCacheEntry::Requested, _) | (MediaCacheEntry::Loaded(_), MediaFormat::Thumbnail(_)) => {
-            show_image_modal_view(cx, view_set, LoadState::Loading);
             LoadState::Loading
         }
         (MediaCacheEntry::Failed, _) => {
-            cx.stop_timer(*timer);
-            show_image_modal_view(cx, view_set, LoadState::Error);
+            cx.action(ImageViewerModalAction::Show(LoadState::Error));
             LoadState::Error
         }
     }

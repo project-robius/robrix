@@ -624,7 +624,7 @@ fn insert_into_cache(
     
     if let Some(sender) = update_sender {
         // Reuse TimelineUpdate MediaFetched to trigger redraw in the timeline.
-        let _ = sender.send(TimelineUpdate::MediaFetched);
+        let _ = sender.send(TimelineUpdate::MediaFetched(url));
     }
     SignalToUI::set_ui_signal();
 }

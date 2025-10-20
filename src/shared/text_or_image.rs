@@ -5,7 +5,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomId};
-use crate::shared::image_viewer_modal::{get_global_image_viewer_modal, show_image_modal_view, LoadState};
+use crate::shared::image_viewer_modal::{ImageViewerModalAction, LoadState};
 use crate::home::room_screen::RoomScreenProps;
 
 live_design! {
@@ -83,21 +83,23 @@ impl Widget for TextOrImage {
                 }
                 Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                     // Open the image viewer modal
-                    let image_viewer_modal = get_global_image_viewer_modal(cx);
-                    if let Some(image_modal) = image_viewer_modal.get_image_modal() {
-                        image_modal.open(cx);
-                    }
-                    let image_viewer_modal = get_global_image_viewer_modal(cx);
-                    if let Some(view_set) = image_viewer_modal.get_view_set() {
-                        // Display Loading spinner
-                        show_image_modal_view(cx, view_set, LoadState::Loading);
-                    }
-                    // Get room_id from RoomScreenProps in scope
-                    if let Some(room_props) = scope.props.get::<RoomScreenProps>() {
-                        let room_id = room_props.room_id.clone();
-                        // Send an Action containing the room_id and MXC URI to the room_screen
-                        cx.widget_action(self.widget_uid(), &scope.path, TextOrImageAction::Clicked(room_id, mxc_uri.clone()));
-                    }
+                    // let image_viewer_modal = get_global_image_viewer_modal(cx);
+                    // if let Some(image_modal) = image_viewer_modal.get_image_modal() {
+                    //     image_modal.open(cx);
+                    // }
+                    // let image_viewer_modal = get_global_image_viewer_modal(cx);
+                    // if let Some(view_set) = image_viewer_modal.get_view_set() {
+                    //     // Display Loading spinner
+                    //     cx.action(ImageViewerModalAction::Show(LoadState::Loading));
+                    // }
+                    // Display Loading spinner
+                    // cx.action(ImageViewerModalAction::Show(LoadState::Loading));
+                    // // Get room_id from RoomScreenProps in scope
+                    // if let Some(room_props) = scope.props.get::<RoomScreenProps>() {
+                    //     let room_id = room_props.room_id.clone();
+                    //     // Send an Action containing the room_id and MXC URI to the room_screen
+                    //     cx.widget_action(self.widget_uid(), &scope.path, TextOrImageAction::Clicked(room_id, mxc_uri.clone()));
+                    // }
                 }
                 Hit::FingerHoverIn(_) => {
                     cx.set_cursor(MouseCursor::Hand);
