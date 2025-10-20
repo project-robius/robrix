@@ -392,7 +392,9 @@ pub fn trim_start_html_whitespace(mut text: &str) -> &str {
 
 /// Looks for bare links in the given `text` and converts them into proper HTML links and returns them.
 pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
-    use linkify::{LinkFinder, LinkKind};
+    const MAILTO: &str = "mailto:";
+
+    use linkify::{Link, LinkFinder, LinkKind};
     let mut links = LinkFinder::new()
         .links(text)
         .peekable();
@@ -414,13 +416,28 @@ pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
     let mut url_links = Vec::new();
     for link in links {
         let link_txt = link.as_str();
-        // Only linkify the URL if it's not already part of an HTML href attribute.
-        let is_link_within_href_attr = text.get(..link.start())
-            .is_some_and(ends_with_href);
-        let is_link_within_html_tag = text.get(link.end() ..)
-            .is_some_and(|after| after.trim_end().starts_with("</a>"));
 
-        if is_link_within_href_attr || is_link_within_html_tag {
+        // Only linkify the URL if it's not already part of an HTML or mailto href attribute.
+        let is_link_within_href_attr = text.get(.. link.start())
+            .is_some_and(ends_with_href);
+        let is_link_within_html_tag = |link: &Link| {
+            text.get(link.end() ..)
+                .is_some_and(|after| after.trim_end().starts_with("</a>"))
+        };
+        let is_mailto_link_within_href_attr = |link: &Link| {
+            if !matches!(link.kind(), LinkKind::Email) { return false; }
+            let mailto_start = link.start().saturating_sub(MAILTO.len());
+            text.get(mailto_start .. link.start())
+                .is_some_and(|t| t == MAILTO)
+                .then(|| text.get(.. mailto_start))
+                .flatten()
+                .is_some_and(ends_with_href)
+        };
+
+        if is_link_within_href_attr
+            || is_link_within_html_tag(&link)
+            || is_mailto_link_within_href_attr(&link)
+        {
             linkified_text = format!(
                 "{linkified_text}{}",
                 text.get(last_end_index..link.end()).unwrap_or_default(),
@@ -861,6 +878,20 @@ mod tests_linkify {
         let text = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
         let expected = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
         assert_eq!(linkify(text, true).as_ref(), expected);
+    }
+
+    #[test]
+    fn test_linkify14() {
+        let text = "<p>If you have any questions please drop us an email to <a href=\"mailto:legal@matrix.org\">legal@matrix.org</a></p>";
+        let expected = text;
+        assert_eq!(linkify(text, true).as_ref(), expected);
+    }
+
+    #[test]
+    fn test_linkify15() {
+        let text = "If you have any questions please drop us an email to:legal@matrix.org";
+        let expected = "If you have any questions please drop us an email to:<a href=\"mailto:legal@matrix.org\">legal@matrix.org</a>";
+        assert_eq!(linkify(text, false).as_ref(), expected);
     }
 }
 
