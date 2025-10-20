@@ -42,7 +42,7 @@ live_design! {
 
     pub RoomInputBar = {{RoomInputBar}} {
         width: Fill,
-        height: Fit,
+        height: Fit { max: Rel(0.625) }
         flow: Down,
 
         // The top-most element is a preview of the message that the user is replying to, if any.
@@ -58,13 +58,13 @@ live_design! {
         // * the EditingPane, which slides up as an overlay in front of the other views below.
         overlay_wrapper = <View> {
             width: Fill,
-            height: Fit,
+            height: Fit { max: Rel(0.625) }
             flow: Overlay,
 
             // Below that, display a view that holds the message input bar and send button.
             input_bar = <View> {
                 width: Fill,
-                height: Fit
+                height: Fit { max: Rel(0.625) }
                 flow: Right
                 // Bottom-align everything to ensure that buttons always stick to the bottom
                 // even when the mentionable_text_input box is very tall.
@@ -88,7 +88,7 @@ live_design! {
 
                 mentionable_text_input = <MentionableTextInput> {
                     width: Fill,
-                    height: Fit
+                    height: Fit { max: Rel(0.625) }
                     margin: { bottom: 12 },
 
                     persistent = {

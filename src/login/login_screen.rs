@@ -412,7 +412,7 @@ impl MatchEvent for LoginScreen {
                     login_status_modal.open(cx);
                     self.redraw(cx);
                 }
-                Some(LoginAction::SsoPending(ref pending)) => {
+                Some(LoginAction::SsoPending(pending)) => {
                     for view_ref in self.view_set(button_set).iter() {
                         let Some(mut view_mut) = view_ref.borrow_mut() else { continue };
                         if *pending {

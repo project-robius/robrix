@@ -5,9 +5,8 @@ use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoom
 use crate::{
     app::{AppState, SelectedRoom},
     room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, RoomPreviewAvatar},
-    shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
-    jump_to_bottom_button::UnreadMessageCount, room_filter_input_bar::RoomFilterAction},
-    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection},
+    shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, room_filter_input_bar::RoomFilterAction},
+    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}, utils::room_name_or_id,
 };
 use super::room_preview::RoomPreviewAction;
 
@@ -139,6 +138,11 @@ pub enum RoomsListUpdate {
     UpdateRoomAvatar {
         room_id: OwnedRoomId,
         avatar: RoomPreviewAvatar,
+    },
+    /// Update whether the given room is a direct room.
+    UpdateIsDirect {
+        room_id: OwnedRoomId,
+        is_direct: bool,
     },
     /// Remove the given room from the rooms list
     RemoveRoom {
@@ -486,6 +490,44 @@ impl RoomsList {
                         }
                     } else {
                         error!("Error: couldn't find room {room_id} to update room name");
+                    }
+                }
+                RoomsListUpdate::UpdateIsDirect { room_id, is_direct } => {
+                    if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
+                        if room.is_direct == is_direct {
+                            continue;
+                        }
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("{} was changed from {} to {}.",
+                                room_name_or_id(room.room_name.as_ref(), &room_id),
+                                if room.is_direct { "direct" } else { "regular" },
+                                if is_direct { "direct" } else { "regular" }
+                            ),
+                            auto_dismissal_duration: None,
+                            kind: PopupKind::Info,
+                        });
+                        // If the room was currently displayed, remove it from the proper list.
+                        if (self.display_filter)(room) {
+                            let list_to_remove_from = if room.is_direct {
+                                &mut self.displayed_direct_rooms
+                            } else {
+                                &mut self.displayed_regular_rooms
+                            };
+                            list_to_remove_from.iter()
+                                .position(|r| r == &room_id)
+                                .map(|index| list_to_remove_from.remove(index));
+                        }
+                        // Update the room. If it should now be displayed, add it to the correct list.
+                        room.is_direct = is_direct;
+                        if (self.display_filter)(room) {
+                            if is_direct {
+                                self.displayed_direct_rooms.push(room_id);
+                            } else {
+                                self.displayed_regular_rooms.push(room_id);
+                            }
+                        }
+                    } else {
+                        error!("Error: couldn't find room {room_id} to update is_direct");
                     }
                 }
                 RoomsListUpdate::RemoveRoom { room_id, new_state: _ } => {
@@ -926,9 +968,8 @@ impl Widget for RoomsList {
                     item.draw_all(cx, &mut scope);
                 }
                 else if let Some(invited_room_id) = get_invited_room_id(portal_list_index) {
-                    if let Some(invited_room) =
-                        self.invited_rooms.borrow_mut().get_mut(invited_room_id)
-                    {
+                    let mut invited_rooms_mut = self.invited_rooms.borrow_mut();
+                    if let Some(invited_room) = invited_rooms_mut.get_mut(invited_room_id) {
                         let item = list.item(cx, portal_list_index, live_id!(room_preview));
                         invited_room.is_selected =
                             self.current_active_room.as_deref() == Some(invited_room_id);

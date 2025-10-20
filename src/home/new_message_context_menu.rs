@@ -235,8 +235,10 @@ bitflags! {
         /// Whether the user can edit this message.
         const CanEdit = 1 << 2;
         /// Whether the user can pin this message.
+        /// This should only be set for non-pinned messages.
         const CanPin = 1 << 3;
         /// Whether the user can unpin this message.
+        /// This should only be set for currently-pinned messages.
         const CanUnpin = 1 << 4;
         /// Whether the user can delete/redact this message.
         const CanDelete = 1 << 5;
@@ -249,6 +251,7 @@ impl MessageAbilities {
         user_power_levels: &UserPowerLevels,
         event_tl_item: &EventTimelineItem,
         _message: &MsgLikeContent,
+        pinned_events: &[OwnedEventId],
         has_html: bool,
     ) -> Self {
         let mut abilities = Self::empty();
@@ -258,11 +261,13 @@ impl MessageAbilities {
             abilities.set(Self::CanDelete, user_power_levels.can_redact_own());
         }
         abilities.set(Self::CanReplyTo, event_tl_item.can_be_replied_to());
-        abilities.set(Self::CanPin, user_power_levels.can_pin());
-        // TODO: currently we don't differentiate between pin and unpin,
-        //       but we should first check whether the given message is already pinned
-        //       before deciding which ability to set.
-        // abilities.set(Self::CanUnPin, user_power_levels.can_pin_unpin());
+        if let Some(event_id) = event_tl_item.event_id() && user_power_levels.can_pin() {
+            if pinned_events.iter().any(|ev| ev == event_id) {
+                abilities.set(Self::CanUnpin, true);
+            } else {
+                abilities.set(Self::CanPin, true);
+            }
+        }
         abilities.set(Self::CanReact, user_power_levels.can_send_reaction());
         abilities.set(Self::HasHtml, has_html);
         abilities

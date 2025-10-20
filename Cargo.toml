@@ -6,7 +6,7 @@ authors = [
 ]
 description = "A Matrix chat client written using Makepad + Robius app dev framework in Rust."
 documentation = "https://docs.rs/robrix"
-edition = "2021"
+edition = "2024"  ## mostly just to allow let-chains
 homepage = "https://robius.rs/"
 keywords = ["matrix", "chat", "client", "robrix", "robius"]
 license = "MIT"
