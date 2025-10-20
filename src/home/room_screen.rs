@@ -3195,32 +3195,30 @@ fn populate_text_message_content(
     link_preview_cache: Option<&mut LinkPreviewCache>,
 ) -> bool {
     // The message was HTML-formatted rich text.
-    let links = if let Some(fb) = formatted_body.as_ref()
+    let mut links = Vec::new();
+    if let Some(fb) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
-        let (linkified_html, links) = utils::linkify_get_urls(
+        let linkified_html = utils::linkify_get_urls(
             utils::trim_start_html_whitespace(&fb.body),
             true,
+            Some(&mut links),
         );
-        message_content_widget.show_html(
-            cx,
-            linkified_html
-        );
-        links
+        message_content_widget.show_html(cx, linkified_html);
     }
     // The message was non-HTML plaintext.
     else {
-        let (linkified_html, links) = utils::linkify_get_urls(body, false);
+        let linkified_html = utils::linkify_get_urls(body, false, Some(&mut links));
         match linkified_html {
             Cow::Owned(linkified_html) => message_content_widget.show_html(cx, &linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext),
         }
-        links
     };
 
     // Populate link previews if all required parameters are provided
     if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) = 
-        (link_preview_ref, media_cache, link_preview_cache) {
+        (link_preview_ref, media_cache, link_preview_cache)
+    {
         link_preview_ref.populate_below_message(
             cx,
             &links,

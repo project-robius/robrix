@@ -390,8 +390,14 @@ pub fn trim_start_html_whitespace(mut text: &str) -> &str {
     text
 }
 
-/// Looks for bare links in the given `text` and converts them into proper HTML links and returns them.
-pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
+/// Looks for bare links in the given `text` and converts them into proper HTML links.
+///
+/// If `links_found` is provided, it will be populated with the list of URLs found in the text.
+pub fn linkify_get_urls<'t>(
+    text: &'t str,
+    is_html: bool,
+    mut links_found: Option<&mut Vec<Url>>,
+) -> Cow<'t, str> {
     const MAILTO: &str = "mailto:";
 
     use linkify::{Link, LinkFinder, LinkKind};
@@ -399,7 +405,7 @@ pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
         .links(text)
         .peekable();
     if links.peek().is_none() {
-        return (Cow::Borrowed(text), Vec::new());
+        return Cow::Borrowed(text);
     }
 
     // A closure to escape text if it's not HTML.
@@ -413,7 +419,6 @@ pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
 
     let mut linkified_text = String::new();
     let mut last_end_index = 0;
-    let mut url_links = Vec::new();
     for link in links {
         let link_txt = link.as_str();
 
@@ -442,9 +447,9 @@ pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
                 "{linkified_text}{}",
                 text.get(last_end_index..link.end()).unwrap_or_default(),
             );
-            if let Some(link) = text.get(link.start()..link.end()) {
-                if let Ok(url) = Url::parse(link) {
-                    url_links.push(url);
+            if let Some(links_found) = links_found.as_mut() {
+                if let Ok(url) = Url::parse(link_txt) {
+                    links_found.push(url);
                 }
             }
         } else {
@@ -456,8 +461,10 @@ pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
                         htmlize::escape_attribute(link_txt),
                         htmlize::escape_text(link_txt),
                     );
-                    if let Ok(url) = Url::parse(link_txt) {
-                        url_links.push(url);
+                    if let Some(links_found) = links_found.as_mut() {
+                        if let Ok(url) = Url::parse(link_txt) {
+                            links_found.push(url);
+                        }
                     }
                 }
                 LinkKind::Email => {
@@ -468,7 +475,7 @@ pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
                         htmlize::escape_text(link_txt),
                     );
                 }
-                _ => return (Cow::Borrowed(text), url_links), // unreachable
+                _ => return Cow::Borrowed(text), // unreachable
             }
         }
         last_end_index = link.end();
@@ -476,14 +483,14 @@ pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
     linkified_text.push_str(
         &escaped(text.get(last_end_index..).unwrap_or_default())
     );
-    // makepad_widgets::log!("Original text:\n{:?}\nLinkified text:\n{:?}", text, linkified_text);
-    (Cow::Owned(linkified_text), url_links)
+    Cow::Owned(linkified_text)
 }
 
 /// Looks for bare links in the given `text` and converts them into proper HTML links.
-/// This is a wrapper around `linkify_get_urls` that only returns the converted text.
+///
+/// To obtain the list of found URLs, use [`linkify_get_urls()`] instead.
 pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
-    linkify_get_urls(text, is_html).0
+    linkify_get_urls(text, is_html, None)
 }
 
 /// Returns true if the given `text` string ends with a valid href attribute opener.
