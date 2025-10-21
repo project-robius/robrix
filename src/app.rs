@@ -17,7 +17,7 @@ use crate::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, shared::image_viewer_modal::ImageViewerModalWidgetRefExt, sliding_sync::current_user_id, utils::{
+    }, sliding_sync::current_user_id, utils::{
         room_name_or_id,
         OwnedRoomIdRon,
     }, verification::VerificationAction, verification_modal::{
@@ -190,10 +190,6 @@ impl LiveHook for App {
         // Here we set the global singleton for the PopupList widget,
         // which is used to access PopupList Widget from anywhere in the app.
         crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
-        // Here we set the global singleton for the image viewer modal
-        // which is used to check if the source of the image viewer modal is the same before
-        // sending an action to load the image.
-        crate::shared::image_viewer_modal::set_global_image_viewer_modal(cx, self.ui.image_viewer_modal(id!(image_viewer_modal)));
     }
 }
 

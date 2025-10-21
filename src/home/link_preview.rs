@@ -7,9 +7,7 @@ use std::{
 };
 
 use makepad_widgets::*;
-use matrix_sdk::
-    ruma::{events::room::{ImageInfo, MediaSource}, OwnedMxcUri, UInt}
-;
+use matrix_sdk::ruma::{events::room::{ImageInfo, MediaSource}, OwnedMxcUri, UInt};
 use serde::Deserialize;
 use url::Url;
 
@@ -174,6 +172,7 @@ pub struct LinkPreview {
     view: View,
     #[live]
     item_template: Option<LivePtr>,
+    /// A vector of tuples containing ViewRef and optional MXC URI
     #[rust]
     children: Vec<(ViewRef, Option<OwnedMxcUri>)>,
     #[layout]
@@ -658,6 +657,7 @@ fn insert_into_cache(
 /// The actions that can be taken on a link preview.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum LinkPreviewAction {
+    /// Send an action to the room screen to open the image in an image viewer.
     SetImageViewerModal(OwnedMxcUri),
     None
 }

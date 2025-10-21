@@ -7,7 +7,6 @@
 use std::sync::Arc;
 
 use makepad_widgets::{image_cache::ImageError, *};
-use reqwest::StatusCode;
 use matrix_sdk::ruma::{api::client::error::ErrorKind, events::room::MediaSource, OwnedMxcUri};
 
 use crate::utils::load_png_or_jpg;
@@ -103,7 +102,7 @@ live_design! {
                                     color: (COLOR_SECONDARY)
                                 }
                                 draw_icon: {
-                                    svg_file: (ICON_MAGNIFY),
+                                    svg_file: (ICON_ZOOM),
                                     fn get_color(self) -> vec4 {
                                         return #x0;
                                     }
@@ -231,11 +230,12 @@ live_design! {
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerModalAction {
     /// Initialize the ImageViewerModal widget with a source get_source_inflight_id.
+    /// This will open the ImageViewerModal widget with loading state.
     Initialize(String),
-    /// Display the ImageViewerModal widget based on the given LoadState.
-    Show(LoadState),
-    /// Set the image being displayed by the ImageViewer. (given the image data)
-    SetImage(Arc<[u8]>),
+    /// Display the ImageViewerModal widget based on the given source id and LoadState.
+    Show(String, LoadState),
+    /// Set the image being displayed by the ImageViewer based on the given the image data.
+    SetImage(String, Arc<[u8]>),
     None,
 }
 
@@ -364,8 +364,14 @@ impl MatchEvent for ImageViewerModal {
                 Some(ImageViewerModalAction::Initialize(source)) => {
                     self.image_loaded = false;
                     self.source_inflight_id = Some(source.clone());
+                    self.modal(id!(image_modal)).open(cx);
+                    self.timeout_timer = cx.start_timeout(IMAGE_LOAD_TIMEOUT);
                 }
-                Some(ImageViewerModalAction::Show(load_state)) => {
+                Some(ImageViewerModalAction::Show(source, load_state)) => {
+                    // Ignore action if the source doesn't match
+                    if Some(source) != self.source_inflight_id.as_ref() {
+                        continue;
+                    }
                     if load_state == &LoadState::Loading {
                         self.modal(id!(image_modal)).open(cx);
                         self.timeout_timer = cx.start_timeout(IMAGE_LOAD_TIMEOUT);
@@ -374,7 +380,11 @@ impl MatchEvent for ImageViewerModal {
                     }
                     show_image_modal_view(cx, self.view_set(), load_state.clone());
                 }
-                Some(ImageViewerModalAction::SetImage(data)) => {
+                Some(ImageViewerModalAction::SetImage(source, data)) => {
+                    // Ignore action if the source doesn't match
+                    if Some(source) != self.source_inflight_id.as_ref() {
+                        continue;
+                    }
                     cx.stop_timer(self.timeout_timer);   
                     self.image_loaded = true;
                     if let Err(e) = load_image_data(cx, self.view.image(id!(zoomable_image)), self.view_set(), data) {
@@ -511,26 +521,6 @@ impl ImageViewerModalRef {
     }
 }
 
-/// Retrieves a mutable reference to the global `ImageViewerModalRef`.
-///
-/// This function accesses the global context to obtain a reference to the
-/// `ImageViewerModalRef`, which is used for managing and displaying the
-/// image viewer modal within the application. It enables interaction with
-/// the image viewer modal system from various parts of the application.
-pub fn get_global_image_viewer_modal(cx: &mut Cx) -> &mut ImageViewerModalRef {
-    cx.get_global::<ImageViewerModalRef>()
-}
-
-/// Sets the global image viewer modal reference.
-///
-/// This function sets the global context to point to the provided
-/// `ImageViewerModalRef`, which is used for managing and displaying the
-/// image viewer modal within the application. It enables interaction with
-/// the image viewer modal system from various parts of the application.
-pub fn set_global_image_viewer_modal(cx: &mut Cx, modal: ImageViewerModalRef) {
-    cx.set_global(modal);
-}
-
 /// Rounds a given Dvec2 to 3 decimal places.
 /// Used to prevent extremely small mouse movement from updating image shader.
 fn round_to_3_decimal_places(dvec2: DVec2) -> DVec2 {
@@ -619,17 +609,18 @@ pub enum LoadState {
 /// Handles media cache entry states for the image modal
 pub fn handle_media_cache_entry(
     cx: &mut Cx,
+    mxc_uri: OwnedMxcUri,
     media_entry: (MediaCacheEntry, MediaFormat),
 ) {
     match media_entry {
         (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
-            cx.action(ImageViewerModalAction::SetImage(data));
+            cx.action(ImageViewerModalAction::SetImage(MediaSource::Plain(mxc_uri).unique_key(), data));
         }
         (MediaCacheEntry::Failed(e), _) => {
-            cx.action(ImageViewerModalAction::Show(LoadState::Error(e)));
+            cx.action(ImageViewerModalAction::Show(MediaSource::Plain(mxc_uri).unique_key(), LoadState::Error(e)));
         }
         (MediaCacheEntry::FailedUnknown, _) => {
-            cx.action(ImageViewerModalAction::Show(LoadState::ErrorUnknown));
+            cx.action(ImageViewerModalAction::Show(MediaSource::Plain(mxc_uri).unique_key(), LoadState::ErrorUnknown));
         }
         _ => { }
     }
@@ -646,10 +637,9 @@ pub fn populate_matrix_image_modal(
     mxc_uri: OwnedMxcUri,
     media_cache: &mut MediaCache
 ) {
-    cx.action(ImageViewerModalAction::Initialize(MediaSource::Plain(mxc_uri.clone()).unique_key()));
     // Try to get media from cache or trigger fetch
     let media_entry = media_cache.try_get_media_or_fetch(mxc_uri.clone(), MediaFormat::File);
 
     // Handle the different media states
-    handle_media_cache_entry(cx, media_entry);
+    handle_media_cache_entry(cx, mxc_uri, media_entry);
 }

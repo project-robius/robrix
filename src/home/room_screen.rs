@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    room::RoomMember, ruma::{
+    media::UniqueKey, room::RoomMember, ruma::{
         events::{
             receipt::Receipt,
             room::{
@@ -32,7 +32,7 @@ use crate::{
     },
     room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer_modal::{get_global_image_viewer_modal, populate_matrix_image_modal, ImageViewerModalAction, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer_modal::{populate_matrix_image_modal, ImageViewerModalAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
@@ -684,7 +684,7 @@ impl Widget for RoomScreen {
                     }
                 }
                 if let LinkPreviewAction::SetImageViewerModal(mxc_uri) = action.as_widget_action().cast() {
-                    cx.action(ImageViewerModalAction::Show(LoadState::Loading));
+                    cx.action(ImageViewerModalAction::Initialize(MediaSource::Plain(mxc_uri.clone()).unique_key()));
                     populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
                 }
                 // Handle the action that requests to show the user profile sliding pane.
@@ -702,8 +702,6 @@ impl Widget for RoomScreen {
                         );
                     }
                 }
-                
-                
             }
 
             /*
@@ -1333,15 +1331,7 @@ impl RoomScreen {
                     log!("process_timeline_updates(): media fetched for room {} source {:?}", tl.room_id, source);
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
-                    // Only populate image modal if the source is the same as the one in the image viewer modal
-                    let image_viewer_modal = get_global_image_viewer_modal(cx);
-                    let source_image_viewer = image_viewer_modal.get_source_inflight_id();
-                    if let Some(source_image_viewer) = source_image_viewer {
-                        if source_image_viewer == source {
-                            let mxc_uri = OwnedMxcUri::from(source);
-                            populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
-                        }
-                    }
+                    populate_matrix_image_modal(cx, OwnedMxcUri::from(source), &mut tl.media_cache);
                 }
                 TimelineUpdate::MessageEdited { timeline_event_id, result } => {
                     self.view.room_input_bar(id!(room_input_bar))
@@ -2252,7 +2242,7 @@ impl RoomScreen {
             if let Hit::FingerUp(fe) = event.hits(cx, image_area) {
                 if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                     if let Some(mxc_uri) = Self::extract_image_source(&tl.items, index) {
-                        cx.action(ImageViewerModalAction::Show(LoadState::Loading));
+                        cx.action(ImageViewerModalAction::Initialize(MediaSource::Plain(mxc_uri.clone()).unique_key()));
                         populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
                         return; // Exit early after handling the first image tap
                     }
