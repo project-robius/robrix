@@ -1033,7 +1033,6 @@ async fn async_worker(
                     };
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
-                let room_id2 = room_id.clone();
                 let subscribe_pinned_events_task = Handle::current().spawn(async move {
                     // Send an initial update, as the stream may not update immediately.
                     let pinned_events = timeline.room().pinned_event_ids().unwrap_or_default();
@@ -1044,7 +1043,6 @@ async fn async_worker(
                     let update_receiver = timeline.room().pinned_event_ids_stream();
                     pin_mut!(update_receiver);
                     while let Some(pinned_events) = update_receiver.next().await {
-                        log!("Got pinned events update for room {room_id2:?}: {pinned_events:?}");
                         match sender.send(TimelineUpdate::PinnedEvents(pinned_events)) {
                             Ok(()) => SignalToUI::set_ui_signal(),
                             Err(e) => log!("Failed to send pinned events update: {e:?}"),
