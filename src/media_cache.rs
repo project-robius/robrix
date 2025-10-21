@@ -1,5 +1,5 @@
 use std::{collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
-use makepad_widgets::{log, SignalToUI};
+use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}, Error, HttpError};
 use ruma::api::client::error::ErrorKind;
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
@@ -200,9 +200,11 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
         Err(e) => match e {
             Error::Http(http_error) => {
                 if let Some(server_error) = http_error.as_ruma_api_error() {
-                    MediaCacheEntry::Failed(ErrorKind::BadStatus { status: None, body: Some(format!("Server error: {server_error}")) })
+                    error!("Server error for media cache: {server_error}");
+                    MediaCacheEntry::Failed(ErrorKind::NotFound)
                 } else if let Some(client_error) = http_error.as_client_api_error() {
-                    MediaCacheEntry::Failed(ErrorKind::BadStatus { status: None, body: Some(format!("Client error: {client_error}")) })
+                    error!("Client error for media cache: {client_error}");
+                    MediaCacheEntry::Failed(ErrorKind::BadJson)
                 } else {
                     match *http_error {
                         HttpError::Reqwest(reqwest_error) => {
