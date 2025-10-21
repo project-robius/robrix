@@ -4,9 +4,6 @@
 //! or to display an error message if the image fails to load, etc.
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomId};
-use crate::shared::image_viewer_modal::{ImageViewerModalAction, LoadState};
-use crate::home::room_screen::RoomScreenProps;
 
 live_design! {
     use link::theme::*;
@@ -74,42 +71,19 @@ pub struct TextOrImage {
 
 impl Widget for TextOrImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // We handle hit events if the status is `Image`.
-        if let TextOrImageStatus::Image(mxc_uri) = &self.status {
-            let image_area = self.view.image(id!(image_view.image)).area();
+        let image_area = self.view.image(id!(image_view.image)).area();
             match event.hits(cx, image_area) {
                 Hit::FingerDown(_) => {
                     cx.set_key_focus(image_area);
-                }
-                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                    // Open the image viewer modal
-                    // let image_viewer_modal = get_global_image_viewer_modal(cx);
-                    // if let Some(image_modal) = image_viewer_modal.get_image_modal() {
-                    //     image_modal.open(cx);
-                    // }
-                    // let image_viewer_modal = get_global_image_viewer_modal(cx);
-                    // if let Some(view_set) = image_viewer_modal.get_view_set() {
-                    //     // Display Loading spinner
-                    //     cx.action(ImageViewerModalAction::Show(LoadState::Loading));
-                    // }
-                    // Display Loading spinner
-                    // cx.action(ImageViewerModalAction::Show(LoadState::Loading));
-                    // // Get room_id from RoomScreenProps in scope
-                    // if let Some(room_props) = scope.props.get::<RoomScreenProps>() {
-                    //     let room_id = room_props.room_id.clone();
-                    //     // Send an Action containing the room_id and MXC URI to the room_screen
-                    //     cx.widget_action(self.widget_uid(), &scope.path, TextOrImageAction::Clicked(room_id, mxc_uri.clone()));
-                    // }
                 }
                 Hit::FingerHoverIn(_) => {
                     cx.set_cursor(MouseCursor::Hand);
                 }
                 Hit::FingerHoverOut(_) => {
-                    cx.set_cursor(MouseCursor::Arrow);
+                    cx.set_cursor(MouseCursor::Default);
                 }
-                _ => { },
+                _ => {}
             }
-        }
         self.view.handle_event(cx, event, scope);
     }
 
@@ -140,13 +114,13 @@ impl TextOrImage {
     ///   * If successful, the `image_set_function` should return the size of the image
     ///     in pixels as a tuple, `(width, height)`.
     ///   * If `image_set_function` returns an error, no change is made to this `TextOrImage`.
-    pub fn show_image<F, E>(&mut self, cx: &mut Cx, owned_mxc_uri: OwnedMxcUri, image_set_function: F) -> Result<(), E>
+    pub fn show_image<F, E>(&mut self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
         let image_ref = self.view.image(id!(image_view.image));
         match image_set_function(cx, image_ref) {
             Ok(size_in_pixels) => {
-                self.status = TextOrImageStatus::Image(owned_mxc_uri);
+                self.status = TextOrImageStatus::Image;
                 self.size_in_pixels = size_in_pixels;
                 self.view(id!(image_view)).set_visible(cx, true);
                 self.view(id!(text_view)).set_visible(cx, false);
@@ -162,7 +136,7 @@ impl TextOrImage {
 
     /// Returns whether this `TextOrImage` is currently displaying an image or text.
     pub fn status(&self) -> TextOrImageStatus {
-        self.status.clone()
+        self.status
     }
 
     /// Displays the default image that is used when no image is available.
@@ -182,11 +156,11 @@ impl TextOrImageRef {
     }
 
     /// See [TextOrImage::show_image()].
-    pub fn show_image<F, E>(&self, cx: &mut Cx, owned_mxc_uri: OwnedMxcUri, image_set_function: F) -> Result<(), E>
+    pub fn show_image<F, E>(&self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_image(cx, owned_mxc_uri, image_set_function)
+            inner.show_image(cx, image_set_function)
         } else {
             Ok(())
         }
@@ -210,17 +184,9 @@ impl TextOrImageRef {
 }
 
 /// Whether a `TextOrImage` instance is currently displaying text or an image.
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub enum TextOrImageStatus {
     #[default]
     Text,
-    /// Image MxcUri stored in this variant to be used 
-    Image(OwnedMxcUri),
-}
-
-/// Actions emitted by the `TextOrImage` based on user interaction with it.
-#[derive(Debug, Clone, DefaultNone)]
-pub enum TextOrImageAction {
-    Clicked(OwnedRoomId, OwnedMxcUri),
-    None
+    Image,
 }

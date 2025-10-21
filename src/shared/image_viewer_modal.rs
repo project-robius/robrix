@@ -1,11 +1,18 @@
+//! Image viewer modal widget for displaying Matrix media content.
+//!
+//! This module provides an image viewer modal that can display images from Matrix media URIs (mxc://).
+//! It supports zooming, panning, loading states, error handling, and timeout management.
+//! The modal integrates with the media cache to efficiently load and display images.
+
 use std::sync::Arc;
 
 use makepad_widgets::{image_cache::ImageError, *};
-use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomId};
+use reqwest::StatusCode;
+use matrix_sdk::ruma::{api::client::error::ErrorKind, events::room::MediaSource, OwnedMxcUri};
 
 use crate::utils::load_png_or_jpg;
-use crate::media_cache::MediaCacheEntry;
-use matrix_sdk::media::MediaFormat;
+use crate::media_cache::{MediaCache, MediaCacheEntry};
+use matrix_sdk::media::{MediaFormat, UniqueKey};
 
 // Image loading timeout in seconds (10 seconds)
 pub const IMAGE_LOAD_TIMEOUT: f64 = 10.0;
@@ -83,22 +90,40 @@ live_design! {
                         flow: Right
                         align: {x: 1.0, y: 0.0},
 
-                        magnify_button = <RobrixIconButton> {
-                            width: Fit, height: Fit,
-                            spacing: 0,
-                            margin: 7,
-                            draw_bg: {
-                                color: (COLOR_SECONDARY)
+                        <View> {
+                            width: Fit, height: Fit
+                            flow: Overlay
+
+                            magnifying_glass_button = <RobrixIconButton> {
+                                width: Fit, height: Fit,
+                                spacing: 0,
+                                margin: 8,
+                                padding: 3
+                                draw_bg: {
+                                    color: (COLOR_SECONDARY)
+                                }
+                                draw_icon: {
+                                    svg_file: (ICON_MAGNIFY),
+                                    fn get_color(self) -> vec4 {
+                                        return #x0;
+                                    }
+                                }
+                                icon_walk: {width: 30, height: 30}
                             }
-                            draw_icon: {
-                                svg_file: (ICON_SEARCH),
-                                fn get_color(self) -> vec4 {
-                                    return #x0;
+                            <View> {
+                                width: Fill, height: Fill,
+                                align: { x: 0.4, y: 0.35 }
+
+                                magnify_glass_sign = <Label> {
+                                    text: "+",
+                                    draw_text: {
+                                        text_style: <THEME_FONT_BOLD>{font_size: 15},
+                                        color: #000000
+                                    }
                                 }
                             }
-                            icon_walk: {width: 14, height: 14}
                         }
-
+                        
                         close_button = <RobrixIconButton> {
                             width: Fit, height: Fit,
                             spacing: 0,
@@ -115,15 +140,16 @@ live_design! {
                             icon_walk: {width: 14, height: 14}
                         }
                     }
+
                     <View> {
                         width: Fill, height: Fill,
-                        align: {x: 0.5, y: 0.5}
+                        align: { x: 0.5, y: 0.5 }
                         flow: Down
 
                         loading_view = <View> {
                             width: Fill, height: Fit,
                             flow: Down,
-                            align: {x: 0.5, y: 0.5},
+                            align: { x: 0.5, y: 0.5 },
                             spacing: 10
 
                             loading_spinner = <LoadingSpinner> {
@@ -147,7 +173,7 @@ live_design! {
                         error_label_view = <View> {
                             width: Fill, height: Fit,
                             flow: Down,
-                            align: {x: 0.5, y: 0.5},
+                            align: { x: 0.5, y: 0.5 },
                             spacing: 10
 
                             <Icon> {
@@ -159,11 +185,14 @@ live_design! {
                             }
 
                             loading_label = <Label> {
-                                width: Fit, height: Fit,
+                                width: Fill, height: Fit,
                                 text: "Failed to load image",
+                                flow: RightWrap,
+                                
                                 draw_text: {
-                                    text_style: <REGULAR_TEXT>{font_size: 14},
-                                    color: #f44
+                                    text_style: <REGULAR_TEXT>{ font_size: 14 },
+                                    color: #f44,
+                                    wrap: Word
                                 }
                             }
                         }
@@ -186,7 +215,7 @@ live_design! {
                                 width: Fit, height: Fit,
                                 text: "Timeout loading image",
                                 draw_text: {
-                                    text_style: <REGULAR_TEXT>{font_size: 14},
+                                    text_style: <REGULAR_TEXT>{ font_size: 14 },
                                     color: #f44
                                 }
                             }
@@ -201,13 +230,12 @@ live_design! {
 /// Actions handled by the `ImageViewer` widget.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerModalAction {
-    /// Initialize the ImageViewer widget with a source URI
+    /// Initialize the ImageViewerModal widget with a source get_source_inflight_id.
     Initialize(String),
-    /// Make the ImageViewer widget visible.
+    /// Display the ImageViewerModal widget based on the given LoadState.
     Show(LoadState),
     /// Set the image being displayed by the ImageViewer. (given the image data)
     SetImage(Arc<[u8]>),
-    DrawImage,
     None,
 }
 
@@ -216,17 +244,13 @@ struct ImageViewerModal {
     #[deref]
     view: View,
     #[rust]
-    mxc_uri: Option<OwnedMxcUri>,
-    #[rust]
     image_loaded: bool,
     #[rust]
     timeout_timer: Timer,
     #[rust]
     drag_state: DragState,
     #[rust]
-    room_id: Option<OwnedRoomId>,
-    #[rust]
-    unqiue_id: Option<String>,
+    source_inflight_id: Option<String>,
 }
 
 impl Widget for ImageViewerModal {
@@ -322,13 +346,15 @@ impl MatchEvent for ImageViewerModal {
         if self.view.button(id!(close_button)).clicked(actions) {
             self.close(cx);
         }
-        if self.view.button(id!(magnify_button)).clicked(actions) {
+        if self.view.button(id!(magnifying_glass_button)).clicked(actions) {
             if self.drag_state.zoom_level == 1.0 {
+                self.view.label(id!(magnify_glass_sign)).set_text(cx, "-");
                 self.drag_state.zoom_level = 1.0 / 1.2;
                 self.drag_state.is_panning = true;
                 self.drag_state.pan_offset.x = (1.0 - self.drag_state.zoom_level) * 0.5;
                 self.drag_state.pan_offset.y = (1.0 - self.drag_state.zoom_level) * 0.5;
             } else {
+                self.view.label(id!(magnify_glass_sign)).set_text(cx, "+");
                 self.reset_drag_state(cx);
             }
             self.update_image_shader(cx);
@@ -337,23 +363,30 @@ impl MatchEvent for ImageViewerModal {
             match action.downcast_ref::<ImageViewerModalAction>() {
                 Some(ImageViewerModalAction::Initialize(source)) => {
                     self.image_loaded = false;
-                    self.unqiue_id = Some(source.clone());
+                    self.source_inflight_id = Some(source.clone());
                 }
                 Some(ImageViewerModalAction::Show(load_state)) => {
-                    cx.stop_timer(self.timeout_timer);
                     if load_state == &LoadState::Loading {
                         self.modal(id!(image_modal)).open(cx);
                         self.timeout_timer = cx.start_timeout(IMAGE_LOAD_TIMEOUT);
+                    } else {
+                        cx.stop_timer(self.timeout_timer);
                     }
-                    show_image_modal_view(cx, self.view_set(), *load_state);
+                    show_image_modal_view(cx, self.view_set(), load_state.clone());
                 }
                 Some(ImageViewerModalAction::SetImage(data)) => {
                     cx.stop_timer(self.timeout_timer);   
                     self.image_loaded = true;
-                    let _ = load_image_data(cx, self.view.image(id!(zoomable_image)), self.view_set(), &data);
-                }
-                Some(ImageViewerModalAction::DrawImage) => {
-                    self.image_loaded = true;
+                    if let Err(e) = load_image_data(cx, self.view.image(id!(zoomable_image)), self.view_set(), data) {
+                        // Determine error type based on the image error
+                        let error_type = match e {
+                            ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ErrorKind::Unrecognized,
+                            ImageError::EmptyData => ErrorKind::BadState,
+                            ImageError::PathNotFound(_) => ErrorKind::NotFound,
+                            _ => ErrorKind::BadState,
+                        };
+                        show_image_modal_view(cx, self.view_set(), LoadState::Error(error_type));
+                    }
                 }
                 _ => {}
             }
@@ -374,11 +407,10 @@ impl ImageViewerModal {
         self.view.image(id!(zoomable_image)).set_visible(cx, false);
     }
 
-    /// Close the modal
+    /// Close the modal and reset its state.
     fn close(&mut self, cx: &mut Cx) {
-        self.mxc_uri = None;
         self.image_loaded = false;
-        self.room_id = None;
+        self.source_inflight_id = None;
         self.reset_drag_state(cx);
         self.update_image_shader(cx);
         self.view
@@ -387,6 +419,7 @@ impl ImageViewerModal {
         self.view.image(id!(zoomable_image)).set_visible(cx, false);
         // Clear the image buffer. 
         let _ = self.view.image(id!(zoomable_image)).load_jpg_from_data(cx, &[]);
+        self.view.label(id!(magnify_glass_sign)).set_text(cx, "+");
         self.modal(id!(image_modal)).close(cx);
         cx.stop_timer(self.timeout_timer);
     }
@@ -454,79 +487,24 @@ impl ImageViewerModal {
 }
 
 impl ImageViewerModalRef {
-    /// Returns whether to call mediacache's get_media_or_fetch function.
-    pub fn get_media_or_fetch(&self, room_id: OwnedRoomId) -> bool {
-        if let Some(inner) = self.borrow() {
-            inner.room_id == Some(room_id) && !inner.image_loaded
-        } else {
-            false
-        }
-    }
-
-    /// Returns a ViewSet that contains the loading, error and timeout views of the
-    /// image viewer modal.
-    pub fn get_view_set(&self) -> Option<ViewSet> {
-        if let Some(mut inner) = self.borrow_mut() {
-            Some(inner.view.view_set(ids!(loading_view, error_label_view, timeout_label_view)))
-        } else {
-            None
-        }
-    }
-
-    /// Returns a reference to the zoomable image widget that is used to display the image
-    /// in the image viewer modal
-    pub fn get_zoomable_image(&self) -> Option<ImageRef> {
-        if let Some(inner) = self.borrow() {
-            Some(inner.view.image(id!(zoomable_image)))
-        } else {
-            None
-        }
-    }
-
-    /// Returns a reference to the modal widget that is used to display the image viewer modal
-    pub fn get_image_modal(&mut self) -> Option<ModalRef> {
-        self.borrow().map(|inner| inner.modal(id!(image_modal)))
-    }
-
-    /// Returns the current media URI of the image viewer modal
-    pub fn get_mxc_uri(&self) -> Option<OwnedMxcUri> {
-        if let Some(inner) = self.borrow() {
-            inner.mxc_uri.clone()
-        } else {
-            None
-        }
-    }
-
-    /// Sets the `image_loaded` field of the inner state to true. This is used to
-    /// indicate that the image has finished loading and can be displayed.
-    pub fn set_image_loaded(&mut self) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.image_loaded = true;
-        }
-    }
-
-    /// Initializes the image viewer modal's state with the given room ID and media
-    /// URI. This function is called when the image viewer modal is opened or
-    /// reopened with a new media URI. It is used to set the correct image URI,
-    /// room ID, and timer for the modal. It also reset the image loaded flag to false.
-    // pub fn initialized(&self, room_id: OwnedRoomId, mxc_uri: OwnedMxcUri, timer: Timer) {
-    //     if let Some(mut inner) = self.borrow_mut() {
-    //         inner.image_loaded = false;
-    //         inner.mxc_uri = Some(mxc_uri);
-    //         inner.room_id = Some(room_id);
-    //         inner.timeout_timer = timer;
-    //     }
-    // }
-    pub fn initialized(&self, unqiue_id: String) {
+    /// Sets the inflight ID of the source image for the modal.
+    ///
+    /// This function resets the image loaded state to false and sets the source inflight ID to the given value.
+    /// It should be called when the image source changes, such as when the image modal is opened with a new image.
+    pub fn set_source_inflight_id(&self, source_inflight_id: String) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.image_loaded = false;
-            inner.unqiue_id = Some(unqiue_id);
+            inner.source_inflight_id = Some(source_inflight_id);
         }
     }
 
-    pub fn unique_key(&self) -> Option<String> {
+    /// Returns the inflight ID of the source image for the modal, if it exists.
+    ///
+    /// It should be called to check if the media fetched source ID is the same as the inflight ID.
+    /// If the IDs match, process to fetch the media from cache.
+    pub fn get_source_inflight_id(&self) -> Option<String> {
         if let Some(inner) = self.borrow() {
-            inner.unqiue_id.clone()
+            inner.source_inflight_id.clone()
         } else {
             None
         }
@@ -584,40 +562,94 @@ fn show_image_modal_view(cx: &mut Cx, view_set: ViewSet, load_state: LoadState) 
     for (i, view_ref) in view_set.iter().enumerate() {
         let should_show = match load_state {
             LoadState::Loading => i == 0,
-            LoadState::Error => i == 1,
+            LoadState::Error(_) => i == 1,
+            LoadState::ErrorUnknown => i == 1,
             LoadState::Timeout => i == 2,
             LoadState::Loaded => false, // Hide all views when loaded
         };
         view_ref.set_visible(cx, should_show);
     }
+
+    // If it's an error state, update the error message and icon
+    match &load_state {
+        LoadState::Error(e) => {
+            if let Some(error_view) = view_set.iter().nth(1) {
+                update_error_display(cx, &error_view, e);
+            }
+        }
+        LoadState::ErrorUnknown => {
+            if let Some(error_view) = view_set.iter().nth(1) {
+                error_view.label(id!(loading_label)).set_text(cx, "Unknown error");
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Updates the error display with specific message and icon based on error type
+fn update_error_display(cx: &mut Cx, error_view: &ViewRef, error: &ErrorKind) {
+    let message = match error {
+        ErrorKind::BadState => "Failed to load image: Empty data",
+        ErrorKind::BadStatus { status: _, body } => &format!("Failed to load image: HTTP error: {:?}", body.clone().unwrap_or_default()),
+        ErrorKind::Unrecognized => "Image decoding error",
+        ErrorKind::ConnectionFailed => "No internet connection",
+        ErrorKind::Unauthorized => "Unauthorized",
+        _ => "Failed to load image",
+    };
+
+    // Update the label text
+    error_view.label(id!(loading_label)).set_text(cx, message);
 }
 
 /// Represents the possible states of an image load operation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LoadState {
+    /// The image is currently being loaded.
     Loading,
+    /// The image has been successfully loaded.
     Loaded,
-    Error,
+    /// An error occurred while loading the image, with specific matrix error kind.
+    Error(ErrorKind),
+    /// An unknown error occurred while loading the image.
+    ErrorUnknown,
+    /// The image loading operation timed out.
     Timeout,
 }
 
 /// Handles media cache entry states for the image modal
 pub fn handle_media_cache_entry(
     cx: &mut Cx,
-    mxc_uri: OwnedMxcUri,
     media_entry: (MediaCacheEntry, MediaFormat),
-) -> LoadState {
+) {
     match media_entry {
         (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
             cx.action(ImageViewerModalAction::SetImage(data));
-            LoadState::Loaded
         }
-        (MediaCacheEntry::Requested, _) | (MediaCacheEntry::Loaded(_), MediaFormat::Thumbnail(_)) => {
-            LoadState::Loading
+        (MediaCacheEntry::Failed(e), _) => {
+            cx.action(ImageViewerModalAction::Show(LoadState::Error(e)));
         }
-        (MediaCacheEntry::Failed, _) => {
-            cx.action(ImageViewerModalAction::Show(LoadState::Error));
-            LoadState::Error
+        (MediaCacheEntry::FailedUnknown, _) => {
+            cx.action(ImageViewerModalAction::Show(LoadState::ErrorUnknown));
         }
+        _ => { }
     }
+}
+
+/// Populates the image modal with matrix media content and handles various loading states
+/// 
+/// This function manages the complete lifecycle of loading and displaying an image in the modal:
+/// 1. Optionally initializes the modal with a new MXC URI
+/// 2. Attempts to fetch or retrieve cached media
+/// 3. Updates the UI based on the current media state: loading, loaded and failed.
+pub fn populate_matrix_image_modal(
+    cx: &mut Cx, 
+    mxc_uri: OwnedMxcUri,
+    media_cache: &mut MediaCache
+) {
+    cx.action(ImageViewerModalAction::Initialize(MediaSource::Plain(mxc_uri.clone()).unique_key()));
+    // Try to get media from cache or trigger fetch
+    let media_entry = media_cache.try_get_media_or_fetch(mxc_uri.clone(), MediaFormat::File);
+
+    // Handle the different media states
+    handle_media_cache_entry(cx, media_entry);
 }

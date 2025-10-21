@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    media::{MediaFormat, UniqueKey}, room::RoomMember, ruma::{
+    room::RoomMember, ruma::{
         events::{
             receipt::Receipt,
             room::{
@@ -24,16 +24,15 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
-use ruma::{MxcUri, __private_macros::mxc_uri};
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewAction, LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
     room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer_modal::{get_global_image_viewer_modal, handle_media_cache_entry, ImageViewerModalAction, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer_modal::{get_global_image_viewer_modal, populate_matrix_image_modal, ImageViewerModalAction, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
@@ -684,7 +683,10 @@ impl Widget for RoomScreen {
                         // portal_list.set_first_id_and_scroll(portal_list.first_id(), 15.0);
                     }
                 }
-
+                if let LinkPreviewAction::SetImageViewerModal(mxc_uri) = action.as_widget_action().cast() {
+                    cx.action(ImageViewerModalAction::Show(LoadState::Loading));
+                    populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
+                }
                 // Handle the action that requests to show the user profile sliding pane.
                 if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
                     // Only show the user profile in room that this avatar belongs to
@@ -700,15 +702,8 @@ impl Widget for RoomScreen {
                         );
                     }
                 }
-
-                if let TextOrImageAction::Clicked(room_id, mxc_uri) = action.as_widget_action().cast() {
-                    if let Some(tl) = &mut self.tl_state {
-                        // Only handle the action if it matches the current room
-                        if tl.room_id == room_id {
-                            populate_image_modal(cx, Some(mxc_uri), tl);
-                        }
-                    }
-                }
+                
+                
             }
 
             /*
@@ -784,29 +779,7 @@ impl Widget for RoomScreen {
         else {
             is_pane_shown = false;
         }
-        //println!("portal_list.visible_items(): {} portal_list.first_id() {:?}", portal_list.visible_items(), portal_list.first_id());
-        for index in portal_list.first_id()..(portal_list.first_id() + portal_list.visible_items()) {
-            if let Some((_,wr)) = portal_list.get_item(index) {
-                let image_area = wr.text_or_image(id!(content.message)).image(id!(image_view.image)).area();
-                //println!("image_area: {:?} area {:?}", image_area, wr.text_or_image(id!(content.message)).area());
-                match event.hits(cx, image_area) {
-                    Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                        if let Some(tl) = &mut self.tl_state {
-                            if let Some(source) = tl.items.get(index).and_then(|item| item.as_event().and_then(|me| me.content().as_message()).map(|imc| match imc.msgtype() {
-                                MessageType::Image(image) => Some(image.source.clone()),
-                                _ => None
-                            })) {
-                                if let Some(MediaSource::Plain(mxc_uri)) = source {
-                                    cx.action(ImageViewerModalAction::Show(LoadState::Loading));
-                                    populate_image_modal(cx, Some(mxc_uri), tl);
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
+        self.handle_image_tap_events(cx, event, &portal_list);
         
         // TODO: once we use the `hits()` API, should be able to remove the above conditionals
         //       about whether the loading pane or user profile pane are shown, because
@@ -1360,14 +1333,13 @@ impl RoomScreen {
                     log!("process_timeline_updates(): media fetched for room {} source {:?}", tl.room_id, source);
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                    // Only populate image modal if the source is the same as the one in the image viewer modal
                     let image_viewer_modal = get_global_image_viewer_modal(cx);
-                    let source_image_viewer = image_viewer_modal.unique_key();
+                    let source_image_viewer = image_viewer_modal.get_source_inflight_id();
                     if let Some(source_image_viewer) = source_image_viewer {
                         if source_image_viewer == source {
                             let mxc_uri = OwnedMxcUri::from(source);
-                            if let LoadState::Loaded = populate_image_modal(cx, Some(mxc_uri), tl) {
-                                cx.action(ImageViewerModalAction::DrawImage);
-                            }
+                            populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
                         }
                     }
                 }
@@ -2245,6 +2217,70 @@ impl RoomScreen {
         }
         tl.last_scrolled_index = first_index;
     }
+
+    /// Handles tap events on images in the timeline.
+    ///
+    /// If a tap event is detected on an image in the timeline, it opens the image viewer modal
+    /// with the image's source URL.
+    fn handle_image_tap_events(
+        &mut self,
+        cx: &mut Cx,
+        event: &Event,
+        portal_list: &PortalListRef,
+    ) {
+        // Early exit: check if we have timeline state
+        let tl = match &mut self.tl_state {
+            Some(tl) => tl,
+            None => return,
+        };
+
+        // Cache visible range to avoid repeated calculation
+        let first_id = portal_list.first_id();
+        let visible_count = portal_list.visible_items();
+        
+        for index in first_id..(first_id + visible_count) {
+            let (_, wr) = match portal_list.get_item(index) {
+                Some(item) => item,
+                None => continue,
+            };
+
+            let image_area = wr
+                .text_or_image(id!(content.message))
+                .image(id!(image_view.image))
+                .area();
+
+            if let Hit::FingerUp(fe) = event.hits(cx, image_area) {
+                if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
+                    if let Some(mxc_uri) = Self::extract_image_source(&tl.items, index) {
+                        cx.action(ImageViewerModalAction::Show(LoadState::Loading));
+                        populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
+                        return; // Exit early after handling the first image tap
+                    }
+                }
+            }
+        }
+    }
+
+    /// Extracts the MXC URI from a timeline item if it's an image message.
+    fn extract_image_source(
+        items: &Vector<Arc<TimelineItem>>,
+        index: usize,
+    ) -> Option<OwnedMxcUri> {
+        let item = items.get(index)?;
+        let event = item.as_event()?;
+        let message = event.content().as_message()?;
+        
+        match message.msgtype() {
+            MessageType::Image(image) => {
+                if let MediaSource::Plain(mxc_uri) = &image.source {
+                    Some(mxc_uri.clone())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 impl RoomScreenRef {
@@ -2368,7 +2404,7 @@ pub enum TimelineUpdate {
     RoomMembersListFetched {
         members: Vec<RoomMember>,
     },
-    /// A notice that one or more requested media items (images, videos, etc.)
+    /// A notice with source string that one or more requested media items (images, videos, etc.)
     /// that should be displayed in this timeline have now been fetched and are available.
     MediaFetched(String),
     /// A notice that one or more members of a this room are currently typing.
@@ -3233,7 +3269,7 @@ fn populate_image_message_content(
     let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
-                let show_image_result = text_or_image_ref.show_image(cx, mxc_uri.clone(), |cx, img| {
+                let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
@@ -3249,7 +3285,7 @@ fn populate_image_message_content(
             (MediaCacheEntry::Requested, _media_format) => {
                 // If the image is being fetched, we try to show its blurhash.
                 if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
-                    let show_image_result = text_or_image_ref.show_image(cx, mxc_uri.clone(), |cx, img| {
+                    let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                         let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else {
                             return Err(image_cache::ImageError::EmptyData)
                         };
@@ -3293,7 +3329,18 @@ fn populate_image_message_content(
                 }
                 fully_drawn = false;
             }
-            (MediaCacheEntry::Failed, _media_format) => {
+            (MediaCacheEntry::Failed(_e), _media_format) => {
+                if text_or_image_ref.view(id!(default_image_view)).visible() {
+                    fully_drawn = true;
+                    return;
+                }
+                text_or_image_ref
+                    .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
+                // For now, we consider this as being "complete". In the future, we could support
+                // retrying to fetch thumbnail of the image on a user click/tap.
+                fully_drawn = true;
+            }
+            (MediaCacheEntry::FailedUnknown, _media_format) => {
                 if text_or_image_ref.view(id!(default_image_view)).visible() {
                     fully_drawn = true;
                     return;
@@ -4124,38 +4171,4 @@ pub fn clear_timeline_states(_cx: &mut Cx) {
     TIMELINE_STATES.with_borrow_mut(|states| {
         states.clear();
     });
-}
-
-/// Populates the image modal with media content and handles various loading states
-/// 
-/// This function manages the complete lifecycle of loading and displaying an image in the modal:
-/// 1. Optionally initializes the modal with a new MXC URI
-/// 2. Attempts to fetch or retrieve cached media
-/// 3. Updates the UI based on the current media state: loading, loaded and failed.
-fn populate_image_modal(
-    cx: &mut Cx, 
-    mxc_uri: Option<OwnedMxcUri>, 
-    tl: &mut TimelineUiState
-) -> LoadState {
-    // Initialize modal with new URI if provided
-    // if let Some(mxc_uri) = mxc_uri {
-    //     initialize_image_modal_with_uri(cx, mxc_uri, tl.room_id.clone());
-    // }
-
-    //let image_viewer_modal = get_global_image_viewer_modal(cx);
-    
-    // // Only proceed if media fetching is active
-    // if !image_viewer_modal.get_media_or_fetch(tl.room_id.clone()) {
-    //     return LoadState::Loading;
-    // }
-    
-    let Some(mxc_uri) = mxc_uri else {
-        return LoadState::Loading;
-    };
-    cx.action(ImageViewerModalAction::Initialize(MediaSource::Plain(mxc_uri.clone()).unique_key()));
-    // Try to get media from cache or trigger fetch
-    let media_entry = tl.media_cache.try_get_media_or_fetch(mxc_uri.clone(), MediaFormat::File);
-    
-    // Handle the different media states
-    handle_media_cache_entry(cx, mxc_uri, media_entry)
 }

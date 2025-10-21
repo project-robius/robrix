@@ -24,6 +24,7 @@ live_design! {
     pub ICON_JUMP            = dep("crate://self/resources/icons/go_back.svg")
     pub ICON_LOGOUT          = dep("crate://self/resources/icons/logout.svg")
     pub ICON_LINK            = dep("crate://self/resources/icons/link.svg")
+    pub ICON_MAGNIFY         = dep("crate://self/resources/icons/search.svg")
     pub ICON_PIN             = dep("crate://self/resources/icons/pin.svg")
     pub ICON_REPLY           = dep("crate://self/resources/icons/reply.svg")
     pub ICON_SEARCH          = dep("crate://self/resources/icons/search.svg")

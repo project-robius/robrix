@@ -7,7 +7,9 @@ use std::{
 };
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::{events::room::{ImageInfo, MediaSource}, OwnedMxcUri, UInt};
+use matrix_sdk::
+    ruma::{events::room::{ImageInfo, MediaSource}, OwnedMxcUri, UInt}
+;
 use serde::Deserialize;
 use url::Url;
 
@@ -173,7 +175,7 @@ pub struct LinkPreview {
     #[live]
     item_template: Option<LivePtr>,
     #[rust]
-    children: Vec<ViewRef>,
+    children: Vec<(ViewRef, Option<OwnedMxcUri>)>,
     #[layout]
     layout: Layout,
     #[rust]
@@ -196,7 +198,7 @@ impl Widget for LinkPreview {
             }
         }
 
-        for view in self.children.iter() {
+        for (view, mxc_uri) in &self.children {
             if let Some(html_link) = view.link_label(id!(content_view.title_label)).borrow() {
                 if let Event::Actions(actions) = event {
                     if html_link.clicked(actions) && !html_link.url.is_empty() {
@@ -211,6 +213,28 @@ impl Widget for LinkPreview {
                     }
                 }
             }
+            
+            // Handle image clicks for opening in modal
+            let image_area = view.text_or_image(id!(image)).area();
+            match event.hits(cx, image_area) {
+                Hit::FingerDown(_) => {
+                    cx.set_key_focus(image_area);
+                }
+                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                    // Use the stored MXC URI if available
+                    if let Some(mxc_uri) = mxc_uri {
+                        cx.widget_action(self.widget_uid(), &Scope::empty().path, LinkPreviewAction::SetImageViewerModal(mxc_uri.clone()));
+                    }
+                }
+                Hit::FingerHoverIn(_) => {
+                    cx.set_cursor(MouseCursor::Hand);
+                }
+                Hit::FingerHoverOut(_) => {
+                    cx.set_cursor(MouseCursor::Default);
+                }
+                _ => {}
+            }
+            
             view.handle_event(cx, event, scope);
         }
         self.view.handle_event(cx, event, scope);
@@ -219,7 +243,7 @@ impl Widget for LinkPreview {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // Draw children (link preview items)
         let max_visible = if self.is_expanded { self.children.len() } else { 2 };
-        for (index, view) in self.children.iter_mut().enumerate() {
+        for (index, (view, _)) in self.children.iter_mut().enumerate() {
             if index < max_visible {
                 let _ = view.draw(cx, scope);
             }
@@ -259,14 +283,14 @@ impl LinkPreviewRef {
     }
     /// Sets the children of the LinkPreview widget.
     ///
-    /// This function will replace all existing children of the LinkPreview widget with the provided views.
+    /// This function will replace all existing children of the LinkPreview widget with the provided views and MXC URIs.
     ///
     /// # Parameters
     ///
-    /// * `views`: A vector of ViewRef objects to be set as the children of the LinkPreview widget.
-    fn set_children(&mut self, views: Vec<ViewRef>) {
+    /// * `children`: A vector of tuples containing ViewRef and optional MXC URI.
+    fn set_children(&mut self, children: Vec<(ViewRef, Option<OwnedMxcUri>)>) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.children = views;
+            inner.children = children;
         }
     }
 
@@ -294,12 +318,13 @@ impl LinkPreviewRef {
         link: &Url,
         media_cache: &mut MediaCache,
         image_populate_fn: F,
-    ) -> (ViewRef, bool)
+    ) -> (ViewRef, bool, Option<OwnedMxcUri>)
     where
         F: FnOnce(&mut Cx, &TextOrImageRef, Option<Box<ImageInfo>>, MediaSource, &str, &mut MediaCache) -> bool,
     {
         let view_ref = WidgetRef::new_from_ptr(cx, self.item_template()).as_view();
         let mut fully_drawn = true;
+        let mut mxc_uri: Option<OwnedMxcUri> = None;
         // Set title and URL
         let title_link = view_ref.link_label(id!(content_view.title_label));
         title_link.set_text(cx, link.as_str());
@@ -310,8 +335,8 @@ impl LinkPreviewRef {
         text_or_image_ref.show_default_image(cx);
         let link_preview_data = match link_preview_cache_entry {
             LinkPreviewCacheEntry::LoadedLinkPreview(link_preview_data) => link_preview_data,
-            LinkPreviewCacheEntry::Failed(_) => return (view_ref, true),
-            LinkPreviewCacheEntry::Requested => return (view_ref, false),
+            LinkPreviewCacheEntry::Failed(_) => return (view_ref, true, None),
+            LinkPreviewCacheEntry::Requested => return (view_ref, false, None),
         };
         if let Some(url) = &link_preview_data.url {
             if let Some(mut title_link) = title_link.borrow_mut() {
@@ -352,6 +377,7 @@ impl LinkPreviewRef {
             image_info.size = link_preview_data.image_size;
             let image_info_source = Some(Box::new(image_info));
             let owned_mxc_uri = OwnedMxcUri::from(image.clone());
+            mxc_uri = Some(owned_mxc_uri.clone());
             let text_or_image_ref = view_ref.text_or_image(id!(image));
             let original_source = MediaSource::Plain(owned_mxc_uri);
             // Calls the closure with the image populate function
@@ -365,7 +391,7 @@ impl LinkPreviewRef {
             );
         }
 
-        (view_ref, fully_drawn)
+        (view_ref, fully_drawn, mxc_uri)
     }
 
     /// Populates link previews below a message.
@@ -390,7 +416,7 @@ impl LinkPreviewRef {
         const MAX_LINK_PREVIEWS_BY_EXPAND: usize = 2;
         let mut fully_drawn_count = 0;
         let mut accepted_link_count = 0;
-        let mut views = Vec::new();
+        let mut children = Vec::new();
         let mut seen_urls = std::collections::HashSet::new();
         
         for link in links {
@@ -410,7 +436,7 @@ impl LinkPreviewRef {
             
             seen_urls.insert(url_string.clone());
             accepted_link_count += 1;
-            let (view_ref, was_image_drawn) = self.populate_view(
+            let (view_ref, was_image_drawn, mxc_uri) = self.populate_view(
                 cx,
                 link_preview_cache.get_or_fetch_link_preview(url_string),
                 link,
@@ -420,13 +446,13 @@ impl LinkPreviewRef {
                 },
             );
             fully_drawn_count += was_image_drawn as usize;
-            views.push(view_ref);
+            children.push((view_ref, mxc_uri));
         }
-        if views.len() > MAX_LINK_PREVIEWS_BY_EXPAND {
-            let hidden_count = views.len() - MAX_LINK_PREVIEWS_BY_EXPAND;
+        if children.len() > MAX_LINK_PREVIEWS_BY_EXPAND {
+            let hidden_count = children.len() - MAX_LINK_PREVIEWS_BY_EXPAND;
             self.show_collapsible_button(cx, hidden_count);
         }
-        self.set_children(views);
+        self.set_children(children);
         fully_drawn_count == accepted_link_count
     }
 }
@@ -629,3 +655,9 @@ fn insert_into_cache(
     SignalToUI::set_ui_signal();
 }
 
+/// The actions that can be taken on a link preview.
+#[derive(Clone, Debug, DefaultNone)]
+pub enum LinkPreviewAction {
+    SetImageViewerModal(OwnedMxcUri),
+    None
+}

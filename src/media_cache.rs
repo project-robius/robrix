@@ -1,6 +1,7 @@
 use std::{collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
-use makepad_widgets::{error, log, SignalToUI};
-use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}};
+use makepad_widgets::{log, SignalToUI};
+use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}, Error, HttpError};
+use ruma::api::client::error::ErrorKind;
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
 
 /// The value type in the media cache, one per Matrix URI.
@@ -17,8 +18,10 @@ pub enum MediaCacheEntry {
     Requested,
     /// The media has been successfully loaded from the server.
     Loaded(Arc<[u8]>),
-    /// The media failed to load from the server.
-    Failed,
+    /// The media failed to load from the server with the given error.
+    Failed(ErrorKind),
+    /// The media failed to load from the server with an unknown error.
+    FailedUnknown,
 }
 
 /// A reference to a media cache entry and its associated format.
@@ -194,12 +197,29 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
             }
             MediaCacheEntry::Loaded(data)
         }
-        Err(e) => {
-            error!("Failed to fetch media for {:?}: {e:?}", request.source);
-            MediaCacheEntry::Failed
+        Err(e) => match e {
+            Error::Http(http_error) => {
+                if let Some(server_error) = http_error.as_ruma_api_error() {
+                    MediaCacheEntry::Failed(ErrorKind::BadStatus { status: None, body: Some(format!("Server error: {server_error}")) })
+                } else if let Some(client_error) = http_error.as_client_api_error() {
+                    MediaCacheEntry::Failed(ErrorKind::BadStatus { status: None, body: Some(format!("Client error: {client_error}")) })
+                } else {
+                    match *http_error {
+                        HttpError::Reqwest(reqwest_error) => {
+                            use std::error::Error;
+                            MediaCacheEntry::Failed(ErrorKind::BadStatus { status: reqwest_error.status(), body: reqwest_error.source().map(|e| format!("{e}")) })
+                        }
+                        _ => {
+                            MediaCacheEntry::FailedUnknown
+                        }
+                    }
+                }
+            }
+            Error::InsufficientData => MediaCacheEntry::Failed(ErrorKind::BadState),
+            Error::AuthenticationRequired => MediaCacheEntry::Failed(ErrorKind::Unauthorized),
+            _ => MediaCacheEntry::FailedUnknown
         }
     };
-
     *value_ref.lock().unwrap() = new_value;
 
     if let Some(sender) = update_sender {
