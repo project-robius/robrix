@@ -579,14 +579,22 @@ fn show_image_modal_view(cx: &mut Cx, view_set: ViewSet, load_state: LoadState) 
 /// Updates the error display with specific message and icon based on error type
 fn update_error_display(cx: &mut Cx, error_view: &ViewRef, error: &ErrorKind) {
     let message = match error {
-        ErrorKind::NotFound => "Failed to load image: 404 Server Error. Image not found",
-        ErrorKind::BadJson  => "Failed to load image: Client error",
-        ErrorKind::BadState => "Failed to load image: Empty data",
-        ErrorKind::BadStatus { status: _, body } => &format!("Failed to load image: HTTP error: {:?}", body.clone().unwrap_or_default()),
-        ErrorKind::Unrecognized => "Image decoding error",
-        ErrorKind::ConnectionFailed => "No internet connection",
-        ErrorKind::Unauthorized => "Unauthorized",
-        _ => "Failed to load image",
+        ErrorKind::NotFound => "Image not available",
+        ErrorKind::BadJson => "Something went wrong while loading the image",
+        ErrorKind::BadState => "Image appears to be empty or corrupted",
+        ErrorKind::BadStatus { status, body: _ } => {
+            match status {
+                Some(status_code) if status_code.as_u16() == 404 => "Image not found",
+                Some(status_code) if status_code.as_u16() == 403 => "Access denied to this image",
+                Some(status_code) if status_code.as_u16() >= 500 => "Server temporarily unavailable",
+                Some(status_code) if status_code.as_u16() >= 400 => "Unable to load image",
+                _ => "Network error occurred",
+            }
+        },
+        ErrorKind::Unrecognized => "This image format isn't supported",
+        ErrorKind::ConnectionFailed => "Check your internet connection",
+        ErrorKind::Unauthorized => "You don't have permission to view this image",
+        _ => "Unable to load image",
     };
 
     // Update the label text
