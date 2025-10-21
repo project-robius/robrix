@@ -556,6 +556,8 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+    /// The set of pinned events in this room.
+    #[rust] pinned_events: Vec<OwnedEventId>,
     /// Whether this room has been successfully loaded (received from the homeserver).
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
@@ -964,6 +966,7 @@ impl Widget for RoomScreen {
                                         &mut tl_state.media_cache,
                                         &mut tl_state.link_preview_cache,
                                         &tl_state.user_power,
+                                        &self.pinned_events,
                                         item_drawn_status,
                                         room_screen_widget_uid,
                                     )
@@ -1200,7 +1203,7 @@ impl RoomScreen {
                         let loading_pane = self.view.loading_pane(id!(loading_pane));
                         let mut loading_pane_state = loading_pane.take_state();
                         if let LoadingPaneState::BackwardsPaginateUntilEvent {
-                            ref mut events_paginated, target_event_id, ..
+                            events_paginated, target_event_id, ..
                         } = &mut loading_pane_state {
                             *events_paginated += new_items.len().saturating_sub(tl.items.len());
                             log!("While finding target event {target_event_id}, we have now loaded {events_paginated} messages...");
@@ -1337,6 +1340,26 @@ impl RoomScreen {
                     self.view.room_input_bar(id!(room_input_bar))
                         .handle_edit_result(cx, timeline_event_id, result);
                 }
+                TimelineUpdate::PinResult { result, pin, .. } => {
+                    let (message, auto_dismissal_duration, kind) = match &result {
+                        Ok(true) => (
+                            format!("Successfully {} event.", if pin { "pinned" } else { "unpinned" }),
+                            Some(4.0),
+                            PopupKind::Success
+                        ),
+                        Ok(false) => (
+                            format!("Message was already {}.", if pin { "pinned" } else { "unpinned" }),
+                            Some(4.0),
+                            PopupKind::Info
+                        ),
+                        Err(e) => (
+                            format!("Failed to {} event. Error: {e}", if pin { "pin" } else { "unpin" }),
+                            None,
+                            PopupKind::Error
+                        ),
+                    };
+                    enqueue_popup_notification(PopupItem { message, auto_dismissal_duration, kind, });
+                }
                 TimelineUpdate::TypingUsers { users } => {
                     // This update loop should be kept tight & fast, so all we do here is
                     // save the list of typing users for future use after the loop exits.
@@ -1344,6 +1367,15 @@ impl RoomScreen {
                     // update loop has completed, which avoids unnecessary expensive work
                     // if the list of typing users gets updated many times in a row.
                     typing_users = Some(users);
+                }
+                TimelineUpdate::PinnedEvents(pinned_events) => {
+                    self.pinned_events = pinned_events;
+                    // We need to redraw any events that might have been pinned or unpinned
+                    // in order to have all events properly reflect their pinned state.
+                    // However, it's intractable to find exactly which events in the timeline
+                    // had a change in their pinned state, so we just clear all draw caches.
+                    tl.content_drawn_since_last_update.clear();
+                    tl.profile_drawn_since_last_update.clear();
                 }
                 TimelineUpdate::UserPowerLevels(user_power_levels) => {
                     tl.user_power = user_power_levels;
@@ -1354,6 +1386,10 @@ impl RoomScreen {
                         room_id: tl.room_id.clone(),
                         can_notify_room: user_power_levels.can_notify_room(),
                     });
+                    // We need to redraw all events in order to reflect the new power levels,
+                    // e.g., for the message context menu to be correctly populated.
+                    tl.content_drawn_since_last_update.clear();
+                    tl.profile_drawn_since_last_update.clear();
                 }
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
@@ -1603,13 +1639,37 @@ impl RoomScreen {
                         });
                     }
                 }
-                MessageAction::Pin(_details) => {
-                    // TODO
-                    enqueue_popup_notification(PopupItem { message: "Pinning messages is not yet implemented.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                MessageAction::Pin(details) => {
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    if let Some(event_id) = details.event_id {
+                        submit_async_request(MatrixRequest::PinEvent {
+                            event_id,
+                            room_id: tl.room_id.clone(),
+                            pin: true,
+                        });
+                    } else {
+                        enqueue_popup_notification(PopupItem {
+                            message: String::from("This event cannot be pinned."),
+                            auto_dismissal_duration: None,
+                            kind: PopupKind::Error,
+                        });
+                    }
                 }
-                MessageAction::Unpin(_details) => {
-                    // TODO
-                    enqueue_popup_notification(PopupItem { message: "Unpinning messages is not yet implemented.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                MessageAction::Unpin(details) => {
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    if let Some(event_id) = details.event_id {
+                        submit_async_request(MatrixRequest::PinEvent {
+                            event_id,
+                            room_id: tl.room_id.clone(),
+                            pin: false,
+                        });
+                    } else {
+                        enqueue_popup_notification(PopupItem {
+                            message: String::from("This event cannot be unpinned."),
+                            auto_dismissal_duration: None,
+                            kind: PopupKind::Error,
+                        });
+                    }
                 }
                 MessageAction::CopyText(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
@@ -1995,6 +2055,10 @@ impl RoomScreen {
                 room_id: room_id.clone(),
                 subscribe: true,
             });
+            submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
+                room_id: room_id.clone(),
+                subscribe: true,
+            });
         }
 
         // Now, restore the visual state of this timeline from its previously-saved state.
@@ -2021,11 +2085,16 @@ impl RoomScreen {
         // * Unsubscribe from typing notices, since we don't care about them
         //   when a given room isn't visible.
         // * Unsubscribe from updates to our own user's read receipts, for the same reason.
+        // * Unsubscribe from updates to this room's pinned events, for the same reason.
         submit_async_request(MatrixRequest::SubscribeToTypingNotices {
             room_id: room_id.clone(),
             subscribe: false,
         });
         submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
+            room_id: room_id.clone(),
+            subscribe: false,
+        });
+        submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
             room_id,
             subscribe: false,
         });
@@ -2402,6 +2471,14 @@ pub enum TimelineUpdate {
         /// The list of users (their displayable name) who are currently typing in this room.
         users: Vec<String>,
     },
+    /// The result of a pin/unpin request ([`MatrixRequest::PinEvent`]).
+    PinResult {
+        event_id: OwnedEventId,
+        result: Result<bool, matrix_sdk::Error>,
+        pin: bool,
+    },
+    /// An update containing the set of pinned events in this room.
+    PinnedEvents(Vec<OwnedEventId>),
     /// An update containing the currently logged-in user's power levels for this room.
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
@@ -2646,6 +2723,7 @@ fn populate_message_view(
     media_cache: &mut MediaCache,
     link_preview_cache: &mut LinkPreviewCache,
     user_power_levels: &UserPowerLevels,
+    pinned_events: &[OwnedEventId],
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
 ) -> (WidgetRef, ItemDrawnStatus) {
@@ -3063,6 +3141,7 @@ fn populate_message_view(
                 user_power_levels,
                 event_tl_item,
                 msg_like_content,
+                pinned_events,
                 has_html_body,
             ),
             should_be_highlighted: event_tl_item.is_highlighted(),
@@ -3185,32 +3264,30 @@ fn populate_text_message_content(
     link_preview_cache: Option<&mut LinkPreviewCache>,
 ) -> bool {
     // The message was HTML-formatted rich text.
-    let links = if let Some(fb) = formatted_body.as_ref()
+    let mut links = Vec::new();
+    if let Some(fb) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
-        let (linkified_html, links) = utils::linkify_get_urls(
+        let linkified_html = utils::linkify_get_urls(
             utils::trim_start_html_whitespace(&fb.body),
             true,
+            Some(&mut links),
         );
-        message_content_widget.show_html(
-            cx,
-            linkified_html
-        );
-        links
+        message_content_widget.show_html(cx, linkified_html);
     }
     // The message was non-HTML plaintext.
     else {
-        let (linkified_html, links) = utils::linkify_get_urls(body, false);
+        let linkified_html = utils::linkify_get_urls(body, false, Some(&mut links));
         match linkified_html {
             Cow::Owned(linkified_html) => message_content_widget.show_html(cx, &linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext),
         }
-        links
     };
 
     // Populate link previews if all required parameters are provided
     if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) = 
-        (link_preview_ref, media_cache, link_preview_cache) {
+        (link_preview_ref, media_cache, link_preview_cache)
+    {
         link_preview_ref.populate_below_message(
             cx,
             &links,

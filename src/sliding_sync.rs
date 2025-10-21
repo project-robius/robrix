@@ -405,7 +405,7 @@ pub enum MatrixRequest {
     /// This request does not return a response or notify the UI thread.
     SubscribeToTypingNotices {
         room_id: OwnedRoomId,
-        /// Whether to subscribe or unsubscribe from typing notices for this room.
+        /// Whether to subscribe or unsubscribe.
         subscribe: bool,
     },
     /// Subscribe to changes in the read receipts of our own user.
@@ -413,7 +413,13 @@ pub enum MatrixRequest {
     /// This request does not return a response or notify the UI thread.
     SubscribeToOwnUserReadReceiptsChanged {
         room_id: OwnedRoomId,
-        /// Whether to subscribe or unsubscribe to changes in the read receipts of our own user for this room
+        /// Whether to subscribe or unsubscribe.
+        subscribe: bool,
+    },
+    /// Subscribe to changes in the set of pinned events for the given room.
+    SubscribeToPinnedEvents {
+        room_id: OwnedRoomId,
+        /// Whether to subscribe or unsubscribe.
         subscribe: bool,
     },
     /// Sends a read receipt for the given event in the given room.
@@ -444,6 +450,13 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
+    },
+    /// Pin or unpin the given event in the given room.
+    #[doc(alias("unpin"))]
+    PinEvent {
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
+        pin: bool,
     },
     /// Sends a request to obtain the room's pill link info for the given Matrix ID.
     ///
@@ -494,7 +507,9 @@ async fn async_worker(
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started async_worker task.");
-    let mut tasks_list: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
+    let mut subscribers_own_user_read_receipts: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
+    let mut subscribers_pinned_events: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
+
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
@@ -952,7 +967,7 @@ async fn async_worker(
             }
             MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
                 if !subscribe {
-                    if let Some(task_handler) = tasks_list.remove(&room_id) {
+                    if let Some(task_handler) = subscribers_own_user_read_receipts.remove(&room_id) {
                         task_handler.abort();
                     }
                     continue;
@@ -980,7 +995,7 @@ async fn async_worker(
                         while (update_receiver.next().await).is_some() {
                             if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
                                 if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
-                                    error!("Failed to get own user read receipt: {e:?}");
+                                    error!("Failed to send own user read receipt: {e:?}");
                                 }
                                 // When read receipts change (from other devices), update unread count
                                 let unread_count = timeline.room().num_unread_messages();
@@ -1001,7 +1016,40 @@ async fn async_worker(
                         }
                     }
                 });
-                tasks_list.insert(room_id.clone(), subscribe_own_read_receipt_task);
+                subscribers_own_user_read_receipts.insert(room_id, subscribe_own_read_receipt_task);
+            }
+            MatrixRequest::SubscribeToPinnedEvents { room_id, subscribe } => {
+                if !subscribe {
+                    if let Some(task_handler) = subscribers_pinned_events.remove(&room_id) {
+                        task_handler.abort();
+                    }
+                    continue;
+                }
+                let (timeline, sender) = {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                        log!("BUG: room info not found for subscribe to pinned events request, room {room_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+                let subscribe_pinned_events_task = Handle::current().spawn(async move {
+                    // Send an initial update, as the stream may not update immediately.
+                    let pinned_events = timeline.room().pinned_event_ids().unwrap_or_default();
+                    match sender.send(TimelineUpdate::PinnedEvents(pinned_events)) {
+                        Ok(()) => SignalToUI::set_ui_signal(),
+                        Err(e) => log!("Failed to send initial pinned events update: {e:?}"),
+                    }
+                    let update_receiver = timeline.room().pinned_event_ids_stream();
+                    pin_mut!(update_receiver);
+                    while let Some(pinned_events) = update_receiver.next().await {
+                        match sender.send(TimelineUpdate::PinnedEvents(pinned_events)) {
+                            Ok(()) => SignalToUI::set_ui_signal(),
+                            Err(e) => log!("Failed to send pinned events update: {e:?}"),
+                        }
+                    }
+                });
+                subscribers_pinned_events.insert(room_id, subscribe_pinned_events_task);
             }
             MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
                 spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
@@ -1244,6 +1292,28 @@ async fn async_worker(
                     }
                 });
             },
+            MatrixRequest::PinEvent { room_id, event_id, pin } => {
+                let (timeline, sender) = {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                        log!("BUG: room info not found for pin message {room_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                let _pin_task = Handle::current().spawn(async move {
+                    let result = if pin {
+                        timeline.pin_event(&event_id).await
+                    } else {
+                        timeline.unpin_event(&event_id).await
+                    };
+                    match sender.send(TimelineUpdate::PinResult { event_id, pin, result }) {
+                        Ok(_) => SignalToUI::set_ui_signal(),
+                        Err(e) => log!("Failed to send timeline update for pin event: {e:?}"),
+                    }
+                });
+            }
             MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
                 let Some(client) = get_client() else { continue };
                 let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {
@@ -1555,12 +1625,15 @@ struct JoinedRoomDetails {
     timeline_subscriber_handler_task: JoinHandle<()>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
+    /// A drop guard for the event handler that represents a subscription to pinned events for this room.
+    pinned_events_subscriber: Option<EventHandlerDropGuard>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
         log!("Dropping JoinedRoomDetails for room {}", self.room_id);
         self.timeline_subscriber_handler_task.abort();
         drop(self.typing_notice_subscriber.take());
+        drop(self.pinned_events_subscriber.take());
     }
 }
 
@@ -1664,25 +1737,25 @@ fn username_to_full_user_id(
 /// determine if the room has changed state.
 /// We can't just store the `matrix_sdk::Room` object itself,
 /// because that is a shallow reference to an inner room object within
-/// the room list service
+/// the room list service.
 #[derive(Clone)]
 struct RoomListServiceRoomInfo {
-    room: matrix_sdk::Room,
     room_id: OwnedRoomId,
     room_state: RoomState,
+    is_direct: bool,
+    room: matrix_sdk::Room,
 }
-impl From<&matrix_sdk::Room> for RoomListServiceRoomInfo {
-    fn from(room: &matrix_sdk::Room) -> Self {
-        room.clone().into()
-    }
-}
-impl From<matrix_sdk::Room> for RoomListServiceRoomInfo {
-    fn from(room: matrix_sdk::Room) -> Self {
+impl RoomListServiceRoomInfo {
+    async fn from_room(room: matrix_sdk::Room) -> Self {
         Self {
             room_id: room.room_id().to_owned(),
             room_state: room.state(),
+            is_direct: room.is_direct().await.unwrap_or(false),
             room,
         }
+    }
+    async fn from_room_ref(room: &matrix_sdk::Room) -> Self {
+        Self::from_room(room.clone()).await
     }
 }
 
@@ -1845,7 +1918,7 @@ async fn async_main_loop(
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append {_num_new_rooms}"); }
                     for new_room in new_rooms {
                         add_new_room(&new_room, &room_list_service).await?;
-                        all_known_rooms.push_back(new_room.into_inner().into());
+                        all_known_rooms.push_back(RoomListServiceRoomInfo::from_room(new_room.into_inner()).await);
                     }
                 }
                 VectorDiff::Clear => {
@@ -1857,12 +1930,12 @@ async fn async_main_loop(
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
                     add_new_room(&new_room, &room_list_service).await?;
-                    all_known_rooms.push_front(new_room.into_inner().into());
+                    all_known_rooms.push_front(RoomListServiceRoomInfo::from_room(new_room.into_inner()).await);
                 }
                 VectorDiff::PushBack { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
                     add_new_room(&new_room, &room_list_service).await?;
-                    all_known_rooms.push_back(new_room.into_inner().into());
+                    all_known_rooms.push_back(RoomListServiceRoomInfo::from_room(new_room.into_inner()).await);
                 }
                 remove_diff @ VectorDiff::PopFront => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopFront"); }
@@ -1891,7 +1964,7 @@ async fn async_main_loop(
                 VectorDiff::Insert { index, value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
                     add_new_room(&new_room, &room_list_service).await?;
-                    all_known_rooms.insert(index, new_room.into_inner().into());
+                    all_known_rooms.insert(index, RoomListServiceRoomInfo::from_room(new_room.into_inner()).await);
                 }
                 VectorDiff::Set { index, value: changed_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Set at {index}"); }
@@ -1900,7 +1973,7 @@ async fn async_main_loop(
                     } else {
                         error!("BUG: room list diff: Set index {index} was out of bounds.");
                     }
-                    all_known_rooms.set(index, changed_room.into_inner().into());
+                    all_known_rooms.set(index, RoomListServiceRoomInfo::from_room(changed_room.into_inner()).await);
                 }
                 remove_diff @ VectorDiff::Remove { index: remove_index } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Remove at {remove_index}"); }
@@ -1941,10 +2014,9 @@ async fn async_main_loop(
                     for room in &new_rooms {
                         add_new_room(room.deref(), &room_list_service).await?;
                     }
-                    all_known_rooms = new_rooms
-                        .into_iter()
-                        .map(|r| r.into_inner().into())
-                        .collect();
+                    for new_room in new_rooms.into_iter() {
+                        all_known_rooms.push_back(RoomListServiceRoomInfo::from_room(new_room.into_inner()).await);
+                    }
                 }
             }
         }
@@ -1979,7 +2051,7 @@ async fn optimize_remove_then_add_into_update(
                 log!("Optimizing {remove_diff:?} + Insert({insert_index}) into Update for room {}", room.room_id);
             }
             update_room(room, new_room, room_list_service).await?;
-            all_known_rooms.insert(*insert_index, new_room.deref().clone().into());
+            all_known_rooms.insert(*insert_index, RoomListServiceRoomInfo::from_room_ref(new_room.deref()).await);
             next_diff_was_handled = true;
         }
         Some(VectorDiff::PushFront { value: new_room })
@@ -1989,7 +2061,7 @@ async fn optimize_remove_then_add_into_update(
                 log!("Optimizing {remove_diff:?} + PushFront into Update for room {}", room.room_id);
             }
             update_room(room, new_room, room_list_service).await?;
-            all_known_rooms.push_front(new_room.deref().clone().into());
+            all_known_rooms.push_front(RoomListServiceRoomInfo::from_room_ref(new_room.deref()).await);
             next_diff_was_handled = true;
         }
         Some(VectorDiff::PushBack { value: new_room })
@@ -1999,7 +2071,7 @@ async fn optimize_remove_then_add_into_update(
                 log!("Optimizing {remove_diff:?} + PushBack into Update for room {}", room.room_id);
             }
             update_room(room, new_room, room_list_service).await?;
-            all_known_rooms.push_back(new_room.deref().clone().into());
+            all_known_rooms.push_back(RoomListServiceRoomInfo::from_room_ref(new_room.deref()).await);
             next_diff_was_handled = true;
         }
         _ => next_diff_was_handled = false,
@@ -2035,7 +2107,7 @@ async fn update_room(
                 RoomState::Banned => {
                     // TODO: handle rooms that this user has been banned from.
                     log!("Removing Banned room: {new_room_name:?} ({new_room_id})");
-                    remove_room(&new_room.into());
+                    remove_room(&RoomListServiceRoomInfo::from_room_ref(new_room).await);
                     return Ok(());
                 }
                 RoomState::Left => {
@@ -2045,7 +2117,7 @@ async fn update_room(
                     //       Upon clicking a left room, we could show a splash page
                     //       that prompts the user to rejoin the room or forget it permanently.
                     //       Currently, we just remove it and do not show left rooms at all.
-                    remove_room(&new_room.into());
+                    remove_room(&RoomListServiceRoomInfo::from_room_ref(new_room).await);
                     return Ok(());
                 }
                 RoomState::Joined => {
@@ -2105,7 +2177,8 @@ async fn update_room(
             }
         }
 
-        // We only update tags or unread count for joined rooms.
+        // Below, we update room data that is only relevant to joined rooms:
+        // tags, unread count, is_direct, etc.
         // Invited or left rooms don't care about these details.
         if matches!(new_room_state, RoomState::Joined) {
             if let Ok(new_tags) = new_room.tags().await {
@@ -2120,6 +2193,15 @@ async fn update_room(
                 count: UnreadMessageCount::Known(new_room.num_unread_messages()),
                 unread_mentions: new_room.num_unread_mentions()
             });
+
+            if let Ok(is_new_room_direct) = new_room.is_direct().await {
+                if old_room.is_direct != is_new_room_direct {
+                    enqueue_rooms_list_update(RoomsListUpdate::UpdateIsDirect {
+                        room_id: new_room_id.clone(),
+                        is_direct: is_new_room_direct,
+                    });
+                }
+            }
         }
 
         Ok(())
@@ -2258,6 +2340,7 @@ async fn add_new_room(room: &matrix_sdk::Room, room_list_service: &RoomListServi
             timeline_update_sender,
             timeline_subscriber_handler_task,
             typing_notice_subscriber: None,
+            pinned_events_subscriber: None,
         },
     );
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can

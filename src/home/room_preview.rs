@@ -366,10 +366,10 @@ impl RoomPreviewContent {
         is_selected: bool,
     ) {
         match room_avatar {
-            RoomPreviewAvatar::Text(ref text) => {
+            RoomPreviewAvatar::Text(text) => {
                 self.view.avatar(id!(avatar)).show_text(cx, None, None, text);
             }
-            RoomPreviewAvatar::Image(ref img_bytes) => {
+            RoomPreviewAvatar::Image(img_bytes) => {
                 let _ = self.view.avatar(id!(avatar)).show_image(
                     cx,
                     None, // don't make room preview avatars clickable.
