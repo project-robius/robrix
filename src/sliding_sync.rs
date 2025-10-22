@@ -847,7 +847,7 @@ async fn async_worker(
                     enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                         room_id: room_id.clone(),
                         unread_messages: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
-                        unread_mentions:timeline.room().num_unread_mentions(),
+                        unread_mentions: timeline.room().num_unread_mentions(),
                     });
                 });
             }
@@ -2162,7 +2162,7 @@ async fn update_room(
         // including joined, invited, and other rooms.
         // This includes the room name and room avatar.
         if old_room.room_avatar != new_room.room_avatar {
-            log!("Updating avatar for room {}", new_room_id);
+            log!("Updating room avatar for room {}", new_room_id);
             spawn_fetch_room_avatar(new_room);
         }
         if old_room.display_name != new_room.display_name {
