@@ -2,7 +2,7 @@
 //!
 //! It supports zooming, panning, loading states, error handling, and timeout management.
 //! The modal integrates with the media cache to efficiently load and display images.
-//! There are 3 variants to ImageViewerModalAction emited by this widget. They are "Initialize", "Show" and "SetImage".
+//! There are 3 types of ImageViewerModalActions handled by this widget. They are "OpenModal", "Show" and "SetImage".
 //! 
 use std::sync::Arc;
 
@@ -154,7 +154,7 @@ live_design! {
                                     return #x0;
                                 }
                             }
-                            icon_walk: {width: 14, height: 14}
+                            icon_walk: { width: 14, height: 14 }
                         }
                     }
 
@@ -201,10 +201,10 @@ live_design! {
                                 icon_walk: { width: 50, height: 50 }
                             }
 
-                            loading_label = <Label> {
+                            error_label = <Label> {
                                 width: Fill, height: Fit,
                                 flow: RightWrap,
-                                align: { x:0.5, y: 0.5 }
+                                align: { x: 0.5, y: 0.5 }
                                 draw_text: {
                                     text_style: <REGULAR_TEXT>{ font_size: 14 },
                                     color: #f44,
@@ -222,10 +222,10 @@ live_design! {
 /// Actions handled by the `ImageViewer` widget.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerModalAction {
-    /// Initialize the ImageViewerModal widget with a source id.
+    /// OpenModal the ImageViewerModal widget with a source id.
     /// The source is will be in-flight mode to avoid handling actions with different source id.
     /// This will open the ImageViewerModal widget with loading state.
-    Initialize(String),
+    OpenModal(String),
     /// Display the ImageViewerModal widget based on the given source id and LoadState.
     Show(String, LoadState),
     /// Set the image being displayed by the ImageViewer based on the given source id andthe image data.
@@ -246,9 +246,9 @@ struct ImageViewerModal {
     drag_state: DragState,
     /// The source id of the image being displayed.
     /// This is used to avoid handling actions with different source id.
-    /// This is set during the `Initialize` action.
+    /// This is set during the `OpenModal` action.
     #[rust]
-    source_inflight_id: Option<String>,
+    source_id: Option<String>,
 }
 
 impl Widget for ImageViewerModal {
@@ -359,16 +359,16 @@ impl MatchEvent for ImageViewerModal {
         }
         for action in actions {
             match action.downcast_ref::<ImageViewerModalAction>() {
-                Some(ImageViewerModalAction::Initialize(source)) => {
+                Some(ImageViewerModalAction::OpenModal(source)) => {
                     self.image_loaded = false;
-                    self.source_inflight_id = Some(source.clone());
+                    self.source_id = Some(source.clone());
                     self.modal(id!(image_modal)).open(cx);
                     self.timeout_timer = cx.start_timeout(IMAGE_LOAD_TIMEOUT);
                     self.show_image_modal_view(cx, LoadState::Loading);
                 }
                 Some(ImageViewerModalAction::Show(source, load_state)) => {
                     // Ignore action if the source doesn't match
-                    if Some(source) != self.source_inflight_id.as_ref() {
+                    if Some(source) != self.source_id.as_ref() {
                         continue;
                     }
                     if load_state == &LoadState::Loading {
@@ -381,12 +381,12 @@ impl MatchEvent for ImageViewerModal {
                 }
                 Some(ImageViewerModalAction::SetImage(source, data)) => {
                     // Ignore action if the source doesn't match
-                    if Some(source) != self.source_inflight_id.as_ref() {
+                    if Some(source) != self.source_id.as_ref() {
                         continue;
                     }
                     cx.stop_timer(self.timeout_timer);   
                     self.image_loaded = true;
-                    if let Err(e) = load_image_data(cx, self.view.image(id!(zoomable_image)), self.view_set(), data) {
+                    if let Err(e) = self.load_image_data(cx, self.view.image(id!(zoomable_image)), data) {
                         // Determine error type based on the image error
                         let error_type = match e {
                             ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
@@ -409,7 +409,7 @@ impl ImageViewerModal {
     /// Close the modal and reset its state.
     fn close(&mut self, cx: &mut Cx) {
         self.image_loaded = false;
-        self.source_inflight_id = None;
+        self.source_id = None;
         self.reset_drag_state(cx);
         self.update_image_shader(cx);
         self.view
@@ -480,9 +480,6 @@ impl ImageViewerModal {
         self.drag_state = DragState::default();
         self.update_image_shader(cx);
     }
-    fn view_set(&mut self) -> ViewSet {
-        self.view.view_set(ids!(loading_view, error_label_view))
-    }
 
     /// Shows the view at the given load state in the view set,
     /// and hides all other views in the set. The zoomable image is also
@@ -490,50 +487,36 @@ impl ImageViewerModal {
     /// 
     /// The ViewSet is in this order: the loading, error views.
     fn show_image_modal_view(&mut self, cx: &mut Cx, load_state: LoadState) {
-        let view_set = self.view_set();
-        for (i, view_ref) in view_set.iter().enumerate() {
-            let should_show = match load_state {
-                LoadState::Loading => i == 0,
-                LoadState::Error(_) => i == 1,
-                LoadState::Loaded => false, // Hide all views when loaded
-            };
-            view_ref.set_visible(cx, should_show);
-        }
-
-        // If it's an error state, update the error message and icon
-        match &load_state {
-            LoadState::Error(e) => {
-                if let Some(error_view) = view_set.iter().nth(1) {
-                    update_error_display(cx, &error_view, e);
-                }
+        match load_state {
+            LoadState::Loading => {
+                self.view(id!(loading_view)).set_visible(cx, true);
+                self.view(id!(error_label_view)).set_visible(cx, false);
             }
-            _ => {}
+            LoadState::Loaded => {
+                self.view(id!(loading_view)).set_visible(cx, false);
+                self.view(id!(error_label_view)).set_visible(cx, false);
+            }
+            LoadState::Error(_) => {
+                self.view(id!(loading_view)).set_visible(cx, false);
+                self.view(id!(error_label_view)).set_visible(cx, true);
+            }
         }
-    }
-}
-
-impl ImageViewerModalRef {
-    /// Sets the inflight ID of the source image for the modal.
-    ///
-    /// This function resets the image loaded state to false and sets the source inflight ID to the given value.
-    /// It should be called when the image source changes, such as when the image modal is opened with a new image.
-    pub fn set_source_inflight_id(&self, source_inflight_id: String) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.image_loaded = false;
-            inner.source_inflight_id = Some(source_inflight_id);
+        // If it's an error state, update the error message and icon
+        if let LoadState::Error(e) = &load_state {
+            update_error_display(cx, &self.view(id!(error_label_view)), e);
         }
     }
 
-    /// Returns the inflight ID of the source image for the modal, if it exists.
+    /// Loads the image data into the given `image_ref` and displays it.
     ///
-    /// It should be called to check if the media fetched source ID is the same as the inflight ID.
-    /// If the IDs match, process to fetch the media from cache.
-    pub fn get_source_inflight_id(&self) -> Option<String> {
-        if let Some(inner) = self.borrow() {
-            inner.source_inflight_id.clone()
-        } else {
-            None
-        }
+    /// Shows the `image_ref` and hides loading and error label views.
+    ///
+    /// If the image fails to load, an `ImageError` is returned.
+    fn load_image_data(&mut self, cx: &mut Cx, image_ref: ImageRef, data: &[u8]) -> Result<(), ImageError> {
+        load_png_or_jpg(&image_ref, cx, data)?;
+        self.view.view_set(ids!(loading_view, error_label_view)).set_visible(cx, false);
+        image_ref.set_visible(cx, true);
+        Ok(())
     }
 }
 
@@ -546,18 +529,7 @@ fn round_to_3_decimal_places(dvec2: DVec2) -> DVec2 {
     }
 }
 
-/// Loads the image data into the given `image_ref` and displays it.
-///
-/// Shows the `image_ref` and hides all views in the given `view_set`.
-///
-/// If the image fails to load, an `ImageError` is returned.
-fn load_image_data(cx: &mut Cx, image_ref: ImageRef, view_set: ViewSet, data: &[u8]) -> Result<(), ImageError> {
-    load_png_or_jpg(&image_ref, cx, data)?;
-    view_set
-        .set_visible(cx, false);
-    image_ref.set_visible(cx, true);
-    Ok(())
-}
+
 
 
 /// Updates the error display with specific message and icon based on error type
@@ -574,7 +546,7 @@ fn update_error_display(cx: &mut Cx, error_view: &ViewRef, error: &ImageViewerEr
     };
 
     // Update the label text
-    error_view.label(id!(loading_label)).set_text(cx, message);
+    error_view.label(id!(error_label)).set_text(cx, message);
 }
 
 /// Represents the possible states of an image load operation.

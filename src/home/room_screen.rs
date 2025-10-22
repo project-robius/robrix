@@ -847,7 +847,7 @@ impl Widget for RoomScreen {
                 }
                 if let TextOrImageAction::Clicked(mxc_uri) = action.as_widget_action().cast() {
                     if let (Some(tl), Some(source_key)) = (&mut self.tl_state, mxc_uri) {
-                        cx.action(ImageViewerModalAction::Initialize(source_key.clone()));
+                        cx.action(ImageViewerModalAction::OpenModal(source_key.clone()));
                         let mxc_uri = OwnedMxcUri::from(source_key);
                         populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
                     }
