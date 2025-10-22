@@ -123,16 +123,16 @@ pub enum RoomsListUpdate {
         /// The Html-formatted text preview of the latest message.
         latest_message_text: String,
     },
-    /// Update the number of unread messages for the given room.
+    /// Update the number of unread messages and mentions for the given room.
     UpdateNumUnreadMessages {
         room_id: OwnedRoomId,
-        count: UnreadMessageCount,
+        unread_messages: UnreadMessageCount,
         unread_mentions: u64,
     },
     /// Update the displayable name for the given room.
     UpdateRoomName {
         room_id: OwnedRoomId,
-        new_room_name: String,
+        new_room_name: Option<String>,
     },
     /// Update the avatar (image) for the given room.
     UpdateRoomAvatar {
@@ -449,9 +449,9 @@ impl RoomsList {
                         error!("Error: couldn't find room {room_id} to update latest event");
                     }
                 }
-                RoomsListUpdate::UpdateNumUnreadMessages { room_id, count , unread_mentions} => {
+                RoomsListUpdate::UpdateNumUnreadMessages { room_id, unread_messages, unread_mentions } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
-                        (room.num_unread_messages, room.num_unread_mentions) = match count {
+                        (room.num_unread_messages, room.num_unread_mentions) = match unread_messages {
                             UnreadMessageCount::Unknown => (0, 0),
                             UnreadMessageCount::Known(count) => (count, unread_mentions),
                         };
@@ -462,7 +462,7 @@ impl RoomsList {
                 RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         let was_displayed = (self.display_filter)(room);
-                        room.room_name = Some(new_room_name);
+                        room.room_name = new_room_name;
                         let should_display = (self.display_filter)(room);
                         match (was_displayed, should_display) {
                             // No need to update the displayed rooms list.

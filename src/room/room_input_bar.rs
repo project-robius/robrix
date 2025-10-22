@@ -1,6 +1,6 @@
 //! The RoomInputBar widget contains all components related to sending messages/content to a room.
 //!
-//! The RoomInputBar must be capped to a maximum height of 75% of the containing RoomScreen's height.
+//! The RoomInputBar is capped to a maximum height of 62.5% of the containing RoomScreen's height.
 //!
 //! The widgets included in the RoomInputBar are:
 //! * a preview of the message the user is replying to.
