@@ -1,7 +1,8 @@
 use std::{collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
 use makepad_widgets::{error, log, SignalToUI};
-use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}, Error, HttpError};
-use ruma::api::client::error::ErrorKind;
+use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri, api::client::error::{Error as ClientError, ErrorBody}}, Error, HttpError};
+use reqwest::StatusCode;
+use serde_json::json;
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
 
 /// The value type in the media cache, one per Matrix URI.
@@ -18,10 +19,8 @@ pub enum MediaCacheEntry {
     Requested,
     /// The media has been successfully loaded from the server.
     Loaded(Arc<[u8]>),
-    /// The media failed to load from the server with the given error.
-    Failed(ErrorKind),
-    /// The media failed to load from the server with an unknown error.
-    FailedUnknown,
+    /// The media failed to load from the server with the ruma client api error.
+    Failed(ClientError),
 }
 
 /// A reference to a media cache entry and its associated format.
@@ -199,37 +198,37 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
         }
         Err(e) => match e {
             Error::Http(http_error) => {
-                if let Some(server_error) = http_error.as_ruma_api_error() {
-                    error!("Server error for media cache: {server_error}");
-                    MediaCacheEntry::Failed(ErrorKind::NotFound)
-                } else if let Some(client_error) = http_error.as_client_api_error() {
-                    error!("Client error for media cache: {client_error}");
-                    MediaCacheEntry::Failed(ErrorKind::BadJson)
+                if let Some(client_error) = http_error.as_client_api_error() {
+                    error!("Client error for media cache: {client_error} request: {:?}", request);
+                    MediaCacheEntry::Failed(client_error.clone())
                 } else {
                     match *http_error {
                         HttpError::Reqwest(reqwest_error) => {
-                            use std::error::Error;
-                            MediaCacheEntry::Failed(ErrorKind::BadStatus { status: reqwest_error.status(), body: reqwest_error.source().map(|e| format!("{e}")) })
+                            if !reqwest_error.is_connect() {
+                                MediaCacheEntry::Failed(ClientError::new(StatusCode::INTERNAL_SERVER_ERROR, ErrorBody::Json(json!({}))))
+                            } else if reqwest_error.is_timeout(){
+                                MediaCacheEntry::Failed(ClientError::new(StatusCode::REQUEST_TIMEOUT, ErrorBody::Json(json!({}))))
+                            } else if reqwest_error.is_status(){
+                                MediaCacheEntry::Failed(ClientError::new(reqwest_error.status().unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), ErrorBody::Json(json!({}))))
+                            } else {
+                                MediaCacheEntry::Failed(ClientError::new(StatusCode::INTERNAL_SERVER_ERROR, ErrorBody::Json(json!({}))))
+                            }
                         }
                         _ => {
-                            MediaCacheEntry::FailedUnknown
+                            MediaCacheEntry::Failed(ClientError::new(StatusCode::NOT_FOUND, ErrorBody::Json(json!({}))))
                         }
                     }
                 }
             }
-            Error::InsufficientData => MediaCacheEntry::Failed(ErrorKind::BadState),
-            Error::AuthenticationRequired => MediaCacheEntry::Failed(ErrorKind::Unauthorized),
-            _ => MediaCacheEntry::FailedUnknown
+            Error::InsufficientData => MediaCacheEntry::Failed(ClientError::new(StatusCode::PARTIAL_CONTENT, ErrorBody::Json(json!({})))),
+            Error::AuthenticationRequired => MediaCacheEntry::Failed(ClientError::new(StatusCode::UNAUTHORIZED, ErrorBody::Json(json!({})))),
+            _ => MediaCacheEntry::Failed(ClientError::new(StatusCode::INTERNAL_SERVER_ERROR, ErrorBody::Json(json!({}))))
         }
     };
     *value_ref.lock().unwrap() = new_value;
 
     if let Some(sender) = update_sender {
-        let source = match &request.source {
-            MediaSource::Plain(mxc_uri) => mxc_uri.to_string(),
-            _ => "<unsupported source>".to_string(),
-        };
-        let _ = sender.send(TimelineUpdate::MediaFetched(source));
+        let _ = sender.send(TimelineUpdate::MediaFetched(Some(request.clone())));
     }
     SignalToUI::set_ui_signal();
 }

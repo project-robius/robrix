@@ -1,20 +1,38 @@
 //! Image viewer modal widget for displaying Matrix media content.
 //!
-//! This module provides an image viewer modal that can display images from Matrix media URIs (mxc://).
 //! It supports zooming, panning, loading states, error handling, and timeout management.
 //! The modal integrates with the media cache to efficiently load and display images.
-
+//! There are 3 variants to ImageViewerModalAction emited by this widget. They are "Initialize", "Show" and "SetImage".
+//! 
 use std::sync::Arc;
 
 use makepad_widgets::{image_cache::ImageError, *};
-use matrix_sdk::ruma::{api::client::error::ErrorKind, events::room::MediaSource, OwnedMxcUri};
 
 use crate::utils::load_png_or_jpg;
-use crate::media_cache::{MediaCache, MediaCacheEntry};
-use matrix_sdk::media::{MediaFormat, UniqueKey};
 
 // Image loading timeout in seconds (10 seconds)
 pub const IMAGE_LOAD_TIMEOUT: f64 = 10.0;
+
+/// Error types for image loading operations
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ImageViewerError {
+    /// Image not found
+    NotFound,
+    /// Access denied
+    Unauthorized,
+    /// Connection failed
+    ConnectionFailed,
+    /// Bad or corrupted data
+    BadData,
+    /// Server error
+    ServerError,
+    /// Unsupported format
+    UnsupportedFormat,
+    /// Unknown error
+    Unknown,
+    /// Image loading timed out
+    Timeout,
+}
 
 /// The Drag state of the image viewer modal
 struct DragState {
@@ -174,7 +192,7 @@ live_design! {
                             flow: Down,
                             align: { x: 0.5, y: 0.5 },
                             spacing: 10
-
+                            visible: false
                             <Icon> {
                                 draw_icon: {
                                     svg_file: (ICON_FORBIDDEN),
@@ -185,37 +203,12 @@ live_design! {
 
                             loading_label = <Label> {
                                 width: Fill, height: Fit,
-                                text: "Failed to load image",
                                 flow: RightWrap,
-                                
+                                align: { x:0.5, y: 0.5 }
                                 draw_text: {
                                     text_style: <REGULAR_TEXT>{ font_size: 14 },
                                     color: #f44,
                                     wrap: Word
-                                }
-                            }
-                        }
-
-                        timeout_label_view = <View> {
-                            width: Fill, height: Fit,
-                            flow: Down,
-                            align: {x: 0.5, y: 0.5},
-                            spacing: 10
-
-                            <Icon> {
-                                draw_icon: {
-                                    svg_file: (ICON_WARNING),
-                                    color: #ffffff,
-                                }
-                                icon_walk: { width: 50, height: 50 }
-                            }
-
-                            loading_label = <Label> {
-                                width: Fit, height: Fit,
-                                text: "Timeout loading image",
-                                draw_text: {
-                                    text_style: <REGULAR_TEXT>{ font_size: 14 },
-                                    color: #f44
                                 }
                             }
                         }
@@ -229,12 +222,13 @@ live_design! {
 /// Actions handled by the `ImageViewer` widget.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerModalAction {
-    /// Initialize the ImageViewerModal widget with a source get_source_inflight_id.
+    /// Initialize the ImageViewerModal widget with a source id.
+    /// The source is will be in-flight mode to avoid handling actions with different source id.
     /// This will open the ImageViewerModal widget with loading state.
     Initialize(String),
     /// Display the ImageViewerModal widget based on the given source id and LoadState.
     Show(String, LoadState),
-    /// Set the image being displayed by the ImageViewer based on the given the image data.
+    /// Set the image being displayed by the ImageViewer based on the given source id andthe image data.
     SetImage(String, Arc<[u8]>),
     None,
 }
@@ -245,10 +239,14 @@ struct ImageViewerModal {
     view: View,
     #[rust]
     image_loaded: bool,
+    /// The timer for displaying the timeout error message after waiting for IMAGE_LOAD_TIMEOUT.
     #[rust]
     timeout_timer: Timer,
     #[rust]
     drag_state: DragState,
+    /// The source id of the image being displayed.
+    /// This is used to avoid handling actions with different source id.
+    /// This is set during the `Initialize` action.
     #[rust]
     source_inflight_id: Option<String>,
 }
@@ -329,7 +327,7 @@ impl Widget for ImageViewerModal {
             cx.stop_timer(self.timeout_timer);
             // Only show timeout if the image hasn't already loaded
             if !self.image_loaded {
-                self.show_timeout_state(cx);
+                self.show_image_modal_view(cx, LoadState::Error(ImageViewerError::Timeout));
             }
         }
 
@@ -366,6 +364,7 @@ impl MatchEvent for ImageViewerModal {
                     self.source_inflight_id = Some(source.clone());
                     self.modal(id!(image_modal)).open(cx);
                     self.timeout_timer = cx.start_timeout(IMAGE_LOAD_TIMEOUT);
+                    self.show_image_modal_view(cx, LoadState::Loading);
                 }
                 Some(ImageViewerModalAction::Show(source, load_state)) => {
                     // Ignore action if the source doesn't match
@@ -378,7 +377,7 @@ impl MatchEvent for ImageViewerModal {
                     } else {
                         cx.stop_timer(self.timeout_timer);
                     }
-                    show_image_modal_view(cx, self.view_set(), load_state.clone());
+                    self.show_image_modal_view(cx, load_state.clone());
                 }
                 Some(ImageViewerModalAction::SetImage(source, data)) => {
                     // Ignore action if the source doesn't match
@@ -390,12 +389,13 @@ impl MatchEvent for ImageViewerModal {
                     if let Err(e) = load_image_data(cx, self.view.image(id!(zoomable_image)), self.view_set(), data) {
                         // Determine error type based on the image error
                         let error_type = match e {
-                            ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ErrorKind::Unrecognized,
-                            ImageError::EmptyData => ErrorKind::BadState,
-                            ImageError::PathNotFound(_) => ErrorKind::NotFound,
-                            _ => ErrorKind::BadState,
+                            ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
+                            ImageError::EmptyData => ImageViewerError::BadData,
+                            ImageError::PathNotFound(_) => ImageViewerError::NotFound,
+                            ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
+                            _ => ImageViewerError::BadData,
                         };
-                        show_image_modal_view(cx, self.view_set(), LoadState::Error(error_type));
+                        self.show_image_modal_view(cx, LoadState::Error(error_type));
                     }
                 }
                 _ => {}
@@ -406,17 +406,6 @@ impl MatchEvent for ImageViewerModal {
 
 impl ImageViewerModal {
 
-    /// Show timeout state
-    pub fn show_timeout_state(&mut self, cx: &mut Cx) {
-        self.view
-            .view(id!(timeout_label_view))
-            .set_visible(cx, true);
-        self.view
-            .view_set(ids!(loading_view, error_label_view))
-            .set_visible(cx, false);
-        self.view.image(id!(zoomable_image)).set_visible(cx, false);
-    }
-
     /// Close the modal and reset its state.
     fn close(&mut self, cx: &mut Cx) {
         self.image_loaded = false;
@@ -424,7 +413,7 @@ impl ImageViewerModal {
         self.reset_drag_state(cx);
         self.update_image_shader(cx);
         self.view
-            .view_set(ids!(loading_view, error_label_view, timeout_label_view))
+            .view_set(ids!(loading_view, error_label_view))
             .set_visible(cx, false);
         self.view.image(id!(zoomable_image)).set_visible(cx, false);
         // Clear the image buffer. 
@@ -492,7 +481,34 @@ impl ImageViewerModal {
         self.update_image_shader(cx);
     }
     fn view_set(&mut self) -> ViewSet {
-        self.view.view_set(ids!(loading_view, error_label_view, timeout_label_view))
+        self.view.view_set(ids!(loading_view, error_label_view))
+    }
+
+    /// Shows the view at the given load state in the view set,
+    /// and hides all other views in the set. The zoomable image is also
+    /// hidden.
+    /// 
+    /// The ViewSet is in this order: the loading, error views.
+    fn show_image_modal_view(&mut self, cx: &mut Cx, load_state: LoadState) {
+        let view_set = self.view_set();
+        for (i, view_ref) in view_set.iter().enumerate() {
+            let should_show = match load_state {
+                LoadState::Loading => i == 0,
+                LoadState::Error(_) => i == 1,
+                LoadState::Loaded => false, // Hide all views when loaded
+            };
+            view_ref.set_visible(cx, should_show);
+        }
+
+        // If it's an error state, update the error message and icon
+        match &load_state {
+            LoadState::Error(e) => {
+                if let Some(error_view) = view_set.iter().nth(1) {
+                    update_error_display(cx, &error_view, e);
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -543,58 +559,18 @@ fn load_image_data(cx: &mut Cx, image_ref: ImageRef, view_set: ViewSet, data: &[
     Ok(())
 }
 
-/// Shows the view at the given load state in the provided view set,
-/// and hides all other views in the set. The zoomable image is also
-/// hidden.
-/// 
-/// The ViewSet is in this order: the loading, error and timeout views.
-fn show_image_modal_view(cx: &mut Cx, view_set: ViewSet, load_state: LoadState) {
-    for (i, view_ref) in view_set.iter().enumerate() {
-        let should_show = match load_state {
-            LoadState::Loading => i == 0,
-            LoadState::Error(_) => i == 1,
-            LoadState::ErrorUnknown => i == 1,
-            LoadState::Timeout => i == 2,
-            LoadState::Loaded => false, // Hide all views when loaded
-        };
-        view_ref.set_visible(cx, should_show);
-    }
-
-    // If it's an error state, update the error message and icon
-    match &load_state {
-        LoadState::Error(e) => {
-            if let Some(error_view) = view_set.iter().nth(1) {
-                update_error_display(cx, &error_view, e);
-            }
-        }
-        LoadState::ErrorUnknown => {
-            if let Some(error_view) = view_set.iter().nth(1) {
-                error_view.label(id!(loading_label)).set_text(cx, "Unknown error");
-            }
-        }
-        _ => {}
-    }
-}
 
 /// Updates the error display with specific message and icon based on error type
-fn update_error_display(cx: &mut Cx, error_view: &ViewRef, error: &ErrorKind) {
+fn update_error_display(cx: &mut Cx, error_view: &ViewRef, error: &ImageViewerError) {
     let message = match error {
-        ErrorKind::NotFound => "Image not available",
-        ErrorKind::BadJson => "Something went wrong while loading the image",
-        ErrorKind::BadState => "Image appears to be empty or corrupted",
-        ErrorKind::BadStatus { status, body: _ } => {
-            match status {
-                Some(status_code) if status_code.as_u16() == 404 => "Image not found",
-                Some(status_code) if status_code.as_u16() == 403 => "Access denied to this image",
-                Some(status_code) if status_code.as_u16() >= 500 => "Server temporarily unavailable",
-                Some(status_code) if status_code.as_u16() >= 400 => "Unable to load image",
-                _ => "Network error occurred",
-            }
-        },
-        ErrorKind::Unrecognized => "This image format isn't supported",
-        ErrorKind::ConnectionFailed => "Check your internet connection",
-        ErrorKind::Unauthorized => "You don't have permission to view this image",
-        _ => "Unable to load image",
+        ImageViewerError::NotFound => "Image not found",
+        ImageViewerError::BadData => "Image appears to be empty or corrupted",
+        ImageViewerError::UnsupportedFormat => "This image format isn't supported",
+        ImageViewerError::ConnectionFailed => "Check your internet connection",
+        ImageViewerError::Unauthorized => "You don't have permission to view this image",
+        ImageViewerError::ServerError => "Server temporarily unavailable",
+        ImageViewerError::Unknown => "Unable to load image",
+        ImageViewerError::Timeout => "Image load timed out",
     };
 
     // Update the label text
@@ -608,48 +584,6 @@ pub enum LoadState {
     Loading,
     /// The image has been successfully loaded.
     Loaded,
-    /// An error occurred while loading the image, with specific matrix error kind.
-    Error(ErrorKind),
-    /// An unknown error occurred while loading the image.
-    ErrorUnknown,
-    /// The image loading operation timed out.
-    Timeout,
-}
-
-/// Handles media cache entry states for the image modal
-pub fn handle_media_cache_entry(
-    cx: &mut Cx,
-    mxc_uri: OwnedMxcUri,
-    media_entry: (MediaCacheEntry, MediaFormat),
-) {
-    match media_entry {
-        (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
-            cx.action(ImageViewerModalAction::SetImage(MediaSource::Plain(mxc_uri).unique_key(), data));
-        }
-        (MediaCacheEntry::Failed(e), _) => {
-            cx.action(ImageViewerModalAction::Show(MediaSource::Plain(mxc_uri).unique_key(), LoadState::Error(e)));
-        }
-        (MediaCacheEntry::FailedUnknown, _) => {
-            cx.action(ImageViewerModalAction::Show(MediaSource::Plain(mxc_uri).unique_key(), LoadState::ErrorUnknown));
-        }
-        _ => { }
-    }
-}
-
-/// Populates the image modal with matrix media content and handles various loading states
-/// 
-/// This function manages the complete lifecycle of loading and displaying an image in the modal:
-/// 1. Optionally initializes the modal with a new MXC URI
-/// 2. Attempts to fetch or retrieve cached media
-/// 3. Updates the UI based on the current media state: loading, loaded and failed.
-pub fn populate_matrix_image_modal(
-    cx: &mut Cx, 
-    mxc_uri: OwnedMxcUri,
-    media_cache: &mut MediaCache
-) {
-    // Try to get media from cache or trigger fetch
-    let media_entry = media_cache.try_get_media_or_fetch(mxc_uri.clone(), MediaFormat::File);
-
-    // Handle the different media states
-    handle_media_cache_entry(cx, mxc_uri, media_entry);
+    /// An error occurred while loading the image, with specific error type.
+    Error(ImageViewerError),
 }
