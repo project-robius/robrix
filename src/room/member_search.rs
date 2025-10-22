@@ -549,7 +549,7 @@ fn grapheme_starts_with(haystack: &str, needle: &str, case_insensitive: bool) ->
 ///
 /// Follows Matrix official recommendations for matching order:
 /// 1. Exact display name match
-/// 2. Exact user ID match  
+/// 2. Exact user ID match
 /// 3. Display name starts with search text
 /// 4. User ID starts with search text
 /// 5. Display name contains search text (at word boundary)
@@ -716,6 +716,7 @@ fn substring_eq_ignore_ascii_case(haystack: &str, start: usize, needle: &str) ->
         .is_some_and(|segment| segment.eq_ignore_ascii_case(needle))
 }
 
+// typos:disable
 #[cfg(test)]
 mod tests {
     use super::*;
