@@ -542,7 +542,7 @@ fn update_error_display(cx: &mut Cx, error_view: &ViewRef, error: &ImageViewerEr
         ImageViewerError::Unauthorized => "You don't have permission to view this image",
         ImageViewerError::ServerError => "Server temporarily unavailable",
         ImageViewerError::Unknown => "Unable to load image",
-        ImageViewerError::Timeout => "Image load timed out",
+        ImageViewerError::Timeout => "Timed out loading this image",
     };
 
     // Update the label text
