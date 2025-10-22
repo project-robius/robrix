@@ -132,7 +132,7 @@ pub enum RoomsListUpdate {
     /// Update the displayable name for the given room.
     UpdateRoomName {
         room_id: OwnedRoomId,
-        new_room_name: String,
+        new_room_name: Option<String>,
     },
     /// Update the avatar (image) for the given room.
     UpdateRoomAvatar {
@@ -462,7 +462,7 @@ impl RoomsList {
                 RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         let was_displayed = (self.display_filter)(room);
-                        room.room_name = Some(new_room_name);
+                        room.room_name = new_room_name;
                         let should_display = (self.display_filter)(room);
                         match (was_displayed, should_display) {
                             // No need to update the displayed rooms list.
