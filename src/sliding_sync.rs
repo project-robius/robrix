@@ -1747,12 +1747,12 @@ struct RoomListServiceRoomInfo {
     is_tombstoned: bool,
     tags: Option<Tags>,
     user_power_levels: Option<UserPowerLevels>,
-    latest_event_timestamp: Option<MilliSecondsSinceUnixEpoch>,
+    // latest_event_timestamp: Option<MilliSecondsSinceUnixEpoch>,
     num_unread_messages: u64,
     num_unread_mentions: u64,
     room_name: Option<RoomDisplayName>,
     room_avatar: Option<OwnedMxcUri>,
-    room: matrix_sdk::Room,
+    _room: matrix_sdk::Room,
 }
 impl RoomListServiceRoomInfo {
     async fn from_room(room: matrix_sdk::Room) -> Self {
@@ -1767,12 +1767,12 @@ impl RoomListServiceRoomInfo {
             } else {
                 None
             },
-            latest_event_timestamp: room.new_latest_event_timestamp(),
+            // latest_event_timestamp: room.new_latest_event_timestamp(),
             num_unread_messages: room.num_unread_messages(),
             num_unread_mentions: room.num_unread_mentions(),
             room_name: room.display_name().await.ok(),
             room_avatar: room.avatar_url(),
-            room,
+            _room: room,
         }
     }
     async fn from_room_ref(room: &matrix_sdk::Room) -> Self {
