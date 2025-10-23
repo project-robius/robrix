@@ -27,9 +27,10 @@ live_design! {
         width: Fill
         height: Fit
         flow: Down
+        // to align this view just below the RoomInputBar's curved border
         margin: {top: 1}
-        padding: {left: 12.0, top: 10.0, bottom: 10.0, right: 10.0}
-        spacing: 15
+        padding: {left: 12, top: 10, bottom: 10, right: 10}
+        spacing: 8
 
         show_bg: true,
         draw_bg: {
@@ -53,24 +54,24 @@ live_design! {
             width: Fill,
             height: Fit,
             align: {x: 0.0, y: 0.5},
-            padding: {left: 10}
+            padding: {left: 10, bottom: 7}
             draw_text: {
                 wrap: Word,
                 color: (MESSAGE_TEXT_COLOR),
                 text_style: <MESSAGE_TEXT_STYLE>{},
             }
-            text: "➤ Fetching current location..."
+            text: "➡ Fetching current location..."
         }
 
         <View> {
             width: Fill, height: Fit
-            flow: Right,
+            flow: RightWrap,
             align: {x: 0.0, y: 0.5}
-            spacing: 15
 
             cancel_location_button = <RobrixIconButton> {
                 align: {x: 0.5, y: 0.5}
                 padding: 15,
+                margin: {right: 15}
                 draw_icon: {
                     svg_file: (ICON_FORBIDDEN)
                     color: (COLOR_FG_DANGER_RED),
@@ -161,10 +162,10 @@ impl Widget for LocationPreview {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let text = match self.coords {
             Some(Ok(c)) => {
-                format!("➤ Current location: {:.6}, {:.6}", c.latitude, c.longitude)
+                format!("➡ Current location: {:.6}, {:.6}", c.latitude, c.longitude)
             }
-            Some(Err(e)) => format!("➤ Error getting location: {e:?}"),
-            None => String::from("➤ Current location is not yet available."),
+            Some(Err(e)) => format!("➡ Error getting location: {e:?}"),
+            None => String::from("➡ Current location is not yet available."),
         };
         self.label(id!(location_label)).set_text(cx, &text);
         self.view.draw_walk(cx, scope, walk)
