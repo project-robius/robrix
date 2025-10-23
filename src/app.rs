@@ -40,6 +40,7 @@ live_design! {
     use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
+    use crate::shared::image_viewer_modal::ImageViewerModal;
     use link::tsp_link::TspVerificationModal;
 
 
@@ -95,6 +96,8 @@ live_design! {
                             visible: true
                             login_screen = <LoginScreen> {}
                         }
+
+                        <ImageViewerModal> {}
 
                         <PopupList> {}
                         

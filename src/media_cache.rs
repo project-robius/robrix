@@ -1,6 +1,8 @@
 use std::{collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
 use makepad_widgets::{error, log, SignalToUI};
-use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}};
+use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri, api::client::error::{Error as ClientError, ErrorBody}}, Error, HttpError};
+use reqwest::StatusCode;
+use serde_json::json;
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
 
 /// The value type in the media cache, one per Matrix URI.
@@ -17,8 +19,8 @@ pub enum MediaCacheEntry {
     Requested,
     /// The media has been successfully loaded from the server.
     Loaded(Arc<[u8]>),
-    /// The media failed to load from the server.
-    Failed,
+    /// The media failed to load from the server with the ruma client api error.
+    Failed(ClientError),
 }
 
 /// A reference to a media cache entry and its associated format.
@@ -165,10 +167,65 @@ impl MediaCache {
     }
 }
 
+/// Converts a Matrix SDK error to a MediaCacheEntry::Failed with appropriate status codes.
+fn error_to_media_cache_entry(e: Error, request: &MediaRequestParameters) -> MediaCacheEntry {
+    match e {
+        Error::Http(http_error) => {
+            if let Some(client_error) = http_error.as_client_api_error() {
+                error!("Client error for media cache: {client_error} request: {:?}", request);
+                MediaCacheEntry::Failed(client_error.clone())
+            } else {
+                match *http_error {
+                    HttpError::Reqwest(reqwest_error) => {
+                        if !reqwest_error.is_connect() {
+                            MediaCacheEntry::Failed(ClientError::new(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                ErrorBody::Json(json!({})),
+                            ))
+                        } else if reqwest_error.is_timeout() {
+                            MediaCacheEntry::Failed(ClientError::new(
+                                StatusCode::REQUEST_TIMEOUT,
+                                ErrorBody::Json(json!({})),
+                            ))
+                        } else if reqwest_error.is_status() {
+                            MediaCacheEntry::Failed(ClientError::new(
+                                reqwest_error
+                                    .status()
+                                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                                ErrorBody::Json(json!({})),
+                            ))
+                        } else {
+                            MediaCacheEntry::Failed(ClientError::new(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                ErrorBody::Json(json!({})),
+                            ))
+                        }
+                    }
+                    _ => MediaCacheEntry::Failed(ClientError::new(
+                        StatusCode::NOT_FOUND,
+                        ErrorBody::Json(json!({})),
+                    )),
+                }
+            }
+        }
+        Error::InsufficientData => MediaCacheEntry::Failed(ClientError::new(
+            StatusCode::PARTIAL_CONTENT, 
+            ErrorBody::Json(json!({}))
+        )),
+        Error::AuthenticationRequired => MediaCacheEntry::Failed(ClientError::new(
+            StatusCode::UNAUTHORIZED, 
+            ErrorBody::Json(json!({}))
+        )),
+        _ => MediaCacheEntry::Failed(ClientError::new(
+            StatusCode::INTERNAL_SERVER_ERROR, ErrorBody::Json(json!({}))
+        ))
+    }
+}
+
 /// Insert data into a previously-requested media cache entry.
 fn insert_into_cache<D: Into<Arc<[u8]>>>(
     value_ref: &Mutex<MediaCacheEntry>,
-    _request: MediaRequestParameters,
+    request: MediaRequestParameters,
     data: matrix_sdk::Result<D>,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
@@ -178,7 +235,7 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
 
             // debugging: dump out the media image to disk
             if false {
-                if let MediaSource::Plain(mxc_uri) = _request.source {
+                if let MediaSource::Plain(mxc_uri) = &request.source {
                     log!("Fetched media for {mxc_uri}");
                     let mut path = crate::temp_storage::get_temp_dir_path().clone();
                     let filename = format!("{}_{}_{}",
@@ -194,16 +251,13 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
             }
             MediaCacheEntry::Loaded(data)
         }
-        Err(e) => {
-            error!("Failed to fetch media for {:?}: {e:?}", _request.source);
-            MediaCacheEntry::Failed
-        }
+        Err(e) => error_to_media_cache_entry(e, &request)
     };
 
     *value_ref.lock().unwrap() = new_value;
 
     if let Some(sender) = update_sender {
-        let _ = sender.send(TimelineUpdate::MediaFetched);
+        let _ = sender.send(TimelineUpdate::MediaFetched(Some(request.clone())));
     }
     SignalToUI::set_ui_signal();
 }
