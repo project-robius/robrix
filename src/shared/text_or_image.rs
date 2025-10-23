@@ -85,7 +85,7 @@ impl Widget for TextOrImage {
                     cx.set_cursor(MouseCursor::Hand);
                 }
                 Hit::FingerHoverOut(_) => {
-                    cx.set_cursor(MouseCursor::Arrow);
+                    cx.set_cursor(MouseCursor::Default);
                 }
                 _ => { },
             }
