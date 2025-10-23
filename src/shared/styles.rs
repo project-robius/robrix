@@ -101,10 +101,12 @@ live_design! {
 
     pub COLOR_PRIMARY = #ffffff
     pub COLOR_PRIMARY_DARKER = #fefefe
-    pub COLOR_SECONDARY = #eef2f4
+    pub COLOR_SECONDARY = #EFEFEF
 
     pub COLOR_ACTIVE_PRIMARY = #0f88fe
     pub COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
+
+    pub COLOR_LOCATION_PREVIEW_BG = #F0F5FF
 
     pub COLOR_AVATAR_BG = #52b2ac
     pub COLOR_AVATAR_BG_IDLE = #d8d8d8
