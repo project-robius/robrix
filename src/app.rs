@@ -97,6 +97,8 @@ live_design! {
                             login_screen = <LoginScreen> {}
                         }
 
+                        <ImageViewerModal> {}
+
                         <PopupList> {}
                         
                         // Context menus should be shown in front of other UI elements,
@@ -125,8 +127,6 @@ live_design! {
                         // Tooltips must be shown in front of all other UI elements,
                         // since they can be shown as a hover atop any other widget.
                         app_tooltip = <CalloutTooltip> {}
-
-                        image_viewer_modal = <ImageViewerModal> {}
                     }
                 } // end of body
             }

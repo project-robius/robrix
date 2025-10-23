@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    media::{MediaFormat, MediaRequestParameters, UniqueKey}, room::RoomMember, ruma::{
+    media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
         events::{
             receipt::Receipt,
             room::{
@@ -847,7 +847,7 @@ impl Widget for RoomScreen {
                 }
                 if let TextOrImageAction::Clicked(mxc_uri) = action.as_widget_action().cast() {
                     if let (Some(tl), Some(source_key)) = (&mut self.tl_state, mxc_uri) {
-                        cx.action(ImageViewerModalAction::OpenModal(source_key.clone()));
+                        cx.action(ImageViewerModalAction::Show(LoadState::Loading));
                         let mxc_uri = OwnedMxcUri::from(source_key);
                         populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
                     }
@@ -3279,7 +3279,7 @@ fn populate_image_message_content(
     let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
-                let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri).unique_key()),|cx, img| {
+                let show_image_result = text_or_image_ref.show_image(cx, Some(mxc_uri.to_string()),|cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
@@ -3295,7 +3295,7 @@ fn populate_image_message_content(
             (MediaCacheEntry::Requested, _media_format) => {
                 // If the image is being fetched, we try to show its blurhash.
                 if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
-                    let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri).unique_key()), |cx, img| {
+                    let show_image_result = text_or_image_ref.show_image(cx, Some(mxc_uri.to_string()), |cx, img| {
                         let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else {
                             return Err(image_cache::ImageError::EmptyData)
                         };
@@ -4190,7 +4190,7 @@ pub fn populate_matrix_image_modal(
     // Handle the different media states
     match media_entry {
         (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
-            cx.action(ImageViewerModalAction::SetImage(MediaSource::Plain(mxc_uri).unique_key(), data));
+            cx.action(ImageViewerModalAction::Show(LoadState::Loaded(data)));
         }
         (MediaCacheEntry::Failed(e), _) => {
             let error = match e.status_code {
@@ -4201,7 +4201,7 @@ pub fn populate_matrix_image_modal(
                 StatusCode::REQUEST_TIMEOUT => ImageViewerError::Timeout,
                 _ => ImageViewerError::Unknown
             };
-            cx.action(ImageViewerModalAction::Show(MediaSource::Plain(mxc_uri).unique_key(), LoadState::Error(
+            cx.action(ImageViewerModalAction::Show(LoadState::Error(
                 error
             )));
         }

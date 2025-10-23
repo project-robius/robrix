@@ -167,6 +167,61 @@ impl MediaCache {
     }
 }
 
+/// Converts a Matrix SDK error to a MediaCacheEntry::Failed with appropriate status codes.
+fn error_to_media_cache_entry(e: Error, request: &MediaRequestParameters) -> MediaCacheEntry {
+    match e {
+        Error::Http(http_error) => {
+            if let Some(client_error) = http_error.as_client_api_error() {
+                error!("Client error for media cache: {client_error} request: {:?}", request);
+                MediaCacheEntry::Failed(client_error.clone())
+            } else {
+                match *http_error {
+                    HttpError::Reqwest(reqwest_error) => {
+                        if !reqwest_error.is_connect() {
+                            MediaCacheEntry::Failed(ClientError::new(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                ErrorBody::Json(json!({})),
+                            ))
+                        } else if reqwest_error.is_timeout() {
+                            MediaCacheEntry::Failed(ClientError::new(
+                                StatusCode::REQUEST_TIMEOUT,
+                                ErrorBody::Json(json!({})),
+                            ))
+                        } else if reqwest_error.is_status() {
+                            MediaCacheEntry::Failed(ClientError::new(
+                                reqwest_error
+                                    .status()
+                                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                                ErrorBody::Json(json!({})),
+                            ))
+                        } else {
+                            MediaCacheEntry::Failed(ClientError::new(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                ErrorBody::Json(json!({})),
+                            ))
+                        }
+                    }
+                    _ => MediaCacheEntry::Failed(ClientError::new(
+                        StatusCode::NOT_FOUND,
+                        ErrorBody::Json(json!({})),
+                    )),
+                }
+            }
+        }
+        Error::InsufficientData => MediaCacheEntry::Failed(ClientError::new(
+            StatusCode::PARTIAL_CONTENT, 
+            ErrorBody::Json(json!({}))
+        )),
+        Error::AuthenticationRequired => MediaCacheEntry::Failed(ClientError::new(
+            StatusCode::UNAUTHORIZED, 
+            ErrorBody::Json(json!({}))
+        )),
+        _ => MediaCacheEntry::Failed(ClientError::new(
+            StatusCode::INTERNAL_SERVER_ERROR, ErrorBody::Json(json!({}))
+        ))
+    }
+}
+
 /// Insert data into a previously-requested media cache entry.
 fn insert_into_cache<D: Into<Arc<[u8]>>>(
     value_ref: &Mutex<MediaCacheEntry>,
@@ -196,57 +251,7 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
             }
             MediaCacheEntry::Loaded(data)
         }
-        Err(e) => match e {
-            Error::Http(http_error) => {
-                if let Some(client_error) = http_error.as_client_api_error() {
-                    error!("Client error for media cache: {client_error} request: {:?}", request);
-                    MediaCacheEntry::Failed(client_error.clone())
-                } else {
-                    match *http_error {
-                        HttpError::Reqwest(reqwest_error) => {
-                            if !reqwest_error.is_connect() {
-                                MediaCacheEntry::Failed(ClientError::new(
-                                    StatusCode::INTERNAL_SERVER_ERROR,
-                                    ErrorBody::Json(json!({})),
-                                ))
-                            } else if reqwest_error.is_timeout() {
-                                MediaCacheEntry::Failed(ClientError::new(
-                                    StatusCode::REQUEST_TIMEOUT,
-                                    ErrorBody::Json(json!({})),
-                                ))
-                            } else if reqwest_error.is_status() {
-                                MediaCacheEntry::Failed(ClientError::new(
-                                    reqwest_error
-                                        .status()
-                                        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-                                    ErrorBody::Json(json!({})),
-                                ))
-                            } else {
-                                MediaCacheEntry::Failed(ClientError::new(
-                                    StatusCode::INTERNAL_SERVER_ERROR,
-                                    ErrorBody::Json(json!({})),
-                                ))
-                            }
-                        }
-                        _ => MediaCacheEntry::Failed(ClientError::new(
-                            StatusCode::NOT_FOUND,
-                            ErrorBody::Json(json!({})),
-                        )),
-                    }
-                }
-            }
-            Error::InsufficientData => MediaCacheEntry::Failed(ClientError::new(
-                StatusCode::PARTIAL_CONTENT, 
-                ErrorBody::Json(json!({}))
-            )),
-            Error::AuthenticationRequired => MediaCacheEntry::Failed(ClientError::new(
-                StatusCode::UNAUTHORIZED, 
-                ErrorBody::Json(json!({}))
-            )),
-            _ => MediaCacheEntry::Failed(ClientError::new(
-                StatusCode::INTERNAL_SERVER_ERROR, ErrorBody::Json(json!({}))
-            ))
-        }
+        Err(e) => error_to_media_cache_entry(e, &request)
     };
 
     *value_ref.lock().unwrap() = new_value;

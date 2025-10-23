@@ -222,14 +222,10 @@ live_design! {
 /// Actions handled by the `ImageViewer` widget.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerModalAction {
-    /// OpenModal the ImageViewerModal widget with a source id.
-    /// The source is will be in-flight mode to avoid handling actions with different source id.
-    /// This will open the ImageViewerModal widget with loading state.
-    OpenModal(String),
-    /// Display the ImageViewerModal widget based on the given source id and LoadState.
-    Show(String, LoadState),
-    /// Set the image being displayed by the ImageViewer based on the given source id andthe image data.
-    SetImage(String, Arc<[u8]>),
+    /// Display the ImageViewerModal widget based on the LoadState.
+    Show(LoadState),
+    /// Hide the ImageViewerModal widget.
+    Hide,
     None,
 }
 
@@ -244,11 +240,6 @@ struct ImageViewerModal {
     timeout_timer: Timer,
     #[rust]
     drag_state: DragState,
-    /// The source id of the image being displayed.
-    /// This is used to avoid handling actions with different source id.
-    /// This is set during the `OpenModal` action.
-    #[rust]
-    source_id: Option<String>,
 }
 
 impl Widget for ImageViewerModal {
@@ -359,44 +350,35 @@ impl MatchEvent for ImageViewerModal {
         }
         for action in actions {
             match action.downcast_ref::<ImageViewerModalAction>() {
-                Some(ImageViewerModalAction::OpenModal(source)) => {
-                    self.image_loaded = false;
-                    self.source_id = Some(source.clone());
-                    self.modal(id!(image_modal)).open(cx);
-                    self.timeout_timer = cx.start_timeout(IMAGE_LOAD_TIMEOUT);
-                    self.show_image_modal_view(cx, LoadState::Loading);
-                }
-                Some(ImageViewerModalAction::Show(source, load_state)) => {
+                Some(ImageViewerModalAction::Show(load_state)) => {
                     // Ignore action if the source doesn't match
-                    if Some(source) != self.source_id.as_ref() {
-                        continue;
-                    }
-                    if load_state == &LoadState::Loading {
-                        self.modal(id!(image_modal)).open(cx);
-                        self.timeout_timer = cx.start_timeout(IMAGE_LOAD_TIMEOUT);
-                    } else {
-                        cx.stop_timer(self.timeout_timer);
+                    match load_state {
+                        LoadState::Loading => {
+                            self.modal(id!(image_modal)).open(cx);
+                            self.timeout_timer = cx.start_timeout(IMAGE_LOAD_TIMEOUT);
+                        }
+                        LoadState::Loaded(data) => {
+                            self.image_loaded = true;
+                            if let Err(e) = self.load_image_data(cx, self.view.image(id!(zoomable_image)), data) {
+                                // Determine error type based on the image error
+                                let error_type = match e {
+                                    ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
+                                    ImageError::EmptyData => ImageViewerError::BadData,
+                                    ImageError::PathNotFound(_) => ImageViewerError::NotFound,
+                                    ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
+                                    _ => ImageViewerError::BadData,
+                                };
+                                self.show_image_modal_view(cx, LoadState::Error(error_type));
+                            }
+                        }
+                        LoadState::Error(err) => {
+                            self.show_image_modal_view(cx, LoadState::Error(err.clone()));
+                        }
                     }
                     self.show_image_modal_view(cx, load_state.clone());
                 }
-                Some(ImageViewerModalAction::SetImage(source, data)) => {
-                    // Ignore action if the source doesn't match
-                    if Some(source) != self.source_id.as_ref() {
-                        continue;
-                    }
-                    cx.stop_timer(self.timeout_timer);   
-                    self.image_loaded = true;
-                    if let Err(e) = self.load_image_data(cx, self.view.image(id!(zoomable_image)), data) {
-                        // Determine error type based on the image error
-                        let error_type = match e {
-                            ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
-                            ImageError::EmptyData => ImageViewerError::BadData,
-                            ImageError::PathNotFound(_) => ImageViewerError::NotFound,
-                            ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
-                            _ => ImageViewerError::BadData,
-                        };
-                        self.show_image_modal_view(cx, LoadState::Error(error_type));
-                    }
+                Some(ImageViewerModalAction::Hide) => {
+                    self.close(cx);
                 }
                 _ => {}
             }
@@ -405,11 +387,9 @@ impl MatchEvent for ImageViewerModal {
 }
 
 impl ImageViewerModal {
-
     /// Close the modal and reset its state.
     fn close(&mut self, cx: &mut Cx) {
         self.image_loaded = false;
-        self.source_id = None;
         self.reset_drag_state(cx);
         self.update_image_shader(cx);
         self.view
@@ -487,12 +467,12 @@ impl ImageViewerModal {
     /// 
     /// The ViewSet is in this order: the loading, error views.
     fn show_image_modal_view(&mut self, cx: &mut Cx, load_state: LoadState) {
-        match load_state {
+        match &load_state {
             LoadState::Loading => {
                 self.view(id!(loading_view)).set_visible(cx, true);
                 self.view(id!(error_label_view)).set_visible(cx, false);
             }
-            LoadState::Loaded => {
+            LoadState::Loaded(_data) => {
                 self.view(id!(loading_view)).set_visible(cx, false);
                 self.view(id!(error_label_view)).set_visible(cx, false);
             }
@@ -554,8 +534,8 @@ fn update_error_display(cx: &mut Cx, error_view: &ViewRef, error: &ImageViewerEr
 pub enum LoadState {
     /// The image is currently being loaded.
     Loading,
-    /// The image has been successfully loaded.
-    Loaded,
+    /// The image has been successfully loaded given the data.
+    Loaded(Arc<[u8]>),
     /// An error occurred while loading the image, with specific error type.
     Error(ImageViewerError),
 }
