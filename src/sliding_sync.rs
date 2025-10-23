@@ -1049,7 +1049,6 @@ async fn async_worker(
                     };
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
-                let room_id2 = room_id.clone();
                 let subscribe_pinned_events_task = Handle::current().spawn(async move {
                     // Send an initial update, as the stream may not update immediately.
                     let pinned_events = timeline.room().pinned_event_ids().unwrap_or_default();
@@ -1060,7 +1059,6 @@ async fn async_worker(
                     let update_receiver = timeline.room().pinned_event_ids_stream();
                     pin_mut!(update_receiver);
                     while let Some(pinned_events) = update_receiver.next().await {
-                        log!("Got pinned events update for room {room_id2:?}: {pinned_events:?}");
                         match sender.send(TimelineUpdate::PinnedEvents(pinned_events)) {
                             Ok(()) => SignalToUI::set_ui_signal(),
                             Err(e) => log!("Failed to send pinned events update: {e:?}"),
@@ -1369,7 +1367,7 @@ async fn async_worker(
                             error!("Matrix client not available for URL preview: {}", url);
                             UrlPreviewError::ClientNotAvailable
                         })?;
-                        
+
                         let token = client.access_token().ok_or_else(|| {
                             error!("Access token not available for URL preview: {}", url);
                             UrlPreviewError::AccessTokenNotAvailable
@@ -1379,7 +1377,6 @@ async fn async_worker(
                         let endpoint_url = client.homeserver().join("/_matrix/client/v1/media/preview_url")
                             .map_err(UrlPreviewError::UrlParse)?;
                         log!("Fetching URL preview from endpoint: {} for URL: {}", endpoint_url, url);
-                        
                         let response = client
                             .http_client()
                             .get(endpoint_url.clone())
@@ -1392,20 +1389,19 @@ async fn async_worker(
                                 error!("HTTP request failed for URL preview {}: {}", url, e);
                                 UrlPreviewError::Request(e)
                             })?;
-                        
                         let status = response.status();
                         log!("URL preview response status for {}: {}", url, status);
-                        
+
                         if !status.is_success() && status.as_u16() != 429 {
                             error!("URL preview request failed with status {} for URL: {}", status, url);
                             return Err(UrlPreviewError::HttpStatus(status.as_u16()));
                         }
-                        
+
                         let text = response.text().await.map_err(|e| {
                             error!("Failed to read response text for URL preview {}: {}", url, e);
                             UrlPreviewError::Request(e)
                         })?;
-                        
+
                         log!("URL preview response body length for {}: {} bytes", url, text.len());
                         if text.len() > MAX_LOG_RESPONSE_BODY_LENGTH {
                             log!("URL preview response body preview for {}: {}...", url, &text[..MAX_LOG_RESPONSE_BODY_LENGTH]);
@@ -1429,7 +1425,6 @@ async fn async_worker(
                                             destination: destination.clone(),
                                             update_sender: update_sender.clone(),
                                         });
-                                        
                                     }
                                 }
                                 Err(e) => {
@@ -1453,7 +1448,7 @@ async fn async_worker(
 
                     match &result {
                         Ok(preview_data) => {
-                            log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}", 
+                            log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}",
                                  url, preview_data.title, preview_data.site_name);
                         }
                         Err(e) => {
@@ -1755,10 +1750,9 @@ fn username_to_full_user_id(
 /// determine what room data has changed since the last update.
 /// We can't just store the `matrix_sdk::Room` object itself,
 /// because that is a shallow reference to an inner room object within
-/// the room list service
+/// the room list service.
 #[derive(Clone)]
 struct RoomListServiceRoomInfo {
-    room: matrix_sdk::Room,
     room_id: OwnedRoomId,
     state: RoomState,
     is_direct: bool,
@@ -1772,13 +1766,8 @@ struct RoomListServiceRoomInfo {
     room_avatar: Option<OwnedMxcUri>,
     room: matrix_sdk::Room,
 }
-impl From<&matrix_sdk::Room> for RoomListServiceRoomInfo {
-    fn from(room: &matrix_sdk::Room) -> Self {
-        room.clone().into()
-    }
-}
-impl From<matrix_sdk::Room> for RoomListServiceRoomInfo {
-    fn from(room: matrix_sdk::Room) -> Self {
+impl RoomListServiceRoomInfo {
+    async fn from_room(room: matrix_sdk::Room) -> Self {
         Self {
             room_id: room.room_id().to_owned(),
             state: room.state(),
@@ -1797,6 +1786,9 @@ impl From<matrix_sdk::Room> for RoomListServiceRoomInfo {
             room_avatar: room.avatar_url(),
             room,
         }
+    }
+    async fn from_room_ref(room: &matrix_sdk::Room) -> Self {
+        Self::from_room(room.clone()).await
     }
 }
 
@@ -2196,7 +2188,7 @@ async fn update_room(
         // Then, we check for changes to room data that is only relevant to joined rooms:
         // including the latest event, tags, unread counts, is_direct, tombstoned state, power levels, etc.
         // Invited or left rooms don't care about these details.
-        if matches!(new_room.state, RoomState::Joined) { 
+        if matches!(new_room.state, RoomState::Joined) {
             // For some reason, the latest event API does not reliably catch *all* changes
             // to the latest event in a given room, such as redactions.
             // Thus, we have to re-obtain the latest event on *every* update, regardless of timestamp.
@@ -2564,7 +2556,7 @@ fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
             SYNC_INDICATOR_DELAY,
             SYNC_INDICATOR_HIDE_DELAY
         );
-    
+
     Handle::current().spawn(async move {
        let mut sync_indicator_stream = std::pin::pin!(sync_indicator_stream);
 
@@ -3318,19 +3310,19 @@ pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
     // This prevents memory leaks when users logout and login again without closing the app
     CLIENT.lock().unwrap().take();
     log!("Client cleared during logout");
-    
+
     SYNC_SERVICE.lock().unwrap().take();
     log!("Sync service cleared during logout");
-    
+
     REQUEST_SENDER.lock().unwrap().take();
     log!("Request sender cleared during logout");
-    
+
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
-    
+
     let on_clear_appstate = Arc::new(Notify::new());
     Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });
-    
+
     match tokio::time::timeout(config.app_state_cleanup_timeout, on_clear_appstate.notified()).await {
         Ok(_) => {
             log!("Received signal that app state was cleaned successfully");
