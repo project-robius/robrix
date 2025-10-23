@@ -39,10 +39,7 @@ live_design! {
         padding: 20,
         spacing: 8
 
-        show_bg: true
-        draw_bg: {
-            color: (COLOR_SECONDARY)
-        }
+        show_bg: false // don't cover up the RoomInputBar
 
         replacement_reason = <Label> {
             width: Fill, height: Fit,

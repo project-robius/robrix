@@ -32,13 +32,11 @@ live_design! {
         height: Fit,
         align: {x: 0.5, y: 1.0}, // centered horizontally, bottom-aligned
         padding: { left: 20, right: 20, top: 10, bottom: 10 }
+        margin: {top: 2}
         spacing: 10,
         flow: Down,
 
-        show_bg: true,
-        draw_bg: {
-            color: (COLOR_PRIMARY)
-        }
+        show_bg: false // don't cover up the RoomInputBar
 
         <View> {
             width: Fill

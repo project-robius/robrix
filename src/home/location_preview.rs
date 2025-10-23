@@ -22,17 +22,20 @@ live_design! {
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
 
-    pub LocationPreview = {{LocationPreview}} {
+    pub LocationPreview = {{LocationPreview}}<RoundedView> {
         visible: false
         width: Fill
         height: Fit
         flow: Down
-        padding: {left: 12.0, top: 12.0, bottom: 12.0, right: 10.0}
+        margin: {top: 1}
+        padding: {left: 12.0, top: 10.0, bottom: 10.0, right: 10.0}
         spacing: 15
 
         show_bg: true,
         draw_bg: {
-            color: #xF0F5FF,
+            color: (COLOR_LOCATION_PREVIEW_BG),
+            border_radius: 5.0,
+            border_size: 2.0
         }
 
         <Label> {
@@ -50,13 +53,13 @@ live_design! {
             width: Fill,
             height: Fit,
             align: {x: 0.0, y: 0.5},
-            padding: {left: 5.0}
+            padding: {left: 10}
             draw_text: {
                 wrap: Word,
                 color: (MESSAGE_TEXT_COLOR),
                 text_style: <MESSAGE_TEXT_STYLE>{},
             }
-            text: "Fetching current location..."
+            text: "➤ Fetching current location..."
         }
 
         <View> {
@@ -158,10 +161,10 @@ impl Widget for LocationPreview {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let text = match self.coords {
             Some(Ok(c)) => {
-                format!("Current location: {:.6}, {:.6}", c.latitude, c.longitude)
+                format!("➤ Current location: {:.6}, {:.6}", c.latitude, c.longitude)
             }
-            Some(Err(e)) => format!("Error getting location: {e:?}"),
-            None => String::from("Current location is not yet available."),
+            Some(Err(e)) => format!("➤ Error getting location: {e:?}"),
+            None => String::from("➤ Current location is not yet available."),
         };
         self.label(id!(location_label)).set_text(cx, &text);
         self.view.draw_walk(cx, scope, walk)
