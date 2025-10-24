@@ -7,7 +7,11 @@ use url::Url;
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, Cx, Event, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
+use matrix_sdk::{
+    media::{MediaFormat, MediaThumbnailSettings},
+    ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, RoomId},
+    RoomDisplayName,
+};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
 use crate::{room::RoomPreviewAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
@@ -140,6 +144,39 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
 pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
     let millis: i64 = millis.get().into();
     Local.timestamp_millis_opt(millis).single()
+}
+
+/// Converts a `RoomDisplayName` to the text we prefer to show in the Rooms list.
+///
+/// Returns `None` when the display name is explicitly empty so that callers can
+/// fall back to aliases or the room ID.
+pub fn preferred_room_name(display_name: &RoomDisplayName) -> Option<String> {
+    match display_name {
+        RoomDisplayName::Empty => None,
+        _ => Some(display_name.to_string()),
+    }
+}
+
+/// Returns the room name that should be shown to the user, falling back to aliases or the room ID.
+pub fn display_name_with_fallback(
+    display_name: &RoomDisplayName,
+    canonical_alias: Option<&OwnedRoomAliasId>,
+    alt_aliases: &[OwnedRoomAliasId],
+    room_id: &OwnedRoomId,
+) -> String {
+    if let Some(name) = preferred_room_name(display_name) {
+        return name;
+    }
+
+    if let Some(alias) = canonical_alias {
+        return alias.as_str().to_owned();
+    }
+
+    if let Some(alias) = alt_aliases.first() {
+        return alias.as_str().to_owned();
+    }
+
+    format!("Room ID {}", room_id.as_str())
 }
 
 /// Returns a string error message, handling special cases related to joining/leaving rooms.

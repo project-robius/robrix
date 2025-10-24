@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
+use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, display_name_with_fallback, room_name_or_id}};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -527,7 +527,12 @@ impl InviteScreen {
             self.info = Some(InviteDetails {
                 room_info: BasicRoomDetails {
                     room_id: room_id.clone(),
-                    room_name: invite.room_name.clone(),
+                    room_name: Some(display_name_with_fallback(
+                        &invite.room_name,
+                        invite.canonical_alias.as_ref(),
+                        &invite.alt_aliases,
+                        &invite.room_id,
+                    )),
                     room_avatar: invite.room_avatar.clone(),
                 },
                 inviter: invite.inviter_info.clone(),

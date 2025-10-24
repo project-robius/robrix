@@ -1,12 +1,12 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
+use matrix_sdk::{RoomDisplayName, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
 use crate::{
     app::{AppState, SelectedRoom},
     room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, RoomPreviewAvatar},
     shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, room_filter_input_bar::RoomFilterAction},
-    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}, utils::room_name_or_id,
+    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}, utils::display_name_with_fallback,
 };
 use super::room_preview::RoomPreviewAction;
 
@@ -132,7 +132,7 @@ pub enum RoomsListUpdate {
     /// Update the displayable name for the given room.
     UpdateRoomName {
         room_id: OwnedRoomId,
-        new_room_name: Option<String>,
+        new_room_name: RoomDisplayName,
     },
     /// Update the avatar (image) for the given room.
     UpdateRoomAvatar {
@@ -201,7 +201,7 @@ pub struct JoinedRoomInfo {
     /// The matrix ID of this room.
     pub room_id: OwnedRoomId,
     /// The displayable name of this room, if known.
-    pub room_name: Option<String>,
+    pub room_name: RoomDisplayName,
     /// The number of unread messages in this room.
     pub num_unread_messages: u64,
     /// The number of unread mentions in this room.
@@ -240,7 +240,7 @@ pub struct InvitedRoomInfo {
     /// The matrix ID of this room.
     pub room_id: OwnedRoomId,
     /// The displayable name of this room, if known.
-    pub room_name: Option<String>,
+    pub room_name: RoomDisplayName,
     /// The canonical alias for this room, if any.
     pub canonical_alias: Option<OwnedRoomAliasId>,
     /// The alternative aliases for this room, if any.
@@ -399,7 +399,6 @@ impl RoomsList {
                 RoomsListUpdate::AddJoinedRoom(joined_room) => {
                     let room_id = joined_room.room_id.clone();
                     let is_direct = joined_room.is_direct;
-                    let room_name = joined_room.room_name.clone();
                     let should_display = (self.display_filter)(&joined_room);
                     let replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
                     if replaced.is_none() {
@@ -425,10 +424,19 @@ impl RoomsList {
                         self.displayed_invited_rooms.iter()
                             .position(|r| r == &room_id)
                             .map(|index| self.displayed_invited_rooms.remove(index));
+                        let new_room_name = self.all_joined_rooms.get(&room_id).map(|room| display_name_with_fallback(
+                            &room.room_name,
+                            room.canonical_alias.as_ref(),
+                            &room.alt_aliases,
+                            &room.room_id,
+                        ));
                         cx.widget_action(
                             self.widget_uid(),
                             &scope.path,
-                            RoomsListAction::InviteAccepted { room_id, room_name }
+                            RoomsListAction::InviteAccepted {
+                                room_id: room_id.clone(),
+                                room_name: new_room_name,
+                            }
                         );
                     }
                     self.update_status_rooms_count();
@@ -460,9 +468,11 @@ impl RoomsList {
                     }
                 }
                 RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
+                    // Try to update joined room first
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         let was_displayed = (self.display_filter)(room);
-                        room.room_name = new_room_name;
+                        // Keep the full RoomDisplayName to preserve EmptyWas semantics
+                        room.room_name = new_room_name.clone();
                         let should_display = (self.display_filter)(room);
                         match (was_displayed, should_display) {
                             // No need to update the displayed rooms list.
@@ -482,14 +492,37 @@ impl RoomsList {
                             // Room was not displayed but should now be displayed.
                             (false, true) => {
                                 if room.is_direct {
-                                    self.displayed_direct_rooms.push(room_id);
+                                    self.displayed_direct_rooms.push(room_id.clone());
                                 } else {
-                                    self.displayed_regular_rooms.push(room_id);
+                                    self.displayed_regular_rooms.push(room_id.clone());
                                 }
                             }
                         }
-                    } else {
-                        error!("Error: couldn't find room {room_id} to update room name");
+                    }
+                    // If not a joined room, try to update invited room
+                    else {
+                        let invited_rooms_ref = get_invited_rooms(cx);
+                        let mut invited_rooms = invited_rooms_ref.borrow_mut();
+                        if let Some(invited_room) = invited_rooms.get_mut(&room_id) {
+                            let was_displayed = (self.display_filter)(invited_room);
+                            invited_room.room_name = new_room_name;
+                            let should_display = (self.display_filter)(invited_room);
+                            match (was_displayed, should_display) {
+                                (true, true) | (false, false) => { }
+                                (true, false) => {
+                                    self.displayed_invited_rooms.iter()
+                                        .position(|r| r == &room_id)
+                                        .map(|index| self.displayed_invited_rooms.remove(index));
+                                }
+                                (false, true) => {
+                                    if !self.displayed_invited_rooms.contains(&room_id) {
+                                        self.displayed_invited_rooms.push(room_id.clone());
+                                    }
+                                }
+                            }
+                        } else {
+                            warning!("Warning: couldn't find invited room {} to update room name", room_id);
+                        }
                     }
                 }
                 RoomsListUpdate::UpdateIsDirect { room_id, is_direct } => {
@@ -497,9 +530,15 @@ impl RoomsList {
                         if room.is_direct == is_direct {
                             continue;
                         }
+                        let room_name_text = display_name_with_fallback(
+                            &room.room_name,
+                            room.canonical_alias.as_ref(),
+                            &room.alt_aliases,
+                            &room.room_id,
+                        );
                         enqueue_popup_notification(PopupItem {
                             message: format!("{} was changed from {} to {}.",
-                                room_name_or_id(room.room_name.as_ref(), &room_id),
+                                room_name_text,
                                 if room.is_direct { "direct" } else { "regular" },
                                 if is_direct { "direct" } else { "regular" }
                             ),
@@ -832,10 +871,30 @@ impl RoomsList {
     /// Returns a room's avatar and displayable name.
     pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
         self.all_joined_rooms.get(room_id)
-            .map(|room_info| (room_info.avatar.clone(), room_info.room_name.clone()))
+            .map(|room_info| {
+                (
+                    room_info.avatar.clone(),
+                    Some(display_name_with_fallback(
+                        &room_info.room_name,
+                        room_info.canonical_alias.as_ref(),
+                        &room_info.alt_aliases,
+                        &room_info.room_id,
+                    )),
+                )
+            })
             .or_else(|| {
                 self.invited_rooms.borrow().get(room_id)
-                    .map(|room_info| (room_info.room_avatar.clone(), room_info.room_name.clone()))
+                    .map(|room_info| {
+                        (
+                            room_info.room_avatar.clone(),
+                            Some(display_name_with_fallback(
+                                &room_info.room_name,
+                                room_info.canonical_alias.as_ref(),
+                                &room_info.alt_aliases,
+                                &room_info.room_id,
+                            )),
+                        )
+                    })
             })
     }
 }
@@ -860,12 +919,22 @@ impl Widget for RoomsList {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
                     SelectedRoom::JoinedRoom {
                         room_id: jr.room_id.clone().into(),
-                        room_name: jr.room_name.clone(),
+                        room_name: Some(display_name_with_fallback(
+                            &jr.room_name,
+                            jr.canonical_alias.as_ref(),
+                            &jr.alt_aliases,
+                            &jr.room_id,
+                        )),
                     }
                 } else if let Some(ir) = self.invited_rooms.borrow().get(&clicked_room_id) {
                     SelectedRoom::InvitedRoom {
                         room_id: ir.room_id.to_owned().into(),
-                        room_name: ir.room_name.clone(),
+                        room_name: Some(display_name_with_fallback(
+                            &ir.room_name,
+                            ir.canonical_alias.as_ref(),
+                            &ir.alt_aliases,
+                            &ir.room_id,
+                        )),
                     }
                 } else {
                     error!("BUG: couldn't find clicked room details for room {clicked_room_id}");

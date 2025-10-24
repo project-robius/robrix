@@ -48,7 +48,7 @@ use crate::{
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{enqueue_popup_notification, PopupItem, PopupKind}
     },
-    utils::{self, avatar_from_room_name, AVATAR_THUMBNAIL_FORMAT},
+    utils::{self, avatar_from_room_name, preferred_room_name, AVATAR_THUMBNAIL_FORMAT},
     verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -2167,9 +2167,15 @@ async fn update_room(
         }
         if old_room.display_name != new_room.display_name {
             log!("Updating room {} name: {:?} --> {:?}", new_room_id, old_room.display_name, new_room.display_name);
+
+            let new_name = new_room
+                .display_name
+                .clone()
+                .unwrap_or(RoomDisplayName::Empty);
+
             enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                 room_id: new_room_id.clone(),
-                new_room_name: new_room.display_name.as_ref().map(|n| n.to_string()),
+                new_room_name: new_name,
             });
         }
 
@@ -2328,8 +2334,12 @@ async fn add_new_room(
             let latest = latest_event.as_ref().map(
                 |ev| get_latest_event_details(ev, &new_room.room_id)
             );
-            let room_name = new_room.display_name.as_ref().map(|n| n.to_string());
-            let room_avatar = room_avatar(&new_room.room, room_name.as_deref()).await;
+            let room_display_name = new_room
+                .display_name
+                .clone()
+                .unwrap_or(RoomDisplayName::Empty);
+            let room_name_text = preferred_room_name(&room_display_name);
+            let room_avatar = room_avatar(&new_room.room, room_name_text.as_deref()).await;
 
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
                 Some(InviterInfo {
@@ -2347,7 +2357,7 @@ async fn add_new_room(
             };
             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddInvitedRoom(InvitedRoomInfo {
                 room_id: new_room.room_id.clone(),
-                room_name,
+                room_name: room_display_name,
                 inviter_info,
                 room_avatar,
                 canonical_alias: new_room.room.canonical_alias(),
@@ -2406,7 +2416,11 @@ async fn add_new_room(
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can
     // send the `AddJoinedRoom` update to the UI, because the UI might immediately
     // issue a `MatrixRequest` that relies on that room being in `ALL_JOINED_ROOMS`.
-    let room_name = new_room.display_name.as_ref().map(|n| n.to_string());
+    let room_display_name = new_room
+        .display_name
+        .clone()
+        .unwrap_or(RoomDisplayName::Empty);
+    let room_name = preferred_room_name(&room_display_name);
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
         room_id: new_room.room_id.clone(),
         latest,
@@ -2415,7 +2429,7 @@ async fn add_new_room(
         num_unread_mentions: new_room.num_unread_mentions,
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
         avatar: avatar_from_room_name(room_name.as_deref()),
-        room_name,
+        room_name: room_display_name,
         canonical_alias: new_room.room.canonical_alias(),
         alt_aliases: new_room.room.alt_aliases(),
         has_been_paginated: false,
