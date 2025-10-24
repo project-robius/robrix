@@ -44,6 +44,7 @@ pub mod avatar_cache;
 pub mod media_cache;
 pub mod verification;
 
+pub mod cpu_worker;
 pub mod utils;
 pub mod temp_storage;
 pub mod location;

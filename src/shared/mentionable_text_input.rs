@@ -6,6 +6,7 @@ use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::shared::bouncing_dots::BouncingDotsWidgetRefExt;
 use crate::shared::styles::COLOR_UNKNOWN_ROOM_AVATAR;
 use crate::utils;
+use crate::cpu_worker::{self, CpuJob, SearchRoomMembersJob};
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
 use makepad_widgets::{text::selection::Cursor, *};
@@ -13,19 +14,22 @@ use matrix_sdk::ruma::{
     events::{room::message::RoomMessageEventContent, Mentions},
     OwnedRoomId, OwnedUserId,
 };
+use matrix_sdk::RoomMemberships;
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_segmentation::UnicodeSegmentation;
 use crate::home::room_screen::RoomScreenProps;
 
 // Channel types for member search communication
-use std::sync::mpsc::Receiver;
+use std::sync::{mpsc::Receiver, Arc};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Result type for member search channel communication
 #[derive(Debug, Clone)]
 pub struct SearchResult {
+    pub search_id: u64,
     pub results: Vec<usize>, // indices in members vec
     pub is_complete: bool,
-    pub search_text: String,
+    pub search_text: Arc<String>,
 }
 
 /// State machine for mention search functionality
@@ -47,6 +51,8 @@ enum MentionSearchState {
         _search_text: String, // Kept for debugging/future use
         receiver: Receiver<SearchResult>,
         accumulated_results: Vec<usize>,
+        search_id: u64,
+        cancel_token: Arc<std::sync::atomic::AtomicBool>,
     },
 
     /// Search was just cancelled (prevents immediate re-trigger)
@@ -374,12 +380,18 @@ pub struct MentionableTextInput {
     /// Whether the current user can notify everyone in the room (@room mention)
     #[rust]
     can_notify_room: bool,
+    /// Tracks whether we have a populated member list to avoid showing empty-state too early
+    #[rust]
+    members_available: bool,
     /// Current state of the mention search functionality
     #[rust]
     search_state: MentionSearchState,
     /// Last search text to avoid duplicate searches
     #[rust]
     last_search_text: Option<String>,
+    /// Next identifier for submitted search jobs
+    #[rust]
+    next_search_id: u64,
 }
 
 impl Widget for MentionableTextInput {
@@ -388,6 +400,7 @@ impl Widget for MentionableTextInput {
         if self.is_searching() {
             if let Event::KeyUp(key_event) = event {
                 if key_event.key_code == KeyCode::Escape {
+                    self.cancel_active_search();
                     self.search_state = MentionSearchState::JustCancelled;
                     self.close_mention_popup(cx);
                     self.redraw(cx);
@@ -489,6 +502,7 @@ impl Widget for MentionableTextInput {
                                 continue;
                             }
 
+                            self.members_available = true;
                             if self.is_searching() {
                                 // Force a fresh search now that members are available
                                 let search_text = self.cmd_text_input.search_text();
@@ -544,6 +558,19 @@ impl MentionableTextInput {
             self.search_state,
             MentionSearchState::WaitingForMembers { .. } | MentionSearchState::Searching { .. }
         )
+    }
+
+    /// Generate the next unique identifier for a background search job.
+    fn allocate_search_id(&mut self) -> u64 {
+        if self.next_search_id == 0 {
+            self.next_search_id = 1;
+        }
+        let id = self.next_search_id;
+        self.next_search_id = self.next_search_id.wrapping_add(1);
+        if self.next_search_id == 0 {
+            self.next_search_id = 1;
+        }
+        id
     }
 
     /// Get the current trigger position if in search mode
@@ -787,8 +814,13 @@ impl MentionableTextInput {
                     popup.set_visible(cx, true);
                     self.cmd_text_input.text_input_ref().set_key_focus(cx);
                 } else if accumulated_results.is_empty() {
-                    // Search completed with no results
-                    self.show_no_matches_indicator(cx);
+                    if self.members_available {
+                        // Search completed with no results
+                        self.show_no_matches_indicator(cx);
+                    } else {
+                        // Still waiting for members from the homeserver
+                        self.show_loading_indicator(cx);
+                    }
                     popup.set_visible(cx, true);
                     self.cmd_text_input.text_input_ref().set_key_focus(cx);
                 } else {
@@ -860,6 +892,7 @@ impl MentionableTextInput {
             );
         }
 
+        self.cancel_active_search();
         self.search_state = MentionSearchState::JustCancelled;
         self.close_mention_popup(cx);
     }
@@ -947,7 +980,7 @@ impl MentionableTextInput {
     fn check_search_channel(&mut self, cx: &mut Cx, scope: &mut Scope) -> bool {
         // Only check if we're in Searching state
         let mut is_complete = false;
-        let mut search_text = String::new();
+        let mut search_text: Option<Arc<String>> = None;
         let mut any_results = false;
         let mut should_update_ui = false;
         let mut new_results = Vec::new();
@@ -956,12 +989,17 @@ impl MentionableTextInput {
         if let MentionSearchState::Searching {
             receiver,
             accumulated_results,
+            search_id,
             ..
         } = &mut self.search_state
         {
             while let Ok(result) = receiver.try_recv() {
+                if result.search_id != *search_id {
+                    continue;
+                }
+
                 any_results = true;
-                search_text = result.search_text.clone();
+                search_text = Some(result.search_text.clone());
                 is_complete = result.is_complete;
 
                 // Collect results
@@ -993,7 +1031,11 @@ impl MentionableTextInput {
 
             if !results_for_ui.is_empty() {
                 // Results are already sorted in member_search.rs and indices are unique
-                self.update_ui_with_results(cx, scope, &search_text);
+                let query = search_text
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or_default();
+                self.update_ui_with_results(cx, scope, query);
             }
         }
 
@@ -1012,7 +1054,11 @@ impl MentionableTextInput {
 
             if final_results.is_empty() {
                 // No user results, but still update UI (may show @room)
-                self.update_ui_with_results(cx, scope, &search_text);
+                let query = search_text
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or_default();
+                self.update_ui_with_results(cx, scope, query);
             }
 
             // Don't change state here - let update_ui_with_results handle it
@@ -1138,63 +1184,86 @@ impl MentionableTextInput {
             MOBILE_MAX_VISIBLE_ITEMS
         };
 
-        // Check if we have cached members
-        let has_members = matches!(&room_props.room_members, Some(members) if !members.is_empty());
+        let cached_members = match &room_props.room_members {
+            Some(members) if !members.is_empty() => {
+                self.members_available = true;
+                members.clone()
+            }
+            _ => {
+                let already_waiting = matches!(
+                    self.search_state,
+                    MentionSearchState::WaitingForMembers { .. }
+                );
 
-        if has_members {
-            // We have cached members, transition to Searching state
-            let popup = self.cmd_text_input.view(id!(popup));
-            let header_view = self.cmd_text_input.view(id!(popup.header_view));
-            header_view.set_visible(cx, true);
-            popup.set_visible(cx, true);
-            self.cmd_text_input.text_input_ref().set_key_focus(cx);
-        } else {
-            // No cached members yet, transition to WaitingForMembers state
-            self.search_state = MentionSearchState::WaitingForMembers {
-                trigger_position: trigger_pos,
-                pending_search_text: search_text.to_string(),
-            };
+                self.cancel_active_search();
+                self.members_available = false;
 
-            // Clear old items before showing loading indicator
-            self.cmd_text_input.clear_items();
-            self.show_loading_indicator(cx);
-            // Request next frame to check when members are loaded
-            cx.new_next_frame();
-            return; // Don't submit search request yet
-        }
+                if !already_waiting {
+                    submit_async_request(MatrixRequest::GetRoomMembers {
+                        room_id: room_props.room_id.clone(),
+                        memberships: RoomMemberships::JOIN,
+                        local_only: false,
+                    });
+                }
 
-        // Only submit search request if we have cached members
-        if let Some(cached_members) = &room_props.room_members {
-            // Create a new channel for this search
-            let (sender, receiver) = std::sync::mpsc::channel();
+                self.search_state = MentionSearchState::WaitingForMembers {
+                    trigger_position: trigger_pos,
+                    pending_search_text: search_text.to_string(),
+                };
 
-            // Submit search request to background worker
-            let search_text_clone = search_text.to_string();
-            let max_results = max_visible_items * SEARCH_BUFFER_MULTIPLIER;
+                // Clear old items before showing loading indicator
+                self.cmd_text_input.clear_items();
+                self.show_loading_indicator(cx);
+                // Request next frame to check when members are loaded
+                cx.new_next_frame();
+                return; // Don't submit search request yet
+            }
+        };
 
-            // Transition to Searching state with new receiver
-            self.search_state = MentionSearchState::Searching {
-                trigger_position: trigger_pos,
-                _search_text: search_text.to_string(),
-                receiver,
-                accumulated_results: Vec::new(),
-            };
+        // We have cached members, ensure popup is visible and focused
+        let popup = self.cmd_text_input.view(id!(popup));
+        let header_view = self.cmd_text_input.view(id!(popup.header_view));
+        header_view.set_visible(cx, true);
+        popup.set_visible(cx, true);
+        self.cmd_text_input.text_input_ref().set_key_focus(cx);
 
-            submit_async_request(MatrixRequest::SearchRoomMembers {
-                room_id: room_props.room_id.clone(),
-                search_text: search_text_clone,
-                sender,
-                max_results,
-                cached_members: cached_members.clone(),
-                precomputed_sort: room_props.room_members_sort.clone(),
-            });
+        // Create a new channel for this search
+        let (sender, receiver) = std::sync::mpsc::channel();
 
-            // Request next frame to check the channel
-            cx.new_next_frame();
+        // Prepare background search job parameters
+        let search_text_clone = search_text.to_string();
+        let max_results = max_visible_items * SEARCH_BUFFER_MULTIPLIER;
+        let search_id = self.allocate_search_id();
 
-            // Try to check immediately for faster response
-            self.check_search_channel(cx, scope);
-        }
+        // Transition to Searching state with new receiver
+        self.cancel_active_search();
+        let cancel_token = Arc::new(AtomicBool::new(false));
+        self.search_state = MentionSearchState::Searching {
+            trigger_position: trigger_pos,
+            _search_text: search_text.to_string(),
+            receiver,
+            accumulated_results: Vec::new(),
+            search_id,
+            cancel_token: cancel_token.clone(),
+        };
+
+        let precomputed_sort = room_props.room_members_sort.clone();
+        let cancel_token_for_job = cancel_token.clone();
+        cpu_worker::spawn_cpu_job(CpuJob::SearchRoomMembers(SearchRoomMembersJob {
+            members: cached_members,
+            search_text: search_text_clone,
+            max_results,
+            sender,
+            search_id,
+            precomputed_sort,
+            cancel_token: Some(cancel_token_for_job),
+        }));
+
+        // Request next frame to check the channel
+        cx.new_next_frame();
+
+        // Try to check immediately for faster response
+        self.check_search_channel(cx, scope);
     }
 
     /// Detects valid mention trigger positions in text
@@ -1365,13 +1434,24 @@ impl MentionableTextInput {
         // The state will be reset when user types or closes popup
     }
 
+    fn cancel_active_search(&mut self) {
+        if let MentionSearchState::Searching { cancel_token, .. } = &self.search_state {
+            cancel_token.store(true, Ordering::Relaxed);
+        }
+    }
+
     /// Reset all search-related state
     fn reset_search_state(&mut self) {
+        self.cancel_active_search();
+
         // Reset to idle state
         self.search_state = MentionSearchState::Idle;
 
         // Reset last search text to allow new searches
         self.last_search_text = None;
+
+        // Mark members as unavailable until we fetch them again
+        self.members_available = false;
 
         // Clear list items
         self.cmd_text_input.clear_items();

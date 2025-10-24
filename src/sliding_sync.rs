@@ -42,7 +42,7 @@ use crate::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     },
-    room::{member_search::{search_room_members_streaming_with_sort, PrecomputedMemberSort}, RoomPreviewAvatar},
+    room::RoomPreviewAvatar,
     shared::{
         html_or_plaintext::MatrixLinkPillState,
         jump_to_bottom_button::UnreadMessageCount,
@@ -329,15 +329,6 @@ pub enum MatrixRequest {
         /// * If `true` (not recommended), only the local cache will be accessed.
         /// * If `false` (recommended), details will be fetched from the server.
         local_only: bool,
-    },
-    /// Request to search room members in background thread
-    SearchRoomMembers {
-        room_id: OwnedRoomId,
-        search_text: String,
-        sender: std::sync::mpsc::Sender<crate::shared::mentionable_text_input::SearchResult>,
-        max_results: usize,
-        cached_members: Arc<Vec<RoomMember>>,
-        precomputed_sort: Option<Arc<PrecomputedMemberSort>>,
     },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
@@ -669,8 +660,27 @@ async fn async_worker(
                     log!("Sending sync room members request for room {room_id}...");
                     timeline.fetch_members().await;
                     log!("Completed sync room members request for room {room_id}.");
-                    sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
-                    SignalToUI::set_ui_signal();
+
+                    match timeline.room().members(RoomMemberships::JOIN).await {
+                        Ok(members) => {
+                            let count = members.len();
+                            log!("Fetched {count} members for room {room_id} after sync.");
+                            if let Err(err) = sender.send(TimelineUpdate::RoomMembersListFetched { members }) {
+                                warning!("Failed to send RoomMembersListFetched update for room {room_id}: {err:?}");
+                            } else {
+                                SignalToUI::set_ui_signal();
+                            }
+                        }
+                        Err(err) => {
+                            warning!("Failed to fetch room members from server for room {room_id}: {err:?}");
+                        }
+                    }
+
+                    if let Err(err) = sender.send(TimelineUpdate::RoomMembersSynced) {
+                        warning!("Failed to send RoomMembersSynced update for room {room_id}: {err:?}");
+                    } else {
+                        SignalToUI::set_ui_signal();
+                    }
                 });
             }
 
@@ -764,12 +774,6 @@ async fn async_worker(
                             send_update(members, "Successfully fetched");
                         }
                     }
-                });
-            }
-
-            MatrixRequest::SearchRoomMembers { room_id: _, search_text, sender, max_results, cached_members, precomputed_sort } => {
-                let _search_task = tokio::task::spawn_blocking(move || {
-                    search_room_members_streaming_with_sort(cached_members, search_text, max_results, sender, precomputed_sort);
                 });
             }
 

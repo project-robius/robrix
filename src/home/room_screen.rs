@@ -491,7 +491,7 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-            
+
             restore_status_view = <RestoreStatusView> {}
 
             // Widgets within this view will get shifted upwards when the on-screen keyboard is shown.
@@ -1325,6 +1325,9 @@ impl RoomScreen {
                     // log!("process_timeline_updates(): room members fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                    //
+                    // Room members have been synced; no additional action required here
+                    // because we already request the full list when the room loads.
                 }
                 TimelineUpdate::RoomMembersListFetched { members } => {
                     // RoomMembersListFetched: Received members for room
@@ -1920,7 +1923,6 @@ impl RoomScreen {
             // and search our locally-known timeline history for the replied-to message.
         }
         self.redraw(cx);
-       
     }
 
     /// Shows the user profile sliding pane with the given avatar info.
@@ -2039,7 +2041,7 @@ impl RoomScreen {
         //    show/hide UI elements based on the user's permissions.
         // 2. Get the list of members in this room (from the SDK's local cache).
         // 3. Subscribe to our own user's read receipts so that we can update the
-        //    read marker and properly send read receipts while scrolling through the timeline. 
+        //    read marker and properly send read receipts while scrolling through the timeline.
         // 4. Subscribe to typing notices again, now that the room is being shown.
         if self.is_loaded {
             submit_async_request(MatrixRequest::GetRoomPowerLevels {
@@ -2048,10 +2050,10 @@ impl RoomScreen {
             submit_async_request(MatrixRequest::GetRoomMembers {
                 room_id: room_id.clone(),
                 memberships: matrix_sdk::RoomMemberships::JOIN,
-                // Fetch from the local cache, as we already requested to sync
-                // the room members from the homeserver above.
-                local_only: true,
-            }); 
+                // Fetch directly from the server to ensure we have
+                // an up-to-date member list for mention suggestions.
+                local_only: false,
+            });
             submit_async_request(MatrixRequest::SubscribeToTypingNotices {
                 room_id: room_id.clone(),
                 subscribe: true,
@@ -3236,7 +3238,7 @@ fn populate_text_message_content(
     };
 
     // Populate link previews if all required parameters are provided
-    if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) = 
+    if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) =
         (link_preview_ref, media_cache, link_preview_cache) {
         link_preview_ref.populate_below_message(
             cx,
@@ -3335,7 +3337,7 @@ fn populate_image_message_content(
                             Err(e) => {
                                 error!("Failed to decode blurhash {e:?}");
                                 Err(image_cache::ImageError::EmptyData)
-                            }   
+                            }
                         }
                     });
                     if let Err(e) = show_image_result {
@@ -4171,7 +4173,7 @@ impl MessageRef {
 ///
 /// This function requires passing in a reference to `Cx`,
 /// which isn't used, but acts as a guarantee that this function
-/// must only be called by the main UI thread. 
+/// must only be called by the main UI thread.
 pub fn clear_timeline_states(_cx: &mut Cx) {
     // Clear timeline states cache
     TIMELINE_STATES.with_borrow_mut(|states| {
