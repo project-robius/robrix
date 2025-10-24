@@ -500,12 +500,16 @@ live_design! {
                 flow: Down,
 
                 // First, display the timeline of all messages/events.
-                timeline = <Timeline> {}
+                timeline = <Timeline> {
+                    // margin: {bottom: 10}
+                }
 
                 // Below that, display a typing notice when other users in the room are typing.
                 typing_notice = <TypingNotice> { }
 
-                room_input_bar = <RoomInputBar> { }
+                room_input_bar = <RoomInputBar> {
+                    // margin: {top: 20}
+                }
             }
 
             // Note: here, we're within a View that has an Overlay flow,
