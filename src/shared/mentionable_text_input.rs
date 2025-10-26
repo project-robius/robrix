@@ -345,7 +345,11 @@ pub enum MentionableTextInputAction {
         can_notify_room: bool,
     },
     /// Notifies the MentionableTextInput that room members have been loaded.
-    RoomMembersLoaded { room_id: OwnedRoomId },
+    RoomMembersLoaded {
+        room_id: OwnedRoomId,
+        /// Whether member sync is still in progress
+        sync_in_progress: bool,
+    },
 }
 
 /// Widget that extends CommandTextInput with @mention capabilities
@@ -392,6 +396,15 @@ pub struct MentionableTextInput {
     /// Next identifier for submitted search jobs
     #[rust]
     next_search_id: u64,
+    /// Whether the background search task has pending results
+    #[rust]
+    search_results_pending: bool,
+    /// Whether the room is still syncing its full member list
+    #[rust]
+    members_sync_pending: bool,
+    /// Active loading indicator widget while we wait for members/results
+    #[rust]
+    loading_indicator_ref: Option<WidgetRef>,
 }
 
 impl Widget for MentionableTextInput {
@@ -413,12 +426,14 @@ impl Widget for MentionableTextInput {
 
         // Best practice: Always check Scope first to get current context
         // Scope represents the current widget context as passed down from parents
-        let scope_room_id = scope
-            .props
-            .get::<RoomScreenProps>()
-            .expect("RoomScreenProps should be available in scope for MentionableTextInput")
-            .room_id
-            .clone();
+        let scope_room_id = {
+            let room_props = scope
+                .props
+                .get::<RoomScreenProps>()
+                .expect("RoomScreenProps should be available in scope for MentionableTextInput");
+            self.members_sync_pending = room_props.room_members_sync_pending;
+            room_props.room_id.clone()
+        };
 
         // Check search channel on every frame if we're searching
         if let MentionSearchState::Searching { .. } = &self.search_state {
@@ -497,17 +512,39 @@ impl Widget for MentionableTextInput {
                                 }
                             }
                         }
-                        MentionableTextInputAction::RoomMembersLoaded { room_id } => {
+                        MentionableTextInputAction::RoomMembersLoaded {
+                            room_id,
+                            sync_in_progress,
+                        } => {
                             if &scope_room_id != room_id {
                                 continue;
                             }
 
-                            self.members_available = true;
-                            if self.is_searching() {
+                            let room_props = scope
+                                .props
+                                .get::<RoomScreenProps>()
+                                .expect("RoomScreenProps should be available in scope");
+                            let has_members = room_props
+                                .room_members
+                                .as_ref()
+                                .is_some_and(|members| !members.is_empty());
+
+                            // Trust the sync state from room_screen, don't override based on member count
+                            self.members_sync_pending = *sync_in_progress;
+                            self.members_available = has_members;
+
+                            if self.members_available && self.is_searching() {
                                 // Force a fresh search now that members are available
                                 let search_text = self.cmd_text_input.search_text();
                                 self.last_search_text = None;
                                 self.update_user_list(cx, &search_text, scope);
+                            } else if self.is_searching() {
+                                // Still no members returned yet; keep showing loading indicator.
+                                self.cmd_text_input.clear_items();
+                                self.show_loading_indicator(cx);
+                                let popup = self.cmd_text_input.view(id!(popup));
+                                popup.set_visible(cx, true);
+                                self.cmd_text_input.text_input_ref().set_key_focus(cx);
                             }
                         }
                     }
@@ -530,6 +567,7 @@ impl Widget for MentionableTextInput {
                 .props
                 .get::<RoomScreenProps>()
                 .expect("RoomScreenProps should be available in scope");
+            self.members_sync_pending = room_props.room_members_sync_pending;
 
             if let Some(room_members) = &room_props.room_members {
                 if !room_members.is_empty() {
@@ -814,11 +852,14 @@ impl MentionableTextInput {
                     popup.set_visible(cx, true);
                     self.cmd_text_input.text_input_ref().set_key_focus(cx);
                 } else if accumulated_results.is_empty() {
-                    if self.members_available {
-                        // Search completed with no results
+                    if self.members_sync_pending || self.search_results_pending {
+                        // Still fetching either member list or background search results.
+                        self.show_loading_indicator(cx);
+                    } else if self.members_available {
+                        // Search completed with no results even though we have members.
                         self.show_no_matches_indicator(cx);
                     } else {
-                        // Still waiting for members from the homeserver
+                        // No members available yet.
                         self.show_loading_indicator(cx);
                     }
                     popup.set_visible(cx, true);
@@ -1041,6 +1082,7 @@ impl MentionableTextInput {
 
         // Handle completion
         if is_complete {
+            self.search_results_pending = false;
             // Search is complete - get results for final UI update
             let final_results = if let MentionSearchState::Searching {
                 accumulated_results,
@@ -1076,6 +1118,7 @@ impl MentionableTextInput {
 
             if disconnected {
                 // Channel was closed - search completed or failed
+                self.search_results_pending = false;
                 self.handle_search_channel_closed(cx, scope);
             }
         }
@@ -1086,13 +1129,30 @@ impl MentionableTextInput {
 
     /// Common UI update logic for both streaming and non-streaming results
     fn update_ui_with_results(&mut self, cx: &mut Cx, scope: &mut Scope, search_text: &str) {
-        // Clear old list items
-        self.cmd_text_input.clear_items();
-
         let room_props = scope
             .props
             .get::<RoomScreenProps>()
             .expect("RoomScreenProps should be available in scope for MentionableTextInput");
+
+        // Check if we still need to show loading indicator
+        // Show loading while sync is in progress, regardless of partial member data
+        // room_screen will clear members_sync_pending when sync completes
+        let still_loading = self.members_sync_pending;
+
+        if still_loading {
+            // Don't clear items if we're going to show loading again
+            // Just ensure loading indicator is showing
+            if self.loading_indicator_ref.is_none() {
+                self.cmd_text_input.clear_items();
+                self.show_loading_indicator(cx);
+            }
+            self.cmd_text_input.text_input_ref().set_key_focus(cx);
+            return;
+        }
+
+        // We're done loading, safe to clear and reset
+        self.cmd_text_input.clear_items();
+        self.loading_indicator_ref = None;
 
         let is_desktop = cx.display_context.is_desktop();
         let max_visible_items: usize = if is_desktop {
@@ -1187,6 +1247,8 @@ impl MentionableTextInput {
         let cached_members = match &room_props.room_members {
             Some(members) if !members.is_empty() => {
                 self.members_available = true;
+                // Trust the sync state from room_screen via props
+                self.members_sync_pending = room_props.room_members_sync_pending;
                 members.clone()
             }
             _ => {
@@ -1197,12 +1259,13 @@ impl MentionableTextInput {
 
                 self.cancel_active_search();
                 self.members_available = false;
+                self.members_sync_pending = true;
 
                 if !already_waiting {
                     submit_async_request(MatrixRequest::GetRoomMembers {
                         room_id: room_props.room_id.clone(),
                         memberships: RoomMemberships::JOIN,
-                        local_only: false,
+                        local_only: true,
                     });
                 }
 
@@ -1246,10 +1309,11 @@ impl MentionableTextInput {
             search_id,
             cancel_token: cancel_token.clone(),
         };
+        self.search_results_pending = true;
 
         let precomputed_sort = room_props.room_members_sort.clone();
         let cancel_token_for_job = cancel_token.clone();
-        cpu_worker::spawn_cpu_job(CpuJob::SearchRoomMembers(SearchRoomMembersJob {
+        cpu_worker::spawn_cpu_job(cx, CpuJob::SearchRoomMembers(SearchRoomMembersJob {
             members: cached_members,
             search_text: search_text_clone,
             max_results,
@@ -1338,22 +1402,36 @@ impl MentionableTextInput {
 
     /// Shows the loading indicator when waiting for initial members to be loaded
     fn show_loading_indicator(&mut self, cx: &mut Cx) {
-        // Clear any existing items
+        // Check if we already have a loading indicator displayed
+        // Avoid recreating it on every call, which would prevent animation from playing
+        if let Some(ref existing_indicator) = self.loading_indicator_ref {
+            // Already showing, just ensure animation is running
+            existing_indicator
+                .bouncing_dots(id!(loading_animation))
+                .start_animation(cx);
+            cx.new_next_frame();
+            return;
+        }
+
+        // Clear old items before creating new loading indicator
         self.cmd_text_input.clear_items();
 
-        // Create loading indicator widget
+        // Create fresh loading indicator widget
         let Some(ptr) = self.loading_indicator else {
             return;
         };
         let loading_item = WidgetRef::new_from_ptr(cx, Some(ptr));
 
-        // Start the loading animation
+        // IMPORTANT: Add the widget to the UI tree FIRST before starting animation
+        // This ensures the widget is properly initialized and can respond to animator commands
+        self.cmd_text_input.add_item(loading_item.clone());
+        self.loading_indicator_ref = Some(loading_item.clone());
+
+        // Now that the widget is in the UI tree, start the loading animation
         loading_item
             .bouncing_dots(id!(loading_animation))
             .start_animation(cx);
-
-        // Add the loading indicator to the popup
-        self.cmd_text_input.add_item(loading_item);
+        cx.new_next_frame();
 
         // Setup popup dimensions for loading state
         let popup = self.cmd_text_input.view(id!(popup));
@@ -1385,6 +1463,7 @@ impl MentionableTextInput {
 
         // Add the no matches indicator to the popup
         self.cmd_text_input.add_item(no_matches_item);
+        self.loading_indicator_ref = None;
 
         // Setup popup dimensions for no matches state
         let popup = self.cmd_text_input.view(id!(popup));
@@ -1438,6 +1517,7 @@ impl MentionableTextInput {
         if let MentionSearchState::Searching { cancel_token, .. } = &self.search_state {
             cancel_token.store(true, Ordering::Relaxed);
         }
+        self.search_results_pending = false;
     }
 
     /// Reset all search-related state
@@ -1449,9 +1529,12 @@ impl MentionableTextInput {
 
         // Reset last search text to allow new searches
         self.last_search_text = None;
+        self.search_results_pending = false;
+        self.members_sync_pending = false;
 
         // Mark members as unavailable until we fetch them again
         self.members_available = false;
+        self.loading_indicator_ref = None;
 
         // Clear list items
         self.cmd_text_input.clear_items();

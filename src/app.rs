@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
-    avatar_cache::clear_avatar_cache, cpu_worker, home::{
+    avatar_cache::clear_avatar_cache, home::{
         main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{clear_timeline_states, MessageAction}, rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
@@ -196,8 +196,6 @@ impl MatchEvent for App {
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
-
-        cpu_worker::init(cx);
 
         if let Err(e) = persistence::load_window_state(self.ui.window(id!(main_window)), cx) {
             error!("Failed to load window state: {}", e);
