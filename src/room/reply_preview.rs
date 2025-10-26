@@ -20,7 +20,7 @@ live_design! {
         width: Fill
         height: Fit
         flow: Down
-        padding: {left: 10.0, bottom: 5.0, top: 5.0}
+        padding: {left: 16.0, bottom: 5.0, top: 2.0, right: 11.0}
         cursor: Hand,
 
         <View> {
@@ -41,7 +41,7 @@ live_design! {
             reply_preview_username = <Label> {
                 width: Fill,
                 flow: Right, // do not wrap
-                margin: { left: 5.0 }
+                margin: { left: 5.0, top: 2 }
                 draw_text: {
                     text_style: <USERNAME_TEXT_STYLE> { font_size: 10 },
                     color: (USERNAME_TEXT_COLOR)
@@ -77,7 +77,7 @@ live_design! {
         width: Fill
         height: Fit
         flow: Down
-        padding: {left: 20, right: 20}
+        padding: { left: 9, right: 9 }
 
         // Displays a "Replying to" label and a cancel button
         // above the preview of the message being replied to.
@@ -86,11 +86,14 @@ live_design! {
             height: Fit
             flow: Right
             align: {y: 0.5}
-            padding: {left: 10, right: 5, top: 10, bottom: 10}
+            padding: {left: 14, right: 6, top: 10, bottom: 0}
 
             <Label> {
                 width: Fill,
                 flow: Right, // do not wrap
+                // Vertically align the text with the X icon in the cancel_reply_button
+                padding: {top: 5}
+
                 draw_text: {
                     text_style: <USERNAME_TEXT_STYLE> {},
                     color: #222,
@@ -104,7 +107,7 @@ live_design! {
                 height: Fit,
                 padding: 13,
                 spacing: 0,
-                margin: {left: 5, right: 5},
+                margin: {left: 5, right: 0},
 
                 draw_bg: {
                     border_color: (COLOR_FG_DANGER_RED),
@@ -119,11 +122,11 @@ live_design! {
             }
         }
 
-        <LineH> {
-            margin: {bottom: 5.0}
-        }
-
         reply_preview_content = <ReplyPreviewContent> { }
+
+        <LineH> {
+            margin: {top: 4.0, left: 5, right: 5} //, bottom: 10}
+        }
     }
 
     // A small inline preview of a message that was replied to by another message

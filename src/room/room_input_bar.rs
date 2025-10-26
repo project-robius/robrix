@@ -40,10 +40,27 @@ live_design! {
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
 
 
-    pub RoomInputBar = {{RoomInputBar}} {
+    pub RoomInputBar = {{RoomInputBar}}<RoundedView> {
         width: Fill,
         height: Fit { max: Rel(0.625) }
         flow: Down,
+
+        // These margins are a hack to make the borders of the RoomInputBar
+        // line up with the boundaries of its parent widgets.
+        // This only works if the border_color is the same as its parents,
+        // which is currently `COLOR_SECONDARY`.
+        margin: {left: -4, right: -4, bottom: -4 }
+
+        show_bg: true,
+        draw_bg: {
+            color: (COLOR_PRIMARY)
+            border_radius: 5.0,
+            border_color: (COLOR_SECONDARY),
+            border_size: 2.0
+            // uniform shadow_color: #0006
+            // shadow_radius: 0.0,
+            // shadow_offset: vec2(0.0,0.0)
+        }
 
         // The top-most element is a preview of the message that the user is replying to, if any.
         replying_preview = <ReplyingPreview> { }
@@ -70,12 +87,17 @@ live_design! {
                 // even when the mentionable_text_input box is very tall.
                 align: {y: 1.0},
                 padding: 6,
-                show_bg: true
-                draw_bg: {color: (COLOR_PRIMARY)}
 
                 location_button = <RobrixIconButton> {
+                    margin: {left: 4}
                     spacing: 0,
-                    draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
+                    draw_icon: {
+                        svg_file: (ICO_LOCATION_PERSON)
+                        color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                    },
+                    draw_bg: {
+                        color: (COLOR_LOCATION_PREVIEW_BG),
+                    }
                     icon_walk: {width: Fit, height: 23, margin: {bottom: -1}}
                     text: "",
                 }
@@ -89,7 +111,7 @@ live_design! {
                 mentionable_text_input = <MentionableTextInput> {
                     width: Fill,
                     height: Fit { max: Rel(0.625) }
-                    margin: { bottom: 12 },
+                    margin: { top: 5, bottom: 12, left: 1, right: 1 },
 
                     persistent = {
                         center = {
@@ -104,6 +126,7 @@ live_design! {
                     // Disabled by default; enabled when text is inputted
                     enabled: false,
                     spacing: 0,
+                    margin: {right: 4}
                     draw_icon: {
                         svg_file: (ICON_SEND),
                         color: (COLOR_FG_DISABLED),
