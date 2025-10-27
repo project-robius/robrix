@@ -571,7 +571,7 @@ impl App {
             return;
         }
 
-        log!("Navigating to destination room: {}, closing room {room_to_close:?}", destination_room.room_id);
+        log!("Navigating to destination room: {destination_room:?}, closing room {room_to_close:?}");
 
         // Select and scroll to the destination room in the rooms list.
         let new_selected_room = SelectedRoom::JoinedRoom {

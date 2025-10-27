@@ -16,10 +16,10 @@
 //!
 
 use makepad_widgets::*;
-use matrix_sdk::{room::reply::{EnforceThread, Reply}, SuccessorRoom};
+use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
 
 live_design! {
     use link::theme::*;
@@ -454,18 +454,19 @@ impl RoomInputBar {
         // because it has already been hidden by the time this function gets called.
     } 
 
-    /// Updates this room's tombstone footer based on the given `successor_room`.
+    /// Updates (populates and shows or hides) this room's tombstone footer
+    /// based on the given successor room details.
     fn update_tombstone_footer(
         &mut self,
         cx: &mut Cx,
-        room_id: &OwnedRoomId,
-        successor_room: Option<&SuccessorRoom>,
+        tombstoned_room_id: &OwnedRoomId,
+        successor_room_details: Option<&SuccessorRoomDetails>,
     ) {
         let tombstone_footer = self.tombstone_footer(id!(tombstone_footer));
         let input_bar = self.view(id!(input_bar));
 
-        if let Some(sr) = successor_room {
-            tombstone_footer.show(cx, room_id, sr);
+        if let Some(srd) = successor_room_details {
+            tombstone_footer.show(cx, tombstoned_room_id, srd);
             input_bar.set_visible(cx, false);
         } else {
             tombstone_footer.hide(cx);
@@ -495,6 +496,19 @@ impl RoomInputBar {
                 color: (bg_color),
             }
         });
+    }
+
+    /// Updates the visibility of select views based on the user's new power levels.
+    ///
+    /// This will show/hide the `input_bar` and the `can_not_send_message_notice` views.
+    fn update_user_power_levels(
+        &mut self,
+        cx: &mut Cx,
+        user_power_levels: UserPowerLevels,
+    ) {
+        let can_send = user_power_levels.can_send_message();
+        self.view.view(id!(input_bar)).set_visible(cx, can_send);
+        self.view.view(id!(can_not_send_message_notice)).set_visible(cx, !can_send);
     }
 
     /// Returns true if the TSP signing checkbox is checked, false otherwise.
@@ -534,27 +548,27 @@ impl RoomInputBarRef {
         );
     }
 
-    // Updates the visibility of select views based on the user's new power levels.
+    /// Updates the visibility of select views based on the user's new power levels.
+    ///
+    /// This will show/hide the `input_bar` and the `can_not_send_message_notice` views.
     pub fn update_user_power_levels(
         &self,
         cx: &mut Cx,
         user_power_levels: UserPowerLevels,
     ) {
-        let Some(inner) = self.borrow() else { return };
-        let can_send = user_power_levels.can_send_message();
-        inner.view(id!(input_bar)).set_visible(cx, can_send);
-        inner.view(id!(can_not_send_message_notice)).set_visible(cx, !can_send);
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.update_user_power_levels(cx, user_power_levels);
     }
 
     /// Updates this room's tombstone footer based on the given `tombstone_state`.
     pub fn update_tombstone_footer(
         &self,
         cx: &mut Cx,
-        room_id: &OwnedRoomId,
-        successor_room: Option<&SuccessorRoom>,
+        tombstoned_room_id: &OwnedRoomId,
+        successor_room_details: Option<&SuccessorRoomDetails>,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.update_tombstone_footer(cx, room_id, successor_room);
+        inner.update_tombstone_footer(cx, tombstoned_room_id, successor_room_details);
     }
 
     /// Forwards the result of an edit request to the `EditingPane` widget
@@ -589,8 +603,9 @@ impl RoomInputBarRef {
         &self,
         cx: &mut Cx,
         room_id: &OwnedRoomId,
-        state: RoomInputBarState,
-        tombstone_info: Option<&SuccessorRoom>,
+        saved_state: RoomInputBarState,
+        user_power_levels: UserPowerLevels,
+        tombstone_info: Option<&SuccessorRoomDetails>,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         let RoomInputBarState {
@@ -598,9 +613,14 @@ impl RoomInputBarRef {
             text_input_state,
             replying_to,
             editing_pane_state,
-        } = state;
+        } = saved_state;
 
         // Note: we do *not* restore the location preview state here; see `save_state()`.
+
+        // 0. Update select views based on user power levels from the RoomScreen (the `TimelineUiState`).
+        //    This must happen before we restore the state of the `EditingPane`,
+        //    because the call to `show_editing_pane()` might affect the visiblity 
+        inner.update_user_power_levels(cx, user_power_levels);
 
         // 1. Restore the state of the TextInput within the MentionableTextInput.
         inner.text_input(id!(input_bar.mentionable_text_input.text_input))
