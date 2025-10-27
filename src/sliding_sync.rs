@@ -337,7 +337,7 @@ pub enum MatrixRequest {
     GetRoomPreview {
         // /// The room that made this request, i.e., where we should send the result.
         // /// * If `Some`, the fetched room preview is sent to this room's timeline.
-        // /// * If `None`, we emit a [`RoomPreviewAction`] containined the fetched room preview.
+        // /// * If `None`, we emit a [`RoomPreviewAction`] contained the fetched room preview.
         // requesting_room_id: Option<OwnedRoomId>,
         room_or_alias_id: OwnedRoomOrAliasId,
         via: Vec<OwnedServerName>,
@@ -1639,7 +1639,7 @@ pub type TimelineRequestSender = watch::Sender<Vec<BackwardsPaginateUntilEventRe
 ///
 /// This primarily contains endpoints for channels of communication
 /// between the timeline UI (`RoomScreen`] and the background worker tasks.
-/// If the relevant room was tombstoned, this also includes info about its succesor room.
+/// If the relevant room was tombstoned, this also includes info about its successor room.
 pub struct TimelineEndpoints {
     pub update_sender: crossbeam_channel::Sender<TimelineUpdate>,
     pub update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,

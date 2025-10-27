@@ -89,6 +89,7 @@ live_design! {
 
 /// Info about the successor room that replaces a tombstoned room.
 #[derive(Default, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum SuccessorRoomDetails {
     /// No information was known about the successor room.
     /// This should not happen because it violates the Matrix spec.

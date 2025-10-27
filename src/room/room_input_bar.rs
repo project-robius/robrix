@@ -619,7 +619,7 @@ impl RoomInputBarRef {
 
         // 0. Update select views based on user power levels from the RoomScreen (the `TimelineUiState`).
         //    This must happen before we restore the state of the `EditingPane`,
-        //    because the call to `show_editing_pane()` might affect the visiblity 
+        //    because the call to `show_editing_pane()` might re-update the `input_bar`'s visibility.
         inner.update_user_power_levels(cx, user_power_levels);
 
         // 1. Restore the state of the TextInput within the MentionableTextInput.
