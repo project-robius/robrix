@@ -19,7 +19,7 @@ use matrix_sdk_ui::{
     room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{EventTimelineItem, LatestEventValue, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem}, RoomListService, Timeline
 };
 use robius_open::Uri;
-use ruma::events::tag::Tags;
+use ruma::{events::tag::Tags, OwnedRoomOrAliasId};
 use tokio::{
     runtime::Handle,
     sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
@@ -33,7 +33,7 @@ use crate::{
     avatar_cache::AvatarUpdate,
     event_preview::text_preview_of_timeline_item,
     home::{
-        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewRateLimitResponse, LinkPreviewDataNonNumeric}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction
+        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     },
     login::login_screen::LoginAction,
     logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{is_logout_in_progress, logout_with_state_machine, LogoutConfig}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
@@ -42,7 +42,7 @@ use crate::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     },
-    room::RoomPreviewAvatar,
+    room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction},
     shared::{
         html_or_plaintext::MatrixLinkPillState,
         jump_to_bottom_button::UnreadMessageCount,
@@ -329,6 +329,22 @@ pub enum MatrixRequest {
         /// * If `true` (not recommended), only the local cache will be accessed.
         /// * If `false` (recommended), details will be fetched from the server.
         local_only: bool,
+    },
+    /// Request to fetch the preview (basic info) for the given room,
+    /// either one that is joined locally or one that is unknown.
+    ///
+    /// Emits a [`RoomPreviewAction::Fetched`] when the fetch operation has completed.
+    GetRoomPreview {
+        // /// The room that made this request, i.e., where we should send the result.
+        // /// * If `Some`, the fetched room preview is sent to this room's timeline.
+        // /// * If `None`, we emit a [`RoomPreviewAction`] contained the fetched room preview.
+        // requesting_room_id: Option<OwnedRoomId>,
+        room_or_alias_id: OwnedRoomOrAliasId,
+        via: Vec<OwnedServerName>,
+    },
+    /// Request to fetch the full details (the room preview) of a tombstoned room.
+    GetSuccessorRoomDetails {
+        tombstoned_room_id: OwnedRoomId,
     },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
@@ -756,6 +772,33 @@ async fn async_worker(
                         }
                     }
                 });
+            }
+
+            MatrixRequest::GetRoomPreview { room_or_alias_id, via } => {
+                let Some(client) = get_client() else { continue };
+                let _fetch_task = Handle::current().spawn(async move {
+                    log!("Sending get room preview request for {room_or_alias_id}...");
+                    let res = fetch_room_preview_with_avatar(&client, &room_or_alias_id, via).await;
+                    Cx::post_action(RoomPreviewAction::Fetched(res));
+                });
+            }
+
+            MatrixRequest::GetSuccessorRoomDetails { tombstoned_room_id } => {
+                let Some(client) = get_client() else { continue };
+                let (sender, successor_room) = {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&tombstoned_room_id) else {
+                        error!("BUG: tombstoned room {tombstoned_room_id} info not found for get successor room details request");
+                        continue;
+                    };
+                    (room_info.timeline_update_sender.clone(), room_info.timeline.room().successor_room())
+                };
+                spawn_fetch_successor_room_preview(
+                    client,
+                    successor_room,
+                    tombstoned_room_id,
+                    sender,
+                );
             }
 
             MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
@@ -1592,7 +1635,11 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
 /// to the corresponding background async task for that room (its `timeline_subscriber_handler`).
 pub type TimelineRequestSender = watch::Sender<Vec<BackwardsPaginateUntilEventRequest>>;
 
-/// The return type for `take_timeline_endpoints`, containing timeline channels and successor room info.
+/// The return type for [`take_timeline_endpoints()`].
+///
+/// This primarily contains endpoints for channels of communication
+/// between the timeline UI (`RoomScreen`] and the background worker tasks.
+/// If the relevant room was tombstoned, this also includes info about its successor room.
 pub struct TimelineEndpoints {
     pub update_sender: crossbeam_channel::Sender<TimelineUpdate>,
     pub update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
@@ -1690,15 +1737,17 @@ pub fn is_user_ignored(user_id: &UserId) -> bool {
 /// This will only succeed once per room, as only a single channel receiver can exist.
 pub fn take_timeline_endpoints(
     room_id: &OwnedRoomId,
-) -> Option<TimelineEndpoints>
-{
+) -> Option<TimelineEndpoints> {
     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
     all_joined_rooms
         .get_mut(room_id)
         .and_then(|jrd| jrd.timeline_singleton_endpoints.take()
-            .map(|(update_receiver, request_sender)|
-                (jrd.timeline_update_sender.clone(), update_receiver, request_sender, jrd.timeline.room().successor_room())
-            )
+            .map(|(update_receiver, request_sender)| (
+                jrd.timeline_update_sender.clone(),
+                update_receiver,
+                request_sender,
+                jrd.timeline.room().successor_room(),
+            ))
         )
         .map(|(update_sender, update_receiver, request_sender, successor_room)| {
             TimelineEndpoints {
@@ -2235,19 +2284,18 @@ async fn update_room(
             };
 
             if !old_room.is_tombstoned && new_room.is_tombstoned {
+                let successor_room = new_room.room.successor_room();
+                log!("Updating room {new_room_id} to be tombstoned, {successor_room:?}");
                 enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: new_room_id.clone() });
-                if let Some(successor_room) = new_room.room.successor_room() {
-                    if let Some(timeline_update_sender) = get_timeline_update_sender(&new_room_id) {
-                        log!("Updating room {new_room_id} to be tombstoned, {successor_room:?}");
-                        match timeline_update_sender.send(TimelineUpdate::Tombstoned(Some(successor_room))) {
-                            Ok(_) => SignalToUI::set_ui_signal(),
-                            Err(_) => error!("Failed to send the Tombstoned update to room {new_room_id}"),
-                        }
-                    } else {
-                        error!("BUG: could not find JoinedRoomDetails for newly-tombstoned room {new_room_id}");
-                    }
+                if let Some(timeline_update_sender) = get_timeline_update_sender(&new_room_id) {
+                    spawn_fetch_successor_room_preview(
+                        room_list_service.client().clone(),
+                        successor_room,
+                        new_room_id.clone(),
+                        timeline_update_sender,
+                    );
                 } else {
-                    log!("BUG: room {} was tombstoned but had no successor room!", new_room_id);
+                    error!("BUG: could not find JoinedRoomDetails for newly-tombstoned room {new_room_id}");
                 }
             }
 
@@ -2317,11 +2365,12 @@ async fn add_new_room(
         }
         RoomState::Invited => {
             let invite_details = new_room.room.invite_details().await.ok();
-            let Some(client) = get_client() else {
-                return Ok(());
-            };
             let latest_event = if let Some(latest_event) = new_room.room.latest_event() {
-                EventTimelineItem::from_latest_event(client, &new_room.room_id, latest_event).await
+                EventTimelineItem::from_latest_event(
+                    room_list_service.client().clone(),
+                    &new_room.room_id,
+                    latest_event,
+                ).await
             } else {
                 None
             };
@@ -2574,6 +2623,79 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
         }
     });
 }
+
+/// Spawns an async task to fetch the RoomPreview for the given successor room.
+///
+/// After the fetch completes, this emites a [`RoomPreviewAction`]
+/// containing the fetched room preview or an error if it failed.
+fn spawn_fetch_successor_room_preview(
+    client: Client,
+    successor_room: Option<SuccessorRoom>,
+    tombstoned_room_id: OwnedRoomId,
+    timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
+) {
+    Handle::current().spawn(async move {
+        log!("Updating room {tombstoned_room_id} to be tombstoned, {successor_room:?}");
+        let srd = if let Some(SuccessorRoom { room_id, reason }) = successor_room {
+            match fetch_room_preview_with_avatar(
+                &client,
+                room_id.deref().into(),
+                Vec::new(),
+            ).await {
+                Ok(room_preview) => SuccessorRoomDetails::Full { room_preview, reason },
+                Err(e) => {
+                    log!("Failed to fetch preview of successor room {room_id}, error: {e:?}");
+                    SuccessorRoomDetails::Basic(SuccessorRoom { room_id, reason })
+                }
+            }
+        } else {
+            log!("BUG: room {tombstoned_room_id} was tombstoned but had no successor room!");
+            SuccessorRoomDetails::None
+        };
+
+        match timeline_update_sender.send(TimelineUpdate::Tombstoned(srd)) {
+            Ok(_) => SignalToUI::set_ui_signal(),
+            Err(_) => error!("Failed to send the Tombstoned update to room {tombstoned_room_id}"),
+        }
+    });
+}
+
+/// Fetches the full preview information for the given `room`.
+/// Also fetches that room preview's avatar, if it had an avatar URL.
+async fn fetch_room_preview_with_avatar(
+    client: &Client,
+    room: &RoomOrAliasId,
+    via: Vec<OwnedServerName>,
+) -> Result<FetchedRoomPreview, matrix_sdk::Error> {
+    let room_preview = client.get_room_preview(room, via).await?;
+    // If this room has an avatar URL, fetch it.
+    let room_avatar = if let Some(avatar_url) = room_preview.avatar_url.clone() {
+        let media_request = MediaRequestParameters {
+            source: MediaSource::Plain(avatar_url),
+            format: AVATAR_THUMBNAIL_FORMAT.into(),
+        };
+        match client.media().get_media_content(&media_request, true).await {
+            Ok(avatar_content) => {
+                log!("Fetched avatar for room preview {:?} ({})", room_preview.name, room_preview.room_id);
+                FetchedRoomAvatar::Image(avatar_content.into())
+            }
+            Err(e) => {
+                log!("Failed to fetch avatar for room preview {:?} ({}), error: {e:?}",
+                    room_preview.name, room_preview.room_id
+                );
+                avatar_from_room_name(room_preview.name.as_deref())
+            }
+        }
+    } else {
+        // The successor room did not have an avatar URL
+        avatar_from_room_name(room_preview.name.as_deref())
+    };
+    Ok(FetchedRoomPreview {
+        room_preview,
+        room_avatar,
+    })
+}
+
 
 /// Returns the timestamp and text preview of the given `latest_event` timeline item.
 ///
@@ -2916,7 +3038,7 @@ async fn timeline_subscriber_handler(
 /// Handles the given updated latest event for the given room.
 ///
 /// This function sends a `RoomsListUpdate::UpdateLatestEvent`
-/// to update the latest event in the RoomsList's room preview for the given room.
+/// to update the latest event in the RoomsListEntry for the given room.
 async fn update_latest_event(room: &Room) {
     let Some(client) = get_client() else { return };
     let (sender_username, sender_id, timestamp, content) = match room.new_latest_event().await {
@@ -2979,15 +3101,15 @@ fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
 
 /// Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
-async fn room_avatar(room: &Room, room_name: Option<&str>) -> RoomPreviewAvatar {
+async fn room_avatar(room: &Room, room_name: Option<&str>) -> FetchedRoomAvatar {
     match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-        Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar.into()),
+        Ok(Some(avatar)) => FetchedRoomAvatar::Image(avatar.into()),
         _ => {
             if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
                 if room_members.len() == 2 {
                     if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
                         if let Ok(Some(avatar)) = non_account_member.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-                            return RoomPreviewAvatar::Image(avatar.into());
+                            return FetchedRoomAvatar::Image(avatar.into());
                         }
                     }
                 }

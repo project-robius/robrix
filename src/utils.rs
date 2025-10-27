@@ -10,7 +10,7 @@ use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRo
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
-use crate::{room::RoomPreviewAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::{room::FetchedRoomAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
 
 /// The scheme for GEO links, used for location messages in Matrix.
 pub const GEO_URI_SCHEME: &str = "geo:";
@@ -729,13 +729,13 @@ impl Display for OwnedRoomIdRon {
 /// Returns a text avatar string containing the first character of the room name.
 ///
 /// Skips the first character if it is a `#` or `!`, the sigils used for Room aliases and Room IDs.
-pub fn avatar_from_room_name(room_name: Option<&str>) -> RoomPreviewAvatar {
+pub fn avatar_from_room_name(room_name: Option<&str>) -> FetchedRoomAvatar {
     let first = room_name.and_then(|rn| rn
         .graphemes(true)
         .find(|&g| g != "#" && g != "!")
         .map(ToString::to_string)
     ).unwrap_or_else(|| String::from("?"));
-    RoomPreviewAvatar::Text(first)
+    FetchedRoomAvatar::Text(first)
 }
 
 #[cfg(test)]
