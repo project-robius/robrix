@@ -19,14 +19,14 @@ use matrix_sdk::{
             sticker::{StickerEventContent, StickerMediaSource},
         },
         matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
-    }, OwnedServerName, SuccessorRoom
+    }, OwnedServerName
 };
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -1421,10 +1421,10 @@ impl RoomScreen {
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
-                TimelineUpdate::Tombstoned(successor_room) => {
+                TimelineUpdate::Tombstoned(successor_room_details) => {
                     self.view.room_input_bar(id!(room_input_bar))
-                        .update_tombstone_footer(cx, &tl.room_id, successor_room.as_ref());
-                    tl.tombstone_info = successor_room;
+                        .update_tombstone_footer(cx, &tl.room_id, Some(&successor_room_details));
+                    tl.tombstone_info = Some(successor_room_details);
                 }
             }
         }
@@ -1981,6 +1981,17 @@ impl RoomScreen {
                 successor_room,
             } = timeline_endpoints;
 
+            // Start with the basic tombstone info, and fetch the full details
+            // if the room has been tombstoned.
+            let tombstone_info = if let Some(sr) = successor_room {
+                submit_async_request(MatrixRequest::GetSuccessorRoomDetails {
+                    tombstoned_room_id: room_id.clone(),
+                });
+                Some(SuccessorRoomDetails::Basic(sr))
+            } else {
+                None
+            };
+
             let tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // Initially, we assume the user has all power levels by default.
@@ -2007,7 +2018,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
-                tombstone_info: successor_room,
+                tombstone_info,
             };
             (tl_state, true)
         };
@@ -2187,6 +2198,7 @@ impl RoomScreen {
             cx,
             &tl_state.room_id,
             saved_room_input_bar_state,
+            tl_state.user_power,
             tl_state.tombstone_info.as_ref(),
         );
     }
@@ -2208,7 +2220,7 @@ impl RoomScreen {
         self.room_id = Some(room_id.clone());
 
         // We initially tell every MentionableTextInput widget that the current user
-        // *does not* has privileges to notify the entire room;
+        // *does not* have privileges to notify the entire room;
         // this gets properly updated when room PowerLevels get fetched.
         cx.action(MentionableTextInputAction::PowerLevelsUpdated {
             room_id: room_id.clone(),
@@ -2460,10 +2472,9 @@ pub enum TimelineUpdate {
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
     OwnUserReadReceipt(Receipt),
-    /// A notice that the given room has been tombstoned,
-    /// includes a `SuccessorRoom` that contains the successor room.
-    /// If the room is not tombstoned, then the `SuccessorRoom` is `None`.
-    Tombstoned(Option<SuccessorRoom>),
+    /// A notice that the given room has been tombstoned (closed)
+    /// and replaced by the given successor room.
+    Tombstoned(SuccessorRoomDetails),
 }
 
 thread_local! {
@@ -2580,9 +2591,9 @@ struct TimelineUiState {
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
 
-    /// If this room has been tombstoned, this has details of its successor room.
-    /// If the room is not tombstoned, this is `None`.
-    tombstone_info: Option<SuccessorRoom>,
+    /// If `Some`, this room has been tombstoned and the details of its successor room
+    /// are contained within. If `None`, the room has not been tombstoned.
+    tombstone_info: Option<SuccessorRoomDetails>,
 }
 
 #[derive(Default, Debug)]
