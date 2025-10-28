@@ -30,7 +30,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
-    room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
+    room::{member_search::{precompute_member_sort, PrecomputedMemberSort}, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
@@ -491,7 +491,7 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-            
+
             restore_status_view = <RestoreStatusView> {}
 
             // Widgets within this view will get shifted upwards when the on-screen keyboard is shown.
@@ -792,6 +792,8 @@ impl Widget for RoomScreen {
             let room_props = if let Some(tl) = self.tl_state.as_ref() {
                 let room_id = tl.room_id.clone();
                 let room_members = tl.room_members.clone();
+                let room_members_sort = tl.room_members_sort.clone();
+                let room_members_sync_pending = tl.room_members_sync_pending;
 
                 // Fetch room data once to avoid duplicate expensive lookups
                 let (room_display_name, room_avatar_url) = get_client()
@@ -806,6 +808,8 @@ impl Widget for RoomScreen {
                     room_screen_widget_uid,
                     room_id,
                     room_members,
+                    room_members_sort,
+                    room_members_sync_pending,
                     room_display_name,
                     room_avatar_url,
                 }
@@ -815,6 +819,8 @@ impl Widget for RoomScreen {
                     room_screen_widget_uid,
                     room_id,
                     room_members: None,
+                    room_members_sort: None,
+                    room_members_sync_pending: false,
                     room_display_name: None,
                     room_avatar_url: None,
                 }
@@ -829,6 +835,8 @@ impl Widget for RoomScreen {
                     room_screen_widget_uid,
                     room_id: matrix_sdk::ruma::OwnedRoomId::try_from("!dummy:matrix.org").unwrap(),
                     room_members: None,
+                    room_members_sort: None,
+                    room_members_sync_pending: false,
                     room_display_name: None,
                     room_avatar_url: None,
                 }
@@ -1325,11 +1333,31 @@ impl RoomScreen {
                     // log!("process_timeline_updates(): room members fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                    //
+                    // Room members have been synced; unconditionally clear pending flag
+                    // to fix bug where small rooms (< 50 members) would stay in loading state forever
+                    tl.room_members_sync_pending = false;
+
+                    // Notify MentionableTextInput that sync is complete
+                    cx.action(MentionableTextInputAction::RoomMembersLoaded {
+                        room_id: tl.room_id.clone(),
+                        sync_in_progress: false,
+                    });
                 }
                 TimelineUpdate::RoomMembersListFetched { members } => {
-                    // Store room members directly in TimelineUiState
+                    // RoomMembersListFetched: Received members for room
+                    // Note: This can be sent from either GetRoomMembers (local cache lookup)
+                    // or SyncRoomMemberList (full server sync). We only clear the sync pending
+                    // flag when we receive RoomMembersSynced (which is only sent after full sync).
+                    let sort_data = precompute_member_sort(&members);
                     tl.room_members = Some(Arc::new(members));
-                },
+                    tl.room_members_sort = Some(Arc::new(sort_data));
+                    // Notify with current sync state, don't modify it here
+                    cx.action(MentionableTextInputAction::RoomMembersLoaded {
+                        room_id: tl.room_id.clone(),
+                        sync_in_progress: tl.room_members_sync_pending,
+                    });
+                }
                 TimelineUpdate::MediaFetched => {
                     log!("process_timeline_updates(): media fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
@@ -1915,7 +1943,6 @@ impl RoomScreen {
             // and search our locally-known timeline history for the replied-to message.
         }
         self.redraw(cx);
-       
     }
 
     /// Shows the user profile sliding pane with the given avatar info.
@@ -1974,6 +2001,8 @@ impl RoomScreen {
                 user_power: UserPowerLevels::all(),
                 // Room members start as None and get populated when fetched from the server
                 room_members: None,
+                room_members_sort: None,
+                room_members_sync_pending: false,
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
                 items: Vector::new(),
@@ -2034,6 +2063,16 @@ impl RoomScreen {
             // Even though we specify that room member profiles should be lazy-loaded,
             // the matrix server still doesn't consistently send them to our client properly.
             // So we kick off a request to fetch the room members here upon first viewing the room.
+            tl_state.room_members_sync_pending = true;
+            submit_async_request(MatrixRequest::SyncRoomMemberList { room_id: room_id.clone() });
+        } else if tl_state
+            .room_members
+            .as_ref()
+            .map(|members| members.is_empty())
+            .unwrap_or(true)
+        {
+            // Room reopened but we lack cached members; trigger a sync to refresh data.
+            tl_state.room_members_sync_pending = true;
             submit_async_request(MatrixRequest::SyncRoomMemberList { room_id: room_id.clone() });
         }
 
@@ -2044,7 +2083,7 @@ impl RoomScreen {
         //    show/hide UI elements based on the user's permissions.
         // 2. Get the list of members in this room (from the SDK's local cache).
         // 3. Subscribe to our own user's read receipts so that we can update the
-        //    read marker and properly send read receipts while scrolling through the timeline. 
+        //    read marker and properly send read receipts while scrolling through the timeline.
         // 4. Subscribe to typing notices again, now that the room is being shown.
         if self.is_loaded {
             submit_async_request(MatrixRequest::GetRoomPowerLevels {
@@ -2053,10 +2092,9 @@ impl RoomScreen {
             submit_async_request(MatrixRequest::GetRoomMembers {
                 room_id: room_id.clone(),
                 memberships: matrix_sdk::RoomMemberships::JOIN,
-                // Fetch from the local cache, as we already requested to sync
-                // the room members from the homeserver above.
+                // Prefer cached members; background sync will refresh them as needed.
                 local_only: true,
-            }); 
+            });
             submit_async_request(MatrixRequest::SubscribeToTypingNotices {
                 room_id: room_id.clone(),
                 subscribe: true,
@@ -2126,8 +2164,10 @@ impl RoomScreen {
             room_input_bar_state: self.room_input_bar(id!(room_input_bar)).save_state(),
         };
         tl.saved_state = state;
-        // Clear room_members to avoid wasting memory (in case this room is never re-opened).
+        // Clear cached room member data to avoid wasting memory (in case this room is never re-opened).
         tl.room_members = None;
+        tl.room_members_sort = None;
+        tl.room_members_sync_pending = false;
         // Store this Timeline's `TimelineUiState` in the global map of states.
         TIMELINE_STATES.with_borrow_mut(|ts| ts.insert(tl.room_id.clone(), tl));
     }
@@ -2308,6 +2348,8 @@ pub struct RoomScreenProps {
     pub room_screen_widget_uid: WidgetUid,
     pub room_id: OwnedRoomId,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
+    pub room_members_sort: Option<Arc<PrecomputedMemberSort>>,
+    pub room_members_sync_pending: bool,
     pub room_display_name: Option<String>,
     pub room_avatar_url: Option<OwnedMxcUri>,
 }
@@ -2459,6 +2501,10 @@ struct TimelineUiState {
 
     /// The list of room members for this room.
     room_members: Option<Arc<Vec<RoomMember>>>,
+    /// Precomputed sort data for room members to speed up mention search.
+    room_members_sort: Option<Arc<PrecomputedMemberSort>>,
+    /// Whether a full member sync is still pending for this room.
+    room_members_sync_pending: bool,
 
     /// Whether this room's timeline has been fully paginated, which means
     /// that the oldest (first) event in the timeline is locally synced and available.
@@ -3210,30 +3256,35 @@ fn populate_text_message_content(
     link_preview_cache: Option<&mut LinkPreviewCache>,
 ) -> bool {
     // The message was HTML-formatted rich text.
-    let mut links = Vec::new();
-    if let Some(fb) = formatted_body.as_ref()
+    let links = if let Some(fb) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
+        let mut links = Vec::new();
         let linkified_html = utils::linkify_get_urls(
             utils::trim_start_html_whitespace(&fb.body),
             true,
             Some(&mut links),
         );
-        message_content_widget.show_html(cx, linkified_html);
+        message_content_widget.show_html(
+            cx,
+            &linkified_html
+        );
+        links
     }
     // The message was non-HTML plaintext.
     else {
+        let mut links = Vec::new();
         let linkified_html = utils::linkify_get_urls(body, false, Some(&mut links));
         match linkified_html {
             Cow::Owned(linkified_html) => message_content_widget.show_html(cx, &linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext),
         }
+        links
     };
 
     // Populate link previews if all required parameters are provided
-    if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) = 
-        (link_preview_ref, media_cache, link_preview_cache)
-    {
+    if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) =
+        (link_preview_ref, media_cache, link_preview_cache) {
         link_preview_ref.populate_below_message(
             cx,
             &links,
@@ -3331,7 +3382,7 @@ fn populate_image_message_content(
                             Err(e) => {
                                 error!("Failed to decode blurhash {e:?}");
                                 Err(image_cache::ImageError::EmptyData)
-                            }   
+                            }
                         }
                     });
                     if let Err(e) = show_image_result {
@@ -4167,7 +4218,7 @@ impl MessageRef {
 ///
 /// This function requires passing in a reference to `Cx`,
 /// which isn't used, but acts as a guarantee that this function
-/// must only be called by the main UI thread. 
+/// must only be called by the main UI thread.
 pub fn clear_timeline_states(_cx: &mut Cx) {
     // Clear timeline states cache
     TIMELINE_STATES.with_borrow_mut(|states| {

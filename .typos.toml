@@ -1,0 +1,14 @@
+[files]
+# Extend default configuration
+extend-exclude = [
+    "*/tests/*",
+    "*/test_*.rs",
+    "*_test.rs",
+]
+
+[default.extend-words]
+# Add any custom words that should not be flagged as typos
+# Test strings used in member_search.rs tests
+hel = "hel"
+caf = "caf"
+

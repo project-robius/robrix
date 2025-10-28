@@ -676,8 +676,27 @@ async fn async_worker(
                     log!("Sending sync room members request for room {room_id}...");
                     timeline.fetch_members().await;
                     log!("Completed sync room members request for room {room_id}.");
-                    sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
-                    SignalToUI::set_ui_signal();
+
+                    match timeline.room().members(RoomMemberships::JOIN).await {
+                        Ok(members) => {
+                            let count = members.len();
+                            log!("Fetched {count} members for room {room_id} after sync.");
+                            if let Err(err) = sender.send(TimelineUpdate::RoomMembersListFetched { members }) {
+                                warning!("Failed to send RoomMembersListFetched update for room {room_id}: {err:?}");
+                            } else {
+                                SignalToUI::set_ui_signal();
+                            }
+                        }
+                        Err(err) => {
+                            warning!("Failed to fetch room members from server for room {room_id}: {err:?}");
+                        }
+                    }
+
+                    if let Err(err) = sender.send(TimelineUpdate::RoomMembersSynced) {
+                        warning!("Failed to send RoomMembersSynced update for room {room_id}: {err:?}");
+                    } else {
+                        SignalToUI::set_ui_signal();
+                    }
                 });
             }
 
@@ -1395,7 +1414,7 @@ async fn async_worker(
                             error!("Matrix client not available for URL preview: {}", url);
                             UrlPreviewError::ClientNotAvailable
                         })?;
-                        
+
                         let token = client.access_token().ok_or_else(|| {
                             error!("Access token not available for URL preview: {}", url);
                             UrlPreviewError::AccessTokenNotAvailable
@@ -1405,7 +1424,6 @@ async fn async_worker(
                         let endpoint_url = client.homeserver().join("/_matrix/client/v1/media/preview_url")
                             .map_err(UrlPreviewError::UrlParse)?;
                         log!("Fetching URL preview from endpoint: {} for URL: {}", endpoint_url, url);
-                        
                         let response = client
                             .http_client()
                             .get(endpoint_url.clone())
@@ -1418,20 +1436,19 @@ async fn async_worker(
                                 error!("HTTP request failed for URL preview {}: {}", url, e);
                                 UrlPreviewError::Request(e)
                             })?;
-                        
                         let status = response.status();
                         log!("URL preview response status for {}: {}", url, status);
-                        
+
                         if !status.is_success() && status.as_u16() != 429 {
                             error!("URL preview request failed with status {} for URL: {}", status, url);
                             return Err(UrlPreviewError::HttpStatus(status.as_u16()));
                         }
-                        
+
                         let text = response.text().await.map_err(|e| {
                             error!("Failed to read response text for URL preview {}: {}", url, e);
                             UrlPreviewError::Request(e)
                         })?;
-                        
+
                         log!("URL preview response body length for {}: {} bytes", url, text.len());
                         if text.len() > MAX_LOG_RESPONSE_BODY_LENGTH {
                             log!("URL preview response body preview for {}: {}...", url, &text[..MAX_LOG_RESPONSE_BODY_LENGTH]);
@@ -1455,7 +1472,6 @@ async fn async_worker(
                                             destination: destination.clone(),
                                             update_sender: update_sender.clone(),
                                         });
-                                        
                                     }
                                 }
                                 Err(e) => {
@@ -1479,7 +1495,7 @@ async fn async_worker(
 
                     match &result {
                         Ok(preview_data) => {
-                            log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}", 
+                            log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}",
                                  url, preview_data.title, preview_data.site_name);
                         }
                         Err(e) => {
@@ -2225,7 +2241,7 @@ async fn update_room(
         // Then, we check for changes to room data that is only relevant to joined rooms:
         // including the latest event, tags, unread counts, is_direct, tombstoned state, power levels, etc.
         // Invited or left rooms don't care about these details.
-        if matches!(new_room.state, RoomState::Joined) { 
+        if matches!(new_room.state, RoomState::Joined) {
             // For some reason, the latest event API does not reliably catch *all* changes
             // to the latest event in a given room, such as redactions.
             // Thus, we have to re-obtain the latest event on *every* update, regardless of timestamp.
@@ -2593,7 +2609,7 @@ fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
             SYNC_INDICATOR_DELAY,
             SYNC_INDICATOR_HIDE_DELAY
         );
-    
+
     Handle::current().spawn(async move {
        let mut sync_indicator_stream = std::pin::pin!(sync_indicator_stream);
 
@@ -3420,19 +3436,19 @@ pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
     // This prevents memory leaks when users logout and login again without closing the app
     CLIENT.lock().unwrap().take();
     log!("Client cleared during logout");
-    
+
     SYNC_SERVICE.lock().unwrap().take();
     log!("Sync service cleared during logout");
-    
+
     REQUEST_SENDER.lock().unwrap().take();
     log!("Request sender cleared during logout");
-    
+
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
-    
+
     let on_clear_appstate = Arc::new(Notify::new());
     Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });
-    
+
     match tokio::time::timeout(config.app_state_cleanup_timeout, on_clear_appstate.notified()).await {
         Ok(_) => {
             log!("Received signal that app state was cleaned successfully");
