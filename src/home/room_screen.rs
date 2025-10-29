@@ -19,14 +19,14 @@ use matrix_sdk::{
             sticker::{StickerEventContent, StickerMediaSource},
         },
         matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
-    }, OwnedServerName, SuccessorRoom
+    }, OwnedServerName
 };
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -491,7 +491,7 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-            
+
             restore_status_view = <RestoreStatusView> {}
 
             // Widgets within this view will get shifted upwards when the on-screen keyboard is shown.
@@ -694,15 +694,15 @@ impl Widget for RoomScreen {
                 if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
                     // Only show the user profile in room that this avatar belongs to
                     if self.room_id.as_ref().is_some_and(|r| r == &profile_and_room_id.room_id) {
-                            self.show_user_profile(
-                                cx,
-                                &user_profile_sliding_pane,
-                                UserProfilePaneInfo {
-                                    profile_and_room_id,
-                                    room_name: self.current_room_label(),
-                                    room_member: None,
-                                },
-                            );
+                        self.show_user_profile(
+                            cx,
+                            &user_profile_sliding_pane,
+                            UserProfilePaneInfo {
+                                profile_and_room_id,
+                                room_name: self.current_room_label(),
+                                room_member: None,
+                            },
+                        );
                     }
                 }
             }
@@ -1077,7 +1077,7 @@ impl Widget for RoomScreen {
             // If the list is not filling the viewport, we need to back paginate the timeline
             // until we have enough events items to fill the viewport.
             if !tl_state.fully_paginated && !list.is_filling_viewport() {
-                let room_label = room_name_or_id(&self.room_name, &room_id);
+                let room_label = room_name_or_id(&self.room_name, room_id);
                 log!("Automatically paginating timeline to fill viewport for room \"{}\" ({})", room_label, room_id);
                 submit_async_request(MatrixRequest::PaginateRoomTimeline {
                     room_id: room_id.clone(),
@@ -1403,10 +1403,10 @@ impl RoomScreen {
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
-                TimelineUpdate::Tombstoned(successor_room) => {
+                TimelineUpdate::Tombstoned(successor_room_details) => {
                     self.view.room_input_bar(id!(room_input_bar))
-                        .update_tombstone_footer(cx, &tl.room_id, successor_room.as_ref());
-                    tl.tombstone_info = successor_room;
+                        .update_tombstone_footer(cx, &tl.room_id, Some(&successor_room_details));
+                    tl.tombstone_info = Some(successor_room_details);
                 }
             }
         }
@@ -1925,7 +1925,7 @@ impl RoomScreen {
             // and search our locally-known timeline history for the replied-to message.
         }
         self.redraw(cx);
-       
+
     }
 
     /// Shows the user profile sliding pane with the given avatar info.
@@ -1964,6 +1964,17 @@ impl RoomScreen {
                 successor_room,
             } = timeline_endpoints;
 
+            // Start with the basic tombstone info, and fetch the full details
+            // if the room has been tombstoned.
+            let tombstone_info = if let Some(sr) = successor_room {
+                submit_async_request(MatrixRequest::GetSuccessorRoomDetails {
+                    tombstoned_room_id: room_id.clone(),
+                });
+                Some(SuccessorRoomDetails::Basic(sr))
+            } else {
+                None
+            };
+
             let tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // Initially, we assume the user has all power levels by default.
@@ -1988,7 +1999,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
-                tombstone_info: successor_room,
+                tombstone_info,
             };
             (tl_state, true)
         };
@@ -2045,7 +2056,7 @@ impl RoomScreen {
         //    show/hide UI elements based on the user's permissions.
         // 2. Get the list of members in this room (from the SDK's local cache).
         // 3. Subscribe to our own user's read receipts so that we can update the
-        //    read marker and properly send read receipts while scrolling through the timeline. 
+        //    read marker and properly send read receipts while scrolling through the timeline.
         // 4. Subscribe to typing notices again, now that the room is being shown.
         if self.is_loaded {
             submit_async_request(MatrixRequest::GetRoomPowerLevels {
@@ -2057,7 +2068,7 @@ impl RoomScreen {
                 // Fetch from the local cache, as we already requested to sync
                 // the room members from the homeserver above.
                 local_only: true,
-            }); 
+            });
             submit_async_request(MatrixRequest::SubscribeToTypingNotices {
                 room_id: room_id.clone(),
                 subscribe: true,
@@ -2159,6 +2170,7 @@ impl RoomScreen {
             cx,
             &tl_state.room_id,
             saved_room_input_bar_state,
+            tl_state.user_power,
             tl_state.tombstone_info.as_ref(),
         );
     }
@@ -2180,7 +2192,7 @@ impl RoomScreen {
         self.room_id = Some(room_id.clone());
 
         // We initially tell every MentionableTextInput widget that the current user
-        // *does not* has privileges to notify the entire room;
+        // *does not* have privileges to notify the entire room;
         // this gets properly updated when room PowerLevels get fetched.
         cx.action(MentionableTextInputAction::PowerLevelsUpdated {
             room_id: room_id.clone(),
@@ -2430,10 +2442,9 @@ pub enum TimelineUpdate {
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
     OwnUserReadReceipt(Receipt),
-    /// A notice that the given room has been tombstoned,
-    /// includes a `SuccessorRoom` that contains the successor room.
-    /// If the room is not tombstoned, then the `SuccessorRoom` is `None`.
-    Tombstoned(Option<SuccessorRoom>),
+    /// A notice that the given room has been tombstoned (closed)
+    /// and replaced by the given successor room.
+    Tombstoned(SuccessorRoomDetails),
 }
 
 thread_local! {
@@ -2546,9 +2557,9 @@ struct TimelineUiState {
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
 
-    /// If this room has been tombstoned, this has details of its successor room.
-    /// If the room is not tombstoned, this is `None`.
-    tombstone_info: Option<SuccessorRoom>,
+    /// If `Some`, this room has been tombstoned and the details of its successor room
+    /// are contained within. If `None`, the room has not been tombstoned.
+    tombstone_info: Option<SuccessorRoomDetails>,
 }
 
 #[derive(Default, Debug)]
@@ -3232,7 +3243,7 @@ fn populate_text_message_content(
     };
 
     // Populate link previews if all required parameters are provided
-    if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) = 
+    if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) =
         (link_preview_ref, media_cache, link_preview_cache)
     {
         link_preview_ref.populate_below_message(
@@ -3332,7 +3343,7 @@ fn populate_image_message_content(
                             Err(e) => {
                                 error!("Failed to decode blurhash {e:?}");
                                 Err(image_cache::ImageError::EmptyData)
-                            }   
+                            }
                         }
                     });
                     if let Err(e) = show_image_result {
@@ -4168,7 +4179,7 @@ impl MessageRef {
 ///
 /// This function requires passing in a reference to `Cx`,
 /// which isn't used, but acts as a guarantee that this function
-/// must only be called by the main UI thread. 
+/// must only be called by the main UI thread.
 pub fn clear_timeline_states(_cx: &mut Cx) {
     // Clear timeline states cache
     TIMELINE_STATES.with_borrow_mut(|states| {

@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::{RoomDisplayName, ruma::OwnedRoomId};
 
-use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, RoomPreviewAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
+use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -457,7 +457,7 @@ impl Widget for InviteScreen {
         let room_view = self.view.view(id!(room_view));
         let room_avatar = room_view.avatar(id!(room_avatar));
         match &info.room_avatar {
-            RoomPreviewAvatar::Text(text) => {
+            FetchedRoomAvatar::Text(text) => {
                 room_avatar.show_text(
                     cx,
                     None,
@@ -465,7 +465,7 @@ impl Widget for InviteScreen {
                     text,
                 );
             }
-            RoomPreviewAvatar::Image(avatar_bytes) => {
+            FetchedRoomAvatar::Image(avatar_bytes) => {
                 let _ = room_avatar.show_image(
                     cx,
                     None, // don't make this avatar clickable.
