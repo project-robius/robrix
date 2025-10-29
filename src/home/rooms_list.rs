@@ -6,7 +6,7 @@ use crate::{
     app::{AppState, SelectedRoom},
     room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, RoomPreviewAvatar},
     shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, room_filter_input_bar::RoomFilterAction},
-    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}, utils::display_name_with_fallback,
+    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}, utils::{room_name_or_id, RoomDisplayNameRon},
 };
 use super::room_preview::RoomPreviewAction;
 
@@ -186,7 +186,7 @@ pub enum RoomsListAction {
     /// to a `RoomScreen` to display now-joined room.
     InviteAccepted {
         room_id: OwnedRoomId,
-        room_name: Option<String>,
+        room_name: RoomDisplayName,
     },
     None,
 }
@@ -424,12 +424,10 @@ impl RoomsList {
                         self.displayed_invited_rooms.iter()
                             .position(|r| r == &room_id)
                             .map(|index| self.displayed_invited_rooms.remove(index));
-                        let new_room_name = self.all_joined_rooms.get(&room_id).map(|room| display_name_with_fallback(
-                            &room.room_name,
-                            room.canonical_alias.as_ref(),
-                            &room.alt_aliases,
-                            &room.room_id,
-                        ));
+                        let new_room_name = self.all_joined_rooms
+                            .get(&room_id)
+                            .map(|room| room.room_name.clone())
+                            .unwrap_or(RoomDisplayName::Empty);
                         cx.widget_action(
                             self.widget_uid(),
                             &scope.path,
@@ -530,12 +528,7 @@ impl RoomsList {
                         if room.is_direct == is_direct {
                             continue;
                         }
-                        let room_name_text = display_name_with_fallback(
-                            &room.room_name,
-                            room.canonical_alias.as_ref(),
-                            &room.alt_aliases,
-                            &room.room_id,
-                        );
+                        let room_name_text = room_name_or_id(&room.room_name, &room.room_id);
                         enqueue_popup_notification(PopupItem {
                             message: format!("{} was changed from {} to {}.",
                                 room_name_text,
@@ -869,17 +862,12 @@ impl RoomsList {
     }
 
     /// Returns a room's avatar and displayable name.
-    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
+    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, RoomDisplayName)> {
         self.all_joined_rooms.get(room_id)
             .map(|room_info| {
                 (
                     room_info.avatar.clone(),
-                    Some(display_name_with_fallback(
-                        &room_info.room_name,
-                        room_info.canonical_alias.as_ref(),
-                        &room_info.alt_aliases,
-                        &room_info.room_id,
-                    )),
+                    room_info.room_name.clone(),
                 )
             })
             .or_else(|| {
@@ -887,12 +875,7 @@ impl RoomsList {
                     .map(|room_info| {
                         (
                             room_info.room_avatar.clone(),
-                            Some(display_name_with_fallback(
-                                &room_info.room_name,
-                                room_info.canonical_alias.as_ref(),
-                                &room_info.alt_aliases,
-                                &room_info.room_id,
-                            )),
+                            room_info.room_name.clone(),
                         )
                     })
             })
@@ -919,22 +902,12 @@ impl Widget for RoomsList {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
                     SelectedRoom::JoinedRoom {
                         room_id: jr.room_id.clone().into(),
-                        room_name: Some(display_name_with_fallback(
-                            &jr.room_name,
-                            jr.canonical_alias.as_ref(),
-                            &jr.alt_aliases,
-                            &jr.room_id,
-                        )),
+                        room_name: RoomDisplayNameRon::from(jr.room_name.clone()),
                     }
                 } else if let Some(ir) = self.invited_rooms.borrow().get(&clicked_room_id) {
                     SelectedRoom::InvitedRoom {
                         room_id: ir.room_id.to_owned().into(),
-                        room_name: Some(display_name_with_fallback(
-                            &ir.room_name,
-                            ir.canonical_alias.as_ref(),
-                            &ir.alt_aliases,
-                            &ir.room_id,
-                        )),
+                        room_name: RoomDisplayNameRon::from(ir.room_name.clone()),
                     }
                 } else {
                     error!("BUG: couldn't find clicked room details for room {clicked_room_id}");
@@ -1158,7 +1131,7 @@ impl RoomsListRef {
     }
 
     /// See [`RoomsList::get_room_avatar_and_name()`].
-    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
+    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, RoomDisplayName)> {
         let inner = self.borrow()?;
         inner.get_room_avatar_and_name(room_id)
     }

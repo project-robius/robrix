@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use makepad_widgets::Cx;
-use matrix_sdk::ruma::OwnedRoomId;
+use matrix_sdk::{RoomDisplayName, ruma::OwnedRoomId};
 
 pub mod reply_preview;
 pub mod room_input_bar;
@@ -17,7 +17,7 @@ pub fn live_design(cx: &mut Cx) {
 #[derive(Clone, Debug)]
 pub struct BasicRoomDetails {
     pub room_id: OwnedRoomId,
-    pub room_name: Option<String>,
+    pub room_name: RoomDisplayName,
     pub room_avatar: RoomPreviewAvatar,
 }
 

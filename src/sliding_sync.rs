@@ -48,7 +48,7 @@ use crate::{
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{enqueue_popup_notification, PopupItem, PopupKind}
     },
-    utils::{self, avatar_from_room_name, preferred_room_name, AVATAR_THUMBNAIL_FORMAT},
+    utils::{self, avatar_from_room_name, AVATAR_THUMBNAIL_FORMAT},
     verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -2338,8 +2338,14 @@ async fn add_new_room(
                 .display_name
                 .clone()
                 .unwrap_or(RoomDisplayName::Empty);
-            let room_name_text = preferred_room_name(&room_display_name);
-            let room_avatar = room_avatar(&new_room.room, room_name_text.as_deref()).await;
+            let room_name_for_avatar = match &room_display_name {
+                RoomDisplayName::Empty => None,
+                RoomDisplayName::EmptyWas(name)
+                | RoomDisplayName::Named(name)
+                | RoomDisplayName::Aliased(name)
+                | RoomDisplayName::Calculated(name) => Some(name.as_str()),
+            };
+            let room_avatar = room_avatar(&new_room.room, room_name_for_avatar).await;
 
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
                 Some(InviterInfo {
@@ -2420,7 +2426,13 @@ async fn add_new_room(
         .display_name
         .clone()
         .unwrap_or(RoomDisplayName::Empty);
-    let room_name = preferred_room_name(&room_display_name);
+    let room_name_for_avatar = match &room_display_name {
+        RoomDisplayName::Empty => None,
+        RoomDisplayName::EmptyWas(name)
+        | RoomDisplayName::Named(name)
+        | RoomDisplayName::Aliased(name)
+        | RoomDisplayName::Calculated(name) => Some(name.as_str()),
+    };
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
         room_id: new_room.room_id.clone(),
         latest,
@@ -2428,7 +2440,7 @@ async fn add_new_room(
         num_unread_messages: new_room.num_unread_messages,
         num_unread_mentions: new_room.num_unread_mentions,
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
-        avatar: avatar_from_room_name(room_name.as_deref()),
+        avatar: avatar_from_room_name(room_name_for_avatar),
         room_name: room_display_name,
         canonical_alias: new_room.room.canonical_alias(),
         alt_aliases: new_room.room.alt_aliases(),

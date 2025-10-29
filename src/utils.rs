@@ -9,7 +9,7 @@ use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, Cx, Event, ImageRef};
 use matrix_sdk::{
     media::{MediaFormat, MediaThumbnailSettings},
-    ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, RoomId},
+    ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId},
     RoomDisplayName,
 };
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
@@ -148,37 +148,6 @@ pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Optio
 
 /// Converts a `RoomDisplayName` to the text we prefer to show in the Rooms list.
 ///
-/// Returns `None` when the display name is explicitly empty so that callers can
-/// fall back to aliases or the room ID.
-pub fn preferred_room_name(display_name: &RoomDisplayName) -> Option<String> {
-    match display_name {
-        RoomDisplayName::Empty => None,
-        _ => Some(display_name.to_string()),
-    }
-}
-
-/// Returns the room name that should be shown to the user, falling back to aliases or the room ID.
-pub fn display_name_with_fallback(
-    display_name: &RoomDisplayName,
-    canonical_alias: Option<&OwnedRoomAliasId>,
-    alt_aliases: &[OwnedRoomAliasId],
-    room_id: &OwnedRoomId,
-) -> String {
-    if let Some(name) = preferred_room_name(display_name) {
-        return name;
-    }
-
-    if let Some(alias) = canonical_alias {
-        return alias.as_str().to_owned();
-    }
-
-    if let Some(alias) = alt_aliases.first() {
-        return alias.as_str().to_owned();
-    }
-
-    format!("Room ID {}", room_id.as_str())
-}
-
 /// Returns a string error message, handling special cases related to joining/leaving rooms.
 pub fn stringify_join_leave_error(
     error: &matrix_sdk::Error,
@@ -277,13 +246,13 @@ pub fn stringify_pagination_error(
 
 /// Returns a string representation of the room name or ID.
 pub fn room_name_or_id(
-    room_name: Option<impl Into<String>>,
+    room_name: &RoomDisplayName,
     room_id: impl AsRef<RoomId>,
 ) -> String {
-    room_name.map_or_else(
-        || format!("Room ID {}", room_id.as_ref()),
-        |name| name.into(),
-    )
+    match room_name {
+        RoomDisplayName::Empty => format!("Empty (ID {})", room_id.as_ref()),
+        other => other.to_string(),
+    }
 }
 
 /// Formats a given Unix timestamp in milliseconds into a relative human-readable date.
@@ -760,6 +729,48 @@ impl Deref for OwnedRoomIdRon {
 impl Display for OwnedRoomIdRon {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoomDisplayNameRon(pub RoomDisplayName);
+impl SerRon for RoomDisplayNameRon {
+    fn ser_ron(&self, d: usize, s: &mut SerRonState) {
+        let serialized = serde_json::to_string(&self.0)
+            .unwrap_or_else(|e| {
+                error!("Failed to serialize RoomDisplayName to ron: {e}");
+                // Fallback to empty variant to keep serialization going.
+                serde_json::to_string(&RoomDisplayName::Empty).expect("serialization of Empty must succeed")
+            });
+        serialized.ser_ron(d, s);
+    }
+}
+impl DeRon for RoomDisplayNameRon {
+    fn de_ron(s: &mut DeRonState, i: &mut Chars) -> Result<Self, DeRonErr> {
+        let serialized = String::de_ron(s, i)?;
+        serde_json::from_str::<RoomDisplayName>(&serialized)
+            .map(RoomDisplayNameRon)
+            .map_err(|e| DeRonErr {
+                msg: e.to_string(),
+                line: s.line,
+                col: s.col,
+            })
+    }
+}
+impl From<RoomDisplayName> for RoomDisplayNameRon {
+    fn from(value: RoomDisplayName) -> Self {
+        RoomDisplayNameRon(value)
+    }
+}
+impl From<RoomDisplayNameRon> for RoomDisplayName {
+    fn from(value: RoomDisplayNameRon) -> Self {
+        value.0
+    }
+}
+impl std::ops::Deref for RoomDisplayNameRon {
+    type Target = RoomDisplayName;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

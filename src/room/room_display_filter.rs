@@ -7,7 +7,7 @@ use matrix_sdk::ruma::{
     OwnedRoomAliasId, RoomAliasId, RoomId,
 };
 
-use crate::{home::rooms_list::{InvitedRoomInfo, JoinedRoomInfo}, utils::display_name_with_fallback};
+use crate::{home::rooms_list::{InvitedRoomInfo, JoinedRoomInfo}, utils::room_name_or_id};
 
 static EMPTY_TAGS: Tags = BTreeMap::new();
 
@@ -29,12 +29,7 @@ impl FilterableRoom for JoinedRoomInfo {
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        Cow::Owned(display_name_with_fallback(
-            &self.room_name,
-            self.canonical_alias.as_ref(),
-            &self.alt_aliases,
-            &self.room_id,
-        ))
+        Cow::Owned(room_name_or_id(&self.room_name, &self.room_id))
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -68,12 +63,7 @@ impl FilterableRoom for InvitedRoomInfo {
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        Cow::Owned(display_name_with_fallback(
-            &self.room_name,
-            self.canonical_alias.as_ref(),
-            &self.alt_aliases,
-            &self.room_id,
-        ))
+        Cow::Owned(room_name_or_id(&self.room_name, &self.room_id))
     }
 
     fn unread_mentions(&self) -> u64 {

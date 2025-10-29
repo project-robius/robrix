@@ -7,6 +7,7 @@
 use makepad_widgets::*;
 use matrix_sdk::{
     ruma::OwnedRoomId,
+    RoomDisplayName,
     SuccessorRoom
 };
 
@@ -15,7 +16,7 @@ use crate::{
     home::rooms_list::RoomsListRef,
     room::{BasicRoomDetails, RoomPreviewAvatar}, 
     shared::avatar::AvatarWidgetExt, 
-    utils
+    utils::{self, room_name_or_id}
 };
 
 const DEFAULT_TOMBSTONE_REASON: &str = "This room has been replaced and is no longer active";
@@ -127,10 +128,12 @@ impl TombstoneFooter {
             successor_room.reason.as_deref().unwrap_or(DEFAULT_TOMBSTONE_REASON),
         );
         let rooms_list_ref = cx.get_global::<RoomsListRef>();
-        let (successor_avatar_preview, room_name, is_joined) = rooms_list_ref
+        let (successor_avatar_preview, successor_room_name, is_joined) = match rooms_list_ref
             .get_room_avatar_and_name(&successor_room.room_id)
-            .map(|(avatar, name)| (avatar, name, true))
-            .unwrap_or_default();
+        {
+            Some((avatar, name)) => (avatar, name, true),
+            None => (RoomPreviewAvatar::default(), RoomDisplayName::Empty, false),
+        };
 
         match &successor_avatar_preview {
             RoomPreviewAvatar::Text(text) => {
@@ -146,19 +149,16 @@ impl TombstoneFooter {
                 );
             }
         }
+        let display_name = room_name_or_id(&successor_room_name, &successor_room.room_id);
         let successor_info = Some(BasicRoomDetails {
             room_id: successor_room.room_id.clone(),
-            room_name,
+            room_name: successor_room_name.clone(),
             room_avatar: successor_avatar_preview,
         });
 
-        self.view.label(id!(successor_room_name)).set_text(
-            cx,
-            successor_info
-                .as_ref()
-                .and_then(|f| f.room_name.as_ref())
-                .map_or("(Unknown room name)", |v| v),
-        );
+        self.view
+            .label(id!(successor_room_name))
+            .set_text(cx, &display_name);
 
         let join_successor_button = self.view.button(id!(join_successor_button));
         join_successor_button.reset_hover(cx);

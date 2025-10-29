@@ -5,7 +5,7 @@ use crate::{
     room::RoomPreviewAvatar, shared::{
         avatar::AvatarWidgetExt,
         html_or_plaintext::HtmlOrPlaintextWidgetExt, unread_badge::UnreadBadgeWidgetExt as _,
-    }, utils::{self, display_name_with_fallback, relative_format}
+    }, utils::{self, relative_format, room_name_or_id}
 };
 
 use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListScopeProps};
@@ -296,12 +296,7 @@ impl RoomPreviewContent {
         cx: &mut Cx,
         room_info: &JoinedRoomInfo,
     ) {
-        let display_name = display_name_with_fallback(
-            &room_info.room_name,
-            room_info.canonical_alias.as_ref(),
-            &room_info.alt_aliases,
-            &room_info.room_id,
-        );
+        let display_name = room_name_or_id(&room_info.room_name, &room_info.room_id);
         self.view.label(id!(room_name)).set_text(cx, &display_name);
         if let Some((ts, msg)) = room_info.latest.as_ref() {
             if let Some(human_readable_date) = relative_format(*ts) {
@@ -328,12 +323,7 @@ impl RoomPreviewContent {
         cx: &mut Cx,
         room_info: &InvitedRoomInfo,
     ) {
-        let display_name = display_name_with_fallback(
-            &room_info.room_name,
-            room_info.canonical_alias.as_ref(),
-            &room_info.alt_aliases,
-            &room_info.room_id,
-        );
+        let display_name = room_name_or_id(&room_info.room_name, &room_info.room_id);
         self.view.label(id!(room_name)).set_text(cx, &display_name);
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(id!(timestamp)).set_text(cx, "");

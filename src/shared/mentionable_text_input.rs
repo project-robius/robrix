@@ -489,6 +489,7 @@ impl MentionableTextInput {
         // Get room avatar fallback text from room display name
         let room_name_first_char = room_props.room_display_name
             .as_ref()
+            .map(|name| name.to_string())
             .and_then(|name| name.graphemes(true).next().map(|s| s.to_uppercase()))
             .filter(|s| s != "@" && s.chars().all(|c| c.is_alphabetic()))
             .unwrap_or_else(|| "R".to_string());
