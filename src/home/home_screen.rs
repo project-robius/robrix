@@ -10,6 +10,7 @@ live_design! {
     use crate::home::main_mobile_ui::MainMobileUI;
     use crate::home::rooms_sidebar::RoomsSideBar;
     use crate::home::spaces_dock::SpacesDock;
+    use crate::home::add_room::*;
     use crate::shared::styles::*;
     use crate::shared::room_filter_input_bar::RoomFilterInputBar;
     use crate::home::main_desktop_ui::MainDesktopUI;
@@ -52,9 +53,26 @@ live_design! {
                         width: Fill, height: Fill
                         flow: Down
 
-                        <CachedWidget> {
-                            room_filter_input_bar = <RoomFilterInputBar> {}
+                        <View> {
+                            width: Fill,
+                            height: 39,
+                            flow: Right
+                            padding: {top: 2, bottom: 2}
+                            margin: {right: 2}
+                            spacing: 2
+                            align: {y: 0.5}
+
+                            <CachedWidget> {
+                                room_filter_input_bar = <RoomFilterInputBar> {}
+                            }
+
+                            add_room_button = <AddRoomButton> {
+                                // make this button match/align with the RoomFilterInputBar
+                                height: 32.5,
+                                margin: {right: 2}
+                            }
                         }
+
                         <MainDesktopUI> {}
                     }
 

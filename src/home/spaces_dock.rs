@@ -69,7 +69,7 @@ live_design! {
             draw_icon: {
                 svg_file: (ICON_HOME),
                 fn get_color(self) -> vec4 {
-                    return #1C274C;
+                    return (COLOR_TEXT);
                 }
             }
             icon_walk: {width: 25, height: Fit}

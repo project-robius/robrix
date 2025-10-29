@@ -19,7 +19,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::room_filter_input_bar::RoomFilterInputBar;
-
+    use crate::home::add_room::*;
     use crate::home::rooms_list::RoomsList;
     use crate::home::rooms_list_header::RoomsListHeader;
 
@@ -61,13 +61,22 @@ live_design! {
             <CachedWidget> {
                 rooms_list_header = <RoomsListHeader> {}
             }
-            <CachedWidget> {
-                room_filter_input_bar = <RoomFilterInputBar> {
-                    draw_bg: {
-                        border_size: 1.0,
-                    }
+
+            <View> {
+                width: Fill,
+                height: 39,
+                flow: Right
+                padding: {top: 2, bottom: 2}
+                spacing: 5 
+                align: {y: 0.5}
+
+                <CachedWidget> {
+                    room_filter_input_bar = <RoomFilterInputBar> {}
                 }
+
+                add_room_button = <AddRoomButton> { }
             }
+
             <CachedWidget> {
                 rooms_list = <RoomsList> {}
             }

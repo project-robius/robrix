@@ -26,10 +26,11 @@ live_design! {
             color: (COLOR_PRIMARY),
             border_radius: 4.0,
             border_color: (COLOR_SECONDARY),
-            border_size: 0.0,
+            border_size: 1.0,
         }
+
         padding: {top: 3, bottom: 3, left: 10, right: 10}
-        margin: {top: 0, bottom: 3, left: 0, right: 0}
+        margin: {top: 0, bottom: 0, left: 0, right: 0}
         spacing: 4,
         align: {x: 0.0, y: 0.5},
 
