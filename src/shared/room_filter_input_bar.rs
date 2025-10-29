@@ -29,8 +29,8 @@ live_design! {
             border_size: 1.0,
         }
 
-        padding: {top: 3, bottom: 3, left: 10, right: 10}
-        margin: {top: 0, bottom: 0, left: 0, right: 0}
+        padding: {top: 3, bottom: 3, left: 10, right: 4.5}
+        margin: 0
         spacing: 4,
         align: {x: 0.0, y: 0.5},
 
@@ -58,7 +58,7 @@ live_design! {
 
         clear_button = <RobrixIconButton> {
             visible: false,
-            padding: {top: 6, bottom: 6, left: 9, right: 9},
+            padding: {top: 5, bottom: 5, left: 9, right: 9},
             spacing: 0,
             align: {x: 0.5, y: 0.5}
             draw_bg: {
@@ -66,7 +66,7 @@ live_design! {
             }
             draw_icon: {
                 svg_file: (ICON_CLOSE),
-                color: (COLOR_TEXT_INPUT_IDLE)
+                color: (COLOR_TEXT)
             }
             icon_walk: {width: Fit, height: 10, margin: 0}
         }

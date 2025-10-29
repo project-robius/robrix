@@ -7,10 +7,8 @@ live_design! {
 
     use crate::shared::styles::*;
 
-    // COLOR_TAB_BAR = #E1F0FF
     COLOR_TAB_BAR = (COLOR_PRIMARY * 0.96)
-    COLOR_DOCK_TAB = (#DDe3e9) // slightly darker
-    COLOR_DOCK_TAB = (#e1eefa) // slightly darker
+    COLOR_DOCK_TAB = #E1EEFA // a light blue-ish color, de-saturated from `COLOR_ACTIVE_PRIMARY`
     COLOR_DRAG_TARGET = (COLOR_ACTIVE_PRIMARY)
 
     pub Splitter = <SplitterBase> {
@@ -154,7 +152,6 @@ live_design! {
 
         align: {x: 0.0, y: 0.5}
         padding: <THEME_MSPACE_3> { }
-        // margin: {right: 1.5}
 
         close_button: <TabCloseButton> {}
         draw_text: {

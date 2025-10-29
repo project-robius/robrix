@@ -101,7 +101,7 @@ live_design! {
 
     pub COLOR_PRIMARY = #ffffff
     pub COLOR_PRIMARY_DARKER = #fefefe
-    pub COLOR_SECONDARY = (#E5E5E5 * 0.99)
+    pub COLOR_SECONDARY = #E3E3E3
 
     pub COLOR_ACTIVE_PRIMARY = #0f88fe
     pub COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
