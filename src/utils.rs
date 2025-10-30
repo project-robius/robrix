@@ -191,7 +191,6 @@ pub fn load_png_or_jpg_rotated_image(img: &RotatedImageRef, cx: &mut Cx, data: &
 pub fn create_texture_from_jpg_data(cx: &mut Cx, data: &[u8]) -> Result<Texture, ImageError> {
     match ImageBuffer::from_jpg(data) {
         Ok(image_buffer) => {
-            println!("image_buffer height {:?}, width {:?}", image_buffer.height,image_buffer.width);
             Ok(image_buffer.into_new_texture(cx))
         }
         Err(err) => {

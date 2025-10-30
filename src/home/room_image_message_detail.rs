@@ -201,7 +201,6 @@ impl MatchEvent for RoomImageMessageDetail {
             self.avatar_drawn = false;
             // Format and display image name and size
             let is_desktop = cx.display_context.is_desktop();
-            println!("is_desktop: {}", is_desktop);
             let truncated_name = truncate_image_name(&image_name, is_desktop);
             let human_readable_size = format_file_size(image_size);
             let display_text = format!("{} ({})", truncated_name, human_readable_size);

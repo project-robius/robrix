@@ -4267,6 +4267,9 @@ pub fn populate_matrix_image_modal(
             // Delete failed media entry from cache for MediaFormat::File so as to start all over again from loading Thumbnail. 
             media_cache.delete_cache_entry(&mxc_uri, Some(MediaFormat::File));
         }
+        (MediaCacheEntry::Requested, _) => {
+            enqueue_popup_notification(PopupItem { message: String::from("Media requested"), auto_dismissal_duration: Some(10.0), kind: PopupKind::Warning });
+        }
         _ => { }
     }
 }

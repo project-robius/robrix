@@ -4,25 +4,37 @@
 //! ImageViewerRef has 2 public methods, `display_image` and `reset`.
 use std::sync::Arc;
 
-use makepad_widgets::{image_cache::ImageError, rotated_image::RotatedImageWidgetExt, *};
+use makepad_widgets::{image_cache::{ImageBuffer, ImageError}, rotated_image::RotatedImageWidgetExt, *};
 
-use crate::utils::{load_png_or_jpg, load_png_or_jpg_rotated_image};
+use crate::utils::load_png_or_jpg_rotated_image;
 
-/// Zoom constraints for the image viewer
-const MIN_ZOOM: f32 = 0.5;
-const MAX_ZOOM: f32 = 2.0;
-
-/// Zoom scale factor for zoom in/out operations
-const ZOOM_SCALE_FACTOR: f32 = 1.2;
-
-/// Pan sensitivity multiplier for drag operations
-/// This value amplifies mouse movement to provide responsive panning.
-/// A value of 2.0 makes the image move twice as fast as the mouse cursor,
-/// which feels natural for image panning interactions.
-const PAN_SENSITIVITY: f64 = 2.0;
-
-/// Duration for rotation animations in seconds
+/// Duration for rotation animations in seconds.
+/// This value should be consistent with the duration value in set in the animator.
 const ROTATION_ANIMATION_DURATION: f64 = 1.0;
+
+/// Configuration for zoom and pan settings in the image viewer
+#[derive(Clone, Debug)]
+pub struct Config {
+    /// Minimum zoom level (default: 0.5)
+    pub min_zoom: f32,
+    /// Maximum zoom level (default: 4.0)
+    pub max_zoom: f32,
+    /// Zoom scale factor for zoom in/out operations (default: 1.2)
+    pub zoom_scale_factor: f32,
+    /// Pan sensitivity multiplier for drag operations (default: 2.0)
+    pub pan_sensitivity: f64,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            min_zoom: 0.5,
+            max_zoom: 4.0,
+            zoom_scale_factor: 1.2,
+            pan_sensitivity: 2.0,
+        }
+    }
+}
 
 /// Error types for image loading operations
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -179,21 +191,6 @@ live_design! {
                 icon_walk: { width: 14, height: 14 }
             }
         }
-        image_container = <View> {
-            width: Fill, height: Fill,
-            flow: Overlay,
-            visible: false
-            show_bg: true
-            draw_bg: {
-                color: (COLOR_PRIMARY)
-            }
-            // Overlay is required to center align the image.
-            align: {x: 0.5, y: 0.5}
-            zoomable_image = <Image> {
-                width: Fill, height: Fill
-                fit: Smallest,
-            }
-        }
         rotated_image_container = <View> {
             width: Fill, height: Fill,
             flow: Overlay
@@ -299,7 +296,7 @@ pub enum ImageViewerAction {
     Hide,
 }
 
-#[derive(Live, Widget, LiveHook)]
+#[derive(Live, Widget)]
 struct ImageViewer {
     #[deref]
     view: View,
@@ -317,6 +314,26 @@ struct ImageViewer {
     /// to start the animation
     #[rust]
     timer: Timer,
+    /// Zoom constraints for the image viewer
+    #[rust]
+    min_zoom: f32,
+    #[rust]
+    max_zoom: f32,
+    /// Zoom scale factor for zoom in/out operations
+    #[rust]
+    zoom_scale_factor: f32,
+    /// Pan sensitivity multiplier for drag operations
+    #[rust]
+    pan_sensitivity: f64,
+}
+
+impl LiveHook for ImageViewer {
+    fn after_new_from_doc(&mut self, _cx: &mut Cx) {
+        self.min_zoom = 0.5;
+        self.max_zoom = 4.0;
+        self.zoom_scale_factor = 1.2;
+        self.pan_sensitivity = 2.0;
+    }
 }
 
 impl Widget for ImageViewer {
@@ -354,7 +371,7 @@ impl Widget for ImageViewer {
                 Hit::FingerMove(fe) => {
                     if let Some(current_offset) = self.drag_state.pan_offset {
                         let drag_delta = fe.abs - self.drag_state.drag_start;
-                        let new_offset = current_offset + drag_delta * PAN_SENSITIVITY;
+                        let new_offset = current_offset + drag_delta * self.pan_sensitivity;
                         
                         let rotated_image_container = self.view.rotated_image(id!(rotated_image));
                         rotated_image_container.apply_over(
@@ -379,11 +396,11 @@ impl Widget for ImageViewer {
                 match &e.key_code {
                     KeyCode::Minus | KeyCode::NumpadSubtract => {
                         // Zoom out (make image smaller)
-                        self.adjust_zoom(cx, 1.0 / ZOOM_SCALE_FACTOR);
+                        self.adjust_zoom(cx, 1.0 / self.zoom_scale_factor);
                     }
                     KeyCode::Equals | KeyCode::NumpadAdd => {
                         // Zoom in (make image larger)
-                        self.adjust_zoom(cx, ZOOM_SCALE_FACTOR);
+                        self.adjust_zoom(cx, self.zoom_scale_factor);
                     }
                     KeyCode::Key0 | KeyCode::Numpad0 => {
                         self.reset_drag_state(cx);
@@ -413,11 +430,11 @@ impl MatchEvent for ImageViewer {
             cx.action(ImageViewerAction::Hide);
         }
         if self.view.button(id!(zoom_button_minus.magnifying_glass_button)).clicked(actions) {
-            self.adjust_zoom(cx, 1.0 / ZOOM_SCALE_FACTOR);
+            self.adjust_zoom(cx, 1.0 / self.zoom_scale_factor);
         }
 
         if self.view.button(id!(zoom_button_plus.magnifying_glass_button)).clicked(actions) {
-            self.adjust_zoom(cx, ZOOM_SCALE_FACTOR);
+            self.adjust_zoom(cx, self.zoom_scale_factor);
         }
 
         if self.view.button(id!(rotation_button_clockwise)).clicked(actions) {
@@ -462,9 +479,11 @@ impl ImageViewer {
         self.rotation_step = 0; // Reset to upright (0°)
         self.is_animating_rotation = false; // Reset animation state
         self.reset_drag_state(cx);
-        self.view.image(id!(zoomable_image)).set_visible(cx, false);
-        // Clear the image buffer. 
-        let _ = self.view.image(id!(zoomable_image)).load_jpg_from_data(cx, &[]);
+        // Clear the rotated image texture to prevent showing previous image on error
+        if let Ok(image_buffer) = ImageBuffer::from_jpg(&[]) {
+            let texture = image_buffer.into_new_texture(cx);
+           let _ = self.view.rotated_image(id!(rotated_image)).set_texture(cx, Some(texture));
+        }
         self.animator_cut(cx, id!(mode.upright));
         self.view.rotated_image(id!(rotated_image)).apply_over(cx, live!{
             draw_bg: { scale: 1.0 }
@@ -506,32 +525,31 @@ impl ImageViewer {
         self.update_rotated_image_shader(cx);
     }
 
-    /// Displays the given image bytes in the zoomable image widget.
-    ///
-    /// This will load the image bytes into the zoomable image widget and display it.
-    /// If the image fails to load, an `ImageError` is returned.
-    pub fn display_image(&mut self, cx: &mut Cx, image_bytes: &[u8]) -> Result<(), ImageError> {
-        self.image_loaded = true;
-        load_png_or_jpg(&self.view.image(id!(zoomable_image)), cx, image_bytes)?;
-        self.view.image(id!(zoomable_image)).set_visible(cx, true);
-        Ok(())
-    }
-
     pub fn display_rotated_image(&mut self, cx: &mut Cx, image_bytes: &[u8]) -> Result<(), ImageError> {
         self.image_loaded = true;
         load_png_or_jpg_rotated_image(&self.view.rotated_image(id!(rotated_image)), cx, image_bytes)
     }
 
     fn adjust_zoom(&mut self, cx: &mut Cx, zoom_factor: f32) {
-        if (self.drag_state.zoom_level >= MAX_ZOOM && zoom_factor > 1.0) || self.drag_state.zoom_level <= MIN_ZOOM && zoom_factor < 1.0 {
-            return;
-        }
         let rotated_image_container = self.view.rotated_image(id!(rotated_image));
         let size = rotated_image_container.area().rect(cx).size;
-        self.drag_state.zoom_level *= zoom_factor;
+        
+        // Calculate target zoom level and clamp it to bounds
+        let target_zoom = self.drag_state.zoom_level * zoom_factor;
+        let clamped_zoom = target_zoom.clamp(self.min_zoom, self.max_zoom);
+        
+        // If the clamped zoom is the same as current zoom, no change needed
+        if (clamped_zoom - self.drag_state.zoom_level).abs() < 0.001 {
+            return;
+        }
+        
+        // Calculate the actual zoom factor based on clamped value
+        let actual_zoom_factor = clamped_zoom / self.drag_state.zoom_level;
+        
+        self.drag_state.zoom_level = clamped_zoom;
         self.drag_state.zoom_level = (self.drag_state.zoom_level * 1000.0).round() / 1000.0;
-        let width = (size.x as f32 * zoom_factor *1000.0).round() / 1000.0;
-        let height = (size.y as f32 * zoom_factor *1000.0).round() / 1000.0;
+        let width = (size.x as f32 * actual_zoom_factor * 1000.0).round() / 1000.0;
+        let height = (size.y as f32 * actual_zoom_factor * 1000.0).round() / 1000.0;
         self.view.rotated_image(id!(rotated_image)).apply_over(cx, live!{
             width: (width),
             height: (height),
@@ -540,12 +558,15 @@ impl ImageViewer {
 }
 
 impl ImageViewerRef {
-    /// See [`ImageViewer::display_image()`].
-    pub fn display_image(&mut self, cx: &mut Cx, image_bytes: &[u8]) -> Result<(), ImageError> {
+    /// Configure zoom and pan settings for the image viewer
+    pub fn configure_zoom(&mut self, config: Config) {
         let Some(mut inner) = self.borrow_mut() else {
-            return Ok(());
+            return;
         };
-        inner.display_image(cx, image_bytes)
+        inner.min_zoom = config.min_zoom;
+        inner.max_zoom = config.max_zoom;
+        inner.zoom_scale_factor = config.zoom_scale_factor;
+        inner.pan_sensitivity = config.pan_sensitivity;
     }
 
     /// See [`ImageViewer::display_rotated_image()`].
