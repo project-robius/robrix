@@ -87,6 +87,9 @@ pub struct RoomImageMessageDetail {
     #[rust] room_id: Option<OwnedRoomId>,
     #[rust] event_id: Option<OwnedEventId>,
     #[rust] avatar_drawn: bool,
+    #[rust] image_name: String,
+    #[rust] image_size: i32,
+    #[rust] is_desktop: bool
 }
 
 /// Convert bytes to human-readable file size format
@@ -117,6 +120,38 @@ fn format_file_size(bytes: i32) -> String {
     }
 }
 
+/// Maximum image name length for desktop display
+const MAX_IMAGE_NAME_LENGTH_DESKTOP: usize = 50;
+/// Maximum image name length for mobile display
+const MAX_IMAGE_NAME_LENGTH_MOBILE: usize = 10;
+
+/// Truncate image name based on display context while preserving file extension
+fn truncate_image_name(image_name: &str, is_desktop: bool) -> String {
+    let max_length = if is_desktop { MAX_IMAGE_NAME_LENGTH_DESKTOP } else { MAX_IMAGE_NAME_LENGTH_MOBILE };
+    
+    if image_name.len() <= max_length {
+        return image_name.to_string();
+    }
+    
+    // Find the last dot to separate name and extension
+    if let Some(dot_pos) = image_name.rfind('.') {
+        let name_part = &image_name[..dot_pos];
+        let extension = &image_name[dot_pos..];
+        
+        // Reserve space for "..." and the extension
+        let available_length = max_length.saturating_sub(3 + extension.len());
+        
+        if available_length > 0 && name_part.len() > available_length {
+            format!("{}...{}", &name_part[..available_length], extension)
+        } else {
+            image_name.to_string()
+        }
+    } else {
+        // No extension found, just truncate the name
+        format!("{}...", &image_name[..max_length.saturating_sub(3)])
+    }
+}
+
 impl Widget for RoomImageMessageDetail {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
@@ -124,6 +159,15 @@ impl Widget for RoomImageMessageDetail {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if self.is_desktop != cx.display_context.is_desktop() && !self.image_name.is_empty() {
+            let is_desktop = cx.display_context.is_desktop();
+            let truncated_name = truncate_image_name(&self.image_name, is_desktop);
+            let human_readable_size = format_file_size(self.image_size);
+            let display_text = format!("{} ({})", truncated_name, human_readable_size);
+            self.label(id!(image_name_and_size)).set_text(cx, &display_text);
+            self.is_desktop = is_desktop;
+        }
+
         if !self.avatar_drawn {
             let avatar_ref = self.avatar(id!(top_left_container.avatar));
             let Some(room_id) = &self.room_id else { return DrawStep::done() };
@@ -131,7 +175,10 @@ impl Widget for RoomImageMessageDetail {
             let (username, avatar_drawn) = avatar_ref.set_avatar_and_get_username(cx, room_id, sender, self.sender_profile.as_ref(), self.event_id.as_deref());
             self.label(id!(top_left_container.username)).set_text(cx, &username);
             self.avatar_drawn = avatar_drawn;
+            let is_desktop = cx.display_context.is_desktop();
+            self.is_desktop = is_desktop;
         }
+        
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -153,8 +200,13 @@ impl MatchEvent for RoomImageMessageDetail {
             self.event_id = event_id.clone();
             self.avatar_drawn = false;
             // Format and display image name and size
+            let is_desktop = cx.display_context.is_desktop();
+            println!("is_desktop: {}", is_desktop);
+            let truncated_name = truncate_image_name(&image_name, is_desktop);
             let human_readable_size = format_file_size(image_size);
-            let display_text = format!("{} ({})", image_name, human_readable_size);
+            let display_text = format!("{} ({})", truncated_name, human_readable_size);
+            self.image_name = image_name;
+            self.image_size = image_size;
             self.label(id!(image_name_and_size)).set_text(cx, &display_text);
             if let Some(dt) = unix_time_millis_to_datetime(timestamp_millis) {
                 self.view(id!(timestamp_view)).set_visible(cx, true);
@@ -172,7 +224,9 @@ impl RoomImageMessageDetail {
         self.room_id = None;
         self.event_id = None;
         self.avatar_drawn = false;
-        
+        self.image_name = String::new();
+        self.image_size = 0;
+
         // Clear the UI elements
         self.label(id!(top_left_container.username)).set_text(cx, "");
         self.label(id!(image_name_and_size)).set_text(cx, "");

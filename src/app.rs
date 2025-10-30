@@ -667,6 +667,9 @@ impl App {
                         self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, true);
                         self.ui.label(id!(image_viewer_status_label)).set_text(cx, "Loading...");
                         self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
+                        self.ui.view(id!(footer)).apply_over(cx, live!{
+                            height: 50
+                        });
                         let _ = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, thumbnail_data);
                     }
                     LoadState::Loaded(image_bytes) => {
@@ -686,12 +689,20 @@ impl App {
                             self.ui.view(id!(zoom_button_view)).set_visible(cx, true);
                             self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
                             self.ui.label(id!(image_viewer_status_label)).set_text(cx, "");
+                            // Collapse the footer
+                            self.ui.view(id!(footer)).apply_over(cx, live!{
+                                height: 0
+                            });
                         }
                     }
                     LoadState::Error(error) => {
                         self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
                         self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, true);
                         self.ui.label(id!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(error));
+                        // Expand the footer
+                        self.ui.view(id!(footer)).apply_over(cx, live!{
+                            height: 50
+                        });
                     }
                 }
                 self.ui.modal(id!(image_viewer)).open(cx);
