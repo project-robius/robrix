@@ -25,9 +25,10 @@ live_design! {
     use crate::shared::icon_button::*;
     use crate::home::invite_screen::*;
 
-    pub TombstoneFooter = {{TombstoneFooter}} {
+    pub TombstoneFooter = {{TombstoneFooter}}<ScrollYView> {
         visible: false,
-        width: Fill, height: Fit
+        width: Fill,
+        height: Fit { max: Rel(0.625) }
         flow: Down,
         align: {x: 0.5}
         padding: 20,

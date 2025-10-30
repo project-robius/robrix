@@ -107,7 +107,7 @@ live_design! {
             text_style: <REGULAR_TEXT>{font_size: 10},
             color: #000
             fn get_color(self) -> vec4 {
-                return self.color;
+                return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
             }
         }
         text: ""
