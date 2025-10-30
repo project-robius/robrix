@@ -14,6 +14,8 @@ live_design! {
     pub ICON_CLOSE           = dep("crate://self/resources/icons/close.svg")
     pub ICON_CLOUD_CHECKMARK = dep("crate://self/resources/icons/cloud_checkmark.svg")
     pub ICON_CLOUD_OFFLINE   = dep("crate://self/resources/icons/cloud_offline.svg")
+    pub ICON_CLOCKWISE       = dep("crate://self/resources/icons/rotate-clockwise.svg")
+    pub ICON_CLOCKWISE_ANTI  = dep("crate://self/resources/icons/rotate-anti-clockwise.svg")
     pub ICON_COPY            = dep("crate://self/resources/icons/copy.svg")
     pub ICON_EDIT            = dep("crate://self/resources/icons/edit.svg")
     pub ICON_EXTERNAL_LINK   = dep("crate://self/resources/icons/external_link.svg")
@@ -33,7 +35,7 @@ live_design! {
     pub ICON_UPLOAD          = dep("crate://self/resources/icons/upload.svg")
     pub ICON_VIEW_SOURCE     = dep("crate://self/resources/icons/view_source.svg")
     pub ICON_WARNING         = dep("crate://self/resources/icons/warning.svg")
-
+    
     pub TITLE_TEXT = <THEME_FONT_REGULAR>{
         font_size: (13),
     }

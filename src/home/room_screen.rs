@@ -33,7 +33,7 @@ use crate::{
     },
     room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer_modal::{ImageViewerError, ImageViewerModalAction, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerError, ImageViewerAction, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
@@ -846,9 +846,8 @@ impl Widget for RoomScreen {
                     return false;
                 }
                 if let TextOrImageAction::Clicked(mxc_uri) = action.as_widget_action().cast() {
-                    if let (Some(tl), Some(source_key)) = (&mut self.tl_state, mxc_uri) {
-                        cx.action(ImageViewerModalAction::Show(LoadState::Loading));
-                        let mxc_uri = OwnedMxcUri::from(source_key);
+                    if let (Some(tl), Some(mxc_uri_string)) = (&mut self.tl_state, mxc_uri) {
+                        let mxc_uri = OwnedMxcUri::from(mxc_uri_string);
                         populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
                     }
                 }
@@ -3339,7 +3338,7 @@ fn populate_image_message_content(
                 }
                 fully_drawn = false;
             }
-            (MediaCacheEntry::Failed(_e), _media_format) => {
+            (MediaCacheEntry::Failed(_status_code), _media_format) => {
                 if text_or_image_ref.view(id!(default_image_view)).visible() {
                     fully_drawn = true;
                     return;
@@ -4190,10 +4189,13 @@ pub fn populate_matrix_image_modal(
     // Handle the different media states
     match media_entry {
         (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
-            cx.action(ImageViewerModalAction::Show(LoadState::Loaded(data)));
+            cx.action(ImageViewerAction::Show(LoadState::Loaded(data)));
         }
-        (MediaCacheEntry::Failed(e), _) => {
-            let error = match e.status_code {
+        (MediaCacheEntry::Loaded(data), MediaFormat::Thumbnail(_)) => {
+            cx.action(ImageViewerAction::Show(LoadState::Loading(data)));
+        }
+        (MediaCacheEntry::Failed(status_code), MediaFormat::File) => {
+            let error = match status_code {
                 StatusCode::NOT_FOUND => ImageViewerError::NotFound,
                 StatusCode::INTERNAL_SERVER_ERROR => ImageViewerError::ConnectionFailed,
                 StatusCode::PARTIAL_CONTENT => ImageViewerError::BadData,
@@ -4201,9 +4203,11 @@ pub fn populate_matrix_image_modal(
                 StatusCode::REQUEST_TIMEOUT => ImageViewerError::Timeout,
                 _ => ImageViewerError::Unknown
             };
-            cx.action(ImageViewerModalAction::Show(LoadState::Error(
+            cx.action(ImageViewerAction::Show(LoadState::Error(
                 error
             )));
+            // Delete failed media entry from cache for MediaFormat::File so as to start all over again from loading Thumbnail. 
+            media_cache.delete_cache_entry(&mxc_uri, Some(MediaFormat::File));
         }
         _ => { }
     }

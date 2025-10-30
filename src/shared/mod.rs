@@ -18,7 +18,7 @@ pub mod bouncing_dots;
 pub mod unread_badge;
 pub mod verification_badge;
 pub mod restore_status_view;
-pub mod image_viewer_modal;
+pub mod image_viewer;
 
 
 pub fn live_design(cx: &mut Cx) {
@@ -41,5 +41,5 @@ pub fn live_design(cx: &mut Cx) {
     mentionable_text_input::live_design(cx);
     restore_status_view::live_design(cx);
     confirmation_modal::live_design(cx);
-    image_viewer_modal::live_design(cx);
+    image_viewer::live_design(cx);
 }
