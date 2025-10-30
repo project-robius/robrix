@@ -1,6 +1,5 @@
 use makepad_widgets::Cx;
 
-pub mod add_room;
 pub mod edited_indicator;
 pub mod editing_pane;
 pub mod home_screen;
@@ -17,14 +16,15 @@ pub mod rooms_list;
 pub mod rooms_list_entry;
 pub mod rooms_list_header;
 pub mod rooms_sidebar;
-pub mod spaces_dock;
+pub mod search_messages;
+pub mod navigation_tab_bar;
 pub mod welcome_screen;
 pub mod event_reaction_list;
 pub mod new_message_context_menu;
 pub mod link_preview;
 
 pub fn live_design(cx: &mut Cx) {
-    add_room::live_design(cx);
+    search_messages::live_design(cx);
     home_screen::live_design(cx);
     loading_pane::live_design(cx);
     location_preview::live_design(cx);
@@ -41,7 +41,7 @@ pub fn live_design(cx: &mut Cx) {
     rooms_sidebar::live_design(cx);
     main_mobile_ui::live_design(cx);
     main_desktop_ui::live_design(cx);
-    spaces_dock::live_design(cx);
+    navigation_tab_bar::live_design(cx);
     welcome_screen::live_design(cx);
     light_themed_dock::live_design(cx);
     event_reaction_list::live_design(cx);

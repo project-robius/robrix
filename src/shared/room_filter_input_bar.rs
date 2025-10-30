@@ -15,8 +15,6 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::icon_button::RobrixIconButton;
 
-    ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
-
     pub RoomFilterInputBar = {{RoomFilterInputBar}}<RoundedView> {
         width: Fill,
         height: 35,

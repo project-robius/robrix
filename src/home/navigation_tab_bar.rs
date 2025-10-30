@@ -1,3 +1,33 @@
+//! The spaces dock (TODO: rename this) shows a side bar or bottom bar
+//! of radio buttons that allow the user to navigate/switch between
+//! various top-level views in Robrix.
+//!
+//! Here's their order (in Mobile view, horizontally from left to right):
+//! 1. Home [house icon]: the main view with the rooms list and the room content
+//!    * TODO: add a SpacesBar: a skinny scrollable PortalList showing all Spaces avatars.
+//!      * In the Mobile view, this will be shown horizontally on the bottom of the main view
+//!        (just above the current NavigationTabBar).
+//!      * In the Desktop view, this will be shown vertically on the left of the main view
+//!        (just to the right of the current NavigationTabBar).
+//!        * We could also optionally embed it directly into the current NavigationTabBar too (like Element).
+//!    * Search should only be available within the main Home view.
+//! 2. Add/Join [plus sign icon]: a new view to handle adding (joining) existing rooms, exploring public rooms,
+//!    or creating new rooms/spaces.
+//! 3. Activity [an inbox or notifications icon]:  like Cinny, this shows a new view
+//!    with a list of notifications, mentions, invitations, etc.
+//! 4. Profile/Settings [profile icon]: the existing ProfileIcon with the verification badge
+//!
+//! The order in Desktop view (vertically from top to bottom) is:
+//! 1. Profile/Settings
+//! 2. Home
+//! 3. Activity/Inbox
+//! 4. Add/Join
+//! 5. (Spaces Bar)
+//!
+//!
+//! TODO: for now, go back to using radio button app tabs like we were before.
+//! We can also place the existing ProfileIcon on the bottom left, but just make it non-clickable.
+
 use makepad_widgets::*;
 
 use crate::{
@@ -19,17 +49,19 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
+    use crate::shared::icon_button::*;
     use crate::shared::verification_badge::*;
     use crate::shared::avatar::*;
 
-    SPACES_DOCK_SIZE = 68
+    NAVIGATION_TAB_BAR_SIZE = 68
+    COLOR_NAVIGATION_TAB_BAR_ICON = #1C274C
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
 
-    ProfileIcon = {{ProfileIcon}} {
+    ProfileIcon = {{ProfileIcon}}<RoundedView> {
         flow: Overlay
-        width: (SPACES_DOCK_SIZE - 6), height: (SPACES_DOCK_SIZE - 6)
+        width: (NAVIGATION_TAB_BAR_SIZE - 6), height: (NAVIGATION_TAB_BAR_SIZE - 6)
         align: { x: 0.5, y: 0.5 }
         cursor: Hand,
 
@@ -53,36 +85,70 @@ live_design! {
         }
     }
 
-    Home = <RoundedView> {
-        width: Fit, height: Fit
+    HomeButton = <RobrixIconButton> {
+        width: Fit
+        height: Fit,
         padding: {top: 8, left: 12, right: 12, bottom: 8}
-        show_bg: true
-        draw_bg: {
-            color: (COLOR_PRIMARY_DARKER)
-            border_radius: 4.0
-            border_color: (COLOR_ACTIVE_PRIMARY)
-            border_size: 1.5
-        }
+        spacing: 0
 
-        align: {x: 0.5, y: 0.5}
-        <Icon> {
-            draw_icon: {
-                svg_file: (ICON_HOME),
-                fn get_color(self) -> vec4 {
-                    return (COLOR_TEXT);
-                }
-            }
-            icon_walk: {width: 25, height: Fit}
+        draw_bg: {
+            // border_color: (COLOR_PRIMARY_DARKER),
+            color: #00000000,
+            color_hover: (COLOR_PRIMARY)
+            // border_radius: 5
         }
+        draw_icon: {
+            svg_file: (ICON_HOME),
+            color: (COLOR_NAVIGATION_TAB_BAR_ICON),
+        }
+        icon_walk: {width: 25, height: Fit, margin: 0}
     }
 
-    pub SpacesDock = <AdaptiveView> {
+    SettingsButton = <RobrixIconButton> {
+        width: Fit
+        height: Fit,
+        padding: {top: 8, left: 12, right: 12, bottom: 8}
+        spacing: 0
+
+        draw_bg: {
+            // border_color: (COLOR_PRIMARY_DARKER),
+            color: #00000000,
+            color_hover: (COLOR_PRIMARY)
+            // border_radius: 5
+        }
+        draw_icon: {
+            svg_file: (ICON_SETTINGS),
+            color: (COLOR_NAVIGATION_TAB_BAR_ICON),
+        }
+        icon_walk: {width: 25, height: Fit, margin: 0}
+    }
+
+    AddRoomButton = <RobrixIconButton> {
+        width: Fit
+        height: Fit,
+        padding: {top: 8, left: 12, right: 12, bottom: 8}
+        spacing: 0
+
+        draw_bg: {
+            // border_color: (COLOR_PRIMARY_DARKER),
+            color: #00000000,
+            color_hover: (COLOR_PRIMARY)
+            // border_radius: 5
+        }
+        draw_icon: {
+            svg_file: (ICON_ADD),
+            color: (COLOR_NAVIGATION_TAB_BAR_ICON),
+        }
+        icon_walk: {width: 25, height: Fit, margin: 0}
+    }
+
+    pub NavigationTabBar = <AdaptiveView> {
         // TODO: make this vertically scrollable
         Desktop = {
             flow: Down, spacing: 15
             align: {x: 0.5}
             padding: {top: 40., bottom: 20.}
-            width: (SPACES_DOCK_SIZE), height: Fill
+            width: (NAVIGATION_TAB_BAR_SIZE), height: Fill
             show_bg: true
             draw_bg: {
                 color: (COLOR_SECONDARY)
@@ -92,11 +158,21 @@ live_design! {
                 profile_icon = <ProfileIcon> {}
             }
 
+            <HomeButton> {}
+
+            <AddRoomButton> {}
+
             <LineH> { margin: {left: 15, right: 15} }
 
-            <Home> {}
-
             <Filler> {}
+
+            // TODO: SpacesBar goes here
+            
+            <Filler> {}
+
+            <LineH> { margin: {left: 15, right: 15} }
+            
+            <SettingsButton> {}
         }
 
         // TODO: make this horizontally scrollable via touch
@@ -104,7 +180,7 @@ live_design! {
             flow: Right
             align: {x: 0.5, y: 0.5}
             padding: {top: 10, right: 10, bottom: 10, left: 10}
-            width: Fill, height: (SPACES_DOCK_SIZE)
+            width: Fill, height: (NAVIGATION_TAB_BAR_SIZE)
             show_bg: true
             draw_bg: {
                 color: (COLOR_SECONDARY)
@@ -112,20 +188,28 @@ live_design! {
 
             <Filler> {}
 
-            <CachedWidget> {
-                profile_icon = <ProfileIcon> {}
-            }
+            <HomeButton> {}
 
             <Filler> {}
 
-            <Home> {}
+            <AddRoomButton> {}
+
+            <Filler> {}
+
+            <SettingsButton> {}
+            
+            <Filler> {}
+            
+            <CachedWidget> {
+                profile_icon = <ProfileIcon> {}
+            }
 
             <Filler> {}
         }
     }
 }
 
-/// The icon in the SpacesDock that show the user's avatar.
+/// The icon in the NavigationTabBar that show the user's avatar.
 ///
 /// Clicking on this icon will open the settings screen.
 #[derive(Live, Widget)]

@@ -19,7 +19,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::room_filter_input_bar::RoomFilterInputBar;
-    use crate::home::add_room::*;
+    use crate::home::search_messages::*;
     use crate::home::rooms_list::RoomsList;
     use crate::home::rooms_list_header::RoomsListHeader;
 
@@ -74,7 +74,7 @@ live_design! {
                     room_filter_input_bar = <RoomFilterInputBar> {}
                 }
 
-                add_room_button = <AddRoomButton> { }
+                search_messages_button = <SearchMessagesButton> { }
             }
 
             <CachedWidget> {

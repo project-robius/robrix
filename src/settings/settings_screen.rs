@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{home::spaces_dock::get_own_profile, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, SettingsAction}};
+use crate::{home::navigation_tab_bar::get_own_profile, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, SettingsAction}};
 
 live_design! {
     use link::theme::*;

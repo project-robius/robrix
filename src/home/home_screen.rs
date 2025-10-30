@@ -9,8 +9,8 @@ live_design! {
 
     use crate::home::main_mobile_ui::MainMobileUI;
     use crate::home::rooms_sidebar::RoomsSideBar;
-    use crate::home::spaces_dock::SpacesDock;
-    use crate::home::add_room::*;
+    use crate::home::navigation_tab_bar::NavigationTabBar;
+    use crate::home::search_messages::*;
     use crate::shared::styles::*;
     use crate::shared::room_filter_input_bar::RoomFilterInputBar;
     use crate::home::main_desktop_ui::MainDesktopUI;
@@ -36,9 +36,9 @@ live_design! {
                 padding: 0,
                 margin: 0,
 
-                // On the left, show the spaces sidebar.
+                // On the left, show the navigation tab bar vertically.
                 <CachedWidget> {
-                    spaces_dock = <SpacesDock> {}
+                    navigation_tab_bar = <NavigationTabBar> {}
                 }
 
                 // To the right of that, we use the PageFlip widget to show either
@@ -66,7 +66,7 @@ live_design! {
                                 room_filter_input_bar = <RoomFilterInputBar> {}
                             }
 
-                            add_room_button = <AddRoomButton> {
+                            search_messages_button = <SearchMessagesButton> {
                                 // make this button match/align with the RoomFilterInputBar
                                 height: 32.5,
                                 margin: {right: 2}
@@ -126,9 +126,9 @@ live_design! {
                                 }
                             }
 
-                            // At the bottom of the root view, show the spaces dock.
+                            // At the bottom of the root view, show the navigation tab bar horizontally.
                             <CachedWidget> {
-                                spaces_dock = <SpacesDock> {}
+                                navigation_tab_bar = <NavigationTabBar> {}
                             }
                         }
 
@@ -160,7 +160,7 @@ live_design! {
 }
 
 
-/// Which space is currently selected in the SpacesDock.
+/// Which space is currently selected in the NavigationTabBar.
 #[derive(Clone, Debug, Default)]
 pub enum SelectedSpace {
     #[default]

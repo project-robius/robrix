@@ -469,7 +469,7 @@ impl MentionableTextInput {
     /// Tries to add the `@room` mention item to the list of selectable popup mentions.
     ///
     /// Returns true if @room item was added to the list and will be displayed in the popup.
-    fn try_add_room_mention_item(
+    fn try_search_messages_mention_item(
         &mut self,
         cx: &mut Cx,
         search_text: &str,
@@ -816,7 +816,7 @@ impl MentionableTextInput {
         let mut items_added = 0;
 
         // 4. Try to add @room mention item
-        let has_room_item = self.try_add_room_mention_item(cx, search_text, room_props, is_desktop);
+        let has_room_item = self.try_search_messages_mention_item(cx, search_text, room_props, is_desktop);
         if has_room_item {
             items_added += 1;
         }
