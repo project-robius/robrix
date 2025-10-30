@@ -51,7 +51,7 @@ The following table shows which host systems can currently be used to build Robr
    On a Debian-like Linux distro (e.g., Ubuntu), run the following:
    ```sh
    sudo apt-get update
-   sudo apt-get install libssl-dev libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev
+   sudo apt-get install libssl-dev libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev libwayland-dev
    ```
 
 3. Then, build and run Robrix.
