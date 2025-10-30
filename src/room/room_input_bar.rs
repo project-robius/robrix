@@ -1,6 +1,6 @@
 //! The RoomInputBar widget contains all components related to sending messages/content to a room.
 //!
-//! The RoomInputBar must be capped to a maximum height of 75% of the containing RoomScreen's height.
+//! The RoomInputBar is capped to a maximum height of 62.5% of the containing RoomScreen's height.
 //!
 //! The widgets included in the RoomInputBar are:
 //! * a preview of the message the user is replying to.
@@ -16,10 +16,10 @@
 //!
 
 use makepad_widgets::*;
-use matrix_sdk::{room::reply::{EnforceThread, Reply}, SuccessorRoom};
+use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
 
 live_design! {
     use link::theme::*;
@@ -40,10 +40,27 @@ live_design! {
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
 
 
-    pub RoomInputBar = {{RoomInputBar}} {
+    pub RoomInputBar = {{RoomInputBar}}<RoundedView> {
         width: Fill,
         height: Fit { max: Rel(0.625) }
         flow: Down,
+
+        // These margins are a hack to make the borders of the RoomInputBar
+        // line up with the boundaries of its parent widgets.
+        // This only works if the border_color is the same as its parents,
+        // which is currently `COLOR_SECONDARY`.
+        margin: {left: -4, right: -4, bottom: -4 }
+
+        show_bg: true,
+        draw_bg: {
+            color: (COLOR_PRIMARY)
+            border_radius: 5.0,
+            border_color: (COLOR_SECONDARY),
+            border_size: 2.0
+            // uniform shadow_color: #0006
+            // shadow_radius: 0.0,
+            // shadow_offset: vec2(0.0,0.0)
+        }
 
         // The top-most element is a preview of the message that the user is replying to, if any.
         replying_preview = <ReplyingPreview> { }
@@ -70,12 +87,17 @@ live_design! {
                 // even when the mentionable_text_input box is very tall.
                 align: {y: 1.0},
                 padding: 6,
-                show_bg: true
-                draw_bg: {color: (COLOR_PRIMARY)}
 
                 location_button = <RobrixIconButton> {
+                    margin: {left: 4}
                     spacing: 0,
-                    draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
+                    draw_icon: {
+                        svg_file: (ICO_LOCATION_PERSON)
+                        color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                    },
+                    draw_bg: {
+                        color: (COLOR_LOCATION_PREVIEW_BG),
+                    }
                     icon_walk: {width: Fit, height: 23, margin: {bottom: -1}}
                     text: "",
                 }
@@ -89,7 +111,7 @@ live_design! {
                 mentionable_text_input = <MentionableTextInput> {
                     width: Fill,
                     height: Fit { max: Rel(0.625) }
-                    margin: { bottom: 12 },
+                    margin: { top: 5, bottom: 12, left: 1, right: 1 },
 
                     persistent = {
                         center = {
@@ -104,6 +126,7 @@ live_design! {
                     // Disabled by default; enabled when text is inputted
                     enabled: false,
                     spacing: 0,
+                    margin: {right: 4}
                     draw_icon: {
                         svg_file: (ICON_SEND),
                         color: (COLOR_FG_DISABLED),
@@ -431,18 +454,19 @@ impl RoomInputBar {
         // because it has already been hidden by the time this function gets called.
     } 
 
-    /// Updates this room's tombstone footer based on the given `successor_room`.
+    /// Updates (populates and shows or hides) this room's tombstone footer
+    /// based on the given successor room details.
     fn update_tombstone_footer(
         &mut self,
         cx: &mut Cx,
-        room_id: &OwnedRoomId,
-        successor_room: Option<&SuccessorRoom>,
+        tombstoned_room_id: &OwnedRoomId,
+        successor_room_details: Option<&SuccessorRoomDetails>,
     ) {
         let tombstone_footer = self.tombstone_footer(id!(tombstone_footer));
         let input_bar = self.view(id!(input_bar));
 
-        if let Some(sr) = successor_room {
-            tombstone_footer.show(cx, room_id, sr);
+        if let Some(srd) = successor_room_details {
+            tombstone_footer.show(cx, tombstoned_room_id, srd);
             input_bar.set_visible(cx, false);
         } else {
             tombstone_footer.hide(cx);
@@ -472,6 +496,19 @@ impl RoomInputBar {
                 color: (bg_color),
             }
         });
+    }
+
+    /// Updates the visibility of select views based on the user's new power levels.
+    ///
+    /// This will show/hide the `input_bar` and the `can_not_send_message_notice` views.
+    fn update_user_power_levels(
+        &mut self,
+        cx: &mut Cx,
+        user_power_levels: UserPowerLevels,
+    ) {
+        let can_send = user_power_levels.can_send_message();
+        self.view.view(id!(input_bar)).set_visible(cx, can_send);
+        self.view.view(id!(can_not_send_message_notice)).set_visible(cx, !can_send);
     }
 
     /// Returns true if the TSP signing checkbox is checked, false otherwise.
@@ -511,27 +548,27 @@ impl RoomInputBarRef {
         );
     }
 
-    // Updates the visibility of select views based on the user's new power levels.
+    /// Updates the visibility of select views based on the user's new power levels.
+    ///
+    /// This will show/hide the `input_bar` and the `can_not_send_message_notice` views.
     pub fn update_user_power_levels(
         &self,
         cx: &mut Cx,
         user_power_levels: UserPowerLevels,
     ) {
-        let Some(inner) = self.borrow() else { return };
-        let can_send = user_power_levels.can_send_message();
-        inner.view(id!(input_bar)).set_visible(cx, can_send);
-        inner.view(id!(can_not_send_message_notice)).set_visible(cx, !can_send);
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.update_user_power_levels(cx, user_power_levels);
     }
 
     /// Updates this room's tombstone footer based on the given `tombstone_state`.
     pub fn update_tombstone_footer(
         &self,
         cx: &mut Cx,
-        room_id: &OwnedRoomId,
-        successor_room: Option<&SuccessorRoom>,
+        tombstoned_room_id: &OwnedRoomId,
+        successor_room_details: Option<&SuccessorRoomDetails>,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.update_tombstone_footer(cx, room_id, successor_room);
+        inner.update_tombstone_footer(cx, tombstoned_room_id, successor_room_details);
     }
 
     /// Forwards the result of an edit request to the `EditingPane` widget
@@ -566,8 +603,9 @@ impl RoomInputBarRef {
         &self,
         cx: &mut Cx,
         room_id: &OwnedRoomId,
-        state: RoomInputBarState,
-        tombstone_info: Option<&SuccessorRoom>,
+        saved_state: RoomInputBarState,
+        user_power_levels: UserPowerLevels,
+        tombstone_info: Option<&SuccessorRoomDetails>,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         let RoomInputBarState {
@@ -575,9 +613,14 @@ impl RoomInputBarRef {
             text_input_state,
             replying_to,
             editing_pane_state,
-        } = state;
+        } = saved_state;
 
         // Note: we do *not* restore the location preview state here; see `save_state()`.
+
+        // 0. Update select views based on user power levels from the RoomScreen (the `TimelineUiState`).
+        //    This must happen before we restore the state of the `EditingPane`,
+        //    because the call to `show_editing_pane()` might re-update the `input_bar`'s visibility.
+        inner.update_user_power_levels(cx, user_power_levels);
 
         // 1. Restore the state of the TextInput within the MentionableTextInput.
         inner.text_input(id!(input_bar.mentionable_text_input.text_input))

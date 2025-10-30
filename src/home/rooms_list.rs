@@ -4,14 +4,14 @@ use makepad_widgets::*;
 use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
 use crate::{
     app::{AppState, SelectedRoom},
-    room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, RoomPreviewAvatar},
+    room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, FetchedRoomAvatar},
     shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, room_filter_input_bar::RoomFilterAction},
     sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}, utils::room_name_or_id,
 };
-use super::room_preview::RoomPreviewAction;
+use super::rooms_list_entry::RoomsListEntryAction;
 
 /// Whether to pre-paginate visible rooms at least once in order to
-/// be able to display the latest message in the room preview,
+/// be able to display the latest message in a room's RoomsListEntry,
 /// and to have something to immediately show when a user first opens a room.
 const PREPAGINATE_VISIBLE_ROOMS: bool = true;
 
@@ -54,7 +54,7 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::html_or_plaintext::HtmlOrPlaintext;
     use crate::shared::collapsible_header::*;
-    use crate::home::room_preview::*;
+    use crate::home::rooms_list_entry::*;
 
     StatusLabel = <View> {
         width: Fill, height: Fit,
@@ -86,7 +86,7 @@ live_design! {
             flow: Down, spacing: 0.0
 
             collapsible_header = <CollapsibleHeader> {}
-            room_preview = <RoomPreview> {}
+            rooms_list_entry = <RoomsListEntry> {}
             empty = <View> {}
             status_label = <StatusLabel> {}
             bottom_filler = <View> {
@@ -123,21 +123,21 @@ pub enum RoomsListUpdate {
         /// The Html-formatted text preview of the latest message.
         latest_message_text: String,
     },
-    /// Update the number of unread messages for the given room.
+    /// Update the number of unread messages and mentions for the given room.
     UpdateNumUnreadMessages {
         room_id: OwnedRoomId,
-        count: UnreadMessageCount,
+        unread_messages: UnreadMessageCount,
         unread_mentions: u64,
     },
     /// Update the displayable name for the given room.
     UpdateRoomName {
         room_id: OwnedRoomId,
-        new_room_name: String,
+        new_room_name: Option<String>,
     },
     /// Update the avatar (image) for the given room.
     UpdateRoomAvatar {
         room_id: OwnedRoomId,
-        avatar: RoomPreviewAvatar,
+        avatar: FetchedRoomAvatar,
     },
     /// Update whether the given room is a direct room.
     UpdateIsDirect {
@@ -218,10 +218,10 @@ pub struct JoinedRoomInfo {
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
-    pub avatar: RoomPreviewAvatar,
+    pub avatar: FetchedRoomAvatar,
     /// Whether this room has been paginated at least once.
     /// We pre-paginate visible rooms at least once in order to
-    /// be able to display the latest message in the room preview,
+    /// be able to display the latest message in the RoomsListEntry
     /// and to have something to immediately show when a user first opens a room.
     pub has_been_paginated: bool,
     /// Whether this room is currently selected in the UI.
@@ -247,7 +247,7 @@ pub struct InvitedRoomInfo {
     pub alt_aliases: Vec<OwnedRoomAliasId>,
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
-    pub room_avatar: RoomPreviewAvatar,
+    pub room_avatar: FetchedRoomAvatar,
     /// Info about the user who invited us to this room, if available.
     pub inviter_info: Option<InviterInfo>,
     /// The timestamp and Html text content of the latest message in this room.
@@ -309,7 +309,7 @@ pub struct RoomsList {
     /// This is a shared reference to the thread-local [`ALL_INVITED_ROOMS`] variable.
     #[rust] invited_rooms: Rc<RefCell<HashMap<OwnedRoomId, InvitedRoomInfo>>>,
 
-    /// The set of all joined rooms and their cached preview info.
+    /// The set of all joined rooms and their cached info.
     /// This includes both direct rooms and regular rooms.
     #[rust] all_joined_rooms: HashMap<OwnedRoomId, JoinedRoomInfo>,
 
@@ -449,9 +449,9 @@ impl RoomsList {
                         error!("Error: couldn't find room {room_id} to update latest event");
                     }
                 }
-                RoomsListUpdate::UpdateNumUnreadMessages { room_id, count , unread_mentions} => {
+                RoomsListUpdate::UpdateNumUnreadMessages { room_id, unread_messages, unread_mentions } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
-                        (room.num_unread_messages, room.num_unread_mentions) = match count {
+                        (room.num_unread_messages, room.num_unread_mentions) = match unread_messages {
                             UnreadMessageCount::Unknown => (0, 0),
                             UnreadMessageCount::Known(count) => (count, unread_mentions),
                         };
@@ -462,7 +462,7 @@ impl RoomsList {
                 RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         let was_displayed = (self.display_filter)(room);
-                        room.room_name = Some(new_room_name);
+                        room.room_name = new_room_name;
                         let should_display = (self.display_filter)(room);
                         match (was_displayed, should_display) {
                             // No need to update the displayed rooms list.
@@ -828,16 +828,6 @@ impl RoomsList {
             regular_rooms_indexes,
         )
     }
-
-    /// Returns a room's avatar and displayable name.
-    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
-        self.all_joined_rooms.get(room_id)
-            .map(|room_info| (room_info.avatar.clone(), room_info.room_name.clone()))
-            .or_else(|| {
-                self.invited_rooms.borrow().get(room_id)
-                    .map(|room_info| (room_info.room_avatar.clone(), room_info.room_name.clone()))
-            })
-    }
 }
 
 impl Widget for RoomsList {
@@ -856,7 +846,7 @@ impl Widget for RoomsList {
             |cx| self.view.handle_event(cx, event, &mut Scope::with_props(&props))
         );
         for list_action in list_actions {
-            if let RoomPreviewAction::Clicked(clicked_room_id) = list_action.as_widget_action().cast() {
+            if let RoomsListEntryAction::Clicked(clicked_room_id) = list_action.as_widget_action().cast() {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
                     SelectedRoom::JoinedRoom {
                         room_id: jr.room_id.clone().into(),
@@ -970,10 +960,10 @@ impl Widget for RoomsList {
                 else if let Some(invited_room_id) = get_invited_room_id(portal_list_index) {
                     let mut invited_rooms_mut = self.invited_rooms.borrow_mut();
                     if let Some(invited_room) = invited_rooms_mut.get_mut(invited_room_id) {
-                        let item = list.item(cx, portal_list_index, live_id!(room_preview));
+                        let item = list.item(cx, portal_list_index, live_id!(rooms_list_entry));
                         invited_room.is_selected =
                             self.current_active_room.as_deref() == Some(invited_room_id);
-                        // Pass the room info down to the RoomPreview widget via Scope.
+                        // Pass the room info down to the RoomsListEntry widget via Scope.
                         scope = Scope::with_props(&*invited_room);
                         item.draw_all(cx, &mut scope);
                     } else {
@@ -995,7 +985,7 @@ impl Widget for RoomsList {
                 }
                 else if let Some(direct_room_id) = get_direct_room_id(portal_list_index) {
                     if let Some(direct_room) = self.all_joined_rooms.get_mut(direct_room_id) {
-                        let item = list.item(cx, portal_list_index, live_id!(room_preview));
+                        let item = list.item(cx, portal_list_index, live_id!(rooms_list_entry));
                         direct_room.is_selected =
                             self.current_active_room.as_ref() == Some(direct_room_id);
 
@@ -1008,7 +998,7 @@ impl Widget for RoomsList {
                                 direction: PaginationDirection::Backwards,
                             });
                         }
-                        // Pass the room info down to the RoomPreview widget via Scope.
+                        // Pass the room info down to the RoomsListEntry widget via Scope.
                         scope = Scope::with_props(&*direct_room);
                         item.draw_all(cx, &mut scope);
                     } else {
@@ -1030,7 +1020,7 @@ impl Widget for RoomsList {
                 }
                 else if let Some(regular_room_id) = get_regular_room_id(portal_list_index) {
                     if let Some(regular_room) = self.all_joined_rooms.get_mut(regular_room_id) {
-                        let item = list.item(cx, portal_list_index, live_id!(room_preview));
+                        let item = list.item(cx, portal_list_index, live_id!(rooms_list_entry));
                         regular_room.is_selected =
                             self.current_active_room.as_ref() == Some(regular_room_id);
 
@@ -1043,7 +1033,7 @@ impl Widget for RoomsList {
                                 direction: PaginationDirection::Backwards,
                             });
                         }
-                        // Pass the room info down to the RoomPreview widget via Scope.
+                        // Pass the room info down to the RoomsListEntry widget via Scope.
                         scope = Scope::with_props(&*regular_room);
                         item.draw_all(cx, &mut scope);
                     } else {
@@ -1087,13 +1077,8 @@ impl RoomsListRef {
         };
         inner.is_room_loaded(room_id)
     }
-
-    /// See [`RoomsList::get_room_avatar_and_name()`].
-    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
-        let inner = self.borrow()?;
-        inner.get_room_avatar_and_name(room_id)
-    }
 }
+
 pub struct RoomsListScopeProps {
     /// Whether the RoomsList's inner PortalList was scrolling
     /// when the latest finger down event occurred.

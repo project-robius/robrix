@@ -29,32 +29,30 @@ live_design! {
 
     EditingContent = <View> {
         width: Fill,
-        height: Fit,
+        height: Fit { max: Rel(0.625) }
         align: {x: 0.5, y: 1.0}, // centered horizontally, bottom-aligned
         padding: { left: 20, right: 20, top: 10, bottom: 10 }
+        margin: {top: 2}
         spacing: 10,
         flow: Down,
 
-        show_bg: true,
-        draw_bg: {
-            color: (COLOR_PRIMARY)
-        }
+        show_bg: false // don't cover up the RoomInputBar
 
         <View> {
-            width: Fill
-            height: Fit
+            width: Fill, height: Fit
             flow: Right
             align: {y: 0.5}
             padding: {left: 5, right: 5}
 
             <Label> {
                 width: Fill,
+                flow: Right, // do not wrap
+                margin: {top: 3}
                 draw_text: {
                     text_style: <USERNAME_TEXT_STYLE> {},
                     color: #222,
-                    wrap: Ellipsis,
                 }
-                text: "Editing message:"
+                text: "Editing:"
             }
 
             cancel_button = <RobrixIconButton> {
@@ -81,7 +79,7 @@ live_design! {
                 height: Fit,
                 padding: 13,
                 spacing: 0,
-                margin: {left: 5, right: 5},
+                margin: {left: 5},
 
                 draw_bg: {
                     border_color: (COLOR_FG_ACCEPT_GREEN),
@@ -99,17 +97,9 @@ live_design! {
         <LineH> { }
 
         edit_text_input = <MentionableTextInput> {
-            width: Fill, height: Fit,
-            margin: { bottom: 5 }
-            padding: { top: 3 }
-            align: {y: 0.5}
-            persistent = {
-                center = {
-                    text_input = {
-                        empty_text: "Enter edited message..."
-                    }
-                }
-            }
+            width: Fill
+            height: Fit { max: Rel(0.625) }
+            margin: { bottom: 5, top: 5 }
         }
     }
 
@@ -117,7 +107,7 @@ live_design! {
     pub EditingPane = {{EditingPane}} {
         visible: false,
         width: Fill,
-        height: Fit,
+        height: Fit { max: Rel(0.625) }
         align: {x: 0.5, y: 1.0}
         // TODO: FIXME: this is a hack to make the editing pane
         //              able to slide out of the bottom of the screen.
