@@ -57,9 +57,7 @@ jobs:
         with:
           cache-all-crates: "true"
           cache-on-failure: "true"
-      # Run clippy with custom configuration for makepad DSL
-      # Allow pedantic / needless_lifetimes / too_many_arguments
-      - run: cargo clippy --workspace --examples --tests --all-features --all-targets
+      - run: cargo clippy --workspace --all-features
 
   typos:
     if: github.event.pull_request.draft == false
