@@ -269,7 +269,7 @@ impl Widget for ProfileIcon {
             | Hit::FingerHoverOver(_) // TODO: remove once CalloutTooltip bug is fixed
             | Hit::FingerHoverIn(_) => {
                 let (verification_str, bg_color) = self.view
-                    .verification_badge(id!(verification_badge))
+                    .verification_badge(ids!(verification_badge))
                     .tooltip_content();
                 let text = self.own_profile.as_ref().map_or_else(
                     || format!("Not logged in.\n\n{}", verification_str),
@@ -297,7 +297,7 @@ impl Widget for ProfileIcon {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let our_own_avatar = self.view.avatar(id!(our_own_avatar));
+        let our_own_avatar = self.view.avatar(ids!(our_own_avatar));
         let Some(own_profile) = self.own_profile.as_ref() else {
             // If we don't have a profile, default to an unknown avatar.
             our_own_avatar.show_text(
@@ -347,13 +347,13 @@ impl Widget for NavigationTabBar {
 
         if let Event::Actions(actions) = event {
             if !self.is_settings_shown
-                && self.view.button(id!(settings_button)).clicked(actions)
+                && self.view.button(ids!(settings_button)).clicked(actions)
             {
                 self.is_settings_shown = true;
                 cx.action(SettingsAction::OpenSettings);
             }
 
-            if self.view.button(id!(home_button)).clicked(actions) {
+            if self.view.button(ids!(home_button)).clicked(actions) {
                 cx.action(SettingsAction::CloseSettings);
             }
 

@@ -188,7 +188,7 @@ impl Widget for LinkPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Handle collapsible button clicks
         if let Event::Actions(actions) = event {
-            let expand_button = self.view.button(id!(collapsible_button.expand_collapse_button));
+            let expand_button = self.view.button(ids!(collapsible_button.expand_collapse_button));
             if expand_button.clicked(actions) {
                 self.is_expanded = !self.is_expanded;
                 self.update_button_and_visibility(cx);
@@ -197,7 +197,7 @@ impl Widget for LinkPreview {
         }
 
         for view in self.children.iter() {
-            if let Some(html_link) = view.link_label(id!(content_view.title_label)).borrow() {
+            if let Some(html_link) = view.link_label(ids!(content_view.title_label)).borrow() {
                 if let Event::Actions(actions) = event {
                     if html_link.clicked(actions) && !html_link.url.is_empty() {
                         cx.widget_action(
@@ -237,15 +237,15 @@ impl LinkPreview {
 
     fn update_button_and_visibility(&mut self, cx: &mut Cx) {
         if self.show_collapsible_button {
-            self.view.view(id!(collapsible_button)).set_visible(cx, true);
-            let button_ref = self.view.button(id!(collapsible_button.expand_collapse_button));
+            self.view.view(ids!(collapsible_button)).set_visible(cx, true);
+            let button_ref = self.view.button(ids!(collapsible_button.expand_collapse_button));
             if self.is_expanded {
                 button_ref.set_text(cx, "▲ Show fewer links");
             } else {
                 button_ref.set_text(cx, &format!("▼ Show {} more links", self.hidden_links_count));
             }
         } else {
-            self.view.view(id!(collapsible_button)).set_visible(cx, false);
+            self.view.view(ids!(collapsible_button)).set_visible(cx, false);
         }
     }
 }
@@ -279,9 +279,9 @@ impl LinkPreviewRef {
          if let Some(mut inner) = self.borrow_mut() {
             inner.show_collapsible_button = true;
             inner.hidden_links_count = hidden_count;
-            let button_ref = inner.view.button(id!(collapsible_button.expand_collapse_button));
+            let button_ref = inner.view.button(ids!(collapsible_button.expand_collapse_button));
             button_ref.set_text(cx, &format!("▼ Show {} more links", inner.hidden_links_count));
-            inner.view.view(id!(collapsible_button)).set_visible(cx, true);
+            inner.view.view(ids!(collapsible_button)).set_visible(cx, true);
         }
     }
 
@@ -301,12 +301,12 @@ impl LinkPreviewRef {
         let view_ref = WidgetRef::new_from_ptr(cx, self.item_template()).as_view();
         let mut fully_drawn = true;
         // Set title and URL
-        let title_link = view_ref.link_label(id!(content_view.title_label));
+        let title_link = view_ref.link_label(ids!(content_view.title_label));
         title_link.set_text(cx, link.as_str());
         if let Some(mut title_link) = title_link.borrow_mut() {
             title_link.url = link.to_string();
         }
-        let text_or_image_ref = view_ref.text_or_image(id!(image));
+        let text_or_image_ref = view_ref.text_or_image(ids!(image));
         text_or_image_ref.show_default_image(cx);
         let link_preview_data = match link_preview_cache_entry {
             LinkPreviewCacheEntry::LoadedLinkPreview(link_preview_data) => link_preview_data,
@@ -325,8 +325,8 @@ impl LinkPreviewRef {
         // Set site name
         if let Some(site_name) = &link_preview_data.site_name {
             view_ref
-                .view(id!(content_view))
-                .label(id!(site_name_label))
+                .view(ids!(content_view))
+                .label(ids!(site_name_label))
                 .set_text(cx, site_name);
         }
 
@@ -340,8 +340,8 @@ impl LinkPreviewRef {
                 description
             };
             view_ref
-                .view(id!(content_view))
-                .label(id!(description_label))
+                .view(ids!(content_view))
+                .label(ids!(description_label))
                 .set_text(cx, &truncated_description);
         }
 
@@ -352,7 +352,7 @@ impl LinkPreviewRef {
             image_info.size = link_preview_data.image_size;
             let image_info_source = Some(Box::new(image_info));
             let owned_mxc_uri = OwnedMxcUri::from(image.clone());
-            let text_or_image_ref = view_ref.text_or_image(id!(image));
+            let text_or_image_ref = view_ref.text_or_image(ids!(image));
             let original_source = MediaSource::Plain(owned_mxc_uri);
             // Calls the closure with the image populate function
             fully_drawn = image_populate_fn(

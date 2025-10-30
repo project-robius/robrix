@@ -100,8 +100,8 @@ impl Widget for RoomFilterInputBar {
 
 impl WidgetMatchEvent for RoomFilterInputBar {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-        let input = self.text_input(id!(input));
-        let clear_button = self.button(id!(clear_button));
+        let input = self.text_input(ids!(input));
+        let clear_button = self.button(ids!(clear_button));
 
         // Handle user changing the input text
         if let Some(keywords) = input.changed(actions) {

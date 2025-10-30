@@ -191,7 +191,7 @@ impl Widget for HomeScreen {
                             self.selection = SelectedSpace::Settings;
                             if let Some(settings_page) = self.update_active_page_from_selection(cx) {
                                 settings_page
-                                    .settings_screen(id!(settings_screen))
+                                    .settings_screen(ids!(settings_screen))
                                     .populate(cx, None);
                                 self.view.redraw(cx);
                             } else {
@@ -225,12 +225,12 @@ impl Widget for HomeScreen {
 impl HomeScreen {
     fn update_active_page_from_selection(&mut self, cx: &mut Cx) -> Option<WidgetRef> {
         self.view
-            .page_flip(id!(home_screen_page_flip))
+            .page_flip(ids!(home_screen_page_flip))
             .set_active_page(
                 cx,
                 match self.selection {
-                    SelectedSpace::Settings => live_id!(settings_page),
-                    SelectedSpace::Home => live_id!(main_page),
+                    SelectedSpace::Settings => id!(settings_page),
+                    SelectedSpace::Home => id!(main_page),
                 },
             )
     }
@@ -256,7 +256,7 @@ impl Widget for NavigationWrapper {
 
 impl MatchEvent for NavigationWrapper {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        self.stack_navigation(id!(view_stack))
+        self.stack_navigation(ids!(view_stack))
             .handle_stack_view_actions(cx, actions);
     }
 }
