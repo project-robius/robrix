@@ -31,7 +31,7 @@
 use makepad_widgets::*;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{self, UserProfileUpdate},
     }, settings::SettingsAction, shared::{
@@ -63,7 +63,7 @@ live_design! {
         flow: Overlay
         width: (NAVIGATION_TAB_BAR_SIZE - 6), height: (NAVIGATION_TAB_BAR_SIZE - 6)
         align: { x: 0.5, y: 0.5 }
-        cursor: Hand,
+        cursor: Default,
 
         our_own_avatar = <Avatar> {
             width: 45, height: 45
@@ -88,7 +88,7 @@ live_design! {
     HomeButton = <RobrixIconButton> {
         width: Fit
         height: Fit,
-        padding: {top: 8, left: 12, right: 12, bottom: 8}
+        padding: {top: 12, left: 12, right: 12, bottom: 12}
         spacing: 0
 
         draw_bg: {
@@ -107,7 +107,7 @@ live_design! {
     SettingsButton = <RobrixIconButton> {
         width: Fit
         height: Fit,
-        padding: {top: 8, left: 12, right: 12, bottom: 8}
+        padding: {top: 12, left: 12, right: 12, bottom: 12}
         spacing: 0
 
         draw_bg: {
@@ -126,28 +126,29 @@ live_design! {
     AddRoomButton = <RobrixIconButton> {
         width: Fit
         height: Fit,
-        padding: {top: 8, left: 12, right: 12, bottom: 8}
+        padding: {top: 12, left: 12, right: 12, bottom: 12}
         spacing: 0
+        enabled: false,
 
         draw_bg: {
-            // border_color: (COLOR_PRIMARY_DARKER),
             color: #00000000,
             color_hover: (COLOR_PRIMARY)
-            // border_radius: 5
         }
         draw_icon: {
             svg_file: (ICON_ADD),
-            color: (COLOR_NAVIGATION_TAB_BAR_ICON),
+            // color: (COLOR_NAVIGATION_TAB_BAR_ICON),
+            color: (COLOR_FG_DISABLED),
         }
         icon_walk: {width: 25, height: Fit, margin: 0}
     }
 
-    pub NavigationTabBar = <AdaptiveView> {
-        // TODO: make this vertically scrollable
+    Separator = <LineH> { margin: {top: 2, bottom: 2, left: 10, right: 10} }
+
+    pub NavigationTabBar = {{NavigationTabBar}}<AdaptiveView> {
         Desktop = {
-            flow: Down, spacing: 15
+            flow: Down, spacing: 5
             align: {x: 0.5}
-            padding: {top: 40., bottom: 20.}
+            padding: {top: 40., bottom: 8}
             width: (NAVIGATION_TAB_BAR_SIZE), height: Fill
             show_bg: true
             draw_bg: {
@@ -158,24 +159,24 @@ live_design! {
                 profile_icon = <ProfileIcon> {}
             }
 
-            <HomeButton> {}
+            home_button = <HomeButton> {}
 
-            <AddRoomButton> {}
+            add_room_button = <AddRoomButton> {}
 
-            <LineH> { margin: {left: 15, right: 15} }
+            <Separator> {}
 
             <Filler> {}
 
-            // TODO: SpacesBar goes here
+            // TODO: SpacesBar goes here, which should be a vertically-scrollable PortalList
+            //       in this case, and a show/hidable hortizontally-scrollable one in Mobile mode.
             
             <Filler> {}
 
-            <LineH> { margin: {left: 15, right: 15} }
+            <Separator> {}
             
-            <SettingsButton> {}
+            settings_button = <SettingsButton> {}
         }
 
-        // TODO: make this horizontally scrollable via touch
         Mobile = {
             flow: Right
             align: {x: 0.5, y: 0.5}
@@ -188,15 +189,15 @@ live_design! {
 
             <Filler> {}
 
-            <HomeButton> {}
+            home_button = <HomeButton> {}
 
             <Filler> {}
 
-            <AddRoomButton> {}
+            add_room_button = <AddRoomButton> {}
 
             <Filler> {}
 
-            <SettingsButton> {}
+            settings_button = <SettingsButton> {}
             
             <Filler> {}
             
@@ -215,7 +216,6 @@ live_design! {
 #[derive(Live, Widget)]
 pub struct ProfileIcon {
     #[deref] view: View,
-    #[rust] is_selected: bool,
     #[rust] own_profile: Option<UserProfile>,
 }
 
@@ -252,11 +252,13 @@ impl Widget for ProfileIcon {
                 if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                     self.own_profile = get_own_profile(cx);
                     self.view.redraw(cx);
+                    continue;
                 }
 
-                if let Some(SettingsAction::CloseSettings) = action.downcast_ref() {
-                    self.is_selected = false;
+                if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
+                    self.own_profile = None;
                     self.view.redraw(cx);
+                    continue;
                 }
             }
         }
@@ -270,8 +272,8 @@ impl Widget for ProfileIcon {
                     .verification_badge(id!(verification_badge))
                     .tooltip_content();
                 let text = self.own_profile.as_ref().map_or_else(
-                    || format!("Not logged in.\n\n{}\n\nTap to view Profiles & Settings.", verification_str),
-                    |p| format!("Logged in as \"{}\".\n\n{}\n\nTap to view Profile & Settings.", p.displayable_name(), verification_str)
+                    || format!("Not logged in.\n\n{}", verification_str),
+                    |p| format!("Logged in as \"{}\".\n\n{}", p.displayable_name(), verification_str)
                 );
                 let rect = area.rect(cx);
                 cx.widget_action(
@@ -284,13 +286,6 @@ impl Widget for ProfileIcon {
                         text_color: None,
                     },
                 );
-            }
-            Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => {
-                cx.action(SettingsAction::OpenSettings);
-                self.is_selected = true;
-                // TODO: actually use the `is_selected` state by showing a
-                //       blue border around the avatar icon (like the `Home` view above).
-                self.view.redraw(cx);
             }
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
@@ -334,6 +329,47 @@ impl Widget for ProfileIcon {
         self.view.draw_walk(cx, scope, walk)
     }
 }
+
+
+/// The tab bar with buttons that navigate through top-level app pages.
+///
+/// * In the "desktop" (wide) layout, this is a vertical bar on the left.
+/// * In the "mobile" (narrow) layout, this is a horizontal bar on the bottom.
+#[derive(Live, LiveHook, Widget)]
+pub struct NavigationTabBar {
+    #[deref] view: AdaptiveView,
+    #[rust] is_settings_shown: bool,
+}
+
+impl Widget for NavigationTabBar {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+
+        if let Event::Actions(actions) = event {
+            if !self.is_settings_shown
+                && self.view.button(id!(settings_button)).clicked(actions)
+            {
+                self.is_settings_shown = true;
+                cx.action(SettingsAction::OpenSettings);
+            }
+
+            if self.view.button(id!(home_button)).clicked(actions) {
+                cx.action(SettingsAction::CloseSettings);
+            }
+
+            for action in actions {
+                if let Some(SettingsAction::CloseSettings) = action.downcast_ref() {
+                    self.is_settings_shown = false;
+                }
+            }
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
 
 /// Returns the current user's profile and avatar, if available.
 pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
