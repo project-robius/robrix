@@ -148,7 +148,7 @@ jobs:
             libx11-dev \
             libasound2-dev \
             libpulse-dev \
-            libwayland-dev
+            libwayland-dev libxkbcommon-dev
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
