@@ -10,7 +10,7 @@ use makepad_widgets::{image_cache::ImageError, makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
-        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_image_message_detail::RoomImageMessageDetailWidgetRefExt, room_screen::{MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{callout_tooltip::{
@@ -41,6 +41,7 @@ live_design! {
     use crate::shared::callout_tooltip::CalloutTooltip;
     use crate::shared::image_viewer::ImageViewer;
     use crate::shared::icon_button::RobrixIconButton;
+    use crate::home::room_image_message_detail::RoomImageMessageDetail;
     use link::tsp_link::TspVerificationModal;
 
 
@@ -114,17 +115,8 @@ live_design! {
                                         debug: true
                                         padding: {bottom: 0}
                                     }
-                                    image_detail = <View> {
-                                        width: 500, height: 200,
-                                        debug: false
-                                        image_viewer_status_label = <Label> {
-                                            width: Fit, height: 30,
-                                            text: "Loading----- image...",
-                                            draw_text: {
-                                                text_style: <REGULAR_TEXT>{font_size: 14},
-                                                color: (COLOR_PRIMARY)
-                                            }
-                                        }
+                                    image_detail = <RoomImageMessageDetail> {
+                                        width: Fill, height: Fill,
                                     }
                                 }
                                 
@@ -465,6 +457,7 @@ impl MatchEvent for App {
                         &LoadState::Loading(thumbnail_data) => {
                             self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, true);
                             self.ui.label(id!(image_viewer_status_label)).set_text(cx, "Loading...");
+                            self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
                             let _ = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, &thumbnail_data);
                         }
                         &LoadState::Loaded(image_bytes) => {
@@ -497,6 +490,7 @@ impl MatchEvent for App {
                 }
                 Some(ImageViewerAction::Hide) => {
                     self.ui.modal(id!(image_viewer)).close(cx);
+                    self.ui.room_image_message_detail(id!(image_detail)).reset_state(cx);
                     continue;
                 }
                 _ => {}
