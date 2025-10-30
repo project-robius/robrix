@@ -939,7 +939,7 @@ impl Widget for RoomScreen {
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
-                        list.item(cx, item_id, live_id!(Empty));
+                        list.item(cx, item_id, id!(Empty));
                         continue;
                     };
 
@@ -1037,13 +1037,13 @@ impl Widget for RoomScreen {
                                 item_drawn_status,
                             ),
                             unhandled => {
-                                let item = list.item(cx, item_id, live_id!(SmallStateEvent));
+                                let item = list.item(cx, item_id, id!(SmallStateEvent));
                                 item.label(ids!(content)).set_text(cx, &format!("[Unsupported] {:?}", unhandled));
                                 (item, ItemDrawnStatus::both_drawn())
                             }
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(millis)) => {
-                            let item = list.item(cx, item_id, live_id!(DateDivider));
+                            let item = list.item(cx, item_id, id!(DateDivider));
                             let text = unix_time_millis_to_datetime(*millis)
                                 // format the time as a shortened date (Sat, Sept 5, 2021)
                                 .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
@@ -1052,11 +1052,11 @@ impl Widget for RoomScreen {
                             (item, ItemDrawnStatus::both_drawn())
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
-                            let item = list.item(cx, item_id, live_id!(ReadMarker));
+                            let item = list.item(cx, item_id, id!(ReadMarker));
                             (item, ItemDrawnStatus::both_drawn())
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::TimelineStart) => {
-                            let item = list.item(cx, item_id, live_id!(Empty));
+                            let item = list.item(cx, item_id, id!(Empty));
                             (item, ItemDrawnStatus::both_drawn())
                         }
                     };
@@ -2706,9 +2706,9 @@ fn populate_message_view(
                 MessageType::Text(TextMessageEventContent { body, formatted, .. }) => {
                      has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
-                        live_id!(CondensedMessage)
+                        id!(CondensedMessage)
                     } else {
-                        live_id!(Message)
+                        id!(Message)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -2732,9 +2732,9 @@ fn populate_message_view(
                     is_notice = true;
                     has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
-                        live_id!(CondensedMessage)
+                        id!(CondensedMessage)
                     } else {
-                        live_id!(Message)
+                        id!(Message)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -2767,7 +2767,7 @@ fn populate_message_view(
                 MessageType::ServerNotice(sn) => {
                     is_server_notice = true;
                     has_html_body = false;
-                    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+                    let (item, existed) = list.item_with_existed(cx, item_id, id!(Message));
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
@@ -2814,9 +2814,9 @@ fn populate_message_view(
                 MessageType::Emote(EmoteMessageEventContent { body, formatted, .. }) => {
                     has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
-                        live_id!(CondensedMessage)
+                        id!(CondensedMessage)
                     } else {
-                        live_id!(Message)
+                        id!(Message)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -2861,9 +2861,9 @@ fn populate_message_view(
                     has_html_body = image.formatted.as_ref()
                         .is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
-                        live_id!(CondensedImageMessage)
+                        id!(CondensedImageMessage)
                     } else {
-                        live_id!(ImageMessage)
+                        id!(ImageMessage)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -2885,9 +2885,9 @@ fn populate_message_view(
                 MessageType::Location(location) => {
                     has_html_body = false;
                     let template = if use_compact_view {
-                        live_id!(CondensedMessage)
+                        id!(CondensedMessage)
                     } else {
-                        live_id!(Message)
+                        id!(Message)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -2905,9 +2905,9 @@ fn populate_message_view(
                 MessageType::File(file_content) => {
                     has_html_body = file_content.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
-                        live_id!(CondensedMessage)
+                        id!(CondensedMessage)
                     } else {
-                        live_id!(Message)
+                        id!(Message)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -2924,9 +2924,9 @@ fn populate_message_view(
                 MessageType::Audio(audio) => {
                     has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
-                        live_id!(CondensedMessage)
+                        id!(CondensedMessage)
                     } else {
-                        live_id!(Message)
+                        id!(Message)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -2943,9 +2943,9 @@ fn populate_message_view(
                 MessageType::Video(video) => {
                     has_html_body = video.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
-                        live_id!(CondensedMessage)
+                        id!(CondensedMessage)
                     } else {
-                        live_id!(Message)
+                        id!(Message)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -2961,7 +2961,7 @@ fn populate_message_view(
                 }
                 MessageType::VerificationRequest(verification) => {
                     has_html_body = verification.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-                    let template = live_id!(Message);
+                    let template = id!(Message);
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
@@ -2994,7 +2994,7 @@ fn populate_message_view(
                 }
                 _ => {
                     has_html_body = false;
-                    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+                    let (item, existed) = list.item_with_existed(cx, item_id, id!(Message));
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
@@ -3014,9 +3014,9 @@ fn populate_message_view(
             let StickerEventContent { body, info, source, .. } = sticker.content();
 
             let template = if use_compact_view {
-                live_id!(CondensedImageMessage)
+                id!(CondensedImageMessage)
             } else {
-                live_id!(ImageMessage)
+                id!(ImageMessage)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
 
@@ -3042,7 +3042,7 @@ fn populate_message_view(
         }
         other => {
             has_html_body = false;
-            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+            let (item, existed) = list.item_with_existed(cx, item_id, id!(Message));
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -3820,7 +3820,7 @@ impl SmallStateEventContent for timeline::OtherState {
             new_drawn_status.content_drawn = true;
             item
         } else {
-            let item = list.item(cx, item_id, live_id!(Empty));
+            let item = list.item(cx, item_id, id!(Empty));
             new_drawn_status = ItemDrawnStatus::new();
             item
         };
@@ -3865,7 +3865,7 @@ impl SmallStateEventContent for RoomMembershipChange {
         let Some(preview) = text_preview_of_room_membership_change(self, false) else {
             // Don't actually display anything for nonexistent/unimportant membership changes.
             return (
-                list.item(cx, item_id, live_id!(Empty)),
+                list.item(cx, item_id, id!(Empty)),
                 ItemDrawnStatus::new(),
             );
         };
@@ -3892,7 +3892,7 @@ fn populate_small_state_event(
     item_drawn_status: ItemDrawnStatus,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
-    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
+    let (item, existed) = list.item_with_existed(cx, item_id, id!(SmallStateEvent));
     // The content of a small state event view may depend on the profile info,
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
     let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;

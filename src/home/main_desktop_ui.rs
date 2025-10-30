@@ -128,14 +128,14 @@ impl MainDesktopUI {
         }
 
         // Create a new tab for the room
-        let (tab_bar, _pos) = dock.find_tab_bar_of_tab(live_id!(home_tab)).unwrap();
+        let (tab_bar, _pos) = dock.find_tab_bar_of_tab(id!(home_tab)).unwrap();
         let (kind, name) = match &room {
             SelectedRoom::JoinedRoom { room_id, room_name }  => (
-                live_id!(room_screen),
+                id!(room_screen),
                 room_name_or_id(room_name.as_ref(), room_id),
             ),
             SelectedRoom::InvitedRoom { room_id, room_name } => (
-                live_id!(invite_screen),
+                id!(invite_screen),
                 room_name_or_id(room_name.as_ref(), room_id),
             ),
         };
@@ -145,7 +145,7 @@ impl MainDesktopUI {
             room_id_as_live_id,
             kind,
             name,
-            live_id!(CloseableTab),
+            id!(CloseableTab),
             None, // insert the tab at the end
             // TODO: insert the tab after the most-recently-selected room
         );
@@ -201,7 +201,7 @@ impl MainDesktopUI {
             } else {
                 // If there is no room to focus, notify app to reset the selected room in the app state
                 cx.action(AppStateAction::FocusNone);
-                dock.select_tab(cx, live_id!(home_tab));
+                dock.select_tab(cx, id!(home_tab));
                 self.most_recently_selected_room = None;
             }
         }
@@ -218,7 +218,7 @@ impl MainDesktopUI {
             dock.close_tab(cx, *tab_id);
         }
 
-        dock.select_tab(cx, live_id!(home_tab));
+        dock.select_tab(cx, id!(home_tab));
         cx.action(AppStateAction::FocusNone);
 
         // Clear tab-related dock UI state.
@@ -240,7 +240,7 @@ impl MainDesktopUI {
         let Some((new_widget, true)) = dock.replace_tab(
             cx,
             LiveId::from_str(room_id.as_str()),
-            live_id!(room_screen),
+            id!(room_screen),
             Some(room_name_or_id(room_name.as_ref(), &room_id)),
             false,
         ) else {
@@ -286,7 +286,7 @@ impl WidgetMatchEvent for MainDesktopUI {
             match widget_action.cast() { // TODO: don't we need to call `widget_uid_eq(dock.widget_uid())` here?
                 // Whenever a tab (except for the home_tab) is pressed, notify the app state.
                 DockAction::TabWasPressed(tab_id) => {
-                    if tab_id == live_id!(home_tab) {
+                    if tab_id == id!(home_tab) {
                         cx.action(AppStateAction::FocusNone);
                         self.most_recently_selected_room = None;
                     }

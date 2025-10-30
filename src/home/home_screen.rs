@@ -229,8 +229,8 @@ impl HomeScreen {
             .set_active_page(
                 cx,
                 match self.selection {
-                    SelectedSpace::Settings => live_id!(settings_page),
-                    SelectedSpace::Home => live_id!(main_page),
+                    SelectedSpace::Settings => id!(settings_page),
+                    SelectedSpace::Home => id!(main_page),
                 },
             )
     }

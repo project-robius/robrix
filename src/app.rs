@@ -151,7 +151,7 @@ impl LiveRegister for App {
         // then other modules widgets.
         makepad_widgets::live_design(cx);
         // Override Makepad's default desktop dark theme with the desktop light theme.
-        cx.link(live_id!(theme), live_id!(theme_desktop_light));
+        cx.link(id!(theme), id!(theme_desktop_light));
         crate::shared::live_design(cx);
 
         // If the `tsp` cargo feature is enabled, we create a new "tsp_link" DSL namespace
@@ -160,11 +160,11 @@ impl LiveRegister for App {
         // to the `tsp_disabled` DSL namespace instead, which defines dummy placeholder widgets.
         #[cfg(feature = "tsp")] {
             crate::tsp::live_design(cx);
-            cx.link(live_id!(tsp_link), live_id!(tsp_enabled));
+            cx.link(id!(tsp_link), id!(tsp_enabled));
         }
         #[cfg(not(feature = "tsp"))] {
             crate::tsp_dummy::live_design(cx);
-            cx.link(live_id!(tsp_link), live_id!(tsp_disabled));
+            cx.link(id!(tsp_link), id!(tsp_disabled));
         }
 
         crate::settings::live_design(cx);
@@ -285,7 +285,7 @@ impl MatchEvent for App {
                 cx.widget_action(
                     self.ui.widget_uid(),
                     &HeapLiveIdPath::default(),
-                    StackNavigationAction::Push(live_id!(main_content_view))
+                    StackNavigationAction::Push(id!(main_content_view))
                 );
                 self.ui.redraw(cx);
                 continue;

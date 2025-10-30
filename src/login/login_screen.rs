@@ -441,7 +441,7 @@ impl MatchEvent for LoginScreen {
         if let Some(sso_redirect_url) = &self.sso_redirect_url {
             let login_status_modal_button = login_status_modal_inner.button_ref();
             if login_status_modal_button.clicked(actions) {
-                let request_id = live_id!(SSO_CANCEL_BUTTON);
+                let request_id = id!(SSO_CANCEL_BUTTON);
                 let request = HttpRequest::new(format!("{}/?login_token=",sso_redirect_url), HttpMethod::GET);
                 cx.http_request(request_id, request);
                 self.sso_redirect_url = None;

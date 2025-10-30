@@ -426,7 +426,7 @@ pub struct RobrixPopupNotification {
 impl LiveHook for RobrixPopupNotification {
     fn after_apply(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) {
         for (view, popup_item, _) in self.popups.iter_mut() {
-            if let Some(index) = nodes.child_by_name(index, live_id!(content).as_field()) {
+            if let Some(index) = nodes.child_by_name(index, id!(content).as_field()) {
                 view.apply(cx, apply, index, nodes);
                 view.label(ids!(popup_label))
                     .set_text(cx, &popup_item.message);

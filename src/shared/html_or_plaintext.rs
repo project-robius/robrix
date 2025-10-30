@@ -206,7 +206,7 @@ impl LiveHook for RobrixHtmlLink {
             let scope = apply.scope.as_ref().unwrap();
             let doc = scope.props.get::<HtmlDoc>().unwrap();
             let mut walker = doc.new_walker_with_index(scope.index + 1);
-            if let Some((live_id!(href), attr)) = walker.while_attr_lc() {
+            if let Some((id!(href), attr)) = walker.while_attr_lc() {
                 self.url = attr.into();
             }
         }
@@ -506,10 +506,10 @@ impl LiveHook for MatrixHtmlSpan {
                     while let Some((lc, attr)) = walker.while_attr_lc() {
                         let attr = attr.trim_matches(['"', '\'']);
                         match lc {
-                            live_id!(color)
-                            | live_id!(data-mx-color) => self.fg_color = Vec4::from_hex_str(attr).ok(),
-                            live_id!(data-mx-bg-color) => self.bg_color = Vec4::from_hex_str(attr).ok(),
-                            live_id!(data-mx-spoiler) => self.spoiler = SpoilerDisplay::Hidden { reason: attr.into() },
+                            id!(color)
+                            | id!(data-mx-color) => self.fg_color = Vec4::from_hex_str(attr).ok(),
+                            id!(data-mx-bg-color) => self.bg_color = Vec4::from_hex_str(attr).ok(),
+                            id!(data-mx-spoiler) => self.spoiler = SpoilerDisplay::Hidden { reason: attr.into() },
                             _ => ()
                         }
                     }

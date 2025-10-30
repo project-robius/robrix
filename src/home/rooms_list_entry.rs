@@ -226,9 +226,9 @@ impl LiveHook for RoomsListEntry {
         self.view
             .adaptive_view(ids!(adaptive_preview))
             .set_variant_selector(|_cx, parent_size| match parent_size.x {
-                width if width <= 70.0  => live_id!(OnlyIcon),
-                width if width <= 200.0 => live_id!(IconAndName),
-                _ => live_id!(FullPreview),
+                width if width <= 70.0  => id!(OnlyIcon),
+                width if width <= 200.0 => id!(IconAndName),
+                _ => id!(FullPreview),
             });
     }
 }
