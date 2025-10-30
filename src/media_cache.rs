@@ -1,6 +1,7 @@
 use std::{collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
 use makepad_widgets::{error, log, SignalToUI};
-use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}};
+use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}, Error, HttpError};
+use reqwest::StatusCode;
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
 
 /// The value type in the media cache, one per Matrix URI.
@@ -17,8 +18,8 @@ pub enum MediaCacheEntry {
     Requested,
     /// The media has been successfully loaded from the server.
     Loaded(Arc<[u8]>),
-    /// The media failed to load from the server.
-    Failed,
+    /// The media failed to load from the server with the ruma client api error.
+    Failed(StatusCode),
 }
 
 /// A reference to a media cache entry and its associated format.
@@ -163,12 +164,81 @@ impl MediaCache {
         );
         post_request_retval
     }
+
+    /// Deletes a specific media format from the cache for the given MXC URI.
+    /// If `format` is None, deletes the entire cache entry for the URI.
+    /// Returns true if an entry was deleted, false if nothing was found.
+    pub fn delete_cache_entry(&mut self, mxc_uri: &OwnedMxcUri, format: Option<MediaFormat>) -> bool {
+        match format {
+            Some(MediaFormat::Thumbnail(_)) => {
+                if let Some(cache_value) = self.cache.get_mut(mxc_uri) {
+                    if cache_value.thumbnail.is_some() {
+                        cache_value.thumbnail = None;
+                        // If both thumbnail and full_file are None, remove the entire entry
+                        if cache_value.full_file.is_none() {
+                            self.cache.remove(mxc_uri);
+                        }
+                        return true;
+                    }
+                }
+                false
+            }
+            Some(MediaFormat::File) => {
+                if let Some(cache_value) = self.cache.get_mut(mxc_uri) {
+                    if cache_value.full_file.is_some() {
+                        cache_value.full_file = None;
+                        // If both thumbnail and full_file are None, remove the entire entry
+                        if cache_value.thumbnail.is_none() {
+                            self.cache.remove(mxc_uri);
+                        }
+                        return true;
+                    }
+                }
+                false
+            }
+            None => {
+                // Delete the entire entry for this MXC URI
+                self.cache.remove(mxc_uri).is_some()
+            }
+        }
+    }
+}
+
+/// Converts a Matrix SDK error to a MediaCacheEntry::Failed with appropriate status codes.
+fn error_to_media_cache_entry(e: Error, request: &MediaRequestParameters) -> MediaCacheEntry {
+    match e {
+        Error::Http(http_error) => {
+            if let Some(client_error) = http_error.as_client_api_error() {
+                error!("Client error for media cache: {client_error} for request: {:?}", request);
+                MediaCacheEntry::Failed(client_error.status_code)
+            } else {
+                match *http_error {
+                    HttpError::Reqwest(reqwest_error) => {
+                        // Checking if the connection is timeout is not important as Matrix SDK has implemented maximum timeout duration.
+                        if !reqwest_error.is_connect() {
+                            MediaCacheEntry::Failed(StatusCode::INTERNAL_SERVER_ERROR)
+                        } else if reqwest_error.is_status() {
+                            MediaCacheEntry::Failed(reqwest_error
+                                    .status()
+                                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
+                        } else {
+                            MediaCacheEntry::Failed(StatusCode::INTERNAL_SERVER_ERROR)
+                        }
+                    }
+                    _ => MediaCacheEntry::Failed(StatusCode::NOT_FOUND),
+                }
+            }
+        }
+        Error::InsufficientData => MediaCacheEntry::Failed(StatusCode::PARTIAL_CONTENT),
+        Error::AuthenticationRequired => MediaCacheEntry::Failed(StatusCode::UNAUTHORIZED),
+        _ => MediaCacheEntry::Failed(StatusCode::INTERNAL_SERVER_ERROR)
+    }
 }
 
 /// Insert data into a previously-requested media cache entry.
 fn insert_into_cache<D: Into<Arc<[u8]>>>(
     value_ref: &Mutex<MediaCacheEntry>,
-    _request: MediaRequestParameters,
+    request: MediaRequestParameters,
     data: matrix_sdk::Result<D>,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
@@ -178,7 +248,7 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
 
             // debugging: dump out the media image to disk
             if false {
-                if let MediaSource::Plain(mxc_uri) = _request.source {
+                if let MediaSource::Plain(mxc_uri) = &request.source {
                     log!("Fetched media for {mxc_uri}");
                     let mut path = crate::temp_storage::get_temp_dir_path().clone();
                     let filename = format!("{}_{}_{}",
@@ -194,16 +264,13 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
             }
             MediaCacheEntry::Loaded(data)
         }
-        Err(e) => {
-            error!("Failed to fetch media for {:?}: {e:?}", _request.source);
-            MediaCacheEntry::Failed
-        }
+        Err(e) => error_to_media_cache_entry(e, &request)
     };
 
     *value_ref.lock().unwrap() = new_value;
 
     if let Some(sender) = update_sender {
-        let _ = sender.send(TimelineUpdate::MediaFetched);
+        let _ = sender.send(TimelineUpdate::MediaFetched(Some(request.clone())));
     }
     SignalToUI::set_ui_signal();
 }

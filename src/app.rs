@@ -6,20 +6,19 @@
 #![allow(clippy::question_mark)]
 
 use std::collections::HashMap;
-use makepad_widgets::{makepad_micro_serde::*, *};
+use makepad_widgets::{image_cache::ImageError, makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
-        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{clear_timeline_states, MessageAction}, rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate}
+        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_image_message_detail::RoomImageMessageDetailWidgetRefExt, room_screen::{MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::callout_tooltip::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{callout_tooltip::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, sliding_sync::current_user_id, utils::{
-        room_name_or_id,
-        OwnedRoomIdRon,
+    }, image_viewer::{ImageViewerAction, ImageViewerError, ImageViewerWidgetRefExt, LoadState}}, sliding_sync::current_user_id, utils::{
+        OwnedRoomIdRon, image_viewer_error_to_string, room_name_or_id
     }, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
@@ -40,6 +39,9 @@ live_design! {
     use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
+    use crate::shared::image_viewer::ImageViewer;
+    use crate::shared::icon_button::RobrixIconButton;
+    use crate::home::room_image_message_detail::RoomImageMessageDetail;
     use link::tsp_link::TspVerificationModal;
 
 
@@ -94,6 +96,67 @@ live_design! {
                         login_screen_view = <View> {
                             visible: true
                             login_screen = <LoginScreen> {}
+                        }
+
+                        image_viewer = <Modal> {
+                            content: {
+                                width: Fill, height: Fill,
+                                flow: Down
+                                show_bg: true
+                                draw_bg: {
+                                    color: #000
+                                }
+
+                                <View> {
+                                    width: Fill, height: Fill,
+                                    flow: Overlay
+                                    image_viewer_inner = <ImageViewer> {
+                                        align: {x: 0.5, y: 0.5}
+                                        padding: {bottom: 0}
+                                    }
+                                    image_detail = <RoomImageMessageDetail> {
+                                        width: Fill, height: Fill,
+                                    }
+                                }
+                                
+                                footer = <View> {
+                                    width: Fill, height: 50,
+                                    flow: Right
+                                    padding: 10
+                                    align: {x: 0.5, y: 0.8}
+                                    spacing: 10
+
+                                    image_viewer_loading_spinner_view = <View> {
+                                        width: Fit, height: Fit
+                                        loading_spinner = <LoadingSpinner> {
+                                            width: 40, height: 40,
+                                            draw_bg: {
+                                                color: (COLOR_PRIMARY)
+                                                border_size: 3.0,
+                                            }
+                                        }
+                                    }
+                                    image_viewer_forbidden_view = <View> {
+                                        width: Fit, height: Fit
+                                        visible: false
+                                        <Icon> {
+                                            draw_icon: {
+                                                svg_file: (ICON_FORBIDDEN),
+                                                color: #ffffff,
+                                            }
+                                            icon_walk: { width: 30, height: 30 }
+                                        }
+                                    }
+                                    image_viewer_status_label = <Label> {
+                                        width: Fit, height: 30,
+                                        text: "Loading image...",
+                                        draw_text: {
+                                            text_style: <REGULAR_TEXT>{font_size: 14},
+                                            color: (COLOR_PRIMARY)
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         <PopupList> {}
@@ -388,6 +451,10 @@ impl MatchEvent for App {
                 _ => {}
             }
 
+            if self.handle_image_viewer_action(cx, action) {
+                continue;
+            }
+
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
             // Therefore, we cannot use `as_widget_action().cast()` to match them.
             //
@@ -588,6 +655,74 @@ impl App {
         // Close a previously/currently-open room if specified.
         if let Some(closure) = close_room_closure_opt {
             closure(cx);
+        }
+    }
+
+    /// Handles actions for the image viewer.
+    /// Returns a boolean, is true continues the actions for loop.
+    fn handle_image_viewer_action(&mut self, cx: &mut Cx, action: &Box<dyn ActionTrait>) -> bool {
+        match action.downcast_ref() {
+            Some(ImageViewerAction::Show(load_state)) => {
+                match load_state {
+                    LoadState::Loading(thumbnail_data) => {
+                        self.ui.modal(id!(image_viewer)).open(cx);
+                        self.ui.image_viewer(id!(image_viewer_inner)).reset(cx);
+                        self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, true);
+                        self.ui.label(id!(image_viewer_status_label)).set_text(cx, "Loading...");
+                        self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
+                        self.ui.view(id!(footer)).apply_over(cx, live!{
+                            height: 50
+                        });
+                        let _ = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, thumbnail_data);
+                    }
+                    LoadState::Loaded(image_bytes) => {
+                        self.ui.modal(id!(image_viewer)).open(cx);
+                        self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
+                        if let Err(error) = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, image_bytes) {
+                            // Reset the image viewer to clear any previous image
+                            self.ui.image_viewer(id!(image_viewer_inner)).reset(cx);
+                            self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, true);
+                            let err = match error {
+                                ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
+                                ImageError::EmptyData => ImageViewerError::BadData,
+                                ImageError::PathNotFound(_) => ImageViewerError::NotFound,
+                                ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
+                                _ => ImageViewerError::BadData,
+                            };
+                            self.ui.label(id!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(&err));
+                        } else {
+                            self.ui.view(id!(zoom_button_view)).set_visible(cx, true);
+                            self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
+                            self.ui.label(id!(image_viewer_status_label)).set_text(cx, "");
+                            // Collapse the footer
+                            self.ui.view(id!(footer)).apply_over(cx, live!{
+                                height: 0
+                            });
+                        }
+                    }
+                    LoadState::Error(error) => {
+                        if self.ui.modal(id!(image_viewer)).is_open() {
+                            // Reset the image viewer to clear any previous image
+                            self.ui.image_viewer(id!(image_viewer_inner)).reset(cx);
+                            self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
+                            self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, true);
+                            self.ui.label(id!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(error));
+                            // Expand the footer
+                            self.ui.view(id!(footer)).apply_over(cx, live!{
+                                height: 50
+                            });
+                        }
+                    }
+                }
+                
+                true
+            }
+            Some(ImageViewerAction::Hide) => {
+                self.ui.modal(id!(image_viewer)).close(cx);
+                self.ui.room_image_message_detail(id!(image_detail)).reset_state(cx);
+                true
+            }
+            _ => false
         }
     }
 }

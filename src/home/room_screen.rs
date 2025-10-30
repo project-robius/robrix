@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    room::RoomMember, ruma::{
+    media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
         events::{
             receipt::Receipt,
             room::{
@@ -24,6 +24,7 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
+use reqwest::StatusCode;
 
 use crate::{
     app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
@@ -32,7 +33,7 @@ use crate::{
     },
     room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerError, ImageViewerAction, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
@@ -43,7 +44,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputAction;
 
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_image_message_detail::RoomImageMessageDetailAction, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 /// The maximum number of timeline items to search through
 /// when looking for a particular event.
@@ -602,7 +603,7 @@ impl Widget for RoomScreen {
         // we want to handle those before processing any updates that might change
         // the set of timeline indices (which would invalidate the index values in any actions).
         if let Event::Actions(actions) = event {
-            for (_, wr) in portal_list.items_with_actions(actions) {
+            for (index, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
                     widget_rect,
@@ -660,6 +661,49 @@ impl Widget for RoomScreen {
                         &scope.path,
                         TooltipAction::HoverOut
                     );
+                }
+                let image_widget_uid = wr.image(id!(content.message)).widget_uid();
+                if let TextOrImageAction::Clicked(_mxc_uri) = actions.find_widget_action(image_widget_uid).cast() {
+                    if let Some(tl_state) = &self.tl_state {
+                        if let Some(item) = tl_state.items.get(index) {
+                            if let Some(event_tl_item) = item.as_event() {
+                                let sender_profile = event_tl_item.sender_profile();
+                                let sender = event_tl_item.sender();
+                                let event_id = event_tl_item.event_id().map(|id| id.to_owned());
+                                let timestamp = event_tl_item.timestamp();
+                                
+                                // Extract image name and size from the message content
+                                let (image_name, image_size) = if let Some(message) = event_tl_item.content().as_message() {
+                                    if let MessageType::Image(image_content) = message.msgtype() {
+                                        let name = message.body().to_string();
+                                        let size = image_content.info.as_ref()
+                                            .and_then(|info| info.size)
+                                            .map(|s| i32::try_from(s).unwrap_or_default())
+                                            .unwrap_or(0);
+                                        (name, size)
+                                    } else {
+                                        ("Unknown Image".to_string(), 0)
+                                    }
+                                } else {
+                                    ("Unknown Image".to_string(), 0)
+                                };
+                                
+                                cx.widget_action(
+                                    room_screen_widget_uid,
+                                    &scope.path,
+                                    RoomImageMessageDetailAction::SetImageDetail {
+                                        room_id: self.room_id.clone(),
+                                        sender: Some(sender.to_owned()),
+                                        sender_profile: Some(sender_profile.clone()),
+                                        event_id,
+                                        timestamp_millis: timestamp,
+                                        image_name,
+                                        image_size
+                                    }
+                                );
+                            }
+                        }
+                    }
                 }
             }
 
@@ -848,7 +892,12 @@ impl Widget for RoomScreen {
                 if self.handle_link_clicked(cx, action, &user_profile_sliding_pane) {
                     return false;
                 }
-
+                if let TextOrImageAction::Clicked(mxc_uri) = action.as_widget_action().cast() {
+                    if let (Some(tl), Some(mxc_uri_string)) = (&mut self.tl_state, mxc_uri) {
+                        let mxc_uri = OwnedMxcUri::from(mxc_uri_string);
+                        populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
+                    }
+                }
                 /*
                 match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
                     MessageAction::ActionBarClose => {
@@ -1330,10 +1379,15 @@ impl RoomScreen {
                     // Store room members directly in TimelineUiState
                     tl.room_members = Some(Arc::new(members));
                 },
-                TimelineUpdate::MediaFetched => {
-                    log!("process_timeline_updates(): media fetched for room {}", tl.room_id);
+                TimelineUpdate::MediaFetched(media_request_parameter) => {
+                    log!("process_timeline_updates(): media fetched for room {} {:?}", tl.room_id, media_request_parameter);
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                    if let Some(media_request_parameter) = media_request_parameter {
+                        if let (MediaFormat::File, MediaSource::Plain(mxc_uri)) = (media_request_parameter.format, media_request_parameter.source) {
+                            populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
+                        }
+                    }
                 }
                 TimelineUpdate::MessageEdited { timeline_event_id, result } => {
                     self.view.room_input_bar(id!(room_input_bar))
@@ -2410,9 +2464,9 @@ pub enum TimelineUpdate {
     RoomMembersListFetched {
         members: Vec<RoomMember>,
     },
-    /// A notice that one or more requested media items (images, videos, etc.)
+    /// A notice with an option of Media Request Parameters that one or more requested media items (images, videos, etc.)
     /// that should be displayed in this timeline have now been fetched and are available.
-    MediaFetched,
+    MediaFetched(Option<MediaRequestParameters>),
     /// A notice that one or more members of a this room are currently typing.
     TypingUsers {
         /// The list of users (their displayable name) who are currently typing in this room.
@@ -3282,7 +3336,7 @@ fn populate_image_message_content(
     let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
-                let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                let show_image_result = text_or_image_ref.show_image(cx, Some(mxc_uri.to_string()),|cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
@@ -3298,7 +3352,7 @@ fn populate_image_message_content(
             (MediaCacheEntry::Requested, _media_format) => {
                 // If the image is being fetched, we try to show its blurhash.
                 if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
-                    let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                    let show_image_result = text_or_image_ref.show_image(cx, Some(mxc_uri.to_string()), |cx, img| {
                         let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else {
                             return Err(image_cache::ImageError::EmptyData)
                         };
@@ -3342,7 +3396,7 @@ fn populate_image_message_content(
                 }
                 fully_drawn = false;
             }
-            (MediaCacheEntry::Failed, _media_format) => {
+            (MediaCacheEntry::Failed(_status_code), _media_format) => {
                 if text_or_image_ref.view(id!(default_image_view)).visible() {
                     fully_drawn = true;
                     return;
@@ -4173,4 +4227,49 @@ pub fn clear_timeline_states(_cx: &mut Cx) {
     TIMELINE_STATES.with_borrow_mut(|states| {
         states.clear();
     });
+}
+
+/// Populates the image viewer modal with the given media content.
+///
+/// If the media is already cached, it will be immediately displayed.
+/// If the media is not cached, it will be fetched from the server.
+/// If the media fetch fails, an error message will be displayed.
+///
+/// This function requires passing in a reference to `Cx`, which isn't used, but acts as a guarantee that this function must only be called by the main UI thread.
+pub fn populate_matrix_image_modal(
+    cx: &mut Cx, 
+    mxc_uri: OwnedMxcUri,
+    media_cache: &mut MediaCache
+) {
+    // Try to get media from cache or trigger fetch
+    let media_entry = media_cache.try_get_media_or_fetch(mxc_uri.clone(), MediaFormat::File);
+
+    // Handle the different media states
+    match media_entry {
+        (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
+            cx.action(ImageViewerAction::Show(LoadState::Loaded(data)));
+        }
+        (MediaCacheEntry::Loaded(data), MediaFormat::Thumbnail(_)) => {
+            cx.action(ImageViewerAction::Show(LoadState::Loading(data)));
+        }
+        (MediaCacheEntry::Failed(status_code), MediaFormat::File) => {
+            let error = match status_code {
+                StatusCode::NOT_FOUND => ImageViewerError::NotFound,
+                StatusCode::INTERNAL_SERVER_ERROR => ImageViewerError::ConnectionFailed,
+                StatusCode::PARTIAL_CONTENT => ImageViewerError::BadData,
+                StatusCode::UNAUTHORIZED => ImageViewerError::Unauthorized,
+                StatusCode::REQUEST_TIMEOUT => ImageViewerError::Timeout,
+                _ => ImageViewerError::Unknown
+            };
+            cx.action(ImageViewerAction::Show(LoadState::Error(
+                error
+            )));
+            // Delete failed media entry from cache for MediaFormat::File so as to start all over again from loading Thumbnail. 
+            media_cache.delete_cache_entry(&mxc_uri, Some(MediaFormat::File));
+        }
+        (MediaCacheEntry::Requested, _) => {
+            enqueue_popup_notification(PopupItem { message: String::from("Media requested"), auto_dismissal_duration: Some(10.0), kind: PopupKind::Warning });
+        }
+        _ => { }
+    }
 }
