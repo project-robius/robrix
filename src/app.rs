@@ -99,7 +99,6 @@ live_design! {
                         }
 
                         image_viewer = <Modal> {
-                            
                             content: {
                                 width: Fill, height: Fill,
                                 flow: Down
@@ -107,6 +106,7 @@ live_design! {
                                 draw_bg: {
                                     color: #000
                                 }
+
                                 <View> {
                                     width: Fill, height: Fill,
                                     flow: Overlay
@@ -125,6 +125,7 @@ live_design! {
                                     padding: 10
                                     align: {x: 0.5, y: 0.8}
                                     spacing: 10
+
                                     image_viewer_loading_spinner_view = <View> {
                                         width: Fit, height: Fit
                                         loading_spinner = <LoadingSpinner> {
@@ -450,49 +451,8 @@ impl MatchEvent for App {
                 _ => {}
             }
 
-            match action.downcast_ref() {
-                Some(ImageViewerAction::Show(load_state)) => {
-                    match load_state {
-                        LoadState::Loading(thumbnail_data) => {
-                            self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, true);
-                            self.ui.label(id!(image_viewer_status_label)).set_text(cx, "Loading...");
-                            self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
-                            let _ = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, thumbnail_data);
-                        }
-                        LoadState::Loaded(image_bytes) => {
-                            self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
-                            let _ = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, image_bytes);
-                            if let Err(error) = self.ui.image_viewer(id!(image_viewer_inner)).display_image(cx, image_bytes) {
-                                self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, true);
-                                let err = match error {
-                                    ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
-                                    ImageError::EmptyData => ImageViewerError::BadData,
-                                    ImageError::PathNotFound(_) => ImageViewerError::NotFound,
-                                    ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
-                                    _ => ImageViewerError::BadData,
-                                };
-                                self.ui.label(id!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(&err));
-                            } else {
-                                self.ui.view(id!(zoom_button_view)).set_visible(cx, true);
-                                self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
-                                self.ui.label(id!(image_viewer_status_label)).set_text(cx, "");
-                            }
-                        }
-                        LoadState::Error(error) => {
-                            self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
-                            self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, true);
-                            self.ui.label(id!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(error));
-                        }
-                    }
-                    self.ui.modal(id!(image_viewer)).open(cx);
-                    continue;
-                }
-                Some(ImageViewerAction::Hide) => {
-                    self.ui.modal(id!(image_viewer)).close(cx);
-                    self.ui.room_image_message_detail(id!(image_detail)).reset_state(cx);
-                    continue;
-                }
-                _ => {}
+            if self.handle_image_viewer_action(cx, action) {
+                continue;
             }
 
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
@@ -695,6 +655,54 @@ impl App {
         // Close a previously/currently-open room if specified.
         if let Some(closure) = close_room_closure_opt {
             closure(cx);
+        }
+    }
+
+    /// Handles actions for the image viewer.
+    fn handle_image_viewer_action(&mut self, cx: &mut Cx, action: &Box<dyn ActionTrait>) -> bool {
+        match action.downcast_ref() {
+            Some(ImageViewerAction::Show(load_state)) => {
+                match load_state {
+                    LoadState::Loading(thumbnail_data) => {
+                        self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, true);
+                        self.ui.label(id!(image_viewer_status_label)).set_text(cx, "Loading...");
+                        self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
+                        let _ = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, thumbnail_data);
+                    }
+                    LoadState::Loaded(image_bytes) => {
+                        self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
+                        let _ = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, image_bytes);
+                        if let Err(error) = self.ui.image_viewer(id!(image_viewer_inner)).display_image(cx, image_bytes) {
+                            self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, true);
+                            let err = match error {
+                                ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
+                                ImageError::EmptyData => ImageViewerError::BadData,
+                                ImageError::PathNotFound(_) => ImageViewerError::NotFound,
+                                ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
+                                _ => ImageViewerError::BadData,
+                            };
+                            self.ui.label(id!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(&err));
+                        } else {
+                            self.ui.view(id!(zoom_button_view)).set_visible(cx, true);
+                            self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
+                            self.ui.label(id!(image_viewer_status_label)).set_text(cx, "");
+                        }
+                    }
+                    LoadState::Error(error) => {
+                        self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
+                        self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, true);
+                        self.ui.label(id!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(error));
+                    }
+                }
+                self.ui.modal(id!(image_viewer)).open(cx);
+                true
+            }
+            Some(ImageViewerAction::Hide) => {
+                self.ui.modal(id!(image_viewer)).close(cx);
+                self.ui.room_image_message_detail(id!(image_detail)).reset_state(cx);
+                true
+            }
+            _ => false
         }
     }
 }

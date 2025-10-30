@@ -8,6 +8,22 @@ use makepad_widgets::{image_cache::ImageError, rotated_image::RotatedImageWidget
 
 use crate::utils::{load_png_or_jpg, load_png_or_jpg_rotated_image};
 
+/// Zoom constraints for the image viewer
+const MIN_ZOOM: f32 = 0.5;
+const MAX_ZOOM: f32 = 2.0;
+
+/// Zoom scale factor for zoom in/out operations
+const ZOOM_SCALE_FACTOR: f32 = 1.2;
+
+/// Pan sensitivity multiplier for drag operations
+/// This value amplifies mouse movement to provide responsive panning.
+/// A value of 2.0 makes the image move twice as fast as the mouse cursor,
+/// which feels natural for image panning interactions.
+const PAN_SENSITIVITY: f64 = 2.0;
+
+/// Duration for rotation animations in seconds
+const ROTATION_ANIMATION_DURATION: f64 = 1.0;
+
 /// Error types for image loading operations
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ImageViewerError {
@@ -34,9 +50,7 @@ struct DragState {
     /// The starting position of the drag.
     drag_start: DVec2,
     /// The zoom level of the image.
-    /// 
-    /// 1.0 = 100%
-    /// 0.5 = 200%
+    /// The larger the value, the more zoomed in the image is.
     zoom_level: f32,
     /// The pan offset of the image.
     pan_offset: Option<DVec2>,
@@ -70,7 +84,7 @@ live_design! {
             margin: 8,
             padding: 3
             draw_bg: {
-                color: (COLOR_SECONDARY)
+                color: (COLOR_PRIMARY)
             }
             draw_icon: {
                 svg_file: (ICON_ZOOM),
@@ -99,7 +113,7 @@ live_design! {
         padding: 3
         align: {x: 0.5, y: 0.5}
         draw_bg: {
-            color: (COLOR_SECONDARY)
+            color: (COLOR_PRIMARY)
         }
         draw_icon: {
             svg_file: (ICON_CLOCKWISE),
@@ -114,7 +128,7 @@ live_design! {
         align: {x: 0.5, y: 0.5}
         show_bg: true
         draw_bg: {
-            color: #ffffff
+            color: (COLOR_PRIMARY)
         }
         flow: Down
         header = <View> {
@@ -127,6 +141,7 @@ live_design! {
                 sign_label = <View> {
                     width: Fill, height: 50,
                     align: { x: 0.4, y: 0.35 }
+
                     magnify_glass_sign = <Label> {
                         text: "-",
                         draw_text: {
@@ -153,7 +168,7 @@ live_design! {
                 spacing: 0,
                 margin: 8,
                 draw_bg: {
-                    color: (COLOR_SECONDARY)
+                    color: (COLOR_PRIMARY)
                 }
                 draw_icon: {
                     svg_file: (ICON_CLOSE),
@@ -169,10 +184,9 @@ live_design! {
             flow: Overlay,
             visible: false
             show_bg: true
-                draw_bg: {
-                    color: #FF0000
-                    //color: #ffffff
-                }
+            draw_bg: {
+                color: (COLOR_PRIMARY)
+            }
             // Overlay is required to center align the image.
             align: {x: 0.5, y: 0.5}
             zoomable_image = <Image> {
@@ -184,10 +198,10 @@ live_design! {
             width: Fill, height: Fill,
             flow: Overlay
             align: {x: 0.5, y: 0.5}
+
             rotated_image = <RotatedImage> {
                 width: Fill, height: Fill,
                 draw_bg: {
-                    scale: 1.0,
                     rotation: 0.0
                     opacity: 1.0
                 }
@@ -213,7 +227,6 @@ live_design! {
                     apply: {
                         rotated_image_container = {
                             rotated_image = {
-                                //draw_bg: {rotation: [{time: 0.0, value: 4.71239}, {time: 0.9999, value: 6.28318}, {time: 1.0, value: 0.0}]}
                                 draw_bg: {rotation: 0.0}
                             }
                         }
@@ -341,7 +354,7 @@ impl Widget for ImageViewer {
                 Hit::FingerMove(fe) => {
                     if let Some(current_offset) = self.drag_state.pan_offset {
                         let drag_delta = fe.abs - self.drag_state.drag_start;
-                        let new_offset = current_offset + drag_delta * 2.0;
+                        let new_offset = current_offset + drag_delta * PAN_SENSITIVITY;
                         
                         let rotated_image_container = self.view.rotated_image(id!(rotated_image));
                         rotated_image_container.apply_over(
@@ -366,11 +379,11 @@ impl Widget for ImageViewer {
                 match &e.key_code {
                     KeyCode::Minus | KeyCode::NumpadSubtract => {
                         // Zoom out (make image smaller)
-                        self.adjust_zoom(cx, 1.0 / 1.2);
+                        self.adjust_zoom(cx, 1.0 / ZOOM_SCALE_FACTOR);
                     }
                     KeyCode::Equals | KeyCode::NumpadAdd => {
                         // Zoom in (make image larger)
-                        self.adjust_zoom(cx, 1.2);
+                        self.adjust_zoom(cx, ZOOM_SCALE_FACTOR);
                     }
                     KeyCode::Key0 | KeyCode::Numpad0 => {
                         self.reset_drag_state(cx);
@@ -400,16 +413,16 @@ impl MatchEvent for ImageViewer {
             cx.action(ImageViewerAction::Hide);
         }
         if self.view.button(id!(zoom_button_minus.magnifying_glass_button)).clicked(actions) {
-            self.adjust_zoom(cx, 1.0 / 1.2);
+            self.adjust_zoom(cx, 1.0 / ZOOM_SCALE_FACTOR);
         }
 
         if self.view.button(id!(zoom_button_plus.magnifying_glass_button)).clicked(actions) {
-            self.adjust_zoom(cx, 1.2);
+            self.adjust_zoom(cx, ZOOM_SCALE_FACTOR);
         }
 
         if self.view.button(id!(rotation_button_clockwise)).clicked(actions) {
             if !self.is_animating_rotation {
-                self.timer = cx.start_timeout(1.0);
+                self.timer = cx.start_timeout(ROTATION_ANIMATION_DURATION);
                 self.is_animating_rotation = true;
                 if self.rotation_step == 3 {
                     self.animator_cut(cx, id!(mode.degree_neg90));
@@ -510,8 +523,6 @@ impl ImageViewer {
     }
 
     fn adjust_zoom(&mut self, cx: &mut Cx, zoom_factor: f32) {
-        const MIN_ZOOM: f32 = 0.5;
-        const MAX_ZOOM: f32 = 2.0;
         if (self.drag_state.zoom_level >= MAX_ZOOM && zoom_factor > 1.0) || self.drag_state.zoom_level <= MIN_ZOOM && zoom_factor < 1.0 {
             return;
         }
