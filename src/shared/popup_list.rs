@@ -10,7 +10,7 @@ const POPUP_KINDS: [(PopupKind, Vec4); 4] = [
     (PopupKind::Success, COLOR_FG_ACCEPT_GREEN),
     (PopupKind::Warning, COLOR_WARNING_YELLOW),
 ];
-const ICON_SET: &[&[LiveId]] = ids!(error_icon, info_icon, success_icon, warning_icon,);
+const ICON_SET: &[&[LiveId]] = ids_array!(error_icon, info_icon, success_icon, warning_icon,);
 
 /// Displays a new popup notification with a popup item.
 ///
@@ -45,7 +45,7 @@ pub fn get_global_popup_list(cx: &mut Cx) -> &mut RobrixPopupNotificationRef {
 pub fn set_global_popup_list(cx: &mut Cx, parent_ref: &WidgetRef) {
     Cx::set_global(
         cx,
-        parent_ref.robrix_popup_notification(id!(popup_notification)),
+        parent_ref.robrix_popup_notification(ids!(popup_notification)),
     );
 }
 
@@ -428,7 +428,7 @@ impl LiveHook for RobrixPopupNotification {
         for (view, popup_item, _) in self.popups.iter_mut() {
             if let Some(index) = nodes.child_by_name(index, live_id!(content).as_field()) {
                 view.apply(cx, apply, index, nodes);
-                view.label(id!(popup_label))
+                view.label(ids!(popup_label))
                     .set_text(cx, &popup_item.message);
                 for (view, (popup_kind, _color)) in view.view_set(ICON_SET).iter().zip(POPUP_KINDS)
                 {
@@ -491,7 +491,7 @@ impl RobrixPopupNotification {
     pub fn push(&mut self, cx: &mut Cx, popup_item: PopupItem) {
         let mut view = View::new_from_ptr(cx, self.content);
         let mut background_color = None;
-        view.label(id!(popup_label))
+        view.label(ids!(popup_label))
             .set_text(cx, &popup_item.message);
         for (view, (popup_kind, color)) in view.view_set(ICON_SET).iter().zip(POPUP_KINDS) {
             if popup_item.kind == popup_kind {
@@ -556,7 +556,7 @@ impl RobrixPopupNotification {
                     }
                 },
             );
-            view.animator_play(cx, id!(mode.slide));
+            view.animator_play(cx, ids!(mode.slide));
             cx.start_timeout(duration)
         } else {
             view.apply_over(
@@ -601,7 +601,7 @@ impl RobrixPopupNotification {
     ///     message: "Welcome!".to_string(),
     ///     auto_dismissal_duration: Some(4.0),
     /// };
-    ///  view.label(id!(popup_label))
+    ///  view.label(ids!(popup_label))
     ///     .set_text(cx, &popup_item.message);
     ///  let close_timer = if let Some(duration) = popup_item.auto_dismissal_duration {
     ///     cx.start_timeout(duration)
@@ -633,9 +633,9 @@ impl RobrixPopupNotification {
 impl WidgetMatchEvent for RobrixPopupNotification {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         for (i, (view, _popup_item, close_timer)) in self.popups.iter_mut().enumerate() {
-            if view.button(id!(close_button)).clicked(actions) {
+            if view.button(ids!(close_button)).clicked(actions) {
                 cx.stop_timer(*close_timer);
-                view.animator_cut(cx, id!(mode.close_slider));
+                view.animator_cut(cx, ids!(mode.close_slider));
                 self.popups.remove(i);
                 self.draw_bg.redraw(cx);
                 break;

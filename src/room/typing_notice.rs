@@ -89,8 +89,8 @@ impl TypingNotice {
         let typing_notice_text = match typing_users {
             [] => {
                 // Animate out the typing notice view (sliding it out towards the bottom).
-                self.animator_play(cx, id!(typing_notice_animator.hide));
-                self.view.bouncing_dots(id!(bouncing_dots)).stop_animation(cx);
+                self.animator_play(cx, ids!(typing_notice_animator.hide));
+                self.view.bouncing_dots(ids!(bouncing_dots)).stop_animation(cx);
                 return;
             }
             [user] => format!("{user} is typing "),
@@ -107,12 +107,12 @@ impl TypingNotice {
             }
         };
         // Set the typing notice text and make its view visible.
-        self.view.label(id!(typing_label)).set_text(cx, &typing_notice_text);
+        self.view.label(ids!(typing_label)).set_text(cx, &typing_notice_text);
         self.view.set_visible(cx, true);
         // Animate in the typing notice view (sliding it up from the bottom).
-        self.animator_play(cx, id!(typing_notice_animator.show));
+        self.animator_play(cx, ids!(typing_notice_animator.show));
         // Start the typing notice text animation of bouncing dots.
-        self.view.bouncing_dots(id!(bouncing_dots)).start_animation(cx);
+        self.view.bouncing_dots(ids!(bouncing_dots)).start_animation(cx);
     }
 }
 

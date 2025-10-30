@@ -613,7 +613,7 @@ impl RoomsList {
                     }
                 }
                 RoomsListUpdate::ScrollToRoom(room_id) => {
-                    let portal_list = self.view.portal_list(id!(list));
+                    let portal_list = self.view.portal_list(ids!(list));
                     let speed = 50.0;
                     let portal_list_index = if let Some(direct_index) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
                         let (_, direct_rooms_indexes, _) = self.calculate_indexes();
@@ -669,7 +669,7 @@ impl RoomsList {
     /// Updates the lists of displayed rooms based on the current search filter
     /// and redraws the RoomsList.
     fn update_displayed_rooms(&mut self, cx: &mut Cx, keywords: &str) {
-        let portal_list = self.view.portal_list(id!(list));
+        let portal_list = self.view.portal_list(ids!(list));
         if keywords.is_empty() {
             // Reset each of the displayed_* lists to show all rooms.
             self.display_filter = RoomDisplayFilter::default();
@@ -840,7 +840,7 @@ impl Widget for RoomsList {
         // Now, handle any actions on this widget, e.g., a user selecting a room.
         // We use Scope `props` to pass down the current scrolling state of the PortalList.
         let props = RoomsListScopeProps {
-            was_scrolling: self.view.portal_list(id!(list)).was_scrolling(),
+            was_scrolling: self.view.portal_list(ids!(list)).was_scrolling(),
         };
         let list_actions = cx.capture_actions(
             |cx| self.view.handle_event(cx, event, &mut Scope::with_props(&props))

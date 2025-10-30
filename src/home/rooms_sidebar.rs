@@ -100,7 +100,7 @@ impl LiveHook for RoomsSideBar {
     fn after_new_from_doc(&mut self, cx: &mut Cx) {
         // Here we set the global singleton for the RoomsList widget,
         // which is used to access the list of rooms from anywhere in the app.
-        Cx::set_global(cx, self.view.rooms_list(id!(rooms_list)));
+        Cx::set_global(cx, self.view.rooms_list(ids!(rooms_list)));
     }
 }
 

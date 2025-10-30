@@ -169,8 +169,8 @@ impl Widget for TspVerificationModal {
 
 impl WidgetMatchEvent for TspVerificationModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let accept_button = self.button(id!(accept_button));
-        let cancel_button = self.button(id!(cancel_button));
+        let accept_button = self.button(ids!(accept_button));
+        let cancel_button = self.button(ids!(cancel_button));
 
         let cancel_button_clicked = cancel_button.clicked(actions);
         let modal_dismissed = actions
@@ -199,7 +199,7 @@ impl WidgetMatchEvent for TspVerificationModal {
             return;
         }
 
-        let prompt_label = self.view.label(id!(prompt));
+        let prompt_label = self.view.label(ids!(prompt));
         if accept_button.clicked(actions) {
             let current_state = std::mem::take(&mut self.state);
             let new_state: TspVerificationModalState;
@@ -292,11 +292,11 @@ impl WidgetMatchEvent for TspVerificationModal {
                 {
                     match result {
                         Ok(()) => {
-                            self.label(id!(prompt)).set_text(cx, "The TSP verification process has completed successfully.\n\nYou may now close this.");
+                            self.label(ids!(prompt)).set_text(cx, "The TSP verification process has completed successfully.\n\nYou may now close this.");
                             self.state = TspVerificationModalState::RequestVerified;
                         }
                         Err(e) => {
-                            self.label(id!(prompt)).set_text(cx, &format!("Error: failed to complete the TSP verification process:\n\n{e}"));
+                            self.label(ids!(prompt)).set_text(cx, &format!("Error: failed to complete the TSP verification process:\n\n{e}"));
                             self.state = TspVerificationModalState::RequestDeclined;
                         }
                     }
@@ -339,10 +339,10 @@ impl TspVerificationModal {
             details.responding_vid,
             details.responding_user_id,
         );
-        self.label(id!(prompt)).set_text(cx, &prompt_text);
+        self.label(ids!(prompt)).set_text(cx, &prompt_text);
 
-        let accept_button = self.button(id!(accept_button));
-        let cancel_button = self.button(id!(cancel_button));
+        let accept_button = self.button(ids!(accept_button));
+        let cancel_button = self.button(ids!(cancel_button));
         accept_button.set_text(cx, "Accept Request");
         accept_button.set_enabled(cx, true);
         accept_button.set_visible(cx, true);

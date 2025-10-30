@@ -123,7 +123,7 @@ impl Widget for TspSignIndicator {
 impl TspSignIndicator {
     /// Sets this indicator to show given state of this message's TSP signature.
     pub fn show_with_state(&mut self, cx: &mut Cx, state: TspSignState) {
-        let tsp_html_ref = self.view.html(id!(tsp_html));
+        let tsp_html_ref = self.view.html(ids!(tsp_html));
         if let Some(mut tsp_html) = tsp_html_ref.borrow_mut() {
             let (text, font_color) = match state {
                 TspSignState::Unknown => {

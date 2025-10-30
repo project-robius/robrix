@@ -244,8 +244,8 @@ impl Widget for ConfirmationModal {
 
 impl WidgetMatchEvent for ConfirmationModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-        let accept_button = self.view.button(id!(accept_button));
-        let cancel_button = self.view.button(id!(cancel_button));
+        let accept_button = self.view.button(ids!(accept_button));
+        let cancel_button = self.view.button(ids!(cancel_button));
 
         // Handle canceling/closing the modal.
         let cancel_clicked = cancel_button.clicked(actions);
@@ -289,21 +289,21 @@ impl ConfirmationModal {
     }
 
     fn apply_content(&mut self, cx: &mut Cx) {
-        self.view.label(id!(title)).set_text(cx, &self.content.title_text);
-        self.view.label(id!(body)).set_text(cx, &self.content.body_text);
-        self.view.button(id!(accept_button)).set_text(
+        self.view.label(ids!(title)).set_text(cx, &self.content.title_text);
+        self.view.label(ids!(body)).set_text(cx, &self.content.body_text);
+        self.view.button(ids!(accept_button)).set_text(
             cx,
             self.content.accept_button_text.as_deref().unwrap_or("Confirm"),
         );
-        self.view.button(id!(cancel_button)).set_text(
+        self.view.button(ids!(cancel_button)).set_text(
             cx,
             self.content.cancel_button_text.as_deref().unwrap_or("Cancel"),
         );
 
-        self.view.button(id!(cancel_button)).reset_hover(cx);
-        self.view.button(id!(accept_button)).reset_hover(cx);
-        self.view.button(id!(accept_button)).set_enabled(cx, true);
-        self.view.button(id!(cancel_button)).set_enabled(cx, true);
+        self.view.button(ids!(cancel_button)).reset_hover(cx);
+        self.view.button(ids!(accept_button)).reset_hover(cx);
+        self.view.button(ids!(accept_button)).set_enabled(cx, true);
+        self.view.button(ids!(cancel_button)).set_enabled(cx, true);
         self.view.redraw(cx);
     }
 }
