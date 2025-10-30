@@ -168,7 +168,7 @@ live_design! {
             <Filler> {}
 
             // TODO: SpacesBar goes here, which should be a vertically-scrollable PortalList
-            //       in this case, and a show/hidable hortizontally-scrollable one in Mobile mode.
+            //       in this case, and a show/hidable horizontally-scrollable one in Mobile mode.
             
             <Filler> {}
 
