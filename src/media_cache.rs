@@ -210,7 +210,7 @@ fn error_to_media_cache_entry(e: Error, request: &MediaRequestParameters) -> Med
         Error::Http(http_error) => {
             if let Some(client_error) = http_error.as_client_api_error() {
                 error!("Client error for media cache: {client_error} for request: {:?}", request);
-                MediaCacheEntry::Failed(client_error.status_code.clone())
+                MediaCacheEntry::Failed(client_error.status_code)
             } else {
                 match *http_error {
                     HttpError::Reqwest(reqwest_error) => {

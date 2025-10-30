@@ -663,50 +663,47 @@ impl Widget for RoomScreen {
                     );
                 }
                 let image_widget_uid = wr.image(id!(content.message)).widget_uid();
-                match actions.find_widget_action(image_widget_uid).cast() {
-                    TextOrImageAction::Clicked(_mxc_uri) => {
-                        if let Some(tl_state) = &self.tl_state {
-                            if let Some(item) = tl_state.items.get(index) {
-                                if let Some(event_tl_item) = item.as_event() {
-                                    let sender_profile = event_tl_item.sender_profile();
-                                    let sender = event_tl_item.sender();
-                                    let event_id = event_tl_item.event_id().map(|id| id.to_owned());
-                                    let timestamp = event_tl_item.timestamp();
-                                    
-                                    // Extract image name and size from the message content
-                                    let (image_name, image_size) = if let Some(message) = event_tl_item.content().as_message() {
-                                        if let MessageType::Image(image_content) = message.msgtype() {
-                                            let name = message.body().to_string();
-                                            let size = image_content.info.as_ref()
-                                                .and_then(|info| info.size)
-                                                .map(|s| i32::try_from(s).unwrap_or_default())
-                                                .unwrap_or(0);
-                                            (name, size)
-                                        } else {
-                                            ("Unknown Image".to_string(), 0)
-                                        }
+                if let TextOrImageAction::Clicked(_mxc_uri) = actions.find_widget_action(image_widget_uid).cast() {
+                    if let Some(tl_state) = &self.tl_state {
+                        if let Some(item) = tl_state.items.get(index) {
+                            if let Some(event_tl_item) = item.as_event() {
+                                let sender_profile = event_tl_item.sender_profile();
+                                let sender = event_tl_item.sender();
+                                let event_id = event_tl_item.event_id().map(|id| id.to_owned());
+                                let timestamp = event_tl_item.timestamp();
+                                
+                                // Extract image name and size from the message content
+                                let (image_name, image_size) = if let Some(message) = event_tl_item.content().as_message() {
+                                    if let MessageType::Image(image_content) = message.msgtype() {
+                                        let name = message.body().to_string();
+                                        let size = image_content.info.as_ref()
+                                            .and_then(|info| info.size)
+                                            .map(|s| i32::try_from(s).unwrap_or_default())
+                                            .unwrap_or(0);
+                                        (name, size)
                                     } else {
                                         ("Unknown Image".to_string(), 0)
-                                    };
-                                    
-                                    cx.widget_action(
-                                        room_screen_widget_uid,
-                                        &scope.path,
-                                        RoomImageMessageDetailAction::SetImageDetail {
-                                            room_id: self.room_id.clone(),
-                                            sender: Some(sender.to_owned()),
-                                            sender_profile: Some(sender_profile.clone()),
-                                            event_id,
-                                            timestamp_millis: timestamp,
-                                            image_name,
-                                            image_size
-                                        }
-                                    );
-                                }
+                                    }
+                                } else {
+                                    ("Unknown Image".to_string(), 0)
+                                };
+                                
+                                cx.widget_action(
+                                    room_screen_widget_uid,
+                                    &scope.path,
+                                    RoomImageMessageDetailAction::SetImageDetail {
+                                        room_id: self.room_id.clone(),
+                                        sender: Some(sender.to_owned()),
+                                        sender_profile: Some(sender_profile.clone()),
+                                        event_id,
+                                        timestamp_millis: timestamp,
+                                        image_name,
+                                        image_size
+                                    }
+                                );
                             }
                         }
                     }
-                    _ => {}
                 }
             }
 

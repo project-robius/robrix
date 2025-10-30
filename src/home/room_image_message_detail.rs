@@ -138,8 +138,7 @@ impl Widget for RoomImageMessageDetail {
 
 impl MatchEvent for RoomImageMessageDetail {
     fn handle_action(&mut self, cx: &mut Cx, action:&Action) {
-        match action.as_widget_action().cast() {
-            RoomImageMessageDetailAction::SetImageDetail { 
+        if let RoomImageMessageDetailAction::SetImageDetail { 
                 room_id, 
                 sender, 
                 sender_profile, 
@@ -147,22 +146,20 @@ impl MatchEvent for RoomImageMessageDetail {
                 timestamp_millis,
                 image_name,
                 image_size
-             } => {
-                self.room_id = room_id.clone();
-                self.sender = sender.clone();
-                self.sender_profile = sender_profile.clone();
-                self.event_id = event_id.clone();
-                self.avatar_drawn = false;
-                // Format and display image name and size
-                let human_readable_size = format_file_size(image_size);
-                let display_text = format!("{} ({})", image_name, human_readable_size);
-                self.label(id!(image_name_and_size)).set_text(cx, &display_text);
-                if let Some(dt) = unix_time_millis_to_datetime(timestamp_millis) {
-                    self.view(id!(timestamp_view)).set_visible(cx, true);
-                    self.timestamp(id!(timestamp)).set_date_time(cx, dt);
-                }
+             } = action.as_widget_action().cast() {
+            self.room_id = room_id.clone();
+            self.sender = sender.clone();
+            self.sender_profile = sender_profile.clone();
+            self.event_id = event_id.clone();
+            self.avatar_drawn = false;
+            // Format and display image name and size
+            let human_readable_size = format_file_size(image_size);
+            let display_text = format!("{} ({})", image_name, human_readable_size);
+            self.label(id!(image_name_and_size)).set_text(cx, &display_text);
+            if let Some(dt) = unix_time_millis_to_datetime(timestamp_millis) {
+                self.view(id!(timestamp_view)).set_visible(cx, true);
+                self.timestamp(id!(timestamp)).set_date_time(cx, dt);
             }
-            _ => {}
         }
     }
 }

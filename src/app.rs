@@ -112,7 +112,6 @@ live_design! {
                                     flow: Overlay
                                     image_viewer_inner = <ImageViewer> {
                                         align: {x: 0.5, y: 0.5}
-                                        debug: true
                                         padding: {bottom: 0}
                                     }
                                     image_detail = <RoomImageMessageDetail> {
@@ -453,17 +452,17 @@ impl MatchEvent for App {
 
             match action.downcast_ref() {
                 Some(ImageViewerAction::Show(load_state)) => {
-                    match &load_state {
-                        &LoadState::Loading(thumbnail_data) => {
+                    match load_state {
+                        LoadState::Loading(thumbnail_data) => {
                             self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, true);
                             self.ui.label(id!(image_viewer_status_label)).set_text(cx, "Loading...");
                             self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
-                            let _ = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, &thumbnail_data);
+                            let _ = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, thumbnail_data);
                         }
-                        &LoadState::Loaded(image_bytes) => {
+                        LoadState::Loaded(image_bytes) => {
                             self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
-                            let _ = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, &image_bytes);
-                            if let Err(error) = self.ui.image_viewer(id!(image_viewer_inner)).display_image(cx, &image_bytes) {
+                            let _ = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, image_bytes);
+                            if let Err(error) = self.ui.image_viewer(id!(image_viewer_inner)).display_image(cx, image_bytes) {
                                 self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, true);
                                 let err = match error {
                                     ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
@@ -479,7 +478,7 @@ impl MatchEvent for App {
                                 self.ui.label(id!(image_viewer_status_label)).set_text(cx, "");
                             }
                         }
-                        &LoadState::Error(error) => {
+                        LoadState::Error(error) => {
                             self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
                             self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, true);
                             self.ui.label(id!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(error));

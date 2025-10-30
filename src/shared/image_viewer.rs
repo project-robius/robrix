@@ -114,11 +114,9 @@ live_design! {
         align: {x: 0.5, y: 0.5}
         show_bg: true
         draw_bg: {
-            //color: #000
             color: #ffffff
         }
         flow: Down
-        debug: false
         header = <View> {
             width: Fill, height: 50
             flow: Right
@@ -185,13 +183,7 @@ live_design! {
         rotated_image_container = <View> {
             width: Fill, height: Fill,
             flow: Overlay
-            show_bg: false
-            draw_bg: {
-                color: #FF0000
-                //color: #ffffff
-            }
             align: {x: 0.5, y: 0.5}
-            debug: true
             rotated_image = <RotatedImage> {
                 width: Fill, height: Fill,
                 draw_bg: {
@@ -443,11 +435,8 @@ impl MatchEvent for ImageViewer {
         }
 
         for action in actions {
-            match action.downcast_ref::<ImageViewerAction>() {
-                Some(ImageViewerAction::Hide) => {
-                    self.reset(cx);
-                }
-                _ => {}
+            if let Some(ImageViewerAction::Hide) = action.downcast_ref::<ImageViewerAction>() {
+                self.reset(cx);
             }
         }
     }
