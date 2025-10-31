@@ -36,7 +36,7 @@ use crate::{
     avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{self, UserProfileUpdate},
-    }, settings::SettingsAction, shared::{
+    }, shared::{
         avatar::AvatarWidgetExt,
         callout_tooltip::TooltipAction,
         styles::*,
@@ -393,7 +393,6 @@ impl Widget for ProfileIcon {
 #[derive(Live, LiveHook, Widget)]
 pub struct NavigationTabBar {
     #[deref] view: AdaptiveView,
-    #[rust] is_settings_shown: bool,
 }
 
 impl Widget for NavigationTabBar {
@@ -401,20 +400,29 @@ impl Widget for NavigationTabBar {
         self.view.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {
-            if !self.is_settings_shown
-                && self.view.button(ids!(settings_button)).clicked(actions)
-            {
-                self.is_settings_shown = true;
-                cx.action(SettingsAction::OpenSettings);
-            }
-
-            if self.view.button(ids!(home_button)).clicked(actions) {
-                cx.action(SettingsAction::CloseSettings);
+            // Handle one of the radio buttons being clicked (selected).
+            let radio_button_set = self.view.radio_button_set(ids_array!(
+                home_button,
+                add_room_button,
+                settings_button,
+            ));
+            match radio_button_set.selected(cx, actions) {
+                Some(0) => cx.action(NavigationBarAction::GoToHome),
+                Some(1) => cx.action(NavigationBarAction::GoToAddRoom),
+                Some(2) => cx.action(NavigationBarAction::OpenSettings),
+                _ => { }
             }
 
             for action in actions {
-                if let Some(SettingsAction::CloseSettings) = action.downcast_ref() {
-                    self.is_settings_shown = false;
+                // If another widget programmatically selected a new tab,
+                // update our radio buttons accordingly.
+                if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
+                    let radio_button_to_select = match tab {
+                        SelectedTab::Home     => self.view.radio_button(ids!(home_button)),
+                        SelectedTab::AddRoom  => self.view.radio_button(ids!(add_room_button)),
+                        SelectedTab::Settings => self.view.radio_button(ids!(settings_button)),
+                    };
+                    radio_button_to_select.select(cx, scope);
                 }
             }
         }
@@ -423,6 +431,40 @@ impl Widget for NavigationTabBar {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
     }
+}
+
+
+/// Which tab is currently selected in the NavigationTabBar.
+#[derive(Clone, Debug, Default)]
+pub enum SelectedTab {
+    #[default]
+    Home,
+    AddRoom,
+    Settings,
+    // AlertsInbox,
+
+    // Once we support spaces and shortcut buttons (like directs only, etc),
+    // we can add them here.
+}
+
+
+/// Actions for navigating through the top-level views of the app,
+/// e.g., when the user clicks/taps on a button in the NavigationTabBar.
+#[derive(Debug)]
+pub enum NavigationBarAction {
+    /// Go to the main rooms content view.
+    GoToHome,
+    /// Go the add/join/explore room view.
+    GoToAddRoom,
+    /// Go to the Settings view (open the `SettingsScreen`).
+    OpenSettings,
+    /// Close the Settings view (`SettingsScreen`), returning to the previous page.
+    CloseSettings,
+    /// The given tab was selected programmatically, e.g., after closing the settings screen.
+    /// This is needed just to ensure that the proper tab radio button is marked as selected.
+    TabSelected(SelectedTab),
+    // GoToAlertsInbox
+    // GoToSpace { space_id: OwnedRoomId }, // TODO: uncomment once we impl the SpacesBar
 }
 
 
