@@ -197,6 +197,7 @@ live_design! {
     }
 
     AddRoomButton = <NavigationTabButton> {
+        enabled: false
         draw_icon: {
             svg_file: (ICON_ADD),
             color: (COLOR_FG_DISABLED),
@@ -223,9 +224,13 @@ live_design! {
                 profile_icon = <ProfileIcon> {}
             }
 
-            home_button = <HomeButton> {}
+            <CachedWidget> {
+                home_button = <HomeButton> {}
+            }
 
-            add_room_button = <AddRoomButton> {}
+            <CachedWidget> {
+                add_room_button = <AddRoomButton> {}
+            }
 
             <Separator> {}
 
@@ -238,7 +243,9 @@ live_design! {
 
             <Separator> {}
             
-            settings_button = <SettingsButton> {}
+            <CachedWidget> {
+                settings_button = <SettingsButton> {}
+            }
         }
 
         Mobile = {
@@ -252,11 +259,17 @@ live_design! {
                 color: (COLOR_SECONDARY)
             }
 
-            home_button = <HomeButton> {}
+            <CachedWidget> {
+                home_button = <HomeButton> {}
+            }
 
-            add_room_button = <AddRoomButton> {}
+            <CachedWidget> {
+                add_room_button = <AddRoomButton> {}
+            }
 
-            settings_button = <SettingsButton> {}
+            <CachedWidget> {
+                settings_button = <SettingsButton> {}
+            }
 
             <CachedWidget> {
                 profile_icon = <ProfileIcon> {}

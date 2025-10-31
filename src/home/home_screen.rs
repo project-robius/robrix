@@ -23,9 +23,17 @@ live_design! {
     // A placeholder for the AddRoomScreen
     AddRoomScreen = <View> {
         width: Fill, height: Fill,
+        padding: {top: 100}
+        align: {x: 0.5}
+
+        show_bg: true
+        draw_bg: {
+            color: (COLOR_PRIMARY)
+        }
 
         title = <Label> {
             flow: RightWrap,
+            align: {x: 0.5}
             draw_text: {
                 text_style: <TITLE_TEXT>{font_size: 13},
                 color: #000
@@ -40,6 +48,10 @@ live_design! {
     // It adapts to both desktop and mobile layouts.
     pub HomeScreen = {{HomeScreen}} {
         <AdaptiveView> {
+            // NOTE: within each of these sub views, we used `CachedWidget` wrappers
+            //       to ensure that there is only a single global instance of each
+            //       of those widgets, which means they maintain their state
+            //       across transitions between the Desktop and Mobile variant.
             Desktop = {
                 show_bg: true
                 draw_bg: {
