@@ -1,32 +1,34 @@
-//! The spaces dock (TODO: rename this) shows a side bar or bottom bar
-//! of radio buttons that allow the user to navigate/switch between
-//! various top-level views in Robrix.
+//! The NavigationTabBar shows a bar of radio-button icons
+//! on the left side bar or along the bottom.
+//! These buttons allow the user navigate/switch between
+//! the top-level views in Robrix.
 //!
-//! Here's their order (in Mobile view, horizontally from left to right):
+//! Their order in Mobile view (horizontally from left to right) is:
 //! 1. Home [house icon]: the main view with the rooms list and the room content
 //!    * TODO: add a SpacesBar: a skinny scrollable PortalList showing all Spaces avatars.
 //!      * In the Mobile view, this will be shown horizontally on the bottom of the main view
 //!        (just above the current NavigationTabBar).
-//!      * In the Desktop view, this will be shown vertically on the left of the main view
-//!        (just to the right of the current NavigationTabBar).
-//!        * We could also optionally embed it directly into the current NavigationTabBar too (like Element).
-//!    * Search should only be available within the main Home view.
+//!      * In the Desktop view, this will be "embedded" within the NavigationTabBar itself.
+//!        We could optionally allow users to "pop it out", just to the right of the NavigationTabBar
+//!        such that it could occupy the full height of the app window.
 //! 2. Add/Join [plus sign icon]: a new view to handle adding (joining) existing rooms, exploring public rooms,
 //!    or creating new rooms/spaces.
-//! 3. Activity [an inbox or notifications icon]:  like Cinny, this shows a new view
+//! 3. Spaces: a button that toggles the `SpacesBar` (shows/hides it).
+//!    This is NOT a regular radio button.
+//! 4. Activity [an inbox, alert bell, or notifications icon]:  like Cinny, this shows a new view
 //!    with a list of notifications, mentions, invitations, etc.
-//! 4. Profile/Settings [profile icon]: the existing ProfileIcon with the verification badge
+//! 5. Profile/Settings [ProfileIcon]: the existing ProfileIcon with the verification badge.
+//!    Upon click, this shows the SettingsScreen as normal.
 //!
 //! The order in Desktop view (vertically from top to bottom) is:
 //! 1. Profile/Settings
 //! 2. Home
-//! 3. Activity/Inbox
-//! 4. Add/Join
-//! 5. (Spaces Bar)
+//! 3. ----- separator -----
+//!      (the Spaces Bar)
+//!    ----- separator -----
+//! 4. Activity/Inbox
+//! 5. Add/Join
 //!
-//!
-//! TODO: for now, go back to using radio button app tabs like we were before.
-//! We can also place the existing ProfileIcon on the bottom left, but just make it non-clickable.
 
 use makepad_widgets::*;
 
@@ -49,19 +51,118 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
-    use crate::shared::icon_button::*;
     use crate::shared::verification_badge::*;
     use crate::shared::avatar::*;
 
     NAVIGATION_TAB_BAR_SIZE = 68
-    COLOR_NAVIGATION_TAB_BAR_ICON = #1C274C
+
+    COLOR_NAVIGATION_TAB_FG = #1C274C
+    COLOR_NAVIGATION_TAB_FG_HOVER = #1C274C
+    COLOR_NAVIGATION_TAB_FG_ACTIVE = #1C274C
+    COLOR_NAVIGATION_TAB_BG        = (COLOR_SECONDARY)
+    COLOR_NAVIGATION_TAB_BG_HOVER  = (COLOR_SECONDARY * 0.85)
+    COLOR_NAVIGATION_TAB_BG_ACTIVE = (COLOR_SECONDARY * 0.5)
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
 
+    // A RadioButton styled to fit within our NavigationTabBar.
+    pub NavigationTabButton = <RadioButton> {
+        width: Fill,
+        height: (NAVIGATION_TAB_BAR_SIZE - 5),
+        padding: 5,
+        margin: 3, 
+        align: {x: 0.5, y: 0.5}
+        flow: Down,
+        
+        icon_walk: {margin: 0, width: (NAVIGATION_TAB_BAR_SIZE/2.2), height: Fit}
+        // Fully hide the text with zero size, zero margin, and zero spacing
+        label_walk: {margin: 0, width: 0, height: 0}
+        spacing: 0,
+
+        draw_bg: {
+            radio_type: Tab,
+
+            border_size: 0.0
+            border_color: #0000
+            uniform inset: vec4(0.0, 0.0, 0.0, 0.0)
+            border_radius: 4.0
+
+            fn get_color(self) -> vec4 {
+                return mix(
+                    mix(
+                        COLOR_NAVIGATION_TAB_BG,
+                        COLOR_NAVIGATION_TAB_BG_HOVER,
+                        self.hover
+                    ),
+                    COLOR_NAVIGATION_TAB_BG_ACTIVE,
+                    self.active
+                )
+            }
+
+            fn get_border_color(self) -> vec4 {
+                return self.border_color
+            }
+
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                sdf.box(
+                    self.inset.x + self.border_size,
+                    self.inset.y + self.border_size,
+                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
+                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
+                    max(1.0, self.border_radius)
+                )
+                sdf.fill_keep(self.get_color())
+                if self.border_size > 0.0 {
+                    sdf.stroke(self.get_border_color(), self.border_size)
+                }
+                return sdf.result;
+            }
+        }
+
+        draw_text: {
+            color: (COLOR_NAVIGATION_TAB_FG)
+            color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
+            color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
+
+            text_style: <THEME_FONT_BOLD>{font_size: 9}
+
+            fn get_color(self) -> vec4 {
+                return mix(
+                    mix(
+                        self.color,
+                        self.color_hover,
+                        self.hover
+                    ),
+                    self.color_active,
+                    self.active
+                )
+            }
+        }
+
+        draw_icon: {
+            uniform color: (COLOR_NAVIGATION_TAB_FG)
+            uniform color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
+            uniform color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
+            fn get_color(self) -> vec4 {
+                return mix(
+                    mix(
+                        self.color,
+                        self.color_hover,
+                        self.focus
+                    ),
+                    self.color_active,
+                    self.active
+                )
+            }
+        }
+    }
+
     ProfileIcon = {{ProfileIcon}}<RoundedView> {
+        width: Fill,
+        height: (NAVIGATION_TAB_BAR_SIZE - 8)
         flow: Overlay
-        width: (NAVIGATION_TAB_BAR_SIZE - 6), height: (NAVIGATION_TAB_BAR_SIZE - 6)
         align: { x: 0.5, y: 0.5 }
         cursor: Default,
 
@@ -80,76 +181,39 @@ live_design! {
         }
 
         <View> {
-            align: { x: 1.0, y: 0.0 }
+            align: { x: 0.5, y: 0.0 }
+            margin: { left: 42 }
             verification_badge = <VerificationBadge> {}
         }
     }
 
-    HomeButton = <RobrixIconButton> {
-        width: Fit
-        height: Fit,
-        padding: {top: 12, left: 12, right: 12, bottom: 12}
-        spacing: 0
-
-        draw_bg: {
-            // border_color: (COLOR_PRIMARY_DARKER),
-            color: #00000000,
-            color_hover: (COLOR_PRIMARY)
-            // border_radius: 5
-        }
-        draw_icon: {
-            svg_file: (ICON_HOME),
-            color: (COLOR_NAVIGATION_TAB_BAR_ICON),
-        }
-        icon_walk: {width: 25, height: Fit, margin: 0}
+    HomeButton = <NavigationTabButton> {
+        draw_icon: { svg_file: (ICON_HOME) }
+        animator: { active = { default: on } }
     }
 
-    SettingsButton = <RobrixIconButton> {
-        width: Fit
-        height: Fit,
-        padding: {top: 12, left: 12, right: 12, bottom: 12}
-        spacing: 0
-
-        draw_bg: {
-            // border_color: (COLOR_PRIMARY_DARKER),
-            color: #00000000,
-            color_hover: (COLOR_PRIMARY)
-            // border_radius: 5
-        }
-        draw_icon: {
-            svg_file: (ICON_SETTINGS),
-            color: (COLOR_NAVIGATION_TAB_BAR_ICON),
-        }
-        icon_walk: {width: 25, height: Fit, margin: 0}
+    SettingsButton = <NavigationTabButton> {
+        draw_icon: { svg_file: (ICON_SETTINGS) }
     }
 
-    AddRoomButton = <RobrixIconButton> {
-        width: Fit
-        height: Fit,
-        padding: {top: 12, left: 12, right: 12, bottom: 12}
-        spacing: 0
-        enabled: false,
-
-        draw_bg: {
-            color: #00000000,
-            color_hover: (COLOR_PRIMARY)
-        }
+    AddRoomButton = <NavigationTabButton> {
         draw_icon: {
             svg_file: (ICON_ADD),
-            // color: (COLOR_NAVIGATION_TAB_BAR_ICON),
             color: (COLOR_FG_DISABLED),
         }
-        icon_walk: {width: 25, height: Fit, margin: 0}
+        animator: { disabled = { default: on } }
     }
 
-    Separator = <LineH> { margin: {top: 2, bottom: 2, left: 10, right: 10} }
+    Separator = <LineH> { margin: 8 }
 
     pub NavigationTabBar = {{NavigationTabBar}}<AdaptiveView> {
         Desktop = {
-            flow: Down, spacing: 5
+            flow: Down,
             align: {x: 0.5}
             padding: {top: 40., bottom: 8}
-            width: (NAVIGATION_TAB_BAR_SIZE), height: Fill
+            width: (NAVIGATION_TAB_BAR_SIZE), 
+            height: Fill
+
             show_bg: true
             draw_bg: {
                 color: (COLOR_SECONDARY)
@@ -180,32 +244,23 @@ live_design! {
         Mobile = {
             flow: Right
             align: {x: 0.5, y: 0.5}
-            padding: {top: 10, right: 10, bottom: 10, left: 10}
-            width: Fill, height: (NAVIGATION_TAB_BAR_SIZE)
+            width: Fill,
+            height: (NAVIGATION_TAB_BAR_SIZE)
+
             show_bg: true
             draw_bg: {
                 color: (COLOR_SECONDARY)
             }
 
-            <Filler> {}
-
             home_button = <HomeButton> {}
-
-            <Filler> {}
 
             add_room_button = <AddRoomButton> {}
 
-            <Filler> {}
-
             settings_button = <SettingsButton> {}
-            
-            <Filler> {}
-            
+
             <CachedWidget> {
                 profile_icon = <ProfileIcon> {}
             }
-
-            <Filler> {}
         }
     }
 }
