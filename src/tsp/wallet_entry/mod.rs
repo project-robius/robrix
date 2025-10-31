@@ -157,10 +157,10 @@ impl Widget for WalletEntry {
 
         let Some(metadata) = self.metadata.as_ref() else { return };
         if let Event::Actions(actions) = event {
-            if self.view.button(id!(set_default_wallet_button)).clicked(actions) {
+            if self.view.button(ids!(set_default_wallet_button)).clicked(actions) {
                 submit_tsp_request(TspRequest::SetDefaultWallet(metadata.clone()));
             }
-            if self.view.button(id!(remove_wallet_button)).clicked(actions) {
+            if self.view.button(ids!(remove_wallet_button)).clicked(actions) {
                 let metadata_clone = metadata.clone();
                 let content = ConfirmationModalContent {
                     title_text: "Remove Wallet".into(),
@@ -177,7 +177,7 @@ impl Widget for WalletEntry {
                 };
                 cx.action(TspWalletEntryAction::ShowConfirmationModal(RefCell::new(Some(content))));
             }
-            if self.view.button(id!(delete_wallet_button)).clicked(actions) {
+            if self.view.button(ids!(delete_wallet_button)).clicked(actions) {
                 // TODO: Implement the delete wallet feature.
                 enqueue_popup_notification(PopupItem {
                     message: "Delete wallet feature is not yet implemented.".to_string(),
@@ -197,11 +197,11 @@ impl Widget for WalletEntry {
             self.metadata = Some(metadata.clone());
         }
 
-        self.label(id!(wallet_name)).set_text(
+        self.label(ids!(wallet_name)).set_text(
             cx,
             &metadata.wallet_name,
         );
-        self.label(id!(wallet_path)).set_text(
+        self.label(ids!(wallet_path)).set_text(
             cx,
             metadata.url.as_url_unencoded()
         );
@@ -210,19 +210,19 @@ impl Widget for WalletEntry {
         // get their styling messed up in weird ways.
         // So, as a workaround, we just hide the button entirely and show a `is_default_label_view` instead.
 
-        self.view(id!(is_default_label_view)).set_visible(
+        self.view(ids!(is_default_label_view)).set_visible(
             cx,
             sd.is_default
         );
-        self.label(id!(not_found_label_view)).set_visible(
+        self.label(ids!(not_found_label_view)).set_visible(
             cx,
             sd.status == WalletStatus::NotFound,
         );
-        self.button(id!(set_default_wallet_button)).set_visible(
+        self.button(ids!(set_default_wallet_button)).set_visible(
             cx,
             !sd.is_default && sd.status != WalletStatus::NotFound,
         );
-        self.button(id!(delete_wallet_button)).set_visible(
+        self.button(ids!(delete_wallet_button)).set_visible(
             cx,
             sd.status != WalletStatus::NotFound,
         );

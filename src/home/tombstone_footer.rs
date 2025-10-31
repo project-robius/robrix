@@ -25,9 +25,10 @@ live_design! {
     use crate::shared::icon_button::*;
     use crate::home::invite_screen::*;
 
-    pub TombstoneFooter = {{TombstoneFooter}} {
+    pub TombstoneFooter = {{TombstoneFooter}}<ScrollYView> {
         visible: false,
-        width: Fill, height: Fit
+        width: Fill,
+        height: Fit { max: Rel(0.625) }
         flow: Down,
         align: {x: 0.5}
         padding: 20,
@@ -118,7 +119,7 @@ pub struct TombstoneFooter {
 impl Widget for TombstoneFooter {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
-            if self.view.button(id!(join_successor_button)).clicked(actions) {
+            if self.view.button(ids!(join_successor_button)).clicked(actions) {
                 self.navigate_to_successor_room(cx, scope);
             }
         }
@@ -138,10 +139,10 @@ impl TombstoneFooter {
         tombstoned_room_id: &OwnedRoomId,
         successor_room_details: &SuccessorRoomDetails,
     ) {
-        let replacement_reason = self.view.label(id!(replacement_reason));
-        let join_successor_button = self.view.button(id!(join_successor_button));
-        let successor_room_avatar = self.view.avatar(id!(successor_room_avatar));
-        let successor_room_name = self.view.label(id!(successor_room_name));
+        let replacement_reason = self.view.label(ids!(replacement_reason));
+        let join_successor_button = self.view.button(ids!(join_successor_button));
+        let successor_room_avatar = self.view.avatar(ids!(successor_room_avatar));
+        let successor_room_name = self.view.label(ids!(successor_room_name));
 
         log!("Showing TombstoneFooter for room {tombstoned_room_id}, Successor: {successor_room_details:?}");
         match successor_room_details {

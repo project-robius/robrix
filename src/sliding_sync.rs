@@ -3441,7 +3441,7 @@ pub fn shutdown_background_tasks() {
     }
 }
 
-pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
+pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
     // Clear resources normally, allowing them to be properly dropped
     // This prevents memory leaks when users logout and login again without closing the app
     CLIENT.lock().unwrap().take();

@@ -18,7 +18,7 @@ pub fn live_design(cx: &mut Cx) {
 /// Basic details needed to display a brief summary of a room.
 ///
 /// You can construct this manually, but it also can be created from a
-/// `SuccessorRoom` or a `FetchedRoomPreview`.
+/// [`SuccessorRoom`] or a [`FetchedRoomPreview`].
 #[derive(Clone, Debug)]
 pub struct BasicRoomDetails {
     pub room_id: OwnedRoomId,

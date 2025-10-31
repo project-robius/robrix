@@ -128,9 +128,9 @@ impl Widget for Avatar {
     fn set_text(&mut self, cx: &mut Cx, v: &str) {
         let f = utils::user_name_first_letter(v)
             .unwrap_or("?").to_uppercase();
-        self.label(id!(text_view.text)).set_text(cx, &f);
-        self.view(id!(img_view)).set_visible(cx, false);
-        self.view(id!(text_view)).set_visible(cx, true);
+        self.label(ids!(text_view.text)).set_text(cx, &f);
+        self.view(ids!(img_view)).set_visible(cx, false);
+        self.view(ids!(text_view)).set_visible(cx, true);
     }
 }
 
@@ -166,7 +166,7 @@ impl Avatar {
 
         // Apply background color if provided
         if let Some(color) = bg_color {
-            self.view(id!(text_view)).apply_over(cx, live! {
+            self.view(ids!(text_view)).apply_over(cx, live! {
                 draw_bg: {
                     background_color: (color)
                 }
@@ -194,11 +194,11 @@ impl Avatar {
     ) -> Result<(), E>
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(), E>
     {
-        let img_ref = self.image(id!(img_view.img));
+        let img_ref = self.image(ids!(img_view.img));
         let res = image_set_function(cx, img_ref);
         if res.is_ok() {
-            self.view(id!(img_view)).set_visible(cx, true);
-            self.view(id!(text_view)).set_visible(cx, false);
+            self.view(ids!(img_view)).set_visible(cx, true);
+            self.view(ids!(text_view)).set_visible(cx, false);
 
             self.info = info.map(|AvatarImageInfo { user_id, username, room_id, img_data }|
                 UserProfileAndRoomId {
@@ -216,7 +216,7 @@ impl Avatar {
 
     /// Returns whether this avatar is currently displaying an image or text.
     pub fn status(&mut self) -> AvatarDisplayStatus {
-        if self.view(id!(img_view)).visible() {
+        if self.view(ids!(img_view)).visible() {
             AvatarDisplayStatus::Image
         } else {
             AvatarDisplayStatus::Text

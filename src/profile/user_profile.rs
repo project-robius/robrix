@@ -461,12 +461,12 @@ impl Widget for UserProfileSlidingPane {
         }
         // If the animator is in the `hide` state and has finished animating out,
         // that means it has fully animated off-screen and can be set to invisible.
-        if self.animator_in_state(cx, id!(panel.hide)) {
+        if self.animator_in_state(cx, ids!(panel.hide)) {
             match (self.is_animating_out, animator_action.is_animating()) {
                 (true, false) => {
                     self.visible = false;
                     cx.revert_key_focus();
-                    self.view(id!(bg_view)).set_visible(cx, false);
+                    self.view(ids!(bg_view)).set_visible(cx, false);
                     self.redraw(cx);
                     return;
                 }
@@ -488,7 +488,7 @@ impl Widget for UserProfileSlidingPane {
         let close_pane = {
             matches!(
                 event,
-                Event::Actions(actions) if self.button(id!(close_button)).clicked(actions)
+                Event::Actions(actions) if self.button(ids!(close_button)).clicked(actions)
             )
             || event.back_pressed()
             || match event.hits_with_capture_overload(cx, area, true) {
@@ -499,13 +499,13 @@ impl Widget for UserProfileSlidingPane {
                 }
                 Hit::FingerUp(fue) if fue.is_over => {
                     fue.mouse_button().is_some_and(|b| b.is_back())
-                    || !self.view(id!(main_content)).area().rect(cx).contains(fue.abs)
+                    || !self.view(ids!(main_content)).area().rect(cx).contains(fue.abs)
                 }
                 _ => false,
             }
         };
         if close_pane {
-            self.animator_play(cx, id!(panel.hide));
+            self.animator_play(cx, ids!(panel.hide));
             self.redraw(cx);
             return;
         }
@@ -563,7 +563,7 @@ impl Widget for UserProfileSlidingPane {
 
             // TODO: handle actions for the `direct_message_button`
 
-            if self.button(id!(copy_link_to_user_button)).clicked(actions) {
+            if self.button(ids!(copy_link_to_user_button)).clicked(actions) {
                 let matrix_to_uri = info.user_id.matrix_to_uri().to_string();
                 cx.copy_to_clipboard(&matrix_to_uri);
                 enqueue_popup_notification(PopupItem {
@@ -579,7 +579,7 @@ impl Widget for UserProfileSlidingPane {
 
             // The `ignore_user_button` require room membership info.
             if let Some(room_member) = info.room_member.as_ref() {
-                if self.button(id!(ignore_user_button)).clicked(actions) {
+                if self.button(ids!(ignore_user_button)).clicked(actions) {
                     submit_async_request(MatrixRequest::IgnoreUser {
                         ignore: !room_member.is_ignored(),
                         room_id: info.room_id.clone(),
@@ -602,20 +602,20 @@ impl Widget for UserProfileSlidingPane {
         };
 
         // Set the user name, using the user ID as a fallback.
-        self.label(id!(user_name)).set_text(cx, info.displayable_name());
-        self.label(id!(user_id)).set_text(cx, info.user_id.as_str());
+        self.label(ids!(user_name)).set_text(cx, info.displayable_name());
+        self.label(ids!(user_id)).set_text(cx, info.user_id.as_str());
 
         // Set the avatar image, using the user name as a fallback.
-        let avatar_ref = self.avatar(id!(avatar));
+        let avatar_ref = self.avatar(ids!(avatar));
         info.avatar_state
             .data()
             .and_then(|data| avatar_ref.show_image(cx, None, |cx, img| utils::load_png_or_jpg(&img, cx, data)).ok())
             .unwrap_or_else(|| avatar_ref.show_text(cx, None, None, info.displayable_name()));
 
         // Set the membership status and role in the room.
-        self.label(id!(membership_title_label)).set_text(cx, &info.membership_title());
-        self.label(id!(membership_status_label)).set_text(cx, info.membership_status());
-        self.label(id!(role_info_label)).set_text(cx, info.role_in_room().as_ref());
+        self.label(ids!(membership_title_label)).set_text(cx, &info.membership_title());
+        self.label(ids!(membership_status_label)).set_text(cx, info.membership_status());
+        self.label(ids!(role_info_label)).set_text(cx, info.role_in_room().as_ref());
 
         // Draw and enable/disable the buttons according to user and room membership info:
         // * `direct_message_button` is disabled if the user is the same as the account user,
@@ -630,9 +630,9 @@ impl Widget for UserProfileSlidingPane {
             .unwrap_or_else(|| current_user_id().is_some_and(|uid| uid == info.user_id));
 
         // TODO: uncomment the line below once the `direct_message_button` logic is implemented.
-        // self.button(id!(direct_message_button)).set_enabled(!is_pane_showing_current_account);
+        // self.button(ids!(direct_message_button)).set_enabled(!is_pane_showing_current_account);
 
-        let ignore_user_button = self.button(id!(ignore_user_button));
+        let ignore_user_button = self.button(ids!(ignore_user_button));
         ignore_user_button.set_enabled(cx, !is_pane_showing_current_account && info.room_member.is_some());
         // Unfortunately the Matrix SDK's RoomMember type does not properly track
         // the `ignored` state of a user, so we have to maintain it separately.
@@ -699,7 +699,7 @@ impl UserProfileSlidingPane {
         // If TSP is enabled, populate the TSP verification info for this user.
         #[cfg(feature = "tsp")] {
             use crate::tsp::verify_user::TspVerifyUserWidgetExt;
-            self.view.tsp_verify_user(id!(tsp_verify_user))
+            self.view.tsp_verify_user(ids!(tsp_verify_user))
                 .show(_cx, info.user_id.clone());
         }
 
@@ -709,14 +709,14 @@ impl UserProfileSlidingPane {
     pub fn show(&mut self, cx: &mut Cx) {
         self.visible = true;
         cx.set_key_focus(self.view.area());
-        self.animator_play(cx, id!(panel.show));
-        self.view(id!(bg_view)).set_visible(cx, true);
+        self.animator_play(cx, ids!(panel.show));
+        self.view(ids!(bg_view)).set_visible(cx, true);
 
-        self.view.button(id!(close_button)).reset_hover(cx);
-        self.view.button(id!(direct_message_button)).reset_hover(cx);
-        self.view.button(id!(copy_link_to_user_button)).reset_hover(cx);
-        self.view.button(id!(jump_to_read_receipt_button)).reset_hover(cx);
-        self.view.button(id!(ignore_user_button)).reset_hover(cx);
+        self.view.button(ids!(close_button)).reset_hover(cx);
+        self.view.button(ids!(direct_message_button)).reset_hover(cx);
+        self.view.button(ids!(copy_link_to_user_button)).reset_hover(cx);
+        self.view.button(ids!(jump_to_read_receipt_button)).reset_hover(cx);
+        self.view.button(ids!(ignore_user_button)).reset_hover(cx);
         self.redraw(cx);
     }
 }

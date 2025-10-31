@@ -179,7 +179,7 @@ impl Widget for EditingPane {
         }
         // If the animator is in the `hide` state and has finished animating out,
         // that means it has fully animated off-screen and can be set to invisible.
-        if self.animator_in_state(cx, id!(panel.hide)) {
+        if self.animator_in_state(cx, ids!(panel.hide)) {
             match (self.is_animating_out, animator_action.is_animating()) {
                 (true, false) => {
                     self.visible = false;
@@ -199,21 +199,21 @@ impl Widget for EditingPane {
 
         if let Event::Actions(actions) = event {
 
-            let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input)).text_input_ref();
+            let edit_text_input = self.mentionable_text_input(ids!(editing_content.edit_text_input)).text_input_ref();
 
             // Hide the editing pane if the cancel button was clicked
             // or if the `Escape` key was pressed within the edit text input.
-            if self.button(id!(cancel_button)).clicked(actions)
+            if self.button(ids!(cancel_button)).clicked(actions)
                 || edit_text_input.escaped(actions)
             {
-                self.animator_play(cx, id!(panel.hide));
+                self.animator_play(cx, ids!(panel.hide));
                 self.redraw(cx);
                 return;
             }
 
             let Some(info) = self.info.as_ref() else { return };
 
-            if self.button(id!(accept_button)).clicked(actions)
+            if self.button(ids!(accept_button)).clicked(actions)
                 || edit_text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
             {
                 let edited_text = edit_text_input.text().trim().to_string();
@@ -290,7 +290,7 @@ impl Widget for EditingPane {
                                     },
                                     _non_editable => {
                                         enqueue_popup_notification(PopupItem { message: "That message type cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
-                                        self.animator_play(cx, id!(panel.hide));
+                                        self.animator_play(cx, ids!(panel.hide));
                                         self.redraw(cx);
                                         return;
                                     },
@@ -401,7 +401,7 @@ impl EditingPane {
         }
         match edit_result {
             Ok(()) => {
-                self.animator_play(cx, id!(panel.hide));
+                self.animator_play(cx, ids!(panel.hide));
             },
             Err(e) => {
                 enqueue_popup_notification(PopupItem { message: format!("Failed to edit message: {}", e), kind: PopupKind::Error, auto_dismissal_duration: None });
@@ -416,7 +416,7 @@ impl EditingPane {
             return;
         }
 
-        let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
+        let edit_text_input = self.mentionable_text_input(ids!(editing_content.edit_text_input));
 
         if let Some(message) = event_tl_item.content().as_message() {
             edit_text_input.set_text(cx, message.body());
@@ -431,9 +431,9 @@ impl EditingPane {
         self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
 
         self.visible = true;
-        self.button(id!(accept_button)).reset_hover(cx);
-        self.button(id!(cancel_button)).reset_hover(cx);
-        self.animator_play(cx, id!(panel.show));
+        self.button(ids!(accept_button)).reset_hover(cx);
+        self.button(ids!(cancel_button)).reset_hover(cx);
+        self.animator_play(cx, ids!(panel.show));
 
         // Set the text input's cursor to the end and give it key focus.
         let inner_text_input = edit_text_input.text_input_ref();
@@ -452,7 +452,7 @@ impl EditingPane {
         self.info.as_ref().map(|info| EditingPaneState {
             event_tl_item: info.event_tl_item.clone(),
             text_input_state: self
-                .mentionable_text_input(id!(editing_content.edit_text_input))
+                .mentionable_text_input(ids!(editing_content.edit_text_input))
                 .text_input_ref()
                 .save_state(),
         })
@@ -466,14 +466,14 @@ impl EditingPane {
         room_id: OwnedRoomId,
     ) {
         let EditingPaneState { event_tl_item, text_input_state } = editing_pane_state;
-        self.mentionable_text_input(id!(editing_content.edit_text_input))
+        self.mentionable_text_input(ids!(editing_content.edit_text_input))
             .text_input_ref()
             .restore_state(cx, text_input_state);
         self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
         self.visible = true;
-        self.button(id!(accept_button)).reset_hover(cx);
-        self.button(id!(cancel_button)).reset_hover(cx);
-        self.animator_play(cx, id!(panel.show));
+        self.button(ids!(accept_button)).reset_hover(cx);
+        self.button(ids!(cancel_button)).reset_hover(cx);
+        self.animator_play(cx, ids!(panel.show));
         self.redraw(cx);
 
         // In this function, we do not give key focus to the text input,
@@ -544,7 +544,7 @@ impl EditingPaneRef {
     pub fn force_reset_hide(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.visible = false;
-        inner.animator_cut(cx, id!(panel.hide));
+        inner.animator_cut(cx, ids!(panel.hide));
         inner.is_animating_out = false;
         inner.info = None;
         inner.redraw(cx);

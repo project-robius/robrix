@@ -194,8 +194,8 @@ impl Widget for LogoutConfirmModal {
 
 impl WidgetMatchEvent for LogoutConfirmModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let cancel_button = self.button(id!(cancel_button));
-        let confirm_button = self.button(id!(confirm_button));
+        let cancel_button = self.button(ids!(cancel_button));
+        let confirm_button = self.button(ids!(confirm_button));
 
         let modal_dismissed = actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
         let cancel_clicked = cancel_button.clicked(actions);
@@ -245,7 +245,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
 
                 Some(LogoutAction::LogoutFailure(error)) => {
                     if is_logout_past_point_of_no_return() {
-                        self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
+                        self.label(ids!(title)).set_text(cx, "Logout error, please restart Robrix.");
                         self.set_message(cx, "The logout process encountered an error when communicating with the homeserver. Since your login session has been partially invalidated, Robrix must restart in order to continue to properly function.");
 
                         confirm_button.set_text(cx, "Restart now");
@@ -270,7 +270,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                 }
 
                 Some(LogoutAction::ApplicationRequiresRestart { .. }) => {
-                    self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
+                    self.label(ids!(title)).set_text(cx, "Logout error, please restart Robrix.");
                     self.set_message(cx, "Application is in an inconsistent state and needs to be restarted to continue.");
 
                     confirm_button.set_text(cx, "Restart now");
@@ -310,12 +310,12 @@ impl WidgetMatchEvent for LogoutConfirmModal {
 impl LogoutConfirmModal {
     /// Sets the message text displayed in the body of the modal.
     pub fn set_message(&mut self, cx: &mut Cx, message: &str) {
-        self.label(id!(message)).set_text(cx, message);
+        self.label(ids!(message)).set_text(cx, message);
     }
 
     fn reset_state(&mut self, cx: &mut Cx) {
-        let cancel_button = self.button(id!(cancel_button));
-        let confirm_button = self.button(id!(confirm_button));
+        let cancel_button = self.button(ids!(cancel_button));
+        let confirm_button = self.button(ids!(confirm_button));
         self.final_success = None;
         self.set_message(cx, "Are you sure you want to logout?");
         confirm_button.set_enabled(cx, true);
