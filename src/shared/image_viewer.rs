@@ -2,11 +2,11 @@
 //!
 //! There are 2 types of ImageViewerActions handled by this widget. They are "Show" and "Hide".
 //! ImageViewerRef has 2 public methods, `display_image` and `reset`.
-use std::sync::Arc;
+use std::sync::{Arc, mpsc::Receiver};
 
 use makepad_widgets::{image_cache::{ImageBuffer, ImageError}, rotated_image::RotatedImageWidgetExt, event::TouchUpdateEvent, *};
 
-use crate::utils::load_png_or_jpg_rotated_image;
+use crate::utils::{get_png_or_jpg_image_buffer, retain_aspect_ratio};
 
 /// Duration for rotation animations in seconds.
 /// This value should be consistent with the duration value in set in the animator.
@@ -331,7 +331,11 @@ struct ImageViewer {
     mouse_cursor_hover_over_image: bool,
     /// Distance between two touch points for pinch-to-zoom functionality
     #[rust]
-    previous_pinch_distance: Option<f64>
+    previous_pinch_distance: Option<f64>,
+    #[rust]
+    background_task_id: u32,
+    #[rust]
+    receiver: Option<(u32, Receiver<Result<ImageBuffer, ImageError>>)>,
 }
 
 impl LiveHook for ImageViewer {
@@ -436,6 +440,43 @@ impl Widget for ImageViewer {
         if let Some(_timer) = self.timer.is_event(event) {
             self.is_animating_rotation = false;
         }
+        if let Event::Signal = event {
+            let mut to_remove = false;
+            if let Some((_background_task_id, receiver)) = &mut self.receiver {
+                while let Ok(image_buffer_res) = receiver.try_recv() {
+                    match image_buffer_res {
+                        Ok(image_buffer) => {
+                            let rotated_image = self.view.rotated_image(id!(rotated_image));
+                            let (capped_width, capped_height) = retain_aspect_ratio(image_buffer.width as u32, image_buffer.height as u32);
+                            let texture = image_buffer.into_new_texture(cx);
+                            rotated_image.set_texture(cx, Some(texture));
+                            rotated_image.apply_over(cx, live!{
+                                width: (capped_width),
+                                height: (capped_height),
+                            });
+                            self.image_loaded = true;
+                            to_remove = true;
+                            cx.action(ImageViewerAction::Show(LoadState::Fully));
+                        
+                        }
+                        Err(error) => {
+                            let error = match error {
+                                ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
+                                ImageError::EmptyData => ImageViewerError::BadData,
+                                ImageError::PathNotFound(_) => ImageViewerError::NotFound,
+                                ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
+                                _ => ImageViewerError::BadData,
+                            };
+                            cx.action(ImageViewerAction::Show(LoadState::Error(error)));
+                        }
+                    }
+                    break
+                }
+            }
+            if to_remove {
+                self.receiver = None;
+            }
+        }
         self.animator_handle_event(cx, event);
         self.view.handle_event(cx, event, scope);
         self.match_event(cx, event);
@@ -487,12 +528,6 @@ impl MatchEvent for ImageViewer {
                 self.update_rotated_image_shader(cx);
             }
         }
-
-        for action in actions {
-            if let Some(ImageViewerAction::Hide) = action.downcast_ref::<ImageViewerAction>() {
-                self.reset(cx);
-            }
-        }
     }
 }
 
@@ -505,11 +540,13 @@ impl ImageViewer {
         self.previous_pinch_distance = None; // Reset pinch tracking
         self.mouse_cursor_hover_over_image = false; // Reset hover state
         self.timer = Timer::default(); // Reset timer
+        self.receiver = None;
         self.reset_drag_state(cx);
-        // Clear the rotated image texture to prevent showing previous image on error
-        if let Ok(image_buffer) = ImageBuffer::from_jpg(&[]) {
+        // Clear the rotated image texture with a white background
+        if let Ok(image_buffer) = ImageBuffer::new(&[255], 1, 1) {
             let texture = image_buffer.into_new_texture(cx);
             let _ = self.view.rotated_image(id!(rotated_image)).set_texture(cx, Some(texture));
+            self.view.rotated_image(id!(rotated_image)).redraw(cx);
         }
         self.animator_cut(cx, id!(mode.upright));
         self.view.rotated_image(id!(rotated_image_container.rotated_image)).apply_over(cx, live!{
@@ -552,9 +589,23 @@ impl ImageViewer {
         self.update_rotated_image_shader(cx);
     }
 
-    pub fn display_rotated_image(&mut self, cx: &mut Cx, image_bytes: &[u8]) -> Result<(), ImageError> {
+    pub fn display_rotated_image(&mut self, cx: &mut Cx, image_bytes: &[u8]) {
         self.image_loaded = true;
-        load_png_or_jpg_rotated_image(&self.view.rotated_image(id!(rotated_image)), cx, image_bytes)
+        if self.receiver.is_some() {
+            return;
+        }
+        if let Some(new_value) = self.background_task_id.checked_add(1) {
+            self.background_task_id = new_value;
+        }
+        let (sender, receiver) = std::sync::mpsc::channel();
+        self.receiver = Some((self.background_task_id, receiver));
+        let image_bytes_clone = image_bytes.to_vec();
+        cx.spawn_thread(move ||{
+            if let Err(e) = sender.send(get_png_or_jpg_image_buffer(image_bytes_clone)) {
+                println!("Send Error {:?}",e);
+            }
+            SignalToUI::set_ui_signal();
+        });
     }
 
     fn adjust_zoom(&mut self, cx: &mut Cx, zoom_factor: f32) {
@@ -615,9 +666,9 @@ impl ImageViewerRef {
     }
 
     /// See [`ImageViewer::display_rotated_image()`].
-    pub fn display_rotated_image(&mut self, cx: &mut Cx, image_bytes: &[u8]) -> Result<(), ImageError> {
+    pub fn display_rotated_image(&mut self, cx: &mut Cx, image_bytes: &[u8]) {
         let Some(mut inner) = self.borrow_mut() else {
-            return Ok(());
+            return;
         };
         inner.display_rotated_image(cx, image_bytes)
     }
@@ -638,6 +689,8 @@ pub enum LoadState {
     Loading(Arc<[u8]>),
     /// The image has been successfully loaded given the data.
     Loaded(Arc<[u8]>),
+    /// The image has been fully loaded.
+    Fully,
     /// An error occurred while loading the image, with specific error type.
     Error(ImageViewerError),
 }

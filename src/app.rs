@@ -6,7 +6,7 @@
 #![allow(clippy::question_mark)]
 
 use std::collections::HashMap;
-use makepad_widgets::{image_cache::ImageError, makepad_micro_serde::*, *};
+use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
@@ -17,7 +17,7 @@ use crate::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, image_viewer::{ImageViewerAction, ImageViewerError, ImageViewerWidgetRefExt, LoadState}}, sliding_sync::current_user_id, utils::{
+    }, image_viewer::{ImageViewerAction, ImageViewerWidgetRefExt, LoadState}}, sliding_sync::current_user_id, utils::{
         OwnedRoomIdRon, image_viewer_error_to_string, room_name_or_id
     }, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
@@ -159,7 +159,7 @@ live_design! {
                             }
                         }
 
-                        <PopupList> {}
+                        popup_list = <PopupList> {}
                         
                         // Context menus should be shown in front of other UI elements,
                         // but behind verification modals.
@@ -560,7 +560,12 @@ impl AppMain for App {
         let image_viewer_modal = self.ui.modal(id!(image_viewer));
         if image_viewer_modal.is_open() &&image_viewer_modal.area().rect(cx).size.y > 200.0 {
             let scope = &mut Scope::with_data(&mut self.app_state);
+            //self.ui.view(id!(popup_list)).handle_event(cx, event, scope);
             self.ui.modal(id!(image_viewer)).handle_event(cx, event, scope);
+            // Pass the Signal event to the underlying room screen, so as to populate the full image in the image viewer.
+            if let Event::Signal = event {
+                self.ui.handle_event(cx, event, scope);
+            }
             if let Event::Actions(actions) = event {
                 for action in actions {
                     if self.handle_image_viewer_action(cx, action) {
@@ -695,37 +700,46 @@ impl App {
                         self.ui.view(id!(footer)).apply_over(cx, live!{
                             height: 50
                         });
-                        let _ = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, thumbnail_data);
+                        self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, thumbnail_data);
                     }
                     LoadState::Loaded(image_bytes) => {
                         self.ui.modal(id!(image_viewer)).open(cx);
                         self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
-                        if let Err(error) = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, image_bytes) {
-                            // Reset the image viewer to clear any previous image
-                            self.ui.image_viewer(id!(image_viewer_inner)).reset(cx);
-                            self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, true);
-                            let err = match error {
-                                ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
-                                ImageError::EmptyData => ImageViewerError::BadData,
-                                ImageError::PathNotFound(_) => ImageViewerError::NotFound,
-                                ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
-                                _ => ImageViewerError::BadData,
-                            };
-                            self.ui.label(id!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(&err));
-                        } else {
-                            self.ui.view(id!(zoom_button_view)).set_visible(cx, true);
-                            self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
-                            self.ui.label(id!(image_viewer_status_label)).set_text(cx, "");
-                            // Collapse the footer
-                            self.ui.view(id!(footer)).apply_over(cx, live!{
-                                height: 0
-                            });
-                        }
+                        self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, image_bytes);
+                        // if let Err(error) = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, image_bytes) {
+                        //     // Reset the image viewer to clear any previous image
+                        //     //self.ui.image_viewer(id!(image_viewer_inner)).reset(cx);
+                        //     self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, true);
+                        //     let err = match error {
+                        //         ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
+                        //         ImageError::EmptyData => ImageViewerError::BadData,
+                        //         ImageError::PathNotFound(_) => ImageViewerError::NotFound,
+                        //         ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
+                        //         _ => ImageViewerError::BadData,
+                        //     };
+                        //     self.ui.label(id!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(&err));
+                        // } else {
+                        //     self.ui.view(id!(zoom_button_view)).set_visible(cx, true);
+                        //     self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
+                        //     self.ui.label(id!(image_viewer_status_label)).set_text(cx, "");
+                        //     // Collapse the footer
+                        //     self.ui.view(id!(footer)).apply_over(cx, live!{
+                        //         height: 0
+                        //     });
+                        // }
+                    }
+                    LoadState::Fully => {
+                        self.ui.view(id!(zoom_button_view)).set_visible(cx, true);
+                        self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
+                        self.ui.label(id!(image_viewer_status_label)).set_text(cx, "");
+                        // Collapse the footer
+                        self.ui.view(id!(footer)).apply_over(cx, live!{
+                            height: 0
+                        });
                     }
                     LoadState::Error(error) => {
                         if self.ui.modal(id!(image_viewer)).is_open() {
                             // Reset the image viewer to clear any previous image
-                            self.ui.image_viewer(id!(image_viewer_inner)).reset(cx);
                             self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
                             self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, true);
                             self.ui.label(id!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(error));

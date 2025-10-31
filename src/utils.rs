@@ -185,6 +185,39 @@ pub fn load_png_or_jpg_rotated_image(img: &RotatedImageRef, cx: &mut Cx, data: &
     Ok(())
 }
 
+pub fn retain_aspect_ratio(width: u32, height: u32) -> (f32, f32) {
+    let aspect_ratio: f32 = width as f32 / height as f32;
+    let (mut capped_width, mut capped_height) = (width, height);
+    if capped_height > ROTATED_IMAGE_MAX_SIZE {
+        capped_height = ROTATED_IMAGE_MAX_SIZE;
+        capped_width = (capped_height as f32 * aspect_ratio).floor() as u32;
+    }
+    if capped_width > ROTATED_IMAGE_MAX_SIZE {
+        capped_width = ROTATED_IMAGE_MAX_SIZE;
+        capped_height = (capped_width as f32 / aspect_ratio).floor() as u32;
+    }
+    (capped_width as f32, capped_height as f32)
+}
+
+pub fn get_png_or_jpg_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageError> {
+    match imghdr::from_bytes(&data) {
+        Some(imghdr::Type::Png) => {
+            ImageBuffer::from_png(&data)
+        },
+        Some(imghdr::Type::Jpeg) => {
+            ImageBuffer::from_jpg(&data)
+        },
+        Some(_unsupported) => {
+            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
+            Err(ImageError::UnsupportedFormat)
+        }
+        None => {
+            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
+            Err(ImageError::UnsupportedFormat)
+        }
+    }
+}
+
 /// Creates a texture from JPEG image data, similar to `load_jpg_from_data` but returns a Texture.
 ///
 /// Returns an error if the image fails to load or if the format is unsupported.
