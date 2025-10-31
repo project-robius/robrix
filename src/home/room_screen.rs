@@ -44,7 +44,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputAction;
 
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_image_message_detail::RoomImageMessageDetailAction, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 /// The maximum number of timeline items to search through
 /// when looking for a particular event.
@@ -603,7 +603,7 @@ impl Widget for RoomScreen {
         // we want to handle those before processing any updates that might change
         // the set of timeline indices (which would invalidate the index values in any actions).
         if let Event::Actions(actions) = event {
-            for (_, wr) in portal_list.items_with_actions(actions) {
+            for (index, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
                     widget_rect,
@@ -661,6 +661,49 @@ impl Widget for RoomScreen {
                         &scope.path,
                         TooltipAction::HoverOut
                     );
+                }
+                let image_widget_uid = wr.image(id!(content.message)).widget_uid();
+                if let TextOrImageAction::Clicked(_mxc_uri) = actions.find_widget_action(image_widget_uid).cast() {
+                    if let Some(tl_state) = &self.tl_state {
+                        if let Some(item) = tl_state.items.get(index) {
+                            if let Some(event_tl_item) = item.as_event() {
+                                let sender_profile = event_tl_item.sender_profile();
+                                let sender = event_tl_item.sender();
+                                let event_id = event_tl_item.event_id().map(|id| id.to_owned());
+                                let timestamp = event_tl_item.timestamp();
+                                
+                                // Extract image name and size from the message content
+                                let (image_name, image_size) = if let Some(message) = event_tl_item.content().as_message() {
+                                    if let MessageType::Image(image_content) = message.msgtype() {
+                                        let name = message.body().to_string();
+                                        let size = image_content.info.as_ref()
+                                            .and_then(|info| info.size)
+                                            .map(|s| i32::try_from(s).unwrap_or_default())
+                                            .unwrap_or(0);
+                                        (name, size)
+                                    } else {
+                                        ("Unknown Image".to_string(), 0)
+                                    }
+                                } else {
+                                    ("Unknown Image".to_string(), 0)
+                                };
+                                
+                                cx.widget_action(
+                                    room_screen_widget_uid,
+                                    &scope.path,
+                                    RoomImageMessageDetailAction::SetImageDetail {
+                                        room_id: self.room_id.clone(),
+                                        sender: Some(sender.to_owned()),
+                                        sender_profile: Some(sender_profile.clone()),
+                                        event_id,
+                                        timestamp_millis: timestamp,
+                                        image_name,
+                                        image_size
+                                    }
+                                );
+                            }
+                        }
+                    }
                 }
             }
 
@@ -4223,6 +4266,9 @@ pub fn populate_matrix_image_modal(
             )));
             // Delete failed media entry from cache for MediaFormat::File so as to start all over again from loading Thumbnail. 
             media_cache.delete_cache_entry(&mxc_uri, Some(MediaFormat::File));
+        }
+        (MediaCacheEntry::Requested, _) => {
+            enqueue_popup_notification(PopupItem { message: String::from("Media requested"), auto_dismissal_duration: Some(10.0), kind: PopupKind::Warning });
         }
         _ => { }
     }

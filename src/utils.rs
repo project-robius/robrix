@@ -141,7 +141,7 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
 pub fn load_png_or_jpg_rotated_image(img: &RotatedImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), ImageError> {
     fn retain_aspect_ratio(width: u32, height: u32) -> (f32, f32) {
         let aspect_ratio: f32 = width as f32 / height as f32;
-        let (mut capped_width, mut capped_height) = (width as u32, height as u32);
+        let (mut capped_width, mut capped_height) = (width, height);
         if capped_height > ROTATED_IMAGE_MAX_SIZE {
             capped_height = ROTATED_IMAGE_MAX_SIZE;
             capped_width = (capped_height as f32 * aspect_ratio).floor() as u32;
@@ -189,9 +189,8 @@ pub fn load_png_or_jpg_rotated_image(img: &RotatedImageRef, cx: &mut Cx, data: &
 ///
 /// Returns an error if the image fails to load or if the format is unsupported.
 pub fn create_texture_from_jpg_data(cx: &mut Cx, data: &[u8]) -> Result<Texture, ImageError> {
-    match ImageBuffer::from_jpg(&*data) {
+    match ImageBuffer::from_jpg(data) {
         Ok(image_buffer) => {
-            println!("image_buffer height {:?}, width {:?}", image_buffer.height,image_buffer.width);
             Ok(image_buffer.into_new_texture(cx))
         }
         Err(err) => {
@@ -204,7 +203,7 @@ pub fn create_texture_from_jpg_data(cx: &mut Cx, data: &[u8]) -> Result<Texture,
 ///
 /// Returns an error if the image fails to load or if the format is unsupported.
 pub fn create_texture_from_png_data(cx: &mut Cx, data: &[u8]) -> Result<Texture, ImageError> {
-    match ImageBuffer::from_png(&*data) {
+    match ImageBuffer::from_png(data) {
         Ok(image_buffer) => {
             Ok(image_buffer.into_new_texture(cx))
         }

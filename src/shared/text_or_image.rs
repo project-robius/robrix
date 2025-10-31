@@ -80,6 +80,7 @@ impl Widget for TextOrImage {
                 }
                 Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                     cx.widget_action(self.widget_uid(), &scope.path, TextOrImageAction::Clicked(mxc_uri.clone()));
+                    cx.set_cursor(MouseCursor::Default);
                 }
                 Hit::FingerHoverIn(_) => {
                     cx.set_cursor(MouseCursor::Hand);
