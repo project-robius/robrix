@@ -405,6 +405,9 @@ pub struct MentionableTextInput {
     /// Active loading indicator widget while we wait for members/results
     #[rust]
     loading_indicator_ref: Option<WidgetRef>,
+    /// Flag to track if popup cleanup is pending after focus loss
+    #[rust]
+    pending_popup_cleanup: bool,
 }
 
 impl Widget for MentionableTextInput {
@@ -456,7 +459,15 @@ impl Widget for MentionableTextInput {
 
             // Handle item selection from mention popup
             if let Some(selected) = self.cmd_text_input.item_selected(actions) {
+                // Clear pending popup cleanup since we're processing a selection
+                self.pending_popup_cleanup = false;
                 self.on_user_selected(cx, scope, selected);
+            }
+
+            // If we had a pending cleanup but no selection occurred, do the cleanup now
+            if self.pending_popup_cleanup {
+                self.pending_popup_cleanup = false;
+                self.close_mention_popup(cx);
             }
 
             // Handle build items request
@@ -552,8 +563,16 @@ impl Widget for MentionableTextInput {
             }
 
             // Close popup if focus is lost while searching
+            // However, don't reset search state immediately to allow pending item selection events to process
+            // This fixes the issue where mouse clicks would clear state before the selection could be handled
             if !has_focus && self.is_searching() {
-                self.close_mention_popup(cx);
+                // Only close the visual popup, but keep the search state for a brief moment
+                // to allow any pending selection events to be processed
+                let popup = self.cmd_text_input.view(id!(popup));
+                popup.set_visible(cx, false);
+                // Mark that we should clean up state after selection is processed
+                // The actual cleanup will happen in the next event cycle if no selection occurs
+                self.pending_popup_cleanup = true;
             }
         }
 
@@ -878,6 +897,9 @@ impl MentionableTextInput {
         // Note: We receive scope as parameter but don't use it in this method
         // This is good practice to maintain signature consistency with other methods
         // and allow for future scope-based enhancements
+
+        // Clear pending popup cleanup since we're processing a selection
+        self.pending_popup_cleanup = false;
 
         let text_input_ref = self.cmd_text_input.text_input_ref();
         let current_text = text_input_ref.text();

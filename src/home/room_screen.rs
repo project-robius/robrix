@@ -1352,10 +1352,21 @@ impl RoomScreen {
                     let sort_data = precompute_member_sort(&members);
                     tl.room_members = Some(Arc::new(members));
                     tl.room_members_sort = Some(Arc::new(sort_data));
-                    // Notify with current sync state, don't modify it here
+
+                    // For non-sync requests (like GetRoomMembers), there won't be a RoomMembersSynced event
+                    // So we should clear the sync pending flag if we have members and we're not actually syncing
+                    // This fixes the issue where local cache lookups would leave the loading indicator on
+                    let sync_in_progress = if !tl.room_members_sync_pending {
+                        // We're not syncing, this is likely from a local cache lookup
+                        false
+                    } else {
+                        // We are syncing, wait for RoomMembersSynced to clear the flag
+                        true
+                    };
+
                     cx.action(MentionableTextInputAction::RoomMembersLoaded {
                         room_id: tl.room_id.clone(),
-                        sync_in_progress: tl.room_members_sync_pending,
+                        sync_in_progress,
                     });
                 }
                 TimelineUpdate::MediaFetched => {
