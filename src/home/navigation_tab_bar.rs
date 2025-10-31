@@ -83,6 +83,10 @@ live_design! {
         draw_bg: {
             radio_type: Tab,
 
+            color: (COLOR_NAVIGATION_TAB_BG)
+            color_hover: (COLOR_NAVIGATION_TAB_BG_HOVER)
+            color_active: (COLOR_NAVIGATION_TAB_BG_ACTIVE)
+
             border_size: 0.0
             border_color: #0000
             uniform inset: vec4(0.0, 0.0, 0.0, 0.0)
@@ -91,11 +95,11 @@ live_design! {
             fn get_color(self) -> vec4 {
                 return mix(
                     mix(
-                        COLOR_NAVIGATION_TAB_BG,
-                        COLOR_NAVIGATION_TAB_BG_HOVER,
+                        self.color,
+                        self.color_hover,
                         self.hover
                     ),
-                    COLOR_NAVIGATION_TAB_BG_ACTIVE,
+                    self.color_active,
                     self.active
                 )
             }
@@ -196,11 +200,18 @@ live_design! {
         draw_icon: { svg_file: (ICON_SETTINGS) }
     }
 
+    // This button is temporarily disabled until the AddRoomScreen is implemented.
     AddRoomButton = <NavigationTabButton> {
-        enabled: false
+        draw_bg: {
+            color: (COLOR_SECONDARY)
+            color_hover: (COLOR_SECONDARY)
+            color_active: (COLOR_SECONDARY)
+        }
         draw_icon: {
             svg_file: (ICON_ADD),
             color: (COLOR_FG_DISABLED),
+            color_hover: (COLOR_FG_DISABLED)
+            color_active: (COLOR_FG_DISABLED)
         }
         animator: { disabled = { default: on } }
     }
@@ -416,13 +427,13 @@ impl Widget for NavigationTabBar {
             // Handle one of the radio buttons being clicked (selected).
             let radio_button_set = self.view.radio_button_set(ids_array!(
                 home_button,
-                add_room_button,
+                // add_room_button,
                 settings_button,
             ));
             match radio_button_set.selected(cx, actions) {
                 Some(0) => cx.action(NavigationBarAction::GoToHome),
-                Some(1) => cx.action(NavigationBarAction::GoToAddRoom),
-                Some(2) => cx.action(NavigationBarAction::OpenSettings),
+                // Some(1) => cx.action(NavigationBarAction::GoToAddRoom),
+                Some(1) => cx.action(NavigationBarAction::OpenSettings),
                 _ => { }
             }
 
@@ -430,12 +441,13 @@ impl Widget for NavigationTabBar {
                 // If another widget programmatically selected a new tab,
                 // update our radio buttons accordingly.
                 if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
-                    let radio_button_to_select = match tab {
-                        SelectedTab::Home     => self.view.radio_button(ids!(home_button)),
-                        SelectedTab::AddRoom  => self.view.radio_button(ids!(add_room_button)),
-                        SelectedTab::Settings => self.view.radio_button(ids!(settings_button)),
-                    };
-                    radio_button_to_select.select(cx, scope);
+                    match tab {
+                        SelectedTab::Home     => self.view.radio_button(ids!(home_button)).select(cx, scope),
+                        SelectedTab::AddRoom  => {
+                            // self.view.radio_button(ids!(add_room_button)).select(cx, scope),
+                        }
+                        SelectedTab::Settings => self.view.radio_button(ids!(settings_button)).select(cx, scope),
+                    }
                 }
             }
         }
