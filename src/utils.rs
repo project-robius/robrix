@@ -2,6 +2,7 @@
 #![allow(clippy::question_mark)]
 
 use std::{borrow::Cow, fmt::Display, ops::{Deref, DerefMut}, str::{Chars, FromStr}, time::SystemTime};
+use ruma::{OwnedServerName, ServerName};
 use url::Url;
 
 use unicode_segmentation::UnicodeSegmentation;
@@ -721,6 +722,63 @@ impl Deref for OwnedRoomIdRon {
     }
 }
 impl Display for OwnedRoomIdRon {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// A RON-(de)serializable wrapper around [`OwnedServerName`].
+#[derive(Clone, Debug)]
+pub struct OwnedServerNameRon(pub OwnedServerName);
+impl SerRon for OwnedServerNameRon {
+    fn ser_ron(&self, d: usize, s: &mut SerRonState) {
+        self.0.to_string().ser_ron(d, s);
+    }
+}
+impl DeRon for OwnedServerNameRon {
+    fn de_ron(s: &mut DeRonState, i: &mut Chars) -> Result<Self,DeRonErr> {
+        OwnedServerName::from_str(&String::de_ron(s, i)?)
+            .map(OwnedServerNameRon)
+            .map_err(|e| DeRonErr {
+                msg: e.to_string(),
+                line: s.line,
+                col: s.col,
+            })
+    }
+}
+impl From<OwnedServerName> for OwnedServerNameRon {
+    fn from(server_name: OwnedServerName) -> Self {
+        OwnedServerNameRon(server_name)
+    }
+}
+impl<'a> From<&'a OwnedServerNameRon> for &'a OwnedServerName {
+    fn from(server_name: &'a OwnedServerNameRon) -> Self {
+        &server_name.0
+    }
+}
+
+impl From<OwnedServerNameRon> for OwnedServerName {
+    fn from(server_name: OwnedServerNameRon) -> Self {
+        server_name.0
+    }
+}
+impl<'a> From<&'a OwnedServerNameRon> for &'a ServerName {
+    fn from(server_name: &'a OwnedServerNameRon) -> Self {
+        &server_name.0
+    }
+}
+impl AsRef<ServerName> for OwnedServerNameRon {
+    fn as_ref(&self) -> &ServerName {
+        &self.0
+    }
+}
+impl Deref for OwnedServerNameRon {
+    type Target = OwnedServerName;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl Display for OwnedServerNameRon {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }

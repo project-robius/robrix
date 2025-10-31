@@ -10,7 +10,7 @@ use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
-        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{clear_timeline_states, MessageAction}, rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate}
+        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::callout_tooltip::{
@@ -18,8 +18,7 @@ use crate::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
     }, sliding_sync::current_user_id, utils::{
-        room_name_or_id,
-        OwnedRoomIdRon,
+        OwnedRoomIdRon, room_name_or_id
     }, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
@@ -630,6 +629,10 @@ pub enum SelectedRoom {
         room_id: OwnedRoomIdRon,
         room_name: Option<String>,
     },
+    PreviewedRoom {
+        room_id: OwnedRoomIdRon,
+        room_name: Option<String>,
+    },
 }
 
 impl SelectedRoom {
@@ -637,6 +640,7 @@ impl SelectedRoom {
         match self {
             SelectedRoom::JoinedRoom { room_id, .. } => room_id,
             SelectedRoom::InvitedRoom { room_id, .. } => room_id,
+            SelectedRoom::PreviewedRoom { room_id, .. } => room_id,
         }
     }
 
@@ -644,6 +648,7 @@ impl SelectedRoom {
         match self {
             SelectedRoom::JoinedRoom { room_name, .. } => room_name.as_ref(),
             SelectedRoom::InvitedRoom { room_name, .. } => room_name.as_ref(),
+            SelectedRoom::PreviewedRoom { room_name, .. } => room_name.as_ref(),
         }
     }
 

@@ -3,7 +3,7 @@ use matrix_sdk::ruma::OwnedRoomId;
 use tokio::sync::Notify;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SelectedRoom}, utils::room_name_or_id};
+use crate::{app::{AppState, AppStateAction, SelectedRoom}, room::{BasicRoomDetails, FetchedRoomPreview, RoomPreviewAction, can_not_preview_screen::{CanNotPreviewDetails, CanNotPreviewScreenWidgetRefExt}}, shared::popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 live_design! {
@@ -17,6 +17,7 @@ live_design! {
     use crate::home::welcome_screen::WelcomeScreen;
     use crate::home::room_screen::RoomScreen;
     use crate::home::invite_screen::InviteScreen;
+    use crate::room::can_not_preview_screen::CanNotPreviewScreen;
 
     pub MainDesktopUI = {{MainDesktopUI}} {
         dock = <Dock> {
@@ -54,6 +55,7 @@ live_design! {
             welcome_screen = <WelcomeScreen> {}
             room_screen = <RoomScreen> {}
             invite_screen = <InviteScreen> {}
+            can_not_preview_screen = <CanNotPreviewScreen> {}
         }
     }
 }
@@ -138,6 +140,7 @@ impl MainDesktopUI {
                 id!(invite_screen),
                 room_name_or_id(room_name.as_ref(), room_id),
             ),
+            _ => return
         };
         let new_tab_widget = dock.create_and_select_tab(
             cx,
@@ -168,6 +171,7 @@ impl MainDesktopUI {
                         room.room_name().cloned()
                     );
                 }
+                _ => {}
             }
             cx.action(MainDesktopUiAction::SaveDockIntoAppState);
         } else {
@@ -176,6 +180,77 @@ impl MainDesktopUI {
 
         self.open_rooms.insert(room_id_as_live_id, room.clone());
         self.most_recently_selected_room = Some(room);
+    }
+
+    fn focus_or_crate_preview_screen_tab(&mut self, cx: &mut Cx, preview_info: &FetchedRoomPreview) {
+        let room_id = preview_info.room_id.clone();
+        let room_name = preview_info.name.clone();
+        let is_world_readable = preview_info.room_preview.is_world_readable.unwrap_or(false);
+
+        let dock = self.view.dock(ids!(dock));
+        let selected_room = SelectedRoom::PreviewedRoom { room_id: room_id.to_owned().into(), room_name: room_name.clone() };
+
+        // Do nothing if the room to select is already created and focused.
+        if self.most_recently_selected_room.as_ref().is_some_and(|r| r == &selected_room) {
+            return;
+        }
+
+        // If the room is already open, select (jump to) its existing tab
+        let room_id_as_live_id = LiveId::from_str(room_id.as_str());
+        if self.open_rooms.contains_key(&room_id_as_live_id) {
+            dock.select_tab(cx, room_id_as_live_id);
+            self.most_recently_selected_room = Some(selected_room);
+            return;
+        }
+
+
+        // Create a new tab for the room preview
+        let (tab_bar, _pos) = dock.find_tab_bar_of_tab(id!(home_tab)).unwrap();
+        let (kind, name) = if is_world_readable {
+            (id!(room_screen), room_name_or_id(room_name.as_ref(), &room_id))
+        } else {
+            (id!(can_not_preview_screen), room_name_or_id(room_name.as_ref(), &room_id))
+        };
+
+        let new_tab_widget = dock.create_and_select_tab(
+            cx,
+            tab_bar,
+            room_id_as_live_id,
+            kind,
+            name,
+            id!(CloseableTab),
+            None,
+        );
+
+        if let Some(new_widget) = new_tab_widget {
+            self.room_order.push(selected_room.clone());
+            if is_world_readable {
+                new_widget.as_room_screen().set_displayed_room(
+                    cx,
+                    room_id.clone().into(),
+                    selected_room.room_name().cloned(),
+                );
+            } else {
+                new_widget.as_can_not_preview_screen().set_displayed(
+                    cx,
+                    room_id.clone().into(),
+                    selected_room.room_name().cloned(),
+                    CanNotPreviewDetails {
+                        room_basic_details: BasicRoomDetails {
+                            room_id: room_id.clone(),
+                            room_name: room_name.clone(),
+                            room_avatar: preview_info.room_avatar.clone(),
+                        },
+                        join_rule: preview_info.room_preview.join_rule.clone(),
+                    },
+                );
+            }
+            cx.action(MainDesktopUiAction::SaveDockIntoAppState);
+        } else {
+            error!("BUG: failed to create tab for {selected_room:?}");
+        }
+        self.open_rooms.insert(room_id_as_live_id, selected_room.clone());
+        self.most_recently_selected_room = Some(selected_room);
     }
 
     /// Closes a tab in the dock and focuses on the latest open room.
@@ -280,6 +355,20 @@ impl WidgetMatchEvent for MainDesktopUI {
                 self.close_all_tabs(cx);
                 on_close_all.notify_one();
                 continue;
+            }
+
+            if let Some(RoomPreviewAction::Fetched(res)) = action.downcast_ref() {
+                match res {
+                    Ok(room_preview) => self.focus_or_crate_preview_screen_tab(cx, room_preview),
+                    Err(err) => {
+                        error!("Failed to fetch room preview: {}", err);
+                        enqueue_popup_notification(PopupItem {
+                            message: "This room preview is not available.".to_string(),
+                            kind: PopupKind::Error,
+                            auto_dismissal_duration: None
+                        });
+                    },
+                }
             }
 
             // Handle actions emitted by the dock within the MainDesktopUI

@@ -33,7 +33,8 @@ pub fn save_app_state(
     for (tab_id, room) in &app_state.saved_dock_state.open_rooms {
         match room {
             SelectedRoom::JoinedRoom { room_id, .. }
-            | SelectedRoom::InvitedRoom { room_id, .. } => {
+            | SelectedRoom::InvitedRoom { room_id, .. }
+            | SelectedRoom::PreviewedRoom { room_id, .. } => {
                 if !app_state.saved_dock_state.dock_items.contains_key(tab_id) {
                     error!("Room id: {} already in dock state", room_id);
                 }
