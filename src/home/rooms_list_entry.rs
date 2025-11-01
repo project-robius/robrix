@@ -5,7 +5,7 @@ use crate::{
     room::FetchedRoomAvatar, shared::{
         avatar::AvatarWidgetExt,
         html_or_plaintext::HtmlOrPlaintextWidgetExt, unread_badge::UnreadBadgeWidgetExt as _,
-    }, utils::{self, relative_format}
+    }, utils::{self, relative_format, room_name_or_id}
 };
 
 use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListScopeProps};
@@ -296,9 +296,8 @@ impl RoomsListEntryContent {
         cx: &mut Cx,
         room_info: &JoinedRoomInfo,
     ) {
-        if let Some(ref name) = room_info.room_name {
-            self.view.label(ids!(room_name)).set_text(cx, name);
-        }
+        let display_name = room_name_or_id(&room_info.room_name, &room_info.room_id);
+        self.view.label(ids!(room_name)).set_text(cx, &display_name);
         if let Some((ts, msg)) = room_info.latest.as_ref() {
             if let Some(human_readable_date) = relative_format(*ts) {
                 self.view
@@ -324,11 +323,8 @@ impl RoomsListEntryContent {
         cx: &mut Cx,
         room_info: &InvitedRoomInfo,
     ) {
-        self.view.label(ids!(room_name)).set_text(
-            cx,
-            room_info.room_name.as_deref()
-                .unwrap_or("Invite to unnamed room"),
-        );
+        let display_name = room_name_or_id(&room_info.room_name, &room_info.room_id);
+        self.view.label(ids!(room_name)).set_text(cx, &display_name);
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(ids!(timestamp)).set_text(cx, "");
         let inviter_string = match &room_info.inviter_info {

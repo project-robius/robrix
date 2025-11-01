@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use makepad_widgets::{makepad_micro_serde::*, *};
-use matrix_sdk::ruma::{OwnedRoomId, RoomId};
+use matrix_sdk::{RoomDisplayName, ruma::{OwnedRoomId, RoomId}};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
         main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{clear_timeline_states, MessageAction}, rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate}
@@ -20,6 +20,7 @@ use crate::{
     }, sliding_sync::current_user_id, utils::{
         room_name_or_id,
         OwnedRoomIdRon,
+        RoomDisplayNameRon,
     }, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
@@ -576,7 +577,7 @@ impl App {
         // Select and scroll to the destination room in the rooms list.
         let new_selected_room = SelectedRoom::JoinedRoom {
             room_id: destination_room.room_id.clone().into(),
-            room_name: destination_room.room_name.clone(),
+            room_name: RoomDisplayNameRon::from(destination_room.room_name.clone()),
         };
         enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room.room_id.clone()));
         cx.widget_action(
@@ -624,11 +625,11 @@ pub struct SavedDockState {
 pub enum SelectedRoom {
     JoinedRoom {
         room_id: OwnedRoomIdRon,
-        room_name: Option<String>,
+        room_name: RoomDisplayNameRon,
     },
     InvitedRoom {
         room_id: OwnedRoomIdRon,
-        room_name: Option<String>,
+        room_name: RoomDisplayNameRon,
     },
 }
 
@@ -640,10 +641,10 @@ impl SelectedRoom {
         }
     }
 
-    pub fn room_name(&self) -> Option<&String> {
+    pub fn room_name(&self) -> &RoomDisplayName {
         match self {
-            SelectedRoom::JoinedRoom { room_name, .. } => room_name.as_ref(),
-            SelectedRoom::InvitedRoom { room_name, .. } => room_name.as_ref(),
+            SelectedRoom::JoinedRoom { room_name, .. } => &room_name.0,
+            SelectedRoom::InvitedRoom { room_name, .. } => &room_name.0,
         }
     }
 
@@ -656,7 +657,7 @@ impl SelectedRoom {
     pub fn upgrade_invite_to_joined(&mut self, room_id: &RoomId) -> bool {
         match self {
             SelectedRoom::InvitedRoom { room_id: id, room_name } if id.0 == room_id => {
-                let name = room_name.take();
+                let name = room_name.clone();
                 *self = SelectedRoom::JoinedRoom {
                     room_id: id.clone(),
                     room_name: name,

@@ -1,5 +1,5 @@
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedRoomId;
+use matrix_sdk::{RoomDisplayName, ruma::OwnedRoomId};
 use tokio::sync::Notify;
 use std::{collections::HashMap, sync::Arc};
 
@@ -132,11 +132,11 @@ impl MainDesktopUI {
         let (kind, name) = match &room {
             SelectedRoom::JoinedRoom { room_id, room_name }  => (
                 id!(room_screen),
-                room_name_or_id(room_name.as_ref(), room_id),
+                room_name_or_id(&RoomDisplayName::from(room_name.clone()), room_id),
             ),
             SelectedRoom::InvitedRoom { room_id, room_name } => (
                 id!(invite_screen),
-                room_name_or_id(room_name.as_ref(), room_id),
+                room_name_or_id(&RoomDisplayName::from(room_name.clone()), room_id),
             ),
         };
         let new_tab_widget = dock.create_and_select_tab(
@@ -158,14 +158,14 @@ impl MainDesktopUI {
                     new_widget.as_room_screen().set_displayed_room(
                         cx,
                         room_id.clone().into(),
-                        room.room_name().cloned(),
+                        room.room_name().clone(),
                     );
                 }
                 SelectedRoom::InvitedRoom { room_id, room_name: _ } => {
                     new_widget.as_invite_screen().set_displayed_invite(
                         cx,
                         room_id.clone().into(),
-                        room.room_name().cloned()
+                        room.room_name().clone()
                     );
                 }
             }
@@ -234,14 +234,14 @@ impl MainDesktopUI {
         cx: &mut Cx,
         _scope: &mut Scope,
         room_id: OwnedRoomId,
-        room_name: Option<String>,
+        room_name: RoomDisplayName,
     ) {
         let dock = self.view.dock(ids!(dock));
         let Some((new_widget, true)) = dock.replace_tab(
             cx,
             LiveId::from_str(room_id.as_str()),
             id!(room_screen),
-            Some(room_name_or_id(room_name.as_ref(), &room_id)),
+            Some(room_name_or_id(&room_name, &room_id)),
             false,
         ) else {
             // Nothing we can really do here except log an error.
@@ -366,14 +366,14 @@ impl WidgetMatchEvent for MainDesktopUI {
                                     widget.as_room_screen().set_displayed_room(
                                         cx,
                                         room_id.clone().into(),
-                                        room_name.clone(),
+                                        room_name.clone().into(),
                                     );
                                 }
                                 Some(SelectedRoom::InvitedRoom { room_id, room_name }) => {
                                     widget.as_invite_screen().set_displayed_invite(
                                         cx,
                                         room_id.clone().into(),
-                                        room_name.clone(),
+                                        room_name.clone().into(),
                                     );
                                 }
                                 _ => { }
