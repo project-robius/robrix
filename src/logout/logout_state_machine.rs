@@ -89,8 +89,8 @@ use tokio::sync::{Mutex, Notify};
 use anyhow::{anyhow, Result};
 use makepad_widgets::{Cx, log};
 
+use crate::home::navigation_tab_bar::NavigationBarAction;
 use crate::persistence::delete_latest_user_id;
-use crate::settings::SettingsAction;
 use crate::sliding_sync::clear_app_state;
 use crate::{
     home::main_desktop_ui::MainDesktopUiAction,
@@ -442,8 +442,9 @@ impl LogoutStateMachine {
             100
         ).await?;
 
-        // CloseSetting after logout
-        Cx::post_action(SettingsAction::CloseSettings);
+        // Close the settings screen after logout, since its content
+        // is specific to the currently-logged-in user's account.
+        Cx::post_action(NavigationBarAction::CloseSettings);
 
         // Reset logout in progress flag
         set_logout_in_progress(false);
