@@ -8,11 +8,13 @@ pub mod reply_preview;
 pub mod room_input_bar;
 pub mod room_display_filter;
 pub mod typing_notice;
+pub mod can_not_preview_screen;
 
 pub fn live_design(cx: &mut Cx) {
     reply_preview::live_design(cx);
     room_input_bar::live_design(cx);
     typing_notice::live_design(cx);
+    can_not_preview_screen::live_design(cx);
 }
 
 /// Basic details needed to display a brief summary of a room.
