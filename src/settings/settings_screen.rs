@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{home::navigation_tab_bar::get_own_profile, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, SettingsAction}};
+use crate::{home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::account_settings::AccountSettingsWidgetExt};
 
 live_design! {
     use link::theme::*;
@@ -146,7 +146,7 @@ impl Widget for SettingsScreen {
             }
         };
         if close_pane {
-            cx.action(SettingsAction::CloseSettings);
+            cx.action(NavigationBarAction::CloseSettings);
         }
 
         #[cfg(feature = "tsp")]

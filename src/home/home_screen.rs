@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::settings::{settings_screen::SettingsScreenWidgetRefExt, SettingsAction};
+use crate::{home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, settings::settings_screen::SettingsScreenWidgetRefExt};
 
 live_design! {
     use link::theme::*;
@@ -16,8 +16,31 @@ live_design! {
     use crate::home::main_desktop_ui::MainDesktopUI;
     use crate::settings::settings_screen::SettingsScreen;
 
-    NavigationWrapper = {{NavigationWrapper}} {
+    StackNavigationWrapper = {{StackNavigationWrapper}} {
         view_stack = <StackNavigation> {}
+    }
+
+    // A placeholder for the AddRoomScreen
+    AddRoomScreen = <View> {
+        width: Fill, height: Fill,
+        padding: {top: 100}
+        align: {x: 0.5}
+
+        show_bg: true
+        draw_bg: {
+            color: (COLOR_PRIMARY)
+        }
+
+        title = <Label> {
+            flow: RightWrap,
+            align: {x: 0.5}
+            draw_text: {
+                text_style: <TITLE_TEXT>{font_size: 13},
+                color: #000
+                wrap: Word
+            }
+            text: "Add Room page is not yet implemented"
+        }
     }
 
     // The home screen widget contains the main content:
@@ -25,6 +48,10 @@ live_design! {
     // It adapts to both desktop and mobile layouts.
     pub HomeScreen = {{HomeScreen}} {
         <AdaptiveView> {
+            // NOTE: within each of these sub views, we used `CachedWidget` wrappers
+            //       to ensure that there is only a single global instance of each
+            //       of those widgets, which means they maintain their state
+            //       across transitions between the Desktop and Mobile variant.
             Desktop = {
                 show_bg: true
                 draw_bg: {
@@ -47,9 +74,9 @@ live_design! {
                     width: Fill, height: Fill
 
                     lazy_init: true,
-                    active_page: main_page
+                    active_page: home_page
 
-                    main_page = <View> {
+                    home_page = <View> {
                         width: Fill, height: Fill
                         flow: Down
 
@@ -83,18 +110,27 @@ live_design! {
                             settings_screen = <SettingsScreen> {}
                         }
                     }
+
+                    add_room_page = <View> {
+                        width: Fill, height: Fill
+
+                        <CachedWidget> {
+                            add_room_screen = <AddRoomScreen> {}
+                        }
+                    }
                 }
             }
 
             Mobile = {
+                width: Fill, height: Fill
+                flow: Down
+
                 show_bg: true
                 draw_bg: {
                     color: (COLOR_PRIMARY)
                 }
-                width: Fill, height: Fill
-                flow: Down
 
-                <NavigationWrapper> {
+                <StackNavigationWrapper> {
                     view_stack = <StackNavigation> {
 
                         root_view = {
@@ -108,9 +144,9 @@ live_design! {
                                 width: Fill, height: Fill
 
                                 lazy_init: true,
-                                active_page: main_page
+                                active_page: home_page
 
-                                main_page = <View> {
+                                home_page = <View> {
                                     width: Fill, height: Fill
                                     flow: Down
 
@@ -122,6 +158,14 @@ live_design! {
 
                                     <CachedWidget> {
                                         settings_screen = <SettingsScreen> {}
+                                    }
+                                }
+
+                                add_room_page = <View> {
+                                    width: Fill, height: Fill
+
+                                    <CachedWidget> {
+                                        add_room_screen = <AddRoomScreen> {}
                                     }
                                 }
                             }
@@ -160,35 +204,40 @@ live_design! {
 }
 
 
-/// Which space is currently selected in the NavigationTabBar.
-#[derive(Clone, Debug, Default)]
-pub enum SelectedSpace {
-    #[default]
-    Home,
-    Settings,
-    // Once we support spaces and shortcut buttons (like directs only, etc),
-    // we can add them here.
-}
-
-
 #[derive(Live, LiveHook, Widget)]
 pub struct HomeScreen {
     #[deref] view: View,
 
-    #[rust] selection: SelectedSpace,
-    #[rust] previous_selection: SelectedSpace,
+    #[rust] selection: SelectedTab,
+    #[rust] previous_selection: SelectedTab,
 }
 
 impl Widget for HomeScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
             for action in actions {
-                // Handle the settings screen being opened or closed.
                 match action.downcast_ref() {
-                    Some(SettingsAction::OpenSettings) => {
-                        if !matches!(self.selection, SelectedSpace::Settings) {
+                    Some(NavigationBarAction::GoToHome) => {
+                        if !matches!(self.selection, SelectedTab::Home) {
                             self.previous_selection = self.selection.clone();
-                            self.selection = SelectedSpace::Settings;
+                            self.selection = SelectedTab::Home;
+                            self.update_active_page_from_selection(cx);
+                            self.view.redraw(cx);
+                        }
+                    }
+                    Some(NavigationBarAction::GoToAddRoom) => {
+                        if !matches!(self.selection, SelectedTab::AddRoom) {
+                            self.previous_selection = self.selection.clone();
+                            self.selection = SelectedTab::AddRoom;
+                            self.update_active_page_from_selection(cx);
+                            self.view.redraw(cx);
+                        }
+                    }
+                    // Only open the settings screen if it is not currently open.
+                    Some(NavigationBarAction::OpenSettings) => {
+                        if !matches!(self.selection, SelectedTab::Settings) {
+                            self.previous_selection = self.selection.clone();
+                            self.selection = SelectedTab::Settings;
                             if let Some(settings_page) = self.update_active_page_from_selection(cx) {
                                 settings_page
                                     .settings_screen(ids!(settings_screen))
@@ -199,8 +248,9 @@ impl Widget for HomeScreen {
                             }
                         }
                     }
-                    Some(SettingsAction::CloseSettings) => {
+                    Some(NavigationBarAction::CloseSettings) => {
                         self.selection = self.previous_selection.clone();
+                        cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
                         self.update_active_page_from_selection(cx);
                         self.view.redraw(cx);
                     }
@@ -229,8 +279,9 @@ impl HomeScreen {
             .set_active_page(
                 cx,
                 match self.selection {
-                    SelectedSpace::Settings => id!(settings_page),
-                    SelectedSpace::Home => id!(main_page),
+                    SelectedTab::Home     => id!(home_page),
+                    SelectedTab::Settings => id!(settings_page),
+                    SelectedTab::AddRoom  => id!(add_room_page),
                 },
             )
     }
@@ -239,12 +290,12 @@ impl HomeScreen {
 /// A wrapper around the StackNavigation widget
 /// that simply forwards stack view actions to it.
 #[derive(Live, LiveHook, Widget)]
-pub struct NavigationWrapper {
+pub struct StackNavigationWrapper {
     #[deref]
     view: View,
 }
 
-impl Widget for NavigationWrapper {
+impl Widget for StackNavigationWrapper {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
@@ -254,7 +305,7 @@ impl Widget for NavigationWrapper {
     }
 }
 
-impl MatchEvent for NavigationWrapper {
+impl MatchEvent for StackNavigationWrapper {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         self.stack_navigation(ids!(view_stack))
             .handle_stack_view_actions(cx, actions);
