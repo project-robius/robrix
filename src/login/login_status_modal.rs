@@ -108,7 +108,7 @@ impl Widget for LoginStatusModal {
 impl WidgetMatchEvent for LoginStatusModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         let widget_uid = self.widget_uid();
-        let button = self.button(id!(button));
+        let button = self.button(ids!(button));
 
         let modal_dismissed = actions
             .iter()
@@ -131,17 +131,17 @@ impl WidgetMatchEvent for LoginStatusModal {
 impl LoginStatusModal {
     /// Sets the title text displayed in the modal.
     fn set_title(&mut self, cx: &mut Cx, title: &str) {
-        self.label(id!(title)).set_text(cx, title);
+        self.label(ids!(title)).set_text(cx, title);
     }
 
     /// Sets the status text displayed in the body of the modal.
     fn set_status(&mut self, cx: &mut Cx, status: &str) {
-        self.label(id!(status)).set_text(cx, status);
+        self.label(ids!(status)).set_text(cx, status);
     }
 
     /// Returns a reference to the modal's button, enabling you to set its properties.
     fn button_ref(&self) -> ButtonRef {
-        self.button(id!(button))
+        self.button(ids!(button))
     }
 }
 

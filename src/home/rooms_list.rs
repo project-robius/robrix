@@ -613,7 +613,7 @@ impl RoomsList {
                     }
                 }
                 RoomsListUpdate::ScrollToRoom(room_id) => {
-                    let portal_list = self.view.portal_list(id!(list));
+                    let portal_list = self.view.portal_list(ids!(list));
                     let speed = 50.0;
                     let portal_list_index = if let Some(direct_index) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
                         let (_, direct_rooms_indexes, _) = self.calculate_indexes();
@@ -669,7 +669,7 @@ impl RoomsList {
     /// Updates the lists of displayed rooms based on the current search filter
     /// and redraws the RoomsList.
     fn update_displayed_rooms(&mut self, cx: &mut Cx, keywords: &str) {
-        let portal_list = self.view.portal_list(id!(list));
+        let portal_list = self.view.portal_list(ids!(list));
         if keywords.is_empty() {
             // Reset each of the displayed_* lists to show all rooms.
             self.display_filter = RoomDisplayFilter::default();
@@ -840,7 +840,7 @@ impl Widget for RoomsList {
         // Now, handle any actions on this widget, e.g., a user selecting a room.
         // We use Scope `props` to pass down the current scrolling state of the PortalList.
         let props = RoomsListScopeProps {
-            was_scrolling: self.view.portal_list(id!(list)).was_scrolling(),
+            was_scrolling: self.view.portal_list(ids!(list)).was_scrolling(),
         };
         let list_actions = cx.capture_actions(
             |cx| self.view.handle_event(cx, event, &mut Scope::with_props(&props))
@@ -948,7 +948,7 @@ impl Widget for RoomsList {
                 let mut scope = Scope::empty();
 
                 if invited_rooms_indexes.header_index == Some(portal_list_index) {
-                    let item = list.item(cx, portal_list_index, live_id!(collapsible_header));
+                    let item = list.item(cx, portal_list_index, id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
                         self.is_invited_rooms_header_expanded,
@@ -960,19 +960,19 @@ impl Widget for RoomsList {
                 else if let Some(invited_room_id) = get_invited_room_id(portal_list_index) {
                     let mut invited_rooms_mut = self.invited_rooms.borrow_mut();
                     if let Some(invited_room) = invited_rooms_mut.get_mut(invited_room_id) {
-                        let item = list.item(cx, portal_list_index, live_id!(rooms_list_entry));
+                        let item = list.item(cx, portal_list_index, id!(rooms_list_entry));
                         invited_room.is_selected =
                             self.current_active_room.as_deref() == Some(invited_room_id);
                         // Pass the room info down to the RoomsListEntry widget via Scope.
                         scope = Scope::with_props(&*invited_room);
                         item.draw_all(cx, &mut scope);
                     } else {
-                        list.item(cx, portal_list_index, live_id!(empty))
+                        list.item(cx, portal_list_index, id!(empty))
                             .draw_all(cx, &mut scope);
                     }
                 }
                 else if direct_rooms_indexes.header_index == Some(portal_list_index) {
-                    let item = list.item(cx, portal_list_index, live_id!(collapsible_header));
+                    let item = list.item(cx, portal_list_index, id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
                         self.is_direct_rooms_header_expanded,
@@ -985,7 +985,7 @@ impl Widget for RoomsList {
                 }
                 else if let Some(direct_room_id) = get_direct_room_id(portal_list_index) {
                     if let Some(direct_room) = self.all_joined_rooms.get_mut(direct_room_id) {
-                        let item = list.item(cx, portal_list_index, live_id!(rooms_list_entry));
+                        let item = list.item(cx, portal_list_index, id!(rooms_list_entry));
                         direct_room.is_selected =
                             self.current_active_room.as_ref() == Some(direct_room_id);
 
@@ -1002,12 +1002,12 @@ impl Widget for RoomsList {
                         scope = Scope::with_props(&*direct_room);
                         item.draw_all(cx, &mut scope);
                     } else {
-                        list.item(cx, portal_list_index, live_id!(empty))
+                        list.item(cx, portal_list_index, id!(empty))
                             .draw_all(cx, &mut scope);
                     }
                 }
                 else if regular_rooms_indexes.header_index == Some(portal_list_index) {
-                    let item = list.item(cx, portal_list_index, live_id!(collapsible_header));
+                    let item = list.item(cx, portal_list_index, id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
                         self.is_regular_rooms_header_expanded,
@@ -1020,7 +1020,7 @@ impl Widget for RoomsList {
                 }
                 else if let Some(regular_room_id) = get_regular_room_id(portal_list_index) {
                     if let Some(regular_room) = self.all_joined_rooms.get_mut(regular_room_id) {
-                        let item = list.item(cx, portal_list_index, live_id!(rooms_list_entry));
+                        let item = list.item(cx, portal_list_index, id!(rooms_list_entry));
                         regular_room.is_selected =
                             self.current_active_room.as_ref() == Some(regular_room_id);
 
@@ -1037,12 +1037,12 @@ impl Widget for RoomsList {
                         scope = Scope::with_props(&*regular_room);
                         item.draw_all(cx, &mut scope);
                     } else {
-                        list.item(cx, portal_list_index, live_id!(empty)).draw_all(cx, &mut scope);
+                        list.item(cx, portal_list_index, id!(empty)).draw_all(cx, &mut scope);
                     }
                 }
                 // Draw the status label as the bottom entry.
                 else if portal_list_index == status_label_id {
-                    let item = list.item(cx, portal_list_index, live_id!(status_label));
+                    let item = list.item(cx, portal_list_index, id!(status_label));
                     item.as_view().apply_over(cx, live!{
                         height: Fit,
                         label = { text: (&self.status) }
@@ -1051,7 +1051,7 @@ impl Widget for RoomsList {
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.
                 else {
-                    list.item(cx, portal_list_index, live_id!(bottom_filler))
+                    list.item(cx, portal_list_index, id!(bottom_filler))
                         .draw_all(cx, &mut scope);
                 }
             }

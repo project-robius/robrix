@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{home::spaces_dock::get_own_profile, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, SettingsAction}};
+use crate::{home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::account_settings::AccountSettingsWidgetExt};
 
 live_design! {
     use link::theme::*;
@@ -133,7 +133,7 @@ impl Widget for SettingsScreen {
         let close_pane = {
             matches!(
                 event,
-                Event::Actions(actions) if self.button(id!(close_button)).clicked(actions)
+                Event::Actions(actions) if self.button(ids!(close_button)).clicked(actions)
             )
             || event.back_pressed()
             || match event.hits(cx, area) {
@@ -146,7 +146,7 @@ impl Widget for SettingsScreen {
             }
         };
         if close_pane {
-            cx.action(SettingsAction::CloseSettings);
+            cx.action(NavigationBarAction::CloseSettings);
         }
 
         #[cfg(feature = "tsp")]
@@ -163,11 +163,11 @@ impl Widget for SettingsScreen {
                 match action.downcast_ref() {
                     Some(CreateWalletModalAction::Open) => {
                         use crate::tsp::create_wallet_modal::CreateWalletModalWidgetExt;
-                        self.view.create_wallet_modal(id!(create_wallet_modal_inner)).show(cx);
-                        self.view.modal(id!(create_wallet_modal)).open(cx);
+                        self.view.create_wallet_modal(ids!(create_wallet_modal_inner)).show(cx);
+                        self.view.modal(ids!(create_wallet_modal)).open(cx);
                     }
                     Some(CreateWalletModalAction::Close) => {
-                        self.view.modal(id!(create_wallet_modal)).close(cx);
+                        self.view.modal(ids!(create_wallet_modal)).close(cx);
                     }
                     None => { }
                 }
@@ -176,11 +176,11 @@ impl Widget for SettingsScreen {
                 match action.downcast_ref() {
                     Some(CreateDidModalAction::Open) => {
                         use crate::tsp::create_did_modal::CreateDidModalWidgetExt;
-                        self.view.create_did_modal(id!(create_did_modal_inner)).show(cx);
-                        self.view.modal(id!(create_did_modal)).open(cx);
+                        self.view.create_did_modal(ids!(create_did_modal_inner)).show(cx);
+                        self.view.modal(ids!(create_did_modal)).open(cx);
                     }
                     Some(CreateDidModalAction::Close) => {
-                        self.view.modal(id!(create_did_modal)).close(cx);
+                        self.view.modal(ids!(create_did_modal)).close(cx);
                     }
                     None => { }
                 }
@@ -188,14 +188,14 @@ impl Widget for SettingsScreen {
                 // Handle a request to show a TSP wallet confirmation modal.
                 if let Some(TspWalletEntryAction::ShowConfirmationModal(content_opt)) = action.downcast_ref() {
                     if let Some(content) = content_opt.borrow_mut().take() {
-                        self.view.confirmation_modal(id!(remove_delete_wallet_modal_inner)).show(cx, content);
-                        self.view.modal(id!(remove_delete_wallet_modal)).open(cx);
+                        self.view.confirmation_modal(ids!(remove_delete_wallet_modal_inner)).show(cx, content);
+                        self.view.modal(ids!(remove_delete_wallet_modal)).open(cx);
                     }
                 }
             }
 
-            if let Some(_accepted) = self.view.confirmation_modal(id!(remove_delete_wallet_modal_inner)).closed(actions) {
-                self.view.modal(id!(remove_delete_wallet_modal)).close(cx);
+            if let Some(_accepted) = self.view.confirmation_modal(ids!(remove_delete_wallet_modal_inner)).closed(actions) {
+                self.view.modal(ids!(remove_delete_wallet_modal)).close(cx);
             }
         }
     }
@@ -209,11 +209,11 @@ impl SettingsScreen {
     /// Fetches the current user's profile and uses it to populate the settings screen.
     pub fn populate(&mut self, cx: &mut Cx, own_profile: Option<UserProfile>) {
         let Some(profile) = own_profile.or_else(|| get_own_profile(cx)) else {
-            error!("BUG: failed to get own profile for settings screen.");
+            error!("Failed to get own profile for settings screen.");
             return;
         };
-        self.view.account_settings(id!(account_settings)).populate(cx, profile);
-        self.view.button(id!(close_button)).reset_hover(cx);
+        self.view.account_settings(ids!(account_settings)).populate(cx, profile);
+        self.view.button(ids!(close_button)).reset_hover(cx);
         cx.set_key_focus(self.view.area());
         self.redraw(cx);
     }

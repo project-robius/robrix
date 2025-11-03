@@ -259,10 +259,11 @@ unused_import_braces = "warn"
 
 ## Configuration for clippy lints.
 [lints.clippy]
+blocks_in_conditions = "allow"
 collapsible_if = "allow"
 collapsible_else_if = "allow"
-too_many_arguments = "allow"
-blocks_in_conditions = "allow"
-used_underscore_binding = "allow"
+doc_overindented_list_items = "allow"
 module_name_repetitions = "allow"
+too_many_arguments = "allow"
 uninlined_format_args = "allow"
+used_underscore_binding = "allow"

@@ -137,7 +137,7 @@ impl Widget for CollapsibleHeader {
         } else {
             90.0
         };
-        self.icon(id!(collapse_icon)).apply_over(
+        self.icon(ids!(collapse_icon)).apply_over(
             cx,
             live! {
                 draw_icon: { rotation_angle: (angle) }
@@ -173,8 +173,8 @@ impl CollapsibleHeaderRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.is_expanded = is_expanded;
             inner.category = category;
-            inner.label(id!(label)).set_text(cx, category.as_str());
-            inner.unread_badge(id!(unread_badge)).update_counts(num_unread_mentions, 0);
+            inner.label(ids!(label)).set_text(cx, category.as_str());
+            inner.unread_badge(ids!(unread_badge)).update_counts(num_unread_mentions, 0);
         }
     }
 }

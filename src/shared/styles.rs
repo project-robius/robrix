@@ -29,6 +29,7 @@ live_design! {
     pub ICON_ZOOM            = dep("crate://self/resources/icons/search.svg")
     pub ICON_PIN             = dep("crate://self/resources/icons/pin.svg")
     pub ICON_REPLY           = dep("crate://self/resources/icons/reply.svg")
+    pub ICON_SEARCH          = dep("crate://self/resources/icons/search.svg")
     pub ICON_SEND            = dep("crate://self/resources/icon_send.svg")
     pub ICON_TOMBSTONE       = dep("crate://self/resources/icons/tombstone.svg")
     pub ICON_TRASH           = dep("crate://self/resources/icons/trash.svg")
@@ -104,7 +105,7 @@ live_design! {
 
     pub COLOR_PRIMARY = #ffffff
     pub COLOR_PRIMARY_DARKER = #fefefe
-    pub COLOR_SECONDARY = #EFEFEF
+    pub COLOR_SECONDARY = #E3E3E3
 
     pub COLOR_ACTIVE_PRIMARY = #0f88fe
     pub COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
