@@ -3,8 +3,7 @@
 //! This is useful to display a loading message while waiting for an image to be fetched,
 //! or to display an error message if the image fails to load, etc.
 
-use makepad_widgets::*;
-
+use makepad_widgets::{image_cache::ImageCacheImpl, *};
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -79,6 +78,7 @@ impl Widget for TextOrImage {
                     cx.set_key_focus(image_area);
                 }
                 Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                    println!("clicked -- self.widget_uid() {:?}", self.widget_uid());
                     cx.widget_action(self.widget_uid(), &scope.path, TextOrImageAction::Clicked(mxc_uri.clone()));
                     cx.set_cursor(MouseCursor::Default);
                 }
@@ -186,6 +186,27 @@ impl TextOrImageRef {
     pub fn show_default_image(&self, cx: &mut Cx) {
         if let Some(inner) = self.borrow() {
             inner.show_default_image(cx);
+        }
+    }
+
+    /// Returns the current image texture and its size in pixels if the `TextOrImage` is currently displaying an image.
+    ///
+    /// If the `TextOrImage` is not displaying an image, this function returns `None`.
+    ///
+    /// The returned size is in pixels and is relative to the display scale.
+    ///
+    /// Note that this function will return `None` if the `TextOrImage` widget is not yet laid out.
+    ///
+    pub fn get_texture_and_size(&self, cx: &mut Cx) -> Option<(Option<Texture>, DVec2)> {
+        if let Some(inner) = self.borrow() {
+            if let Some(image_inner) = inner.view.image(id!(image_view.image)).borrow() {
+                let rect = image_inner.area().rect(cx);
+                Some((image_inner.get_texture(0).clone(), rect.size))
+            } else {
+                None
+            }
+        } else {
+            None
         }
     }
 }

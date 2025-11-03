@@ -560,7 +560,7 @@ impl AppMain for App {
         let image_viewer_modal = self.ui.modal(id!(image_viewer));
         if image_viewer_modal.is_open() &&image_viewer_modal.area().rect(cx).size.y > 200.0 {
             let scope = &mut Scope::with_data(&mut self.app_state);
-            //self.ui.view(id!(popup_list)).handle_event(cx, event, scope);
+            self.ui.view(id!(popup_list)).handle_event(cx, event, scope);
             self.ui.modal(id!(image_viewer)).handle_event(cx, event, scope);
             // Pass the Signal event to the underlying room screen, so as to populate the full image in the image viewer.
             if let Event::Signal = event {
@@ -691,7 +691,7 @@ impl App {
         match action.downcast_ref() {
             Some(ImageViewerAction::Show(load_state)) => {
                 match load_state {
-                    LoadState::Loading(thumbnail_data) => {
+                    LoadState::Loading(texture, image_size) => {
                         self.ui.modal(id!(image_viewer)).open(cx);
                         self.ui.image_viewer(id!(image_viewer_inner)).reset(cx);
                         self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, true);
@@ -700,36 +700,15 @@ impl App {
                         self.ui.view(id!(footer)).apply_over(cx, live!{
                             height: 50
                         });
-                        self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, thumbnail_data);
+                        self.ui.image_viewer(id!(image_viewer_inner)).display_using_texture(cx, texture.as_ref().clone(), image_size);
                     }
                     LoadState::Loaded(image_bytes) => {
                         self.ui.modal(id!(image_viewer)).open(cx);
-                        self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
-                        self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, image_bytes);
-                        // if let Err(error) = self.ui.image_viewer(id!(image_viewer_inner)).display_rotated_image(cx, image_bytes) {
-                        //     // Reset the image viewer to clear any previous image
-                        //     //self.ui.image_viewer(id!(image_viewer_inner)).reset(cx);
-                        //     self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, true);
-                        //     let err = match error {
-                        //         ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
-                        //         ImageError::EmptyData => ImageViewerError::BadData,
-                        //         ImageError::PathNotFound(_) => ImageViewerError::NotFound,
-                        //         ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
-                        //         _ => ImageViewerError::BadData,
-                        //     };
-                        //     self.ui.label(id!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(&err));
-                        // } else {
-                        //     self.ui.view(id!(zoom_button_view)).set_visible(cx, true);
-                        //     self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
-                        //     self.ui.label(id!(image_viewer_status_label)).set_text(cx, "");
-                        //     // Collapse the footer
-                        //     self.ui.view(id!(footer)).apply_over(cx, live!{
-                        //         height: 0
-                        //     });
-                        // }
+                        self.ui.image_viewer(id!(image_viewer_inner)).display_using_background_thread(cx, image_bytes);
                     }
-                    LoadState::Fully => {
+                    LoadState::FinishedBackgroundDecoding => {
                         self.ui.view(id!(zoom_button_view)).set_visible(cx, true);
+                        self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
                         self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
                         self.ui.label(id!(image_viewer_status_label)).set_text(cx, "");
                         // Collapse the footer

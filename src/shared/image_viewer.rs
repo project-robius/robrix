@@ -4,9 +4,9 @@
 //! ImageViewerRef has 2 public methods, `display_image` and `reset`.
 use std::sync::{Arc, mpsc::Receiver};
 
-use makepad_widgets::{image_cache::{ImageBuffer, ImageError}, rotated_image::RotatedImageWidgetExt, event::TouchUpdateEvent, *};
+use makepad_widgets::{event::TouchUpdateEvent, image_cache::{ImageBuffer, ImageError}, rotated_image::RotatedImageWidgetExt, *};
 
-use crate::utils::{get_png_or_jpg_image_buffer, retain_aspect_ratio};
+use crate::utils::get_png_or_jpg_image_buffer;
 
 /// Duration for rotation animations in seconds.
 /// This value should be consistent with the duration value in set in the animator.
@@ -144,14 +144,14 @@ live_design! {
         }
         flow: Down
         header = <View> {
-            width: Fill, height: 50
+            width: Fill, height: 80
             flow: Right
             spacing: 0
             align: {x: 1.0, y: 0.0},
 
             zoom_button_minus = <MagnifyingGlass> {
                 sign_label = <View> {
-                    width: Fill, height: 50,
+                    width: Fill, height: Fill,
                     align: { x: 0.4, y: 0.35 }
 
                     magnify_glass_sign = <Label> {
@@ -447,16 +447,11 @@ impl Widget for ImageViewer {
                     match image_buffer_res {
                         Ok(image_buffer) => {
                             let rotated_image = self.view.rotated_image(id!(rotated_image));
-                            let (capped_width, capped_height) = retain_aspect_ratio(image_buffer.width as u32, image_buffer.height as u32);
                             let texture = image_buffer.into_new_texture(cx);
                             rotated_image.set_texture(cx, Some(texture));
-                            rotated_image.apply_over(cx, live!{
-                                width: (capped_width),
-                                height: (capped_height),
-                            });
                             self.image_loaded = true;
                             to_remove = true;
-                            cx.action(ImageViewerAction::Show(LoadState::Fully));
+                            cx.action(ImageViewerAction::Show(LoadState::FinishedBackgroundDecoding));
                         
                         }
                         Err(error) => {
@@ -589,7 +584,13 @@ impl ImageViewer {
         self.update_rotated_image_shader(cx);
     }
 
-    pub fn display_rotated_image(&mut self, cx: &mut Cx, image_bytes: &[u8]) {
+    /// Displays an image in the image viewer widget.
+    ///
+    /// If `background_thread` is false, the image is decoded and displayed immediately.
+    /// If `background_thread` is true, the image is decoded in a separate thread and displayed when the decoding is complete.
+    ///
+    /// The image is displayed in the center of the widget. If the image is larger than the widget, it is scaled down to fit the widget while retaining its aspect ratio.
+    pub fn display_using_background_thread(&mut self, cx: &mut Cx, image_bytes: &[u8]) {
         self.image_loaded = true;
         if self.receiver.is_some() {
             return;
@@ -600,11 +601,17 @@ impl ImageViewer {
         let (sender, receiver) = std::sync::mpsc::channel();
         self.receiver = Some((self.background_task_id, receiver));
         let image_bytes_clone = image_bytes.to_vec();
-        cx.spawn_thread(move ||{
-            if let Err(e) = sender.send(get_png_or_jpg_image_buffer(image_bytes_clone)) {
-                println!("Send Error {:?}",e);
-            }
+        cx.spawn_thread(move || {
+            let _ = sender.send(get_png_or_jpg_image_buffer(image_bytes_clone));
             SignalToUI::set_ui_signal();
+        });
+    }
+
+    pub fn display_using_texture(&mut self, cx: &mut Cx, texture: Option<Texture>, size: &DVec2) {
+        self.rotated_image(id!(rotated_image)).set_texture(cx, texture);
+        self.rotated_image(id!(rotated_image)).apply_over(cx, live!{
+            width: (size.x),
+            height: (size.y),
         });
     }
 
@@ -665,14 +672,21 @@ impl ImageViewerRef {
         inner.pan_sensitivity = config.pan_sensitivity;
     }
 
-    /// See [`ImageViewer::display_rotated_image()`].
-    pub fn display_rotated_image(&mut self, cx: &mut Cx, image_bytes: &[u8]) {
+    /// See [`ImageViewer::display_using_background_thread()`].
+    pub fn display_using_background_thread(&mut self, cx: &mut Cx, image_bytes: &[u8]) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.display_rotated_image(cx, image_bytes)
+        inner.display_using_background_thread(cx, image_bytes)
     }
 
+    /// See [`ImageViewer::display_using_texture()`].
+    pub fn display_using_texture(&mut self, cx: &mut Cx, texture: Option<Texture>, size: &DVec2) {
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
+        inner.display_using_texture(cx, texture, size)
+    }
     /// See [`ImageViewer::reset()`].
     pub fn reset(&mut self, cx: &mut Cx) {
        let Some(mut inner) = self.borrow_mut() else {
@@ -683,14 +697,14 @@ impl ImageViewerRef {
 }
 
 /// Represents the possible states of an image load operation.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug,)]
 pub enum LoadState {
-    /// The image is currently being loaded with its thumbnail image.
-    Loading(Arc<[u8]>),
+    /// The image is currently being loaded with its thumbnail image texture and its image size.
+    Loading(Arc<Option<Texture>>, DVec2),
     /// The image has been successfully loaded given the data.
     Loaded(Arc<[u8]>),
-    /// The image has been fully loaded.
-    Fully,
+    /// The image has been loaded from background thread.
+    FinishedBackgroundDecoding,
     /// An error occurred while loading the image, with specific error type.
     Error(ImageViewerError),
 }

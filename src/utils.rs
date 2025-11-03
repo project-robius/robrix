@@ -185,18 +185,29 @@ pub fn load_png_or_jpg_rotated_image(img: &RotatedImageRef, cx: &mut Cx, data: &
     Ok(())
 }
 
-pub fn retain_aspect_ratio(width: u32, height: u32) -> (f32, f32) {
-    let aspect_ratio: f32 = width as f32 / height as f32;
+/// Returns a width and height pair that has been capped to the maximum allowed size, while retaining the aspect ratio of the original image.
+///
+/// The maximum allowed size is defined by the `ROTATED_IMAGE_MAX_SIZE` constant.
+///
+/// This function is used to ensure that images displayed in the image viewer do not exceed the maximum allowed size, while still maintaining their aspect ratio.
+pub fn retain_aspect_ratio(width: u32, height: u32) -> (f64, f64) {
+    let aspect_ratio: f64 = width as f64 / height as f64;
     let (mut capped_width, mut capped_height) = (width, height);
-    if capped_height > ROTATED_IMAGE_MAX_SIZE {
+    
+    if width <= ROTATED_IMAGE_MAX_SIZE && height <= ROTATED_IMAGE_MAX_SIZE {
         capped_height = ROTATED_IMAGE_MAX_SIZE;
-        capped_width = (capped_height as f32 * aspect_ratio).floor() as u32;
+        capped_width = (capped_height as f64 * aspect_ratio).floor() as u32;
+    } else {
+        if capped_height > ROTATED_IMAGE_MAX_SIZE {
+            capped_height = ROTATED_IMAGE_MAX_SIZE;
+            capped_width = (capped_height as f64 * aspect_ratio).floor() as u32;
+        }
+        if capped_width > ROTATED_IMAGE_MAX_SIZE {
+            capped_width = ROTATED_IMAGE_MAX_SIZE;
+            capped_height = (capped_width as f64 / aspect_ratio).floor() as u32;
+        }
     }
-    if capped_width > ROTATED_IMAGE_MAX_SIZE {
-        capped_width = ROTATED_IMAGE_MAX_SIZE;
-        capped_height = (capped_width as f32 / aspect_ratio).floor() as u32;
-    }
-    (capped_width as f32, capped_height as f32)
+    (capped_width as f64, capped_height as f64)
 }
 
 pub fn get_png_or_jpg_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageError> {

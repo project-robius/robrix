@@ -159,8 +159,8 @@ impl Widget for RoomImageMessageDetail {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if self.is_desktop != cx.display_context.is_desktop() && !self.image_name.is_empty() {
-            let is_desktop = cx.display_context.is_desktop();
+        let is_desktop = cx.display_context.is_desktop();
+        if self.is_desktop != is_desktop && !self.image_name.is_empty() {
             let truncated_name = truncate_image_name(&self.image_name, is_desktop);
             let human_readable_size = format_file_size(self.image_size);
             let display_text = format!("{} ({})", truncated_name, human_readable_size);

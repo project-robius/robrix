@@ -33,9 +33,9 @@ use crate::{
     },
     room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerError, ImageViewerAction, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerError, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, retain_aspect_ratio, room_name_or_id, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -662,16 +662,18 @@ impl Widget for RoomScreen {
                         TooltipAction::HoverOut
                     );
                 }
-                let image_widget_uid = wr.image(id!(content.message)).widget_uid();
-                if let TextOrImageAction::Clicked(_mxc_uri) = actions.find_widget_action(image_widget_uid).cast() {
-                    if let Some(tl_state) = &self.tl_state {
+                let content_message = wr.text_or_image(id!(content.message));
+                if let TextOrImageAction::Clicked(mxc_uri) = actions.find_widget_action(content_message.widget_uid()).cast() {
+                    let Some((texture, size)) = content_message.get_texture_and_size(cx) else { continue; };
+                    let texture = Arc::new(texture);
+                    let (capped_width, capped_height) =  retain_aspect_ratio(size.x as u32, size.y as u32);
+                    if let Some(tl_state) = &mut self.tl_state {
                         if let Some(item) = tl_state.items.get(index) {
                             if let Some(event_tl_item) = item.as_event() {
                                 let sender_profile = event_tl_item.sender_profile();
                                 let sender = event_tl_item.sender();
                                 let event_id = event_tl_item.event_id().map(|id| id.to_owned());
                                 let timestamp = event_tl_item.timestamp();
-                                
                                 // Extract image name and size from the message content
                                 let (image_name, image_size) = if let Some(message) = event_tl_item.content().as_message() {
                                     if let MessageType::Image(image_content) = message.msgtype() {
@@ -680,6 +682,7 @@ impl Widget for RoomScreen {
                                             .and_then(|info| info.size)
                                             .map(|s| i32::try_from(s).unwrap_or_default())
                                             .unwrap_or(0);
+                                        
                                         (name, size)
                                     } else {
                                         ("Unknown Image".to_string(), 0)
@@ -687,7 +690,10 @@ impl Widget for RoomScreen {
                                 } else {
                                     ("Unknown Image".to_string(), 0)
                                 };
-                                
+                                cx.action(ImageViewerAction::Show(LoadState::Loading(texture, DVec2 { x: capped_width, y: capped_height })));
+                                let Some(mxc_uri_string) = mxc_uri else { continue; };
+                                let mxc_uri = OwnedMxcUri::from(mxc_uri_string);
+                                populate_matrix_image_modal(cx, mxc_uri, &mut tl_state.media_cache);
                                 cx.widget_action(
                                     room_screen_widget_uid,
                                     &scope.path,
@@ -703,6 +709,22 @@ impl Widget for RoomScreen {
                                 );
                             }
                         }
+                    }
+                    continue
+                }
+                let link_preview_content = wr.link_preview(id!(content.link_preview_view)).get_children();
+                for text_or_image in link_preview_content.iter() {
+                    let text_or_image = text_or_image.text_or_image(id!(image_view.image));
+                    if let TextOrImageAction::Clicked(mxc_uri) = actions.find_widget_action(text_or_image.widget_uid()).cast() {
+                        let Some((texture, size)) = text_or_image.get_texture_and_size(cx) else { 
+                            continue; 
+                        };
+                        let (capped_width, capped_height) =  retain_aspect_ratio(size.x as u32, size.y as u32);
+                        let texture = Arc::new(texture);
+                        let Some(mxc_uri_string) = mxc_uri else { continue; };
+                        let mxc_uri = OwnedMxcUri::from(mxc_uri_string);
+                        cx.action(ImageViewerAction::Show(LoadState::Loading(texture, DVec2 { x: capped_width, y: capped_height })));
+                        populate_matrix_image_modal(cx, mxc_uri, &mut self.tl_state.as_mut().unwrap().media_cache);
                     }
                 }
             }
@@ -891,12 +913,6 @@ impl Widget for RoomScreen {
             actions_generated_within_this_room_screen.retain(|action| {
                 if self.handle_link_clicked(cx, action, &user_profile_sliding_pane) {
                     return false;
-                }
-                if let TextOrImageAction::Clicked(mxc_uri) = action.as_widget_action().cast() {
-                    if let (Some(tl), Some(mxc_uri_string)) = (&mut self.tl_state, mxc_uri) {
-                        let mxc_uri = OwnedMxcUri::from(mxc_uri_string);
-                        populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
-                    }
                 }
                 /*
                 match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
@@ -4249,9 +4265,6 @@ pub fn populate_matrix_image_modal(
         (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
             cx.action(ImageViewerAction::Show(LoadState::Loaded(data)));
         }
-        (MediaCacheEntry::Loaded(data), MediaFormat::Thumbnail(_)) => {
-            cx.action(ImageViewerAction::Show(LoadState::Loading(data)));
-        }
         (MediaCacheEntry::Failed(status_code), MediaFormat::File) => {
             let error = match status_code {
                 StatusCode::NOT_FOUND => ImageViewerError::NotFound,
@@ -4266,9 +4279,6 @@ pub fn populate_matrix_image_modal(
             )));
             // Delete failed media entry from cache for MediaFormat::File so as to start all over again from loading Thumbnail. 
             media_cache.delete_cache_entry(&mxc_uri, Some(MediaFormat::File));
-        }
-        (MediaCacheEntry::Requested, _) => {
-            enqueue_popup_notification(PopupItem { message: String::from("Media requested"), auto_dismissal_duration: Some(10.0), kind: PopupKind::Warning });
         }
         _ => { }
     }
