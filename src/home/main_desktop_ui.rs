@@ -154,11 +154,11 @@ impl MainDesktopUI {
         if let Some(new_widget) = new_tab_widget {
             self.room_order.push(room.clone());
             match &room {
-                SelectedRoom::JoinedRoom { room_id, .. }  => {
+                SelectedRoom::JoinedRoom { room_id, room_name }  => {
                     new_widget.as_room_screen().set_displayed_room(
                         cx,
                         room_id.clone().into(),
-                        room.room_name().clone(),
+                        room_name.as_ref().clone(),
                     );
                 }
                 SelectedRoom::InvitedRoom { room_id, room_name: _ } => {
@@ -250,11 +250,9 @@ impl MainDesktopUI {
         };
 
         // Set the info to be displayed in the newly-replaced RoomScreen..
-        new_widget.as_room_screen().set_displayed_room(
-            cx,
-            room_id.clone(),
-            room_name.clone(),
-        );
+        new_widget
+            .as_room_screen()
+            .set_displayed_room(cx, room_id.clone(), room_name.clone());
 
         // Go through all existing `SelectedRoom` instances and replace the
         // `SelectedRoom::InvitedRoom`s with `SelectedRoom::JoinedRoom`s.
@@ -366,14 +364,14 @@ impl WidgetMatchEvent for MainDesktopUI {
                                     widget.as_room_screen().set_displayed_room(
                                         cx,
                                         room_id.clone().into(),
-                                        room_name.clone().into(),
+                                        room_name.as_ref().clone(),
                                     );
                                 }
                                 Some(SelectedRoom::InvitedRoom { room_id, room_name }) => {
                                     widget.as_invite_screen().set_displayed_invite(
                                         cx,
                                         room_id.clone().into(),
-                                        room_name.clone().into(),
+                                        room_name.as_ref().clone(),
                                     );
                                 }
                                 _ => { }

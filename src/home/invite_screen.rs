@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::{RoomDisplayName, ruma::OwnedRoomId};
 
-use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
+use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id, RoomName}};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -396,14 +396,11 @@ impl Widget for InviteScreen {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let room_display_text = self.room_id
-            .as_ref()
-            .map(|id| room_name_or_id(&self.room_name, id))
-            .unwrap_or_else(|| self.room_name.to_string());
-
         if !self.is_loaded {
             let mut restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
-            restore_status_view.set_content(cx, self.all_rooms_loaded, &room_display_text);
+            let room_id = self.room_id.as_ref().map(|id| id.as_ref());
+            let room_name = RoomName::from(self.room_name.clone());
+            restore_status_view.set_content(cx, self.all_rooms_loaded, room_name, room_id);
             return restore_status_view.draw(cx, scope);
         }
         let Some(info) = self.info.as_ref() else {
@@ -523,8 +520,6 @@ impl InviteScreen {
     pub fn set_displayed_invite(&mut self, cx: &mut Cx, room_id: OwnedRoomId, room_name: RoomDisplayName) {
         self.room_id = Some(room_id.clone());
         self.room_name = room_name;
-        let room_display_text = room_name_or_id(&self.room_name, &room_id);
-
         if let Some(invite) = super::rooms_list::get_invited_rooms(cx)
             .borrow()
             .get(&room_id)
@@ -545,7 +540,12 @@ impl InviteScreen {
         }
         self.view
             .restore_status_view(ids!(restore_status_view))
-            .set_content(cx, self.all_rooms_loaded, &room_display_text);
+            .set_content(
+                cx,
+                self.all_rooms_loaded,
+                RoomName::from(self.room_name.clone()),
+                Some(room_id.as_ref()),
+            );
         self.view
             .restore_status_view(ids!(restore_status_view))
             .set_visible(cx, !self.is_loaded);

@@ -34,7 +34,7 @@ use crate::{
     shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+    sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomName}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -699,7 +699,7 @@ impl Widget for RoomScreen {
                             &user_profile_sliding_pane,
                             UserProfilePaneInfo {
                                 profile_and_room_id,
-                                room_name: self.current_room_label(),
+                                room_name: self.room_name.to_string(),
                                 room_member: None,
                             },
                         );
@@ -902,8 +902,9 @@ impl Widget for RoomScreen {
         // If the room isn't loaded yet, we show the restore status label only.
         if !self.is_loaded {
             let mut restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
-            let room_label = self.current_room_label();
-            restore_status_view.set_content(cx, self.all_rooms_loaded, &room_label);
+            let room_id = self.room_id.as_deref();
+            let room_name = RoomName::from(self.room_name.clone());
+            restore_status_view.set_content(cx, self.all_rooms_loaded, room_name, room_id);
             return restore_status_view.draw(cx, scope);
         }
         if self.tl_state.is_none() {
@@ -1091,13 +1092,6 @@ impl Widget for RoomScreen {
 }
 
 impl RoomScreen {
-    fn current_room_label(&self) -> String {
-        match self.room_id.as_ref() {
-            Some(room_id) => room_name_or_id(&self.room_name, room_id),
-            None => self.room_name.to_string(),
-        }
-    }
-
     /// Processes all pending background updates to the currently-shown timeline.
     ///
     /// Redraws this RoomScreen view if any updates were applied.
@@ -1106,8 +1100,8 @@ impl RoomScreen {
         let jump_to_bottom = self.jump_to_bottom_button(ids!(jump_to_bottom));
         let curr_first_id = portal_list.first_id();
         let ui = self.widget_uid();
-        let room_label_cached = self.current_room_label();
         let Some(tl) = self.tl_state.as_mut() else { return };
+        let room_label_cached = self.room_name.to_string();
 
         let mut done_loading = false;
         let mut should_continue_backwards_pagination = false;
@@ -1468,7 +1462,7 @@ impl RoomScreen {
                                 },
                                 room_id: self.room_id.clone().unwrap(),
                             },
-                            room_name: self.current_room_label(),
+                            room_name: self.room_name.to_string(),
                             // TODO: use the extra `via` parameters
                             room_member: None,
                         },
@@ -2018,9 +2012,8 @@ impl RoomScreen {
             let rooms_list_ref = cx.get_global::<RoomsListRef>();
             let is_loaded_now = rooms_list_ref.is_room_loaded(&room_id);
             if is_loaded_now && !self.is_loaded {
-                let room_label = self.current_room_label();
                 log!("Detected that room \"{}\" ({}) is now loaded for the first time",
-                    room_label, room_id,
+                    self.room_name, room_id,
                 );
                 is_first_time_being_loaded = true;
             }
@@ -2034,8 +2027,7 @@ impl RoomScreen {
         // when they first open the room, and there might not be any messages yet.
         if is_first_time_being_loaded {
             if !tl_state.fully_paginated {
-                let room_label = self.current_room_label();
-                log!("Sending a first-time backwards pagination request for room \"{}\" {}", room_label, room_id);
+                log!("Sending a first-time backwards pagination request for room \"{}\" {}", self.room_name, room_id);
                 submit_async_request(MatrixRequest::PaginateRoomTimeline {
                     room_id: room_id.clone(),
                     num_events: 50,

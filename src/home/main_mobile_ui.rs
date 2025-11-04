@@ -80,7 +80,7 @@ impl Widget for MainMobileUI {
                 // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
                 self.view
                     .room_screen(ids!(room_screen))
-                    .set_displayed_room(cx, room_id.clone().into(), room_name.clone().into());
+                    .set_displayed_room(cx, room_id.clone().into(), room_name.as_ref().clone());
             }
             Some(SelectedRoom::InvitedRoom { room_id, room_name }) => {
                 show_welcome = false;
