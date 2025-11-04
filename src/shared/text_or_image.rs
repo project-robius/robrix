@@ -72,14 +72,17 @@ impl Widget for TextOrImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // We handle hit events if the status is `Image`.
         if let TextOrImageStatus::Image(mxc_uri) = &self.status {
-            let image_area = self.view.image(id!(image_view.image)).area();
+            let image_area = self.view.image(ids!(image_view.image)).area();
             match event.hits(cx, image_area) {
                 Hit::FingerDown(_) => {
                     cx.set_key_focus(image_area);
                 }
                 Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                    println!("clicked -- self.widget_uid() {:?}", self.widget_uid());
-                    cx.widget_action(self.widget_uid(), &scope.path, TextOrImageAction::Clicked(mxc_uri.clone()));
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TextOrImageAction::Clicked(mxc_uri.clone()),
+                    );
                     cx.set_cursor(MouseCursor::Default);
                 }
                 Hit::FingerHoverIn(_) => {
@@ -88,7 +91,7 @@ impl Widget for TextOrImage {
                 Hit::FingerHoverOut(_) => {
                     cx.set_cursor(MouseCursor::Default);
                 }
-                _ => { },
+                _ => {}
             }
         }
         self.view.handle_event(cx, event, scope);
@@ -199,7 +202,7 @@ impl TextOrImageRef {
     ///
     pub fn get_texture_and_size(&self, cx: &mut Cx) -> Option<(Option<Texture>, DVec2)> {
         if let Some(inner) = self.borrow() {
-            if let Some(image_inner) = inner.view.image(id!(image_view.image)).borrow() {
+            if let Some(image_inner) = inner.view.image(ids!(image_view.image)).borrow() {
                 let rect = image_inner.area().rect(cx);
                 Some((image_inner.get_texture(0).clone(), rect.size))
             } else {

@@ -3,10 +3,9 @@
 
 use std::{borrow::Cow, fmt::Display, ops::{Deref, DerefMut}, str::{Chars, FromStr}, time::SystemTime};
 use url::Url;
-use makepad_widgets::*;
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{error, image_cache::{ImageBuffer, ImageError}, live, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, rotated_image::RotatedImageRef, Cx, Event, ImageRef, Texture};
+use makepad_widgets::{error, image_cache::{ImageBuffer, ImageError}, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, Cx, Event, ImageRef};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
@@ -14,9 +13,6 @@ use crate::{room::FetchedRoomAvatar, shared::image_viewer::ImageViewerError, sli
 
 /// The scheme for GEO links, used for location messages in Matrix.
 pub const GEO_URI_SCHEME: &str = "geo:";
-
-/// The max size (width or height) of a rotated image to display.
-const ROTATED_IMAGE_MAX_SIZE: u32 = 500;
 
 /// A wrapper type that implements the `Debug` trait for non-`Debug` types.
 pub struct DebugWrapper<T>(T);
@@ -138,78 +134,52 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
     res
 }
 
-pub fn load_png_or_jpg_rotated_image(img: &RotatedImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), ImageError> {
-    fn retain_aspect_ratio(width: u32, height: u32) -> (f32, f32) {
-        let aspect_ratio: f32 = width as f32 / height as f32;
-        let (mut capped_width, mut capped_height) = (width, height);
-        if capped_height > ROTATED_IMAGE_MAX_SIZE {
-            capped_height = ROTATED_IMAGE_MAX_SIZE;
-            capped_width = (capped_height as f32 * aspect_ratio).floor() as u32;
-        }
-        if capped_width > ROTATED_IMAGE_MAX_SIZE {
-            capped_width = ROTATED_IMAGE_MAX_SIZE;
-            capped_height = (capped_width as f32 / aspect_ratio).floor() as u32;
-        }
-        (capped_width as f32, capped_height as f32)
-    }
-    match imghdr::from_bytes(data) {
-        Some(imghdr::Type::Png) => {
-            let buffer = ImageBuffer::from_png(data)?;
-            let (width, height) = (buffer.width, buffer.height);
-            let texture = buffer.into_new_texture(cx);
-            img.set_texture(cx, Some(texture));
-            let (capped_width, capped_height) = retain_aspect_ratio(width as u32, height as u32);
-            img.apply_over(cx, live!{
-                width: (capped_width as f32), height: (capped_height as f32)
-            });
-        },
-        Some(imghdr::Type::Jpeg) => {
-            let buffer = ImageBuffer::from_jpg(data)?;
-            let (width, height) = (buffer.width, buffer.height);
-             let texture = buffer.into_new_texture(cx);
-            img.set_texture(cx, Some(texture));
-            let (capped_width, capped_height) = retain_aspect_ratio(width as u32, height as u32);
-            img.apply_over(cx, live!{
-                width: (capped_width as f32), height: (capped_height as f32)
-            });
-        },
-        Some(_unsupported) => {
-            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
-            return Err(ImageError::UnsupportedFormat);
-        }
-        None => {
-            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
-            return Err(ImageError::UnsupportedFormat);
-        }
-    };
-    Ok(())
-}
-
-/// Returns a width and height pair that has been capped to the maximum allowed size, while retaining the aspect ratio of the original image.
+/// Constrain the width and height of an image to the screen_width, while preserving aspect ratio.
+/// 
+/// This function implements an intelligent scaling algorithm that handles three scenarios:
+/// 1. If both dimensions are within `screen_width`: enlarges the image so height equals `screen_width`
+/// 2. If height exceeds limit: scales down to fit height within `screen_width`
+/// 3. If width exceeds limit: scales down to fit width within `screen_width`
+/// 
+/// The aspect ratio is always preserved during scaling operations to prevent image distortion.
+/// 
+/// # Algorithm Details
+/// The function first checks if the image fits within the screen dimensions. If not, it calculates
+/// scaling factors for both width and height constraints and applies the more restrictive one.
+/// After applying the first constraint, it checks if the other dimension still exceeds the limit
+/// and applies a second scaling if necessary.
 ///
-/// The maximum allowed size is defined by the `ROTATED_IMAGE_MAX_SIZE` constant.
+/// # Parameters
+/// - `width`: Original image width in pixels
+/// - `height`: Original image height in pixels  
+/// - `screen_width`: Maximum allowed dimension for both width and height
 ///
-/// This function is used to ensure that images displayed in the image viewer do not exceed the maximum allowed size, while still maintaining their aspect ratio.
-pub fn retain_aspect_ratio(width: u32, height: u32) -> (f64, f64) {
-    let aspect_ratio: f64 = width as f64 / height as f64;
+/// # Returns
+/// A tuple of (constrained_width, constrained_height) as f64 values
+pub fn constrain_image_dimensions(width: f64, height: f64, screen_width: f64) -> (f64, f64) {
+    let aspect_ratio = width / height;
     let (mut capped_width, mut capped_height) = (width, height);
     
-    if width <= ROTATED_IMAGE_MAX_SIZE && height <= ROTATED_IMAGE_MAX_SIZE {
-        capped_height = ROTATED_IMAGE_MAX_SIZE;
-        capped_width = (capped_height as f64 * aspect_ratio).floor() as u32;
+    if width <= screen_width && height <= screen_width {
+        capped_height = screen_width;
+        capped_width = (capped_height * aspect_ratio).floor();
     } else {
-        if capped_height > ROTATED_IMAGE_MAX_SIZE {
-            capped_height = ROTATED_IMAGE_MAX_SIZE;
-            capped_width = (capped_height as f64 * aspect_ratio).floor() as u32;
+        if capped_height > screen_width {
+            capped_height = screen_width;
+            capped_width = (capped_height * aspect_ratio).floor();
         }
-        if capped_width > ROTATED_IMAGE_MAX_SIZE {
-            capped_width = ROTATED_IMAGE_MAX_SIZE;
-            capped_height = (capped_width as f64 / aspect_ratio).floor() as u32;
+        if capped_width > screen_width {
+            capped_width = screen_width;
+            capped_height = (capped_width / aspect_ratio).floor();
         }
     }
-    (capped_width as f64, capped_height as f64)
+    (capped_width, capped_height)
 }
 
+/// Loads the given image `data` into an `ImageBuffer` as either a PNG or JPEG, using the `imghdr` library to determine which format it is.
+///
+/// Returns an error if either load fails or if the image format is unknown.
+///
 pub fn get_png_or_jpg_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageError> {
     match imghdr::from_bytes(&data) {
         Some(imghdr::Type::Png) => {
@@ -228,82 +198,6 @@ pub fn get_png_or_jpg_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageEr
         }
     }
 }
-
-/// Creates a texture from JPEG image data, similar to `load_jpg_from_data` but returns a Texture.
-///
-/// Returns an error if the image fails to load or if the format is unsupported.
-pub fn create_texture_from_jpg_data(cx: &mut Cx, data: &[u8]) -> Result<Texture, ImageError> {
-    match ImageBuffer::from_jpg(data) {
-        Ok(image_buffer) => {
-            Ok(image_buffer.into_new_texture(cx))
-        }
-        Err(err) => {
-            Err(err)
-        }
-    }
-}
-
-/// Creates a texture from PNG image data, similar to `load_png_from_data` but returns a Texture.
-///
-/// Returns an error if the image fails to load or if the format is unsupported.
-pub fn create_texture_from_png_data(cx: &mut Cx, data: &[u8]) -> Result<Texture, ImageError> {
-    match ImageBuffer::from_png(data) {
-        Ok(image_buffer) => {
-            Ok(image_buffer.into_new_texture(cx))
-        }
-        Err(err) => {
-            Err(err)
-        }
-    }
-}
-
-/// Creates a texture from either PNG or JPEG image data, automatically detecting the format.
-///
-/// Uses the `imghdr` library to determine the image format and creates the appropriate texture.
-/// Returns an error if either load fails or if the image format is unknown.
-pub fn create_texture_from_png_or_jpg_data(cx: &mut Cx, data: &[u8]) -> Result<Texture, ImageError> {
-    fn attempt_both(cx: &mut Cx, data: &[u8]) -> Result<Texture, ImageError> {
-        create_texture_from_png_data(cx, data)
-            .or_else(|_| create_texture_from_jpg_data(cx, data))
-    }
-
-    let res = match imghdr::from_bytes(data) {
-        Some(imghdr::Type::Png) => create_texture_from_png_data(cx, data),
-        Some(imghdr::Type::Jpeg) => create_texture_from_jpg_data(cx, data),
-        Some(unsupported) => {
-            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
-            attempt_both(cx, data).map_err(|_| {
-                error!("create_texture_from_png_or_jpg_data(): The {unsupported:?} image format is unsupported");
-                ImageError::UnsupportedFormat
-            })
-        }
-        None => {
-            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
-            attempt_both(cx, data).map_err(|_| {
-                error!("create_texture_from_png_or_jpg_data(): Unknown image format");
-                ImageError::UnsupportedFormat
-            })
-        }
-    };
-    if let Err(err) = res.as_ref() {
-        // debugging: dump out the bad image to disk
-        let mut path = crate::temp_storage::get_temp_dir_path().clone();
-        let filename = format!(
-            "img_{}",
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_millis())
-                .unwrap_or_else(|_| rand::random::<u128>()),
-        );
-        path.push(filename);
-        path.set_extension("unknown");
-        error!("Failed to create texture from PNG/JPG: {err}. Dumping bad image: {:?}", path);
-        let _ = std::fs::write(path, data)
-            .inspect_err(|e| error!("Failed to write bad image to disk: {e}"));
-    }
-    res
-}
-
 
 pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
     let millis: i64 = millis.get().into();

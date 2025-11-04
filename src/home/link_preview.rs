@@ -270,19 +270,14 @@ impl LinkPreviewRef {
         }
     }
 
+    /// Gets the children of the LinkPreview widget.
     pub fn get_children(&self) -> Vec<ViewRef> {
         if let Some(inner) = self.borrow() {
             return inner.children.clone();
         }
         Vec::new()
     }
-    pub fn iter<F>(&self, closure: F) where F: Fn(&ViewRef) {
-        if let Some(inner) = self.borrow() {
-            for child in inner.children.iter() {
-                closure(child);
-            }
-        }
-    }
+
     /// Shows the collapsible button for the link preview.
     /// 
     /// This function is usually called when the link preview is updated.

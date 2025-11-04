@@ -1,10 +1,15 @@
 //! Image viewer widget for displaying Image with zooming and panning.
 //!
 //! There are 2 types of ImageViewerActions handled by this widget. They are "Show" and "Hide".
-//! ImageViewerRef has 2 public methods, `display_image` and `reset`.
-use std::sync::{Arc, mpsc::Receiver};
+//! ImageViewerRef has 4 public methods, `configure_zoom`, `display_using_background_thread`, `display_using_texture` and `reset`.
+use std::sync::{mpsc::Receiver, Arc};
 
-use makepad_widgets::{event::TouchUpdateEvent, image_cache::{ImageBuffer, ImageError}, rotated_image::RotatedImageWidgetExt, *};
+use makepad_widgets::{
+    event::TouchUpdateEvent,
+    image_cache::{ImageBuffer, ImageError},
+    rotated_image::RotatedImageWidgetExt,
+    *,
+};
 
 use crate::utils::get_png_or_jpg_image_buffer;
 
@@ -110,7 +115,7 @@ live_design! {
             width: Fill, height: Fill,
             align: { x: 0.4, y: 0.35 }
 
-            magnify_glass_sign = <Label> {
+            magnifying_glass_sign = <Label> {
                 text: "+",
                 draw_text: {
                     text_style: <THEME_FONT_BOLD>{font_size: 15},
@@ -154,7 +159,7 @@ live_design! {
                     width: Fill, height: Fill,
                     align: { x: 0.4, y: 0.35 }
 
-                    magnify_glass_sign = <Label> {
+                    magnifying_glass_sign = <Label> {
                         text: "-",
                         draw_text: {
                             text_style: <THEME_FONT_BOLD>{font_size: 15},
@@ -174,11 +179,11 @@ live_design! {
                 }
             }
             rotation_button_clockwise = <Rotation_Button> { }
-            
+
             close_button = <RobrixIconButton> {
                 width: Fit, height: Fit,
                 spacing: 0,
-                margin: 8,
+                margin: 2,
                 draw_bg: {
                     color: (COLOR_PRIMARY)
                 }
@@ -188,7 +193,7 @@ live_design! {
                         return #x0;
                     }
                 }
-                icon_walk: { width: 14, height: 14 }
+                icon_walk: { width: 25, height: 25 }
             }
         }
         rotated_image_container = <View> {
@@ -287,9 +292,11 @@ live_design! {
     }
 }
 
-/// Actions handled by the `ImageViewer` widget.
-#[derive(Debug)]
+/// Actions emitted by the `ImageViewer` widget.
+#[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerAction {
+    /// No action.
+    None,
     /// Display the ImageViewer widget based on the LoadState.
     Show(LoadState),
     /// Close the ImageViewer widget.
@@ -301,11 +308,11 @@ struct ImageViewer {
     #[deref]
     view: View,
     #[rust]
-    image_loaded: bool,
-    #[rust]
     drag_state: DragState,
+    /// The current rotation angle of the image. Max of 4, each step represents 90 degrees
     #[rust]
     rotation_step: i32,
+    /// A lock to prevent multiple rotation animations from running at the same time
     #[rust]
     is_animating_rotation: bool,
     #[animator]
@@ -332,8 +339,10 @@ struct ImageViewer {
     /// Distance between two touch points for pinch-to-zoom functionality
     #[rust]
     previous_pinch_distance: Option<f64>,
+    /// The ID of the background task that is currently running
     #[rust]
     background_task_id: u32,
+    /// The mpsc::Receiver used to receive the result of the background task
     #[rust]
     receiver: Option<(u32, Receiver<Result<ImageBuffer, ImageError>>)>,
 }
@@ -349,93 +358,91 @@ impl LiveHook for ImageViewer {
 
 impl Widget for ImageViewer {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if self.image_loaded {
-            let rotated_image = self.view.rotated_image(id!(rotated_image));
-            // Handle cursor changes on mouse hover
-            match event.hits(cx, rotated_image.area()) {
-                Hit::FingerDown(fe) => {
-                    if fe.is_primary_hit() {
-                        self.drag_state.drag_start = fe.abs;
-                        // Initialize pan_offset with current position if not set
-                        if self.drag_state.pan_offset.is_none() {
-                            self.drag_state.pan_offset = Some(DVec2::default());
-                        }
-                    }
-                }
-                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() => {
-                    // Only reset pan_offset on double-tap, not single tap
-                    if fe.tap_count == 2 {
-                        self.drag_state.pan_offset = Some(DVec2::default());
-                        let rotated_image_container = self.view.rotated_image(id!(rotated_image));
-                        rotated_image_container.apply_over(
-                            cx,
-                            live! {
-                                margin: { top: 0.0, left: 0.0 },
-                            }
-                        );
-                        rotated_image_container.redraw(cx);
-                    }
-                }
-                Hit::FingerHoverIn(_) => {
-                    self.mouse_cursor_hover_over_image = true;
-                    cx.set_cursor(MouseCursor::Hand);
-                }
-                Hit::FingerMove(fe) => {
-                    if let Some(current_offset) = self.drag_state.pan_offset {
-                        let drag_delta = fe.abs - self.drag_state.drag_start;
-                        let new_offset = current_offset + drag_delta * self.pan_sensitivity;
-                        
-                        let rotated_image_container = self.view.rotated_image(id!(rotated_image));
-                        rotated_image_container.apply_over(
-                            cx,
-                            live! {
-                                margin: { top: (new_offset.y), left: (new_offset.x) },
-                            }
-                        );
-                        
-                        // Update pan_offset with new position
-                        self.drag_state.pan_offset = Some(new_offset);
-                    }
+        let rotated_image = self.view.rotated_image(ids!(rotated_image));
+        // Handle cursor changes on mouse hover
+        match event.hits(cx, rotated_image.area()) {
+            Hit::FingerDown(fe) => {
+                if fe.is_primary_hit() {
                     self.drag_state.drag_start = fe.abs;
+                    // Initialize pan_offset with current position if not set
+                    if self.drag_state.pan_offset.is_none() {
+                        self.drag_state.pan_offset = Some(DVec2::default());
+                    }
                 }
-                Hit::FingerHoverOut(_) => {
-                    self.mouse_cursor_hover_over_image = false;
-                    cx.set_cursor(MouseCursor::Default);
+            }
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() => {
+                // Only reset pan_offset on double-tap, not single tap
+                if fe.tap_count == 2 {
+                    self.drag_state.pan_offset = Some(DVec2::default());
+                    let rotated_image_container = self.view.rotated_image(ids!(rotated_image));
+                    rotated_image_container.apply_over(
+                        cx,
+                        live! {
+                            margin: { top: 0.0, left: 0.0 },
+                        },
+                    );
+                    rotated_image_container.redraw(cx);
+                }
+            }
+            Hit::FingerHoverIn(_) => {
+                self.mouse_cursor_hover_over_image = true;
+                cx.set_cursor(MouseCursor::Hand);
+            }
+            Hit::FingerMove(fe) => {
+                if let Some(current_offset) = self.drag_state.pan_offset {
+                    let drag_delta = fe.abs - self.drag_state.drag_start;
+                    let new_offset = current_offset + drag_delta * self.pan_sensitivity;
+
+                    let rotated_image_container = self.view.rotated_image(ids!(rotated_image));
+                    rotated_image_container.apply_over(
+                        cx,
+                        live! {
+                            margin: { top: (new_offset.y), left: (new_offset.x) },
+                        },
+                    );
+
+                    // Update pan_offset with new position
+                    self.drag_state.pan_offset = Some(new_offset);
+                }
+                self.drag_state.drag_start = fe.abs;
+            }
+            Hit::FingerHoverOut(_) => {
+                self.mouse_cursor_hover_over_image = false;
+                cx.set_cursor(MouseCursor::Default);
+            }
+            _ => {}
+        }
+        if let Event::Scroll(scroll_event) = event {
+            if self.mouse_cursor_hover_over_image {
+                let scroll_delta = scroll_event.scroll.y;
+
+                if scroll_delta > 0.0 {
+                    // Scroll up = Zoom in
+                    self.adjust_zoom(cx, self.zoom_scale_factor);
+                } else if scroll_delta < 0.0 {
+                    // Scroll down = Zoom out
+                    self.adjust_zoom(cx, 1.0 / self.zoom_scale_factor);
+                }
+            }
+        }
+        if let Event::KeyDown(e) = event {
+            match &e.key_code {
+                KeyCode::Minus | KeyCode::NumpadSubtract => {
+                    // Zoom out (make image smaller)
+                    self.adjust_zoom(cx, 1.0 / self.zoom_scale_factor);
+                }
+                KeyCode::Equals | KeyCode::NumpadAdd => {
+                    // Zoom in (make image larger)
+                    self.adjust_zoom(cx, self.zoom_scale_factor);
+                }
+                KeyCode::Key0 | KeyCode::Numpad0 => {
+                    self.reset_drag_state(cx);
                 }
                 _ => {}
             }
-            if let Event::Scroll(scroll_event) = event {
-                if self.mouse_cursor_hover_over_image {
-                    let scroll_delta = scroll_event.scroll.y;
-                    
-                    if scroll_delta > 0.0 {
-                        // Scroll up = Zoom in
-                        self.adjust_zoom(cx, self.zoom_scale_factor);
-                    } else if scroll_delta < 0.0 {
-                        // Scroll down = Zoom out
-                        self.adjust_zoom(cx, 1.0 / self.zoom_scale_factor);
-                    }
-                }
-            }
-            if let Event::KeyDown(e) = event {
-                match &e.key_code {
-                    KeyCode::Minus | KeyCode::NumpadSubtract => {
-                        // Zoom out (make image smaller)
-                        self.adjust_zoom(cx, 1.0 / self.zoom_scale_factor);
-                    }
-                    KeyCode::Equals | KeyCode::NumpadAdd => {
-                        // Zoom in (make image larger)
-                        self.adjust_zoom(cx, self.zoom_scale_factor);
-                    }
-                    KeyCode::Key0 | KeyCode::Numpad0 => {
-                        self.reset_drag_state(cx);
-                    }
-                    _ => {}
-                }
-            }
-            if let Event::TouchUpdate(touch_event) = event {
-                self.handle_touch_update(cx, touch_event);
-            }  
+        }
+        if let Event::TouchUpdate(touch_event) = event {
+            self.handle_touch_update(cx, touch_event);
         }
         if let Some(_timer) = self.timer.is_event(event) {
             self.is_animating_rotation = false;
@@ -443,29 +450,32 @@ impl Widget for ImageViewer {
         if let Event::Signal = event {
             let mut to_remove = false;
             if let Some((_background_task_id, receiver)) = &mut self.receiver {
-                while let Ok(image_buffer_res) = receiver.try_recv() {
-                    match image_buffer_res {
+                if let Ok(image_buffer) = receiver.try_recv() {
+                    match image_buffer {
                         Ok(image_buffer) => {
-                            let rotated_image = self.view.rotated_image(id!(rotated_image));
+                            let rotated_image = self.view.rotated_image(ids!(rotated_image));
                             let texture = image_buffer.into_new_texture(cx);
                             rotated_image.set_texture(cx, Some(texture));
-                            self.image_loaded = true;
                             to_remove = true;
-                            cx.action(ImageViewerAction::Show(LoadState::FinishedBackgroundDecoding));
-                        
+                            cx.action(ImageViewerAction::Show(
+                                LoadState::FinishedBackgroundDecoding,
+                            ));
                         }
                         Err(error) => {
                             let error = match error {
-                                ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
+                                ImageError::JpgDecode(_) | ImageError::PngDecode(_) => {
+                                    ImageViewerError::UnsupportedFormat
+                                }
                                 ImageError::EmptyData => ImageViewerError::BadData,
                                 ImageError::PathNotFound(_) => ImageViewerError::NotFound,
-                                ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
+                                ImageError::UnsupportedFormat => {
+                                    ImageViewerError::UnsupportedFormat
+                                }
                                 _ => ImageViewerError::BadData,
                             };
                             cx.action(ImageViewerAction::Show(LoadState::Error(error)));
                         }
                     }
-                    break
                 }
             }
             if to_remove {
@@ -475,7 +485,6 @@ impl Widget for ImageViewer {
         self.animator_handle_event(cx, event);
         self.view.handle_event(cx, event, scope);
         self.match_event(cx, event);
-        
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -485,39 +494,53 @@ impl Widget for ImageViewer {
 
 impl MatchEvent for ImageViewer {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        if self.view.button(id!(close_button)).clicked(actions) {
+        if self.view.button(ids!(close_button)).clicked(actions) {
             self.reset(cx);
             cx.action(ImageViewerAction::Hide);
         }
-        if self.view.button(id!(zoom_button_minus.magnifying_glass_button)).clicked(actions) {
+        if self
+            .view
+            .button(ids!(zoom_button_minus.magnifying_glass_button))
+            .clicked(actions)
+        {
             self.adjust_zoom(cx, 1.0 / self.zoom_scale_factor);
         }
 
-        if self.view.button(id!(zoom_button_plus.magnifying_glass_button)).clicked(actions) {
+        if self
+            .view
+            .button(ids!(zoom_button_plus.magnifying_glass_button))
+            .clicked(actions)
+        {
             self.adjust_zoom(cx, self.zoom_scale_factor);
         }
 
-        if self.view.button(id!(rotation_button_clockwise)).clicked(actions) {
+        if self
+            .view
+            .button(ids!(rotation_button_clockwise))
+            .clicked(actions)
+        {
             if !self.is_animating_rotation {
                 self.timer = cx.start_timeout(ROTATION_ANIMATION_DURATION);
                 self.is_animating_rotation = true;
                 if self.rotation_step == 3 {
-                    self.animator_cut(cx, id!(mode.degree_neg90));
+                    self.animator_cut(cx, ids!(mode.degree_neg90));
                 }
                 self.rotation_step = (self.rotation_step + 1) % 4; // Rotate 90 degrees clockwise
                 self.update_rotated_image_shader(cx);
             }
         }
 
-        if self.view.button(id!(rotation_button_anti_clockwise)).clicked(actions) {
+        if self
+            .view
+            .button(ids!(rotation_button_anti_clockwise))
+            .clicked(actions)
+        {
             if !self.is_animating_rotation {
                 self.timer = cx.start_timeout(1.0);
                 self.is_animating_rotation = true;
                 if self.rotation_step == 0 {
                     self.rotation_step = 4;
-                    self.animator_cut(cx, id!(mode.degree_360));
-                } else if self.rotation_step == 1{
-
+                    self.animator_cut(cx, ids!(mode.degree_360));
                 }
                 self.rotation_step = (self.rotation_step - 1) % 4; // Rotate 90 degrees clockwise
                 self.update_rotated_image_shader(cx);
@@ -529,7 +552,6 @@ impl MatchEvent for ImageViewer {
 impl ImageViewer {
     /// Reset state.
     pub fn reset(&mut self, cx: &mut Cx) {
-        self.image_loaded = false;
         self.rotation_step = 0; // Reset to upright (0°)
         self.is_animating_rotation = false; // Reset animation state
         self.previous_pinch_distance = None; // Reset pinch tracking
@@ -540,13 +562,20 @@ impl ImageViewer {
         // Clear the rotated image texture with a white background
         if let Ok(image_buffer) = ImageBuffer::new(&[255], 1, 1) {
             let texture = image_buffer.into_new_texture(cx);
-            let _ = self.view.rotated_image(id!(rotated_image)).set_texture(cx, Some(texture));
-            self.view.rotated_image(id!(rotated_image)).redraw(cx);
+            self.view
+                .rotated_image(ids!(rotated_image))
+                .set_texture(cx, Some(texture));
+            self.view.rotated_image(ids!(rotated_image)).redraw(cx);
         }
-        self.animator_cut(cx, id!(mode.upright));
-        self.view.rotated_image(id!(rotated_image_container.rotated_image)).apply_over(cx, live!{
-            draw_bg: { scale: 1.0 }
-        });
+        self.animator_cut(cx, ids!(mode.upright));
+        self.view
+            .rotated_image(ids!(rotated_image_container.rotated_image))
+            .apply_over(
+                cx,
+                live! {
+                    draw_bg: { scale: 1.0 }
+                },
+            );
     }
 
     /// Updates the shader uniforms of the rotated image widget with the current rotation,
@@ -554,13 +583,13 @@ impl ImageViewer {
     fn update_rotated_image_shader(&mut self, cx: &mut Cx) {
         // Map rotation step to animation state
         let animation_id = match self.rotation_step {
-            0 => id!(mode.upright),     // 0°
-            1 => id!(mode.degree_90),   // 90°
-            2 => id!(mode.degree_180),  // 180°
-            3 => id!(mode.degree_270),  // 270°
-            _ => id!(mode.upright),
+            0 => ids!(mode.upright),    // 0°
+            1 => ids!(mode.degree_90),  // 90°
+            2 => ids!(mode.degree_180), // 180°
+            3 => ids!(mode.degree_270), // 270°
+            _ => ids!(mode.upright),
         };
-        
+
         self.animator_play(cx, animation_id);
     }
 
@@ -569,29 +598,25 @@ impl ImageViewer {
     /// This function can be used to reset drag state when the magnifying glass is toggled off.
     fn reset_drag_state(&mut self, cx: &mut Cx) {
         self.drag_state = DragState::default();
-        
+
         // Reset image position and scale
-        let rotated_image_container = self.view.rotated_image(id!(rotated_image));
+        let rotated_image_container = self.view.rotated_image(ids!(rotated_image));
         rotated_image_container.apply_over(
             cx,
             live! {
                 margin: { top: 0.0, left: 0.0 },
                 draw_bg: { scale: 1.0 }
-            }
+            },
         );
         rotated_image_container.redraw(cx);
-        
+
         self.update_rotated_image_shader(cx);
     }
 
     /// Displays an image in the image viewer widget.
     ///
-    /// If `background_thread` is false, the image is decoded and displayed immediately.
-    /// If `background_thread` is true, the image is decoded in a separate thread and displayed when the decoding is complete.
-    ///
     /// The image is displayed in the center of the widget. If the image is larger than the widget, it is scaled down to fit the widget while retaining its aspect ratio.
     pub fn display_using_background_thread(&mut self, cx: &mut Cx, image_bytes: &[u8]) {
-        self.image_loaded = true;
         if self.receiver.is_some() {
             return;
         }
@@ -607,52 +632,94 @@ impl ImageViewer {
         });
     }
 
+    /// Displays an image in the image viewer widget using the provided texture.
+    ///
+    /// The image is displayed in the center of the widget. If the image is larger than the widget, it is scaled down to fit the widget while retaining its aspect ratio.
+    ///
+    /// `texture` is an optional `Texture` that can be set to display an image. If `None`, the image is cleared.
+    ///
+    /// `size` is the size of the image to be displayed.
     pub fn display_using_texture(&mut self, cx: &mut Cx, texture: Option<Texture>, size: &DVec2) {
-        self.rotated_image(id!(rotated_image)).set_texture(cx, texture);
-        self.rotated_image(id!(rotated_image)).apply_over(cx, live!{
-            width: (size.x),
-            height: (size.y),
-        });
+        let rotated_image = self.rotated_image(ids!(rotated_image));
+        rotated_image.set_texture(cx, texture);
+        rotated_image.apply_over(
+            cx,
+            live! {
+                width: (size.x),
+                height: (size.y),
+            },
+        );
     }
 
+    /// Adjust the zoom level of the image viewer based on the provided zoom factor.
+    ///
+    /// The zoom factor is a value greater than 0.0, where 1.0 means no zoom change.
+    /// A value greater than 1.0 means zoom in, and a value less than 1.0 means zoom out.
+    /// The target zoom level is calculated by multiplying the current zoom level by the provided zoom factor.
+    /// The target zoom level is then clamped to the minimum and maximum zoom levels.
+    /// If the clamped zoom level is the same as the current zoom level, no change is made.
+    /// Otherwise, the actual zoom factor is calculated based on the clamped value, and the image is resized accordingly.
     fn adjust_zoom(&mut self, cx: &mut Cx, zoom_factor: f32) {
-        let rotated_image_container = self.view.rotated_image(id!(rotated_image));
+        let rotated_image_container = self.view.rotated_image(ids!(rotated_image));
         let size = rotated_image_container.area().rect(cx).size;
-        
+
         // Calculate target zoom level and clamp it to bounds
         let target_zoom = self.drag_state.zoom_level * zoom_factor;
         let clamped_zoom = target_zoom.clamp(self.min_zoom, self.max_zoom);
-        
+
         // If the clamped zoom is the same as current zoom, no change needed
         if (clamped_zoom - self.drag_state.zoom_level).abs() < 0.001 {
             return;
         }
-        
+
         // Calculate the actual zoom factor based on clamped value
         let actual_zoom_factor = clamped_zoom / self.drag_state.zoom_level;
-        
+
         self.drag_state.zoom_level = clamped_zoom;
         self.drag_state.zoom_level = (self.drag_state.zoom_level * 1000.0).round() / 1000.0;
+        // Zoom level may not reach back to 1.0 when zooming in after zooming out because of floating point multiplication.
+        // In this case, zoom_level will be clamped to 1.0
+        if self.drag_state.zoom_level < 1.0 * zoom_factor
+            && self.drag_state.zoom_level > 1.0 / zoom_factor
+        {
+            self.drag_state.zoom_level = 1.0;
+        }
         let width = (size.x as f32 * actual_zoom_factor * 1000.0).round() / 1000.0;
         let height = (size.y as f32 * actual_zoom_factor * 1000.0).round() / 1000.0;
-        self.view.rotated_image(id!(rotated_image)).apply_over(cx, live!{
-            width: (width),
-            height: (height),
-        });
+        self.view.rotated_image(ids!(rotated_image)).apply_over(
+            cx,
+            live! {
+                width: (width),
+                height: (height),
+            },
+        );
     }
 
+    /// Handle touch update events, specifically the pinch gesture to zoom in/out.
+    ///
+    /// This method implements pinch-to-zoom functionality by:
+    /// 1. Detecting when exactly two touch points are present
+    /// 2. Calculating the current distance between the two touch points
+    /// 3. Comparing it to the previous distance to determine the scale factor
+    /// 4. Applying the scale factor to adjust the zoom level
+    /// 5. Resetting the pinch tracking when fewer than two touches are detected
+    ///
+    /// When the event contains two touches, the distance between the two touches is used
+    /// to calculate a scale factor. The scale factor is then passed to `adjust_zoom` to
+    /// adjust the zoom level of the image viewer. When the event contains less than two
+    /// touches, the previous pinch distance is reset to `None`.
     fn handle_touch_update(&mut self, cx: &mut Cx, event: &TouchUpdateEvent) {
         if event.touches.len() == 2 {
             let touch1 = &event.touches[0];
             let touch2 = &event.touches[1];
-            
+
             let current_distance = (touch1.abs - touch2.abs).length();
-            
+
             if let Some(previous_distance) = self.previous_pinch_distance {
                 let scale = current_distance / previous_distance;
                 self.adjust_zoom(cx, scale as f32);
             }
-            
+
             self.previous_pinch_distance = Some(current_distance);
         } else {
             self.previous_pinch_distance = None;
@@ -689,7 +756,7 @@ impl ImageViewerRef {
     }
     /// See [`ImageViewer::reset()`].
     pub fn reset(&mut self, cx: &mut Cx) {
-       let Some(mut inner) = self.borrow_mut() else {
+        let Some(mut inner) = self.borrow_mut() else {
             return;
         };
         inner.reset(cx);
@@ -697,10 +764,11 @@ impl ImageViewerRef {
 }
 
 /// Represents the possible states of an image load operation.
-#[derive(Debug,)]
+#[derive(Debug, Clone)]
 pub enum LoadState {
-    /// The image is currently being loaded with its thumbnail image texture and its image size.
-    Loading(Arc<Option<Texture>>, DVec2),
+    /// The image is currently being loaded with its loading image texture and its image size.
+    /// This texture is usually the image texture that's being selected.
+    Loading(std::rc::Rc<Option<Texture>>, DVec2),
     /// The image has been successfully loaded given the data.
     Loaded(Arc<[u8]>),
     /// The image has been loaded from background thread.

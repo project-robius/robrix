@@ -18,7 +18,7 @@ pub enum MediaCacheEntry {
     Requested,
     /// The media has been successfully loaded from the server.
     Loaded(Arc<[u8]>),
-    /// The media failed to load from the server with the ruma client api error.
+    /// The media failed to load from the server with reqwest status code.
     Failed(StatusCode),
 }
 

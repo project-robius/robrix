@@ -10,7 +10,7 @@ use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
-        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_image_message_detail::RoomImageMessageDetailWidgetRefExt, room_screen::{MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_image_viewer_detail::RoomImageViewerDetailWidgetRefExt, room_image_viewer_footer::RoomImageViewerFooterWidgetRefExt, room_screen::{MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{callout_tooltip::{
@@ -40,8 +40,8 @@ live_design! {
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
     use crate::shared::image_viewer::ImageViewer;
-    use crate::shared::icon_button::RobrixIconButton;
-    use crate::home::room_image_message_detail::RoomImageMessageDetail;
+    use crate::home::room_image_viewer_detail::RoomImageViewerDetail;
+    use crate::home::room_image_viewer_footer::RoomImageViewerFooter;
     use link::tsp_link::TspVerificationModal;
 
 
@@ -114,48 +114,12 @@ live_design! {
                                         align: {x: 0.5, y: 0.5}
                                         padding: {bottom: 0}
                                     }
-                                    image_detail = <RoomImageMessageDetail> {
+                                    image_detail = <RoomImageViewerDetail> {
                                         width: Fill, height: Fill,
                                     }
                                 }
                                 
-                                footer = <View> {
-                                    width: Fill, height: 50,
-                                    flow: Right
-                                    padding: 10
-                                    align: {x: 0.5, y: 0.8}
-                                    spacing: 10
-
-                                    image_viewer_loading_spinner_view = <View> {
-                                        width: Fit, height: Fit
-                                        loading_spinner = <LoadingSpinner> {
-                                            width: 40, height: 40,
-                                            draw_bg: {
-                                                color: (COLOR_PRIMARY)
-                                                border_size: 3.0,
-                                            }
-                                        }
-                                    }
-                                    image_viewer_forbidden_view = <View> {
-                                        width: Fit, height: Fit
-                                        visible: false
-                                        <Icon> {
-                                            draw_icon: {
-                                                svg_file: (ICON_FORBIDDEN),
-                                                color: #ffffff,
-                                            }
-                                            icon_walk: { width: 30, height: 30 }
-                                        }
-                                    }
-                                    image_viewer_status_label = <Label> {
-                                        width: Fit, height: 30,
-                                        text: "Loading image...",
-                                        draw_text: {
-                                            text_style: <REGULAR_TEXT>{font_size: 14},
-                                            color: (COLOR_PRIMARY)
-                                        }
-                                    }
-                                }
+                                footer = <RoomImageViewerFooter> {}
                             }
                         }
 
@@ -557,11 +521,15 @@ impl AppMain for App {
         }
         
         // If the image viewer modal is really opened, handles non-Draw events using the modal.
-        let image_viewer_modal = self.ui.modal(id!(image_viewer));
-        if image_viewer_modal.is_open() &&image_viewer_modal.area().rect(cx).size.y > 200.0 {
+        let image_viewer_modal = self.ui.modal(ids!(image_viewer));
+        if image_viewer_modal.is_open() && image_viewer_modal.area().rect(cx).size.y > 0.0 {
             let scope = &mut Scope::with_data(&mut self.app_state);
-            self.ui.view(id!(popup_list)).handle_event(cx, event, scope);
-            self.ui.modal(id!(image_viewer)).handle_event(cx, event, scope);
+            self.ui
+                .view(ids!(popup_list))
+                .handle_event(cx, event, scope);
+            self.ui
+                .modal(ids!(image_viewer))
+                .handle_event(cx, event, scope);
             // Pass the Signal event to the underlying room screen, so as to populate the full image in the image viewer.
             if let Event::Signal = event {
                 self.ui.handle_event(cx, event, scope);
@@ -569,7 +537,7 @@ impl AppMain for App {
             if let Event::Actions(actions) = event {
                 for action in actions {
                     if self.handle_image_viewer_action(cx, action) {
-                        continue
+                        continue;
                     }
                 }
             }
@@ -687,43 +655,35 @@ impl App {
 
     /// Handles actions for the image viewer.
     /// Returns a boolean, is true continues the actions for loop.
-    fn handle_image_viewer_action(&mut self, cx: &mut Cx, action: &Box<dyn ActionTrait>) -> bool {
+    fn handle_image_viewer_action(&mut self, cx: &mut Cx, action: &Action) -> bool {
+
         match action.downcast_ref() {
             Some(ImageViewerAction::Show(load_state)) => {
                 match load_state {
                     LoadState::Loading(texture, image_size) => {
-                        self.ui.modal(id!(image_viewer)).open(cx);
-                        self.ui.image_viewer(id!(image_viewer_inner)).reset(cx);
-                        self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, true);
-                        self.ui.label(id!(image_viewer_status_label)).set_text(cx, "Loading...");
-                        self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
-                        self.ui.view(id!(footer)).apply_over(cx, live!{
+                        self.ui.modal(ids!(image_viewer)).open(cx);
+                        self.ui.image_viewer(ids!(image_viewer_inner)).reset(cx);
+                        self.ui.room_image_viewer_footer(ids!(footer)).show_loading(cx);
+                        self.ui.view(ids!(footer)).apply_over(cx, live!{
                             height: 50
                         });
-                        self.ui.image_viewer(id!(image_viewer_inner)).display_using_texture(cx, texture.as_ref().clone(), image_size);
+                        self.ui.image_viewer(ids!(image_viewer_inner)).display_using_texture(cx, texture.as_ref().clone(), image_size);
                     }
                     LoadState::Loaded(image_bytes) => {
-                        self.ui.modal(id!(image_viewer)).open(cx);
-                        self.ui.image_viewer(id!(image_viewer_inner)).display_using_background_thread(cx, image_bytes);
+                        self.ui.modal(ids!(image_viewer)).open(cx);
+                        self.ui.image_viewer(ids!(image_viewer_inner)).display_using_background_thread(cx, image_bytes);
                     }
                     LoadState::FinishedBackgroundDecoding => {
-                        self.ui.view(id!(zoom_button_view)).set_visible(cx, true);
-                        self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
-                        self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, false);
-                        self.ui.label(id!(image_viewer_status_label)).set_text(cx, "");
+                        self.ui.room_image_viewer_footer(ids!(footer)).hide(cx);
                         // Collapse the footer
-                        self.ui.view(id!(footer)).apply_over(cx, live!{
+                        self.ui.view(ids!(footer)).apply_over(cx, live!{
                             height: 0
                         });
                     }
                     LoadState::Error(error) => {
-                        if self.ui.modal(id!(image_viewer)).is_open() {
-                            // Reset the image viewer to clear any previous image
-                            self.ui.view(id!(image_viewer_loading_spinner_view)).set_visible(cx, false);
-                            self.ui.view(id!(image_viewer_forbidden_view)).set_visible(cx, true);
-                            self.ui.label(id!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(error));
-                            // Expand the footer
-                            self.ui.view(id!(footer)).apply_over(cx, live!{
+                        if self.ui.modal(ids!(image_viewer)).is_open() {
+                            self.ui.room_image_viewer_footer(ids!(footer)).show_error(cx, &image_viewer_error_to_string(error));
+                            self.ui.view(ids!(footer)).apply_over(cx, live!{
                                 height: 50
                             });
                         }
@@ -732,8 +692,8 @@ impl App {
                 true
             }
             Some(ImageViewerAction::Hide) => {
-                self.ui.modal(id!(image_viewer)).close(cx);
-                self.ui.room_image_message_detail(id!(image_detail)).reset_state(cx);
+                self.ui.modal(ids!(image_viewer)).close(cx);
+                self.ui.room_image_viewer_detail(ids!(image_detail)).reset_state(cx);
                 true
             }
             _ => false
