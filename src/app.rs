@@ -682,7 +682,7 @@ impl App {
                     }
                     LoadState::Error(error) => {
                         if self.ui.modal(ids!(image_viewer)).is_open() {
-                            self.ui.room_image_viewer_footer(ids!(footer)).show_error(cx, &image_viewer_error_to_string(error));
+                            self.ui.room_image_viewer_footer(ids!(footer)).show_error(cx, image_viewer_error_to_string(error));
                             self.ui.view(ids!(footer)).apply_over(cx, live!{
                                 height: 50
                             });
