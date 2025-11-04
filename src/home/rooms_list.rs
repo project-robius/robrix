@@ -6,7 +6,7 @@ use crate::{
     app::{AppState, SelectedRoom},
     room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, FetchedRoomAvatar},
     shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, room_filter_input_bar::RoomFilterAction},
-    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}, utils::{room_name_or_id, RoomDisplayNameRon},
+    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}, utils::room_name_or_id,
 };
 use super::rooms_list_entry::RoomsListEntryAction;
 
@@ -882,12 +882,12 @@ impl Widget for RoomsList {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
                     SelectedRoom::JoinedRoom {
                         room_id: jr.room_id.clone().into(),
-                        room_name: RoomDisplayNameRon::from(jr.room_name.clone()),
+                        room_name: jr.room_name.clone().into(),
                     }
                 } else if let Some(ir) = self.invited_rooms.borrow().get(&clicked_room_id) {
                     SelectedRoom::InvitedRoom {
                         room_id: ir.room_id.to_owned().into(),
-                        room_name: RoomDisplayNameRon::from(ir.room_name.clone()),
+                        room_name: ir.room_name.clone().into(),
                     }
                 } else {
                     error!("BUG: couldn't find clicked room details for room {clicked_room_id}");

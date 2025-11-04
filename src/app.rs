@@ -20,7 +20,7 @@ use crate::{
     }, sliding_sync::current_user_id, utils::{
         room_name_or_id,
         OwnedRoomIdRon,
-        RoomDisplayNameRon,
+        RoomName,
     }, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
@@ -577,7 +577,7 @@ impl App {
         // Select and scroll to the destination room in the rooms list.
         let new_selected_room = SelectedRoom::JoinedRoom {
             room_id: destination_room.room_id.clone().into(),
-            room_name: RoomDisplayNameRon::from(destination_room.room_name.clone()),
+            room_name: destination_room.room_name.clone().into(),
         };
         enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room.room_id.clone()));
         cx.widget_action(
@@ -625,11 +625,11 @@ pub struct SavedDockState {
 pub enum SelectedRoom {
     JoinedRoom {
         room_id: OwnedRoomIdRon,
-        room_name: RoomDisplayNameRon,
+        room_name: RoomName,
     },
     InvitedRoom {
         room_id: OwnedRoomIdRon,
-        room_name: RoomDisplayNameRon,
+        room_name: RoomName,
     },
 }
 
@@ -643,8 +643,8 @@ impl SelectedRoom {
 
     pub fn room_name(&self) -> &RoomDisplayName {
         match self {
-            SelectedRoom::JoinedRoom { room_name, .. } => &room_name.0,
-            SelectedRoom::InvitedRoom { room_name, .. } => &room_name.0,
+            SelectedRoom::JoinedRoom { room_name, .. } => room_name.as_ref(),
+            SelectedRoom::InvitedRoom { room_name, .. } => room_name.as_ref(),
         }
     }
 

@@ -48,7 +48,7 @@ use crate::{
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{enqueue_popup_notification, PopupItem, PopupKind}
     },
-    utils::{self, avatar_from_room_name, AVATAR_THUMBNAIL_FORMAT},
+    utils::{self, avatar_from_room_name, AVATAR_THUMBNAIL_FORMAT, RoomName},
     verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -2387,14 +2387,7 @@ async fn add_new_room(
                 .display_name
                 .clone()
                 .unwrap_or(RoomDisplayName::Empty);
-            let room_name_for_avatar = match &room_display_name {
-                RoomDisplayName::Empty => None,
-                RoomDisplayName::EmptyWas(name)
-                | RoomDisplayName::Named(name)
-                | RoomDisplayName::Aliased(name)
-                | RoomDisplayName::Calculated(name) => Some(name.as_str()),
-            };
-            let room_avatar = room_avatar(&new_room.room, room_name_for_avatar).await;
+            let room_avatar = room_avatar(&new_room.room, RoomName::from(room_display_name.clone())).await;
 
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
                 Some(InviterInfo {
@@ -2475,13 +2468,7 @@ async fn add_new_room(
         .display_name
         .clone()
         .unwrap_or(RoomDisplayName::Empty);
-    let room_name_for_avatar = match &room_display_name {
-        RoomDisplayName::Empty => None,
-        RoomDisplayName::EmptyWas(name)
-        | RoomDisplayName::Named(name)
-        | RoomDisplayName::Aliased(name)
-        | RoomDisplayName::Calculated(name) => Some(name.as_str()),
-    };
+    let room_name_for_avatar = RoomName::from(room_display_name.clone());
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
         room_id: new_room.room_id.clone(),
         latest,
@@ -2489,7 +2476,7 @@ async fn add_new_room(
         num_unread_messages: new_room.num_unread_messages,
         num_unread_mentions: new_room.num_unread_mentions,
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
-        avatar: avatar_from_room_name(room_name_for_avatar),
+        avatar: avatar_from_room_name(room_name_for_avatar.as_str()),
         room_name: room_display_name,
         canonical_alias: new_room.room.canonical_alias(),
         alt_aliases: new_room.room.alt_aliases(),
@@ -3114,10 +3101,10 @@ async fn update_latest_event(room: &Room) {
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
     let room_id = room.room_id.clone();
-    let room_name = room.display_name.as_ref().map(|n| n.to_string());
+    let room_name = room.display_name.clone().map(RoomName::from).unwrap_or_default();
     let inner_room = room.room.clone();
     Handle::current().spawn(async move {
-        let avatar = room_avatar(&inner_room, room_name.as_deref()).await;
+        let avatar = room_avatar(&inner_room, room_name).await;
         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
             room_id,
             avatar,
@@ -3127,7 +3114,7 @@ fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
 
 /// Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
-async fn room_avatar(room: &Room, room_name: Option<&str>) -> FetchedRoomAvatar {
+async fn room_avatar(room: &Room, room_name: RoomName) -> FetchedRoomAvatar {
     match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
         Ok(Some(avatar)) => FetchedRoomAvatar::Image(avatar.into()),
         _ => {
@@ -3140,7 +3127,7 @@ async fn room_avatar(room: &Room, room_name: Option<&str>) -> FetchedRoomAvatar 
                     }
                 }
             }
-            utils::avatar_from_room_name(room_name)
+            utils::avatar_from_room_name(room_name.as_str())
         }
     }
 }

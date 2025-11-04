@@ -132,11 +132,11 @@ impl MainDesktopUI {
         let (kind, name) = match &room {
             SelectedRoom::JoinedRoom { room_id, room_name }  => (
                 id!(room_screen),
-                room_name_or_id(&RoomDisplayName::from(room_name.clone()), room_id),
+                room_name_or_id(RoomDisplayName::from(room_name.clone()), room_id),
             ),
             SelectedRoom::InvitedRoom { room_id, room_name } => (
                 id!(invite_screen),
-                room_name_or_id(&RoomDisplayName::from(room_name.clone()), room_id),
+                room_name_or_id(RoomDisplayName::from(room_name.clone()), room_id),
             ),
         };
         let new_tab_widget = dock.create_and_select_tab(
