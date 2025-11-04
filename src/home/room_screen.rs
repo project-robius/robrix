@@ -22,13 +22,14 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
+use ruma::OwnedRoomOrAliasId;
 
 use crate::{
     app::{AppStateAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::{RoomsListAction, RoomsListRef}, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
-    room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
+    room::{preview_screen::RoomPreviewAction, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
@@ -564,6 +565,8 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
+    /// Whether this room is being previewed (not fully joined).
+    #[rust] is_preview: bool,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1473,85 +1476,29 @@ impl RoomScreen {
                         });
                         return true;
                     }
-                    if let Some(known_room) = get_client().and_then(|c| c.get_room(room_id)) {
-                        if known_room.is_space() {
-                            // TODO: Show space home page
-                            enqueue_popup_notification(PopupItem {
-                                message: "Showing a space's home page is not yet supported.".into(),
-                                kind: PopupKind::Warning,
-                                auto_dismissal_duration: Some(3.0)
-                            });
-                        }
-
-                        if known_room.is_tombstoned() {
-                            // TODO: To join the successor room, we need to: known_room.tombstone_content()
-                            enqueue_popup_notification(PopupItem {
-                                message: "This room has been replaced by another room. You must join the new room.".into(),
-                                kind: PopupKind::Warning,
-                                auto_dismissal_duration: None
-                            });
-                        }
-
-                        match known_room.state() {
-                            RoomState::Joined => {
-                                cx.widget_action(
-                                    uid,
-                                    &Scope::empty().path,
-                                    RoomsListAction::Selected(
-                                        SelectedRoom::JoinedRoom {
-                                            room_id: known_room.room_id().to_owned().into(),
-                                            room_name: known_room.name(),
-                                        }
-                                    )
-                                );
+                    // Try to switch to an already-known room first.
+                    if !handle_switch_to_known_room(cx, uid, room_id.to_owned()) {
+                        // Otherwise, send a RoomPreviewAction to preview/join the room.
+                        cx.widget_action(
+                            uid,
+                            &Scope::empty().path,
+                            RoomPreviewAction::Selected {
+                                room_or_alias_id: OwnedRoomOrAliasId::from(room_id.clone()).into(),
+                                via: via.to_owned()
                             }
-                            RoomState::Invited => {
-                                cx.widget_action(
-                                    uid,
-                                    &Scope::empty().path,
-                                    RoomsListAction::Selected(
-                                        SelectedRoom::InvitedRoom {
-                                            room_id: known_room.room_id().to_owned().into(),
-                                            room_name: known_room.name(),
-                                        }
-                                    )
-                                );
-                            }
-                            RoomState::Knocked => {
-                                enqueue_popup_notification(PopupItem {
-                                    message: "Already knocked. Waiting for approval.".into(),
-                                    kind: PopupKind::Info,
-                                    auto_dismissal_duration: None
-                                });
-                            }
-                            RoomState::Banned => {
-                                enqueue_popup_notification(PopupItem {
-                                    message: "You are banned from that room. You cannot join. Unless the admin lifts the ban.".into(),
-                                    kind: PopupKind::Error,
-                                    auto_dismissal_duration: None
-                                });
-                            }
-                            RoomState::Left => {
-                                enqueue_popup_notification(PopupItem {
-                                    message: "You have left that room. You must be re-invited to join again.".into(),
-                                    kind: PopupKind::Info,
-                                    auto_dismissal_duration: None
-                                });
-                            }
-                        }
-                    } else {
-                        submit_async_request(MatrixRequest::GetRoomPreview {
-                            room_or_alias_id: room_id.to_owned().into(),
-                            via: via.to_owned(),
-                        });
+                        );
                     }
                     true
                 }
                 MatrixId::RoomAlias(room_alias) => {
-                    submit_async_request(MatrixRequest::GetRoomPreview {
-                        room_or_alias_id: room_alias.to_owned().into(),
-                        via: via.to_owned(),
-                    });
+                    cx.widget_action(
+                        uid,
+                        &Scope::empty().path,
+                        RoomPreviewAction::Selected {
+                            room_or_alias_id: OwnedRoomOrAliasId::from(room_alias.clone()).into(),
+                            via: via.to_owned()
+                        }
+                    );
                     true
                 }
                 MatrixId::Event(room_id, event_id) => {
@@ -2150,6 +2097,92 @@ impl RoomScreen {
         self.redraw(cx);
     }
 
+    fn show_preview_timeline(&mut self, cx: &mut Cx) {
+        let room_id = self.room_id.clone()
+            .expect("BUG: Timeline::show_preview_timeline(): no room_id was set.");
+
+        let state_opt = TIMELINE_STATES.with_borrow_mut(|ts| ts.remove(&room_id));
+        let (mut tl_state, is_first_time_being_loaded) = if let Some(existing) = state_opt {
+            (existing, false)
+        } else {
+            let Some(timeline_endpoints) = take_timeline_endpoints(&room_id) else {
+                return;
+            };
+            let TimelineEndpoints {
+                update_receiver,
+                update_sender,
+                request_sender,
+                // we don't need the successor room for preview timelines
+                successor_room: _,
+            } = timeline_endpoints;
+
+            let tl_state = TimelineUiState {
+                room_id: room_id.clone(),
+                // For preview timelines, we set the user power level to read-only,
+                user_power: UserPowerLevels::read_only(),
+                room_members: None,
+                fully_paginated: false,
+                items: Vector::new(),
+                content_drawn_since_last_update: RangeSet::new(),
+                profile_drawn_since_last_update: RangeSet::new(),
+                update_receiver,
+                request_sender,
+                media_cache: MediaCache::new(Some(update_sender.clone())),
+                link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
+                saved_state: SavedState::default(),
+                message_highlight_animation_state: MessageHighlightAnimationState::default(),
+                last_scrolled_index: usize::MAX,
+                prev_first_index: None,
+                scrolled_past_read_marker: false,
+                latest_own_user_receipt: None,
+                tombstone_info: None,
+            };
+            (tl_state, true)
+        };
+
+        log!("Setting preview timeline for room \"{}\" ({}) as loaded", self.room_name, room_id);
+
+        self.is_loaded = true;
+
+        log!("Showing preview timeline for room \"{}\" ({})", self.room_name, room_id);
+
+        if is_first_time_being_loaded {
+            if !tl_state.fully_paginated {
+                log!("Sending a first-time backwards pagination request for room \"{}\" {}", self.room_name, room_id);
+                submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                    room_id: room_id.clone(),
+                    num_events: 50,
+                    direction: PaginationDirection::Backwards,
+                });
+            }
+            submit_async_request(MatrixRequest::SyncRoomMemberList { room_id: room_id.clone() });
+        }
+
+        self.view(ids!(typing_notice)).set_visible(cx, false);
+        if self.is_loaded {
+            submit_async_request(MatrixRequest::GetRoomPowerLevels {
+                room_id: room_id.clone(),
+            });
+            submit_async_request(MatrixRequest::GetRoomMembers {
+                room_id: room_id.clone(),
+                memberships: matrix_sdk::RoomMemberships::JOIN,
+                // Because we're previewing, we get members from server.
+                local_only: false,
+            });
+            submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
+                room_id: room_id.clone(),
+                subscribe: true,
+            });
+        }
+
+        self.restore_state(cx, &mut tl_state);
+        self.tl_state = Some(tl_state);
+
+        self.process_timeline_updates(cx, &self.portal_list(ids!(list)));
+
+        self.redraw(cx);
+    }
+
     /// Invoke this when this RoomScreen/timeline is being hidden or no longer being shown.
     fn hide_timeline(&mut self) {
         let Some(room_id) = self.room_id.clone() else { return };
@@ -2169,6 +2202,19 @@ impl RoomScreen {
             room_id: room_id.clone(),
             subscribe: false,
         });
+        submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
+            room_id,
+            subscribe: false,
+        });
+    }
+
+    fn hide_preview_timeline(&mut self) {
+        let Some(room_id) = self.room_id.clone() else { return; };
+
+        self.save_state();
+
+        // The preview timeline only subscribes the pinned events when shown,
+        // so we only need to unsubscribe from that here.
         submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
             room_id,
             subscribe: false,
@@ -2238,6 +2284,11 @@ impl RoomScreen {
         // If the room is already being displayed, then do nothing.
         if self.room_id.as_ref().is_some_and(|id| id == &room_id) { return; }
 
+        // If we were previously displaying a preview timeline, hide it first.
+        if self.is_preview {
+            self.hide_preview_timeline();
+        }
+
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
         self.loading_pane(ids!(loading_pane)).take_state();
@@ -2253,6 +2304,34 @@ impl RoomScreen {
         });
 
         self.show_timeline(cx);
+    }
+
+    pub fn set_displayed_preview_room<S: Into<Option<String>>>(
+        &mut self,
+        cx: &mut Cx,
+        room_id: OwnedRoomId,
+        room_name: S,
+    ) {
+        if self.room_id.as_ref().is_some_and(|id| id == &room_id) { return; }
+
+        // If we were previously displaying a normal timeline, hide it first.
+        if !self.is_preview {
+            self.hide_timeline();
+        }
+
+        self.hide_preview_timeline();
+        // Reset the the state of the inner loading pane.
+        self.loading_pane(ids!(loading_pane)).take_state();
+        self.room_name = room_name_or_id(room_name.into(), &room_id);
+        self.room_id = Some(room_id.clone());
+        self.is_preview = true;
+
+        cx.action(MentionableTextInputAction::PowerLevelsUpdated {
+            room_id: room_id.clone(),
+            can_notify_room: false,
+        });
+
+        self.show_preview_timeline(cx);
     }
 
     /// Sends read receipts based on the current scroll position of the timeline.
@@ -2365,6 +2444,90 @@ impl RoomScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
     }
+
+    /// See [`RoomScreen::set_displayed_preview_room()`].
+    pub fn set_displayed_preview_room<S: Into<Option<String>>>(
+        &self,
+        cx: &mut Cx,
+        room_id: OwnedRoomId,
+        room_name: S,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_displayed_preview_room(cx, room_id, room_name);
+    }
+}
+
+/// Attempts to switch to a known room with the given `room_id`.
+pub fn handle_switch_to_known_room(cx: &mut Cx, uid: WidgetUid, room_id: OwnedRoomId) -> bool {
+    if let Some(known_room) = get_client().and_then(|c| c.get_room(&room_id)) {
+        if known_room.is_space() {
+            // TODO: Show space home page
+            enqueue_popup_notification(PopupItem {
+                message: "Showing a space's home page is not yet supported.".into(),
+                kind: PopupKind::Warning,
+                auto_dismissal_duration: Some(3.0)
+            });
+        }
+
+        if known_room.is_tombstoned() {
+            // TODO: To join the successor room, we need to: known_room.tombstone_content()
+            enqueue_popup_notification(PopupItem {
+                message: "This room has been replaced by another room. You must join the new room.".into(),
+                kind: PopupKind::Warning,
+                auto_dismissal_duration: None
+            });
+        }
+
+        match known_room.state() {
+            RoomState::Joined => {
+                cx.widget_action(
+                    uid,
+                    &Scope::empty().path,
+                    RoomsListAction::Selected(
+                        SelectedRoom::JoinedRoom {
+                            room_id: known_room.room_id().to_owned().into(),
+                            room_name: known_room.name(),
+                        }
+                    )
+                );
+            }
+            RoomState::Invited => {
+                cx.widget_action(
+                    uid,
+                    &Scope::empty().path,
+                    RoomsListAction::Selected(
+                        SelectedRoom::InvitedRoom {
+                            room_id: known_room.room_id().to_owned().into(),
+                            room_name: known_room.name(),
+                        }
+                    )
+                );
+            }
+            RoomState::Knocked => {
+                enqueue_popup_notification(PopupItem {
+                    message: "Already knocked. Waiting for approval.".into(),
+                    kind: PopupKind::Info,
+                    auto_dismissal_duration: None
+                });
+            }
+            RoomState::Banned => {
+                enqueue_popup_notification(PopupItem {
+                    message: "You are banned from that room. You cannot join. Unless the admin lifts the ban.".into(),
+                    kind: PopupKind::Error,
+                    auto_dismissal_duration: None
+                });
+            }
+            RoomState::Left => {
+                enqueue_popup_notification(PopupItem {
+                    message: "You have left that room. You must be re-invited to join again.".into(),
+                    kind: PopupKind::Info,
+                    auto_dismissal_duration: None
+                });
+            }
+        }
+        return true;
+    }
+    false
 }
 
 /// Immutable RoomScreen states passed via Scope props

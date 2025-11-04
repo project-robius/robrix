@@ -18,7 +18,7 @@ use crate::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
     }, sliding_sync::current_user_id, utils::{
-        OwnedRoomIdRon, room_name_or_id
+        OwnedRoomIdRon, OwnedRoomOrAliasIdRon, OwnedServerNameRon, room_name_or_id
     }, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,

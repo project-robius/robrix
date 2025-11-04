@@ -1,9 +1,10 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
+use ruma::{OwnedRoomAliasId, OwnedRoomOrAliasId};
 use tokio::sync::Notify;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SelectedRoom}, room::{BasicRoomDetails, FetchedRoomPreview, RoomPreviewAction, can_not_preview_screen::{CanNotPreviewDetails, CanNotPreviewScreenWidgetRefExt}}, shared::popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, utils::room_name_or_id};
+use crate::{app::{AppState, AppStateAction, SelectedRoom}, home::room_screen::handle_switch_to_known_room, room::{self, BasicRoomDetails, RoomAliasResolutionAction, preview_screen::{PreviewDetails, PreviewScreenWidgetRefExt, RoomPreviewAction}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 live_design! {
@@ -17,7 +18,7 @@ live_design! {
     use crate::home::welcome_screen::WelcomeScreen;
     use crate::home::room_screen::RoomScreen;
     use crate::home::invite_screen::InviteScreen;
-    use crate::room::can_not_preview_screen::CanNotPreviewScreen;
+    use crate::room::preview_screen::PreviewScreen;
 
     pub MainDesktopUI = {{MainDesktopUI}} {
         dock = <Dock> {
@@ -55,7 +56,7 @@ live_design! {
             welcome_screen = <WelcomeScreen> {}
             room_screen = <RoomScreen> {}
             invite_screen = <InviteScreen> {}
-            can_not_preview_screen = <CanNotPreviewScreen> {}
+            preview_screen = <PreviewScreen> {}
         }
     }
 }
@@ -90,6 +91,9 @@ pub struct MainDesktopUI {
     /// If true, this widget proceeds to draw the desktop UI as normal.
     #[rust]
     drawn_previously: bool,
+
+    #[rust]
+    already_resolved_aliases: HashMap<OwnedRoomAliasId, OwnedRoomId>,
 }
 
 impl Widget for MainDesktopUI {
@@ -182,75 +186,68 @@ impl MainDesktopUI {
         self.most_recently_selected_room = Some(room);
     }
 
-    fn focus_or_crate_preview_screen_tab(&mut self, cx: &mut Cx, preview_info: &FetchedRoomPreview) {
-        let room_id = preview_info.room_id.clone();
-        let room_name = preview_info.name.clone();
-        let is_world_readable = preview_info.room_preview.is_world_readable.unwrap_or(false);
-
+    fn focus_or_create_preview_tab(&mut self, cx: &mut Cx, room: SelectedRoom, preview_details: PreviewDetails) {
         let dock = self.view.dock(ids!(dock));
-        let selected_room = SelectedRoom::PreviewedRoom { room_id: room_id.to_owned().into(), room_name: room_name.clone() };
 
-        // Do nothing if the room to select is already created and focused.
-        if self.most_recently_selected_room.as_ref().is_some_and(|r| r == &selected_room) {
+        if self.most_recently_selected_room.as_ref().is_some_and(|r| r == &room) {
             return;
         }
 
-        // If the room is already open, select (jump to) its existing tab
-        let room_id_as_live_id = LiveId::from_str(room_id.as_str());
+        let room_id_as_live_id = LiveId::from_str(room.room_id().as_str());
         if self.open_rooms.contains_key(&room_id_as_live_id) {
             dock.select_tab(cx, room_id_as_live_id);
-            self.most_recently_selected_room = Some(selected_room);
+            self.most_recently_selected_room = Some(room);
             return;
         }
 
-
-        // Create a new tab for the room preview
-        let (tab_bar, _pos) = dock.find_tab_bar_of_tab(id!(home_tab)).unwrap();
-        let (kind, name) = if is_world_readable {
-            (id!(room_screen), room_name_or_id(room_name.as_ref(), &room_id))
-        } else {
-            (id!(can_not_preview_screen), room_name_or_id(room_name.as_ref(), &room_id))
+        let (tab_bar, _pos) = match dock.find_tab_bar_of_tab(id!(home_tab)) {
+            Some(found) => found,
+            None => {
+                error!("BUG: unable to find home_tab tab bar when creating preview tab");
+                return;
+            }
         };
+
+        let (kind, name) = match &room {
+            SelectedRoom::PreviewedRoom { room_id, room_name } => (
+                id!(preview_screen),
+                room_name_or_id(room_name.as_ref(), room_id),
+            ),
+            _ => {
+                error!("BUG: focus_or_create_preview_tab called with non-preview room: {:?}", room);
+                return;
+            }
+        };
+
+        log!("Creating preview tab for room {:?}", name);
 
         let new_tab_widget = dock.create_and_select_tab(
             cx,
             tab_bar,
             room_id_as_live_id,
             kind,
-            name,
+            name.clone(),
             id!(CloseableTab),
             None,
         );
 
         if let Some(new_widget) = new_tab_widget {
-            self.room_order.push(selected_room.clone());
-            if is_world_readable {
-                new_widget.as_room_screen().set_displayed_room(
-                    cx,
-                    room_id.clone().into(),
-                    selected_room.room_name().cloned(),
-                );
-            } else {
-                new_widget.as_can_not_preview_screen().set_displayed(
-                    cx,
-                    room_id.clone().into(),
-                    selected_room.room_name().cloned(),
-                    CanNotPreviewDetails {
-                        room_basic_details: BasicRoomDetails {
-                            room_id: room_id.clone(),
-                            room_name: room_name.clone(),
-                            room_avatar: preview_info.room_avatar.clone(),
-                        },
-                        join_rule: preview_info.room_preview.join_rule.clone(),
-                    },
-                );
-            }
+            self.room_order.push(room.clone());
+            new_widget.as_preview_screen().set_displayed_preview(
+                cx,
+                room.room_id().clone(),
+                room.room_name().cloned(),
+                preview_details.clone(),
+            );
+
             cx.action(MainDesktopUiAction::SaveDockIntoAppState);
         } else {
-            error!("BUG: failed to create tab for {selected_room:?}");
+            error!("BUG: failed to create preview tab for {room:?}");
+            return;
         }
-        self.open_rooms.insert(room_id_as_live_id, selected_room.clone());
-        self.most_recently_selected_room = Some(selected_room);
+
+        self.open_rooms.insert(room_id_as_live_id, room.clone());
+        self.most_recently_selected_room = Some(room);
     }
 
     /// Closes a tab in the dock and focuses on the latest open room.
@@ -347,6 +344,7 @@ impl MainDesktopUI {
 
 impl WidgetMatchEvent for MainDesktopUI {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+        let uid = self.widget_uid();
         let mut should_save_dock_action: bool = false;
         for action in actions {
             let widget_action = action.as_widget_action();
@@ -357,17 +355,76 @@ impl WidgetMatchEvent for MainDesktopUI {
                 continue;
             }
 
-            if let Some(RoomPreviewAction::Fetched(res)) = action.downcast_ref() {
+            if let Some(RoomAliasResolutionAction::Resolved(room_alias, result)) = action.downcast_ref() {
+                match result {
+                    Ok(data) => {
+                        let room_id = &data.room_id;
+                        let server_names = &data.servers;
+
+                        // Skip if we've already resolved this alias
+                        if self.already_resolved_aliases.contains_key(room_alias) {
+                            log!("Alias {} already resolved, skipping.", room_alias);
+                            return;
+                        }
+
+                        self.already_resolved_aliases
+                            .insert(room_alias.clone(), room_id.clone());
+
+                        // Try to switch to the known room
+                        if !handle_switch_to_known_room(cx, uid, room_id.clone()) {
+                            cx.widget_action(
+                                uid,
+                                &Scope::empty().path,
+                                RoomPreviewAction::Selected {
+                                    room_or_alias_id: OwnedRoomOrAliasId::from(room_id.clone()),
+                                    via: server_names.to_vec(),
+                                }
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to resolve alias {}: {}", room_alias, e);
+                    }
+                }
+            }
+
+            if let Some(room::RoomPreviewAction::Fetched(res)) = action.downcast_ref() {
                 match res {
-                    Ok(room_preview) => self.focus_or_crate_preview_screen_tab(cx, room_preview),
-                    Err(err) => {
-                        error!("Failed to fetch room preview: {}", err);
-                        enqueue_popup_notification(PopupItem {
-                            message: "This room preview is not available.".to_string(),
-                            kind: PopupKind::Error,
-                            auto_dismissal_duration: None
-                        });
-                    },
+                    Ok(data) => {
+                        let BasicRoomDetails {
+                            room_id,
+                            room_name,
+                            room_avatar,
+                        } = BasicRoomDetails {
+                            room_id: data.room_id.clone(),
+                            room_name: data.name.clone(),
+                            room_avatar: data.room_avatar.clone(),
+                        };
+
+                        let preview_details = PreviewDetails {
+                            room_basic_details: BasicRoomDetails {
+                                room_id: room_id.clone(),
+                                room_name: room_name.clone(),
+                                room_avatar,
+                            },
+                            is_world_readable: data.is_world_readable.unwrap_or(false),
+                            join_rule: data.join_rule.clone(),
+                        };
+
+                        log!("Opening room preview for {} (name: {:?})", room_id, room_name);
+
+                        self.focus_or_create_preview_tab(
+                            cx,
+                            SelectedRoom::PreviewedRoom {
+                                room_id: room_id.into(),
+                                room_name: room_name.clone(),
+                            },
+                            preview_details,
+                        );
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch room preview: {e}");
+                    }
                 }
             }
 
@@ -420,6 +477,36 @@ impl WidgetMatchEvent for MainDesktopUI {
                     should_save_dock_action = true;
                 }
                 _ => (),
+            }
+
+            match widget_action.cast() {
+                RoomPreviewAction::Selected { room_or_alias_id, via } => {
+                    match OwnedRoomAliasId::try_from(room_or_alias_id) {
+                        // We have a room alias ID to resolve it to a room ID, and then switch to it.
+                        Ok(alias_id) => {
+                            if let Some(room_id) = self.already_resolved_aliases.get(&alias_id) {
+                                if handle_switch_to_known_room(cx, uid, room_id.clone()) {
+                                    return;
+                                }
+                                // If we couldn't switch to the known room, we need to fetch the preview info.
+                                submit_async_request(MatrixRequest::GetRoomPreview {
+                                    room_or_alias_id: OwnedRoomOrAliasId::from(room_id.clone()),
+                                    via: via.clone(),
+                                });
+                            } else {
+                                submit_async_request(MatrixRequest::ResolveRoomAlias(alias_id));
+                            }
+                        }
+                        // This Err returns means we have a room ID, so we can directly fetch the preview info.
+                        Err(room_id) => {
+                            submit_async_request(MatrixRequest::GetRoomPreview {
+                                room_or_alias_id: OwnedRoomOrAliasId::from(room_id.clone()),
+                                via: via.clone()
+                            });
+                        }
+                    }
+                }
+                RoomPreviewAction::None => { }
             }
 
             // Handle RoomsList actions, which are updates from the rooms list.

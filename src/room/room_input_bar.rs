@@ -18,7 +18,7 @@
 use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
-use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
+use ruma::{OwnedRoomId, events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, room::JoinRuleSummary};
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
 
 live_design! {
@@ -476,6 +476,16 @@ impl RoomInputBar {
         }
     }
 
+    // fn update_preview_footer(
+    //     &mut self,
+    //     cx: &mut Cx,
+    //     preview_room_id: &OwnedRoomId,
+    //     join_rule: &Option<JoinRuleSummary>,
+    // ) {
+    //     let preview_footer = self.view(ids!(preview_footer));
+    
+    // }
+
     /// Sets the send_message_button to be enabled and green, or disabled and gray.
     ///
     /// This should be called to update the button state when the message TextInput content changes.
@@ -570,6 +580,16 @@ impl RoomInputBarRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.update_tombstone_footer(cx, tombstoned_room_id, successor_room_details);
     }
+
+    // pub fn update_preview_footer(
+    //     &self,
+    //     cx: &mut Cx,
+    //     preview_room_id: &OwnedRoomId,
+    //     join_rule: &Option<JoinRuleSummary>,
+    // ) {
+    //     let Some(mut inner) = self.borrow_mut() else { return };
+    //     inner.update_preview_footer(cx, preview_room_id, join_rule);
+    // }
 
     /// Forwards the result of an edit request to the `EditingPane` widget
     /// within this `RoomInputBar`.

@@ -2,7 +2,7 @@
 #![allow(clippy::question_mark)]
 
 use std::{borrow::Cow, fmt::Display, ops::{Deref, DerefMut}, str::{Chars, FromStr}, time::SystemTime};
-use ruma::{OwnedServerName, ServerName};
+use ruma::{OwnedRoomOrAliasId, OwnedServerName, RoomOrAliasId, ServerName};
 use url::Url;
 
 use unicode_segmentation::UnicodeSegmentation;
@@ -722,6 +722,62 @@ impl Deref for OwnedRoomIdRon {
     }
 }
 impl Display for OwnedRoomIdRon {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// A RON-(de)serializable wrapper around [`OwnedRoomOrAliasId`].
+#[derive(Clone, Debug)]
+pub struct OwnedRoomOrAliasIdRon(pub OwnedRoomOrAliasId);
+impl SerRon for OwnedRoomOrAliasIdRon {
+    fn ser_ron(&self, d: usize, s: &mut SerRonState) {
+        self.0.to_string().ser_ron(d, s);
+    }
+}
+impl DeRon for OwnedRoomOrAliasIdRon {
+    fn de_ron(s: &mut DeRonState, i: &mut Chars) -> Result<Self, DeRonErr> {
+        OwnedRoomOrAliasId::from_str(&String::de_ron(s, i)?)
+            .map(OwnedRoomOrAliasIdRon)
+            .map_err(|e| DeRonErr {
+                msg: e.to_string(),
+                line: s.line,
+                col: s.col,
+            })
+    }
+}
+impl From<OwnedRoomOrAliasId> for OwnedRoomOrAliasIdRon {
+    fn from(room_or_alias_id: OwnedRoomOrAliasId) -> Self {
+        OwnedRoomOrAliasIdRon(room_or_alias_id)
+    }
+}
+impl<'a> From<&'a OwnedRoomOrAliasIdRon> for &'a OwnedRoomOrAliasId {
+    fn from(room_or_alias_id: &'a OwnedRoomOrAliasIdRon) -> Self {
+        &room_or_alias_id.0
+    }
+}
+impl From<OwnedRoomOrAliasIdRon> for OwnedRoomOrAliasId {
+    fn from(room_or_alias_id: OwnedRoomOrAliasIdRon) -> Self {
+        room_or_alias_id.0
+    }
+}
+impl<'a> From<&'a OwnedRoomOrAliasIdRon> for &'a RoomOrAliasId {
+    fn from(room_or_alias_id: &'a OwnedRoomOrAliasIdRon) -> Self {
+        &room_or_alias_id.0
+    }
+}
+impl AsRef<RoomOrAliasId> for OwnedRoomOrAliasIdRon {
+    fn as_ref(&self) -> &RoomOrAliasId {
+        &self.0
+    }
+}
+impl Deref for OwnedRoomOrAliasIdRon {
+    type Target = OwnedRoomOrAliasId;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl Display for OwnedRoomOrAliasIdRon {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
