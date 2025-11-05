@@ -281,7 +281,7 @@ impl Widget for InviteScreen {
             if let (false, Some(room_id), true) = (self.is_loaded, &self.room_id, cx.has_global::<RoomsListRef>()) {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
                 if !rooms_list_ref.is_room_loaded(room_id) {
-                    self.all_rooms_loaded = rooms_list_ref.all_known_rooms_loaded();
+                    self.all_rooms_loaded = rooms_list_ref.all_rooms_loaded();
                     self.redraw(cx);
                     return;
                 } else {

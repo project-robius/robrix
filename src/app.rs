@@ -193,6 +193,9 @@ impl LiveHook for App {
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
+        // only init logging/tracing once
+        let _ = tracing_subscriber::fmt::try_init();
+
         // Initialize the project directory here from the main UI thread
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();

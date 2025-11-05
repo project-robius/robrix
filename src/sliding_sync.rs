@@ -16,13 +16,13 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
 };
 use matrix_sdk_ui::{
-    room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{EventTimelineItem, LatestEventValue, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem}, RoomListService, Timeline
+    RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, spaces::{SpaceRoom, SpaceService}, sync_service::{self, SyncService}, timeline::{EventTimelineItem, LatestEventValue, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem}
 };
 use robius_open::Uri;
 use ruma::{events::tag::Tags, OwnedRoomOrAliasId};
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
+    sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
@@ -495,7 +495,7 @@ pub enum MatrixRequest {
 pub fn submit_async_request(req: MatrixRequest) {
     if let Some(sender) = REQUEST_SENDER.lock().unwrap().as_ref() {
         sender.send(req)
-            .expect("BUG: async worker task receiver has died!");
+            .expect("BUG: matrix worker task receiver has died!");
     }
 }
 
@@ -515,15 +515,15 @@ pub struct LoginByPassword {
 }
 
 
-/// The entry point for an async worker thread that can run async tasks.
+/// The entry point for the worker task that runs Matrix-related operations.
 ///
-/// All this thread does is wait for [`MatrixRequests`] from the main UI-driven non-async thread(s)
+/// All this task does is wait for [`MatrixRequests`] from the main UI thread
 /// and then executes them within an async runtime context.
-async fn async_worker(
+async fn matrix_worker_task(
     mut request_receiver: UnboundedReceiver<MatrixRequest>,
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
-    log!("Started async_worker task.");
+    log!("Started matrix_worker_task.");
     let mut subscribers_own_user_read_receipts: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
     let mut subscribers_pinned_events: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
 
@@ -533,7 +533,7 @@ async fn async_worker(
                 if let Err(e) = login_sender.send(login_request).await {
                     error!("Error sending login request to login_sender: {e:?}");
                     Cx::post_action(LoginAction::LoginFailure(String::from(
-                        "BUG: failed to send login request to async worker thread."
+                        "BUG: failed to send login request to login worker task."
                     )));
                 }
             }
@@ -1494,8 +1494,8 @@ async fn async_worker(
         }
     }
 
-    error!("async_worker task ended unexpectedly");
-    bail!("async_worker task ended unexpectedly")
+    error!("matrix_worker_task task ended unexpectedly");
+    bail!("matrix_worker_task task ended unexpectedly")
 }
 
 
@@ -1547,85 +1547,24 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
         tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
     }).handle().clone();
 
-    // Create a channel to be used between UI thread(s) and the async worker thread.
-    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
-    REQUEST_SENDER.lock().unwrap().replace(sender);
-
-    let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
-    // Start a high-level async task that will start and monitor all other tasks.
-    let rt = rt_handle.clone();
-    let _monitor = rt_handle.spawn(async move {
-        // Spawn the actual async worker thread.
-        let mut worker_join_handle = rt.spawn(async_worker(receiver, login_sender));
-
-        // Start the main loop that drives the Matrix client SDK.
-        let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
-        // Build a Matrix Client in the background so that SSO Server starts earlier.
-        rt.spawn(async move {
-            match build_client(&Cli::default(), app_data_dir()).await {
-                Ok(client_and_session) => {
-                    DEFAULT_SSO_CLIENT.lock().unwrap()
-                        .get_or_insert(client_and_session);
-                }
-                Err(e) => error!("Error: could not create DEFAULT_SSO_CLIENT object: {e}"),
-            };
-            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
-            Cx::post_action(LoginAction::SsoPending(false));
-        });
-
-        #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
-        loop {
-            tokio::select! {
-                result = &mut main_loop_join_handle => {
-                    match result {
-                        Ok(Ok(())) => {
-                            error!("BUG: main async loop task ended unexpectedly!");
-                        }
-                        Ok(Err(e)) => {
-                            error!("Error: main async loop task ended:\n\t{e:?}");
-                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                status: e.to_string(),
-                            });
-                            enqueue_popup_notification(PopupItem { message: format!("Rooms list update error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
-                        },
-                        Err(e) => {
-                            error!("BUG: failed to join main async loop task: {e:?}");
-                        }
-                    }
-                    break;
-                }
-                result = &mut worker_join_handle => {
-                    match result {
-                        Ok(Ok(())) => {
-                            // Check if this is due to logout
-                            if is_logout_in_progress() {
-                                log!("async worker task ended due to logout");
-                            } else {
-                                error!("BUG: async worker task ended unexpectedly!");
-                            }
-                        }
-                        Ok(Err(e)) => {
-                            // Check if this is due to logout
-                            if is_logout_in_progress() {
-                                log!("async worker task ended with error due to logout: {e:?}");
-                            } else {
-                                error!("Error: async worker task ended:\n\t{e:?}");
-                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: e.to_string(),
-                                });
-                                enqueue_popup_notification(PopupItem { message: format!("Rooms list update error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
-
-                            }
-                        },
-                        Err(e) => {
-                            error!("BUG: failed to join async worker task: {e:?}");
-                        }
-                    }
-                    break;
-                }
+    // Proactively build a Matrix Client in the background so that the SSO Server
+    // can have a quicker start if needed (as it's rather slow to build this client).
+    rt_handle.spawn(async move {
+        match build_client(&Cli::default(), app_data_dir()).await {
+            Ok(client_and_session) => {
+                DEFAULT_SSO_CLIENT.lock().unwrap()
+                    .get_or_insert(client_and_session);
             }
-        }
+            Err(e) => error!("Error: could not create DEFAULT_SSO_CLIENT object: {e}"),
+        };
+        DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+        Cx::post_action(LoginAction::SsoPending(false));
     });
+
+    let rt = rt_handle.clone();
+    // Spawn the main async task that drives the Matrix client SDK, which itself will
+    // start and monitor other related background tasks.
+    rt_handle.spawn(start_matrix_client_login_and_sync(rt));
 
     Ok(rt_handle)
 }
@@ -1829,11 +1768,21 @@ impl RoomListServiceRoomInfo {
     }
 }
 
-async fn async_main_loop(
-    mut login_receiver: Receiver<LoginRequest>,
-) -> Result<()> {
-    // only init subscribe once
-    let _ = tracing_subscriber::fmt::try_init();
+/// Performs the Matrix client login or session restore, and starts the main sync service.
+///
+/// After starting the sync service, this also starts the main room list service loop
+/// and the main space service loop.
+async fn start_matrix_client_login_and_sync(rt: Handle) {
+    // Create a channel for sending requests from the main UI thread to a background worker task.
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
+    REQUEST_SENDER.lock().unwrap().replace(sender);
+
+    let (login_sender, mut login_receiver) = tokio::sync::mpsc::channel(1);
+
+    // Spawn the async worker task that handles matrix requests.
+    // We must do this now such that the matrix worker task can listen for incoming login requests
+    // from the UI, and forward them to this task (via the login_sender --> login_receiver).
+    let mut matrix_worker_task_handle = rt.spawn(matrix_worker_task(receiver, login_sender));
 
     let most_recent_user_id = persistence::most_recent_user_id();
     log!("Most recent user ID: {most_recent_user_id:?}");
@@ -1917,7 +1866,12 @@ async fn async_main_loop(
                     },
                     None => {
                         error!("BUG: login_receiver hung up unexpectedly");
-                        return Err(anyhow::anyhow!("BUG: login_receiver hung up unexpectedly"));
+                        let err = String::from("Please restart Robrix.\n\nUnable to listen for login requests.");
+                        Cx::post_action(LoginAction::LoginFailure(err.clone()));
+                        enqueue_rooms_list_update(RoomsListUpdate::Status {
+                            status: err,
+                        });
+                        return;
                     }
                 }
             }
@@ -1934,27 +1888,39 @@ async fn async_main_loop(
     let logged_in_user_id = client.user_id()
         .expect("BUG: client.user_id() returned None after successful login!");
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
-    // enqueue_popup_notification(status.clone());
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
-    client.event_cache().subscribe().expect("BUG: CLIENT's event cache unable to subscribe");
-
+    // Store this active client in our global Client state so that other tasks can access it.
     if let Some(_existing) = CLIENT.lock().unwrap().replace(client.clone()) {
         error!("BUG: unexpectedly replaced an existing client when initializing the matrix client.");
     }
 
+    // Listen for changes to our verification status and incoming verification requests.
     add_verification_event_handlers_and_sync_client(client.clone());
 
     // Listen for updates to the ignored user list.
     handle_ignore_user_list_subscriber(client.clone());
 
-    let sync_service = SyncService::builder(client.clone())
+    let sync_service = match SyncService::builder(client.clone())
         .with_offline_mode()
         .build()
-        .await?;
+        .await
+    {
+        Ok(ss) => ss,
+        Err(e) => {
+            error!("BUG: failed to create SyncService: {e:?}");
+            let err = format!("Please restart Robrix.\n\nFailed to create Matrix sync service: {e}.");
+            enqueue_popup_notification(PopupItem {
+                message: err.clone(),
+                auto_dismissal_duration: None,
+                kind: PopupKind::Error,
+            });
+            enqueue_rooms_list_update(RoomsListUpdate::Status { status: err });
+            return;
+        }
+    };
 
     // Attempt to load the previously-saved app state.
-    // Include this after re-login.
     handle_load_app_state(logged_in_user_id.to_owned());
     handle_sync_indicator_subscriber(&sync_service);
     handle_sync_service_state_subscriber(sync_service.state());
@@ -1965,6 +1931,97 @@ async fn async_main_loop(
         error!("BUG: unexpectedly replaced an existing sync service when initializing the matrix client.");
     }
 
+    let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
+    let mut space_service_task = rt.spawn(space_service_loop(SpaceService::new(client)));
+
+    // Now, this task becomes an infinite loop that monitors the state of the
+    // three core matrix-related background tasks that we just spawned above.
+    #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
+    loop {
+        tokio::select! {
+            result = &mut matrix_worker_task_handle => {
+                match result {
+                    Ok(Ok(())) => {
+                        // Check if this is due to logout
+                        if is_logout_in_progress() {
+                            log!("matrix worker task ended due to logout");
+                        } else {
+                            error!("BUG: matrix worker task ended unexpectedly!");
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        // Check if this is due to logout
+                        if is_logout_in_progress() {
+                            log!("matrix worker task ended with error due to logout: {e:?}");
+                        } else {
+                            error!("Error: matrix worker task ended:\n\t{e:?}");
+                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                status: e.to_string(),
+                            });
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Rooms list update error: {e}"),
+                                kind: PopupKind::Error,
+                                auto_dismissal_duration: None,
+                            });
+                        }
+                    },
+                    Err(e) => {
+                        error!("BUG: failed to join matrix worker task: {e:?}");
+                    }
+                }
+                break;
+            }
+            result = &mut room_list_service_task => {
+                match result {
+                    Ok(Ok(())) => {
+                        error!("BUG: room list service loop task ended unexpectedly!");
+                    }
+                    Ok(Err(e)) => {
+                        error!("Error: room list service loop task ended:\n\t{e:?}");
+                        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                            status: e.to_string(),
+                        });
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Room list service  error: {e}"),
+                            kind: PopupKind::Error,
+                            auto_dismissal_duration: None,
+                        });
+                    },
+                    Err(e) => {
+                        error!("BUG: failed to join room list service loop task: {e:?}");
+                    }
+                }
+                break;
+            }
+            result = &mut space_service_task => {
+                match result {
+                    Ok(Ok(())) => {
+                        error!("BUG: space service loop task ended unexpectedly!");
+                    }
+                    Ok(Err(e)) => {
+                        error!("Error: space service loop task ended:\n\t{e:?}");
+                        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                            status: e.to_string(),
+                        });
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Space service error: {e}"),
+                            kind: PopupKind::Error,
+                            auto_dismissal_duration: None,
+                        });
+                    },
+                    Err(e) => {
+                        error!("BUG: failed to join space service loop task: {e:?}");
+                    }
+                }
+                break;
+            }
+        }
+    }
+}
+
+
+/// The main async task that listens for changes to all rooms.
+async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Result<()> {
     let all_rooms_list = room_list_service.all_rooms().await?;
     handle_room_list_service_loading_state(all_rooms_list.loading_state());
 
@@ -1972,9 +2029,17 @@ async fn async_main_loop(
         // TODO: paginate room list to avoid loading all rooms at once
         all_rooms_list.entries_with_dynamic_adapters(usize::MAX);
 
-    room_list_dynamic_entries_controller.set_filter(
-        Box::new(|_room| true),
-    );
+    // By default, our rooms list should only show rooms that are:
+    // 1. not spaces (those are handled by the SpaceService),
+    // 2. not left (clients don't typically show rooms that the user has already left),
+    // 3. not outdated (don't show tombstoned rooms whose successor is already joined).
+    room_list_dynamic_entries_controller.set_filter(Box::new(
+        filters::new_filter_all(vec![
+            Box::new(filters::new_filter_not(Box::new(filters::new_filter_space()))),
+            Box::new(filters::new_filter_non_left()),
+            Box::new(filters::new_filter_deduplicate_versions()),
+        ])
+    ));
 
     let mut all_known_rooms: Vector<RoomListServiceRoomInfo> = Vector::new();
 
@@ -2098,6 +2163,151 @@ async fn async_main_loop(
 
     bail!("room list service sync loop ended unexpectedly")
 }
+
+
+/// The main async loop task that listens for changes to all spaces.
+async fn space_service_loop(space_service: SpaceService) -> Result<()> {
+    let (initial_spaces, spaces_diff_stream) = space_service.subscribe_to_joined_spaces().await;
+
+    let mut all_joined_spaces: Vector<SpaceRoom> = initial_spaces;
+    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: initial set: {all_joined_spaces:?}"); }
+
+    pin_mut!(spaces_diff_stream);
+    while let Some(batch) = spaces_diff_stream.next().await {
+        for diff in batch {
+            match diff {
+                VectorDiff::Append { values: new_spaces } => {
+                    let _num_new_spaces = new_spaces.len();
+                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Append {_num_new_spaces}"); }
+                    for new_space in new_spaces {
+                        // TODO: call add_new_space()
+                        // let new_space = SpaceListServiceSpaceInfo::from_space(new_space.into_inner()).await;
+                        // add_new_space(&new_space, &space_service_service).await?;
+                        all_joined_spaces.push_back(new_space);
+                    }
+                }
+                VectorDiff::Clear => {
+                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Clear"); }
+                    // TODO: call clear all spaces()
+                    all_joined_spaces.clear();
+                    // ALL_JOINED_SPACES.lock().unwrap().clear();
+                    // enqueue_spaces_list_update(SpacesListUpdate::ClearSpaces);
+                }
+                VectorDiff::PushFront { value: new_space } => {
+                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PushFront"); }
+                    // TODO: call add_new_space()
+                    // let new_space = SpaceListServiceSpaceInfo::from_space(new_space.into_inner()).await;
+                    // add_new_space(&new_space, &space_service_service).await?;
+                    all_joined_spaces.push_front(new_space);
+                }
+                VectorDiff::PushBack { value: new_space } => {
+                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PushBack"); }
+                    // TODO: call add_new_space()
+                    // let new_space = SpaceListServiceSpaceInfo::from_space(new_space.into_inner()).await;
+                    // add_new_space(&new_space, &space_service_service).await?;
+                    all_joined_spaces.push_back(new_space);
+                }
+                _remove_diff @ VectorDiff::PopFront => {
+                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PopFront"); }
+                    // TODO: call update_space()
+                    all_joined_spaces.pop_front();
+                    // if let Some(space) = all_joined_spaces.pop_front() {
+                    //     optimize_remove_then_add_into_update(
+                    //         remove_diff,
+                    //         &space,
+                    //         &mut peekable_diffs,
+                    //         &mut all_joined_spaces,
+                    //         &space_service_service,
+                    //     ).await?;
+                    // }
+                }
+                _remove_diff @ VectorDiff::PopBack => {
+                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PopBack"); }
+                    // TODO: call update_space()
+                    all_joined_spaces.pop_back();
+                    // if let Some(space) = all_joined_spaces.pop_back() {
+                    //     optimize_remove_then_add_into_update(
+                    //         remove_diff,
+                    //         &space,
+                    //         &mut peekable_diffs,
+                    //         &mut all_joined_spaces,
+                    //         &space_service_service,
+                    //     ).await?;
+                    // }
+                }
+                VectorDiff::Insert { index, value: new_space } => {
+                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Insert at {index}"); }
+                    // TODO: call add_new_space()
+                    // let new_space = SpaceListServiceSpaceInfo::from_space(new_space.into_inner()).await;
+                    // add_new_space(&new_space, &space_service_service).await?;
+                    all_joined_spaces.insert(index, new_space);
+                }
+                VectorDiff::Set { index, value: changed_space } => {
+                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Set at {index}"); }
+                    // TODO: update this space
+                    // let changed_space = SpaceListServiceSpaceInfo::from_space(changed_space.into_inner()).await;
+                    // if let Some(old_space) = all_joined_spaces.get(index) {
+                    //     update_space(old_space, &changed_space, &space_service_service).await?;
+                    // } else {
+                    //     error!("BUG: space list diff: Set index {index} was out of bounds.");
+                    // }
+                    all_joined_spaces.set(index, changed_space);
+                }
+                _remove_diff @ VectorDiff::Remove { index: remove_index } => {
+                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Remove at {remove_index}"); }
+                    // TODO: call update_space() or remove space
+                    all_joined_spaces.remove(remove_index);
+                    // if remove_index < all_joined_spaces.len() {
+                    //     let space = all_joined_spaces.remove(remove_index);
+                    //     optimize_remove_then_add_into_update(
+                    //         remove_diff,
+                    //         &space,
+                    //         &mut peekable_diffs,
+                    //         &mut all_joined_spaces,
+                    //         &space_service_service,
+                    //     ).await?;
+                    // } else {
+                    //     error!("BUG: space_service: diff Remove index {remove_index} out of bounds, len {}", all_joined_spaces.len());
+                    // }
+                }
+                VectorDiff::Truncate { length } => {
+                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Truncate to {length}"); }
+                    // TODO: remove multiple spaces
+                    // // Iterate manually so we can know which spaces are being removed.
+                    // while all_joined_spaces.len() > length {
+                    //     if let Some(space) = all_joined_spaces.pop_back() {
+                    //         remove_space(&space);
+                    //     }
+                    // }
+                    all_joined_spaces.truncate(length); // sanity check
+                }
+                VectorDiff::Reset { values: new_spaces } => {
+                    // We implement this by clearing all spaces and then adding back the new values.
+                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Reset, old length {}, new length {}", all_joined_spaces.len(), new_spaces.len()); }
+                    // TODO: implement reset of all spaces
+
+                    // // Iterate manually so we can know which spaces are being removed.
+                    // while let Some(space) = all_joined_spaces.pop_back() {
+                    //     remove_space(&space);
+                    // }
+                    // ALL_JOINED_SPACES should already be empty due to successive calls to `remove_space()`,
+                    // so this is just a sanity check.
+                    // ALL_JOINED_SPACES.lock().unwrap().clear();
+                    // enqueue_spaces_list_update(SpacesListUpdate::ClearSpaces);
+                    for new_space in new_spaces.into_iter() {
+                        // let new_space = SpaceListServiceSpaceInfo::from_space(new_space.into_inner()).await;
+                        // add_new_space(&new_space, &space_service_service).await?;
+                        all_joined_spaces.push_back(new_space);
+                    }
+                }
+            }
+        }
+        if LOG_SPACE_SERVICE_DIFFS { log!("space_service: after batch diff: {all_joined_spaces:?}"); }
+    }
+
+    bail!("Space service sync loop ended unexpectedly")
+}
+
 
 
 /// Attempts to optimize a common RoomListService operation of remove + add.
@@ -2631,6 +2841,9 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
                 }
                 RoomListLoadingState::Loaded { maximum_number_of_rooms } => {
                     enqueue_rooms_list_update(RoomsListUpdate::LoadedRooms { max_rooms: maximum_number_of_rooms });
+                    // The SDK docs state that we cannot move from the `Loaded` state
+                    // back to the `NotLoaded` state, so we can safely exit this task here.
+                    return;
                 }
             }
         }
@@ -2747,6 +2960,8 @@ pub struct BackwardsPaginateUntilEventRequest {
 const LOG_TIMELINE_DIFFS: bool = cfg!(feature = "log_timeline_diffs");
 /// Whether to enable verbose logging of all room list service diff updates.
 const LOG_ROOM_LIST_DIFFS: bool = cfg!(feature = "log_room_list_diffs");
+/// Whether to enable verbose logging of all spaces service diff updates.
+const LOG_SPACE_SERVICE_DIFFS: bool = cfg!(feature = "log_space_service_diffs");
 
 /// A per-room async task that listens for timeline updates and sends them to the UI thread.
 ///
@@ -3245,7 +3460,7 @@ async fn spawn_sso_server(
                     if let Err(e) = login_sender.send(LoginRequest::LoginBySSOSuccess(client, client_session)).await {
                         error!("Error sending login request to login_sender: {e:?}");
                         Cx::post_action(LoginAction::LoginFailure(String::from(
-                            "BUG: failed to send login request to async worker thread."
+                            "BUG: failed to send login request to matrix worker thread."
                         )));
                     }
                     enqueue_rooms_list_update(RoomsListUpdate::Status {

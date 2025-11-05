@@ -111,6 +111,9 @@ log_room_list_diffs = []
 ## Logs all diffs to all room timelines.
 log_timeline_diffs = []
 
+## Logs all diffs received by the Matrix SpaceService.
+log_space_service_diffs = []
+
 
 [patch.crates-io]
 ## This is required to avoid a version conflict on the libsqlite3-sys crate,
