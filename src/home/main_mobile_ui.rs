@@ -95,6 +95,11 @@ impl Widget for MainMobileUI {
                 show_room = false;
                 show_invite = false;
             }
+            _ => {
+                show_welcome = false;
+                show_room = false;
+                show_invite = false;
+            }
         }
 
         self.view.view(ids!(welcome)).set_visible(cx, show_welcome);

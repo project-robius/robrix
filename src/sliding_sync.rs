@@ -33,22 +33,22 @@ use crate::{
     avatar_cache::AvatarUpdate,
     event_preview::text_preview_of_timeline_item,
     home::{
-        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
+        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::TimelineUpdate, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     },
     login::login_screen::LoginAction,
-    logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{is_logout_in_progress, logout_with_state_machine, LogoutConfig}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
-    persistence::{self, load_app_state, ClientSessionPersisted},
+    logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
+    persistence::{self, ClientSessionPersisted, load_app_state},
     profile::{
         user_profile::{AvatarState, UserProfile},
-        user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
+        user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     },
-    room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction},
+    room::{self, FetchedRoomAvatar, FetchedRoomPreview, RoomAliasResolutionAction, RoomPreviewAction},
     shared::{
         html_or_plaintext::MatrixLinkPillState,
         jump_to_bottom_button::UnreadMessageCount,
-        popup_list::{enqueue_popup_notification, PopupItem, PopupKind}
+        popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
     },
-    utils::{self, avatar_from_room_name, AVATAR_THUMBNAIL_FORMAT},
+    utils::{self, AVATAR_THUMBNAIL_FORMAT, avatar_from_room_name},
     verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -742,6 +742,14 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::GetRoomMembers { room_id, memberships, local_only } => {
+                // let (timeline, sender, is_preview) = {
+                //     let register = ALL_ROOMS.lock().unwrap();
+                //     let Some(room_info) = register.get_timeline_info(&room_id) else {
+                //         log!("BUG: room info not found for get room members request {room_id}");
+                //         continue;
+                //     };
+                //     room_info
+                // };
                 let (timeline, sender) = {
                     let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get(&room_id) else {
@@ -1103,8 +1111,7 @@ async fn matrix_worker_task(
                 let _resolve_task = Handle::current().spawn(async move {
                     log!("Sending resolve room alias request for {room_alias}...");
                     let res = client.resolve_room_alias(&room_alias).await;
-                    log!("Resolved room alias {room_alias} to: {res:?}");
-                    todo!("Send the resolved room alias back to the UI thread somehow.");
+                    Cx::post_action(RoomAliasResolutionAction::Resolved(room_alias, res));
                 });
             }
             MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
@@ -1624,9 +1631,69 @@ impl Drop for JoinedRoomDetails {
     }
 }
 
+struct PreviewRoomDetails {
+    #[allow(unused)]
+    room_id: OwnedRoomId,
+    timeline: Arc<Timeline>,
+    timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
+    timeline_singleton_endpoints: Option<(
+        crossbeam_channel::Receiver<TimelineUpdate>,
+        TimelineRequestSender,
+    )>,
+    timeline_subscriber_handler_task: JoinHandle<()>,
+    pinned_events_subscriber: Option<EventHandlerDropGuard>,
+}
+
+impl Drop for PreviewRoomDetails {
+    fn drop(&mut self) {
+        log!("Dropping PreviewRoomDetails for room {}", self.room_id);
+        self.timeline_subscriber_handler_task.abort();
+        drop(self.pinned_events_subscriber.take());
+    }
+}
 
 /// Information about all joined rooms that our client currently know about.
 static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
+
+struct RoomRegistry {
+    all_joined_rooms: BTreeMap<OwnedRoomId, JoinedRoomDetails>,
+    all_preview_rooms: BTreeMap<OwnedRoomId, PreviewRoomDetails>,
+}
+
+impl RoomRegistry {
+    fn get_timeline_info(&self, room_id: &OwnedRoomId)
+        -> Option<(Arc<Timeline>, crossbeam_channel::Sender<TimelineUpdate>, bool)> {
+        if let Some(room) = self.all_joined_rooms.get(room_id) {
+            return Some((
+                room.timeline.clone(),
+                room.timeline_update_sender.clone(),
+                false,
+            ));
+        }
+
+        if let Some(preview_room) = self.all_preview_rooms.get(room_id) {
+            return Some((
+                preview_room.timeline.clone(),
+                preview_room.timeline_update_sender.clone(),
+                true,
+            ));
+        }
+        None
+    }
+
+    fn get_all_joined_room(&self, room_id: &OwnedRoomId) -> Option<&JoinedRoomDetails> {
+        self.all_joined_rooms.get(room_id)
+    }
+
+    fn get_preview_room(&self, room_id: &OwnedRoomId) -> Option<&PreviewRoomDetails> {
+        self.all_preview_rooms.get(room_id)
+    }
+}
+
+static ALL_ROOMS: Mutex<RoomRegistry> = Mutex::new(RoomRegistry {
+    all_joined_rooms: BTreeMap::new(),
+    all_preview_rooms: BTreeMap::new(),
+});
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
@@ -1677,25 +1744,41 @@ pub fn is_user_ignored(user_id: &UserId) -> bool {
 pub fn take_timeline_endpoints(
     room_id: &OwnedRoomId,
 ) -> Option<TimelineEndpoints> {
+    if let Some(endpoints) = take_joined_timeline_endpoints(room_id) {
+        return Some(endpoints);
+    }
+
+    // take_preview_timeline_endpoints()
+    None
+}
+
+// fn take_preview_timeline_endpoints() -> Option<TimelineEndpoints> {
+//     let (update_sender, update_receiver) = crossbeam_channel::unbounded::<TimelineUpdate>();
+//     let (request_sender, _request_receiver) =
+//         watch::channel::<Vec<BackwardsPaginateUntilEventRequest>>(Vec::new());
+//     Some(TimelineEndpoints {
+//         update_sender,
+//         update_receiver,
+//         request_sender,
+//         successor_room: None,
+//         is_preview: true,
+//     })
+// }
+
+fn take_joined_timeline_endpoints(
+    room_id: &OwnedRoomId,
+) -> Option<TimelineEndpoints> {
     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
     all_joined_rooms
         .get_mut(room_id)
         .and_then(|jrd| jrd.timeline_singleton_endpoints.take()
-            .map(|(update_receiver, request_sender)| (
-                jrd.timeline_update_sender.clone(),
+            .map(|(update_receiver, request_sender)| TimelineEndpoints {
+                update_sender: jrd.timeline_update_sender.clone(),
                 update_receiver,
                 request_sender,
-                jrd.timeline.room().successor_room(),
-            ))
+                successor_room: jrd.timeline.room().successor_room(),
+            })
         )
-        .map(|(update_sender, update_receiver, request_sender, successor_room)| {
-            TimelineEndpoints {
-                update_sender,
-                update_receiver,
-                request_sender,
-                successor_room,
-            }
-        })
 }
 
 const DEFAULT_HOMESERVER: &str = "matrix.org";
@@ -3565,6 +3648,12 @@ impl UserPowerLevels {
     pub async fn from_room(room: &Room, user_id: &UserId) -> Option<Self> {
         let room_power_levels = room.power_levels().await.ok()?;
         Some(UserPowerLevels::from(&room_power_levels, user_id))
+    }
+
+    /// A conservative "read-only" power set used for previewing world-readable rooms.
+    /// The user cannot send messages, reactions, pin, or perform moderation actions.
+    pub fn read_only() -> Self {
+        UserPowerLevels::empty()
     }
 
     pub fn can_ban(self) -> bool {
