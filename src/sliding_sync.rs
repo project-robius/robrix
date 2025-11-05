@@ -1866,7 +1866,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                     },
                     None => {
                         error!("BUG: login_receiver hung up unexpectedly");
-                        let err = format!("Please restart Robrix.\n\nUnable to listen for login requests.");
+                        let err = String::from("Please restart Robrix.\n\nUnable to listen for login requests.");
                         Cx::post_action(LoginAction::LoginFailure(err.clone()));
                         enqueue_rooms_list_update(RoomsListUpdate::Status {
                             status: err,
@@ -2244,7 +2244,7 @@ async fn space_service_loop(space_service: SpaceService) -> Result<()> {
                 }
                 VectorDiff::Set { index, value: changed_space } => {
                     if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Set at {index}"); }
-                    // TOOD: update this space
+                    // TODO: update this space
                     // let changed_space = SpaceListServiceSpaceInfo::from_space(changed_space.into_inner()).await;
                     // if let Some(old_space) = all_joined_spaces.get(index) {
                     //     update_space(old_space, &changed_space, &space_service_service).await?;

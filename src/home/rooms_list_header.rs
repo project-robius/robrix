@@ -131,7 +131,7 @@ impl Widget for RoomsListHeader {
     }
 }
 
-/// Actions that can be handled by or emitted from the `RoomsListHeader`.
+/// Actions that can be handled by the `RoomsListHeader`.
 #[derive(Debug)]
 pub enum RoomsListHeaderAction {
     /// An action received by the RoomsListHeader that will show or hide
