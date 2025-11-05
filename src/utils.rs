@@ -10,7 +10,10 @@ use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRo
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
-use crate::{room::RoomPreviewAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::{room::FetchedRoomAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
+
+/// The scheme for GEO links, used for location messages in Matrix.
+pub const GEO_URI_SCHEME: &str = "geo:";
 
 
 /// A wrapper type that implements the `Debug` trait for non-`Debug` types.
@@ -387,14 +390,22 @@ pub fn trim_start_html_whitespace(mut text: &str) -> &str {
     text
 }
 
-/// Looks for bare links in the given `text` and converts them into proper HTML links and returns them.
-pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
-    use linkify::{LinkFinder, LinkKind};
+/// Looks for bare links in the given `text` and converts them into proper HTML links.
+///
+/// If `links_found` is provided, it will be populated with the list of URLs found in the text.
+pub fn linkify_get_urls<'t>(
+    text: &'t str,
+    is_html: bool,
+    mut links_found: Option<&mut Vec<Url>>,
+) -> Cow<'t, str> {
+    const MAILTO: &str = "mailto:";
+
+    use linkify::{Link, LinkFinder, LinkKind};
     let mut links = LinkFinder::new()
         .links(text)
         .peekable();
     if links.peek().is_none() {
-        return (Cow::Borrowed(text), Vec::new());
+        return Cow::Borrowed(text);
     }
 
     // A closure to escape text if it's not HTML.
@@ -408,23 +419,37 @@ pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
 
     let mut linkified_text = String::new();
     let mut last_end_index = 0;
-    let mut url_links = Vec::new();
     for link in links {
         let link_txt = link.as_str();
-        // Only linkify the URL if it's not already part of an HTML href attribute.
-        let is_link_within_href_attr = text.get(..link.start())
-            .is_some_and(ends_with_href);
-        let is_link_within_html_tag = text.get(link.end() ..)
-            .is_some_and(|after| after.trim_end().starts_with("</a>"));
 
-        if is_link_within_href_attr || is_link_within_html_tag {
+        // Only linkify the URL if it's not already part of an HTML or mailto href attribute.
+        let is_link_within_href_attr = text.get(.. link.start())
+            .is_some_and(ends_with_href);
+        let is_link_within_html_tag = |link: &Link| {
+            text.get(link.end() ..)
+                .is_some_and(|after| after.trim_end().starts_with("</a>"))
+        };
+        let is_mailto_link_within_href_attr = |link: &Link| {
+            if !matches!(link.kind(), LinkKind::Email) { return false; }
+            let mailto_start = link.start().saturating_sub(MAILTO.len());
+            text.get(mailto_start .. link.start())
+                .is_some_and(|t| t == MAILTO)
+                .then(|| text.get(.. mailto_start))
+                .flatten()
+                .is_some_and(ends_with_href)
+        };
+
+        if is_link_within_href_attr
+            || is_link_within_html_tag(&link)
+            || is_mailto_link_within_href_attr(&link)
+        {
             linkified_text = format!(
                 "{linkified_text}{}",
                 text.get(last_end_index..link.end()).unwrap_or_default(),
             );
-            if let Some(link) = text.get(link.start()..link.end()) {
-                if let Ok(url) = Url::parse(link) {
-                    url_links.push(url);
+            if let Some(links_found) = links_found.as_mut() {
+                if let Ok(url) = Url::parse(link_txt) {
+                    links_found.push(url);
                 }
             }
         } else {
@@ -436,8 +461,10 @@ pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
                         htmlize::escape_attribute(link_txt),
                         htmlize::escape_text(link_txt),
                     );
-                    if let Ok(url) = Url::parse(link_txt) {
-                        url_links.push(url);
+                    if let Some(links_found) = links_found.as_mut() {
+                        if let Ok(url) = Url::parse(link_txt) {
+                            links_found.push(url);
+                        }
                     }
                 }
                 LinkKind::Email => {
@@ -448,7 +475,7 @@ pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
                         htmlize::escape_text(link_txt),
                     );
                 }
-                _ => return (Cow::Borrowed(text), url_links), // unreachable
+                _ => return Cow::Borrowed(text), // unreachable
             }
         }
         last_end_index = link.end();
@@ -456,14 +483,14 @@ pub fn linkify_get_urls(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<Url>) {
     linkified_text.push_str(
         &escaped(text.get(last_end_index..).unwrap_or_default())
     );
-    // makepad_widgets::log!("Original text:\n{:?}\nLinkified text:\n{:?}", text, linkified_text);
-    (Cow::Owned(linkified_text), url_links)
+    Cow::Owned(linkified_text)
 }
 
 /// Looks for bare links in the given `text` and converts them into proper HTML links.
-/// This is a wrapper around `linkify_get_urls` that only returns the converted text.
+///
+/// To obtain the list of found URLs, use [`linkify_get_urls()`] instead.
 pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
-    linkify_get_urls(text, is_html).0
+    linkify_get_urls(text, is_html, None)
 }
 
 /// Returns true if the given `text` string ends with a valid href attribute opener.
@@ -702,13 +729,13 @@ impl Display for OwnedRoomIdRon {
 /// Returns a text avatar string containing the first character of the room name.
 ///
 /// Skips the first character if it is a `#` or `!`, the sigils used for Room aliases and Room IDs.
-pub fn avatar_from_room_name(room_name: Option<&str>) -> RoomPreviewAvatar {
+pub fn avatar_from_room_name(room_name: Option<&str>) -> FetchedRoomAvatar {
     let first = room_name.and_then(|rn| rn
         .graphemes(true)
         .find(|&g| g != "#" && g != "!")
         .map(ToString::to_string)
     ).unwrap_or_else(|| String::from("?"));
-    RoomPreviewAvatar::Text(first)
+    FetchedRoomAvatar::Text(first)
 }
 
 #[cfg(test)]
@@ -858,6 +885,20 @@ mod tests_linkify {
         let text = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
         let expected = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
         assert_eq!(linkify(text, true).as_ref(), expected);
+    }
+
+    #[test]
+    fn test_linkify14() {
+        let text = "<p>If you have any questions please drop us an email to <a href=\"mailto:legal@matrix.org\">legal@matrix.org</a></p>";
+        let expected = text;
+        assert_eq!(linkify(text, true).as_ref(), expected);
+    }
+
+    #[test]
+    fn test_linkify15() {
+        let text = "If you have any questions please drop us an email to:legal@matrix.org";
+        let expected = "If you have any questions please drop us an email to:<a href=\"mailto:legal@matrix.org\">legal@matrix.org</a>";
+        assert_eq!(linkify(text, false).as_ref(), expected);
     }
 }
 

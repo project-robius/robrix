@@ -86,13 +86,13 @@ impl BouncingDotsRef {
     /// Starts animation of the bouncing dots.
     pub fn start_animation(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.animator_play(cx, id!(dots.on));
+            inner.animator_play(cx, ids!(dots.on));
         }
     }
     /// Stops animation of the bouncing dots.
     pub fn stop_animation(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.animator_play(cx, id!(dots.off));
+            inner.animator_play(cx, ids!(dots.off));
         }
     }
 }

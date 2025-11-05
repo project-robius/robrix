@@ -125,9 +125,9 @@ impl VerificationBadge {
             VerificationState::Verified => (true, false, false),
         };
 
-        self.view(id!(icon_yes)).set_visible(cx, yes);
-        self.view(id!(icon_no)).set_visible(cx, no);
-        self.view(id!(icon_unk)).set_visible(cx, unk);
+        self.view(ids!(icon_yes)).set_visible(cx, yes);
+        self.view(ids!(icon_no)).set_visible(cx, no);
+        self.view(ids!(icon_unk)).set_visible(cx, unk);
         self.redraw(cx);
     }
 }

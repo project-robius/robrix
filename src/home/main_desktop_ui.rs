@@ -24,6 +24,9 @@ live_design! {
             height: Fill,
             padding: 0,
             spacing: 0,
+            // Align the dock with the RoomFilterInputBar. Not sure why we need this...
+            margin: {left: 1.75}
+
 
             root = Splitter {
                 axis: Horizontal,
@@ -109,7 +112,7 @@ impl Widget for MainDesktopUI {
 impl MainDesktopUI {
     /// Focuses on a room if it is already open, otherwise creates a new tab for the room.
     fn focus_or_create_tab(&mut self, cx: &mut Cx, room: SelectedRoom) {
-        let dock = self.view.dock(id!(dock));
+        let dock = self.view.dock(ids!(dock));
 
         // Do nothing if the room to select is already created and focused.
         if self.most_recently_selected_room.as_ref().is_some_and(|r| r == &room) {
@@ -125,14 +128,14 @@ impl MainDesktopUI {
         }
 
         // Create a new tab for the room
-        let (tab_bar, _pos) = dock.find_tab_bar_of_tab(live_id!(home_tab)).unwrap();
+        let (tab_bar, _pos) = dock.find_tab_bar_of_tab(id!(home_tab)).unwrap();
         let (kind, name) = match &room {
             SelectedRoom::JoinedRoom { room_id, room_name }  => (
-                live_id!(room_screen),
+                id!(room_screen),
                 room_name_or_id(room_name.as_ref(), room_id),
             ),
             SelectedRoom::InvitedRoom { room_id, room_name } => (
-                live_id!(invite_screen),
+                id!(invite_screen),
                 room_name_or_id(room_name.as_ref(), room_id),
             ),
         };
@@ -142,7 +145,7 @@ impl MainDesktopUI {
             room_id_as_live_id,
             kind,
             name,
-            live_id!(CloseableTab),
+            id!(CloseableTab),
             None, // insert the tab at the end
             // TODO: insert the tab after the most-recently-selected room
         );
@@ -177,7 +180,7 @@ impl MainDesktopUI {
 
     /// Closes a tab in the dock and focuses on the latest open room.
     fn close_tab(&mut self, cx: &mut Cx, tab_id: LiveId) {
-        let dock = self.view.dock(id!(dock));
+        let dock = self.view.dock(ids!(dock));
         if let Some(room_being_closed) = self.open_rooms.get(&tab_id) {
             self.room_order.retain(|sr| sr != room_being_closed);
 
@@ -198,7 +201,7 @@ impl MainDesktopUI {
             } else {
                 // If there is no room to focus, notify app to reset the selected room in the app state
                 cx.action(AppStateAction::FocusNone);
-                dock.select_tab(cx, live_id!(home_tab));
+                dock.select_tab(cx, id!(home_tab));
                 self.most_recently_selected_room = None;
             }
         }
@@ -210,12 +213,12 @@ impl MainDesktopUI {
 
     /// Closes all tabs
     pub fn close_all_tabs(&mut self, cx: &mut Cx) {
-        let dock = self.view.dock(id!(dock));
+        let dock = self.view.dock(ids!(dock));
         for tab_id in self.open_rooms.keys() {        
             dock.close_tab(cx, *tab_id);
         }
 
-        dock.select_tab(cx, live_id!(home_tab));
+        dock.select_tab(cx, id!(home_tab));
         cx.action(AppStateAction::FocusNone);
 
         // Clear tab-related dock UI state.
@@ -233,11 +236,11 @@ impl MainDesktopUI {
         room_id: OwnedRoomId,
         room_name: Option<String>,
     ) {
-        let dock = self.view.dock(id!(dock));
+        let dock = self.view.dock(ids!(dock));
         let Some((new_widget, true)) = dock.replace_tab(
             cx,
             LiveId::from_str(room_id.as_str()),
-            live_id!(room_screen),
+            id!(room_screen),
             Some(room_name_or_id(room_name.as_ref(), &room_id)),
             false,
         ) else {
@@ -283,7 +286,7 @@ impl WidgetMatchEvent for MainDesktopUI {
             match widget_action.cast() { // TODO: don't we need to call `widget_uid_eq(dock.widget_uid())` here?
                 // Whenever a tab (except for the home_tab) is pressed, notify the app state.
                 DockAction::TabWasPressed(tab_id) => {
-                    if tab_id == live_id!(home_tab) {
+                    if tab_id == id!(home_tab) {
                         cx.action(AppStateAction::FocusNone);
                         self.most_recently_selected_room = None;
                     }
@@ -301,7 +304,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                 }
                 // When dragging a tab, allow it to be dragged
                 DockAction::ShouldTabStartDrag(tab_id) => {
-                    self.view.dock(id!(dock)).tab_start_drag(
+                    self.view.dock(ids!(dock)).tab_start_drag(
                         cx,
                         tab_id,
                         DragItem::FilePath {
@@ -313,7 +316,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                 // When dragging a tab, allow it to be dragged
                 DockAction::Drag(drag_event) => {
                     if drag_event.items.len() == 1 {
-                        self.view.dock(id!(dock)).accept_drag(cx, drag_event, DragResponse::Move);
+                        self.view.dock(ids!(dock)).accept_drag(cx, drag_event, DragResponse::Move);
                     }
                 }
                 // When dropping a tab, move it to the new position
@@ -323,7 +326,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                         internal_id: Some(internal_id),
                         ..
                     } = &drop_event.items[0] {
-                        self.view.dock(id!(dock)).drop_move(cx, drop_event.abs, *internal_id);
+                        self.view.dock(ids!(dock)).drop_move(cx, drop_event.abs, *internal_id);
                     }
                     should_save_dock_action = true;
                 }
@@ -348,7 +351,7 @@ impl WidgetMatchEvent for MainDesktopUI {
             match action.downcast_ref() {
                 Some(MainDesktopUiAction::LoadDockFromAppState) => {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
-                    let dock = self.view.dock(id!(dock));
+                    let dock = self.view.dock(ids!(dock));
                     self.room_order = app_state.saved_dock_state.room_order.clone();
                     self.open_rooms = app_state.saved_dock_state.open_rooms.clone();
                     if app_state.saved_dock_state.dock_items.is_empty() {
@@ -382,14 +385,14 @@ impl WidgetMatchEvent for MainDesktopUI {
                     }
                     // Note: the borrow of `dock` must end here *before* we call `self.focus_or_create_tab()`.
 
-                    if let Some(ref selected_room) = &app_state.selected_room {
+                    if let Some(selected_room) = &app_state.selected_room {
                         self.focus_or_create_tab(cx, selected_room.clone());
                     }
                     self.view.redraw(cx);
                 }
                 Some(MainDesktopUiAction::SaveDockIntoAppState) => {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
-                    let dock = self.view.dock(id!(dock));
+                    let dock = self.view.dock(ids!(dock));
                     if let Some(dock_items) = dock.clone_state() {
                         app_state.saved_dock_state.dock_items = dock_items;
                     }

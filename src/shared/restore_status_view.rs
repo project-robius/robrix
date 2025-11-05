@@ -74,7 +74,7 @@ impl RestoreStatusViewRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.visible = visible;
             if !visible {
-                inner.label(id!(restore_status_label))
+                inner.label(ids!(restore_status_label))
                     .set_text(cx, "");
             }
         }
@@ -92,8 +92,8 @@ impl RestoreStatusViewRef {
     /// The `room_name` parameter is used to fill in the room name in the error message.
     pub fn set_content(&self, cx: &mut Cx, all_rooms_loaded: bool, room_name: &str) {
         let Some(inner) = self.borrow() else { return };      
-        let restore_status_spinner = inner.view.view(id!(restore_status_spinner));
-        let restore_status_label = inner.view.label(id!(restore_status_label));
+        let restore_status_spinner = inner.view.view(ids!(restore_status_spinner));
+        let restore_status_label = inner.view.label(ids!(restore_status_label));
         if all_rooms_loaded {
             restore_status_spinner.set_visible(cx, false);
             restore_status_label.set_text(

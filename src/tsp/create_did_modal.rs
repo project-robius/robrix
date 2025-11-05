@@ -297,8 +297,8 @@ impl Widget for CreateDidModal {
 
 impl WidgetMatchEvent for CreateDidModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let accept_button = self.view.button(id!(accept_button));
-        let cancel_button = self.view.button(id!(cancel_button));
+        let accept_button = self.view.button(ids!(accept_button));
+        let cancel_button = self.view.button(ids!(cancel_button));
 
         // Handle canceling/closing the modal.
         let cancel_clicked = cancel_button.clicked(actions);
@@ -317,11 +317,11 @@ impl WidgetMatchEvent for CreateDidModal {
             return;
         }
 
-        let username_input = self.view.text_input(id!(username_input));
-        let alias_input = self.view.text_input(id!(alias_input));
-        let server_input = self.view.text_input(id!(server_input));
-        let did_server_input = self.view.text_input(id!(did_server_input));
-        let status_label = self.view.label(id!(status_label));
+        let username_input = self.view.text_input(ids!(username_input));
+        let alias_input = self.view.text_input(ids!(alias_input));
+        let server_input = self.view.text_input(ids!(server_input));
+        let did_server_input = self.view.text_input(ids!(did_server_input));
+        let status_label = self.view.label(ids!(status_label));
 
         // Handle clicking the accept button.
         let mut needs_redraw = false;
@@ -401,7 +401,7 @@ impl WidgetMatchEvent for CreateDidModal {
                 || did_server_input.changed(actions).is_some()
             {
                 self.is_showing_error = false;
-                self.view.label(id!(status_label)).set_text(cx, "");
+                self.view.label(ids!(status_label)).set_text(cx, "");
                 self.state = CreateDidModalState::WaitingForUserInput;
                 accept_button.apply_over(cx, live!(
                     text: "Create DID",
@@ -477,8 +477,8 @@ impl WidgetMatchEvent for CreateDidModal {
 impl CreateDidModal {
     pub fn show(&mut self, cx: &mut Cx) {
         self.state = CreateDidModalState::WaitingForUserInput;
-        let accept_button = self.view.button(id!(accept_button));
-        let cancel_button = self.view.button(id!(cancel_button));
+        let accept_button = self.view.button(ids!(accept_button));
+        let cancel_button = self.view.button(ids!(cancel_button));
         accept_button.set_text(cx, "Create DID");
         cancel_button.set_text(cx, "Cancel");
         accept_button.reset_hover(cx);
@@ -488,11 +488,11 @@ impl CreateDidModal {
         accept_button.set_visible(cx, true);
         cancel_button.set_visible(cx, true);
         // TODO: return buttons to their default state/appearance
-        self.view.text_input(id!(username_input)).set_is_read_only(cx, false);
-        self.view.text_input(id!(alias_input)).set_is_read_only(cx, false);
-        self.view.text_input(id!(server_input)).set_is_read_only(cx, false);
-        self.view.text_input(id!(did_server_input)).set_is_read_only(cx, false);
-        self.view.label(id!(status_label)).set_text(cx, "");
+        self.view.text_input(ids!(username_input)).set_is_read_only(cx, false);
+        self.view.text_input(ids!(alias_input)).set_is_read_only(cx, false);
+        self.view.text_input(ids!(server_input)).set_is_read_only(cx, false);
+        self.view.text_input(ids!(did_server_input)).set_is_read_only(cx, false);
+        self.view.label(ids!(status_label)).set_text(cx, "");
         self.is_showing_error = false;
         self.view.redraw(cx);        
     }

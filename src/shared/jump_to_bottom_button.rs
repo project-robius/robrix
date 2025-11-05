@@ -119,7 +119,7 @@ impl JumpToBottomButton {
     pub fn update_visibility(&mut self, cx: &mut Cx, is_at_bottom: bool) {
         if is_at_bottom {
             self.visible = false;
-            self.view(id!(unread_message_badge)).set_visible(cx, false);
+            self.view(ids!(unread_message_badge)).set_visible(cx, false);
         } else {
             self.visible = true;
         }
@@ -133,17 +133,17 @@ impl JumpToBottomButton {
         match count {
             UnreadMessageCount::Unknown => {
                 self.visible = true;
-                self.view(id!(unread_message_badge)).set_visible(cx, true);
-                self.label(id!(unread_messages_count)).set_text(cx, "");
+                self.view(ids!(unread_message_badge)).set_visible(cx, true);
+                self.label(ids!(unread_messages_count)).set_text(cx, "");
             }
             UnreadMessageCount::Known(0) => {
                 self.visible = false;
-                self.view(id!(unread_message_badge)).set_visible(cx, false);
-                self.label(id!(unread_messages_count)).set_text(cx, "");
+                self.view(ids!(unread_message_badge)).set_visible(cx, false);
+                self.label(ids!(unread_messages_count)).set_text(cx, "");
             }
             UnreadMessageCount::Known(unread_message_count) => {
                 self.visible = true;
-                self.view(id!(unread_message_badge)).set_visible(cx, true);
+                self.view(ids!(unread_message_badge)).set_visible(cx, true);
                 let (border_size, plus_sign) = if unread_message_count > 99 {
                     (0.0, "+")
                 } else if unread_message_count > 9 {
@@ -151,11 +151,11 @@ impl JumpToBottomButton {
                 } else {
                     (2.0, "")
                 };
-                self.label(id!(unread_messages_count)).set_text(
+                self.label(ids!(unread_messages_count)).set_text(
                     cx,
                     &format!("{}{plus_sign}", std::cmp::min(unread_message_count, 99))
                 );
-                self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
+                self.view(ids!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
                     draw_bg: {
                         border_size: (border_size),
                     }
@@ -183,7 +183,7 @@ impl JumpToBottomButton {
         //       to check if the portallist has been scrolled than to just directly
         //       query the portallist's `at_end` state and set the visibility accordingly.
 
-        if self.button(id!(jump_to_bottom_button)).clicked(actions) {
+        if self.button(ids!(jump_to_bottom_button)).clicked(actions) {
             portal_list.smooth_scroll_to_end(
                 cx,
                 SCROLL_TO_BOTTOM_SPEED,

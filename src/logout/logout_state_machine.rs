@@ -89,9 +89,9 @@ use tokio::sync::{Mutex, Notify};
 use anyhow::{anyhow, Result};
 use makepad_widgets::{Cx, log};
 
+use crate::home::navigation_tab_bar::NavigationBarAction;
 use crate::persistence::delete_latest_user_id;
-use crate::settings::SettingsAction;
-use crate::sliding_sync::clean_app_state;
+use crate::sliding_sync::clear_app_state;
 use crate::{
     home::main_desktop_ui::MainDesktopUiAction,
     sliding_sync::{get_client, get_sync_service, shutdown_background_tasks, start_matrix_tokio},
@@ -395,9 +395,9 @@ impl LogoutStateMachine {
         ).await?;
         
         // All static resources (CLIENT, SYNC_SERVICE, etc.) are defined in the sliding_sync module,
-        // so the state machine delegates the cleanup operation to sliding_sync's clean_app_state function
+        // so the state machine delegates the cleanup operation to sliding_sync's clear_app_state function
         // rather than accessing these static variables directly from outside the module.
-        if let Err(e) = clean_app_state(&self.config).await {
+        if let Err(e) = clear_app_state(&self.config).await {
             let error = LogoutError::Unrecoverable(UnrecoverableError::PostPointOfNoReturnFailure(e.to_string()));
             self.transition_to(
                 LogoutState::Failed(error.clone()),
@@ -442,8 +442,9 @@ impl LogoutStateMachine {
             100
         ).await?;
 
-        // CloseSetting after logout
-        Cx::post_action(SettingsAction::CloseSettings);
+        // Close the settings screen after logout, since its content
+        // is specific to the currently-logged-in user's account.
+        Cx::post_action(NavigationBarAction::CloseSettings);
 
         // Reset logout in progress flag
         set_logout_in_progress(false);
