@@ -352,7 +352,7 @@ impl Widget for InviteScreen {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
                             let room_label = room_name_or_id(&info.room_name, &info.room_id);
-                            let msg = utils::stringify_join_leave_error(error, Some(room_label.as_str()), true, true);
+                            let msg = utils::stringify_join_leave_error(error, Some(&room_label), true, true);
                             enqueue_popup_notification(PopupItem { message: msg, kind: PopupKind::Error, auto_dismissal_duration: None });
                         }
                         continue;
@@ -399,8 +399,7 @@ impl Widget for InviteScreen {
         if !self.is_loaded {
             let mut restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
             let room_id = self.room_id.as_ref().map(|id| id.as_ref());
-            let room_name = RoomName::from(self.room_name.clone());
-            restore_status_view.set_content(cx, self.all_rooms_loaded, room_name, room_id);
+            restore_status_view.set_content(cx, self.all_rooms_loaded, self.room_name.clone().into(), room_id);
             return restore_status_view.draw(cx, scope);
         }
         let Some(info) = self.info.as_ref() else {

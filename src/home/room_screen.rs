@@ -34,7 +34,7 @@ use crate::{
     shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomName}
+    sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomName}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -491,7 +491,6 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-
             restore_status_view = <RestoreStatusView> {}
 
             // Widgets within this view will get shifted upwards when the on-screen keyboard is shown.
@@ -1078,8 +1077,7 @@ impl Widget for RoomScreen {
             // If the list is not filling the viewport, we need to back paginate the timeline
             // until we have enough events items to fill the viewport.
             if !tl_state.fully_paginated && !list.is_filling_viewport() {
-                let room_label = room_name_or_id(&self.room_name, room_id);
-                log!("Automatically paginating timeline to fill viewport for room \"{}\" ({})", room_label, room_id);
+                log!("Automatically paginating timeline to fill viewport for room \"{}\" ({})", self.room_name, room_id);
                 submit_async_request(MatrixRequest::PaginateRoomTimeline {
                     room_id: room_id.clone(),
                     num_events: 50,
@@ -1101,7 +1099,6 @@ impl RoomScreen {
         let curr_first_id = portal_list.first_id();
         let ui = self.widget_uid();
         let Some(tl) = self.tl_state.as_mut() else { return };
-        let room_label_cached = self.room_name.to_string();
 
         let mut done_loading = false;
         let mut should_continue_backwards_pagination = false;
@@ -1298,9 +1295,9 @@ impl RoomScreen {
                     }
                 }
                 TimelineUpdate::PaginationError { error, direction } => {
-                    error!("Pagination error ({direction}) in room \"{}\", {}: {error:?}", room_label_cached, tl.room_id);
+                    error!("Pagination error ({direction}) in room \"{}\", {}: {error:?}", self.room_name, tl.room_id);
                     enqueue_popup_notification(PopupItem {
-                        message: utils::stringify_pagination_error(&error, room_label_cached.as_str()),
+                        message: utils::stringify_pagination_error(&error, &self.room_name.to_string()),
                         auto_dismissal_duration: None,
                         kind: PopupKind::Error,
                     });
@@ -1919,7 +1916,6 @@ impl RoomScreen {
             // and search our locally-known timeline history for the replied-to message.
         }
         self.redraw(cx);
-
     }
 
     /// Shows the user profile sliding pane with the given avatar info.

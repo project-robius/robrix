@@ -7,11 +7,7 @@ use url::Url;
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, Cx, Event, ImageRef};
-use matrix_sdk::{
-    media::{MediaFormat, MediaThumbnailSettings},
-    ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId},
-    RoomDisplayName,
-};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}, RoomDisplayName};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
 use crate::{room::FetchedRoomAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
