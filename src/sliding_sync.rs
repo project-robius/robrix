@@ -22,7 +22,7 @@ use robius_open::Uri;
 use ruma::{events::tag::Tags, OwnedRoomOrAliasId};
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
+    sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
@@ -1547,130 +1547,24 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
         tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
     }).handle().clone();
 
-    // Create a channel to be used between UI thread(s) and the async worker thread.
-    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
-    REQUEST_SENDER.lock().unwrap().replace(sender);
-
-    let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
-    let rt = rt_handle.clone();
-
-    // Start a high-level async task that will start and monitor all other tasks.
-    let _monitor = rt_handle.spawn(async move {
-        // Eagerly build a Matrix Client in the background so that SSO Server starts earlier.
-        rt.spawn(async move {
-            match build_client(&Cli::default(), app_data_dir()).await {
-                Ok(client_and_session) => {
-                    DEFAULT_SSO_CLIENT.lock().unwrap()
-                        .get_or_insert(client_and_session);
-                }
-                Err(e) => error!("Error: could not create DEFAULT_SSO_CLIENT object: {e}"),
-            };
-            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
-            Cx::post_action(LoginAction::SsoPending(false));
-        });
-
-        // Spawn the async worker task that handles matrix requests.
-        let mut matrix_worker_task_handle = rt.spawn(matrix_worker_task(receiver, login_sender));
-
-        // Start the main async tasks that drive the Matrix client SDK.
-        // This returns JoinHandles for two async tasks:
-        // 1. One running the main SyncService, which includes the main RoomListService
-        // 2. One running the main SpaceService, which is used to populate the SpacesBar
-        let (mut room_list_service_task, mut space_service_task) = match
-            start_matrix_client_login_and_sync(login_receiver).await 
-        {
-            Ok(handles) => handles,
-            Err(e) => {
-                enqueue_popup_notification(PopupItem {
-                    message: format!("Please restart Robrix.\n\nFailed to start Matrix client or login and sync: {e}"),
-                    kind: PopupKind::Error,
-                    auto_dismissal_duration: None,
-                });
-                return;
+    // Proactively build a Matrix Client in the background so that the SSO Server
+    // can have a quicker start if needed (as it's rather slow to build this client).
+    rt_handle.spawn(async move {
+        match build_client(&Cli::default(), app_data_dir()).await {
+            Ok(client_and_session) => {
+                DEFAULT_SSO_CLIENT.lock().unwrap()
+                    .get_or_insert(client_and_session);
             }
+            Err(e) => error!("Error: could not create DEFAULT_SSO_CLIENT object: {e}"),
         };
-
-        // TODO: add select statements for sync_service_loop_task_handle and space_service_task_handle
-
-        #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
-        loop {
-            tokio::select! {
-                result = &mut room_list_service_task => {
-                    match result {
-                        Ok(Ok(())) => {
-                            error!("BUG: room list service loop task ended unexpectedly!");
-                        }
-                        Ok(Err(e)) => {
-                            error!("Error: room list service loop task ended:\n\t{e:?}");
-                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                status: e.to_string(),
-                            });
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("Room list service  error: {e}"),
-                                kind: PopupKind::Error,
-                                auto_dismissal_duration: None,
-                            });
-                        },
-                        Err(e) => {
-                            error!("BUG: failed to join room list service loop task: {e:?}");
-                        }
-                    }
-                    break;
-                }
-                result = &mut space_service_task => {
-                    match result {
-                        Ok(Ok(())) => {
-                            error!("BUG: space service loop task ended unexpectedly!");
-                        }
-                        Ok(Err(e)) => {
-                            error!("Error: space service loop task ended:\n\t{e:?}");
-                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                status: e.to_string(),
-                            });
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("Space service error: {e}"),
-                                kind: PopupKind::Error,
-                                auto_dismissal_duration: None,
-                            });
-                        },
-                        Err(e) => {
-                            error!("BUG: failed to join space service loop task: {e:?}");
-                        }
-                    }
-                    break;
-                }
-                result = &mut matrix_worker_task_handle => {
-                    match result {
-                        Ok(Ok(())) => {
-                            // Check if this is due to logout
-                            if is_logout_in_progress() {
-                                log!("matrix worker task ended due to logout");
-                            } else {
-                                error!("BUG: matrix worker task ended unexpectedly!");
-                            }
-                        }
-                        Ok(Err(e)) => {
-                            // Check if this is due to logout
-                            if is_logout_in_progress() {
-                                log!("matrix worker task ended with error due to logout: {e:?}");
-                            } else {
-                                error!("Error: matrix worker task ended:\n\t{e:?}");
-                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: e.to_string(),
-                                });
-                                enqueue_popup_notification(PopupItem { message: format!("Rooms list update error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
-
-                            }
-                        },
-                        Err(e) => {
-                            error!("BUG: failed to join matrix worker task: {e:?}");
-                        }
-                    }
-                    break;
-                }
-            }
-        }
+        DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+        Cx::post_action(LoginAction::SsoPending(false));
     });
+
+    let rt = rt_handle.clone();
+    // Spawn the main async task that drives the Matrix client SDK, which itself will
+    // start and monitor other related background tasks.
+    rt_handle.spawn(start_matrix_client_login_and_sync(rt));
 
     Ok(rt_handle)
 }
@@ -1878,16 +1772,18 @@ impl RoomListServiceRoomInfo {
 ///
 /// After starting the sync service, this also starts the main room list service loop
 /// and the main space service loop.
-///
-/// Returns a tuple of two JoinHandles for each of those two tasks:
-/// 1. The main room list service loop task.
-/// 2. The main space service loop task.
-async fn start_matrix_client_login_and_sync(
-    mut login_receiver: Receiver<LoginRequest>,
-) -> Result<(
-    JoinHandle<Result<()>>,
-    JoinHandle<Result<()>>,
-)> {
+async fn start_matrix_client_login_and_sync(rt: Handle) {
+    // Create a channel for sending requests from the main UI thread to a background worker task.
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
+    REQUEST_SENDER.lock().unwrap().replace(sender);
+
+    let (login_sender, mut login_receiver) = tokio::sync::mpsc::channel(1);
+
+    // Spawn the async worker task that handles matrix requests.
+    // We must do this now such that the matrix worker task can listen for incoming login requests
+    // from the UI, and forward them to this task (via the login_sender --> login_receiver).
+    let mut matrix_worker_task_handle = rt.spawn(matrix_worker_task(receiver, login_sender));
+
     let most_recent_user_id = persistence::most_recent_user_id();
     log!("Most recent user ID: {most_recent_user_id:?}");
     let cli_parse_result = Cli::try_parse();
@@ -1970,7 +1866,12 @@ async fn start_matrix_client_login_and_sync(
                     },
                     None => {
                         error!("BUG: login_receiver hung up unexpectedly");
-                        return Err(anyhow::anyhow!("BUG: login_receiver hung up unexpectedly"));
+                        let err = format!("Please restart Robrix.\n\nUnable to listen for login requests.");
+                        Cx::post_action(LoginAction::LoginFailure(err.clone()));
+                        enqueue_rooms_list_update(RoomsListUpdate::Status {
+                            status: err,
+                        });
+                        return;
                     }
                 }
             }
@@ -2000,10 +1901,24 @@ async fn start_matrix_client_login_and_sync(
     // Listen for updates to the ignored user list.
     handle_ignore_user_list_subscriber(client.clone());
 
-    let sync_service = SyncService::builder(client.clone())
+    let sync_service = match SyncService::builder(client.clone())
         .with_offline_mode()
         .build()
-        .await?;
+        .await
+    {
+        Ok(ss) => ss,
+        Err(e) => {
+            error!("BUG: failed to create SyncService: {e:?}");
+            let err = format!("Please restart Robrix.\n\nFailed to create Matrix sync service: {e}.");
+            enqueue_popup_notification(PopupItem {
+                message: err.clone(),
+                auto_dismissal_duration: None,
+                kind: PopupKind::Error,
+            });
+            enqueue_rooms_list_update(RoomsListUpdate::Status { status: err });
+            return;
+        }
+    };
 
     // Attempt to load the previously-saved app state.
     handle_load_app_state(logged_in_user_id.to_owned());
@@ -2016,11 +1931,92 @@ async fn start_matrix_client_login_and_sync(
         error!("BUG: unexpectedly replaced an existing sync service when initializing the matrix client.");
     }
 
-    let rt = Handle::current();
-    let room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
-    let space_service_task = rt.spawn(space_service_loop(SpaceService::new(client)));
+    let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
+    let mut space_service_task = rt.spawn(space_service_loop(SpaceService::new(client)));
 
-    Ok((room_list_service_task, space_service_task))
+    // Now, this task becomes an infinite loop that monitors the state of the
+    // three core matrix-related background tasks that we just spawned above.
+    #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
+    loop {
+        tokio::select! {
+            result = &mut matrix_worker_task_handle => {
+                match result {
+                    Ok(Ok(())) => {
+                        // Check if this is due to logout
+                        if is_logout_in_progress() {
+                            log!("matrix worker task ended due to logout");
+                        } else {
+                            error!("BUG: matrix worker task ended unexpectedly!");
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        // Check if this is due to logout
+                        if is_logout_in_progress() {
+                            log!("matrix worker task ended with error due to logout: {e:?}");
+                        } else {
+                            error!("Error: matrix worker task ended:\n\t{e:?}");
+                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                status: e.to_string(),
+                            });
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Rooms list update error: {e}"),
+                                kind: PopupKind::Error,
+                                auto_dismissal_duration: None,
+                            });
+                        }
+                    },
+                    Err(e) => {
+                        error!("BUG: failed to join matrix worker task: {e:?}");
+                    }
+                }
+                break;
+            }
+            result = &mut room_list_service_task => {
+                match result {
+                    Ok(Ok(())) => {
+                        error!("BUG: room list service loop task ended unexpectedly!");
+                    }
+                    Ok(Err(e)) => {
+                        error!("Error: room list service loop task ended:\n\t{e:?}");
+                        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                            status: e.to_string(),
+                        });
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Room list service  error: {e}"),
+                            kind: PopupKind::Error,
+                            auto_dismissal_duration: None,
+                        });
+                    },
+                    Err(e) => {
+                        error!("BUG: failed to join room list service loop task: {e:?}");
+                    }
+                }
+                break;
+            }
+            result = &mut space_service_task => {
+                match result {
+                    Ok(Ok(())) => {
+                        error!("BUG: space service loop task ended unexpectedly!");
+                    }
+                    Ok(Err(e)) => {
+                        error!("Error: space service loop task ended:\n\t{e:?}");
+                        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                            status: e.to_string(),
+                        });
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Space service error: {e}"),
+                            kind: PopupKind::Error,
+                            auto_dismissal_duration: None,
+                        });
+                    },
+                    Err(e) => {
+                        error!("BUG: failed to join space service loop task: {e:?}");
+                    }
+                }
+                break;
+            }
+        }
+    }
 }
 
 
