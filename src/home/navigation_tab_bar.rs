@@ -53,6 +53,7 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::verification_badge::*;
     use crate::shared::avatar::*;
+    use crate::shared::icon_button::*;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
@@ -187,6 +188,19 @@ live_design! {
         animator: { active = { default: on } }
     }
 
+    ToggleSpacesBarButton = <RobrixIconButton> {
+        padding: 12,
+        spacing: 0,
+        draw_bg: {
+            color: (COLOR_SECONDARY)
+        }
+        draw_icon: {
+            svg_file: (ICON_SQUARES)
+            color: (COLOR_NAVIGATION_TAB_FG)
+        }
+        icon_walk: {width: 45, height: 45, margin: {right: -2} }
+    }
+
     SettingsButton = <NavigationTabButton> {
         draw_icon: { svg_file: (ICON_SETTINGS) }
     }
@@ -236,12 +250,9 @@ live_design! {
 
             <Separator> {}
 
-            <Filler> {}
-
-            // TODO: SpacesBar goes here, which should be a vertically-scrollable PortalList
-            //       in this case, and a show/hidable horizontally-scrollable one in Mobile mode.
-            
-            <Filler> {}
+            <CachedWidget> {
+                root_spaces_bar = <SpacesBar> {}
+            }
 
             <Separator> {}
             
@@ -268,6 +279,8 @@ live_design! {
             <CachedWidget> {
                 add_room_button = <AddRoomButton> {}
             }
+
+            toggle_spaces_bar
 
             <CachedWidget> {
                 settings_button = <SettingsButton> {}

@@ -2420,7 +2420,7 @@ async fn add_new_room(
             let invite_details = new_room.room.invite_details().await.ok();
             let latest_event = if let Some(latest_event) = new_room.room.latest_event() {
                 EventTimelineItem::from_latest_event(
-                    room_list_service.client().clone(),
+                    room_list_service.client(),
                     &new_room.room_id,
                     latest_event,
                 ).await

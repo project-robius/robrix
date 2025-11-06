@@ -45,6 +45,148 @@ live_design! {
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
 
 
+    SpacesBarEntry = {{SpacesBarEntry}}<RoundedView> {
+        width: (NAVIGATION_TAB_BAR_SIZE),
+        height: (NAVIGATION_TAB_BAR_SIZE),
+        flow: Down
+        padding: 5,
+        margin: 3,
+        align: {x: 0.5, y: 0.5}
+        cursor: Hand
+
+        show_bg: true
+        draw_bg: {
+            color: (COLOR_NAVIGATION_TAB_BG)
+            color_hover: (COLOR_NAVIGATION_TAB_BG_HOVER)
+            color_active: (COLOR_NAVIGATION_TAB_BG_ACTIVE)
+
+            border_size: 0.0
+            border_color: #0000
+            uniform inset: vec4(0.0, 0.0, 0.0, 0.0)
+            border_radius: 4.0
+
+            fn get_color(self) -> vec4 {
+                return mix(
+                    mix(
+                        self.color,
+                        self.color_hover,
+                        self.hover
+                    ),
+                    self.color_active,
+                    self.active
+                )
+            }
+
+            fn get_border_color(self) -> vec4 {
+                return self.border_color
+            }
+
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                sdf.box(
+                    self.inset.x + self.border_size,
+                    self.inset.y + self.border_size,
+                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
+                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
+                    max(1.0, self.border_radius)
+                )
+                sdf.fill_keep(self.get_color())
+                if self.border_size > 0.0 {
+                    sdf.stroke(self.get_border_color(), self.border_size)
+                }
+                return sdf.result;
+            }
+        }
+
+        avatar = <Avatar> {
+            width: 45, height: 45
+            // If no avatar picture, use white text on a dark background.
+            text_view = {
+                draw_bg: {
+                    background_color: (COLOR_FG_DISABLED),
+                }
+                text = { draw_text: {
+                    text_style: { font_size: 16.0 },
+                    color: (COLOR_PRIMARY),
+                } }
+            }
+        }
+
+        space_name = <Label> {
+            width: Fill, height: Fit
+            flow: Right, // do not wrap
+            padding: 0,
+            draw_text: {
+                color: (COLOR_NAVIGATION_TAB_FG)
+                color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
+                color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
+
+                // text_style: <THEME_FONT_BOLD>{font_size: 9}
+                text_style: <REGULAR_TEXT>{font_size: 9}
+                wrap: Ellipsis,
+
+                fn get_color(self) -> vec4 {
+                    return mix(
+                        mix(
+                            self.color,
+                            self.color_hover,
+                            self.hover
+                        ),
+                        self.color_active,
+                        self.active
+                    )
+                }
+            }
+        }
+
+        animator: {
+            hover = {
+                default: off
+                off = {
+                    from: {all: Forward {duration: 0.15}}
+                    apply: {
+                        draw_bg: {down: [{time: 0.0, value: 0.0}], hover: 0.0}
+                        space_name = { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 0.0} }
+                    }
+                }
+                on = {
+                    from: {all: Snap}
+                    apply: {
+                        draw_bg: {down: [{time: 0.0, value: 0.0}], hover: 1.0}
+                        space_name = { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 1.0} }
+                    }
+                }
+                down = {
+                    from: {all: Forward {duration: 0.2}}
+                    apply: {
+                        draw_bg: {down: [{time: 0.0, value: 1.0}], hover: 1.0,}
+                        space_name = { draw_text: {down: [{time: 0.0, value: 1.0}], hover: 1.0,} }
+                    }
+                }
+            }
+            active = {
+                default: off
+                off = {
+                    from: {all: Forward {duration: 0.2}}
+                    apply: {
+                        draw_bg: {active: 0.0}
+                        draw_icon: {active: 0.0}
+                        space_name = { draw_text: {active: 0.0} }
+                    }
+                }
+                on = {
+                    from: {all: Forward {duration: 0.0}}
+                    apply: {
+                        draw_bg: {active: 1.0}
+                        draw_icon: {active: 1.0}
+                        space_name = { draw_text: {active: 1.0} }
+                    }
+                }
+            }
+        }
+    }
+
+
     SpaceIcon = {{SpaceIcon}}<RoundedView> {
         width: Fill,
         height: (NAVIGATION_TAB_BAR_SIZE - 8)
@@ -308,6 +450,90 @@ impl SpaceRadioButtonRef {
 }
 
 
+pub enum SpacesBarAction {
+    ButtonClicked { space_id: OwnedRoomId },
+    ButtonSecondaryClicked { space_id: OwnedRoomId },
+}
+
+
+#[derive(Live, LiveHook, Widget)]
+pub struct SpacesBarEntry {
+    #[deref] view: View,
+    #[animator] animator: Animator,
+
+    #[live] is_selected: bool,
+    #[rust] space_id: Option<OwnedRoomId>,
+}
+
+impl Widget for SpacesBarEntry {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let uid = self.widget_uid();
+        self.animator_handle_event(cx, event);
+
+        match event.hits(cx, self.draw_bg.area()) {
+            Hit::FingerHoverIn(_) => {
+                self.animator_play(cx, ids!(hover.on));
+            }
+            Hit::FingerHoverOut(_) => {
+                self.animator_play(cx, ids!(hover.off));
+            }
+            Hit::FingerDown(fe) => {
+                if self.animator_in_state(cx, ids!(active.off)) {
+                    self.animator_play(cx, ids!(hover.down));
+                }
+                if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
+                    if let Some(space_id) = self.space_id {
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &scope.path,
+                            SpacesBarAction::ButtonSecondaryClicked { space_id },
+                        );
+                    }
+                }
+            }
+            Hit::FingerLongPress(_lp) => {
+                if let Some(space_id) = self.space_id {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        SpacesBarAction::ButtonSecondaryClicked { space_id },
+                    );
+                }
+            }
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                self.animator_play(cx, ids!(hover.on));
+                if self.animator_in_state(cx, ids!(active.off)) {
+                    self.animator_play(cx, ids!(active.on));
+                    if let Some(space_id) = self.space_id {
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &scope.path,
+                            SpacesBarAction::ButtonClicked { space_id },
+                        );
+                    }
+                    self.is_selected = true;
+                } else {
+                    self.animator_play(cx, ids!(active.off));
+                }
+            }
+            Hit::FingerMove(_fe) => { }
+            _ => {}
+        }
+
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                if let Some(SpacesBarAction::ButtonClicked { space_id }) = action.downcast_ref() {
+                    // Ensure that only one SpacesBarEntry is selected at once.
+                    self.is_selected = self.space_id.is_some_and(|id| id == space_id);
+                }
+            }
+        }
+    }
+    
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
 
 pub struct JoinedSpaceInfo {
     /// The ID of the space.
@@ -452,33 +678,6 @@ impl Widget for SpacesBar {
                     continue;
                 }
             }
-
-            // Handle one of the radio buttons being clicked (selected).
-            let radio_button_set = self.view.radio_button_set(ids_array!(
-                home_button,
-                // add_room_button,
-                settings_button,
-            ));
-            match radio_button_set.selected(cx, actions) {
-                Some(0) => cx.action(NavigationBarAction::GoToHome),
-                // Some(1) => cx.action(NavigationBarAction::GoToAddRoom),
-                Some(1) => cx.action(NavigationBarAction::OpenSettings),
-                _ => { }
-            }
-
-            for action in actions {
-                // If another widget programmatically selected a new tab,
-                // update our radio buttons accordingly.
-                if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
-                    match tab {
-                        SelectedTab::Home     => self.view.radio_button(ids!(home_button)).select(cx, scope),
-                        SelectedTab::AddRoom  => {
-                            // self.view.radio_button(ids!(add_room_button)).select(cx, scope),
-                        }
-                        SelectedTab::Settings => self.view.radio_button(ids!(settings_button)).select(cx, scope),
-                    }
-                }
-            }
         }
     }
 
@@ -499,7 +698,7 @@ impl Widget for SpacesBar {
                             if self.all_joined_spaces.is_empty() {
                                 "Joined spaces\nwill show here."
                             } else {
-                                "No matching\nspaces found.",
+                                "No matching\nspaces found."
                             }
                         );
                         item
