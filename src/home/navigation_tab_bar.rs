@@ -54,15 +54,6 @@ live_design! {
     use crate::shared::verification_badge::*;
     use crate::shared::avatar::*;
 
-    NAVIGATION_TAB_BAR_SIZE = 68
-
-    COLOR_NAVIGATION_TAB_FG = #1C274C
-    COLOR_NAVIGATION_TAB_FG_HOVER = #1C274C
-    COLOR_NAVIGATION_TAB_FG_ACTIVE = #1C274C
-    COLOR_NAVIGATION_TAB_BG        = (COLOR_SECONDARY)
-    COLOR_NAVIGATION_TAB_BG_HOVER  = (COLOR_SECONDARY * 0.85)
-    COLOR_NAVIGATION_TAB_BG_ACTIVE = (COLOR_SECONDARY * 0.5)
-
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
 

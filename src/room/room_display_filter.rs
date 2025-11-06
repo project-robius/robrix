@@ -6,6 +6,7 @@ use matrix_sdk::ruma::{
     events::tag::{TagName, Tags},
     OwnedRoomAliasId, RoomAliasId, RoomId,
 };
+use matrix_sdk_ui::spaces::SpaceRoom;
 
 use crate::home::rooms_list::{InvitedRoomInfo, JoinedRoomInfo};
 
@@ -88,6 +89,40 @@ impl FilterableRoom for InvitedRoomInfo {
 
     fn is_direct(&self) -> bool {
         self.is_direct
+    }
+}
+
+impl FilterableRoom for SpaceRoom {
+    fn room_id(&self) -> &RoomId {
+        &self.room_id
+    }
+
+    fn room_name(&self) -> Cow<'_, str> {
+        self.name.as_deref().map(Into::into).unwrap_or_default()
+    }
+
+    fn unread_mentions(&self) -> u64 {
+        0 // TODO: calculate unread mentions for spaces
+    }
+
+    fn unread_messages(&self) -> u64 {
+        0 // TODO: calculate unread messages for spaces
+    }
+
+    fn canonical_alias(&self) -> Option<Cow<'_, RoomAliasId>> {
+        self.canonical_alias.as_deref().map(Cow::Borrowed)
+    }
+
+    fn alt_aliases(&self) -> Cow<'_, [OwnedRoomAliasId]> {
+        [].into()
+    }
+
+    fn tags(&self) -> &Tags {
+        &EMPTY_TAGS
+    }
+
+    fn is_direct(&self) -> bool {
+        self.is_direct.unwrap_or(false)
     }
 }
 

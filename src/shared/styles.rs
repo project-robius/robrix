@@ -123,6 +123,16 @@ live_design! {
 
     pub COLOR_LINK_HOVER = #21B070
 
+
+    pub NAVIGATION_TAB_BAR_SIZE = 68
+    pub COLOR_NAVIGATION_TAB_FG        = (COLOR_TEXT)
+    pub COLOR_NAVIGATION_TAB_FG_HOVER  = (COLOR_TEXT)
+    pub COLOR_NAVIGATION_TAB_FG_ACTIVE = (COLOR_TEXT)
+    pub COLOR_NAVIGATION_TAB_BG        = (COLOR_SECONDARY)
+    pub COLOR_NAVIGATION_TAB_BG_HOVER  = (COLOR_SECONDARY * 0.85)
+    pub COLOR_NAVIGATION_TAB_BG_ACTIVE = (COLOR_SECONDARY * 0.5)
+
+    
     // An icon that can be rotated at a custom angle.
     pub IconRotated = <Icon> {
         draw_icon: {
