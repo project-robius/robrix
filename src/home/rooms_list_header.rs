@@ -133,12 +133,12 @@ impl Widget for RoomsListHeader {
     }
 }
 
-/// An enum that represents the possible actions that can be sent to the `RoomsListHeader`.
+/// Actions that can be handled by the `RoomsListHeader`.
 #[derive(Debug)]
 pub enum RoomsListHeaderAction {
-    /// Action to set the sync status of the rooms list header.
-    /// This will show or hide the loading spinner based on the boolean value.
+    /// An action received by the RoomsListHeader that will show or hide
+    /// its sync status indicator (and loading spinner) based on the given boolean.
     SetSyncStatus(bool),
-    /// The sync service state has changed.
+    /// An action received by the RoomsListHeader indicating the sync service state has changed.
     StateUpdate(State),
 }

@@ -760,7 +760,7 @@ impl Widget for RoomScreen {
                     self.room_id = None;
                     self.set_displayed_room(cx, same_room_id, self.room_name.clone());
                 } else {
-                    self.all_rooms_loaded = rooms_list_ref.all_known_rooms_loaded();
+                    self.all_rooms_loaded = rooms_list_ref.all_rooms_loaded();
                     return;
                 }
             }
