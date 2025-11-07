@@ -10,15 +10,16 @@ use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
-        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_image_viewer_detail::RoomImageViewerDetailWidgetRefExt, room_image_viewer_footer::RoomImageViewerFooterWidgetRefExt, room_screen::{MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{clear_timeline_states, MessageAction}, rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{callout_tooltip::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::callout_tooltip::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, image_viewer::{ImageViewerAction, ImageViewerWidgetRefExt, LoadState, image_viewer_error_to_string}}, sliding_sync::current_user_id, utils::{
-        OwnedRoomIdRon, room_name_or_id
+    }, sliding_sync::current_user_id, utils::{
+        room_name_or_id,
+        OwnedRoomIdRon,
     }, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
@@ -39,9 +40,7 @@ live_design! {
     use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
-    use crate::shared::image_viewer::ImageViewer;
-    use crate::home::room_image_viewer_detail::RoomImageViewerDetail;
-    use crate::home::room_image_viewer_footer::RoomImageViewerFooter;
+    use crate::home::room_image_viewer::RoomImageViewer;
     use link::tsp_link::TspVerificationModal;
 
 
@@ -98,32 +97,9 @@ live_design! {
                             login_screen = <LoginScreen> {}
                         }
 
-                        image_viewer = <Modal> {
-                            content: {
-                                width: Fill, height: Fill,
-                                flow: Down
-                                show_bg: true
-                                draw_bg: {
-                                    color: #000
-                                }
+                        <RoomImageViewer> { }
 
-                                <View> {
-                                    width: Fill, height: Fill,
-                                    flow: Overlay
-                                    image_viewer_inner = <ImageViewer> {
-                                        align: {x: 0.5, y: 0.5}
-                                        padding: {bottom: 0}
-                                    }
-                                    image_detail = <RoomImageViewerDetail> {
-                                        width: Fill, height: Fill,
-                                    }
-                                }
-                                
-                                footer = <RoomImageViewerFooter> {}
-                            }
-                        }
-
-                        popup_list = <PopupList> {}
+                        <PopupList> {}
                         
                         // Context menus should be shown in front of other UI elements,
                         // but behind verification modals.
@@ -415,10 +391,6 @@ impl MatchEvent for App {
                 _ => {}
             }
 
-            if self.handle_image_viewer_action(cx, action) {
-                continue;
-            }
-
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
             // Therefore, we cannot use `as_widget_action().cast()` to match them.
             //
@@ -512,6 +484,7 @@ impl AppMain for App {
                 }
             }
         }
+        
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
@@ -618,53 +591,6 @@ impl App {
         // Close a previously/currently-open room if specified.
         if let Some(closure) = close_room_closure_opt {
             closure(cx);
-        }
-    }
-
-    /// Handles actions for the image viewer.
-    /// Returns a boolean, is true continues the actions for loop.
-    fn handle_image_viewer_action(&mut self, cx: &mut Cx, action: &Action) -> bool {
-
-        match action.downcast_ref() {
-            Some(ImageViewerAction::Show(load_state)) => {
-                match load_state {
-                    LoadState::Loading(texture, image_size) => {
-                        self.ui.modal(ids!(image_viewer)).open(cx);
-                        self.ui.image_viewer(ids!(image_viewer_inner)).reset(cx);
-                        self.ui.room_image_viewer_footer(ids!(footer)).show_loading(cx);
-                        self.ui.view(ids!(footer)).apply_over(cx, live!{
-                            height: 50
-                        });
-                        self.ui.image_viewer(ids!(image_viewer_inner)).display_using_texture(cx, texture.as_ref().clone(), image_size);
-                    }
-                    LoadState::Loaded(image_bytes) => {
-                        self.ui.modal(ids!(image_viewer)).open(cx);
-                        self.ui.image_viewer(ids!(image_viewer_inner)).display_using_background_thread(cx, image_bytes);
-                    }
-                    LoadState::FinishedBackgroundDecoding => {
-                        self.ui.room_image_viewer_footer(ids!(footer)).hide(cx);
-                        // Collapse the footer
-                        self.ui.view(ids!(footer)).apply_over(cx, live!{
-                            height: 0
-                        });
-                    }
-                    LoadState::Error(error) => {
-                        if self.ui.modal(ids!(image_viewer)).is_open() {
-                            self.ui.room_image_viewer_footer(ids!(footer)).show_error(cx, image_viewer_error_to_string(error));
-                            self.ui.view(ids!(footer)).apply_over(cx, live!{
-                                height: 50
-                            });
-                        }
-                    }
-                }
-                true
-            }
-            Some(ImageViewerAction::Hide) => {
-                self.ui.modal(ids!(image_viewer)).close(cx);
-                self.ui.room_image_viewer_detail(ids!(image_detail)).reset_state(cx);
-                true
-            }
-            _ => false
         }
     }
 }

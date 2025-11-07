@@ -3,16 +3,18 @@
 
 use std::{borrow::Cow, fmt::Display, ops::{Deref, DerefMut}, str::{Chars, FromStr}, time::SystemTime};
 use url::Url;
+
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::{ImageBuffer, ImageError}, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, Cx, Event, ImageRef};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
-use crate::{room::FetchedRoomAvatar, sliding_sync::{MatrixRequest, submit_async_request}};
+use crate::{room::FetchedRoomAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
 
 /// The scheme for GEO links, used for location messages in Matrix.
 pub const GEO_URI_SCHEME: &str = "geo:";
+
 
 /// A wrapper type that implements the `Debug` trait for non-`Debug` types.
 pub struct DebugWrapper<T>(T);
