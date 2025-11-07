@@ -44,6 +44,36 @@ live_design! {
         }
     }
 
+    // A wrapper view around the SpacesBar that lets us show/hide it via animation.
+    SpacesBarWrapper = {{SpacesBarWrapper}} {
+        width: Fill,
+        height: (NAVIGATION_TAB_BAR_SIZE)
+        show_bg: true
+        draw_bg: {
+            color: #0f0 // (COLOR_PRIMARY_DARKER * 0.85)
+        }
+
+        <CachedWidget> {
+            root_spaces_bar = <SpacesBar> {}
+        }
+
+        animator: {
+            spaces_bar_animator = {
+                default: hide,
+                show = {
+                    redraw: true,
+                    from: { all: Forward { duration: (SPACES_BAR_ANIMATION_DURATION_SECS) } }
+                    apply: { height: (NAVIGATION_TAB_BAR_SIZE) }
+                }
+                hide = {
+                    redraw: true,
+                    from: { all: Forward { duration: (SPACES_BAR_ANIMATION_DURATION_SECS) } }
+                    apply: { height: 0 }
+                }
+            }
+        }
+    }
+
     // The home screen widget contains the main content:
     // rooms list, room screens, and the settings screen as an overlay.
     // It adapts to both desktop and mobile layouts.
@@ -171,17 +201,14 @@ live_design! {
                                 }
                             }
 
-                            spaces_bar_wrapper = <View> {
-                                width: Fill,
-                                height: (NAVIGATION_TAB_BAR_SIZE)
-                                show_bg: true
-                                draw_bg: {
-                                    color: #0f0 // (COLOR_PRIMARY_DARKER * 0.85)
-                                }
-
-                                <CachedWidget> {
-                                    root_spaces_bar = <SpacesBar> {}
-                                }
+                            // Show the SpacesBar right above the navigation tab bar.
+                            // We wrap it in the SpacesBarWrapper in order to animate it in or out,
+                            // and wrap *that* in a CachedWidget in order to maintain its shown/hidden state
+                            // across AdaptiveView transitions between Mobile view mode and Desktop view mode.
+                            // 
+                            // ... Then we wrap *that* in a ... <https://www.youtube.com/watch?v=evUWersr7pc>
+                            <CachedWidget> {
+                                spaces_bar_wrapper = <SpacesBarWrapper> {}
                             }
 
                             // At the bottom of the root view, show the navigation tab bar horizontally.
@@ -214,21 +241,40 @@ live_design! {
                 }
             }
         }
+    }
+}
 
-        animator: {
-            spaces_bar_animator = {
-                default: hide,
-                show = {
-                    redraw: true,
-                    from: { all: Forward { duration: (SPACES_BAR_ANIMATION_DURATION_SECS) } }
-                    apply: { spaces_bar_wrapper = { height: (NAVIGATION_TAB_BAR_SIZE) } }
-                }
-                hide = {
-                    redraw: true,
-                    from: { all: Forward { duration: (SPACES_BAR_ANIMATION_DURATION_SECS) } }
-                    apply: { spaces_bar_wrapper = { height: 0 } }
-                }
-            }
+
+/// A simple wrapper around the SpacesBar that allows us to animate showing or hiding it.
+#[derive(Live, LiveHook, Widget)]
+pub struct SpacesBarWrapper {
+    #[deref] view: View,
+    #[animator] animator: Animator,
+}
+
+impl Widget for SpacesBarWrapper {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.animator_handle_event(cx, event).must_redraw() {
+            self.redraw(cx);
+        }
+        self.view.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl SpacesBarWrapperRef {
+    /// Shows or hides the spaces bar by animating it in or out.
+    fn show_or_hide(&self, cx: &mut Cx, show: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        if show {
+            log!("Showing spaces bar...");
+            inner.animator_play(cx, ids!(spaces_bar_animator.show));
+        } else {
+            log!("Hiding spaces bar...");
+            inner.animator_play(cx, ids!(spaces_bar_animator.hide));
         }
     }
 }
@@ -237,7 +283,6 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct HomeScreen {
     #[deref] view: View,
-    #[animator] animator: Animator,
 
     #[rust] selection: SelectedTab,
     #[rust] previous_selection: SelectedTab,
@@ -246,10 +291,6 @@ pub struct HomeScreen {
 
 impl Widget for HomeScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if self.animator_handle_event(cx, event).must_redraw() {
-            self.redraw(cx);
-        }
-
         if let Event::Actions(actions) = event {
             for action in actions {
                 match action.downcast_ref() {
@@ -291,16 +332,9 @@ impl Widget for HomeScreen {
                         self.view.redraw(cx);
                     }
                     Some(NavigationBarAction::ToggleSpacesBar) => {
-                        if self.is_spaces_bar_shown {
-                            log!("Hiding spaces bar...");
-                            self.animator_play(cx, ids!(spaces_bar_animator.hide));
-                            self.view.view(ids!(spaces_bar_wrapper)).set_visible(cx, false);
-                        } else {
-                            log!("Showing spaces bar...");
-                            self.view.view(ids!(spaces_bar_wrapper)).set_visible(cx, true);
-                            self.animator_play(cx, ids!(spaces_bar_animator.show));
-                        }
                         self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
+                        self.view.spaces_bar_wrapper(ids!(spaces_bar_wrapper))
+                            .show_or_hide(cx, self.is_spaces_bar_shown);
                     }
                     // We're the ones who emitted this action, so we don't need to handle it again.
                     Some(NavigationBarAction::TabSelected(_))
@@ -309,7 +343,7 @@ impl Widget for HomeScreen {
             }
         }
 
-        self.view.handle_event(cx, event, scope);  
+        self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -318,8 +352,6 @@ impl Widget for HomeScreen {
         // the PageFlip widget will have been reset to its default,
         // so we must re-set it to the correct page based on `self.selection`.
         self.update_active_page_from_selection(cx);
-        // Same goes for whether the spaces bar should be shown.
-        self.view.view(ids!(spaces_bar_wrapper)).set_visible(cx, self.is_spaces_bar_shown);
 
         self.view.draw_walk(cx, scope, walk)
     }
