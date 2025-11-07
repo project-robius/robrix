@@ -454,6 +454,7 @@ impl Widget for NavigationTabBar {
 
             if self.view.button(ids!(toggle_spaces_bar_button)).clicked(actions) {
                 self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
+                log!("Clicked toggle_spaces_bar_button, transitiong to {}...", if self.is_spaces_bar_shown {"shown"} else {"hidden"});
                 cx.action(NavigationBarAction::ToggleSpacesBar);
             }
 

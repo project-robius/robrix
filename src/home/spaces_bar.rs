@@ -29,6 +29,9 @@ live_design! {
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
 
+    // The duration of the animation when showing/hiding the SpacesBar (in Mobile view mode only).
+    pub SPACES_BAR_ANIMATION_DURATION_SECS = 0.3
+
     // An entry in the list of all spaces, which shown the Space's avatar and name.
     SpacesBarEntry = {{SpacesBarEntry}}<RoundedView> {
         width: (NAVIGATION_TAB_BAR_SIZE - 5),
@@ -221,37 +224,33 @@ live_design! {
 
     pub SpacesBar = {{SpacesBar}}<AdaptiveView> {
         Desktop = {
-            flow: Down,
-            align: {x: 0.5}
+            align: {x: 0.5, y: 0.5}
             padding: 0,
             width: (NAVIGATION_TAB_BAR_SIZE), 
             height: Fill
 
-            show_bg: true
-            draw_bg: {
-                color: (COLOR_SECONDARY)
-            }
+            show_bg: false
 
             <CachedWidget> {
                 spaces_list = <SpacesList> {
+                    // Note: this doesn't work properly, so this is re-overwritten
+                    // in the `SpacesBar::draw_walk()` function.
                     flow: Down,
                 }
             }
         }
 
         Mobile = {
-            flow: Right
             align: {x: 0.5, y: 0.5}
             width: Fill,
             height: (NAVIGATION_TAB_BAR_SIZE)
 
-            show_bg: true
-            draw_bg: {
-                color: (COLOR_SECONDARY)
-            }
+            show_bg: false
 
             <CachedWidget> {
                 spaces_list = <SpacesList> {
+                    // Note: this doesn't work properly, so this is re-overwritten
+                    // in the `SpacesBar::draw_walk()` function.
                     flow: Right,
                 }
             }
@@ -513,6 +512,18 @@ impl Widget for SpacesBar {
             // We only care about drawing the portal list.
             let portal_list_ref = widget_to_draw.as_portal_list();
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
+
+            // AdaptiveView + CachedWidget does not properly handle DSL-level style overrides,
+            // so we must manually apply the different style choices here when drawing it.
+            if cx.display_context.is_desktop() {
+                list.apply_over(cx, live! {
+                    flow: Down,
+                });
+            } else {
+                list.apply_over(cx, live! {
+                    flow: Right,
+                });
+            }
 
             let len = self.displayed_spaces.len();
             if len == 0 {

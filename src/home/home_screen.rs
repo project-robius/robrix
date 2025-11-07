@@ -174,14 +174,13 @@ live_design! {
                             spaces_bar_wrapper = <View> {
                                 width: Fill,
                                 height: (NAVIGATION_TAB_BAR_SIZE)
+                                show_bg: true
+                                draw_bg: {
+                                    color: #0f0 // (COLOR_PRIMARY_DARKER * 0.85)
+                                }
+
                                 <CachedWidget> {
-                                    root_spaces_bar = <SpacesBar> {
-                                        Mobile = {
-                                            draw_bg: {
-                                                color: (COLOR_PRIMARY_DARKER * 0.85)
-                                            }
-                                        }
-                                    }
+                                    root_spaces_bar = <SpacesBar> {}
                                 }
                             }
 
@@ -215,6 +214,22 @@ live_design! {
                 }
             }
         }
+
+        animator: {
+            spaces_bar_animator = {
+                default: hide,
+                show = {
+                    redraw: true,
+                    from: { all: Forward { duration: (SPACES_BAR_ANIMATION_DURATION_SECS) } }
+                    apply: { spaces_bar_wrapper = { height: (NAVIGATION_TAB_BAR_SIZE) } }
+                }
+                hide = {
+                    redraw: true,
+                    from: { all: Forward { duration: (SPACES_BAR_ANIMATION_DURATION_SECS) } }
+                    apply: { spaces_bar_wrapper = { height: 0 } }
+                }
+            }
+        }
     }
 }
 
@@ -222,13 +237,19 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct HomeScreen {
     #[deref] view: View,
+    #[animator] animator: Animator,
 
     #[rust] selection: SelectedTab,
     #[rust] previous_selection: SelectedTab,
+    #[rust] is_spaces_bar_shown: bool,
 }
 
 impl Widget for HomeScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.animator_handle_event(cx, event).must_redraw() {
+            self.redraw(cx);
+        }
+
         if let Event::Actions(actions) = event {
             for action in actions {
                 match action.downcast_ref() {
@@ -270,9 +291,16 @@ impl Widget for HomeScreen {
                         self.view.redraw(cx);
                     }
                     Some(NavigationBarAction::ToggleSpacesBar) => {
-                        // TODO: animate this
-                        let spaces_bar_wrapper = self.view.view(ids!(spaces_bar_wrapper));
-                        spaces_bar_wrapper.set_visible(cx, spaces_bar_wrapper.visible());
+                        if self.is_spaces_bar_shown {
+                            log!("Hiding spaces bar...");
+                            self.animator_play(cx, ids!(spaces_bar_animator.hide));
+                            self.view.view(ids!(spaces_bar_wrapper)).set_visible(cx, false);
+                        } else {
+                            log!("Showing spaces bar...");
+                            self.view.view(ids!(spaces_bar_wrapper)).set_visible(cx, true);
+                            self.animator_play(cx, ids!(spaces_bar_animator.show));
+                        }
+                        self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
                     }
                     // We're the ones who emitted this action, so we don't need to handle it again.
                     Some(NavigationBarAction::TabSelected(_))
@@ -290,6 +318,9 @@ impl Widget for HomeScreen {
         // the PageFlip widget will have been reset to its default,
         // so we must re-set it to the correct page based on `self.selection`.
         self.update_active_page_from_selection(cx);
+        // Same goes for whether the spaces bar should be shown.
+        self.view.view(ids!(spaces_bar_wrapper)).set_visible(cx, self.is_spaces_bar_shown);
+
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -313,8 +344,7 @@ impl HomeScreen {
 /// that simply forwards stack view actions to it.
 #[derive(Live, LiveHook, Widget)]
 pub struct StackNavigationWrapper {
-    #[deref]
-    view: View,
+    #[deref] view: View,
 }
 
 impl Widget for StackNavigationWrapper {

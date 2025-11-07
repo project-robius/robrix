@@ -281,6 +281,8 @@ live_design! {
     }
 }
 
+
+pub const NAVIGATION_TAB_BAR_SIZE: f64 = 68.0;
 /// #FFFFFF
 pub const COLOR_PRIMARY:               Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
 /// #0F88FE
