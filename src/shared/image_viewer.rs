@@ -470,32 +470,27 @@ impl Widget for ImageViewer {
         if let Event::Signal = event {
             let mut to_remove = false;
             if let Some((_background_task_id, receiver)) = &mut self.receiver {
-                if let Ok(image_buffer) = receiver.try_recv() {
-                    match image_buffer {
-                        Ok(image_buffer) => {
-                            let rotated_image = self.view.rotated_image(ids!(rotated_image));
-                            let texture = image_buffer.into_new_texture(cx);
-                            rotated_image.set_texture(cx, Some(texture));
-                            to_remove = true;
-                            cx.action(ImageViewerAction::Show(
-                                LoadState::FinishedBackgroundDecoding,
-                            ));
-                        }
-                        Err(error) => {
-                            let error = match error {
-                                ImageError::JpgDecode(_) | ImageError::PngDecode(_) => {
-                                    ImageViewerError::UnsupportedFormat
-                                }
-                                ImageError::EmptyData => ImageViewerError::BadData,
-                                ImageError::PathNotFound(_) => ImageViewerError::NotFound,
-                                ImageError::UnsupportedFormat => {
-                                    ImageViewerError::UnsupportedFormat
-                                }
-                                _ => ImageViewerError::BadData,
-                            };
-                            cx.action(ImageViewerAction::Show(LoadState::Error(error)));
-                        }
+                match receiver.try_recv() {
+                    Ok(Ok(image_buffer)) => {
+                        let rotated_image = self.view.rotated_image(ids!(rotated_image));
+                        let texture = image_buffer.into_new_texture(cx);
+                        rotated_image.set_texture(cx, Some(texture));
+                        to_remove = true;
+                        cx.action(ImageViewerAction::Show(
+                            LoadState::FinishedBackgroundDecoding,
+                        ));
                     }
+                    Ok(Err(error)) => {
+                        let error = match error {
+                            ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
+                            ImageError::EmptyData => ImageViewerError::BadData,
+                            ImageError::PathNotFound(_) => ImageViewerError::NotFound,
+                            ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
+                            _ => ImageViewerError::BadData,
+                        };
+                        cx.action(ImageViewerAction::Show(LoadState::Error(error)));
+                    }
+                    Err(_) => {}
                 }
             }
             if to_remove {
@@ -791,7 +786,7 @@ pub enum LoadState {
     Loading(std::rc::Rc<Option<Texture>>, DVec2),
     /// The image has been successfully loaded given the data.
     Loaded(Arc<[u8]>),
-    /// The image has been loaded from background thread.
+    /// The image has been decoded from background thread.
     FinishedBackgroundDecoding,
     /// An error occurred while loading the image, with specific error type.
     Error(ImageViewerError),
