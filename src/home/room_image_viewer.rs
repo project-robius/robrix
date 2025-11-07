@@ -9,7 +9,8 @@
 use makepad_widgets::*;
 
 use matrix_sdk::{media::MediaFormat, ruma::{MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, OwnedUserId, OwnedMxcUri}};
-use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
+use matrix_sdk_ui::timeline::{Profile, TimelineDetails, EventTimelineItem};
+use matrix_sdk::ruma::events::room::message::MessageType;
 use reqwest::StatusCode;
 use crate::{media_cache::{MediaCache, MediaCacheEntry}, shared::{avatar::AvatarWidgetExt, image_viewer::{ImageViewerAction, ImageViewerError, ImageViewerWidgetExt, LoadState, image_viewer_error_to_string}, timestamp::TimestampWidgetExt}, utils::unix_time_millis_to_datetime};
 
@@ -256,6 +257,24 @@ fn format_file_size(bytes: i32) -> String {
         format!("{} {}", bytes, UNITS[unit_index])
     } else {
         format!("{:.1} {}", size, UNITS[unit_index])
+    }
+}
+
+/// Extracts image name and size from an event timeline item.
+pub fn extract_image_info(event_tl_item: &EventTimelineItem) -> (String, i32) {
+    if let Some(message) = event_tl_item.content().as_message() {
+        if let MessageType::Image(image_content) = message.msgtype() {
+            let name = message.body().to_string();
+            let size = image_content.info.as_ref()
+                .and_then(|info| info.size)
+                .map(|s| i32::try_from(s).unwrap_or_default())
+                .unwrap_or(0);
+            (name, size)
+        } else {
+            ("Unknown Image".to_string(), 0)
+        }
+    } else {
+        ("Unknown Image".to_string(), 0)
     }
 }
 

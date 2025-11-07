@@ -43,7 +43,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputAction;
 
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_image_viewer::extract_image_info, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 /// The maximum number of timeline items to search through
 /// when looking for a particular event.
@@ -1588,7 +1588,7 @@ impl RoomScreen {
         let event_id = event_tl_item.event_id().map(|id| id.to_owned());
         let timestamp = event_tl_item.timestamp();
         
-        let (image_name, image_size) = Self::extract_image_info(event_tl_item);
+        let (image_name, image_size) = extract_image_info(event_tl_item);
         
         cx.action(ImageViewerAction::Show(LoadState::Loading(texture.clone(), DVec2 { x: capped_width, y: capped_height })));
         
@@ -1610,23 +1610,6 @@ impl RoomScreen {
         );
     }
 
-    /// Extracts image name and size from an event timeline item.
-    fn extract_image_info(event_tl_item: &EventTimelineItem) -> (String, i32) {
-        if let Some(message) = event_tl_item.content().as_message() {
-            if let MessageType::Image(image_content) = message.msgtype() {
-                let name = message.body().to_string();
-                let size = image_content.info.as_ref()
-                    .and_then(|info| info.size)
-                    .map(|s| i32::try_from(s).unwrap_or_default())
-                    .unwrap_or(0);
-                (name, size)
-            } else {
-                ("Unknown Image".to_string(), 0)
-            }
-        } else {
-            ("Unknown Image".to_string(), 0)
-        }
-    }
 
     /// Handles any [`MessageAction`]s received by this RoomScreen.
     fn handle_message_actions(
