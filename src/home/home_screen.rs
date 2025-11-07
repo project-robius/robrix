@@ -11,6 +11,7 @@ live_design! {
     use crate::home::rooms_sidebar::RoomsSideBar;
     use crate::home::navigation_tab_bar::NavigationTabBar;
     use crate::home::search_messages::*;
+    use crate::home::spaces_bar::*;
     use crate::shared::styles::*;
     use crate::shared::room_filter_input_bar::RoomFilterInputBar;
     use crate::home::main_desktop_ui::MainDesktopUI;
@@ -170,6 +171,20 @@ live_design! {
                                 }
                             }
 
+                            spaces_bar_wrapper = <View> {
+                                width: Fill,
+                                height: (NAVIGATION_TAB_BAR_SIZE)
+                                <CachedWidget> {
+                                    root_spaces_bar = <SpacesBar> {
+                                        Mobile = {
+                                            draw_bg: {
+                                                color: (COLOR_PRIMARY_DARKER * 0.85)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             // At the bottom of the root view, show the navigation tab bar horizontally.
                             <CachedWidget> {
                                 navigation_tab_bar = <NavigationTabBar> {}
@@ -254,7 +269,14 @@ impl Widget for HomeScreen {
                         self.update_active_page_from_selection(cx);
                         self.view.redraw(cx);
                     }
-                    _ => {}
+                    Some(NavigationBarAction::ToggleSpacesBar) => {
+                        // TODO: animate this
+                        let spaces_bar_wrapper = self.view.view(ids!(spaces_bar_wrapper));
+                        spaces_bar_wrapper.set_visible(cx, spaces_bar_wrapper.visible());
+                    }
+                    // We're the ones who emitted this action, so we don't need to handle it again.
+                    Some(NavigationBarAction::TabSelected(_))
+                    | None => { }
                 }
             }
         }

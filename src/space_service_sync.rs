@@ -1,8 +1,16 @@
+//! Background tasks that subscribe to the Matrix SpaceService in order to
+//! track changes to the user's joined spaces and send updates the UI.
+
+use std::iter::Peekable;
+
+use eyeball_im::VectorDiff;
+use futures_util::{StreamExt, pin_mut};
 use imbl::Vector;
-use matrix_sdk::{Client, media::MediaRequestParameters};
+use makepad_widgets::*;
+use matrix_sdk::{Client, RoomState, media::MediaRequestParameters};
 use matrix_sdk_ui::spaces::{SpaceRoom, SpaceService};
 use ruma::{OwnedMxcUri, events::room::MediaSource};
-
+use tokio::runtime::Handle;
 use crate::{home::spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}, room::FetchedRoomAvatar, utils};
 
 /// Whether to enable verbose logging of all spaces service diff updates.
@@ -10,7 +18,7 @@ const LOG_SPACE_SERVICE_DIFFS: bool = cfg!(feature = "log_space_service_diffs");
 
 
 /// The main async loop task that listens for changes to all spaces.
-pub async fn space_service_loop(space_service: SpaceService, client: Client) -> Result<()> {
+pub async fn space_service_loop(space_service: SpaceService, client: Client) -> anyhow::Result<()> {
     // Get the set of top-level (root) spaces that the user has joined.
     let (initial_spaces, spaces_diff_stream) = space_service.subscribe_to_joined_spaces().await;
     for space in &initial_spaces {
@@ -46,28 +54,28 @@ pub async fn space_service_loop(space_service: SpaceService, client: Client) -> 
                     add_new_space(&new_space, &client).await;
                     all_joined_spaces.push_back(new_space);
                 }
-                _remove_diff @ VectorDiff::PopFront => {
+                remove_diff @ VectorDiff::PopFront => {
                     if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PopFront"); }
                     if let Some(space) = all_joined_spaces.pop_front() {
                         optimize_remove_then_add_into_update(
                             remove_diff,
-                            &space,
+                            space,
                             &mut peekable_diffs,
                             &mut all_joined_spaces,
-                            &space_service,
-                        ).await?;
+                            &client,
+                        ).await;
                     }
                 }
-                _remove_diff @ VectorDiff::PopBack => {
+                remove_diff @ VectorDiff::PopBack => {
                     if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PopBack"); }
                     if let Some(space) = all_joined_spaces.pop_back() {
                         optimize_remove_then_add_into_update(
                             remove_diff,
-                            &space,
+                            space,
                             &mut peekable_diffs,
                             &mut all_joined_spaces,
-                            &space_service,
-                        ).await?;
+                            &client,
+                        ).await;
                     }
                 }
                 VectorDiff::Insert { index, value: new_space } => {
@@ -78,23 +86,23 @@ pub async fn space_service_loop(space_service: SpaceService, client: Client) -> 
                 VectorDiff::Set { index, value: changed_space } => {
                     if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Set at {index}"); }
                     if let Some(old_space) = all_joined_spaces.get(index) {
-                        update_space(old_space, &changed_space, &space_service_service).await?;
+                        update_space(old_space, &changed_space, &client).await;
                     } else {
                         error!("BUG: space_service diff: Set index {index} was out of bounds.");
                     }
                     all_joined_spaces.set(index, changed_space);
                 }
-                _remove_diff @ VectorDiff::Remove { index: remove_index } => {
+                remove_diff @ VectorDiff::Remove { index: remove_index } => {
                     if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Remove at {remove_index}"); }
                     if remove_index < all_joined_spaces.len() {
                         let space = all_joined_spaces.remove(remove_index);
                         optimize_remove_then_add_into_update(
                             remove_diff,
-                            &space,
+                            space,
                             &mut peekable_diffs,
                             &mut all_joined_spaces,
-                            &space_service,
-                        ).await?;
+                            &client,
+                        ).await;
                     } else {
                         error!("BUG: space_service: diff Remove index {remove_index} out of bounds, len {}", all_joined_spaces.len());
                     }
@@ -127,13 +135,16 @@ pub async fn space_service_loop(space_service: SpaceService, client: Client) -> 
         if LOG_SPACE_SERVICE_DIFFS { log!("space_service: after batch diff: {all_joined_spaces:?}"); }
     }
 
-    bail!("Space service sync loop ended unexpectedly")
+    anyhow::bail!("Space service sync loop ended unexpectedly")
 }
 
 
 async fn add_new_space(space: &SpaceRoom, client: &Client) {
     let space_avatar_opt = if let Some(url) = &space.avatar_url {
-        fetch_space_avatar(url).await
+        fetch_space_avatar(url.clone(), client)
+            .await
+            .inspect_err(|e| error!("Failed to fetch avatar for new space {:?} ({}): {e}", space.display_name, space.room_id))
+            .ok()
     } else { None };
     let space_avatar = space_avatar_opt.unwrap_or_else(
         || utils::avatar_from_room_name(Some(&space.display_name))
@@ -167,11 +178,11 @@ async fn add_new_space(space: &SpaceRoom, client: &Client) {
 /// or to "sort" the space list by changing its positional order.
 async fn optimize_remove_then_add_into_update(
     remove_diff: VectorDiff<SpaceRoom>,
-    space: &SpaceRoom,
+    space: SpaceRoom,
     peekable_diffs: &mut Peekable<impl Iterator<Item = VectorDiff<SpaceRoom>>>,
     all_joined_spaces: &mut Vector<SpaceRoom>,
     client: &Client,
-) -> Result<()> {
+) {
     let next_diff_was_handled: bool;
     match peekable_diffs.peek() {
         Some(VectorDiff::Insert { index: insert_index, value: new_space })
@@ -180,8 +191,8 @@ async fn optimize_remove_then_add_into_update(
             if LOG_SPACE_SERVICE_DIFFS {
                 log!("Optimizing {remove_diff:?} + Insert({insert_index}) into Update for space {}", space.room_id);
             }
-            update_space(space, &new_space, client).await?;
-            all_joined_spaces.insert(*insert_index, new_space);
+            update_space(&space, &new_space, client).await;
+            all_joined_spaces.insert(*insert_index, new_space.clone());
             next_diff_was_handled = true;
         }
         Some(VectorDiff::PushFront { value: new_space })
@@ -190,9 +201,8 @@ async fn optimize_remove_then_add_into_update(
             if LOG_SPACE_SERVICE_DIFFS {
                 log!("Optimizing {remove_diff:?} + PushFront into Update for space {}", space.room_id);
             }
-            let new_space = SpaceListServiceSpaceInfo::from_space_ref(new_space.deref()).await;
-            update_space(space, &new_space, client).await?;
-            all_joined_spaces.push_front(new_space);
+            update_space(&space, &new_space, client).await;
+            all_joined_spaces.push_front(new_space.clone());
             next_diff_was_handled = true;
         }
         Some(VectorDiff::PushBack { value: new_space })
@@ -201,9 +211,8 @@ async fn optimize_remove_then_add_into_update(
             if LOG_SPACE_SERVICE_DIFFS {
                 log!("Optimizing {remove_diff:?} + PushBack into Update for space {}", space.room_id);
             }
-            let new_space = SpaceListServiceSpaceInfo::from_space_ref(new_space.deref()).await;
-            update_space(space, &new_space, client).await?;
-            all_joined_spaces.push_back(new_space);
+            update_space(&space, &new_space, client).await;
+            all_joined_spaces.push_back(new_space.clone());
             next_diff_was_handled = true;
         }
         _ => next_diff_was_handled = false,
@@ -211,9 +220,8 @@ async fn optimize_remove_then_add_into_update(
     if next_diff_was_handled {
         peekable_diffs.next(); // consume the next diff
     } else {
-        remove_space(space);
+        remove_space(&space);
     }
-    Ok(())
 }
 
 
@@ -231,35 +239,38 @@ async fn update_space(
         }
         if old_space.state != new_space.state {
             match new_space.state {
-                RoomState::Banned => {
+                Some(RoomState::Banned) => {
                     // TODO: handle spaces that this user has been banned from.
                     log!("Removing Banned space: {:?} ({new_space_id})", new_space.display_name);
-                    remove_room(new_space);
+                    remove_space(new_space);
                     return;
                 }
-                RoomState::Left => {
+                Some(RoomState::Left) => {
                     log!("Removing Left space: {:?} ({new_space_id})", new_space.display_name);
                     // TODO: instead of removing this, we could optionally add it to
                     //       a separate list of left space, which would be collapsed by default.
                     //       Upon clicking a left space, we could show a splash page
                     //       that prompts the user to rejoin the space or forget it permanently.
                     //       Currently, we just remove it and do not show left spaces at all.
-                    remove_room(new_space);
+                    remove_space(new_space);
                     return;
                 }
-                RoomState::Joined => {
+                Some(RoomState::Joined) => {
                     log!("update_space(): adding new Joined space: {:?} ({new_space_id})", new_space.display_name);
                     add_new_space(new_space, client).await;
                     return;
                 }
-                RoomState::Invited => {
+                Some(RoomState::Invited) => {
                     log!("update_space(): adding new Invited space: {:?} ({new_space_id})", new_space.display_name);
                     add_new_space(new_space, client).await;
                     return;
                 }
-                RoomState::Knocked => {
+                Some(RoomState::Knocked) => {
                     // TODO: handle Knocked spaces (e.g., can you re-knock? or cancel a prior knock?)
                     return;
+                }
+                None => {
+                    error!("WARNING: UNTESTED: new space {} ({}) RoomState is None", new_space.display_name, new_space.room_id);
                 }
             }
         }
@@ -267,14 +278,14 @@ async fn update_space(
         if old_space.canonical_alias != new_space.canonical_alias {
             log!("Updating space {} alias: {:?} --> {:?}", new_space_id, old_space.canonical_alias, new_space.canonical_alias);
             enqueue_spaces_list_update(SpacesListUpdate::UpdateCanonicalAlias {
-                space_id: new_space_id,
+                space_id: new_space_id.clone(),
                 new_canonical_alias: new_space.canonical_alias.clone(),
             });
         }
 
         if old_space.display_name != new_space.display_name {
             log!("Updating space {} name: {:?} --> {:?}", new_space_id, old_space.display_name, new_space.display_name);
-            enqueue_rooms_list_update(SpacesListUpdate::UpdateSpaceName {
+            enqueue_spaces_list_update(SpacesListUpdate::UpdateSpaceName {
                 space_id: new_space_id.clone(),
                 new_space_name: new_space.display_name.clone(),
             });
@@ -282,7 +293,7 @@ async fn update_space(
 
         if old_space.topic != new_space.topic {
             log!("Updating space {} topic:\n    {:?}\n  -->\n    {:?}", new_space_id, old_space.topic, new_space.topic);
-            enqueue_rooms_list_update(SpacesListUpdate::UpdateSpaceTopic {
+            enqueue_spaces_list_update(SpacesListUpdate::UpdateSpaceTopic {
                 space_id: new_space_id.clone(),
                 topic: new_space.topic.clone(),
             });
@@ -294,10 +305,14 @@ async fn update_space(
             let space_id = new_space_id.clone();
             let space_display_name = new_space.display_name.clone();
             let url_opt = new_space.avatar_url.clone();
+            let client2 = client.clone();
             // Spawn a new task to fetch the space's new avatar in the background.
             Handle::current().spawn(async move {
                 let space_avatar_opt = if let Some(url) = url_opt {
-                    fetch_space_avatar(url).await
+                    fetch_space_avatar(url, &client2)
+                        .await
+                        .inspect_err(|e| error!("Failed to fetch avatar for space {:?} ({}): {e}", space_display_name, space_id))
+                        .ok()
                 } else { None };
                 let avatar = space_avatar_opt.unwrap_or_else(
                     || utils::avatar_from_room_name(Some(&space_display_name))
@@ -350,14 +365,14 @@ async fn update_space(
         warning!("UNTESTED SCENARIO: update_space(): removing old room {}, replacing with new room {}",
             old_space.room_id, new_space_id,
         );
-        remove_room(old_space);
-        add_new_space(new_space, room_list_service).await;
+        remove_space(old_space);
+        add_new_space(new_space, client).await;
     }
 }
 
 
 /// Invoked when the space service has received an update to remove an existing space.
-fn remove_room(space: &SpaceRoom) {
+fn remove_space(space: &SpaceRoom) {
     enqueue_spaces_list_update(SpacesListUpdate::RemoveSpace {
         space_id: space.room_id.clone(),
         new_state: space.state.clone(),
@@ -368,16 +383,13 @@ fn remove_room(space: &SpaceRoom) {
 /// Fetches the avatar for the space at the given URL.
 ///
 /// Returns `Some` if the avatar image was successfully fetched.
-async fn fetch_space_avatar(url: &OwnedMxcUri) -> Option<FetchedRoomAvatar> {
+async fn fetch_space_avatar(url: OwnedMxcUri, client: &Client) -> matrix_sdk::Result<FetchedRoomAvatar> {
     let request = MediaRequestParameters {
-        source: MediaSource::Plain(url.clone()),
+        source: MediaSource::Plain(url),
         format: utils::AVATAR_THUMBNAIL_FORMAT.into(),
     };
-    match client.media().get_media_content(&request, true).await {
-        Ok(img_data) => Some(FetchedRoomAvatar::Image(img_data.into())),
-        Err(e) => {
-            log!("Failed to fetch avatar for space {:?} ({}): {e}", space.name, space.room_id);
-            None
-        }
-    }
+    client.media()
+        .get_media_content(&request, true)
+        .await
+        .map(|img_data| FetchedRoomAvatar::Image(img_data.into()))
 }

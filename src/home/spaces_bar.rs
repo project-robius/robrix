@@ -5,20 +5,15 @@
 //! 1. a narrow vertical strip, when in Desktop (widescreen) mode,
 //! 2. a wide, short horizontal strip, when in Mobile (narrowscreen) mode.
 
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
+use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::RoomState;
-use matrix_sdk_ui::spaces::SpaceRoom;
-use ruma::{OwnedRoomAliasId, OwnedRoomId, OwnedServerName, room::JoinRuleSummary};
+use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
-        user_profile::{AvatarState, UserProfile},
-        user_profile_cache::{self, UserProfileUpdate},
-    }, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{
-        avatar::AvatarWidgetExt, callout_tooltip::TooltipAction, custom_radio_button::CustomRadioButton, jump_to_bottom_button::UnreadMessageCount, room_filter_input_bar::RoomFilterAction, styles::*, verification_badge::VerificationBadgeWidgetExt
-    }, sliding_sync::current_user_id, utils
+    room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::RoomFilterAction}, utils,
 };
 
 live_design! {
@@ -30,24 +25,14 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::verification_badge::*;
     use crate::shared::avatar::*;
-    use crate::shared::custom_radio_button::*;
-
-    NAVIGATION_TAB_BAR_SIZE = 68
-
-    COLOR_NAVIGATION_TAB_FG = #1C274C
-    COLOR_NAVIGATION_TAB_FG_HOVER = #1C274C
-    COLOR_NAVIGATION_TAB_FG_ACTIVE = #1C274C
-    COLOR_NAVIGATION_TAB_BG        = (COLOR_SECONDARY)
-    COLOR_NAVIGATION_TAB_BG_HOVER  = (COLOR_SECONDARY * 0.85)
-    COLOR_NAVIGATION_TAB_BG_ACTIVE = (COLOR_SECONDARY * 0.5)
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
 
-
+    // An entry in the list of all spaces, which shown the Space's avatar and name.
     SpacesBarEntry = {{SpacesBarEntry}}<RoundedView> {
-        width: (NAVIGATION_TAB_BAR_SIZE),
-        height: (NAVIGATION_TAB_BAR_SIZE),
+        width: (NAVIGATION_TAB_BAR_SIZE - 5),
+        height: (NAVIGATION_TAB_BAR_SIZE - 5),
         flow: Down
         padding: 5,
         margin: 3,
@@ -56,9 +41,12 @@ live_design! {
 
         show_bg: true
         draw_bg: {
-            color: (COLOR_NAVIGATION_TAB_BG)
-            color_hover: (COLOR_NAVIGATION_TAB_BG_HOVER)
-            color_active: (COLOR_NAVIGATION_TAB_BG_ACTIVE)
+            instance hover: 0.0
+            instance active: 0.0
+
+            color: #0000
+            uniform color_hover: (COLOR_NAVIGATION_TAB_BG_HOVER)
+            uniform color_active: (COLOR_NAVIGATION_TAB_BG_ACTIVE)
 
             border_size: 0.0
             border_color: #0000
@@ -113,17 +101,24 @@ live_design! {
         }
 
         space_name = <Label> {
-            width: Fill, height: Fit
-            flow: Right, // do not wrap
+            width: Fill,
+            // height: Fit
+            height: 0,
+            flow: RightWrap, // do not wrap
             padding: 0,
+            align: {x: 0.5}
             draw_text: {
+                instance active: 0.0
+                instance hover: 0.0
+                instance down: 0.0
+
                 color: (COLOR_NAVIGATION_TAB_FG)
-                color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
-                color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
+                uniform color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
+                uniform color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
 
                 // text_style: <THEME_FONT_BOLD>{font_size: 9}
                 text_style: <REGULAR_TEXT>{font_size: 9}
-                wrap: Ellipsis,
+                wrap: Word,
 
                 fn get_color(self) -> vec4 {
                     return mix(
@@ -170,7 +165,6 @@ live_design! {
                     from: {all: Forward {duration: 0.2}}
                     apply: {
                         draw_bg: {active: 0.0}
-                        draw_icon: {active: 0.0}
                         space_name = { draw_text: {active: 0.0} }
                     }
                 }
@@ -178,169 +172,12 @@ live_design! {
                     from: {all: Forward {duration: 0.0}}
                     apply: {
                         draw_bg: {active: 1.0}
-                        draw_icon: {active: 1.0}
                         space_name = { draw_text: {active: 1.0} }
                     }
                 }
             }
         }
     }
-
-
-    SpaceIcon = {{SpaceIcon}}<RoundedView> {
-        width: Fill,
-        height: (NAVIGATION_TAB_BAR_SIZE - 8)
-        flow: Overlay
-        align: { x: 0.5, y: 0.5 }
-        cursor: Default,
-
-        space_avatar = <Avatar> {
-            width: 45, height: 45
-            // If no avatar picture, use white text on a dark background.
-            text_view = {
-                draw_bg: {
-                    background_color: (COLOR_FG_DISABLED),
-                }
-                text = { draw_text: {
-                    text_style: { font_size: 16.0 },
-                    color: (COLOR_PRIMARY),
-                } }
-            }
-        }
-
-        // TODO: add an unread badge for each space
-
-        // <View> {
-        //     align: { x: 0.5, y: 0.0 }
-        //     margin: { left: 42 }
-        //     verification_badge = <VerificationBadge> {}
-        // }
-    }
-
-    // A CustomRadioButton styled to fit within the SpacesBar.
-    pub SpaceRadioButton = {{SpaceRadioButton}}<CustomRadioButton> {
-        width: Fill,
-        height: (NAVIGATION_TAB_BAR_SIZE - 5),
-        padding: 5,
-        margin: 3, 
-        align: {x: 0.5, y: 0.5}
-        flow: Down,
-
-        icon_walk: {margin: 0, width: (NAVIGATION_TAB_BAR_SIZE/2.2), height: Fit}
-        // Fully hide the text with zero size, zero margin, and zero spacing
-        label_walk: {margin: 0, width: 0, height: 0}
-        spacing: 0,
-
-        draw_bg: {
-            radio_type: Tab,
-
-            color: (COLOR_NAVIGATION_TAB_BG)
-            color_hover: (COLOR_NAVIGATION_TAB_BG_HOVER)
-            color_active: (COLOR_NAVIGATION_TAB_BG_ACTIVE)
-
-            border_size: 0.0
-            border_color: #0000
-            uniform inset: vec4(0.0, 0.0, 0.0, 0.0)
-            border_radius: 4.0
-
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        self.color,
-                        self.color_hover,
-                        self.hover
-                    ),
-                    self.color_active,
-                    self.active
-                )
-            }
-
-            fn get_border_color(self) -> vec4 {
-                return self.border_color
-            }
-
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                sdf.box(
-                    self.inset.x + self.border_size,
-                    self.inset.y + self.border_size,
-                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
-                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
-                    max(1.0, self.border_radius)
-                )
-                sdf.fill_keep(self.get_color())
-                if self.border_size > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_size)
-                }
-                return sdf.result;
-            }
-        }
-
-        draw_text: {
-            color: (COLOR_NAVIGATION_TAB_FG)
-            color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
-            color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
-
-            text_style: <THEME_FONT_BOLD>{font_size: 9}
-
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        self.color,
-                        self.color_hover,
-                        self.hover
-                    ),
-                    self.color_active,
-                    self.active
-                )
-            }
-        }
-
-        draw_icon: {
-            uniform color: (COLOR_NAVIGATION_TAB_FG)
-            uniform color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
-            uniform color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        self.color,
-                        self.color_hover,
-                        self.focus
-                    ),
-                    self.color_active,
-                    self.active
-                )
-            }
-        }
-    }
-
-
-    HomeButton = <NavigationTabButton> {
-        draw_icon: { svg_file: (ICON_HOME) }
-        animator: { active = { default: on } }
-    }
-
-    SettingsButton = <NavigationTabButton> {
-        draw_icon: { svg_file: (ICON_SETTINGS) }
-    }
-
-    // This button is temporarily disabled until the AddRoomScreen is implemented.
-    AddRoomButton = <NavigationTabButton> {
-        draw_bg: {
-            color: (COLOR_SECONDARY)
-            color_hover: (COLOR_SECONDARY)
-            color_active: (COLOR_SECONDARY)
-        }
-        draw_icon: {
-            svg_file: (ICON_ADD),
-            color: (COLOR_FG_DISABLED),
-            color_hover: (COLOR_FG_DISABLED)
-            color_active: (COLOR_FG_DISABLED)
-        }
-        animator: { disabled = { default: on } }
-    }
-
-    Separator = <LineH> { margin: 8 }
 
     StatusLabel = <View> {
         width: Fill, height: Fill,
@@ -369,8 +206,12 @@ live_design! {
 
         auto_tail: false, 
         max_pull_down: 0.0,
+        scroll_bar: {  // hide the scroll bar
+            bar_size: 0.0,
+            min_handle_size: 0.0
+        }
 
-        SpaceRadioButton = <SpaceRadioButton> {}
+        SpacesBarEntry = <SpacesBarEntry> {}
         StatusLabel = <StatusLabel> {}
         BottomFiller = <View> {
             width: 80.0,
@@ -382,7 +223,7 @@ live_design! {
         Desktop = {
             flow: Down,
             align: {x: 0.5}
-            padding: {top: 20., bottom: 20}
+            padding: 0,
             width: (NAVIGATION_TAB_BAR_SIZE), 
             height: Fill
 
@@ -419,40 +260,12 @@ live_design! {
 }
 
 
-#[derive(Live, LiveHook, Widget)]
-pub struct SpaceRadioButton {
-    #[deref] radio_button: CustomRadioButton,
-
-    #[rust] index_in_portal_list: usize,
-    #[rust] space_id: Option<OwnedRoomId>,
-}
-impl Widget for SpaceRadioButton {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.radio_button.handle_event(cx, event, scope);
-    }
-
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.radio_button.draw_walk(cx, scope, walk);
-        DrawStep::done()
-    }
-}
-impl SpaceRadioButton {
-    fn set_index_and_id(&mut self, _cx: &mut Cx, index_in_portal_list: usize, space_id: OwnedRoomId) {
-        self.index_in_portal_list = index_in_portal_list;
-        self.space_id = Some(space_id);
-    }
-}
-impl SpaceRadioButtonRef {
-    fn set_index_and_id(&self, _cx: &mut Cx, index_in_portal_list: usize, space_id: OwnedRoomId) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_index_and_id(_cx, index_in_portal_list, space_id);
-    }
-}
-
-
+/// Actions emitted by and handled by the SpacesBar widget (and its children).
+#[derive(Clone, Debug, DefaultNone)]
 pub enum SpacesBarAction {
     ButtonClicked { space_id: OwnedRoomId },
     ButtonSecondaryClicked { space_id: OwnedRoomId },
+    None,
 }
 
 
@@ -462,12 +275,12 @@ pub struct SpacesBarEntry {
     #[animator] animator: Animator,
 
     #[live] is_selected: bool,
+    #[rust] index_in_portal_list: usize,
     #[rust] space_id: Option<OwnedRoomId>,
 }
 
 impl Widget for SpacesBarEntry {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let uid = self.widget_uid();
         self.animator_handle_event(cx, event);
 
         match event.hits(cx, self.draw_bg.area()) {
@@ -482,7 +295,7 @@ impl Widget for SpacesBarEntry {
                     self.animator_play(cx, ids!(hover.down));
                 }
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
-                    if let Some(space_id) = self.space_id {
+                    if let Some(space_id) = self.space_id.clone() {
                         cx.widget_action(
                             self.widget_uid(),
                             &scope.path,
@@ -492,7 +305,7 @@ impl Widget for SpacesBarEntry {
                 }
             }
             Hit::FingerLongPress(_lp) => {
-                if let Some(space_id) = self.space_id {
+                if let Some(space_id) = self.space_id.clone() {
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
@@ -504,7 +317,7 @@ impl Widget for SpacesBarEntry {
                 self.animator_play(cx, ids!(hover.on));
                 if self.animator_in_state(cx, ids!(active.off)) {
                     self.animator_play(cx, ids!(active.on));
-                    if let Some(space_id) = self.space_id {
+                    if let Some(space_id) = self.space_id.clone() {
                         cx.widget_action(
                             self.widget_uid(),
                             &scope.path,
@@ -524,14 +337,28 @@ impl Widget for SpacesBarEntry {
             for action in actions {
                 if let Some(SpacesBarAction::ButtonClicked { space_id }) = action.downcast_ref() {
                     // Ensure that only one SpacesBarEntry is selected at once.
-                    self.is_selected = self.space_id.is_some_and(|id| id == space_id);
+                    self.is_selected = self.space_id.as_ref().is_some_and(|id| id == space_id);
                 }
             }
         }
     }
     
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl SpacesBarEntry {
+    fn set_index_and_id(&mut self, _cx: &mut Cx, index_in_portal_list: usize, space_id: OwnedRoomId) {
+        self.index_in_portal_list = index_in_portal_list;
+        self.space_id = Some(space_id);
+    }
+}
+impl SpacesBarEntryRef {
+    pub fn set_index_and_id(&self, _cx: &mut Cx, index_in_portal_list: usize, space_id: OwnedRoomId) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_index_and_id(_cx, index_in_portal_list, space_id);
     }
 }
 
@@ -711,15 +538,39 @@ impl Widget for SpacesBar {
             else {
                 list.set_item_range(cx, 0, len + 1);
                 while let Some(portal_list_index) = list.next_visible_item(cx) {
-                    let item = if let Some(space_room) = self.displayed_spaces
+                    let item = if let Some(space) = self.displayed_spaces
                         .get(portal_list_index)
                         .and_then(|space_id| self.all_joined_spaces.get(space_id))
                     {
-                        let item = list.item(cx, portal_list_index, id!(collapsible_header));
-                        item.as_space_radio_button().set_index_and_id(
+                        let item = list.item(cx, portal_list_index, id!(SpacesBarEntry));
+                        // Populate the space name and avatar.
+                        // item.label(ids!(space_name)).set_text(cx, &space.display_name);
+                        item.label(ids!(space_name)).set_text(cx, "");
+                        let avatar_ref = item.avatar(ids!(avatar));
+                        match &space.space_avatar {
+                            FetchedRoomAvatar::Text(text) => {
+                                avatar_ref.show_text(cx, None, None, text);
+                            }
+                            FetchedRoomAvatar::Image(image_data) => {
+                                let res = avatar_ref.show_image(
+                                    cx,
+                                    None,
+                                    |cx, img_ref| utils::load_png_or_jpg(&img_ref, cx, image_data),
+                                );
+                                if res.is_err() {
+                                    avatar_ref.show_text(
+                                        cx,
+                                        None,
+                                        None,
+                                        &space.display_name,
+                                    );
+                                }
+                            }
+                        }
+                        item.as_spaces_bar_entry().set_index_and_id(
                             cx,
                             portal_list_index, 
-                            space_room.room_id.clone(),
+                            space.space_id.clone(),
                         );
                         item
                     }
@@ -728,10 +579,10 @@ impl Widget for SpacesBar {
                         item.set_text(
                             cx,
                             match len {
-                                0 => "No matching\nspaces found.",
-                                1 => "Found 1\nmatching space.",
-                                n => &format!("Found {}\nmatching spaces.", n),
-                            }
+                                0 => Cow::from("No matching\nspaces found."),
+                                1 => Cow::from("Found 1\nmatching space."),
+                                n => Cow::from(format!("Found {}\nmatching spaces.", n)),
+                            }.as_ref(),
                         );
                         item
                     }
@@ -749,7 +600,7 @@ impl Widget for SpacesBar {
 
 impl SpacesBar {
      /// Handle all pending updates to the spaces list.
-    fn handle_spaces_list_updates(&mut self, cx: &mut Cx, _event: &Event, scope: &mut Scope) {
+    fn handle_spaces_list_updates(&mut self, cx: &mut Cx, _event: &Event, _scope: &mut Scope) {
 
         fn adjust_displayed_spaces(
             was_displayed: bool,
@@ -763,7 +614,7 @@ impl SpacesBar {
                 // Space was displayed but should no longer be displayed.
                 (true, false) => {
                     displayed_spaces.iter()
-                        .position(|s| s == space_id)
+                        .position(|s| s == &space_id)
                         .map(|index| displayed_spaces.remove(index));
                 }
                 // Space was not displayed but should now be displayed.
@@ -779,7 +630,7 @@ impl SpacesBar {
             num_updates += 1;
             match update {
                 SpacesListUpdate::AddJoinedSpace(joined_space) => {
-                    let space_id = joined.space_id.clone();
+                    let space_id = joined_space.space_id.clone();
                     let should_display = (self.display_filter)(&joined_space);
                     let replaced = self.all_joined_spaces.insert(space_id.clone(), joined_space);
                     if replaced.is_none() {

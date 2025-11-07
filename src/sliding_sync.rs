@@ -6,8 +6,9 @@ use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
+use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, crypto::{DecryptionSettings, TrustRequirement}, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
+    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
         api::client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
             room::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
@@ -16,7 +17,7 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
 };
 use matrix_sdk_ui::{
-    RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, spaces::{SpaceRoom, SpaceService}, sync_service::{self, SyncService}, timeline::{EventTimelineItem, LatestEventValue, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem}
+    RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, spaces::SpaceService, sync_service::{self, SyncService}, timeline::{EventTimelineItem, LatestEventValue, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem}
 };
 use robius_open::Uri;
 use ruma::{events::tag::Tags, OwnedRoomOrAliasId};
@@ -2420,7 +2421,7 @@ async fn add_new_room(
             let invite_details = new_room.room.invite_details().await.ok();
             let latest_event = if let Some(latest_event) = new_room.room.latest_event() {
                 EventTimelineItem::from_latest_event(
-                    room_list_service.client(),
+                    room_list_service.client().clone(),
                     &new_room.room_id,
                     latest_event,
                 ).await

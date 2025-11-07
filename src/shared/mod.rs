@@ -1,7 +1,6 @@
 use makepad_widgets::Cx;
 
 pub mod avatar;
-pub mod custom_radio_button;
 pub mod callout_tooltip;
 pub mod collapsible_header;
 pub mod confirmation_modal;
@@ -31,7 +30,6 @@ pub fn live_design(cx: &mut Cx) {
     timestamp::live_design(cx);
     room_filter_input_bar::live_design(cx);
     avatar::live_design(cx);
-    custom_radio_button::live_design(cx);
     text_or_image::live_design(cx);
     html_or_plaintext::live_design(cx);
     bouncing_dots::live_design(cx);

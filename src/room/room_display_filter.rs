@@ -6,9 +6,8 @@ use matrix_sdk::ruma::{
     events::tag::{TagName, Tags},
     OwnedRoomAliasId, RoomAliasId, RoomId,
 };
-use matrix_sdk_ui::spaces::SpaceRoom;
 
-use crate::home::rooms_list::{InvitedRoomInfo, JoinedRoomInfo};
+use crate::home::{rooms_list::{InvitedRoomInfo, JoinedRoomInfo}, spaces_bar::JoinedSpaceInfo};
 
 static EMPTY_TAGS: Tags = BTreeMap::new();
 
@@ -92,13 +91,13 @@ impl FilterableRoom for InvitedRoomInfo {
     }
 }
 
-impl FilterableRoom for SpaceRoom {
+impl FilterableRoom for JoinedSpaceInfo {
     fn room_id(&self) -> &RoomId {
-        &self.room_id
+        &self.space_id
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        self.name.as_deref().map(Into::into).unwrap_or_default()
+        self.display_name.as_str().into()
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -114,7 +113,7 @@ impl FilterableRoom for SpaceRoom {
     }
 
     fn alt_aliases(&self) -> Cow<'_, [OwnedRoomAliasId]> {
-        [].into()
+        (&[]).into()
     }
 
     fn tags(&self) -> &Tags {
@@ -122,7 +121,7 @@ impl FilterableRoom for SpaceRoom {
     }
 
     fn is_direct(&self) -> bool {
-        self.is_direct.unwrap_or(false)
+        false
     }
 }
 
