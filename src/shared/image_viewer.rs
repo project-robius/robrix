@@ -62,6 +62,26 @@ pub enum ImageViewerError {
     Timeout,
 }
 
+/// Returns a human-readable string describing the given ImageViewerError.
+///
+/// This can be used to update the label text of an error display.
+///
+/// The error type is matched against a string which describes the error in a way that is visible to the user.
+///
+/// The strings returned by this function will be appropriate for display in a label or similar widget.
+pub fn image_viewer_error_to_string(error: &ImageViewerError) -> &str {
+    match error {
+        ImageViewerError::NotFound => "Full image is not found",
+        ImageViewerError::BadData => "Image appears to be empty or corrupted",
+        ImageViewerError::UnsupportedFormat => "This image format isn't supported",
+        ImageViewerError::ConnectionFailed => "Check your internet connection",
+        ImageViewerError::Unauthorized => "You don't have permission to view this image",
+        ImageViewerError::ServerError => "Server temporarily unavailable",
+        ImageViewerError::Unknown => "Unable to load image",
+        ImageViewerError::Timeout => "Timed out loading this image",
+    }
+}
+
 /// The Drag state of the image viewer modal
 struct DragState {
     /// The starting position of the drag.

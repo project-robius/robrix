@@ -17,8 +17,8 @@ use crate::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, image_viewer::{ImageViewerAction, ImageViewerWidgetRefExt, LoadState}}, sliding_sync::current_user_id, utils::{
-        OwnedRoomIdRon, image_viewer_error_to_string, room_name_or_id
+    }, image_viewer::{ImageViewerAction, ImageViewerWidgetRefExt, LoadState, image_viewer_error_to_string}}, sliding_sync::current_user_id, utils::{
+        OwnedRoomIdRon, room_name_or_id
     }, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
@@ -512,38 +512,6 @@ impl AppMain for App {
                 }
             }
         }
-
-        // Ensure all draw events are handled on the main UI thread regardless of modal consuming the events.
-        if let Event::Draw(_) = event {
-            let scope = &mut Scope::with_data(&mut self.app_state);
-            self.ui.handle_event(cx, event, scope);
-            return;
-        }
-        
-        // If the image viewer modal is really opened, handles non-Draw events using the modal.
-        let image_viewer_modal = self.ui.modal(ids!(image_viewer));
-        if image_viewer_modal.is_open() && image_viewer_modal.area().rect(cx).size.y > 0.0 {
-            let scope = &mut Scope::with_data(&mut self.app_state);
-            self.ui
-                .view(ids!(popup_list))
-                .handle_event(cx, event, scope);
-            self.ui
-                .modal(ids!(image_viewer))
-                .handle_event(cx, event, scope);
-            // Pass the Signal event to the underlying room screen, so as to populate the full image in the image viewer.
-            if let Event::Signal = event {
-                self.ui.handle_event(cx, event, scope);
-            }
-            if let Event::Actions(actions) = event {
-                for action in actions {
-                    if self.handle_image_viewer_action(cx, action) {
-                        continue;
-                    }
-                }
-            }
-            return;
-        }
-
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);

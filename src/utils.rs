@@ -9,7 +9,7 @@ use makepad_widgets::{error, image_cache::{ImageBuffer, ImageError}, makepad_mic
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
-use crate::{room::FetchedRoomAvatar, shared::image_viewer::ImageViewerError, sliding_sync::{MatrixRequest, submit_async_request}};
+use crate::{room::FetchedRoomAvatar, sliding_sync::{MatrixRequest, submit_async_request}};
 
 /// The scheme for GEO links, used for location messages in Matrix.
 pub const GEO_URI_SCHEME: &str = "geo:";
@@ -800,25 +800,6 @@ pub fn avatar_from_room_name(room_name: Option<&str>) -> FetchedRoomAvatar {
     FetchedRoomAvatar::Text(first)
 }
 
-/// Returns a human-readable string describing the given ImageViewerError.
-///
-/// This can be used to update the label text of an error display.
-///
-/// The error type is matched against a string which describes the error in a way that is visible to the user.
-///
-/// The strings returned by this function will be appropriate for display in a label or similar widget.
-pub fn image_viewer_error_to_string(error: &ImageViewerError) -> &str {
-    match error {
-        ImageViewerError::NotFound => "Full image is not found",
-        ImageViewerError::BadData => "Image appears to be empty or corrupted",
-        ImageViewerError::UnsupportedFormat => "This image format isn't supported",
-        ImageViewerError::ConnectionFailed => "Check your internet connection",
-        ImageViewerError::Unauthorized => "You don't have permission to view this image",
-        ImageViewerError::ServerError => "Server temporarily unavailable",
-        ImageViewerError::Unknown => "Unable to load image",
-        ImageViewerError::Timeout => "Timed out loading this image",
-    }
-}
 
 #[cfg(test)]
 mod tests_human_readable_list {

@@ -165,40 +165,43 @@ impl MediaCache {
         post_request_retval
     }
 
-    /// Deletes a specific media format from the cache for the given MXC URI.
-    /// If `format` is None, deletes the entire cache entry for the URI.
-    /// Returns true if an entry was deleted, false if nothing was found.
-    pub fn delete_cache_entry(&mut self, mxc_uri: &OwnedMxcUri, format: Option<MediaFormat>) -> bool {
+    /// Removes a specific media format from the cache for the given MXC URI.
+    /// If `format` is None, removes the entire cache entry for the URI.
+    /// Returns the removed cache entry if found, None otherwise.
+    pub fn remove_cache_entry(&mut self, mxc_uri: &OwnedMxcUri, format: Option<MediaFormat>) -> Option<MediaCacheEntryRef> {
         match format {
             Some(MediaFormat::Thumbnail(_)) => {
                 if let Some(cache_value) = self.cache.get_mut(mxc_uri) {
-                    if cache_value.thumbnail.is_some() {
-                        cache_value.thumbnail = None;
+                    if let Some((removed_entry, _)) = cache_value.thumbnail.take() {
                         // If both thumbnail and full_file are None, remove the entire entry
                         if cache_value.full_file.is_none() {
                             self.cache.remove(mxc_uri);
                         }
-                        return true;
+                        return Some(removed_entry);
                     }
                 }
-                false
+                None
             }
             Some(MediaFormat::File) => {
                 if let Some(cache_value) = self.cache.get_mut(mxc_uri) {
-                    if cache_value.full_file.is_some() {
-                        cache_value.full_file = None;
+                    if let Some(removed_entry) = cache_value.full_file.take() {
                         // If both thumbnail and full_file are None, remove the entire entry
                         if cache_value.thumbnail.is_none() {
                             self.cache.remove(mxc_uri);
                         }
-                        return true;
+                        return Some(removed_entry);
                     }
                 }
-                false
+                None
             }
             None => {
-                // Delete the entire entry for this MXC URI
-                self.cache.remove(mxc_uri).is_some()
+                // Remove the entire entry for this MXC URI
+                self.cache.remove(mxc_uri).map(|cache_value| {
+                    // Return the full_file entry if it exists, otherwise the thumbnail entry
+                    cache_value.full_file
+                        .or_else(|| cache_value.thumbnail.map(|(entry, _)| entry))
+                        .unwrap_or_else(|| Arc::new(Mutex::new(MediaCacheEntry::Requested)))
+                })
             }
         }
     }

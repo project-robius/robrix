@@ -4277,8 +4277,8 @@ pub fn populate_matrix_image_modal(
                 _ => ImageViewerError::Unknown,
             };
             cx.action(ImageViewerAction::Show(LoadState::Error(error)));
-            // Delete failed media entry from cache for MediaFormat::File so as to start all over again from loading Thumbnail.
-            media_cache.delete_cache_entry(&mxc_uri, Some(MediaFormat::File));
+            // Remove failed media entry from cache for MediaFormat::File so as to start all over again from loading Thumbnail.
+            media_cache.remove_cache_entry(&mxc_uri, Some(MediaFormat::File));
         }
         _ => {}
     }
