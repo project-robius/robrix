@@ -667,67 +667,18 @@ impl Widget for RoomScreen {
                     let Some((texture, size)) = content_message.get_texture_and_size(cx) else { continue; };
                     let texture = std::rc::Rc::new(texture);
                     let screen_width = wr.area().rect(cx).size.x;
-                    let (capped_width, capped_height) = constrain_image_dimensions(size.x, size.y, screen_width);
-                    if let Some(tl_state) = &mut self.tl_state {
-                        if let Some(item) = tl_state.items.get(index) {
-                            if let Some(event_tl_item) = item.as_event() {
-                                let sender_profile = event_tl_item.sender_profile();
-                                let sender = event_tl_item.sender();
-                                let event_id = event_tl_item.event_id().map(|id| id.to_owned());
-                                let timestamp = event_tl_item.timestamp();
-                                // Extract image name and size from the message content
-                                let (image_name, image_size) = if let Some(message) = event_tl_item.content().as_message() {
-                                    if let MessageType::Image(image_content) = message.msgtype() {
-                                        let name = message.body().to_string();
-                                        let size = image_content.info.as_ref()
-                                            .and_then(|info| info.size)
-                                            .map(|s| i32::try_from(s).unwrap_or_default())
-                                            .unwrap_or(0);
-                                        (name, size)
-                                    } else {
-                                        ("Unknown Image".to_string(), 0)
-                                    }
-                                } else {
-                                    ("Unknown Image".to_string(), 0)
-                                };
-                                cx.action(ImageViewerAction::Show(LoadState::Loading(texture, DVec2 { x: capped_width, y: capped_height })));
-                                let Some(mxc_uri_string) = mxc_uri else { continue; };
-                                let mxc_uri = OwnedMxcUri::from(mxc_uri_string);
-                                populate_matrix_image_modal(cx, mxc_uri, &mut tl_state.media_cache);
-                                cx.widget_action(
-                                    room_screen_widget_uid,
-                                    &scope.path,
-                                    RoomImageViewerDetailAction::SetImageDetail {
-                                        room_id: self.room_id.clone(),
-                                        sender: Some(sender.to_owned()),
-                                        sender_profile: Some(sender_profile.clone()),
-                                        event_id,
-                                        timestamp_millis: timestamp,
-                                        image_name,
-                                        image_size
-                                    }
-                                );
-                            }
-                        }
-                    }
-                    continue
-                }
-                let link_preview_content = wr.link_preview(ids!(content.link_preview_view)).get_children();
-                for text_or_image in link_preview_content.iter() {
-                    let text_or_image = text_or_image.text_or_image(ids!(image_view.image));
-                    if let TextOrImageAction::Clicked(mxc_uri) = actions.find_widget_action(text_or_image.widget_uid()).cast() {
-                        let Some((texture, size)) = text_or_image.get_texture_and_size(cx) else { 
-                            continue; 
-                        };
-                        let screen_width = wr.area().rect(cx).size.x;
-                        let (capped_width, capped_height) = constrain_image_dimensions(size.x, size.y, screen_width);
-                        let texture = std::rc::Rc::new(texture);
-                        let Some(mxc_uri_string) = mxc_uri else { continue; };
-                        let mxc_uri = OwnedMxcUri::from(mxc_uri_string);
-                        cx.action(ImageViewerAction::Show(LoadState::Loading(texture, DVec2 { x: capped_width, y: capped_height })));
-                        let Some(tl_state) = self.tl_state.as_mut() else { continue; };
-                        populate_matrix_image_modal(cx, mxc_uri, &mut tl_state.media_cache);
-                    }
+                    
+                    self.handle_image_click(
+                        cx,
+                        mxc_uri,
+                        texture,
+                        size,
+                        screen_width,
+                        index,
+                        room_screen_widget_uid,
+                        scope,
+                    );
+                    continue;
                 }
             }
 
@@ -1611,6 +1562,70 @@ impl RoomScreen {
         }
         else {
             false
+        }
+    }
+
+    /// Handles image clicks in message content by opening the image viewer.
+    fn handle_image_click(
+        &mut self,
+        cx: &mut Cx,
+        mxc_uri: Option<String>,
+        texture: std::rc::Rc<Option<Texture>>,
+        size: DVec2,
+        screen_width: f64,
+        index: usize,
+        room_screen_widget_uid: WidgetUid,
+        scope: &Scope,
+    ) {
+        let Some(mxc_uri_string) = mxc_uri else { return; };
+        let Some(tl_state) = &mut self.tl_state else { return; };
+        let Some(item) = tl_state.items.get(index) else { return; };
+        let Some(event_tl_item) = item.as_event() else { return; };
+
+        let (capped_width, capped_height) = constrain_image_dimensions(size.x, size.y, screen_width);
+        
+        let sender_profile = event_tl_item.sender_profile();
+        let sender = event_tl_item.sender();
+        let event_id = event_tl_item.event_id().map(|id| id.to_owned());
+        let timestamp = event_tl_item.timestamp();
+        
+        let (image_name, image_size) = Self::extract_image_info(event_tl_item);
+        
+        cx.action(ImageViewerAction::Show(LoadState::Loading(texture.clone(), DVec2 { x: capped_width, y: capped_height })));
+        
+        let mxc_uri = OwnedMxcUri::from(mxc_uri_string);
+        populate_matrix_image_modal(cx, mxc_uri, &mut tl_state.media_cache);
+        
+        cx.widget_action(
+            room_screen_widget_uid,
+            &scope.path,
+            RoomImageViewerDetailAction::SetImageDetail {
+                room_id: self.room_id.clone(),
+                sender: Some(sender.to_owned()),
+                sender_profile: Some(sender_profile.clone()),
+                event_id,
+                timestamp_millis: timestamp,
+                image_name,
+                image_size
+            }
+        );
+    }
+
+    /// Extracts image name and size from an event timeline item.
+    fn extract_image_info(event_tl_item: &EventTimelineItem) -> (String, i32) {
+        if let Some(message) = event_tl_item.content().as_message() {
+            if let MessageType::Image(image_content) = message.msgtype() {
+                let name = message.body().to_string();
+                let size = image_content.info.as_ref()
+                    .and_then(|info| info.size)
+                    .map(|s| i32::try_from(s).unwrap_or_default())
+                    .unwrap_or(0);
+                (name, size)
+            } else {
+                ("Unknown Image".to_string(), 0)
+            }
+        } else {
+            ("Unknown Image".to_string(), 0)
         }
     }
 
