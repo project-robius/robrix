@@ -270,7 +270,7 @@ live_design! {
             }
         }
 
-        Mobile = {
+        Mobile = <RoundedView> {
             flow: Right
             align: {x: 0.5, y: 0.5}
             width: Fill,
@@ -279,6 +279,7 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: (COLOR_SECONDARY)
+                border_radius: 4.0
             }
 
             <CachedWidget> {
@@ -454,7 +455,7 @@ impl Widget for NavigationTabBar {
 
             if self.view.button(ids!(toggle_spaces_bar_button)).clicked(actions) {
                 self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
-                log!("Clicked toggle_spaces_bar_button, transitiong to {}...", if self.is_spaces_bar_shown {"shown"} else {"hidden"});
+                log!("Clicked toggle_spaces_bar_button, transitioning to {}...", if self.is_spaces_bar_shown {"shown"} else {"hidden"});
                 cx.action(NavigationBarAction::ToggleSpacesBar);
             }
 

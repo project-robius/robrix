@@ -22,11 +22,6 @@ live_design! {
         width: Fill, height: Fill,
         flow: Overlay
 
-        show_bg: true,
-        draw_bg: {
-            color: (COLOR_PRIMARY)
-        }
-
         <View> {
             padding: {top: 5, left: 15, right: 15, bottom: 15},
             spacing: 10,

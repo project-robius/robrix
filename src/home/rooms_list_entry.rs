@@ -113,6 +113,7 @@ live_design! {
         width: Fill, height: Fit
         show_bg: true
         draw_bg: {
+            color: #0000
             instance border_size: 0.0
             instance border_color: #0000
             instance inset: vec4(0.0, 0.0, 0.0, 0.0)
@@ -398,13 +399,13 @@ impl RoomsListEntryContent {
 
         // TODO: This is quite verbose, makepad should provide a way to override this at a higher level.
         if is_selected {
-            bg_color = vec3(0.059, 0.533, 0.996); // COLOR_PRIMARY_SELECTED
+            bg_color = vec4(0.059, 0.533, 0.996, 1.0); // COLOR_PRIMARY_SELECTED
             message_text_color = vec3(1., 1., 1.); // COLOR_PRIMARY
             room_name_color = vec3(1., 1., 1.); // COLOR_PRIMARY
             timestamp_color = vec3(1., 1., 1.); // COLOR_PRIMARY
             code_bg_color = vec3(0.3, 0.3, 0.3); // a darker gray, used for `code_color` and `quote_bg_color`
         } else {
-            bg_color = vec3(1., 1., 1.); // COLOR_PRIMARY
+            bg_color = vec4(0.0, 0.0, 0.0, 0.0); // TRANSPARENT
             message_text_color = vec3(0.267, 0.267, 0.267); // MESSAGE_TEXT_COLOR
             room_name_color = vec3(0., 0., 0.);
             timestamp_color = vec3(0.6, 0.6, 0.6);

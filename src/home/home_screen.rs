@@ -45,12 +45,18 @@ live_design! {
     }
 
     // A wrapper view around the SpacesBar that lets us show/hide it via animation.
-    SpacesBarWrapper = {{SpacesBarWrapper}} {
+    SpacesBarWrapper = {{SpacesBarWrapper}}<RoundedShadowView> {
         width: Fill,
         height: (NAVIGATION_TAB_BAR_SIZE)
+        margin: {left: 4, right: 4}
         show_bg: true
         draw_bg: {
-            color: #0f0 // (COLOR_PRIMARY_DARKER * 0.85)
+            color: (COLOR_PRIMARY_DARKER),
+            border_radius: 4.0,
+            border_size: 0.0
+            shadow_color: #0005
+            shadow_radius: 15.0
+            shadow_offset: vec2(1.0, 0.0), //5.0,5.0)
         }
 
         <CachedWidget> {
@@ -63,12 +69,12 @@ live_design! {
                 show = {
                     redraw: true,
                     from: { all: Forward { duration: (SPACES_BAR_ANIMATION_DURATION_SECS) } }
-                    apply: { height: (NAVIGATION_TAB_BAR_SIZE) }
+                    apply: { height: (NAVIGATION_TAB_BAR_SIZE),  draw_bg: { shadow_color: #x00000055 } }
                 }
                 hide = {
                     redraw: true,
                     from: { all: Forward { duration: (SPACES_BAR_ANIMATION_DURATION_SECS) } }
-                    apply: { height: 0 }
+                    apply: { height: 0,  draw_bg: { shadow_color: #x00000000 } }
                 }
             }
         }
@@ -136,6 +142,10 @@ live_design! {
 
                     settings_page = <View> {
                         width: Fill, height: Fill
+                        show_bg: true,
+                        draw_bg: {
+                            color: (COLOR_PRIMARY)
+                        }
 
                         <CachedWidget> {
                             settings_screen = <SettingsScreen> {}

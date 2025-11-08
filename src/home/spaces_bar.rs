@@ -30,7 +30,7 @@ live_design! {
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
 
     // The duration of the animation when showing/hiding the SpacesBar (in Mobile view mode only).
-    pub SPACES_BAR_ANIMATION_DURATION_SECS = 0.3
+    pub SPACES_BAR_ANIMATION_DURATION_SECS = 0.25
 
     // An entry in the list of all spaces, which shown the Space's avatar and name.
     SpacesBarEntry = {{SpacesBarEntry}}<RoundedView> {
