@@ -23,8 +23,7 @@ live_design! {
         flow: Overlay
 
         <View> {
-            padding: {top: 5, left: 15, right: 15, bottom: 15},
-            spacing: 10,
+            padding: {top: 5, left: 15, right: 15, bottom: 0},
             flow: Down
 
             // The settings header shows a title, with a close button to the right.
@@ -65,7 +64,8 @@ live_design! {
                 }
             }
 
-            <LineH> { padding: 10 }
+            // Make sure the dividing line is aligned with the close_button
+            <LineH> { padding: 10, margin: {top: 10, right: 2} }
 
             <ScrollXYView> {
                 width: Fill, height: Fill

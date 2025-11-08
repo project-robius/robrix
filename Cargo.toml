@@ -59,7 +59,10 @@ indexmap = "2.6.0"
 blurhash = { version = "0.2.3", default-features = false }
 
 ## Dependencies for TSP support.
-# tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", optional = true, features = ["async", "resolve"] }
+## Commit "f0bc4625dcd729e07e4a36257df2f1d94c81cef4" is the most recent one without the invalid change to pin serde to 1.0.219.
+## See my issue here: <https://github.com/openwallet-foundation-labs/tsp/issues/237>.
+## However, that commit doesn't build.... yikes. So we have to use a slightly older commit in the "rev" field below.
+tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", rev = "1cd0cc9442e144ad7c01ccd30daffbb3a52c0f20", optional = true, features = ["async", "resolve"] }
 quinn = { version = "0.11", default-features = false, optional = true }
 ## We only include this such that we can specify the prebuilt-nasm features,
 ## which is required to build this on Windows x86_64 without having to install NASM separately.
@@ -80,8 +83,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 [features]
 default = []
 ## Enables experimental support for using TSP wallets.
-# tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding"]
-tsp = [] ## TEMP REMOVE
+tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding"]
 
 ## Hides the command prompt console on Windows.
 hide_windows_console = []
