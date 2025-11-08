@@ -47,7 +47,7 @@ live_design! {
             height: Fit,
             flow: Right, // do not wrap
 
-            empty_text: "Filter rooms..."
+            empty_text: "Filter rooms/spaces..."
 
             draw_text: {
                 text_style: { font_size: 10 },
