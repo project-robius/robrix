@@ -191,7 +191,7 @@ async fn optimize_remove_then_add_into_update(
             if LOG_SPACE_SERVICE_DIFFS {
                 log!("Optimizing {remove_diff:?} + Insert({insert_index}) into Update for space {}", space.room_id);
             }
-            update_space(&space, &new_space, client).await;
+            update_space(&space, new_space, client).await;
             all_joined_spaces.insert(*insert_index, new_space.clone());
             next_diff_was_handled = true;
         }
@@ -201,7 +201,7 @@ async fn optimize_remove_then_add_into_update(
             if LOG_SPACE_SERVICE_DIFFS {
                 log!("Optimizing {remove_diff:?} + PushFront into Update for space {}", space.room_id);
             }
-            update_space(&space, &new_space, client).await;
+            update_space(&space, new_space, client).await;
             all_joined_spaces.push_front(new_space.clone());
             next_diff_was_handled = true;
         }
@@ -211,7 +211,7 @@ async fn optimize_remove_then_add_into_update(
             if LOG_SPACE_SERVICE_DIFFS {
                 log!("Optimizing {remove_diff:?} + PushBack into Update for space {}", space.room_id);
             }
-            update_space(&space, &new_space, client).await;
+            update_space(&space, new_space, client).await;
             all_joined_spaces.push_back(new_space.clone());
             next_diff_was_handled = true;
         }
@@ -375,7 +375,7 @@ async fn update_space(
 fn remove_space(space: &SpaceRoom) {
     enqueue_spaces_list_update(SpacesListUpdate::RemoveSpace {
         space_id: space.room_id.clone(),
-        new_state: space.state.clone(),
+        new_state: space.state,
     });
 }
 
