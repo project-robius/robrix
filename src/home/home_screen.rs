@@ -284,10 +284,8 @@ impl SpacesBarWrapperRef {
     fn show_or_hide(&self, cx: &mut Cx, show: bool) {
         let Some(mut inner) = self.borrow_mut() else { return };
         if show {
-            log!("Showing spaces bar...");
             inner.animator_play(cx, ids!(spaces_bar_animator.show));
         } else {
-            log!("Hiding spaces bar...");
             inner.animator_play(cx, ids!(spaces_bar_animator.hide));
         }
         inner.redraw(cx);

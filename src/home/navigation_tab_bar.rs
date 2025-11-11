@@ -34,7 +34,7 @@ use makepad_widgets::*;
 use ruma::OwnedRoomId;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, home::spaces_bar::SpacesBarAction, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{self, UserProfileUpdate},
     }, shared::{
@@ -120,6 +120,8 @@ live_design! {
         }
 
         draw_text: {
+            instance hover: 0.0
+            instance active: 0.0
             color: (COLOR_NAVIGATION_TAB_FG)
             color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
             color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
@@ -140,6 +142,8 @@ live_design! {
         }
 
         draw_icon: {
+            instance hover: 0.0
+            instance active: 0.0
             uniform color: (COLOR_NAVIGATION_TAB_FG)
             uniform color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
             uniform color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)

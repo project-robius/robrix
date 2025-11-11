@@ -276,6 +276,7 @@ pub struct SpacesBarEntry {
     #[animator] animator: Animator,
 
     #[rust] space_id: Option<OwnedRoomId>,
+    // #[rust] is_selected: bool,
 }
 
 impl Widget for SpacesBarEntry {
@@ -292,6 +293,7 @@ impl Widget for SpacesBarEntry {
                 self.animator_play(cx, ids!(hover.off));
             }
             Hit::FingerDown(fe) => {
+                self.animator_play(cx, ids!(hover.down));
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                     if let Some(space_id) = self.space_id.clone() {
                         cx.widget_action(
@@ -303,6 +305,7 @@ impl Widget for SpacesBarEntry {
                 }
             }
             Hit::FingerLongPress(_lp) => {
+                self.animator_play(cx, ids!(hover.down));
                 if let Some(space_id) = self.space_id.clone() {
                     cx.widget_action(
                         self.widget_uid(),
@@ -312,8 +315,7 @@ impl Widget for SpacesBarEntry {
                 }
             }
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                // self.animator_play(cx, ids!(hover.on));
-                log!("Space icon was clicked, {:?}", self.space_id);
+                self.animator_play(cx, ids!(hover.on));
                 if let Some(space_id) = self.space_id.clone() {
                     cx.widget_action(
                         self.widget_uid(),
@@ -321,6 +323,9 @@ impl Widget for SpacesBarEntry {
                         SpacesBarAction::ButtonClicked { space_id },
                     );
                 }
+            }
+            Hit::FingerUp(fe) if !fe.is_over => {
+                self.animator_play(cx, ids!(hover.off));
             }
             Hit::FingerMove(_fe) => { }
             _ => {}
@@ -334,9 +339,6 @@ impl Widget for SpacesBarEntry {
 
 impl SpacesBarEntry {
     fn set_metadata(&mut self, cx: &mut Cx, space_id: OwnedRoomId, is_selected: bool) {
-        if is_selected {
-            log!("Space {space_id} is SELECTED!");
-        }
         self.space_id = Some(space_id);
         let active_val = is_selected as u8 as f64;
         self.apply_over(cx, live!{
@@ -500,7 +502,6 @@ impl Widget for SpacesBar {
 
                 // Update which space is currently selected.
                 if let SpacesBarAction::ButtonClicked { space_id } = action.as_widget_action().cast() {
-                    log!("New space was selected: {space_id}");
                     self.selected_space = Some(space_id.clone());
                     self.redraw(cx);
                     cx.action(NavigationBarAction::GoToSpace { space_id });
@@ -510,17 +511,14 @@ impl Widget for SpacesBar {
                 // If another widget programmatically selected a new tab,
                 // we must unselect/deselect the currently-selected space.
                 if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
-                    log!("SpacesBar: updating selected tab to {tab:?}");
                     match tab {
-                        SelectedTab::Space { space_id } if self.selected_space.as_ref() != Some(space_id) => {
+                        SelectedTab::Space { space_id } => {
                             self.selected_space = Some(space_id.clone());
                             self.redraw(cx);
                         }
                         _ => {
-                            if self.selected_space.is_some() {
-                                self.selected_space = None;
-                                self.redraw(cx);
-                            }
+                            self.selected_space = None;
+                            self.redraw(cx);
                         }
                     }
                     continue;
@@ -548,7 +546,6 @@ impl Widget for SpacesBar {
             }
 
             let len = self.displayed_spaces.len();
-            log!("DRAWING {len} DISPLAYED SPACES...");
             if len == 0 {
                 list.set_item_range(cx, 0, 1);
                 while let Some(portal_list_index) = list.next_visible_item(cx) {
@@ -777,7 +774,6 @@ impl SpacesBar {
             }
         }
         if num_updates > 0 {
-            // log!("SpacesBar: processed {} updates to the list of all space", num_updates);
             self.redraw(cx);
         }
     }
