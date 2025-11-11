@@ -313,6 +313,7 @@ impl Widget for HomeScreen {
                         if !matches!(self.selection, SelectedTab::Home) {
                             self.previous_selection = self.selection.clone();
                             self.selection = SelectedTab::Home;
+                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
                             self.update_active_page_from_selection(cx);
                             self.view.redraw(cx);
                         }
@@ -321,6 +322,17 @@ impl Widget for HomeScreen {
                         if !matches!(self.selection, SelectedTab::AddRoom) {
                             self.previous_selection = self.selection.clone();
                             self.selection = SelectedTab::AddRoom;
+                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
+                            self.update_active_page_from_selection(cx);
+                            self.view.redraw(cx);
+                        }
+                    }
+                    Some(NavigationBarAction::GoToSpace { space_id }) => {
+                        let new_space_selection = SelectedTab::Space { space_id: space_id.clone() };
+                        if self.selection != new_space_selection {
+                            self.previous_selection = self.selection.clone();
+                            self.selection = new_space_selection;
+                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
                             self.update_active_page_from_selection(cx);
                             self.view.redraw(cx);
                         }
@@ -330,6 +342,7 @@ impl Widget for HomeScreen {
                         if !matches!(self.selection, SelectedTab::Settings) {
                             self.previous_selection = self.selection.clone();
                             self.selection = SelectedTab::Settings;
+                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
                             if let Some(settings_page) = self.update_active_page_from_selection(cx) {
                                 settings_page
                                     .settings_screen(ids!(settings_screen))
@@ -341,10 +354,12 @@ impl Widget for HomeScreen {
                         }
                     }
                     Some(NavigationBarAction::CloseSettings) => {
-                        self.selection = self.previous_selection.clone();
-                        cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
-                        self.update_active_page_from_selection(cx);
-                        self.view.redraw(cx);
+                        if matches!(self.selection, SelectedTab::Settings) {
+                            self.selection = self.previous_selection.clone();
+                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
+                            self.update_active_page_from_selection(cx);
+                            self.view.redraw(cx);
+                        }
                     }
                     Some(NavigationBarAction::ToggleSpacesBar) => {
                         self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
@@ -382,6 +397,7 @@ impl HomeScreen {
                     SelectedTab::Home     => id!(home_page),
                     SelectedTab::Settings => id!(settings_page),
                     SelectedTab::AddRoom  => id!(add_room_page),
+                    SelectedTab::Space { .. } => id!(home_page), // TODO: show the SpacesScreen
                 },
             )
     }

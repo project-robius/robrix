@@ -31,23 +31,18 @@
 //!
 
 use makepad_widgets::*;
+use ruma::OwnedRoomId;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry},
-    login::login_screen::LoginAction,
-    logout::logout_confirm_modal::LogoutAction,
-    profile::{
+    avatar_cache::{self, AvatarCacheEntry}, home::spaces_bar::SpacesBarAction, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{self, UserProfileUpdate},
-    },
-    shared::{
+    }, shared::{
         avatar::AvatarWidgetExt,
         callout_tooltip::TooltipAction,
         styles::*,
         verification_badge::VerificationBadgeWidgetExt,
-    },
-    sliding_sync::current_user_id,
-    utils,
+    }, sliding_sync::current_user_id, utils
 };
 
 live_design! {
@@ -455,7 +450,6 @@ impl Widget for NavigationTabBar {
 
             if self.view.button(ids!(toggle_spaces_bar_button)).clicked(actions) {
                 self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
-                log!("Clicked toggle_spaces_bar_button, transitioning to {}...", if self.is_spaces_bar_shown {"shown"} else {"hidden"});
                 cx.action(NavigationBarAction::ToggleSpacesBar);
             }
 
@@ -469,8 +463,26 @@ impl Widget for NavigationTabBar {
                             // self.view.radio_button(ids!(add_room_button)).select(cx, scope),
                         }
                         SelectedTab::Settings => self.view.radio_button(ids!(settings_button)).select(cx, scope),
+                        SelectedTab::Space { .. } => {
+                            for rb in radio_button_set.iter() {
+                                if let Some(mut rb_inner) = rb.borrow_mut() {
+                                    rb_inner.animator_play(cx, ids!(active.off));
+                                }
+                            }
+                        }
                     }
+                    continue;
                 }
+
+                // if let SpacesBarAction::ButtonClicked { .. } = action.as_widget_action().cast_ref() {
+                //     log!("Space selected. Unselecting all navigation tab bar radio buttons...");
+                //     for rb in radio_button_set.iter() {
+                //         if let Some(mut rb_inner) = rb.borrow_mut() {
+                //             rb_inner.animator_play(cx, ids!(active.off));
+                //         }
+                //     }
+                //     continue;
+                // }
             }
         }
     }
@@ -482,22 +494,22 @@ impl Widget for NavigationTabBar {
 
 
 /// Which tab is currently selected in the NavigationTabBar.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum SelectedTab {
     #[default]
     Home,
     AddRoom,
     Settings,
     // AlertsInbox,
-
-    // Once we support spaces and shortcut buttons (like directs only, etc),
-    // we can add them here.
+    Space {
+        space_id: OwnedRoomId,
+    }
 }
 
 
 /// Actions for navigating through the top-level views of the app,
 /// e.g., when the user clicks/taps on a button in the NavigationTabBar.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum NavigationBarAction {
     /// Go to the main rooms content view.
     GoToHome,
@@ -514,6 +526,8 @@ pub enum NavigationBarAction {
     /// This is only applicable in the Mobile view mode, because the SpacesBar
     /// is always shown in Desktop view mode.
     ToggleSpacesBar,
+    /// Go the space screen for the given space.
+    GoToSpace { space_id: OwnedRoomId },
     // GoToAlertsInbox
 }
 

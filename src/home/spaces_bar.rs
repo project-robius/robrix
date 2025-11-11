@@ -13,7 +13,7 @@ use matrix_sdk::RoomState;
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::RoomFilterAction}, utils,
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::RoomFilterAction}, utils
 };
 
 live_design! {
@@ -162,23 +162,23 @@ live_design! {
                     }
                 }
             }
-            active = {
-                default: off
-                off = {
-                    from: {all: Forward {duration: 0.2}}
-                    apply: {
-                        draw_bg: {active: 0.0}
-                        space_name = { draw_text: {active: 0.0} }
-                    }
-                }
-                on = {
-                    from: {all: Forward {duration: 0.0}}
-                    apply: {
-                        draw_bg: {active: 1.0}
-                        space_name = { draw_text: {active: 1.0} }
-                    }
-                }
-            }
+            // active = {
+            //     default: off
+            //     off = {
+            //         from: {all: Forward {duration: 0.2}}
+            //         apply: {
+            //             draw_bg: {active: 0.0}
+            //             space_name = { draw_text: {active: 0.0} }
+            //         }
+            //     }
+            //     on = {
+            //         from: {all: Forward {duration: 0.0}}
+            //         apply: {
+            //             draw_bg: {active: 1.0}
+            //             space_name = { draw_text: {active: 1.0} }
+            //         }
+            //     }
+            // }
         }
     }
 
@@ -275,13 +275,14 @@ pub struct SpacesBarEntry {
     #[deref] view: View,
     #[animator] animator: Animator,
 
-    #[rust] index_in_portal_list: usize,
     #[rust] space_id: Option<OwnedRoomId>,
 }
 
 impl Widget for SpacesBarEntry {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.animator_handle_event(cx, event);
+        if self.animator_handle_event(cx, event).must_redraw() {
+            self.redraw(cx);
+        }
 
         match event.hits(cx, self.draw_bg.area()) {
             Hit::FingerHoverIn(_) => {
@@ -291,9 +292,6 @@ impl Widget for SpacesBarEntry {
                 self.animator_play(cx, ids!(hover.off));
             }
             Hit::FingerDown(fe) => {
-                if self.animator_in_state(cx, ids!(active.off)) {
-                    self.animator_play(cx, ids!(hover.down));
-                }
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                     if let Some(space_id) = self.space_id.clone() {
                         cx.widget_action(
@@ -305,9 +303,6 @@ impl Widget for SpacesBarEntry {
                 }
             }
             Hit::FingerLongPress(_lp) => {
-                if self.animator_in_state(cx, ids!(active.off)) {
-                    self.animator_play(cx, ids!(hover.down));
-                }
                 if let Some(space_id) = self.space_id.clone() {
                     cx.widget_action(
                         self.widget_uid(),
@@ -317,16 +312,14 @@ impl Widget for SpacesBarEntry {
                 }
             }
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                self.animator_play(cx, ids!(hover.on));
-                if self.animator_in_state(cx, ids!(active.off)) {
-                    self.animator_play(cx, ids!(active.on));
-                    if let Some(space_id) = self.space_id.clone() {
-                        cx.widget_action(
-                            self.widget_uid(),
-                            &scope.path,
-                            SpacesBarAction::ButtonClicked { space_id },
-                        );
-                    }
+                // self.animator_play(cx, ids!(hover.on));
+                log!("Space icon was clicked, {:?}", self.space_id);
+                if let Some(space_id) = self.space_id.clone() {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        SpacesBarAction::ButtonClicked { space_id },
+                    );
                 }
             }
             Hit::FingerMove(_fe) => { }
@@ -340,20 +333,22 @@ impl Widget for SpacesBarEntry {
 }
 
 impl SpacesBarEntry {
-    fn set_metadata(&mut self, cx: &mut Cx, index_in_portal_list: usize, space_id: OwnedRoomId, is_selected: bool) {
-        self.index_in_portal_list = index_in_portal_list;
-        self.space_id = Some(space_id);
+    fn set_metadata(&mut self, cx: &mut Cx, space_id: OwnedRoomId, is_selected: bool) {
         if is_selected {
-            self.animator_play(cx, ids!(active.on));
-        } else {
-            self.animator_play(cx, ids!(active.off));
+            log!("Space {space_id} is SELECTED!");
         }
+        self.space_id = Some(space_id);
+        let active_val = is_selected as u8 as f64;
+        self.apply_over(cx, live!{
+            draw_bg: { active: (active_val) },
+            space_name = { draw_text: { active: (active_val) } }
+        });
     }
 }
 impl SpacesBarEntryRef {
-    pub fn set_metadata(&self, cx: &mut Cx, index_in_portal_list: usize, space_id: OwnedRoomId, is_selected: bool) {
+    pub fn set_metadata(&self, cx: &mut Cx, space_id: OwnedRoomId, is_selected: bool) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_metadata(cx, index_in_portal_list, space_id, is_selected);
+        inner.set_metadata(cx, space_id, is_selected);
     }
 }
 
@@ -504,9 +499,30 @@ impl Widget for SpacesBar {
                 }
 
                 // Update which space is currently selected.
-                if let Some(SpacesBarAction::ButtonClicked { space_id }) = action.downcast_ref() {
+                if let SpacesBarAction::ButtonClicked { space_id } = action.as_widget_action().cast() {
+                    log!("New space was selected: {space_id}");
                     self.selected_space = Some(space_id.clone());
                     self.redraw(cx);
+                    cx.action(NavigationBarAction::GoToSpace { space_id });
+                    continue;
+                }
+
+                // If another widget programmatically selected a new tab,
+                // we must unselect/deselect the currently-selected space.
+                if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
+                    log!("SpacesBar: updating selected tab to {tab:?}");
+                    match tab {
+                        SelectedTab::Space { space_id } if self.selected_space.as_ref() != Some(space_id) => {
+                            self.selected_space = Some(space_id.clone());
+                            self.redraw(cx);
+                        }
+                        _ => {
+                            if self.selected_space.is_some() {
+                                self.selected_space = None;
+                                self.redraw(cx);
+                            }
+                        }
+                    }
                     continue;
                 }
             }
@@ -586,7 +602,6 @@ impl Widget for SpacesBar {
                         }
                         item.as_spaces_bar_entry().set_metadata(
                             cx,
-                            portal_list_index, 
                             space.space_id.clone(),
                             self.selected_space.as_ref().is_some_and(|id| id == &space.space_id),
                         );
