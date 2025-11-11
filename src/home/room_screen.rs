@@ -3231,7 +3231,7 @@ fn populate_text_message_content(
     };
 
     // Populate link previews if all required parameters are provided
-    if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) =
+    if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) = 
         (link_preview_ref, media_cache, link_preview_cache)
     {
         link_preview_ref.populate_below_message(
@@ -3331,7 +3331,7 @@ fn populate_image_message_content(
                             Err(e) => {
                                 error!("Failed to decode blurhash {e:?}");
                                 Err(image_cache::ImageError::EmptyData)
-                            }
+                            }   
                         }
                     });
                     if let Err(e) = show_image_result {
@@ -4167,7 +4167,7 @@ impl MessageRef {
 ///
 /// This function requires passing in a reference to `Cx`,
 /// which isn't used, but acts as a guarantee that this function
-/// must only be called by the main UI thread.
+/// must only be called by the main UI thread. 
 pub fn clear_timeline_states(_cx: &mut Cx) {
     // Clear timeline states cache
     TIMELINE_STATES.with_borrow_mut(|states| {
