@@ -22,7 +22,7 @@ on:
           - 'linux-ubuntu-22.04-x86_64'   # Build for Ubuntu 22.04 x86_64
           - 'linux-ubuntu-22.04-aarch64'  # Build for Ubuntu 22.04 aarch64
           - 'macos-14-aarch64'            # Build for MacOS 14 (Apple Silicon)
-          - 'macos-13-x86_64'             # Build for MacOS 13 (Intel)
+          - 'macos-15-x86_64'             # Build for MacOS 15 (Intel)
           - 'windows-2022-x86_64'         # Build for Windows 2022 x86_64
       release_tag:
         description: 'Release tag (required if creating release)'
@@ -87,7 +87,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             case "${{ github.event.inputs.target_platforms }}" in
               "All")
-                matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"},{"os":"ubuntu-24.04-arm","arch":"aarch64"},{"os":"ubuntu-22.04","arch":"x86_64"},{"os":"ubuntu-22.04-arm","arch":"aarch64"},{"os":"macos-14","arch":"aarch64"},{"os":"macos-13","arch":"x86_64"},{"os":"windows-2022","arch":"x86_64"}]}'
+                matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"},{"os":"ubuntu-24.04-arm","arch":"aarch64"},{"os":"ubuntu-22.04","arch":"x86_64"},{"os":"ubuntu-22.04-arm","arch":"aarch64"},{"os":"macos-14","arch":"aarch64"},{"os":"macos-15-intel","arch":"x86_64"},{"os":"windows-2022","arch":"x86_64"}]}'
                 ;;
               "linux-ubuntu-24.04")
                 matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"},{"os":"ubuntu-24.04-arm","arch":"aarch64"}]}'
@@ -110,15 +110,15 @@ jobs:
               "macos-14-aarch64")
                 matrix='{"include":[{"os":"macos-14","arch":"aarch64"}]}'
                 ;;
-              "macos-13-x86_64")
-                matrix='{"include":[{"os":"macos-13","arch":"x86_64"}]}'
+              "macos-15-x86_64")
+                matrix='{"include":[{"os":"macos-15-intel","arch":"x86_64"}]}'
                 ;;
               "windows-2022-x86_64")
                 matrix='{"include":[{"os":"windows-2022","arch":"x86_64"}]}'
                 ;;
             esac
           else
-            matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"},{"os":"ubuntu-24.04-arm","arch":"aarch64"},{"os":"ubuntu-22.04","arch":"x86_64"},{"os":"ubuntu-22.04-arm","arch":"aarch64"},{"os":"macos-14","arch":"aarch64"},{"os":"macos-13","arch":"x86_64"},{"os":"windows-2022","arch":"x86_64"}]}'
+            matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"},{"os":"ubuntu-24.04-arm","arch":"aarch64"},{"os":"ubuntu-22.04","arch":"x86_64"},{"os":"ubuntu-22.04-arm","arch":"aarch64"},{"os":"macos-14","arch":"aarch64"},{"os":"macos-15-intel","arch":"x86_64"},{"os":"windows-2022","arch":"x86_64"}]}'
           fi
           echo "matrix=$matrix" >> $GITHUB_OUTPUT
 
@@ -216,7 +216,7 @@ jobs:
             echo "RELEASE_FILE=$FILE" >> $GITHUB_ENV
             echo "UPLOAD_FILES=./dist/$FILE" >> $GITHUB_ENV
 
-          elif [[ "$OS" == "macos-13" ]]; then
+          elif [[ "$OS" == "macos-15-intel" ]]; then
             FILE="robrix-${VERSION}-macOS-${ARCH}.dmg"
             mv ./dist/Robrix_${VERSION}_x64.dmg ./dist/$FILE
             echo "RELEASE_FILE=$FILE" >> $GITHUB_ENV
