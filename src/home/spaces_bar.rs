@@ -13,7 +13,7 @@ use matrix_sdk::RoomState;
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::RoomFilterAction}, utils
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, room_filter_input_bar::RoomFilterAction}, utils
 };
 
 live_design! {
@@ -259,6 +259,7 @@ pub struct SpacesBarEntry {
     #[animator] animator: Animator,
 
     #[rust] space_id: Option<OwnedRoomId>,
+    #[rust] space_name: String,
 }
 
 impl Widget for SpacesBarEntry {
@@ -267,12 +268,35 @@ impl Widget for SpacesBarEntry {
             self.redraw(cx);
         }
 
-        match event.hits(cx, self.draw_bg.area()) {
+        let area = self.draw_bg.area();
+        let emit_hover_in_action = |this: &Self, cx: &mut Cx| {
+            cx.widget_action(
+                this.widget_uid(),
+                &scope.path,
+                TooltipAction::HoverIn {
+                    widget_rect: area.rect(cx),
+                    text: this.space_name.clone(),
+                    bg_color: None,
+                    text_color: None,
+                },
+            );
+        };
+
+        match event.hits(cx, area) {
             Hit::FingerHoverIn(_) => {
                 self.animator_play(cx, ids!(hover.on));
+                emit_hover_in_action(self, cx);
+            }
+            Hit::FingerHoverOver(_) => {
+                emit_hover_in_action(self, cx);
             }
             Hit::FingerHoverOut(_) => {
                 self.animator_play(cx, ids!(hover.off));
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    TooltipAction::HoverOut,
+                );
             }
             Hit::FingerDown(fe) => {
                 self.animator_play(cx, ids!(hover.down));
@@ -288,6 +312,7 @@ impl Widget for SpacesBarEntry {
             }
             Hit::FingerLongPress(_lp) => {
                 self.animator_play(cx, ids!(hover.down));
+                emit_hover_in_action(self, cx);
                 if let Some(space_id) = self.space_id.clone() {
                     cx.widget_action(
                         self.widget_uid(),
@@ -320,8 +345,9 @@ impl Widget for SpacesBarEntry {
 }
 
 impl SpacesBarEntry {
-    fn set_metadata(&mut self, cx: &mut Cx, space_id: OwnedRoomId, is_selected: bool) {
+    fn set_metadata(&mut self, cx: &mut Cx, space_id: OwnedRoomId, space_name: String, is_selected: bool) {
         self.space_id = Some(space_id);
+        self.space_name = space_name;
         let active_val = is_selected as u8 as f64;
         self.apply_over(cx, live!{
             draw_bg: { active: (active_val) },
@@ -330,9 +356,9 @@ impl SpacesBarEntry {
     }
 }
 impl SpacesBarEntryRef {
-    pub fn set_metadata(&self, cx: &mut Cx, space_id: OwnedRoomId, is_selected: bool) {
+    pub fn set_metadata(&self, cx: &mut Cx, space_id: OwnedRoomId, space_name: String, is_selected: bool) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_metadata(cx, space_id, is_selected);
+        inner.set_metadata(cx, space_id, space_name, is_selected);
     }
 }
 
@@ -582,6 +608,7 @@ impl Widget for SpacesBar {
                         item.as_spaces_bar_entry().set_metadata(
                             cx,
                             space.space_id.clone(),
+                            space.display_name.clone(),
                             self.selected_space.as_ref().is_some_and(|id| id == &space.space_id),
                         );
                         item
