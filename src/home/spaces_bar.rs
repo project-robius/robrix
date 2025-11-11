@@ -612,7 +612,7 @@ impl Widget for SpacesBar {
                                 0 => Cow::from("Found no\nmatching spaces."),
                                 1 => Cow::from("Found 1\nmatching space."),
                                 2..100 => Cow::from(format!("Found {len}\nmatching spaces.")),
-                                100..  => Cow::from(format!("Found 99+\nmatching spaces.")),
+                                100..  => Cow::from(String::from("Found 99+\nmatching spaces.")),
                             }.as_ref(),
                         );
                         item
