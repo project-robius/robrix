@@ -477,16 +477,6 @@ impl Widget for NavigationTabBar {
                     }
                     continue;
                 }
-
-                // if let SpacesBarAction::ButtonClicked { .. } = action.as_widget_action().cast_ref() {
-                //     log!("Space selected. Unselecting all navigation tab bar radio buttons...");
-                //     for rb in radio_button_set.iter() {
-                //         if let Some(mut rb_inner) = rb.borrow_mut() {
-                //             rb_inner.animator_play(cx, ids!(active.off));
-                //         }
-                //     }
-                //     continue;
-                // }
             }
         }
     }

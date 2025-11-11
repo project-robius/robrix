@@ -162,23 +162,6 @@ live_design! {
                     }
                 }
             }
-            // active = {
-            //     default: off
-            //     off = {
-            //         from: {all: Forward {duration: 0.2}}
-            //         apply: {
-            //             draw_bg: {active: 0.0}
-            //             space_name = { draw_text: {active: 0.0} }
-            //         }
-            //     }
-            //     on = {
-            //         from: {all: Forward {duration: 0.0}}
-            //         apply: {
-            //             draw_bg: {active: 1.0}
-            //             space_name = { draw_text: {active: 1.0} }
-            //         }
-            //     }
-            // }
         }
     }
 
@@ -276,7 +259,6 @@ pub struct SpacesBarEntry {
     #[animator] animator: Animator,
 
     #[rust] space_id: Option<OwnedRoomId>,
-    // #[rust] is_selected: bool,
 }
 
 impl Widget for SpacesBarEntry {
