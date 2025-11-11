@@ -80,7 +80,8 @@ live_design! {
             keep_invisible: false,
             auto_tail: false,
             width: Fill, height: Fill
-            flow: Down, spacing: 0.0
+            flow: Down,
+            spacing: 0.0
 
             collapsible_header = <CollapsibleHeader> {}
             rooms_list_entry = <RoomsListEntry> {}

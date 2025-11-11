@@ -17,6 +17,7 @@ pub mod rooms_list_entry;
 pub mod rooms_list_header;
 pub mod rooms_sidebar;
 pub mod search_messages;
+pub mod spaces_bar;
 pub mod navigation_tab_bar;
 pub mod welcome_screen;
 pub mod event_reaction_list;
@@ -41,6 +42,7 @@ pub fn live_design(cx: &mut Cx) {
     rooms_sidebar::live_design(cx);
     main_mobile_ui::live_design(cx);
     main_desktop_ui::live_design(cx);
+    spaces_bar::live_design(cx);
     navigation_tab_bar::live_design(cx);
     welcome_screen::live_design(cx);
     light_themed_dock::live_design(cx);

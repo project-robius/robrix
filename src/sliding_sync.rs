@@ -6,8 +6,9 @@ use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
+use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, crypto::{DecryptionSettings, TrustRequirement}, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
+    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
         api::client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
             room::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
@@ -16,7 +17,7 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
 };
 use matrix_sdk_ui::{
-    RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, spaces::{SpaceRoom, SpaceService}, sync_service::{self, SyncService}, timeline::{EventTimelineItem, LatestEventValue, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem}
+    RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, spaces::SpaceService, sync_service::{self, SyncService}, timeline::{EventTimelineItem, LatestEventValue, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem}
 };
 use robius_open::Uri;
 use ruma::{events::tag::Tags, OwnedRoomOrAliasId};
@@ -33,11 +34,23 @@ use crate::{
     avatar_cache::AvatarUpdate,
     event_preview::text_preview_of_timeline_item,
     home::{
-        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
+        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction},
+        link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse},
+        room_screen::TimelineUpdate,
+        rooms_list::{
+            self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate,
+            enqueue_rooms_list_update,
+        },
+        rooms_list_header::RoomsListHeaderAction,
+        tombstone_footer::SuccessorRoomDetails,
     },
     login::login_screen::LoginAction,
-    logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{is_logout_in_progress, logout_with_state_machine, LogoutConfig}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
-    persistence::{self, load_app_state, ClientSessionPersisted},
+    logout::{
+        logout_confirm_modal::LogoutAction,
+        logout_state_machine::{is_logout_in_progress, logout_with_state_machine, LogoutConfig},
+    },
+    media_cache::{MediaCacheEntry, MediaCacheEntryRef},
+    persistence::{self, ClientSessionPersisted, load_app_state},
     profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -48,6 +61,7 @@ use crate::{
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{enqueue_popup_notification, PopupItem, PopupKind}
     },
+    space_service_sync::space_service_loop,
     utils::{self, avatar_from_room_name, AVATAR_THUMBNAIL_FORMAT, RoomName},
     verification::add_verification_event_handlers_and_sync_client
 };
@@ -1932,7 +1946,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     }
 
     let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
-    let mut space_service_task = rt.spawn(space_service_loop(SpaceService::new(client)));
+    let mut space_service_task = rt.spawn(space_service_loop(SpaceService::new(client.clone()), client));
 
     // Now, this task becomes an infinite loop that monitors the state of the
     // three core matrix-related background tasks that we just spawned above.
@@ -2163,151 +2177,6 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
 
     bail!("room list service sync loop ended unexpectedly")
 }
-
-
-/// The main async loop task that listens for changes to all spaces.
-async fn space_service_loop(space_service: SpaceService) -> Result<()> {
-    let (initial_spaces, spaces_diff_stream) = space_service.subscribe_to_joined_spaces().await;
-
-    let mut all_joined_spaces: Vector<SpaceRoom> = initial_spaces;
-    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: initial set: {all_joined_spaces:?}"); }
-
-    pin_mut!(spaces_diff_stream);
-    while let Some(batch) = spaces_diff_stream.next().await {
-        for diff in batch {
-            match diff {
-                VectorDiff::Append { values: new_spaces } => {
-                    let _num_new_spaces = new_spaces.len();
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Append {_num_new_spaces}"); }
-                    for new_space in new_spaces {
-                        // TODO: call add_new_space()
-                        // let new_space = SpaceListServiceSpaceInfo::from_space(new_space.into_inner()).await;
-                        // add_new_space(&new_space, &space_service_service).await?;
-                        all_joined_spaces.push_back(new_space);
-                    }
-                }
-                VectorDiff::Clear => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Clear"); }
-                    // TODO: call clear all spaces()
-                    all_joined_spaces.clear();
-                    // ALL_JOINED_SPACES.lock().unwrap().clear();
-                    // enqueue_spaces_list_update(SpacesListUpdate::ClearSpaces);
-                }
-                VectorDiff::PushFront { value: new_space } => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PushFront"); }
-                    // TODO: call add_new_space()
-                    // let new_space = SpaceListServiceSpaceInfo::from_space(new_space.into_inner()).await;
-                    // add_new_space(&new_space, &space_service_service).await?;
-                    all_joined_spaces.push_front(new_space);
-                }
-                VectorDiff::PushBack { value: new_space } => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PushBack"); }
-                    // TODO: call add_new_space()
-                    // let new_space = SpaceListServiceSpaceInfo::from_space(new_space.into_inner()).await;
-                    // add_new_space(&new_space, &space_service_service).await?;
-                    all_joined_spaces.push_back(new_space);
-                }
-                _remove_diff @ VectorDiff::PopFront => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PopFront"); }
-                    // TODO: call update_space()
-                    all_joined_spaces.pop_front();
-                    // if let Some(space) = all_joined_spaces.pop_front() {
-                    //     optimize_remove_then_add_into_update(
-                    //         remove_diff,
-                    //         &space,
-                    //         &mut peekable_diffs,
-                    //         &mut all_joined_spaces,
-                    //         &space_service_service,
-                    //     ).await?;
-                    // }
-                }
-                _remove_diff @ VectorDiff::PopBack => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PopBack"); }
-                    // TODO: call update_space()
-                    all_joined_spaces.pop_back();
-                    // if let Some(space) = all_joined_spaces.pop_back() {
-                    //     optimize_remove_then_add_into_update(
-                    //         remove_diff,
-                    //         &space,
-                    //         &mut peekable_diffs,
-                    //         &mut all_joined_spaces,
-                    //         &space_service_service,
-                    //     ).await?;
-                    // }
-                }
-                VectorDiff::Insert { index, value: new_space } => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Insert at {index}"); }
-                    // TODO: call add_new_space()
-                    // let new_space = SpaceListServiceSpaceInfo::from_space(new_space.into_inner()).await;
-                    // add_new_space(&new_space, &space_service_service).await?;
-                    all_joined_spaces.insert(index, new_space);
-                }
-                VectorDiff::Set { index, value: changed_space } => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Set at {index}"); }
-                    // TODO: update this space
-                    // let changed_space = SpaceListServiceSpaceInfo::from_space(changed_space.into_inner()).await;
-                    // if let Some(old_space) = all_joined_spaces.get(index) {
-                    //     update_space(old_space, &changed_space, &space_service_service).await?;
-                    // } else {
-                    //     error!("BUG: space list diff: Set index {index} was out of bounds.");
-                    // }
-                    all_joined_spaces.set(index, changed_space);
-                }
-                _remove_diff @ VectorDiff::Remove { index: remove_index } => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Remove at {remove_index}"); }
-                    // TODO: call update_space() or remove space
-                    all_joined_spaces.remove(remove_index);
-                    // if remove_index < all_joined_spaces.len() {
-                    //     let space = all_joined_spaces.remove(remove_index);
-                    //     optimize_remove_then_add_into_update(
-                    //         remove_diff,
-                    //         &space,
-                    //         &mut peekable_diffs,
-                    //         &mut all_joined_spaces,
-                    //         &space_service_service,
-                    //     ).await?;
-                    // } else {
-                    //     error!("BUG: space_service: diff Remove index {remove_index} out of bounds, len {}", all_joined_spaces.len());
-                    // }
-                }
-                VectorDiff::Truncate { length } => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Truncate to {length}"); }
-                    // TODO: remove multiple spaces
-                    // // Iterate manually so we can know which spaces are being removed.
-                    // while all_joined_spaces.len() > length {
-                    //     if let Some(space) = all_joined_spaces.pop_back() {
-                    //         remove_space(&space);
-                    //     }
-                    // }
-                    all_joined_spaces.truncate(length); // sanity check
-                }
-                VectorDiff::Reset { values: new_spaces } => {
-                    // We implement this by clearing all spaces and then adding back the new values.
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Reset, old length {}, new length {}", all_joined_spaces.len(), new_spaces.len()); }
-                    // TODO: implement reset of all spaces
-
-                    // // Iterate manually so we can know which spaces are being removed.
-                    // while let Some(space) = all_joined_spaces.pop_back() {
-                    //     remove_space(&space);
-                    // }
-                    // ALL_JOINED_SPACES should already be empty due to successive calls to `remove_space()`,
-                    // so this is just a sanity check.
-                    // ALL_JOINED_SPACES.lock().unwrap().clear();
-                    // enqueue_spaces_list_update(SpacesListUpdate::ClearSpaces);
-                    for new_space in new_spaces.into_iter() {
-                        // let new_space = SpaceListServiceSpaceInfo::from_space(new_space.into_inner()).await;
-                        // add_new_space(&new_space, &space_service_service).await?;
-                        all_joined_spaces.push_back(new_space);
-                    }
-                }
-            }
-        }
-        if LOG_SPACE_SERVICE_DIFFS { log!("space_service: after batch diff: {all_joined_spaces:?}"); }
-    }
-
-    bail!("Space service sync loop ended unexpectedly")
-}
-
 
 
 /// Attempts to optimize a common RoomListService operation of remove + add.
@@ -2960,8 +2829,6 @@ pub struct BackwardsPaginateUntilEventRequest {
 const LOG_TIMELINE_DIFFS: bool = cfg!(feature = "log_timeline_diffs");
 /// Whether to enable verbose logging of all room list service diff updates.
 const LOG_ROOM_LIST_DIFFS: bool = cfg!(feature = "log_room_list_diffs");
-/// Whether to enable verbose logging of all spaces service diff updates.
-const LOG_SPACE_SERVICE_DIFFS: bool = cfg!(feature = "log_space_service_diffs");
 
 /// A per-room async task that listens for timeline updates and sends them to the UI thread.
 ///

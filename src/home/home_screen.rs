@@ -11,6 +11,7 @@ live_design! {
     use crate::home::rooms_sidebar::RoomsSideBar;
     use crate::home::navigation_tab_bar::NavigationTabBar;
     use crate::home::search_messages::*;
+    use crate::home::spaces_bar::*;
     use crate::shared::styles::*;
     use crate::shared::room_filter_input_bar::RoomFilterInputBar;
     use crate::home::main_desktop_ui::MainDesktopUI;
@@ -40,6 +41,42 @@ live_design! {
                 wrap: Word
             }
             text: "Add Room page is not yet implemented"
+        }
+    }
+
+    // A wrapper view around the SpacesBar that lets us show/hide it via animation.
+    SpacesBarWrapper = {{SpacesBarWrapper}}<RoundedShadowView> {
+        width: Fill,
+        height: (NAVIGATION_TAB_BAR_SIZE)
+        margin: {left: 4, right: 4}
+        show_bg: true
+        draw_bg: {
+            color: (COLOR_PRIMARY_DARKER),
+            border_radius: 4.0,
+            border_size: 0.0
+            shadow_color: #0005
+            shadow_radius: 15.0
+            shadow_offset: vec2(1.0, 0.0), //5.0,5.0)
+        }
+
+        <CachedWidget> {
+            root_spaces_bar = <SpacesBar> {}
+        }
+
+        animator: {
+            spaces_bar_animator = {
+                default: hide,
+                show = {
+                    redraw: true,
+                    from: { all: Forward { duration: (SPACES_BAR_ANIMATION_DURATION_SECS) } }
+                    apply: { height: (NAVIGATION_TAB_BAR_SIZE),  draw_bg: { shadow_color: #x00000055 } }
+                }
+                hide = {
+                    redraw: true,
+                    from: { all: Forward { duration: (SPACES_BAR_ANIMATION_DURATION_SECS) } }
+                    apply: { height: 0,  draw_bg: { shadow_color: #x00000000 } }
+                }
+            }
         }
     }
 
@@ -105,6 +142,10 @@ live_design! {
 
                     settings_page = <View> {
                         width: Fill, height: Fill
+                        show_bg: true,
+                        draw_bg: {
+                            color: (COLOR_PRIMARY)
+                        }
 
                         <CachedWidget> {
                             settings_screen = <SettingsScreen> {}
@@ -170,6 +211,16 @@ live_design! {
                                 }
                             }
 
+                            // Show the SpacesBar right above the navigation tab bar.
+                            // We wrap it in the SpacesBarWrapper in order to animate it in or out,
+                            // and wrap *that* in a CachedWidget in order to maintain its shown/hidden state
+                            // across AdaptiveView transitions between Mobile view mode and Desktop view mode.
+                            // 
+                            // ... Then we wrap *that* in a ... <https://www.youtube.com/watch?v=evUWersr7pc>
+                            <CachedWidget> {
+                                spaces_bar_wrapper = <SpacesBarWrapper> {}
+                            }
+
                             // At the bottom of the root view, show the navigation tab bar horizontally.
                             <CachedWidget> {
                                 navigation_tab_bar = <NavigationTabBar> {}
@@ -204,12 +255,48 @@ live_design! {
 }
 
 
+/// A simple wrapper around the SpacesBar that allows us to animate showing or hiding it.
+#[derive(Live, LiveHook, Widget)]
+pub struct SpacesBarWrapper {
+    #[deref] view: View,
+    #[animator] animator: Animator,
+}
+
+impl Widget for SpacesBarWrapper {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.animator_handle_event(cx, event).must_redraw() {
+            self.redraw(cx);
+        }
+        self.view.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl SpacesBarWrapperRef {
+    /// Shows or hides the spaces bar by animating it in or out.
+    fn show_or_hide(&self, cx: &mut Cx, show: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        if show {
+            log!("Showing spaces bar...");
+            inner.animator_play(cx, ids!(spaces_bar_animator.show));
+        } else {
+            log!("Hiding spaces bar...");
+            inner.animator_play(cx, ids!(spaces_bar_animator.hide));
+        }
+    }
+}
+
+
 #[derive(Live, LiveHook, Widget)]
 pub struct HomeScreen {
     #[deref] view: View,
 
     #[rust] selection: SelectedTab,
     #[rust] previous_selection: SelectedTab,
+    #[rust] is_spaces_bar_shown: bool,
 }
 
 impl Widget for HomeScreen {
@@ -254,12 +341,19 @@ impl Widget for HomeScreen {
                         self.update_active_page_from_selection(cx);
                         self.view.redraw(cx);
                     }
-                    _ => {}
+                    Some(NavigationBarAction::ToggleSpacesBar) => {
+                        self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
+                        self.view.spaces_bar_wrapper(ids!(spaces_bar_wrapper))
+                            .show_or_hide(cx, self.is_spaces_bar_shown);
+                    }
+                    // We're the ones who emitted this action, so we don't need to handle it again.
+                    Some(NavigationBarAction::TabSelected(_))
+                    | None => { }
                 }
             }
         }
 
-        self.view.handle_event(cx, event, scope);  
+        self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -268,6 +362,7 @@ impl Widget for HomeScreen {
         // the PageFlip widget will have been reset to its default,
         // so we must re-set it to the correct page based on `self.selection`.
         self.update_active_page_from_selection(cx);
+
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -291,8 +386,7 @@ impl HomeScreen {
 /// that simply forwards stack view actions to it.
 #[derive(Live, LiveHook, Widget)]
 pub struct StackNavigationWrapper {
-    #[deref]
-    view: View,
+    #[deref] view: View,
 }
 
 impl Widget for StackNavigationWrapper {
