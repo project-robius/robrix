@@ -161,7 +161,6 @@ async fn add_new_space(space: &SpaceRoom, client: &Client) {
         world_readable: space.world_readable,
         guest_can_join: space.guest_can_join,
         children_count: space.children_count,
-        is_selected: false,
     };
     enqueue_spaces_list_update(SpacesListUpdate::AddJoinedSpace(jsi));
 }
