@@ -42,7 +42,7 @@ live_design! {
 
     pub RoomInputBar = {{RoomInputBar}}<RoundedView> {
         width: Fill,
-        height: Fit { max: Rel(0.625) }
+        height: Fit { max: Rel { base: Full, factor: 0.625 } }
         flow: Down,
 
         // These margins are a hack to make the borders of the RoomInputBar
@@ -75,13 +75,13 @@ live_design! {
         // * the EditingPane, which slides up as an overlay in front of the other views below.
         overlay_wrapper = <View> {
             width: Fill,
-            height: Fit { max: Rel(0.625) }
+            height: Fit { max: Rel { base: Full, factor: 0.625 } }
             flow: Overlay,
 
             // Below that, display a view that holds the message input bar and send button.
             input_bar = <View> {
                 width: Fill,
-                height: Fit { max: Rel(0.625) }
+                height: Fit { max: Rel { base: Full, factor: 0.625 } }
                 flow: Right
                 // Bottom-align everything to ensure that buttons always stick to the bottom
                 // even when the mentionable_text_input box is very tall.
@@ -110,7 +110,7 @@ live_design! {
 
                 mentionable_text_input = <MentionableTextInput> {
                     width: Fill,
-                    height: Fit { max: Rel(0.625) }
+                    height: Fit { max: Rel { base: Full, factor: 0.625 } }
                     margin: { top: 5, bottom: 12, left: 1, right: 1 },
 
                     persistent = {
