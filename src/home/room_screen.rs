@@ -1575,7 +1575,7 @@ impl RoomScreen {
         
         // If display_name is empty, look for a non-empty display_name and its avatar in previous items
         if display_name.is_empty() {
-            (display_name, avatar_ref) = find_previous_profile_in_condensed_message(&portal_list, index);
+            (display_name, avatar_ref) = find_previous_profile_in_condensed_message(portal_list, index);
         }
         let Some(mxc_uri_string) = mxc_uri else { return; };
         let Some(tl_state) = &mut self.tl_state else { return; };
