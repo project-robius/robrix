@@ -16,6 +16,7 @@ use matrix_sdk::{
         }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
 };
+use matrix_sdk::ruma::api::client::uiaa::{AuthData, AuthType, Dummy, RegistrationToken, UiaaInfo};
 use matrix_sdk_ui::{
     RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, spaces::SpaceService, sync_service::{self, SyncService}, timeline::{EventTimelineItem, LatestEventValue, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem}
 };
@@ -93,6 +94,27 @@ impl From<LoginByPassword> for Cli {
             verbose: false,
         }
     }
+}
+
+fn next_supported_uia_stage(uiaa_info: &UiaaInfo, have_registration_token: bool) -> Option<AuthType> {
+    fn is_stage_supported(stage: &AuthType, have_registration_token: bool) -> bool {
+        matches!(stage, AuthType::Dummy) || (have_registration_token && matches!(stage, AuthType::RegistrationToken))
+    }
+
+    fn stage_completed(uiaa_info: &UiaaInfo, stage: &AuthType) -> bool {
+        uiaa_info.completed.iter().any(|completed| completed == stage)
+    }
+
+    for flow in &uiaa_info.flows {
+        if flow.stages.iter().all(|stage| is_stage_supported(stage, have_registration_token)) {
+            for stage in &flow.stages {
+                if !stage_completed(uiaa_info, stage) {
+                    return Some(stage.clone());
+                }
+            }
+        }
+    }
+    None
 }
 
 
@@ -221,8 +243,8 @@ async fn login(
 /// This function handles the Matrix User-Interactive Authentication (UIA) flow automatically:
 /// 1. First attempt: Send registration without auth to discover what authentication is required
 /// 2. If server returns 401 with UIA info:
-///    - Check what auth types are supported (dummy, registration_token, etc.)
-///    - Automatically handle supported types (currently only dummy)
+///    - Check what auth types are supported (dummy, registration_token)
+///    - Automatically handle supported types (dummy + registration_token)
 ///    - Fail gracefully for unsupported types
 /// 3. Upon success, returns the registered client and session information
 ///
@@ -238,25 +260,26 @@ async fn register_user(register_request: RegisterRequest) -> Result<(Client, Cli
         homeserver: register_request.homeserver,
         ..Default::default()
     };
-    
+
     let (client, client_session) = build_client(&cli, app_data_dir()).await?;
-    
-    // Create the registration request
+
     use matrix_sdk::ruma::api::client::account::register::v3::Request as RegisterRequest;
-    
-    // First attempt: send registration without auth to get UIA session
+
     let mut req = RegisterRequest::new();
     req.username = Some(cli.user_id.as_str().into());
     req.password = Some(cli.password.as_str().into());
     req.initial_device_display_name = Some("robrix-register".into());
-    
+
+    let sanitized_registration_token = register_request
+        .registration_token
+        .as_deref()
+        .map(|token| token.trim())
+        .filter(|token| !token.is_empty())
+        .map(|token| token.to_string());
+
     // Attempt initial registration
-    // Note: The Matrix SDK's register function has a built-in 60s timeout from RequestConfig
-    let register_result = client
-        .matrix_auth()
-        .register(req.clone())
-        .await;
-    
+    let register_result = client.matrix_auth().register(req.clone()).await;
+
     // Handle registration result
     match register_result {
         Ok(_) => {
@@ -265,59 +288,45 @@ async fn register_user(register_request: RegisterRequest) -> Result<(Client, Cli
         }
         Err(e) => {
             // Check if it's a UIA error that we can handle
-            if let Some(uiaa_info) = e.as_uiaa_response() {
-                use matrix_sdk::ruma::api::client::uiaa::{AuthData, AuthType, Dummy, RegistrationToken};
+            if let Some(mut uiaa_info) = e.as_uiaa_response().cloned() {
+                loop {
+                    let Some(next_stage) = next_supported_uia_stage(&uiaa_info, sanitized_registration_token.is_some()) else {
+                        bail!("This server requires verification steps that are not yet supported. Please use the web client to register.");
+                    };
 
-                // Check what authentication types are required
-                let has_registration_token = uiaa_info.flows.iter().any(|flow| 
-                    flow.stages.iter().any(|stage| matches!(stage, AuthType::RegistrationToken))
-                );
-                let has_dummy = uiaa_info.flows.iter().any(|flow|
-                    flow.stages.iter().any(|stage| matches!(stage, AuthType::Dummy))
-                );
-
-                if has_registration_token {
-                    // Server requires registration token authentication
-                    // Registration tokens are pre-shared tokens that must be obtained out-of-band
-                    // (e.g., from server administrator via email, chat, or other means)
-                    // Use the user-provided registration token if available
-
-                    let token = register_request.registration_token
-                        .filter(|t| !t.is_empty());
-
-                    if token.is_none() {
-                        // If no token provided, fail with a helpful error message
-                        bail!("This server requires a registration token. Please obtain one from the server administrator and try again.");
+                    match next_stage {
+                        AuthType::RegistrationToken => {
+                            let Some(token) = sanitized_registration_token.as_ref() else {
+                                bail!("This server requires a registration token. Please obtain one from the server administrator and try again.");
+                            };
+                            let mut auth_data = RegistrationToken::new(token.clone());
+                            auth_data.session = uiaa_info.session.clone();
+                            req.auth = Some(AuthData::RegistrationToken(auth_data));
+                        }
+                        AuthType::Dummy => {
+                            let mut dummy = Dummy::new();
+                            dummy.session = uiaa_info.session.clone();
+                            req.auth = Some(AuthData::Dummy(dummy));
+                        }
+                        _ => {
+                            bail!("This server requires verification steps that are not yet supported. Please use the web client to register.");
+                        }
                     }
 
-                    let mut auth_data = RegistrationToken::new(token.unwrap());
-                    auth_data.session = uiaa_info.session.clone();
-
-                    req.auth = Some(AuthData::RegistrationToken(auth_data));
-
-                    // Retry registration with token auth
-                    match client.matrix_auth().register(req).await {
-                        Ok(_) => {
-                            log!("Registration succeeded with registration token");
+                    match client.matrix_auth().register(req.clone()).await {
+                        Ok(_) => break,
+                        Err(err) => {
+                            if err.to_string().contains("Invalid registration token") {
+                                bail!("Invalid registration token. Please check the token and try again.");
+                            }
+                            if let Some(next_info) = err.as_uiaa_response().cloned() {
+                                uiaa_info = next_info;
+                                continue;
+                            } else {
+                                return Err(err.into());
+                            }
                         }
-                        Err(e) if e.to_string().contains("Invalid registration token") => {
-                            bail!("Invalid registration token. Please check the token and try again.");
-                        }
-                        Err(e) => return Err(e.into()),
                     }
-                } else if has_dummy {
-                    // Server requires dummy auth (just acknowledgment)
-                    let mut dummy = Dummy::new();
-                    dummy.session = uiaa_info.session.clone();
-
-                    req.auth = Some(AuthData::Dummy(dummy));
-
-                    // Retry registration with dummy auth
-                    client.matrix_auth().register(req).await?;
-                    log!("Registration succeeded with dummy auth");
-                } else {
-                    // Server requires authentication we don't support (captcha, email, etc.)
-                    bail!("This server requires verification steps that are not yet supported. Please use the web client to register.");
                 }
             } else {
                 // Other registration errors

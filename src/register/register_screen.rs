@@ -5,7 +5,7 @@
 //! ## 1. Password-based Registration (Custom Homeservers)
 //! For custom Matrix homeservers, users can register with username/password:
 //! - Minimum password length: 8 characters
-//! - Automatic UIA handling for `m.login.dummy` flow
+//! - Automatic UIA handling for `m.login.dummy` and `m.login.registration_token`
 //! - Basic URL validation for custom homeserver addresses
 //!
 //! ## 2. SSO Registration (matrix.org)
@@ -48,8 +48,8 @@
 //!
 //! # Implementation Notes
 //! - SSO at protocol level doesn't distinguish login/register - server decides based on account existence
-//! - Registration token support has been intentionally omitted for simplicity
-//! - Advanced UIA flows (captcha, email verification) are not supported
+//! - Registration currently supports the dummy + registration token UIA stages; more complex flows
+//!   (captcha, email verification, etc.) are not yet implemented and will prompt users to register via web
 
 use makepad_widgets::*;
 use crate::sliding_sync::{submit_async_request, MatrixRequest, RegisterRequest};
@@ -565,15 +565,18 @@ impl MatchEvent for RegisterScreen {
         
         // Handle custom homeserver input
         if let Some(text_event) = self.view.text_input(ids!(custom_homeserver_input)).changed(actions) {
-            if !text_event.is_empty() {
+            let trimmed = text_event.trim();
+            if !trimmed.is_empty() {
                 // Basic URL validation - ensure it starts with http:// or https://
-                let trimmed = text_event.trim();
                 let is_valid_url = trimmed.starts_with("http://") || trimmed.starts_with("https://") 
                     || (!trimmed.contains("://") && !trimmed.is_empty()); // Allow domain-only input
-                
+
                 if is_valid_url {
-                    self.selected_homeserver = text_event.clone();
-                    self.view.label(ids!(selected_homeserver)).set_text(cx, &text_event);
+                    self.selected_homeserver = trimmed.to_string();
+                    self.view.label(ids!(selected_homeserver)).set_text(cx, trimmed);
+                    if trimmed != text_event {
+                        self.view.text_input(ids!(custom_homeserver_input)).set_text(cx, trimmed);
+                    }
                     self.update_registration_mode(cx);
                 }
             }
@@ -723,10 +726,7 @@ impl MatchEvent for RegisterScreen {
                             self.update_button_mask(&sso_button, cx, 0.0);
                         }
                         self.view.modal(ids!(status_modal)).close(cx);
-                        let register_button = self.view.button(ids!(register_button));
-                        register_button.set_enabled(cx, true);
-                        register_button.reset_hover(cx);
-                        self.redraw(cx);
+                        self.reset_modal_state(cx);
                     }
                     _ => {}
                 }
