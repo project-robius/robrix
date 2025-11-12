@@ -7,8 +7,9 @@
 
 use std::borrow::Cow;
 
-use matrix_sdk::{crypto::types::events::UtdCause, ruma::{events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent}, serde::Raw, UserId}};
-use matrix_sdk_ui::timeline::{self, AnyOtherFullStateEventContent, EncryptedMessage, EventTimelineItem, MemberProfileChange, MembershipChange, MsgLikeKind, RoomMembershipChange, TimelineItemContent};
+use matrix_sdk::{ruma::{events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent}, serde::Raw, UserId}};
+use matrix_sdk_base::crypto::types::events::UtdCause;
+use matrix_sdk_ui::timeline::{self, AnyOtherFullStateEventContent, EncryptedMessage, EventTimelineItem, MemberProfileChange, MembershipChange, MsgLikeKind, OtherMessageLike, RoomMembershipChange, TimelineItemContent};
 
 use crate::utils;
 
@@ -69,20 +70,10 @@ pub fn text_preview_of_timeline_item(
         TimelineItemContent::MsgLike(msg_like_content) => {
             match &msg_like_content.kind {
                 MsgLikeKind::Message(msg) => text_preview_of_message(msg, sender_username),
-                MsgLikeKind::Redacted => {
-                    let mut preview = text_preview_of_redacted_message(
-                        None,
-                        sender_user_id,
-                        sender_username,
-                    );
-                    preview.text = htmlize::escape_text(&preview.text).into();
-                    preview
-                }
                 MsgLikeKind::Sticker(sticker) => TextPreview::from((
                     format!("[Sticker]: <i>{}</i>", htmlize::escape_text(&sticker.content().body)),
                     BeforeText::UsernameWithColon,
                 )),
-                MsgLikeKind::UnableToDecrypt(em) => text_preview_of_encrypted_message(em),
                 MsgLikeKind::Poll(poll_state) => TextPreview::from((
                     format!(
                         "[Poll]: {}",
@@ -93,6 +84,17 @@ pub fn text_preview_of_timeline_item(
                     ),
                     BeforeText::UsernameWithColon,
                 )),
+                MsgLikeKind::Redacted => {
+                    let mut preview = text_preview_of_redacted_message(
+                        None,
+                        sender_user_id,
+                        sender_username,
+                    );
+                    preview.text = htmlize::escape_text(&preview.text).into();
+                    preview
+                }
+                MsgLikeKind::UnableToDecrypt(em) => text_preview_of_encrypted_message(em),
+                MsgLikeKind::Other(oml) => text_preview_of_other_message_like(oml),
             }
         }
         TimelineItemContent::MembershipChange(membership_change) => {
@@ -124,8 +126,8 @@ pub fn text_preview_of_timeline_item(
             String::from("[Call Invitation]"),
             BeforeText::UsernameWithColon,
         )),
-        TimelineItemContent::CallNotify => TextPreview::from((
-            String::from("[Call Notification]"),
+        TimelineItemContent::RtcNotification => TextPreview::from((
+            String::from("[RTC Call Notification]"),
             BeforeText::UsernameWithColon,
         )),
     }
@@ -142,7 +144,15 @@ pub fn plaintext_body_of_timeline_item(
             match &msg_likecontent.kind {
                 MsgLikeKind::Message(msg) => {
                     msg.body().into()
-                },
+                }
+                MsgLikeKind::Sticker(sticker) => {
+                    sticker.content().body.clone()
+                }
+                MsgLikeKind::Poll(poll_state) => {
+                    format!("[Poll]: {}", 
+                        poll_state.fallback_text().unwrap_or_else(|| poll_state.results().question)
+                    )
+                }
                 MsgLikeKind::Redacted => {
                     let sender_username = utils::get_or_fetch_event_sender(event_tl_item, None);
                     text_preview_of_redacted_message(
@@ -150,19 +160,14 @@ pub fn plaintext_body_of_timeline_item(
                         event_tl_item.sender(),
                         &sender_username,
                     ).format_with(&sender_username, false)
-                },
-                MsgLikeKind::Sticker(sticker) => {
-                    sticker.content().body.clone()
-                },
+                }
                 MsgLikeKind::UnableToDecrypt(em) => {
                     text_preview_of_encrypted_message(em)
                         .format_with(&utils::get_or_fetch_event_sender(event_tl_item, None), false)
                 }
-                MsgLikeKind::Poll(poll_state) => {
-                    format!("[Poll]: {}", 
-                        poll_state.fallback_text().unwrap_or_else(|| poll_state.results().question)
-                    )
-                }
+                MsgLikeKind::Other(other_msg_like) => {
+                    text_preview_of_other_message_like(other_msg_like)
+                        .format_with(&utils::get_or_fetch_event_sender(event_tl_item, None), false)}
             }
         }
         TimelineItemContent::MembershipChange(membership_change) => {
@@ -195,7 +200,7 @@ pub fn plaintext_body_of_timeline_item(
             format!("Failed to parse {} state; key: {}. Error: {}", event_type, state_key, error)
         }
         TimelineItemContent::CallInvite => String::from("[Call Invitation]"),
-        TimelineItemContent::CallNotify => String::from("[Call Notification]"),
+        TimelineItemContent::RtcNotification => String::from("[RTC Call Notification]"),
     }
 }
 
@@ -311,17 +316,17 @@ pub fn text_preview_of_redacted_message(
 ) -> TextPreview {
     let mut redactor_and_reason = None;
     if let Some(redacted_msg) = latest_json {
-        if let Ok(
-            AnySyncTimelineEvent::MessageLike(
-                AnySyncMessageLikeEvent::RoomMessage(
-                    SyncMessageLikeEvent::Redacted(redaction)
-                )
+        if let Ok(AnySyncTimelineEvent::MessageLike(
+            AnySyncMessageLikeEvent::RoomMessage(
+                SyncMessageLikeEvent::Redacted(redaction)
             )
-        ) = redacted_msg.deserialize() {
-            redactor_and_reason = Some((
-                redaction.unsigned.redacted_because.sender,
-                redaction.unsigned.redacted_because.content.reason,
-            ));
+        )) = redacted_msg.deserialize() {
+            if let Ok(redacted_because) = redaction.unsigned.redacted_because.deserialize() {
+                redactor_and_reason = Some((
+                    redacted_because.sender,
+                    redacted_because.content.reason,
+                ));
+            }
         }
     }
     let text = match redactor_and_reason {
@@ -392,6 +397,15 @@ pub fn text_preview_of_encrypted_message(
     TextPreview::from((text, BeforeText::UsernameWithColon))
 }
 
+/// Returns a plaintext preview of the given other message-like event.
+pub fn text_preview_of_other_message_like(
+    other_msg_like: &OtherMessageLike,
+) -> TextPreview {
+    TextPreview::from((
+        format!("[Other message type: {}]", other_msg_like.event_type()),
+        BeforeText::UsernameWithColon,
+    ))
+}
 
 /// Returns a text preview of the given other state event as an Html-formatted string.
 pub fn text_preview_of_other_state(

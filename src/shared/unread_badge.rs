@@ -89,9 +89,9 @@ impl Widget for UnreadBadge {
         // If there are unread mentions, show red badge and the number of unread mentions
         if self.unread_mentions > 0 {
             let (border_size, plus_sign) = format_border_and_truncation(self.unread_mentions);
-            self.label(id!(label_count))
+            self.label(ids!(label_count))
                 .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(self.unread_mentions, 99)));
-            self.view(id!(rounded_view)).apply_over(cx, live!{
+            self.view(ids!(rounded_view)).apply_over(cx, live!{
                 draw_bg: {
                     border_size: (border_size),
                     highlight: 1.0
@@ -102,9 +102,9 @@ impl Widget for UnreadBadge {
         // If there are no unread mentions but there are unread messages, show gray badge and the number of unread messages
         else if self.unread_messages > 0 {
             let (border_size, plus_sign) = format_border_and_truncation(self.unread_messages);
-            self.label(id!(label_count))
+            self.label(ids!(label_count))
                 .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(self.unread_messages, 99)));
-            self.view(id!(rounded_view)).apply_over(cx, live!{
+            self.view(ids!(rounded_view)).apply_over(cx, live!{
                 draw_bg: {
                     border_size: (border_size),
                     highlight: 0.0

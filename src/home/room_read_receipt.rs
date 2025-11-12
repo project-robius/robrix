@@ -232,7 +232,7 @@ pub fn populate_read_receipts(
     room_id: &RoomId,
     event_tl_item: &EventTimelineItem,
 ) {
-    item.avatar_row(id!(avatar_row)).set_avatar_row(
+    item.avatar_row(ids!(avatar_row)).set_avatar_row(
         cx,
         room_id,
         event_tl_item.event_id(),

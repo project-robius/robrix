@@ -11,6 +11,7 @@ live_design! {
     use link::widgets::*;
 
     use crate::shared::styles::*;
+    DEFAULT_IMAGE = dep("crate://self/resources/img/default_image.png")
 
     pub TextOrImage = {{TextOrImage}} {
         width: Fill, height: Fit,
@@ -39,6 +40,16 @@ live_design! {
             image = <Image> {
                 width: Fill, height: Fit,
                 fit: Smallest,
+            }
+        }
+        default_image_view = <View> {
+            visible: false,
+            cursor: Default, // Use `Hand` once we support clicking on the image
+            width: Fill, height: Fit,
+            image = <Image> {
+                width: Fill, height: Fit,
+                fit: Smallest,
+                source: (DEFAULT_IMAGE)
             }
         }
     }
@@ -74,9 +85,10 @@ impl TextOrImage {
     /// * `text`: the text that will be displayed in this `TextOrImage`, e.g.,
     ///   a message like "Loading..." or an error message.
     pub fn show_text<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
-        self.view(id!(image_view)).set_visible(cx, false);
-        self.view(id!(text_view)).set_visible(cx, true);
-        self.view.label(id!(text_view.label)).set_text(cx, text.as_ref());
+        self.view(ids!(image_view)).set_visible(cx, false);
+        self.view(ids!(default_image_view)).set_visible(cx, false);
+        self.view(ids!(text_view)).set_visible(cx, true);
+        self.view.label(ids!(text_view.label)).set_text(cx, text.as_ref());
         self.status = TextOrImageStatus::Text;
     }
 
@@ -92,13 +104,14 @@ impl TextOrImage {
     pub fn show_image<F, E>(&mut self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
-        let image_ref = self.view.image(id!(image_view.image));
+        let image_ref = self.view.image(ids!(image_view.image));
         match image_set_function(cx, image_ref) {
             Ok(size_in_pixels) => {
                 self.status = TextOrImageStatus::Image;
                 self.size_in_pixels = size_in_pixels;
-                self.view(id!(image_view)).set_visible(cx, true);
-                self.view(id!(text_view)).set_visible(cx, false);
+                self.view(ids!(image_view)).set_visible(cx, true);
+                self.view(ids!(text_view)).set_visible(cx, false);
+                self.view(ids!(default_image_view)).set_visible(cx, false);
                 Ok(())
             }
             Err(e) => {
@@ -111,6 +124,13 @@ impl TextOrImage {
     /// Returns whether this `TextOrImage` is currently displaying an image or text.
     pub fn status(&self) -> TextOrImageStatus {
         self.status
+    }
+
+    /// Displays the default image that is used when no image is available.
+    pub fn show_default_image(&self, cx: &mut Cx) {
+        self.view(ids!(default_image_view)).set_visible(cx, true);
+        self.view(ids!(text_view)).set_visible(cx, false);
+        self.view(ids!(image_view)).set_visible(cx, false);
     }
 }
 
@@ -139,6 +159,13 @@ impl TextOrImageRef {
             inner.status()
         } else {
             TextOrImageStatus::Text
+        }
+    }
+
+    /// See [TextOrImage::show_default_image()].
+    pub fn show_default_image(&self, cx: &mut Cx) {
+        if let Some(inner) = self.borrow() {
+            inner.show_default_image(cx);
         }
     }
 }

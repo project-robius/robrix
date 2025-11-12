@@ -3,16 +3,12 @@ use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
 use crate::{
-    app::{AppState, SelectedRoom},
-    room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, RoomPreviewAvatar},
-    shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
-    jump_to_bottom_button::UnreadMessageCount, room_filter_input_bar::RoomFilterAction},
-    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection},
+    app::{AppState, SelectedRoom}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}}, shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, room_filter_input_bar::RoomFilterAction}, sliding_sync::{MatrixRequest, PaginationDirection, submit_async_request}, utils::room_name_or_id
 };
-use super::room_preview::RoomPreviewAction;
+use super::rooms_list_entry::RoomsListEntryAction;
 
 /// Whether to pre-paginate visible rooms at least once in order to
-/// be able to display the latest message in the room preview,
+/// be able to display the latest message in a room's RoomsListEntry,
 /// and to have something to immediately show when a user first opens a room.
 const PREPAGINATE_VISIBLE_ROOMS: bool = true;
 
@@ -55,7 +51,7 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::html_or_plaintext::HtmlOrPlaintext;
     use crate::shared::collapsible_header::*;
-    use crate::home::room_preview::*;
+    use crate::home::rooms_list_entry::*;
 
     StatusLabel = <View> {
         width: Fill, height: Fit,
@@ -84,10 +80,11 @@ live_design! {
             keep_invisible: false,
             auto_tail: false,
             width: Fill, height: Fill
-            flow: Down, spacing: 0.0
+            flow: Down,
+            spacing: 0.0
 
             collapsible_header = <CollapsibleHeader> {}
-            room_preview = <RoomPreview> {}
+            rooms_list_entry = <RoomsListEntry> {}
             empty = <View> {}
             status_label = <StatusLabel> {}
             bottom_filler = <View> {
@@ -124,21 +121,26 @@ pub enum RoomsListUpdate {
         /// The Html-formatted text preview of the latest message.
         latest_message_text: String,
     },
-    /// Update the number of unread messages for the given room.
+    /// Update the number of unread messages and mentions for the given room.
     UpdateNumUnreadMessages {
         room_id: OwnedRoomId,
-        count: UnreadMessageCount,
+        unread_messages: UnreadMessageCount,
         unread_mentions: u64,
     },
     /// Update the displayable name for the given room.
     UpdateRoomName {
         room_id: OwnedRoomId,
-        new_room_name: String,
+        new_room_name: Option<String>,
     },
     /// Update the avatar (image) for the given room.
     UpdateRoomAvatar {
         room_id: OwnedRoomId,
-        avatar: RoomPreviewAvatar,
+        avatar: FetchedRoomAvatar,
+    },
+    /// Update whether the given room is a direct room.
+    UpdateIsDirect {
+        room_id: OwnedRoomId,
+        is_direct: bool,
     },
     /// Remove the given room from the rooms list
     RemoveRoom {
@@ -155,6 +157,12 @@ pub enum RoomsListUpdate {
     Status {
         status: String,
     },
+    /// Mark the given room as tombstoned.
+    TombstonedRoom {
+        room_id: OwnedRoomId
+    },
+    /// Scroll to the given room.
+    ScrollToRoom(OwnedRoomId),
 }
 
 static PENDING_ROOM_UPDATES: SegQueue<RoomsListUpdate> = SegQueue::new();
@@ -208,16 +216,18 @@ pub struct JoinedRoomInfo {
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
-    pub avatar: RoomPreviewAvatar,
+    pub avatar: FetchedRoomAvatar,
     /// Whether this room has been paginated at least once.
     /// We pre-paginate visible rooms at least once in order to
-    /// be able to display the latest message in the room preview,
+    /// be able to display the latest message in the RoomsListEntry
     /// and to have something to immediately show when a user first opens a room.
     pub has_been_paginated: bool,
     /// Whether this room is currently selected in the UI.
     pub is_selected: bool,
     /// Whether this a direct room.
     pub is_direct: bool,
+    /// Whether this room is tombstoned (shut down and replaced with a successor room).
+    pub is_tombstoned: bool,
 }
 
 /// UI-related info about a room that the user has been invited to.
@@ -235,7 +245,7 @@ pub struct InvitedRoomInfo {
     pub alt_aliases: Vec<OwnedRoomAliasId>,
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
-    pub room_avatar: RoomPreviewAvatar,
+    pub room_avatar: FetchedRoomAvatar,
     /// Info about the user who invited us to this room, if available.
     pub inviter_info: Option<InviterInfo>,
     /// The timestamp and Html text content of the latest message in this room.
@@ -297,7 +307,7 @@ pub struct RoomsList {
     /// This is a shared reference to the thread-local [`ALL_INVITED_ROOMS`] variable.
     #[rust] invited_rooms: Rc<RefCell<HashMap<OwnedRoomId, InvitedRoomInfo>>>,
 
-    /// The set of all joined rooms and their cached preview info.
+    /// The set of all joined rooms and their cached info.
     /// This includes both direct rooms and regular rooms.
     #[rust] all_joined_rooms: HashMap<OwnedRoomId, JoinedRoomInfo>,
 
@@ -336,7 +346,13 @@ pub struct RoomsList {
     /// The ID of the currently-selected room.
     #[rust] current_active_room: Option<OwnedRoomId>,
     /// The maximum number of rooms that will ever be loaded.
+    ///
+    /// This should not be used to determine whether all requested rooms have been loaded,
+    /// because we will likely never receive this many rooms due to the room list service
+    /// excluding rooms that we have filtered out (e.g., left or tombstoned rooms, spaces, etc).
     #[rust] max_known_rooms: Option<u32>,
+    // /// Whether the room list service has loaded all requested rooms from the homeserver.
+    // #[rust] all_rooms_loaded: bool,
 }
 
 impl LiveHook for RoomsList {
@@ -346,15 +362,13 @@ impl LiveHook for RoomsList {
 }
 
 impl RoomsList {
-    /// Determines if all known rooms have been loaded from the homeserver.
-    ///
-    /// Returns `true` if the number of rooms in `all_joined_rooms` and `invited_rooms` equals or exceeds
-    /// `max_known_rooms`.
-    /// Returns `false` if `max_known_rooms` is `None`.
-    pub fn all_known_rooms_loaded(&self) -> bool {
-        self.max_known_rooms.is_some_and(|max_rooms| {
-            self.all_joined_rooms.len() + self.invited_rooms.borrow().len() >= max_rooms as usize
-        })
+    /// Returns whether the homeserver has finished syncing all of the rooms
+    /// that should be synced to our client based on the currently-specified room list filter. 
+    pub fn all_rooms_loaded(&self) -> bool {
+        // TODO: fix this: figure out a way to determine if
+        //       all requested rooms have been received from the homeserver.
+        false
+        // self.all_rooms_loaded
     }
 
     /// Returns `true` if the given `room_id` is in the `all_joined_rooms` or `invited_rooms` list.
@@ -437,9 +451,9 @@ impl RoomsList {
                         error!("Error: couldn't find room {room_id} to update latest event");
                     }
                 }
-                RoomsListUpdate::UpdateNumUnreadMessages { room_id, count , unread_mentions} => {
+                RoomsListUpdate::UpdateNumUnreadMessages { room_id, unread_messages, unread_mentions } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
-                        (room.num_unread_messages, room.num_unread_mentions) = match count {
+                        (room.num_unread_messages, room.num_unread_mentions) = match unread_messages {
                             UnreadMessageCount::Unknown => (0, 0),
                             UnreadMessageCount::Known(count) => (count, unread_mentions),
                         };
@@ -450,7 +464,7 @@ impl RoomsList {
                 RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         let was_displayed = (self.display_filter)(room);
-                        room.room_name = Some(new_room_name);
+                        room.room_name = new_room_name;
                         let should_display = (self.display_filter)(room);
                         match (was_displayed, should_display) {
                             // No need to update the displayed rooms list.
@@ -478,6 +492,44 @@ impl RoomsList {
                         }
                     } else {
                         error!("Error: couldn't find room {room_id} to update room name");
+                    }
+                }
+                RoomsListUpdate::UpdateIsDirect { room_id, is_direct } => {
+                    if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
+                        if room.is_direct == is_direct {
+                            continue;
+                        }
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("{} was changed from {} to {}.",
+                                room_name_or_id(room.room_name.as_ref(), &room_id),
+                                if room.is_direct { "direct" } else { "regular" },
+                                if is_direct { "direct" } else { "regular" }
+                            ),
+                            auto_dismissal_duration: None,
+                            kind: PopupKind::Info,
+                        });
+                        // If the room was currently displayed, remove it from the proper list.
+                        if (self.display_filter)(room) {
+                            let list_to_remove_from = if room.is_direct {
+                                &mut self.displayed_direct_rooms
+                            } else {
+                                &mut self.displayed_regular_rooms
+                            };
+                            list_to_remove_from.iter()
+                                .position(|r| r == &room_id)
+                                .map(|index| list_to_remove_from.remove(index));
+                        }
+                        // Update the room. If it should now be displayed, add it to the correct list.
+                        room.is_direct = is_direct;
+                        if (self.display_filter)(room) {
+                            if is_direct {
+                                self.displayed_direct_rooms.push(room_id);
+                            } else {
+                                self.displayed_regular_rooms.push(room_id);
+                            }
+                        }
+                    } else {
+                        error!("Error: couldn't find room {room_id} to update is_direct");
                     }
                 }
                 RoomsListUpdate::RemoveRoom { room_id, new_state: _ } => {
@@ -529,6 +581,54 @@ impl RoomsList {
                 RoomsListUpdate::Status { status } => {
                     self.status = status;
                 }
+                RoomsListUpdate::TombstonedRoom { room_id } => {
+                    if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
+                        let was_displayed = (self.display_filter)(room);
+                        room.is_tombstoned = true;
+                        let should_display = (self.display_filter)(room);
+                        match (was_displayed, should_display) {
+                            // No need to update the displayed rooms list.
+                            (true, true) | (false, false) => { }
+                            // Room was displayed but should no longer be displayed.
+                            (true, false) => {
+                                if room.is_direct {
+                                    self.displayed_direct_rooms.iter()
+                                        .position(|r| r == &room_id)
+                                        .map(|index| self.displayed_direct_rooms.remove(index));
+                                } else {
+                                    self.displayed_regular_rooms.iter()
+                                        .position(|r| r == &room_id)
+                                        .map(|index| self.displayed_regular_rooms.remove(index));
+                                }
+                            }
+                            // Room was not displayed but should now be displayed.
+                            (false, true) => {
+                                if room.is_direct {
+                                    self.displayed_direct_rooms.push(room_id);
+                                } else {
+                                    self.displayed_regular_rooms.push(room_id);
+                                }
+                            }
+                        }
+                    } else {
+                        warning!("Warning: couldn't find room {room_id} to update the tombstone status");
+                    }
+                }
+                RoomsListUpdate::ScrollToRoom(room_id) => {
+                    let portal_list = self.view.portal_list(ids!(list));
+                    let speed = 50.0;
+                    let portal_list_index = if let Some(direct_index) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
+                        let (_, direct_rooms_indexes, _) = self.calculate_indexes();
+                        direct_rooms_indexes.first_room_index + direct_index
+                    }
+                    else if let Some(regular_index) = self.displayed_regular_rooms.iter().position(|r| r == &room_id) {
+                        let (_, _, regular_rooms_indexes) = self.calculate_indexes();
+                        regular_rooms_indexes.first_room_index + regular_index
+                    }
+                    else { continue };
+                    // Scroll to just above the room to make it more obviously visible.
+                    portal_list.smooth_scroll_to(cx, portal_list_index.saturating_sub(1), speed, Some(15));
+                }
             }
         }
         if num_updates > 0 {
@@ -540,11 +640,7 @@ impl RoomsList {
     /// Updates the status message to show how many rooms have been loaded.
     fn update_status_rooms_count(&mut self) {
         let num_rooms = self.all_joined_rooms.len() + self.invited_rooms.borrow().len();
-        self.status = if let Some(max_rooms) = self.max_known_rooms {
-            format!("Loaded {num_rooms} of {max_rooms} total rooms.")
-        } else {
-            format!("Loaded {num_rooms} rooms.")
-        };
+        self.status = format!("Loaded {num_rooms} rooms.");
     }
 
     /// Updates the status message to show how many rooms are currently displayed
@@ -571,7 +667,7 @@ impl RoomsList {
     /// Updates the lists of displayed rooms based on the current search filter
     /// and redraws the RoomsList.
     fn update_displayed_rooms(&mut self, cx: &mut Cx, keywords: &str) {
-        let portal_list = self.view.portal_list(id!(list));
+        let portal_list = self.view.portal_list(ids!(list));
         if keywords.is_empty() {
             // Reset each of the displayed_* lists to show all rooms.
             self.display_filter = RoomDisplayFilter::default();
@@ -742,13 +838,13 @@ impl Widget for RoomsList {
         // Now, handle any actions on this widget, e.g., a user selecting a room.
         // We use Scope `props` to pass down the current scrolling state of the PortalList.
         let props = RoomsListScopeProps {
-            was_scrolling: self.view.portal_list(id!(list)).was_scrolling(),
+            was_scrolling: self.view.portal_list(ids!(list)).was_scrolling(),
         };
         let list_actions = cx.capture_actions(
             |cx| self.view.handle_event(cx, event, &mut Scope::with_props(&props))
         );
         for list_action in list_actions {
-            if let RoomPreviewAction::Clicked(clicked_room_id) = list_action.as_widget_action().cast() {
+            if let RoomsListEntryAction::Clicked(clicked_room_id) = list_action.as_widget_action().cast() {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
                     SelectedRoom::JoinedRoom {
                         room_id: jr.room_id.clone().into(),
@@ -794,6 +890,7 @@ impl Widget for RoomsList {
             for action in actions {
                 if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast() {
                     self.update_displayed_rooms(cx, &keywords);
+                    continue;
                 }
             }
         }
@@ -850,7 +947,7 @@ impl Widget for RoomsList {
                 let mut scope = Scope::empty();
 
                 if invited_rooms_indexes.header_index == Some(portal_list_index) {
-                    let item = list.item(cx, portal_list_index, live_id!(collapsible_header));
+                    let item = list.item(cx, portal_list_index, id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
                         self.is_invited_rooms_header_expanded,
@@ -860,22 +957,21 @@ impl Widget for RoomsList {
                     item.draw_all(cx, &mut scope);
                 }
                 else if let Some(invited_room_id) = get_invited_room_id(portal_list_index) {
-                    if let Some(invited_room) =
-                        self.invited_rooms.borrow_mut().get_mut(invited_room_id)
-                    {
-                        let item = list.item(cx, portal_list_index, live_id!(room_preview));
+                    let mut invited_rooms_mut = self.invited_rooms.borrow_mut();
+                    if let Some(invited_room) = invited_rooms_mut.get_mut(invited_room_id) {
+                        let item = list.item(cx, portal_list_index, id!(rooms_list_entry));
                         invited_room.is_selected =
                             self.current_active_room.as_deref() == Some(invited_room_id);
-                        // Pass the room info down to the RoomPreview widget via Scope.
+                        // Pass the room info down to the RoomsListEntry widget via Scope.
                         scope = Scope::with_props(&*invited_room);
                         item.draw_all(cx, &mut scope);
                     } else {
-                        list.item(cx, portal_list_index, live_id!(empty))
+                        list.item(cx, portal_list_index, id!(empty))
                             .draw_all(cx, &mut scope);
                     }
                 }
                 else if direct_rooms_indexes.header_index == Some(portal_list_index) {
-                    let item = list.item(cx, portal_list_index, live_id!(collapsible_header));
+                    let item = list.item(cx, portal_list_index, id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
                         self.is_direct_rooms_header_expanded,
@@ -888,7 +984,7 @@ impl Widget for RoomsList {
                 }
                 else if let Some(direct_room_id) = get_direct_room_id(portal_list_index) {
                     if let Some(direct_room) = self.all_joined_rooms.get_mut(direct_room_id) {
-                        let item = list.item(cx, portal_list_index, live_id!(room_preview));
+                        let item = list.item(cx, portal_list_index, id!(rooms_list_entry));
                         direct_room.is_selected =
                             self.current_active_room.as_ref() == Some(direct_room_id);
 
@@ -901,16 +997,16 @@ impl Widget for RoomsList {
                                 direction: PaginationDirection::Backwards,
                             });
                         }
-                        // Pass the room info down to the RoomPreview widget via Scope.
+                        // Pass the room info down to the RoomsListEntry widget via Scope.
                         scope = Scope::with_props(&*direct_room);
                         item.draw_all(cx, &mut scope);
                     } else {
-                        list.item(cx, portal_list_index, live_id!(empty))
+                        list.item(cx, portal_list_index, id!(empty))
                             .draw_all(cx, &mut scope);
                     }
                 }
                 else if regular_rooms_indexes.header_index == Some(portal_list_index) {
-                    let item = list.item(cx, portal_list_index, live_id!(collapsible_header));
+                    let item = list.item(cx, portal_list_index, id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
                         self.is_regular_rooms_header_expanded,
@@ -923,7 +1019,7 @@ impl Widget for RoomsList {
                 }
                 else if let Some(regular_room_id) = get_regular_room_id(portal_list_index) {
                     if let Some(regular_room) = self.all_joined_rooms.get_mut(regular_room_id) {
-                        let item = list.item(cx, portal_list_index, live_id!(room_preview));
+                        let item = list.item(cx, portal_list_index, id!(rooms_list_entry));
                         regular_room.is_selected =
                             self.current_active_room.as_ref() == Some(regular_room_id);
 
@@ -936,16 +1032,16 @@ impl Widget for RoomsList {
                                 direction: PaginationDirection::Backwards,
                             });
                         }
-                        // Pass the room info down to the RoomPreview widget via Scope.
+                        // Pass the room info down to the RoomsListEntry widget via Scope.
                         scope = Scope::with_props(&*regular_room);
                         item.draw_all(cx, &mut scope);
                     } else {
-                        list.item(cx, portal_list_index, live_id!(empty)).draw_all(cx, &mut scope);
+                        list.item(cx, portal_list_index, id!(empty)).draw_all(cx, &mut scope);
                     }
                 }
                 // Draw the status label as the bottom entry.
                 else if portal_list_index == status_label_id {
-                    let item = list.item(cx, portal_list_index, live_id!(status_label));
+                    let item = list.item(cx, portal_list_index, id!(status_label));
                     item.as_view().apply_over(cx, live!{
                         height: Fit,
                         label = { text: (&self.status) }
@@ -954,7 +1050,7 @@ impl Widget for RoomsList {
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.
                 else {
-                    list.item(cx, portal_list_index, live_id!(bottom_filler))
+                    list.item(cx, portal_list_index, id!(bottom_filler))
                         .draw_all(cx, &mut scope);
                 }
             }
@@ -965,22 +1061,19 @@ impl Widget for RoomsList {
 }
 
 impl RoomsListRef {
-    /// See [`RoomsList::all_known_rooms_loaded()`].
-    pub fn all_known_rooms_loaded(&self) -> bool {
-        let Some(inner) = self.borrow() else {
-            return false;
-        };
-        inner.all_known_rooms_loaded()
+    /// See [`RoomsList::all_rooms_loaded()`].
+    pub fn all_rooms_loaded(&self) -> bool {
+        let Some(inner) = self.borrow() else { return false; };
+        inner.all_rooms_loaded()
     }
 
     /// See [`RoomsList::is_room_loaded()`].
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
-        let Some(inner) = self.borrow() else {
-            return false;
-        };
+        let Some(inner) = self.borrow() else { return false; };
         inner.is_room_loaded(room_id)
     }
 }
+
 pub struct RoomsListScopeProps {
     /// Whether the RoomsList's inner PortalList was scrolling
     /// when the latest finger down event occurred.
@@ -990,6 +1083,7 @@ pub struct RoomsListScopeProps {
 /// The set of indexes for each room category in the the RoomsList's PortalList.
 ///
 /// Each category's room count should be `after_rooms_index - first_room_index`.
+#[derive(Debug, Clone, Copy)]
 struct RoomCategoryIndexes {
     /// The index of this room category's header, at which a `<CollapsibleHeader>` widget is displayed.
     ///

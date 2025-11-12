@@ -3,6 +3,8 @@
 //! This widget is designed to be reused across both Desktop and Mobile variants 
 //! of the RoomsSideBar to avoid code duplication.
 
+use std::mem::discriminant;
+
 use makepad_widgets::*;
 use matrix_sdk_ui::sync_service::State;
 
@@ -91,16 +93,16 @@ impl Widget for RoomsListHeader {
                     Some(RoomsListHeaderAction::SetSyncStatus(is_syncing)) => {
                         // If we are offline, keep showing the offline_icon,
                         // as showing the loading_spinner would be misleading if we're offline.
-                        if self.sync_state == State::Offline {
+                        if matches!(self.sync_state, State::Offline) {
                             continue;
                         }
-                        self.view.view(id!(loading_spinner)).set_visible(cx, *is_syncing);
-                        self.view.view(id!(synced_icon)).set_visible(cx, !*is_syncing);
-                        self.view.view(id!(offline_icon)).set_visible(cx, false);
+                        self.view.view(ids!(loading_spinner)).set_visible(cx, *is_syncing);
+                        self.view.view(ids!(synced_icon)).set_visible(cx, !*is_syncing);
+                        self.view.view(ids!(offline_icon)).set_visible(cx, false);
                         self.redraw(cx);
                     }
                     Some(RoomsListHeaderAction::StateUpdate(new_state)) => {
-                        if &self.sync_state == new_state {
+                        if discriminant(&self.sync_state) == discriminant(new_state) {
                             continue;
                         }
 
@@ -108,9 +110,9 @@ impl Widget for RoomsListHeader {
                         // States like Idle and Running are normal and shouldn't trigger error popups
                         if matches!(new_state, State::Error | State::Terminated | State::Offline) {
                             log!("Setting the RoomsListHeader to offline.");
-                            self.view.view(id!(loading_spinner)).set_visible(cx, false);
-                            self.view.view(id!(synced_icon)).set_visible(cx, false);
-                            self.view.view(id!(offline_icon)).set_visible(cx, true);
+                            self.view.view(ids!(loading_spinner)).set_visible(cx, false);
+                            self.view.view(ids!(synced_icon)).set_visible(cx, false);
+                            self.view.view(ids!(offline_icon)).set_visible(cx, true);
                             enqueue_popup_notification(PopupItem {
                                 message: "Cannot reach the Matrix homeserver. Please check your connection.".into(),
                                 auto_dismissal_duration: None,
@@ -134,12 +136,12 @@ impl Widget for RoomsListHeader {
     }
 }
 
-/// An enum that represents the possible actions that can be sent to the `RoomsListHeader`.
+/// Actions that can be handled by the `RoomsListHeader`.
 #[derive(Debug)]
 pub enum RoomsListHeaderAction {
-    /// Action to set the sync status of the rooms list header.
-    /// This will show or hide the loading spinner based on the boolean value.
+    /// An action received by the RoomsListHeader that will show or hide
+    /// its sync status indicator (and loading spinner) based on the given boolean.
     SetSyncStatus(bool),
-    /// The sync service state has changed.
+    /// An action received by the RoomsListHeader indicating the sync service state has changed.
     StateUpdate(State),
 }

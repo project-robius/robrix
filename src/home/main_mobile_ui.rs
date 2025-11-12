@@ -58,12 +58,7 @@ impl Widget for MainMobileUI {
                     // Because the MainMobileUI is drawn based on the AppState only,
                     // all we need to do is update the AppState here.
                     RoomsListAction::InviteAccepted { room_id, .. } => {
-                        // Emit an action to update the AppState with the new room.
-                        cx.widget_action(
-                            self.widget_uid(),
-                            &scope.path,
-                            AppStateAction::UpgradedInviteToJoinedRoom(room_id),
-                        );
+                        cx.action(AppStateAction::UpgradedInviteToJoinedRoom(room_id));
                     }
                     RoomsListAction::None => {}
                 }
@@ -84,7 +79,7 @@ impl Widget for MainMobileUI {
                 show_invite = false;
                 // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
                 self.view
-                    .room_screen(id!(room_screen))
+                    .room_screen(ids!(room_screen))
                     .set_displayed_room(cx, room_id.clone().into(), room_name.clone());
             }
             Some(SelectedRoom::InvitedRoom { room_id, room_name }) => {
@@ -92,7 +87,7 @@ impl Widget for MainMobileUI {
                 show_room = false;
                 show_invite = true;
                 self.view
-                    .invite_screen(id!(invite_screen))
+                    .invite_screen(ids!(invite_screen))
                     .set_displayed_invite(cx, room_id.clone().into(), room_name.clone());
             }
             None => {
@@ -102,9 +97,9 @@ impl Widget for MainMobileUI {
             }
         }
 
-        self.view.view(id!(welcome)).set_visible(cx, show_welcome);
-        self.view.view(id!(room_view)).set_visible(cx, show_room);
-        self.view.view(id!(invite_view)).set_visible(cx, show_invite);
+        self.view.view(ids!(welcome)).set_visible(cx, show_welcome);
+        self.view.view(ids!(room_view)).set_visible(cx, show_room);
+        self.view.view(ids!(invite_view)).set_visible(cx, show_invite);
         self.view.draw_walk(cx, scope, walk)
     }
 }

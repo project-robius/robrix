@@ -1,13 +1,13 @@
 use std::sync::Arc;
 use futures_util::StreamExt;
 use makepad_widgets::{log, ActionDefaultRef, Cx, DefaultNone};
+use matrix_sdk_base::crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString};
 use matrix_sdk::{
-    crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString}, encryption::{verification::{
-        SasState, SasVerification, Verification, VerificationRequest,
-        VerificationRequestState,
-    }, VerificationState}, ruma::{
+    encryption::{
+        verification::{SasState, SasVerification, Verification, VerificationRequest, VerificationRequestState}, VerificationState}, ruma::{
         events::{
-            key::verification::{request::ToDeviceKeyVerificationRequestEvent, VerificationMethod}, room::message::{MessageType, OriginalSyncRoomMessageEvent}
+            key::verification::{request::ToDeviceKeyVerificationRequestEvent, VerificationMethod},
+            room::message::{MessageType, OriginalSyncRoomMessageEvent},
         },
         UserId,
     }, Client

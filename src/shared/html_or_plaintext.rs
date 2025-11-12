@@ -66,7 +66,7 @@ live_design! {
             flow: RightWrap,
 
             html_link = <HtmlLink> {
-                hover_color: #21b070
+                hover_color: (COLOR_LINK_HOVER)
                 grab_key_focus: false,
                 padding: {left: 1.0, right: 1.5},
             }
@@ -206,7 +206,7 @@ impl LiveHook for RobrixHtmlLink {
             let scope = apply.scope.as_ref().unwrap();
             let doc = scope.props.get::<HtmlDoc>().unwrap();
             let mut walker = doc.new_walker_with_index(scope.index + 1);
-            if let Some((live_id!(href), attr)) = walker.while_attr_lc() {
+            if let Some((id!(href), attr)) = walker.while_attr_lc() {
                 self.url = attr.into();
             }
         }
@@ -248,18 +248,18 @@ impl Widget for RobrixHtmlLink {
 impl RobrixHtmlLink {
     #[allow(unused)]
     fn draw_matrix_pill(&mut self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
-        if let Some(mut pill) = self.matrix_link_pill(id!(matrix_link)).borrow_mut() {
+        if let Some(mut pill) = self.matrix_link_pill(ids!(matrix_link)).borrow_mut() {
             pill.populate_pill(cx, self.url.clone(), matrix_id, via);
         }
-        self.view(id!(matrix_link_view)).set_visible(cx, true);
-        self.view(id!(html_link_view)).set_visible(cx, false);
+        self.view(ids!(matrix_link_view)).set_visible(cx, true);
+        self.view(ids!(html_link_view)).set_visible(cx, false);
     }
 
     /// Shows the inner plain HTML link and hides the Matrix link pill view.
     fn draw_html_link(&mut self, cx: &mut Cx) {
-        self.view(id!(html_link_view)).set_visible(cx, true);
-        self.view(id!(matrix_link_view)).set_visible(cx, false);
-        let mut html_link = self.html_link(id!(html_link));
+        self.view(ids!(html_link_view)).set_visible(cx, true);
+        self.view(ids!(matrix_link_view)).set_visible(cx, false);
+        let mut html_link = self.html_link(ids!(html_link));
         html_link.set_url(&self.url);
         html_link.set_text(cx, self.text.as_ref());
     }
@@ -330,11 +330,11 @@ impl Widget for MatrixLinkPill {
     }
 
     fn text(&self) -> String {
-        self.label(id!(title)).text()
+        self.label(ids!(title)).text()
     }
 
     fn set_text(&mut self, cx: &mut Cx, v: &str) {
-        self.label(id!(title)).set_text(cx, v);
+        self.label(ids!(title)).set_text(cx, v);
     }
 }
 
@@ -375,7 +375,7 @@ impl MatrixLinkPill {
         // Handle room ID or alias
         match &self.state {
             MatrixLinkPillState::Loaded { name, avatar_url, .. } => {
-                self.label(id!(title)).set_text(cx, name);
+                self.label(ids!(title)).set_text(cx, name);
                 self.populate_avatar(cx, avatar_url.clone());
                 return;
             }
@@ -399,7 +399,7 @@ impl MatrixLinkPill {
     }
 
     fn populate_avatar(&self, cx: &mut Cx, avatar_url: Option<OwnedMxcUri>) {
-        let avatar_ref = self.avatar(id!(avatar));
+        let avatar_ref = self.avatar(ids!(avatar));
         if let Some(avatar_url) = avatar_url {
             if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, avatar_url) {
                 let res = avatar_ref.show_image(
@@ -506,10 +506,10 @@ impl LiveHook for MatrixHtmlSpan {
                     while let Some((lc, attr)) = walker.while_attr_lc() {
                         let attr = attr.trim_matches(['"', '\'']);
                         match lc {
-                            live_id!(color)
-                            | live_id!(data-mx-color) => self.fg_color = Vec4::from_hex_str(attr).ok(),
-                            live_id!(data-mx-bg-color) => self.bg_color = Vec4::from_hex_str(attr).ok(),
-                            live_id!(data-mx-spoiler) => self.spoiler = SpoilerDisplay::Hidden { reason: attr.into() },
+                            id!(color)
+                            | id!(data-mx-color) => self.fg_color = Vec4::from_hex_str(attr).ok(),
+                            id!(data-mx-bg-color) => self.bg_color = Vec4::from_hex_str(attr).ok(),
+                            id!(data-mx-spoiler) => self.spoiler = SpoilerDisplay::Hidden { reason: attr.into() },
                             _ => ()
                         }
                     }
@@ -661,16 +661,16 @@ impl Widget for HtmlOrPlaintext {
 impl HtmlOrPlaintext {
     /// Sets the plaintext content and makes it visible, hiding the rich HTML content.
     pub fn show_plaintext<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
-        self.view(id!(html_view)).set_visible(cx, false);
-        self.view(id!(plaintext_view)).set_visible(cx, true);
-        self.label(id!(plaintext_view.pt_label)).set_text(cx, text.as_ref());
+        self.view(ids!(html_view)).set_visible(cx, false);
+        self.view(ids!(plaintext_view)).set_visible(cx, true);
+        self.label(ids!(plaintext_view.pt_label)).set_text(cx, text.as_ref());
     }
 
     /// Sets the HTML content, making the HTML visible and the plaintext invisible.
     pub fn show_html<T: AsRef<str>>(&mut self, cx: &mut Cx, html_body: T) {
-        self.html(id!(html_view.html)).set_text(cx, html_body.as_ref());
-        self.view(id!(html_view)).set_visible(cx, true);
-        self.view(id!(plaintext_view)).set_visible(cx, false);
+        self.html(ids!(html_view.html)).set_text(cx, html_body.as_ref());
+        self.view(ids!(html_view)).set_visible(cx, true);
+        self.view(ids!(plaintext_view)).set_visible(cx, false);
     }
 }
 

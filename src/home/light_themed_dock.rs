@@ -7,6 +7,10 @@ live_design! {
 
     use crate::shared::styles::*;
 
+    COLOR_TAB_BAR = (COLOR_PRIMARY * 0.96)
+    COLOR_DOCK_TAB = #E1EEFA // a light blue-ish color, de-saturated from `COLOR_ACTIVE_PRIMARY`
+    COLOR_DRAG_TARGET = (COLOR_ACTIVE_PRIMARY)
+
     pub Splitter = <SplitterBase> {
         draw_bg: {
             uniform border_radius: 1.0
@@ -18,33 +22,37 @@ live_design! {
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                sdf.clear(#ef);
+                sdf.clear(COLOR_SECONDARY);
 
-                if self.is_vertical > 0.5 {
-                    sdf.box(
-                        self.splitter_pad,
-                        self.rect_size.y * 0.5 - self.splitter_grabber * 0.5,
-                        self.rect_size.x - 2.0 * self.splitter_pad,
-                        self.splitter_grabber,
-                        self.border_radius
-                    );
-                }
-                else {
-                    sdf.box(
-                        self.rect_size.x * 0.5 - self.splitter_grabber * 0.5,
-                        self.splitter_pad,
-                        self.splitter_grabber,
-                        self.rect_size.y - 2.0 * self.splitter_pad,
-                        self.border_radius
-                    );
-                }
+                sdf.box(
+                    -1.,
+                    -1.,
+                    self.rect_size.x + 2,
+                    self.rect_size.y + 2,
+                    2.5
+                );
+                // if self.is_vertical > 0.5 {
+                //     sdf.box(
+                //         self.splitter_pad,
+                //         self.rect_size.y * 0.5 - self.splitter_grabber * 0.5,
+                //         self.rect_size.x - 2.0 * self.splitter_pad,
+                //         self.splitter_grabber,
+                //         self.border_radius
+                //     );
+                // }
+                // else {
+                //     sdf.box(
+                //         self.rect_size.x * 0.5 - self.splitter_grabber * 0.5,
+                //         self.splitter_pad,
+                //         self.splitter_grabber,
+                //         self.rect_size.y - 2.0 * self.splitter_pad,
+                //         self.border_radius
+                //     );
+                // }
+
                 return sdf.fill_keep(mix(
-                    THEME_COLOR_D_HIDDEN,
-                    mix(
-                        THEME_COLOR_OUTSET_HOVER,
-                        THEME_COLOR_OUTSET_HOVER * 1.2,
-                        self.down
-                    ),
+                    COLOR_SECONDARY,
+                    COLOR_ROBRIX_PURPLE,
                     self.hover
                 ));
             }
@@ -94,7 +102,7 @@ live_design! {
     pub TabCloseButton = <TabCloseButtonBase> {
             // TODO: NEEDS FOCUS STATE
         height: 10.0, width: 10.0,
-        margin: { right: (THEME_SPACE_2), left: -3.5 },
+        margin: { right: (THEME_SPACE_2), left: -1 },
         draw_button: {
 
             instance hover: float;
@@ -175,14 +183,14 @@ live_design! {
                     self.rect_size.x + 2,
                     self.rect_size.y + 2,
                     1.
-                )
+                );
                 sdf.fill_keep(
                     mix(
-                        (COLOR_SECONDARY) * 0.95,
+                        (COLOR_DOCK_TAB),
                         (COLOR_ACTIVE_PRIMARY),
                         self.active
                     )
-                )
+                );
                 return sdf.result
             }
         }
@@ -240,7 +248,7 @@ live_design! {
             color: #x0
         }
         draw_fill: {
-            color: (COLOR_SECONDARY)
+            color: (COLOR_TAB_BAR)
         }
 
         width: Fill, height: (THEME_TAB_HEIGHT)
@@ -286,7 +294,7 @@ live_design! {
         padding: {left: (THEME_DOCK_BORDER_SIZE), top: 0, right: (THEME_DOCK_BORDER_SIZE), bottom: (THEME_DOCK_BORDER_SIZE)}
         drag_target_preview: {
             draw_depth: 10.0
-            color: (mix((COLOR_SECONDARY), #FFFFFF00, pow(0.25, THEME_COLOR_CONTRAST)))
+            color: (mix((COLOR_DRAG_TARGET), #FFFFFF00, pow(0.5, THEME_COLOR_CONTRAST)))
         }
         tab_bar: <TabBar> {}
         splitter: <Splitter> {}

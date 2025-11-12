@@ -309,14 +309,14 @@ impl Widget for LoginScreen {
 
 impl MatchEvent for LoginScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let login_button = self.view.button(id!(login_button));
-        let signup_button = self.view.button(id!(signup_button));
-        let user_id_input = self.view.text_input(id!(user_id_input));
-        let password_input = self.view.text_input(id!(password_input));
-        let homeserver_input = self.view.text_input(id!(homeserver_input));
+        let login_button = self.view.button(ids!(login_button));
+        let signup_button = self.view.button(ids!(signup_button));
+        let user_id_input = self.view.text_input(ids!(user_id_input));
+        let password_input = self.view.text_input(ids!(password_input));
+        let homeserver_input = self.view.text_input(ids!(homeserver_input));
 
-        let login_status_modal = self.view.modal(id!(login_status_modal));
-        let login_status_modal_inner = self.view.login_status_modal(id!(login_status_modal_inner));
+        let login_status_modal = self.view.modal(ids!(login_status_modal));
+        let login_status_modal_inner = self.view.login_status_modal(ids!(login_status_modal_inner));
 
         if signup_button.clicked(actions) {
             cx.action(LoginAction::NavigateToRegister);
@@ -353,7 +353,7 @@ impl MatchEvent for LoginScreen {
         }
         
         let provider_brands = ["apple", "facebook", "github", "gitlab", "google", "twitter"];
-        let button_set: &[&[LiveId]] = ids!(
+        let button_set: &[&[LiveId]] = ids_array!(
             apple_button, 
             facebook_button, 
             github_button, 
@@ -410,7 +410,7 @@ impl MatchEvent for LoginScreen {
                     login_status_modal.open(cx);
                     self.redraw(cx);
                 }
-                Some(LoginAction::SsoPending(ref pending)) => {
+                Some(LoginAction::SsoPending(pending)) => {
                     for view_ref in self.view_set(button_set).iter() {
                         let Some(mut view_mut) = view_ref.borrow_mut() else { continue };
                         if *pending {
@@ -439,7 +439,7 @@ impl MatchEvent for LoginScreen {
         if let Some(sso_redirect_url) = &self.sso_redirect_url {
             let login_status_modal_button = login_status_modal_inner.button_ref();
             if login_status_modal_button.clicked(actions) {
-                let request_id = live_id!(SSO_CANCEL_BUTTON);
+                let request_id = id!(SSO_CANCEL_BUTTON);
                 let request = HttpRequest::new(format!("{}/?login_token=",sso_redirect_url), HttpMethod::GET);
                 cx.http_request(request_id, request);
                 self.sso_redirect_url = None;

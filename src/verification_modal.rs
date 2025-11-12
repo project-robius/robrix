@@ -140,8 +140,8 @@ impl Widget for VerificationModal {
 
 impl WidgetMatchEvent for VerificationModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let accept_button = self.button(id!(accept_button));
-        let cancel_button = self.button(id!(cancel_button));
+        let accept_button = self.button(ids!(accept_button));
+        let cancel_button = self.button(ids!(cancel_button));
 
         let cancel_button_clicked = cancel_button.clicked(actions);
         let modal_dismissed = actions
@@ -180,7 +180,7 @@ impl WidgetMatchEvent for VerificationModal {
             if let Some(verification_action) = action.downcast_ref::<VerificationAction>() {
                 match verification_action {
                     VerificationAction::RequestCancelled(cancel_info) => {
-                        self.label(id!(prompt)).set_text(
+                        self.label(ids!(prompt)).set_text(
                             cx,
                             &format!("Verification request was cancelled: {}", cancel_info.reason())
                         );
@@ -191,7 +191,7 @@ impl WidgetMatchEvent for VerificationModal {
                     }
 
                     VerificationAction::RequestAccepted => {
-                        self.label(id!(prompt)).set_text(
+                        self.label(ids!(prompt)).set_text(
                             cx,
                             "You successfully accepted the verification request.\n\n\
                             Waiting for the other device to agree on verification methods..."
@@ -204,7 +204,7 @@ impl WidgetMatchEvent for VerificationModal {
                     }
 
                     VerificationAction::RequestAcceptError(error) => {
-                        self.label(id!(prompt)).set_text(cx, 
+                        self.label(ids!(prompt)).set_text(cx, 
                             &format!(
                                 "Error accepting verification request: {}\n\n\
                                 Please try the verification process again.",
@@ -218,7 +218,7 @@ impl WidgetMatchEvent for VerificationModal {
                     }
 
                     VerificationAction::RequestCancelError(error) => {
-                        self.label(id!(prompt)).set_text(
+                        self.label(ids!(prompt)).set_text(
                             cx,
                             &format!("Error cancelling verification request: {}.", error)
                         );
@@ -229,7 +229,7 @@ impl WidgetMatchEvent for VerificationModal {
                     }
 
                     VerificationAction::RequestTransitionedToUnsupportedMethod(method) => {
-                        self.label(id!(prompt)).set_text(
+                        self.label(ids!(prompt)).set_text(
                             cx,
                             &format!(
                                 "Verification request transitioned to unsupported method: {}\n\nPlease try the verification process again.",
@@ -247,7 +247,7 @@ impl WidgetMatchEvent for VerificationModal {
                     }
 
                     VerificationAction::SasAccepted(_accepted_protocols) => {
-                        self.label(id!(prompt)).set_text(
+                        self.label(ids!(prompt)).set_text(
                             cx,
                             "Both sides have accepted the same verification method(s).\n\n\
                             Waiting for both devices to exchange keys..."
@@ -279,7 +279,7 @@ impl WidgetMatchEvent for VerificationModal {
                                 decimals.0, decimals.1, decimals.2,
                             )
                         };
-                        self.label(id!(prompt)).set_text(cx, &text);
+                        self.label(ids!(prompt)).set_text(cx, &text);
                         accept_button.set_enabled(cx, true);
                         accept_button.set_text(cx, "Yes");
                         cancel_button.set_text(cx, "No");
@@ -288,7 +288,7 @@ impl WidgetMatchEvent for VerificationModal {
                     }
 
                     VerificationAction::SasConfirmed => {
-                        self.label(id!(prompt)).set_text(
+                        self.label(ids!(prompt)).set_text(
                             cx,
                             "You successfully confirmed the Short Auth String keys.\n\n\
                             Waiting for the other device to confirm..."
@@ -301,7 +301,7 @@ impl WidgetMatchEvent for VerificationModal {
                     }
 
                     VerificationAction::SasConfirmationError(error) => {
-                        self.label(id!(prompt)).set_text(
+                        self.label(ids!(prompt)).set_text(
                             cx,
                             &format!("Error confirming keys: {}\n\nPlease retry the verification process.", error)
                         );
@@ -312,7 +312,7 @@ impl WidgetMatchEvent for VerificationModal {
                     }
 
                     VerificationAction::RequestCompleted => {
-                        self.label(id!(prompt)).set_text(cx, "Verification completed successfully!");
+                        self.label(ids!(prompt)).set_text(cx, "Verification completed successfully!");
                         accept_button.set_text(cx, "Ok");
                         accept_button.set_enabled(cx, true);
                         cancel_button.set_visible(cx, false);
@@ -358,10 +358,10 @@ impl VerificationModal {
                 ).into()
             }
         };
-        self.label(id!(prompt)).set_text(cx, &prompt_text);
+        self.label(ids!(prompt)).set_text(cx, &prompt_text);
 
-        let accept_button = self.button(id!(accept_button));
-        let cancel_button = self.button(id!(cancel_button));
+        let accept_button = self.button(ids!(accept_button));
+        let cancel_button = self.button(ids!(cancel_button));
         accept_button.set_text(cx, "Yes");
         accept_button.set_enabled(cx, true);
         accept_button.set_visible(cx, true);

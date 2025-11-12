@@ -284,16 +284,16 @@ impl Widget for TspSettingsScreen {
             Some(current_did) => (current_did, COLOR_FG_ACCEPT_GREEN, true),
             None => ("No default identity has been set.", COLOR_WARNING_NOT_FOUND, false),
         };
-        self.view.label(id!(current_identity_label)).apply_over(cx, live!(
+        self.view.label(ids!(current_identity_label)).apply_over(cx, live!(
             text: (current_did_text),
             draw_text: { color: (current_did_text_color) },
         ));
-        self.view.button(id!(republish_identity_button)).set_visible(cx, show_republish_button);
+        self.view.button(ids!(republish_identity_button)).set_visible(cx, show_republish_button);
 
 
         // If we don't have any wallets, show the "no wallets" label.
         let is_wallets_empty = self.wallets.as_ref().is_none_or(|w| w.is_empty());
-        self.view.view(id!(no_wallets_label)).set_visible(cx, is_wallets_empty);
+        self.view.view(ids!(no_wallets_label)).set_visible(cx, is_wallets_empty);
 
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // Here, we only need to handle drawing the wallet list.
@@ -308,7 +308,7 @@ impl Widget for TspSettingsScreen {
 
             for (metadata, mut status_and_default) in (0..wallets.len()).filter_map(|i| wallets.get(i)) {
                 let item_live_id = LiveId::from_str(metadata.url.as_url_unencoded());
-                let item = list.item(cx, item_live_id, live_id!(wallet_entry)).unwrap();
+                let item = list.item(cx, item_live_id, id!(wallet_entry)).unwrap();
                 // Pass the wallet metadata in through Scope via props,
                 // and status/is_default via data.
                 let mut scope = Scope::with_data_props(&mut status_and_default, metadata);
@@ -321,7 +321,7 @@ impl Widget for TspSettingsScreen {
 
 impl MatchEvent for TspSettingsScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let republish_identity_button = self.view.button(id!(republish_identity_button));
+        let republish_identity_button = self.view.button(ids!(republish_identity_button));
 
         for action in actions {
             match action.downcast_ref() {
@@ -334,6 +334,7 @@ impl MatchEvent for TspSettingsScreen {
                         wallets.other_wallets.push((metadata.clone(), WalletStatus::Opened));
                     }
                     self.view.redraw(cx);
+                    continue;
                 }
 
                 // Remove the wallet from the list of drawn wallets.
@@ -364,6 +365,7 @@ impl MatchEvent for TspSettingsScreen {
                         });
                     }
                     self.view.redraw(cx);
+                    continue;
                 }
 
                 // Update the default/active wallet.
@@ -379,6 +381,7 @@ impl MatchEvent for TspSettingsScreen {
                         wallets.other_wallets.insert(0, (previous_active, WalletStatus::Opened));
                     }
                     self.view.redraw(cx);
+                    continue;
                 }
                 Some(TspWalletAction::DefaultWalletChanged(Err(_))) => {
                     enqueue_popup_notification(PopupItem {
@@ -386,6 +389,7 @@ impl MatchEvent for TspSettingsScreen {
                         auto_dismissal_duration: None,
                         kind: PopupKind::Error,
                     });
+                    continue;
                 }
 
                 // Handle a newly-opened wallet.
@@ -397,6 +401,7 @@ impl MatchEvent for TspSettingsScreen {
                         wallets.other_wallets.push((metadata.clone(), WalletStatus::Opened));
                     }
                     self.view.redraw(cx);
+                    continue;
                 }
                 Some(TspWalletAction::WalletOpened(Err(e))) => {
                     enqueue_popup_notification(PopupItem {
@@ -404,44 +409,59 @@ impl MatchEvent for TspSettingsScreen {
                         auto_dismissal_duration: None,
                         kind: PopupKind::Error,
                     });
+                    continue;
                 }
 
-                Some(TspWalletAction::CreateWalletError { .. }) // handled in the CreateWalletModal
-                | None => { }
+                // This is handled in the CreateWalletModal
+                Some(TspWalletAction::CreateWalletError { .. }) => { continue; }
+                None => { }
             }
 
-            if let Some(TspIdentityAction::DidRepublishResult(result)) = action.downcast_ref() {
-                // restore the republish button to its original state.
-                republish_identity_button.apply_over(cx, live!(
-                    enabled: true,
-                    text: (REPUBLISH_IDENTITY_BUTTON_TEXT),
-                ));
-                match result {
-                    Ok(did) => {
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Successfully republished identity \"{}\" to the DID server.", did),
-                            auto_dismissal_duration: Some(5.0),
-                            kind: PopupKind::Success,
-                        });
+            match action.downcast_ref() {
+                Some(TspIdentityAction::DidCreationResult(result)) => {
+                    // If there is no active identity, set the newly-created identity as active.
+                    let wallets = self.wallets.get_or_insert_default();
+                    if let (Ok(did), None) = (result, wallets.active_identity.as_ref()) {
+                        wallets.active_identity = Some(did.clone());
+                        self.view.redraw(cx);
                     }
-                    Err(e) => {
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Failed to republish identity to the DID server: {e}"),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Error,
-                        });
-                    }
+                    continue;
                 }
+                Some(TspIdentityAction::DidRepublishResult(result)) => {
+                    // restore the republish button to its original state.
+                    republish_identity_button.apply_over(cx, live!(
+                        enabled: true,
+                        text: (REPUBLISH_IDENTITY_BUTTON_TEXT),
+                    ));
+                    match result {
+                        Ok(did) => {
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Successfully republished identity \"{}\" to the DID server.", did),
+                                auto_dismissal_duration: Some(5.0),
+                                kind: PopupKind::Success,
+                            });
+                        }
+                        Err(e) => {
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Failed to republish identity to the DID server: {e}"),
+                                auto_dismissal_duration: None,
+                                kind: PopupKind::Error,
+                            });
+                        }
+                    }
+                    continue;
+                }
+                Some(TspIdentityAction::SentDidAssociationRequest { .. }) => { continue; } // handled in the TspVerifyUser widget
+                Some(TspIdentityAction::ErrorSendingDidAssociationRequest { .. }) => { continue; } // handled in the TspVerifyUser widget
+                Some(TspIdentityAction::ReceivedDidAssociationResponse { .. }) => { continue; } // handled in the TspVerifyUser widget
+                Some(TspIdentityAction::ReceivedDidAssociationRequest { .. }) => { continue; } // handled in the TspVerificationModal widget
+                Some(TspIdentityAction::ReceiveLoopError { .. }) => { continue; } // handled in the top-level app
+                None => { }
             }
         }
 
-        // | Some(TspWalletAction::SentDidAssociationRequest { .. }) // handled in the TspVerifyUser widget
-        // | Some(TspWalletAction::ErrorSendingDidAssociationRequest { .. }) // handled in the TspVerifyUser widget
-        // | Some(TspWalletAction::ReceivedDidAssociationResponse { .. }) // handled in the TspVerifyUser widget
-        // | Some(TspWalletAction::ReceivedDidAssociationRequest(_)) // handled in the TspVerificationModal widget
-        // | Some(TspWalletAction::ReceiveLoopError { .. }) // handled in the top-level app
 
-        if self.view.button(id!(copy_identity_button)).clicked(actions) { 
+        if self.view.button(ids!(copy_identity_button)).clicked(actions) { 
             if let Some(did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
                 cx.copy_to_clipboard(did);
                 enqueue_popup_notification(PopupItem {
@@ -461,7 +481,7 @@ impl MatchEvent for TspSettingsScreen {
         // Allow the user to republish their identity to the DID server.
         // This is primarily needed because some DID servers (e.g., the test servers)
         // frequently wipe their identity storage after a certain period of time.
-        if self.view.button(id!(republish_identity_button)).clicked(actions) {
+        if self.view.button(ids!(republish_identity_button)).clicked(actions) {
             if self.has_default_wallet() {
                 if let Some(our_did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
                     republish_identity_button.apply_over(cx, live!(
@@ -480,17 +500,17 @@ impl MatchEvent for TspSettingsScreen {
             }
         }
 
-        if self.view.button(id!(create_wallet_button)).clicked(actions) {
+        if self.view.button(ids!(create_wallet_button)).clicked(actions) {
             cx.action(CreateWalletModalAction::Open);
         }
 
-        if self.view.button(id!(create_did_button)).clicked(actions) {
+        if self.view.button(ids!(create_did_button)).clicked(actions) {
             if self.has_default_wallet() {
                 cx.action(CreateDidModalAction::Open);
             }
         }
 
-        if self.view.button(id!(import_wallet_button)).clicked(actions) {
+        if self.view.button(ids!(import_wallet_button)).clicked(actions) {
             // TODO: support importing an existing wallet.
             enqueue_popup_notification(PopupItem {
                 message: String::from("Importing an existing wallet is not yet implemented."),

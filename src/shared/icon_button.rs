@@ -71,7 +71,7 @@ live_design! {
             instance color_hover: #A
             instance border_size: 0.0
             instance border_color: #D0D5DD
-            instance border_radius: 3.0
+            instance border_radius: 4.0
 
             fn get_color(self) -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
@@ -107,7 +107,7 @@ live_design! {
             text_style: <REGULAR_TEXT>{font_size: 10},
             color: #000
             fn get_color(self) -> vec4 {
-                return self.color;
+                return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
             }
         }
         text: ""

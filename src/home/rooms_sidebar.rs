@@ -19,7 +19,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::room_filter_input_bar::RoomFilterInputBar;
-
+    use crate::home::search_messages::*;
     use crate::home::rooms_list::RoomsList;
     use crate::home::rooms_list_header::RoomsListHeader;
 
@@ -61,13 +61,22 @@ live_design! {
             <CachedWidget> {
                 rooms_list_header = <RoomsListHeader> {}
             }
-            <CachedWidget> {
-                room_filter_input_bar = <RoomFilterInputBar> {
-                    draw_bg: {
-                        border_size: 1.0,
-                    }
+
+            <View> {
+                width: Fill,
+                height: 39,
+                flow: Right
+                padding: {top: 2, bottom: 2}
+                spacing: 5 
+                align: {y: 0.5}
+
+                <CachedWidget> {
+                    room_filter_input_bar = <RoomFilterInputBar> {}
                 }
+
+                search_messages_button = <SearchMessagesButton> { }
             }
+
             <CachedWidget> {
                 rooms_list = <RoomsList> {}
             }
@@ -91,7 +100,7 @@ impl LiveHook for RoomsSideBar {
     fn after_new_from_doc(&mut self, cx: &mut Cx) {
         // Here we set the global singleton for the RoomsList widget,
         // which is used to access the list of rooms from anywhere in the app.
-        Cx::set_global(cx, self.view.rooms_list(id!(rooms_list)));
+        Cx::set_global(cx, self.view.rooms_list(ids!(rooms_list)));
     }
 }
 

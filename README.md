@@ -25,20 +25,18 @@ Check out our most recent talks and presentations for more info:
 
 
 The following table shows which host systems can currently be used to build Robrix for which target platforms.
-| Host OS | Target Platform | Builds? | Runs? |
-| ------- | --------------- | ------- | ----- |
-| macOS   | macOS           | ✅      | ✅    |
-| macOS   | Android         | ✅      | ✅    |
-| macOS   | iOS             | ✅      | ✅    |
-| Linux   | Linux           | ✅      | ✅    |
-| Linux   | Android         | ✅      | ✅    |
-| Windows | Windows         | ✅      | ✅    |
-| Windows | Android         | ✅      | ✅    |
+| Target Platform | Host OS         | Builds? | Runs? |
+| --------------- | --------------- | ------- | ----- |
+| macOS           | macOS           | ✅      | ✅    |
+| Linux           | Linux           | ✅      | ✅    |
+| Windows         | Windows         | ✅      | ✅    |
+| Android         | *Any*           | ✅      | ✅    |
+| iOS             | macOS           | ✅      | ✅    |
+| OpenHarmony     | *Any*           | ✅      | 🚧    |
 
 
 ## Known issues
  - Drag-n-drop on Linux isn't implemented by Makepad, so you cannot drag room tabs around yet. (see: https://github.com/makepad/makepad/issues/650)
- - There is currently no way to explicitly log out of Robrix. You can run `robrix --login-screen` to show the login screen upon app startup, or delete the app data directory.
  - Matrix-specific links (`https://matrix.to/...`) aren't fully handled in-app yet.
  - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled gradually via back pagination, but the viewport position is not maintained.
  - Currently, accessing system geolocation on Android may not succeed due to failing to prompt the user for permission. Please enable the location permission in the App Info settings page for Robrix, and then it should work as expected.
@@ -53,7 +51,7 @@ The following table shows which host systems can currently be used to build Robr
    On a Debian-like Linux distro (e.g., Ubuntu), run the following:
    ```sh
    sudo apt-get update
-   sudo apt-get install libssl-dev libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev
+   sudo apt-get install libssl-dev libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev libwayland-dev libxkbcommon-dev
    ```
 
 3. Then, build and run Robrix.
@@ -188,7 +186,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
 - [x] User settings screen
 - [ ] Dedicated view of spaces
-- [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
+- [x] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81, https://github.com/project-robius/robrix/pull/585
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
 - [ ] Room browser, search for public rooms
 - [x] Accept/reject room invites

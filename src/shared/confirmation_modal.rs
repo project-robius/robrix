@@ -13,11 +13,13 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::icon_button::RobrixIconButton;
 
+    // A confirmation modal with no icons in the buttons.
+    // The accept button is blue and the cancel button is gray.
     pub ConfirmationModal = {{ConfirmationModal}} {
         width: Fit
         height: Fit
 
-        <RoundedView> {
+        wrapper = <RoundedView> {
             width: 400
             height: Fit
             align: {x: 0.5}
@@ -73,26 +75,52 @@ live_design! {
                     width: 120,
                     align: {x: 0.5, y: 0.5}
                     padding: 15,
-                    draw_icon: {
-                        svg_file: (ICON_FORBIDDEN)
-                        color: (COLOR_FG_DANGER_RED),
-                    }
-                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                    icon_walk: {width: 0, height: 0, margin: 0}
     
                     draw_bg: {
-                        border_color: (COLOR_FG_DANGER_RED),
-                        color: (COLOR_BG_DANGER_RED)
+                        border_size: 1.0
+                        border_color: (COLOR_BG_DISABLED),
+                        color: (COLOR_SECONDARY)
+                    }
+                    draw_text: {
+                        color: (COLOR_TEXT),
                     }
                     text: "Cancel"
-                    draw_text: {
-                        color: (COLOR_FG_DANGER_RED),
-                    }
                 }
 
                 accept_button = <RobrixIconButton> {
                     width: 120
                     align: {x: 0.5, y: 0.5}
                     padding: 15,
+                    icon_walk: {width: 0, height: 0, margin: 0}
+
+                    draw_bg: {
+                        border_size: 1.0
+                        border_color: (COLOR_ACTIVE_PRIMARY_DARKER),
+                        color: (COLOR_ACTIVE_PRIMARY)
+                    }
+                    draw_text: {
+                        color: (COLOR_PRIMARY),
+                    }
+                    text: "Confirm"
+                }
+            }
+        }
+    }
+
+    // A confirmation modal for a positive action.
+    // The accept button is green with a checkmark icon.
+    pub PositiveConfirmationModal = <ConfirmationModal> {
+        wrapper = { 
+            buttons_view = {
+                cancel_button = {
+                    draw_icon: {
+                        svg_file: (ICON_FORBIDDEN)
+                        color: (COLOR_TEXT),
+                    }
+                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                }
+                accept_button = {
                     draw_icon: {
                         svg_file: (ICON_CHECKMARK)
                         color: (COLOR_FG_ACCEPT_GREEN),
@@ -103,9 +131,39 @@ live_design! {
                         border_color: (COLOR_FG_ACCEPT_GREEN),
                         color: (COLOR_BG_ACCEPT_GREEN)
                     }
-                    text: "Confirm"
                     draw_text: {
                         color: (COLOR_FG_ACCEPT_GREEN),
+                    }
+                }
+            }
+        }
+    }
+
+    // A confirmation modal for a negative action.
+    // The accept button is red with a forbidden icon.
+    pub NegativeConfirmationModal = <ConfirmationModal> {
+        wrapper = {
+            buttons_view = {
+                cancel_button = {
+                    draw_icon: {
+                        svg_file: (ICON_FORBIDDEN)
+                        color: (COLOR_TEXT),
+                    }
+                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                }
+                accept_button = {
+                    draw_icon: {
+                        svg_file: (ICON_CLOSE)
+                        color: (COLOR_FG_DANGER_RED),
+                    }
+                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+
+                    draw_bg: {
+                        border_color: (COLOR_FG_DANGER_RED),
+                        color: (COLOR_BG_DANGER_RED)
+                    }
+                    draw_text: {
+                        color: (COLOR_FG_DANGER_RED),
                     }
                 }
             }
@@ -186,8 +244,8 @@ impl Widget for ConfirmationModal {
 
 impl WidgetMatchEvent for ConfirmationModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-        let accept_button = self.view.button(id!(accept_button));
-        let cancel_button = self.view.button(id!(cancel_button));
+        let accept_button = self.view.button(ids!(accept_button));
+        let cancel_button = self.view.button(ids!(cancel_button));
 
         // Handle canceling/closing the modal.
         let cancel_clicked = cancel_button.clicked(actions);
@@ -226,26 +284,26 @@ impl WidgetMatchEvent for ConfirmationModal {
 
 impl ConfirmationModal {
     pub fn show(&mut self, cx: &mut Cx, content: ConfirmationModalContent) {
-        self.content = content  ;
+        self.content = content;
         self.apply_content(cx);
     }
 
     fn apply_content(&mut self, cx: &mut Cx) {
-        self.view.label(id!(title)).set_text(cx, &self.content.title_text);
-        self.view.label(id!(body)).set_text(cx, &self.content.body_text);
-        self.view.button(id!(accept_button)).set_text(
+        self.view.label(ids!(title)).set_text(cx, &self.content.title_text);
+        self.view.label(ids!(body)).set_text(cx, &self.content.body_text);
+        self.view.button(ids!(accept_button)).set_text(
             cx,
             self.content.accept_button_text.as_deref().unwrap_or("Confirm"),
         );
-        self.view.button(id!(cancel_button)).set_text(
+        self.view.button(ids!(cancel_button)).set_text(
             cx,
             self.content.cancel_button_text.as_deref().unwrap_or("Cancel"),
         );
 
-        self.view.button(id!(cancel_button)).reset_hover(cx);
-        self.view.button(id!(accept_button)).reset_hover(cx);
-        self.view.button(id!(accept_button)).set_enabled(cx, true);
-        self.view.button(id!(cancel_button)).set_enabled(cx, true);
+        self.view.button(ids!(cancel_button)).reset_hover(cx);
+        self.view.button(ids!(accept_button)).reset_hover(cx);
+        self.view.button(ids!(accept_button)).set_enabled(cx, true);
+        self.view.button(ids!(cancel_button)).set_enabled(cx, true);
         self.view.redraw(cx);
     }
 }
