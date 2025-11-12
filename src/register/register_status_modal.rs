@@ -108,7 +108,7 @@ impl MatchEvent for RegisterStatusModal {
             .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
 
         // Check if Abort button was clicked
-        let abort_clicked = self.view.button(id!(cancel_button)).clicked(actions);
+        let abort_clicked = self.view.button(ids!(cancel_button)).clicked(actions);
 
         if abort_clicked || modal_dismissed {
             // Send action to close the modal with appropriate was_internal flag
