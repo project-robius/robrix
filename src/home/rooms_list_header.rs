@@ -108,7 +108,7 @@ impl Widget for RoomsListHeader {
 
                         // Only show offline notification for actual connection errors
                         // States like Idle and Running are normal and shouldn't trigger error popups
-                        if matches!(new_state, State::Error(_) | State::Terminated | State::Offline) {
+                        if matches!(new_state, State::Error | State::Terminated | State::Offline) {
                             log!("Setting the RoomsListHeader to offline.");
                             self.view.view(ids!(loading_spinner)).set_visible(cx, false);
                             self.view.view(ids!(synced_icon)).set_visible(cx, false);

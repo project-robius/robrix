@@ -390,7 +390,7 @@ pub struct RegisterScreen {
 impl RegisterScreen {
     fn toggle_homeserver_options(&mut self, cx: &mut Cx) {
         self.is_homeserver_editing = !self.is_homeserver_editing;
-        self.view.view(ids!(homeserver_options)).set_visible(cx, self.is_homeserver_editing);
+        self.view.view(id!(homeserver_options)).set_visible(cx, self.is_homeserver_editing);
         self.redraw(cx);
     }
     
@@ -410,7 +410,7 @@ impl RegisterScreen {
     }
     
     fn reset_modal_state(&mut self, cx: &mut Cx) {
-        let register_button = self.view.button(ids!(register_button));
+        let register_button = self.view.button(id!(register_button));
         register_button.set_enabled(cx, true);
         register_button.reset_hover(cx);
         self.update_button_mask(&register_button, cx, 0.0);
@@ -421,11 +421,11 @@ impl RegisterScreen {
         let is_matrix_org = self.selected_homeserver == "matrix.org" || self.selected_homeserver.is_empty();
 
         // Update UI based on homeserver selection
-        self.view.view(ids!(sso_area)).set_visible(cx, is_matrix_org);
-        self.view.view(ids!(password_area)).set_visible(cx, !is_matrix_org);
+        self.view.view(id!(sso_area)).set_visible(cx, is_matrix_org);
+        self.view.view(id!(password_area)).set_visible(cx, !is_matrix_org);
 
         // Update description text
-        let desc_label = self.view.label(ids!(homeserver_description));
+        let desc_label = self.view.label(id!(homeserver_description));
         if is_matrix_org {
             desc_label.set_text(cx, "Join millions for free on the largest public server");
         } else {
@@ -444,35 +444,35 @@ impl RegisterScreen {
         self.sso_pending = false;
 
         // Reset homeserver selection UI
-        self.view.view(ids!(homeserver_options)).set_visible(cx, false);
-        self.view.label(ids!(selected_homeserver)).set_text(cx, "matrix.org");
-        self.view.view(ids!(custom_homeserver)).set_visible(cx, false);
+        self.view.view(id!(homeserver_options)).set_visible(cx, false);
+        self.view.label(id!(selected_homeserver)).set_text(cx, "matrix.org");
+        self.view.view(id!(custom_homeserver)).set_visible(cx, false);
 
         // Reset homeserver option buttons
-        let matrix_option_button = self.view.button(ids!(matrix_option));
-        let other_option_button = self.view.button(ids!(other_option));
+        let matrix_option_button = self.view.button(id!(matrix_option));
+        let other_option_button = self.view.button(id!(other_option));
         matrix_option_button.set_text(cx, "● matrix.org");
         other_option_button.set_text(cx, "○ Other homeserver");
 
         // Clear input fields
-        self.view.text_input(ids!(username_input)).set_text(cx, "");
-        self.view.text_input(ids!(password_input)).set_text(cx, "");
-        self.view.text_input(ids!(confirm_password_input)).set_text(cx, "");
-        self.view.text_input(ids!(custom_homeserver_input)).set_text(cx, "");
+        self.view.text_input(id!(username_input)).set_text(cx, "");
+        self.view.text_input(id!(password_input)).set_text(cx, "");
+        self.view.text_input(id!(confirm_password_input)).set_text(cx, "");
+        self.view.text_input(id!(custom_homeserver_input)).set_text(cx, "");
 
         // Reset button states
-        let register_button = self.view.button(ids!(register_button));
+        let register_button = self.view.button(id!(register_button));
         register_button.set_enabled(cx, true);
         register_button.reset_hover(cx);
         self.update_button_mask(&register_button, cx, 0.0);
 
-        let sso_button = self.view.button(ids!(sso_button));
+        let sso_button = self.view.button(id!(sso_button));
         sso_button.set_enabled(cx, true);
         sso_button.reset_hover(cx);
         self.update_button_mask(&sso_button, cx, 0.0);
 
         // Close any open modals
-        self.view.modal(ids!(status_modal)).close(cx);
+        self.view.modal(id!(status_modal)).close(cx);
 
         // Update registration mode to show correct UI for matrix.org
         self.update_registration_mode(cx);
@@ -494,9 +494,9 @@ impl Widget for RegisterScreen {
 
 impl MatchEvent for RegisterScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let login_button = self.view.button(ids!(login_button));
-        let edit_button = self.view.button(ids!(edit_button));
-        let sso_button = self.view.button(ids!(sso_button));
+        let login_button = self.view.button(id!(login_button));
+        let edit_button = self.view.button(id!(edit_button));
+        let sso_button = self.view.button(id!(sso_button));
         
         // Initialize selected_homeserver if empty
         if self.selected_homeserver.is_empty() {
@@ -519,11 +519,11 @@ impl MatchEvent for RegisterScreen {
             self.update_button_mask(&sso_button, cx, 1.0);
 
             // Show SSO registration modal immediately
-            let status_label = self.view.label(ids!(status_modal_inner.status));
+            let status_label = self.view.label(id!(status_modal_inner.status));
             status_label.set_text(cx, "Opening your browser...\n\nPlease complete registration in your browser, then return to Robrix.");
-            let cancel_button = self.view.button(ids!(status_modal_inner.cancel_button));
+            let cancel_button = self.view.button(id!(status_modal_inner.cancel_button));
             cancel_button.set_text(cx, "Cancel");
-            self.view.modal(ids!(status_modal)).open(cx);
+            self.view.modal(id!(status_modal)).open(cx);
             self.redraw(cx);
 
             // Use the same SSO flow as login screen - spawn SSO server with Google provider
@@ -538,25 +538,25 @@ impl MatchEvent for RegisterScreen {
         }
         
         // Handle homeserver selection buttons
-        let matrix_option_button = self.view.button(ids!(matrix_option));
-        let other_option_button = self.view.button(ids!(other_option));
+        let matrix_option_button = self.view.button(id!(matrix_option));
+        let other_option_button = self.view.button(id!(other_option));
         
         if matrix_option_button.clicked(actions) {
             self.selected_homeserver = "matrix.org".to_string();
-            self.view.label(ids!(selected_homeserver)).set_text(cx, "matrix.org");
-            self.view.view(ids!(custom_homeserver)).set_visible(cx, false);
+            self.view.label(id!(selected_homeserver)).set_text(cx, "matrix.org");
+            self.view.view(id!(custom_homeserver)).set_visible(cx, false);
             
             // Update button styles to show selection
             matrix_option_button.set_text(cx, "● matrix.org");
             other_option_button.set_text(cx, "○ Other homeserver");
             
             self.is_homeserver_editing = false;
-            self.view.view(ids!(homeserver_options)).set_visible(cx, false);
+            self.view.view(id!(homeserver_options)).set_visible(cx, false);
             self.update_registration_mode(cx);
         }
         
         if other_option_button.clicked(actions) {
-            self.view.view(ids!(custom_homeserver)).set_visible(cx, true);
+            self.view.view(id!(custom_homeserver)).set_visible(cx, true);
             
             // Update button styles to show selection
             matrix_option_button.set_text(cx, "○ matrix.org");
@@ -564,7 +564,7 @@ impl MatchEvent for RegisterScreen {
         }
         
         // Handle custom homeserver input
-        if let Some(text_event) = self.view.text_input(ids!(custom_homeserver_input)).changed(actions) {
+        if let Some(text_event) = self.view.text_input(id!(custom_homeserver_input)).changed(actions) {
             if !text_event.is_empty() {
                 // Basic URL validation - ensure it starts with http:// or https://
                 let trimmed = text_event.trim();
@@ -573,17 +573,17 @@ impl MatchEvent for RegisterScreen {
                 
                 if is_valid_url {
                     self.selected_homeserver = text_event.clone();
-                    self.view.label(ids!(selected_homeserver)).set_text(cx, &text_event);
+                    self.view.label(id!(selected_homeserver)).set_text(cx, &text_event);
                     self.update_registration_mode(cx);
                 }
             }
         }
         
         // Handle password-based registration
-        let register_button = self.view.button(ids!(register_button));
-        let username_input = self.view.text_input(ids!(username_input));
-        let password_input = self.view.text_input(ids!(password_input));
-        let confirm_password_input = self.view.text_input(ids!(confirm_password_input));
+        let register_button = self.view.button(id!(register_button));
+        let username_input = self.view.text_input(id!(username_input));
+        let password_input = self.view.text_input(id!(password_input));
+        let confirm_password_input = self.view.text_input(id!(confirm_password_input));
 
         if register_button.clicked(actions)
             || username_input.returned(actions).is_some()
@@ -626,13 +626,13 @@ impl MatchEvent for RegisterScreen {
             self.update_button_mask(&register_button, cx, 1.0);
 
             // Show registration status modal with appropriate text for password registration
-            let status_label = self.view.label(ids!(status_modal_inner.status));
+            let status_label = self.view.label(id!(status_modal_inner.status));
             status_label.set_text(cx, "Registering account, please wait...");
-            let title_label = self.view.label(ids!(status_modal_inner.title));
+            let title_label = self.view.label(id!(status_modal_inner.title));
             title_label.set_text(cx, "Registration Status");
-            let cancel_button = self.view.button(ids!(status_modal_inner.cancel_button));
+            let cancel_button = self.view.button(id!(status_modal_inner.cancel_button));
             cancel_button.set_text(cx, "Cancel");
-            self.view.modal(ids!(status_modal)).open(cx);
+            self.view.modal(id!(status_modal)).open(cx);
             self.redraw(cx);
 
             // Submit registration request
@@ -651,7 +651,7 @@ impl MatchEvent for RegisterScreen {
             // Handle RegisterStatusModal close action
             if let Some(RegisterStatusModalAction::Close { was_internal }) = action.downcast_ref::<RegisterStatusModalAction>() {
                 if *was_internal {
-                    self.view.modal(ids!(status_modal)).close(cx);
+                    self.view.modal(id!(status_modal)).close(cx);
                 }
                 // Reset appropriate button based on registration type
                 if self.sso_pending {
@@ -671,7 +671,7 @@ impl MatchEvent for RegisterScreen {
             if self.sso_pending {
                 if let Some(LoginAction::LoginSuccess) = action.downcast_ref::<LoginAction>() {
                     // SSO registration successful
-                    self.view.modal(ids!(status_modal)).close(cx);
+                    self.view.modal(id!(status_modal)).close(cx);
                     self.sso_pending = false;
                     self.update_button_mask(&sso_button, cx, 0.0);
                     cx.action(RegisterAction::RegistrationSuccess);
@@ -687,16 +687,16 @@ impl MatchEvent for RegisterScreen {
                         // SSO ended
                         self.sso_pending = false;
                         self.update_button_mask(&sso_button, cx, 0.0);
-                        self.view.modal(ids!(status_modal)).close(cx);
+                        self.view.modal(id!(status_modal)).close(cx);
                     }
                     self.redraw(cx);
                 }
                 Some(RegisterAction::SsoRegistrationStatus { status }) => {
                     // Update SSO status in modal (only if our modal is already open)
                     if self.sso_pending {
-                        let status_label = self.view.label(ids!(status_modal_inner.status));
+                        let status_label = self.view.label(id!(status_modal_inner.status));
                         status_label.set_text(cx, status);
-                        let cancel_button = self.view.button(ids!(status_modal_inner.cancel_button));
+                        let cancel_button = self.view.button(id!(status_modal_inner.cancel_button));
                         cancel_button.set_text(cx, "Cancel");
                         self.redraw(cx);
                     }
@@ -708,7 +708,7 @@ impl MatchEvent for RegisterScreen {
                 match reg_action {
                     RegisterAction::RegistrationSuccess => {
                         // Close modal and let app.rs handle screen transition
-                        self.view.modal(ids!(status_modal)).close(cx);
+                        self.view.modal(id!(status_modal)).close(cx);
                         if self.sso_pending {
                             self.sso_pending = false;
                             self.update_button_mask(&sso_button, cx, 0.0);
@@ -722,8 +722,8 @@ impl MatchEvent for RegisterScreen {
                             self.sso_pending = false;
                             self.update_button_mask(&sso_button, cx, 0.0);
                         }
-                        self.view.modal(ids!(status_modal)).close(cx);
-                        let register_button = self.view.button(ids!(register_button));
+                        self.view.modal(id!(status_modal)).close(cx);
+                        let register_button = self.view.button(id!(register_button));
                         register_button.set_enabled(cx, true);
                         register_button.reset_hover(cx);
                         self.redraw(cx);

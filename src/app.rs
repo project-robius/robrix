@@ -272,10 +272,10 @@ impl MatchEvent for App {
                     }
                     LoginAction::NavigateToRegister => {
                         log!("Navigating from login to register screen");
-                        self.ui.view(ids!(login_screen_view)).set_visible(cx, false);
-                        self.ui.view(ids!(register_screen_view)).set_visible(cx, true);
+                        self.ui.view(id!(login_screen_view)).set_visible(cx, false);
+                        self.ui.view(id!(register_screen_view)).set_visible(cx, true);
                         // Reset register button state when showing register screen
-                        let register_button = self.ui.button(ids!(register_screen_view.register_screen.register_button));
+                        let register_button = self.ui.button(id!(register_screen_view.register_screen.register_button));
                         register_button.set_enabled(cx, true);
                         register_button.reset_hover(cx);
                         self.ui.redraw(cx);
@@ -291,17 +291,17 @@ impl MatchEvent for App {
                     RegisterAction::NavigateToLogin => {
                         log!("Navigating from register to login screen");
                         // Reset the register screen state before hiding it
-                        if let Some(mut register_screen_ref) = self.ui.widget(ids!(register_screen_view.register_screen)).borrow_mut::<crate::register::register_screen::RegisterScreen>() {
+                        if let Some(mut register_screen_ref) = self.ui.widget(id!(register_screen_view.register_screen)).borrow_mut::<crate::register::register_screen::RegisterScreen>() {
                             register_screen_ref.reset_screen_state(cx);
                         }
-                        self.ui.view(ids!(register_screen_view)).set_visible(cx, false);
-                        self.ui.view(ids!(login_screen_view)).set_visible(cx, true);
+                        self.ui.view(id!(register_screen_view)).set_visible(cx, false);
+                        self.ui.view(id!(login_screen_view)).set_visible(cx, true);
                         self.ui.redraw(cx);
                     }
                     RegisterAction::RegistrationSuccess => {
                         log!("Registration successful, transitioning to logged in state");
                         // Clear register screen state after successful registration
-                        if let Some(mut register_screen_ref) = self.ui.widget(ids!(register_screen_view.register_screen)).borrow_mut::<crate::register::register_screen::RegisterScreen>() {
+                        if let Some(mut register_screen_ref) = self.ui.widget(id!(register_screen_view.register_screen)).borrow_mut::<crate::register::register_screen::RegisterScreen>() {
                             register_screen_ref.reset_screen_state(cx);
                         }
                         self.app_state.logged_in = true;
@@ -647,6 +647,7 @@ impl App {
         if let Some(closure) = close_room_closure_opt {
             closure(cx);
         }
+>>>>>>> origin/main
     }
 }
 
