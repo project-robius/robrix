@@ -269,7 +269,6 @@ live_design! {
                 padding: 10
                 align: {x: 0.5, y: 0.8}
                 spacing: 10
-                debug: true
                 image_viewer_loading_spview = <View> {
                     width: Fit, height: Fit
                     loading_spinner = <LoadingSpinner> {
@@ -678,7 +677,7 @@ impl MatchEvent for ImageViewer {
                     self.animator_cut(cx, ids!(mode.degree_neg90));
                 }
                 self.rotation_step = (self.rotation_step + 1) % 4; // Rotate 90 degrees clockwise
-                self.update_rotated_image_shader(cx);
+                self.update_rotation_animation(cx);
             }
         }
 
@@ -695,7 +694,7 @@ impl MatchEvent for ImageViewer {
                     self.animator_cut(cx, ids!(mode.degree_360));
                 }
                 self.rotation_step = (self.rotation_step - 1) % 4; // Rotate 90 degrees clockwise
-                self.update_rotated_image_shader(cx);
+                self.update_rotation_animation(cx);
             }
         }
     }
@@ -734,7 +733,7 @@ impl ImageViewer {
 
     /// Updates the shader uniforms of the rotated image widget with the current rotation,
     /// and requests a redraw.
-    fn update_rotated_image_shader(&mut self, cx: &mut Cx) {
+    fn update_rotation_animation(&mut self, cx: &mut Cx) {
         // Map rotation step to animation state
         let animation_id = match self.rotation_step {
             0 => ids!(mode.upright),    // 0°
@@ -763,7 +762,7 @@ impl ImageViewer {
         );
         rotated_image_container.redraw(cx);
 
-        self.update_rotated_image_shader(cx);
+        self.update_rotation_animation(cx);
     }
 
     /// Displays an image in the image viewer widget.
@@ -1016,7 +1015,7 @@ pub enum LoadState {
 }
 
 #[derive(Debug, Clone)]
-/// Metadata of an image.
+/// Metadata for an image.
 pub struct MetaData {
     pub avatar_ref: Option<AvatarRef>,
     pub sender: Option<String>,

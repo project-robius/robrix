@@ -1566,7 +1566,7 @@ impl RoomScreen {
         cx: &mut Cx,
         mxc_uri: Option<String>,
         texture: std::rc::Rc<Option<Texture>>,
-        portal_list:  &PortalListRef,
+        portal_list: &PortalListRef,
         index: usize,
         widget_ref: WidgetRef,
     ) {

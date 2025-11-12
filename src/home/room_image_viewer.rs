@@ -65,8 +65,8 @@ pub fn extract_image_info(event_tl_item: &EventTimelineItem) -> (String, i32) {
     }
 }
 
-   /// Conndensed message does not have a profile, so we need to find the previous portal list item.
-/// Recursively searches for a non-empty display name and avatar in previous portal list items.
+/// Condensed message does not have a profile, so we need to find the previous portal list item.
+/// Searches backwards for a non-empty display name and avatar in previous portal list items.
 /// Returns the first non-empty display name found and its avatar.
 pub fn find_previous_profile_in_condensed_message(portal_list: &PortalListRef, mut current_index: usize) -> (String, AvatarRef) {
     // Start from the current index and work backwards

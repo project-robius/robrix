@@ -216,7 +216,7 @@ impl TextOrImageRef {
 pub enum TextOrImageStatus {
     #[default]
     Text,
-    /// Image Source URL stored in this variant to be used 
+    /// Image source URL stored in this variant to be used 
     Image(Option<String>),
 }
 

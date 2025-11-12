@@ -208,8 +208,8 @@ impl MediaCache {
 }
 
 /// Converts a Matrix SDK error to a MediaCacheEntry::Failed with appropriate status codes.
-fn error_to_media_cache_entry(e: Error, request: &MediaRequestParameters) -> MediaCacheEntry {
-    match e {
+fn error_to_media_cache_entry(error: Error, request: &MediaRequestParameters) -> MediaCacheEntry {
+    match error {
         Error::Http(http_error) => {
             if let Some(client_error) = http_error.as_client_api_error() {
                 error!("Client error for media cache: {client_error} for request: {:?}", request);
@@ -222,8 +222,8 @@ fn error_to_media_cache_entry(e: Error, request: &MediaRequestParameters) -> Med
                             MediaCacheEntry::Failed(StatusCode::INTERNAL_SERVER_ERROR)
                         } else if reqwest_error.is_status() {
                             MediaCacheEntry::Failed(reqwest_error
-                                    .status()
-                                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
+                                .status()
+                                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
                         } else {
                             MediaCacheEntry::Failed(StatusCode::INTERNAL_SERVER_ERROR)
                         }
