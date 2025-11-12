@@ -67,12 +67,10 @@ live_design! {
             spaces_bar_animator = {
                 default: hide,
                 show = {
-                    redraw: true,
                     from: { all: Forward { duration: (SPACES_BAR_ANIMATION_DURATION_SECS) } }
                     apply: { height: (NAVIGATION_TAB_BAR_SIZE),  draw_bg: { shadow_color: #x00000055 } }
                 }
                 hide = {
-                    redraw: true,
                     from: { all: Forward { duration: (SPACES_BAR_ANIMATION_DURATION_SECS) } }
                     apply: { height: 0,  draw_bg: { shadow_color: #x00000000 } }
                 }
@@ -271,6 +269,12 @@ impl Widget for SpacesBarWrapper {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // TODO: i want to uncomment this, but adding it back in will break
+        //       the animation of showing the SpacesBarWrapper.
+        //       I'm not sure why the SpacesBar is getting redrawn constantly though.
+        // if walk.height.to_fixed().is_some_and(|h| h < 0.01) {
+        //     return DrawStep::done();
+        // }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -280,12 +284,11 @@ impl SpacesBarWrapperRef {
     fn show_or_hide(&self, cx: &mut Cx, show: bool) {
         let Some(mut inner) = self.borrow_mut() else { return };
         if show {
-            log!("Showing spaces bar...");
             inner.animator_play(cx, ids!(spaces_bar_animator.show));
         } else {
-            log!("Hiding spaces bar...");
             inner.animator_play(cx, ids!(spaces_bar_animator.hide));
         }
+        inner.redraw(cx);
     }
 }
 
@@ -308,6 +311,7 @@ impl Widget for HomeScreen {
                         if !matches!(self.selection, SelectedTab::Home) {
                             self.previous_selection = self.selection.clone();
                             self.selection = SelectedTab::Home;
+                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
                             self.update_active_page_from_selection(cx);
                             self.view.redraw(cx);
                         }
@@ -316,6 +320,17 @@ impl Widget for HomeScreen {
                         if !matches!(self.selection, SelectedTab::AddRoom) {
                             self.previous_selection = self.selection.clone();
                             self.selection = SelectedTab::AddRoom;
+                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
+                            self.update_active_page_from_selection(cx);
+                            self.view.redraw(cx);
+                        }
+                    }
+                    Some(NavigationBarAction::GoToSpace { space_id }) => {
+                        let new_space_selection = SelectedTab::Space { space_id: space_id.clone() };
+                        if self.selection != new_space_selection {
+                            self.previous_selection = self.selection.clone();
+                            self.selection = new_space_selection;
+                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
                             self.update_active_page_from_selection(cx);
                             self.view.redraw(cx);
                         }
@@ -325,6 +340,7 @@ impl Widget for HomeScreen {
                         if !matches!(self.selection, SelectedTab::Settings) {
                             self.previous_selection = self.selection.clone();
                             self.selection = SelectedTab::Settings;
+                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
                             if let Some(settings_page) = self.update_active_page_from_selection(cx) {
                                 settings_page
                                     .settings_screen(ids!(settings_screen))
@@ -336,10 +352,12 @@ impl Widget for HomeScreen {
                         }
                     }
                     Some(NavigationBarAction::CloseSettings) => {
-                        self.selection = self.previous_selection.clone();
-                        cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
-                        self.update_active_page_from_selection(cx);
-                        self.view.redraw(cx);
+                        if matches!(self.selection, SelectedTab::Settings) {
+                            self.selection = self.previous_selection.clone();
+                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
+                            self.update_active_page_from_selection(cx);
+                            self.view.redraw(cx);
+                        }
                     }
                     Some(NavigationBarAction::ToggleSpacesBar) => {
                         self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
@@ -377,6 +395,7 @@ impl HomeScreen {
                     SelectedTab::Home     => id!(home_page),
                     SelectedTab::Settings => id!(settings_page),
                     SelectedTab::AddRoom  => id!(add_room_page),
+                    SelectedTab::Space { .. } => id!(home_page), // TODO: show the SpacesScreen
                 },
             )
     }

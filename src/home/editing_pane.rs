@@ -29,7 +29,7 @@ live_design! {
 
     EditingContent = <View> {
         width: Fill,
-        height: Fit { max: Rel(0.625) }
+        height: Fit { max: Rel { base: Full, factor: 0.625 } }
         align: {x: 0.5, y: 1.0}, // centered horizontally, bottom-aligned
         padding: { left: 20, right: 20, top: 10, bottom: 10 }
         margin: {top: 2}
@@ -98,7 +98,7 @@ live_design! {
 
         edit_text_input = <MentionableTextInput> {
             width: Fill
-            height: Fit { max: Rel(0.625) }
+            height: Fit { max: Rel { base: Full, factor: 0.625 } }
             margin: { bottom: 5, top: 5 }
         }
     }
@@ -107,7 +107,7 @@ live_design! {
     pub EditingPane = {{EditingPane}} {
         visible: false,
         width: Fill,
-        height: Fit { max: Rel(0.625) }
+        height: Fit { max: Rel { base: Full, factor: 0.625 } }
         align: {x: 0.5, y: 1.0}
         // TODO: FIXME: this is a hack to make the editing pane
         //              able to slide out of the bottom of the screen.

@@ -131,7 +131,7 @@ live_design! {
     pub COLOR_NAVIGATION_TAB_FG_ACTIVE = (COLOR_TEXT)
     pub COLOR_NAVIGATION_TAB_BG        = (COLOR_SECONDARY)
     pub COLOR_NAVIGATION_TAB_BG_HOVER  = (COLOR_SECONDARY * 0.85)
-    pub COLOR_NAVIGATION_TAB_BG_ACTIVE = (COLOR_SECONDARY * 0.5)
+    pub COLOR_NAVIGATION_TAB_BG_ACTIVE = #9
 
     
     // An icon that can be rotated at a custom angle.
