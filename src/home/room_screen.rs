@@ -26,15 +26,15 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{RoomImageViewerDetailAction, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{extract_image_info, find_previous_profile_in_condensed_message, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
     room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, LoadState, MetaData}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, constrain_image_dimensions, room_name_or_id, unix_time_millis_to_datetime}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, room_name_or_id, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -43,7 +43,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputAction;
 
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_image_viewer::extract_image_info, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 /// The maximum number of timeline items to search through
 /// when looking for a particular event.
@@ -206,7 +206,7 @@ live_design! {
                 height: Fit
                 flow: Down,
                 padding: 0.0
-                <View> {
+                username_view = <View> {
                     flow: Right,
                     width: Fill,
                     height: Fit,
@@ -663,19 +663,14 @@ impl Widget for RoomScreen {
                 }
                 let content_message = wr.text_or_image(ids!(content.message));
                 if let TextOrImageAction::Clicked(mxc_uri) = actions.find_widget_action(content_message.widget_uid()).cast() {
-                    let Some((texture, size)) = content_message.get_texture_and_size(cx) else { continue; };
-                    let texture = std::rc::Rc::new(texture);
-                    let screen_width = wr.area().rect(cx).size.x;
-                    
+                    let texture = content_message.get_texture(cx);
                     self.handle_image_click(
                         cx,
                         mxc_uri,
-                        texture,
-                        size,
-                        screen_width,
+                        std::rc::Rc::new(texture),
+                        &portal_list,
                         index,
-                        room_screen_widget_uid,
-                        scope,
+                        wr
                     );
                     continue;
                 }
@@ -866,6 +861,7 @@ impl Widget for RoomScreen {
                 if self.handle_link_clicked(cx, action, &user_profile_sliding_pane) {
                     return false;
                 }
+
                 /*
                 match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
                     MessageAction::ActionBarClose => {
@@ -1570,44 +1566,34 @@ impl RoomScreen {
         cx: &mut Cx,
         mxc_uri: Option<String>,
         texture: std::rc::Rc<Option<Texture>>,
-        size: DVec2,
-        screen_width: f64,
+        portal_list:  &PortalListRef,
         index: usize,
-        room_screen_widget_uid: WidgetUid,
-        scope: &Scope,
+        widget_ref: WidgetRef,
     ) {
+        let mut avatar_ref = widget_ref.avatar(ids!(profile.avatar));
+        let mut display_name = widget_ref.label(ids!(content.username_view.username)).text();
+        
+        // If display_name is empty, look for a non-empty display_name and its avatar in previous items
+        if display_name.is_empty() {
+            (display_name, avatar_ref) = find_previous_profile_in_condensed_message(&portal_list, index);
+        }
         let Some(mxc_uri_string) = mxc_uri else { return; };
         let Some(tl_state) = &mut self.tl_state else { return; };
         let Some(item) = tl_state.items.get(index) else { return; };
-        let Some(event_tl_item) = item.as_event() else { return; };
-
-        let (capped_width, capped_height) = constrain_image_dimensions(size.x, size.y, screen_width);
-        
-        let sender_profile = event_tl_item.sender_profile();
-        let sender = event_tl_item.sender();
-        let event_id = event_tl_item.event_id().map(|id| id.to_owned());
-        let timestamp = event_tl_item.timestamp();
-        
+        let Some(event_tl_item) = item.as_event() else { return; };        
+        let timestamp_millis = event_tl_item.timestamp();
         let (image_name, image_size) = extract_image_info(event_tl_item);
         
-        cx.action(ImageViewerAction::Show(LoadState::Loading(texture.clone(), DVec2 { x: capped_width, y: capped_height })));
+        cx.action(ImageViewerAction::Show(LoadState::Loading(texture.clone(), Some(MetaData{
+            sender: Some(display_name),
+            image_name,
+            image_size,
+            timestamp:  unix_time_millis_to_datetime(timestamp_millis),
+            avatar_ref: Some(avatar_ref),
+        }))));
         
         let mxc_uri = OwnedMxcUri::from(mxc_uri_string);
         populate_matrix_image_modal(cx, mxc_uri, &mut tl_state.media_cache);
-        
-        cx.widget_action(
-            room_screen_widget_uid,
-            &scope.path,
-            RoomImageViewerDetailAction::SetImageDetail {
-                room_id: self.room_id.clone(),
-                sender: Some(sender.to_owned()),
-                sender_profile: Some(sender_profile.clone()),
-                event_id,
-                timestamp_millis: timestamp,
-                image_name,
-                image_size
-            }
-        );
     }
 
 

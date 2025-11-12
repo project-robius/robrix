@@ -192,19 +192,16 @@ impl TextOrImageRef {
         }
     }
 
-    /// Returns the current image texture and its size in pixels if the `TextOrImage` is currently displaying an image.
+    /// Returns the current image texture if the `TextOrImage` is currently displaying an image.
     ///
     /// If the `TextOrImage` is not displaying an image, this function returns `None`.
     ///
-    /// The returned size is in pixels and is relative to the display scale.
-    ///
     /// Note that this function will return `None` if the `TextOrImage` widget is not yet laid out.
     ///
-    pub fn get_texture_and_size(&self, cx: &mut Cx) -> Option<(Option<Texture>, DVec2)> {
+    pub fn get_texture(&self, _cx: &mut Cx) -> Option<Texture> {
         if let Some(inner) = self.borrow() {
             if let Some(image_inner) = inner.view.image(ids!(image_view.image)).borrow() {
-                let rect = image_inner.area().rect(cx);
-                Some((image_inner.get_texture(0).clone(), rect.size))
+                image_inner.get_texture(0).clone()
             } else {
                 None
             }

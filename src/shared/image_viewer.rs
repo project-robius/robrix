@@ -1,9 +1,10 @@
 //! Image viewer widget for displaying Image with zooming and panning.
 //!
-//! There are 2 types of ImageViewerActions handled by this widget. They are "Show" and "Hide".
-//! ImageViewerRef has 4 public methods, `configure_zoom`, `display_using_background_thread`, `display_using_texture` and `reset`.
+//! There are 2 types of ImageViewerAction handled by this widget. They are "Show" and "Hide".
+//! ImageViewerRef has 4 public methods, `configure_zoom`, `show_loading`, `show_loaded` and `reset`.
 use std::sync::{mpsc::Receiver, Arc};
 
+use chrono::{DateTime, Local};
 use makepad_widgets::{
     event::TouchUpdateEvent,
     image_cache::{ImageBuffer, ImageError},
@@ -11,7 +12,30 @@ use makepad_widgets::{
     *,
 };
 
-use crate::utils::get_png_or_jpg_image_buffer;
+use crate::shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, timestamp::TimestampWidgetRefExt};
+
+/// Loads the given image `data` into an `ImageBuffer` as either a PNG or JPEG, using the `imghdr` library to determine which format it is.
+///
+/// Returns an error if either load fails or if the image format is unknown.
+///
+pub fn get_png_or_jpg_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageError> {
+    match imghdr::from_bytes(&data) {
+        Some(imghdr::Type::Png) => {
+            ImageBuffer::from_png(&data)
+        },
+        Some(imghdr::Type::Jpeg) => {
+            ImageBuffer::from_jpg(&data)
+        },
+        Some(_unsupported) => {
+            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
+            Err(ImageError::UnsupportedFormat)
+        }
+        None => {
+            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
+            Err(ImageError::UnsupportedFormat)
+        }
+    }
+}
 
 /// Duration for rotation animations in seconds.
 /// This value should be consistent with the duration value in set in the animator.
@@ -109,6 +133,8 @@ live_design! {
     use link::widgets::*;
     use crate::shared::styles::*;
     use crate::shared::icon_button::RobrixIconButton;
+    use crate::shared::avatar::Avatar;
+    use crate::shared::timestamp::Timestamp;
 
     pub MagnifyingGlass = <View> {
         width: Fit, height: Fit
@@ -162,71 +188,170 @@ live_design! {
     }
     pub ImageViewer = {{ImageViewer}} {
         width: Fill, height: Fill,
-        align: {x: 0.5, y: 0.5}
+        flow: Overlay
         show_bg: true
         draw_bg: {
             color: (COLOR_PRIMARY)
         }
-        flow: Down
-        header = <View> {
-            width: Fill, height: 80
-            flow: Right
-            spacing: 0
-            align: {x: 1.0, y: 0.0},
+        inner_template = <View> {
+            width: Fill, height: Fill,
+            align: {x: 0.5, y: 0.5}
+            show_bg: true
+            draw_bg: {
+                color: (COLOR_PRIMARY)
+            }
+            flow: Down
+            
+            header = <View> {
+                width: Fill, height: 50
+                flow: Right
+                spacing: 0
+                align: {x: 1.0, y: 0.5},
+                padding: 0
+                zoom_button_minus = <MagnifyingGlass> {
+                    sign_label = <View> {
+                        width: Fill, height: Fill,
+                        align: { x: 0.4, y: 0.35 }
 
-            zoom_button_minus = <MagnifyingGlass> {
-                sign_label = <View> {
+                        magnifying_glass_sign = <Label> {
+                            text: "-",
+                            draw_text: {
+                                text_style: <THEME_FONT_BOLD>{font_size: 15},
+                                color: #000000
+                            }
+                        }
+                    }
+                }
+
+                zoom_button_plus = <MagnifyingGlass> { }
+                rotation_button_anti_clockwise = <Rotation_Button> {
+                    draw_icon: {
+                        svg_file: (ICON_CLOCKWISE_ANTI),
+                        fn get_color(self) -> vec4 {
+                            return #x0;
+                        }
+                    }
+                }
+                rotation_button_clockwise = <Rotation_Button> { }
+
+                close_button = <RobrixIconButton> {
+                    width: Fit, height: Fit,
+                    spacing: 0,
+                    padding: 5
+                    draw_bg: {
+                        color: (COLOR_PRIMARY)
+                    }
+                    draw_icon: {
+                        svg_file: (ICON_CLOSE),
+                        fn get_color(self) -> vec4 {
+                            return #x0;
+                        }
+                    }
+                    icon_walk: { width: 25, height: 25 }
+                }
+            }
+            rotated_image_container = <View> {
+                width: Fill, height: Fill,
+                flow: Overlay
+                align: {x: 0.5, y: 0.5}
+
+                rotated_image = <RotatedImage> {
                     width: Fill, height: Fill,
-                    align: { x: 0.4, y: 0.35 }
+                    draw_bg: {
+                        rotation: 0.0
+                        opacity: 1.0
+                    }
+                }
+            }
+            footer = <View> {
+                width: Fill, height: 50,
+                flow: Right
+                padding: 10
+                align: {x: 0.5, y: 0.8}
+                spacing: 10
+                debug: true
+                image_viewer_loading_spview = <View> {
+                    width: Fit, height: Fit
+                    loading_spinner = <LoadingSpinner> {
+                        width: 40, height: 40,
+                        draw_bg: {
+                            color: (COLOR_TEXT)
+                            border_size: 3.0,
+                        }
+                    }
+                }
+                image_viewer_forbidden_view = <View> {
+                    width: Fit, height: Fit
+                    visible: false
+                    <Icon> {
+                        draw_icon: {
+                            svg_file: (ICON_FORBIDDEN),
+                            color: (COLOR_TEXT),
+                        }
+                        icon_walk: { width: 30, height: 30 }
+                    }
+                }
+                image_viewer_status_label = <Label> {
+                    width: Fit, height: 30,
+                    text: "Loading image...",
+                    draw_text: {
+                        text_style: <REGULAR_TEXT>{font_size: 14},
+                        color: (COLOR_TEXT)
+                    }
+                }
+            }
+        }
+        metadata_view = <View> {
+            width: Fill, height: Fill
+            flow: Right
 
-                    magnifying_glass_sign = <Label> {
-                        text: "-",
+            top_left_container = <View> {
+                width: 150, height: Fit,
+                flow: Right,
+                spacing: 10,
+                margin: {left: 20, top: 40}
+                align: { y: 0.5 }
+
+                avatar = <Avatar> {
+                    width: 40, height: 40,
+                }
+
+                content = <View> {
+                    width: Fill, height: Fit,
+                    flow: Down,
+                    spacing: 4,
+
+                    username = <Label> {
+                        width: Fill, height: Fit,
                         draw_text: {
-                            text_style: <THEME_FONT_BOLD>{font_size: 15},
-                            color: #000000
+                            text_style: <REGULAR_TEXT>{font_size: 14},
+                            color: (COLOR_TEXT)
+                        }
+                    }
+                    timestamp_view = <View> {
+                        width: Fill, height: Fit
+                        timestamp = <Timestamp> {
+                            width: Fill, height: Fit,
+                            margin: { left: 5 }
                         }
                     }
                 }
             }
 
-            zoom_button_plus = <MagnifyingGlass> { }
-            rotation_button_anti_clockwise = <Rotation_Button> {
-                draw_icon: {
-                    svg_file: (ICON_CLOCKWISE_ANTI),
-                    fn get_color(self) -> vec4 {
-                        return #x0;
-                    }
+            image_name_and_size = <Label> {
+                width: Fill, height: Fit,
+                margin: {top: 40}
+                align: { x: 0.5, }
+                draw_text: {
+                    text_style: <REGULAR_TEXT>{font_size: 14},
+                    color: (COLOR_TEXT),
+                    wrap: Word
                 }
             }
-            rotation_button_clockwise = <Rotation_Button> { }
 
-            close_button = <RobrixIconButton> {
-                width: Fit, height: Fit,
-                spacing: 0,
-                margin: 2,
-                draw_bg: {
-                    color: (COLOR_PRIMARY)
-                }
-                draw_icon: {
-                    svg_file: (ICON_CLOSE),
-                    fn get_color(self) -> vec4 {
-                        return #x0;
-                    }
-                }
-                icon_walk: { width: 25, height: 25 }
-            }
-        }
-        rotated_image_container = <View> {
-            width: Fill, height: Fill,
-            flow: Overlay
-            align: {x: 0.5, y: 0.5}
-
-            rotated_image = <RotatedImage> {
-                width: Fill, height: Fill,
-                draw_bg: {
-                    rotation: 0.0
-                    opacity: 1.0
-                }
+            empty_right_container = <View> {
+                // equal width as the top-left container to keep the image name centered.
+                width: 150, height: Fit,
             }
         }
         animator: {
@@ -236,9 +361,11 @@ live_design! {
                     redraw: false,
                     from: {all: Forward {duration: 1.0}}
                     apply: {
-                        rotated_image_container = {
-                            rotated_image = {
-                                draw_bg: {rotation: -1.5708}
+                        inner_template = {
+                            rotated_image_container = {
+                                rotated_image = {
+                                    draw_bg: {rotation: -1.5708}
+                                }
                             }
                         }
                     }
@@ -247,9 +374,11 @@ live_design! {
                     redraw: false,
                     from: {all: Forward {duration: 1.0}}
                     apply: {
-                        rotated_image_container = {
-                            rotated_image = {
-                                draw_bg: {rotation: 0.0}
+                        inner_template = {
+                            rotated_image_container = {
+                                rotated_image = {
+                                    draw_bg: {rotation: 0.0}
+                                }
                             }
                         }
                     }
@@ -258,9 +387,11 @@ live_design! {
                     redraw: false,
                     from: {all: Forward {duration: 1.0}}
                     apply: {
-                        rotated_image_container = {
-                            rotated_image = {
-                                draw_bg: {rotation: 1.5708}
+                        inner_template = {
+                            rotated_image_container = {
+                                rotated_image = {
+                                    draw_bg: {rotation: 1.5708}
+                                }
                             }
                         }
                     }
@@ -269,9 +400,11 @@ live_design! {
                     redraw: false,
                     from: {all: Forward {duration: 1.0}}
                     apply: {
-                        rotated_image_container = {
-                            rotated_image = {
-                                draw_bg: {rotation: 3.14159}
+                        inner_template = {
+                            rotated_image_container = {
+                                rotated_image = {
+                                    draw_bg: {rotation: 3.14159}
+                                }
                             }
                         }
                     }
@@ -280,9 +413,11 @@ live_design! {
                     redraw: false,
                     from: {all: Forward {duration: 1.0}}
                     apply: {
-                        rotated_image_container = {
-                            rotated_image = {
-                                draw_bg: {rotation: 4.71239}
+                        inner_template = {
+                            rotated_image_container = {
+                                rotated_image = {
+                                    draw_bg: {rotation: 4.71239}
+                                }
                             }
                         }
                     }
@@ -291,9 +426,11 @@ live_design! {
                     redraw: false,
                     from: {all: Forward {duration: 0.0}}
                     apply: {
-                        rotated_image_container = {
-                            rotated_image = {
-                                draw_bg: {rotation: 6.28318}
+                        inner_template = {
+                            rotated_image_container = {
+                                rotated_image = {
+                                    draw_bg: {rotation: 6.28318}
+                                }
                             }
                         }
                     }
@@ -579,8 +716,9 @@ impl ImageViewer {
             let texture = image_buffer.into_new_texture(cx);
             self.view
                 .rotated_image(ids!(rotated_image))
-                .set_texture(cx, Some(texture));
+                .set_texture(cx, Some(texture.clone()));
             self.view.rotated_image(ids!(rotated_image)).redraw(cx);
+            self.view.image(ids!(metadata_view.top_left_container.avatar.img_view.img)).set_texture(cx, Some(texture));
         }
         self.animator_cut(cx, ids!(mode.upright));
         self.view
@@ -591,6 +729,7 @@ impl ImageViewer {
                     draw_bg: { scale: 1.0 }
                 },
             );
+        self.view.label(ids!(metadata_view.top_left_container.avatar.text_view.text)).set_text(cx, "?");
     }
 
     /// Updates the shader uniforms of the rotated image widget with the current rotation,
@@ -604,7 +743,6 @@ impl ImageViewer {
             3 => ids!(mode.degree_270), // 270°
             _ => ids!(mode.upright),
         };
-
         self.animator_play(cx, animation_id);
     }
 
@@ -631,7 +769,7 @@ impl ImageViewer {
     /// Displays an image in the image viewer widget.
     ///
     /// The image is displayed in the center of the widget. If the image is larger than the widget, it is scaled down to fit the widget while retaining its aspect ratio.
-    pub fn display_using_background_thread(&mut self, cx: &mut Cx, image_bytes: &[u8]) {
+    pub fn show_loaded(&mut self, cx: &mut Cx, image_bytes: &[u8]) {
         if self.receiver.is_some() {
             return;
         }
@@ -648,20 +786,19 @@ impl ImageViewer {
     }
 
     /// Displays an image in the image viewer widget using the provided texture.
-    ///
-    /// The image is displayed in the center of the widget. If the image is larger than the widget, it is scaled down to fit the widget while retaining its aspect ratio.
-    ///
     /// `texture` is an optional `Texture` that can be set to display an image. If `None`, the image is cleared.
-    ///
-    /// `size` is the size of the image to be displayed.
-    pub fn display_using_texture(&mut self, cx: &mut Cx, texture: Option<Texture>, size: &DVec2) {
+    pub fn display_using_texture(&mut self, cx: &mut Cx, texture: Option<Texture>) {
         let rotated_image = self.rotated_image(ids!(rotated_image));
+        let (width, height) = texture
+            .as_ref()
+            .and_then(|texture| texture.get_format(cx).vec_width_height())
+            .unwrap_or_default();
         rotated_image.set_texture(cx, texture);
         rotated_image.apply_over(
             cx,
             live! {
-                width: (size.x),
-                height: (size.y),
+                width: (width as f64),
+                height: (height as f64),
             },
         );
     }
@@ -740,6 +877,71 @@ impl ImageViewer {
             self.previous_pinch_distance = None;
         }
     }
+
+    /// Shows a loading message in the footer.
+    ///
+    /// The loading spinner is shown, the error icon is hidden, and the
+    /// status label is set to "Loading...".
+    pub fn show_loading(&mut self, cx: &mut Cx) {
+        let footer = self.view.view(ids!(inner_template.footer));
+        footer.view(ids!(image_viewer_loading_spview)).set_visible(cx, true);
+        footer.label(ids!(image_viewer_status_label)).set_text(cx, "Loading...");
+        footer.view(ids!(image_viewer_forbidden_view)).set_visible(cx, false);
+        footer.apply_over(cx, live!{
+            height: 50
+        });
+    }
+
+    /// Shows an error message in the footer.
+    ///
+    /// The loading spinner is hidden, the error icon is shown, and the
+    /// status label is set to the error message provided.
+    pub fn show_error(&mut self, cx: &mut Cx, error: &ImageViewerError) {
+        let footer = self.view.view(ids!(inner_template.footer));
+        footer.view(ids!(image_viewer_loading_spview)).set_visible(cx, false);
+        footer.view(ids!(image_viewer_forbidden_view)).set_visible(cx, true);
+        footer.label(ids!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(error));
+        footer.apply_over(cx, live!{
+            height: 50
+        });
+    }
+
+    /// Hides the footer of the image viewer.
+    ///
+    /// This method is used to hide the footer of the image viewer, which contains the status label and the loading spinner.
+    ///
+    /// The footer is hidden by setting its height to 0.
+    pub fn hide_loading(&mut self, cx: &mut Cx) {
+        let footer = self.view.view(ids!(inner_template.footer));
+        footer.apply_over(cx, live!{
+            height: 0
+        });
+    }
+
+    /// Sets the metadata view in the image viewer with the provided metadata.
+    ///
+    /// The metadata view is updated with the truncated image name and the human-readable size of the image.
+    ///
+    /// The image name is truncated to 24 characters and appended with "..." if it exceeds the limit.
+    /// The human-readable size is calculated based on the image size in bytes.
+    pub fn set_metadata(&mut self, cx: &mut Cx, metadata: &MetaData) {
+        let meta_view = self.view.view(ids!(metadata_view));
+        let truncated_name = truncate_image_name(&metadata.image_name);
+        let human_readable_size = format_file_size(metadata.image_size);
+        let display_text = format!("{} ({})", truncated_name, human_readable_size);
+        meta_view.label(ids!(image_name_and_size))
+            .set_text(cx, &display_text);
+        if let Some(timestamp) = metadata.timestamp {
+            meta_view.view(ids!(top_left_container.content.timestamp_view)).set_visible(cx, true);
+            meta_view.timestamp(ids!(top_left_container.content.timestamp_view.timestamp)).set_date_time(cx, timestamp);
+        }
+        if let Some(sender) = &metadata.sender {
+            meta_view.label(ids!(top_left_container.content.username)).set_text(cx, sender);
+        }
+        if let Some(avatar) = &metadata.avatar_ref {
+            avatar.copy_content_to(cx, &mut meta_view.avatar(ids!(top_left_container.avatar)));
+        }
+    }
 }
 
 impl ImageViewerRef {
@@ -754,21 +956,42 @@ impl ImageViewerRef {
         inner.pan_sensitivity = config.pan_sensitivity;
     }
 
-    /// See [`ImageViewer::display_using_background_thread()`].
-    pub fn display_using_background_thread(&mut self, cx: &mut Cx, image_bytes: &[u8]) {
+    /// See [`ImageViewer::show_loaded()`].
+    pub fn show_loaded(&mut self, cx: &mut Cx, image_bytes: &[u8]) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.display_using_background_thread(cx, image_bytes)
+        inner.show_loaded(cx, image_bytes)
     }
 
-    /// See [`ImageViewer::display_using_texture()`].
-    pub fn display_using_texture(&mut self, cx: &mut Cx, texture: Option<Texture>, size: &DVec2) {
+    /// Display the image viewer widget with the provided texture, metadata and loading spinner.
+    pub fn show_loading(&mut self, cx: &mut Cx, texture: Option<Texture>, metadata: &Option<MetaData>) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.display_using_texture(cx, texture, size)
+        inner.display_using_texture(cx, texture);
+        if let Some(metadata) = metadata {
+            inner.set_metadata(cx, metadata);
+        }
+        inner.show_loading(cx);
     }
+
+    /// See [`ImageViewer::show_error()`].
+    pub fn show_error(&mut self, cx: &mut Cx, error: &ImageViewerError) {
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
+        inner.show_error(cx, error);
+    }
+
+    /// See [`ImageViewer::hide_loading()`].
+    pub fn hide_loading(&mut self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
+        inner.hide_loading(cx);
+    }
+
     /// See [`ImageViewer::reset()`].
     pub fn reset(&mut self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else {
@@ -781,13 +1004,82 @@ impl ImageViewerRef {
 /// Represents the possible states of an image load operation.
 #[derive(Debug, Clone)]
 pub enum LoadState {
-    /// The image is currently being loaded with its loading image texture and its image size.
+    /// The image is currently being loaded with its loading image texture.
     /// This texture is usually the image texture that's being selected.
-    Loading(std::rc::Rc<Option<Texture>>, DVec2),
+    Loading(std::rc::Rc<Option<Texture>>, Option<MetaData>),
     /// The image has been successfully loaded given the data.
     Loaded(Arc<[u8]>),
     /// The image has been decoded from background thread.
     FinishedBackgroundDecoding,
     /// An error occurred while loading the image, with specific error type.
     Error(ImageViewerError),
+}
+
+#[derive(Debug, Clone)]
+/// Metadata of an image.
+pub struct MetaData {
+    pub avatar_ref: Option<AvatarRef>,
+    pub sender: Option<String>,
+    pub timestamp: Option<DateTime<Local>>,
+    pub image_name: String,
+    pub image_size: i32,
+}
+
+/// Maximum image name length to be displayed
+const MAX_IMAGE_NAME_LENGTH: usize = 50;
+
+/// Truncate image name while preserving file extension
+fn truncate_image_name(image_name: &str) -> String {
+    let max_length = MAX_IMAGE_NAME_LENGTH;
+
+    if image_name.len() <= max_length {
+        return image_name.to_string();
+    }
+
+    // Find the last dot to separate name and extension
+    if let Some(dot_pos) = image_name.rfind('.') {
+        let name_part = &image_name[..dot_pos];
+        let extension = &image_name[dot_pos..];
+
+        // Reserve space for "..." and the extension
+        let available_length = max_length.saturating_sub(3 + extension.len());
+
+        if available_length > 0 && name_part.len() > available_length {
+            format!("{}...{}", &name_part[..available_length], extension)
+        } else {
+            image_name.to_string()
+        }
+    } else {
+        // No extension found, just truncate the name
+        format!("{}...", &image_name[..max_length.saturating_sub(3)])
+    }
+}
+
+
+/// Convert bytes to human-readable file size format
+fn format_file_size(bytes: i32) -> String {
+    if bytes < 0 {
+        return "Unknown size".to_string();
+    }
+
+    let bytes = bytes as u64;
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+
+    if bytes == 0 {
+        return "0 B".to_string();
+    }
+
+    let mut size = bytes as f64;
+    let mut unit_index = 0;
+
+    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit_index += 1;
+    }
+
+    if unit_index == 0 {
+        format!("{} {}", bytes, UNITS[unit_index])
+    } else {
+        format!("{:.1} {}", size, UNITS[unit_index])
+    }
 }

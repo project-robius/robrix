@@ -10,16 +10,15 @@ use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
-        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{clear_timeline_states, MessageAction}, rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate}
+        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::callout_tooltip::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{callout_tooltip::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, sliding_sync::current_user_id, utils::{
-        room_name_or_id,
-        OwnedRoomIdRon,
+    }, image_viewer::{ImageViewerAction, ImageViewerWidgetRefExt, LoadState}}, sliding_sync::current_user_id, utils::{
+        OwnedRoomIdRon, room_name_or_id
     }, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
@@ -40,7 +39,7 @@ live_design! {
     use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
-    use crate::home::room_image_viewer::RoomImageViewer;
+    use crate::shared::image_viewer::ImageViewer;
     use link::tsp_link::TspVerificationModal;
 
 
@@ -97,8 +96,12 @@ live_design! {
                             login_screen = <LoginScreen> {}
                         }
 
-                        <RoomImageViewer> { }
-
+                        image_viewer_modal = <Modal> {
+                            content: {
+                                width: Fill, height: Fill,
+                                image_viewer_inner = <ImageViewer> {}
+                            }
+                        }
                         <PopupList> {}
                         
                         // Context menus should be shown in front of other UI elements,
@@ -408,7 +411,31 @@ impl MatchEvent for App {
                 self.ui.modal(ids!(verification_modal)).close(cx);
                 continue;
             }
-
+            let mut image_viewer_inner = self.ui.image_viewer(ids!(image_viewer_inner));
+            match action.downcast_ref() {
+                Some(ImageViewerAction::Show(LoadState::Loading(texture, metadata))) => {
+                    self.ui.modal(ids!(image_viewer_modal)).open(cx);
+                    image_viewer_inner.show_loading(cx, texture.as_ref().clone(), metadata);
+                }
+                Some(ImageViewerAction::Show(LoadState::Loaded(image_bytes))) => {
+                    image_viewer_inner.show_loaded(cx, image_bytes);
+                }
+                Some(ImageViewerAction::Show(LoadState::FinishedBackgroundDecoding)) => {
+                    image_viewer_inner.hide_loading(cx);
+                }
+                Some(ImageViewerAction::Show(LoadState::Error(error))) => {
+                    // This action is emitted when syncing is offline even when the image viewer modal is not opened.
+                    // Hence, we need to check if the modal is open before showing the error.
+                    if self.ui.modal(ids!(image_viewer_modal)).is_open() {
+                        image_viewer_inner.show_error(cx, error);
+                    }
+                }
+                Some(ImageViewerAction::Hide) => {
+                    self.ui.modal(ids!(image_viewer_modal)).close(cx);
+                    image_viewer_inner.reset(cx);
+                }
+                _ => {}
+            }
             // Handle actions to open/close the TSP verification modal.
             #[cfg(feature = "tsp")] {
                 use std::ops::Deref;

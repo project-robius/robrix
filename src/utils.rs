@@ -6,7 +6,7 @@ use url::Url;
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{error, image_cache::{ImageBuffer, ImageError}, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, Cx, Event, ImageRef};
+use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, Cx, Event, ImageRef};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
@@ -136,70 +136,6 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
     res
 }
 
-/// Constrain the width and height of an image to the screen_width, while preserving aspect ratio.
-/// 
-/// This function implements an intelligent scaling algorithm that handles three scenarios:
-/// 1. If both dimensions are within `screen_width`: enlarges the image so height equals `screen_width`
-/// 2. If height exceeds limit: scales down to fit height within `screen_width`
-/// 3. If width exceeds limit: scales down to fit width within `screen_width`
-/// 
-/// The aspect ratio is always preserved during scaling operations to prevent image distortion.
-/// 
-/// # Algorithm Details
-/// The function first checks if the image fits within the screen dimensions. If not, it calculates
-/// scaling factors for both width and height constraints and applies the more restrictive one.
-/// After applying the first constraint, it checks if the other dimension still exceeds the limit
-/// and applies a second scaling if necessary.
-///
-/// # Parameters
-/// - `width`: Original image width in pixels
-/// - `height`: Original image height in pixels  
-/// - `screen_width`: Maximum allowed dimension for both width and height
-///
-/// # Returns
-/// A tuple of (constrained_width, constrained_height) as f64 values
-pub fn constrain_image_dimensions(width: f64, height: f64, screen_width: f64) -> (f64, f64) {
-    let aspect_ratio = width / height;
-    let (mut capped_width, mut capped_height) = (width, height);
-    
-    if width <= screen_width && height <= screen_width {
-        capped_height = screen_width;
-        capped_width = (capped_height * aspect_ratio).floor();
-    } else {
-        if capped_height > screen_width {
-            capped_height = screen_width;
-            capped_width = (capped_height * aspect_ratio).floor();
-        }
-        if capped_width > screen_width {
-            capped_width = screen_width;
-            capped_height = (capped_width / aspect_ratio).floor();
-        }
-    }
-    (capped_width, capped_height)
-}
-
-/// Loads the given image `data` into an `ImageBuffer` as either a PNG or JPEG, using the `imghdr` library to determine which format it is.
-///
-/// Returns an error if either load fails or if the image format is unknown.
-///
-pub fn get_png_or_jpg_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageError> {
-    match imghdr::from_bytes(&data) {
-        Some(imghdr::Type::Png) => {
-            ImageBuffer::from_png(&data)
-        },
-        Some(imghdr::Type::Jpeg) => {
-            ImageBuffer::from_jpg(&data)
-        },
-        Some(_unsupported) => {
-            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
-            Err(ImageError::UnsupportedFormat)
-        }
-        None => {
-            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
-            Err(ImageError::UnsupportedFormat)
-        }
-    }
-}
 
 pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
     let millis: i64 = millis.get().into();
@@ -801,7 +737,6 @@ pub fn avatar_from_room_name(room_name: Option<&str>) -> FetchedRoomAvatar {
     ).unwrap_or_else(|| String::from("?"));
     FetchedRoomAvatar::Text(first)
 }
-
 
 #[cfg(test)]
 mod tests_human_readable_list {

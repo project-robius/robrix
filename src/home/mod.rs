@@ -47,5 +47,4 @@ pub fn live_design(cx: &mut Cx) {
     light_themed_dock::live_design(cx);
     event_reaction_list::live_design(cx);
     link_preview::live_design(cx);
-    room_image_viewer::live_design(cx);
 }
