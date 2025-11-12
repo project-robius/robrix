@@ -28,7 +28,7 @@ live_design! {
     pub TombstoneFooter = {{TombstoneFooter}}<ScrollYView> {
         visible: false,
         width: Fill,
-        height: Fit { max: Rel(0.625) }
+        height: Fit { max: Rel { base: Full, factor: 0.625 } }
         flow: Down,
         align: {x: 0.5}
         padding: 20,
