@@ -105,11 +105,7 @@ impl Widget for RoomsListHeader {
                         if discriminant(&self.sync_state) == discriminant(new_state) {
                             continue;
                         }
-
-                        // Only show offline notification for actual connection errors
-                        // States like Idle and Running are normal and shouldn't trigger error popups
-                        if matches!(new_state, State::Error(_) | State::Terminated | State::Offline) {
-                            log!("Setting the RoomsListHeader to offline.");
+                        if matches!(new_state, State::Offline) {
                             self.view.view(ids!(loading_spinner)).set_visible(cx, false);
                             self.view.view(ids!(synced_icon)).set_visible(cx, false);
                             self.view.view(ids!(offline_icon)).set_visible(cx, true);
@@ -119,7 +115,6 @@ impl Widget for RoomsListHeader {
                                 kind: PopupKind::Error,
                             });
                         }
-                        // For all other states (Idle, Running, etc.), just update without error notification
                         self.sync_state = new_state.clone();
                         self.redraw(cx);
                     }
