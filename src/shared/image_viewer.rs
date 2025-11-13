@@ -157,6 +157,7 @@ live_design! {
             }
             icon_walk: {width: 30, height: 30}
         }
+    
         sign_label = <View> {
             width: Fill, height: Fill,
             align: { x: 0.4, y: 0.35 }
@@ -193,7 +194,8 @@ live_design! {
         draw_bg: {
             color: (COLOR_PRIMARY)
         }
-        inner_template = <View> {
+
+        image_layer = <View> {
             width: Fill, height: Fill,
             align: {x: 0.5, y: 0.5}
             show_bg: true
@@ -205,9 +207,8 @@ live_design! {
             header = <View> {
                 width: Fill, height: 50
                 flow: Right
-                spacing: 0
                 align: {x: 1.0, y: 0.5},
-                padding: 0
+    
                 zoom_button_minus = <MagnifyingGlass> {
                     sign_label = <View> {
                         width: Fill, height: Fill,
@@ -224,6 +225,7 @@ live_design! {
                 }
 
                 zoom_button_plus = <MagnifyingGlass> { }
+
                 rotation_button_anti_clockwise = <Rotation_Button> {
                     draw_icon: {
                         svg_file: (ICON_CLOCKWISE_ANTI),
@@ -232,6 +234,7 @@ live_design! {
                         }
                     }
                 }
+
                 rotation_button_clockwise = <Rotation_Button> { }
 
                 close_button = <RobrixIconButton> {
@@ -250,6 +253,7 @@ live_design! {
                     icon_walk: { width: 25, height: 25 }
                 }
             }
+
             rotated_image_container = <View> {
                 width: Fill, height: Fill,
                 flow: Overlay
@@ -263,14 +267,17 @@ live_design! {
                     }
                 }
             }
+
             footer = <View> {
                 width: Fill, height: 50,
                 flow: Right
                 padding: 10
                 align: {x: 0.5, y: 0.8}
                 spacing: 10
-                image_viewer_loading_spview = <View> {
+
+                image_viewer_loading_spinner_view = <View> {
                     width: Fit, height: Fit
+
                     loading_spinner = <LoadingSpinner> {
                         width: 40, height: 40,
                         draw_bg: {
@@ -279,6 +286,7 @@ live_design! {
                         }
                     }
                 }
+
                 image_viewer_forbidden_view = <View> {
                     width: Fit, height: Fit
                     visible: false
@@ -290,6 +298,7 @@ live_design! {
                         icon_walk: { width: 30, height: 30 }
                     }
                 }
+
                 image_viewer_status_label = <Label> {
                     width: Fit, height: 30,
                     text: "Loading image...",
@@ -300,6 +309,7 @@ live_design! {
                 }
             }
         }
+
         metadata_view = <View> {
             width: Fill, height: Fill
             flow: Right
@@ -327,8 +337,10 @@ live_design! {
                             color: (COLOR_TEXT)
                         }
                     }
+
                     timestamp_view = <View> {
                         width: Fill, height: Fit
+
                         timestamp = <Timestamp> {
                             width: Fill, height: Fit,
                             margin: { left: 5 }
@@ -360,7 +372,7 @@ live_design! {
                     redraw: false,
                     from: {all: Forward {duration: 1.0}}
                     apply: {
-                        inner_template = {
+                        image_layer = {
                             rotated_image_container = {
                                 rotated_image = {
                                     draw_bg: {rotation: -1.5708}
@@ -373,7 +385,7 @@ live_design! {
                     redraw: false,
                     from: {all: Forward {duration: 1.0}}
                     apply: {
-                        inner_template = {
+                        image_layer = {
                             rotated_image_container = {
                                 rotated_image = {
                                     draw_bg: {rotation: 0.0}
@@ -386,7 +398,7 @@ live_design! {
                     redraw: false,
                     from: {all: Forward {duration: 1.0}}
                     apply: {
-                        inner_template = {
+                        image_layer = {
                             rotated_image_container = {
                                 rotated_image = {
                                     draw_bg: {rotation: 1.5708}
@@ -399,7 +411,7 @@ live_design! {
                     redraw: false,
                     from: {all: Forward {duration: 1.0}}
                     apply: {
-                        inner_template = {
+                        image_layer = {
                             rotated_image_container = {
                                 rotated_image = {
                                     draw_bg: {rotation: 3.14159}
@@ -412,7 +424,7 @@ live_design! {
                     redraw: false,
                     from: {all: Forward {duration: 1.0}}
                     apply: {
-                        inner_template = {
+                        image_layer = {
                             rotated_image_container = {
                                 rotated_image = {
                                     draw_bg: {rotation: 4.71239}
@@ -425,7 +437,7 @@ live_design! {
                     redraw: false,
                     from: {all: Forward {duration: 0.0}}
                     apply: {
-                        inner_template = {
+                        image_layer = {
                             rotated_image_container = {
                                 rotated_image = {
                                     draw_bg: {rotation: 6.28318}
@@ -618,7 +630,9 @@ impl Widget for ImageViewer {
                     }
                     Ok(Err(error)) => {
                         let error = match error {
-                            ImageError::JpgDecode(_) | ImageError::PngDecode(_) => ImageViewerError::UnsupportedFormat,
+                            ImageError::JpgDecode(_) | ImageError::PngDecode(_) => {
+                                ImageViewerError::UnsupportedFormat
+                            }
                             ImageError::EmptyData => ImageViewerError::BadData,
                             ImageError::PathNotFound(_) => ImageViewerError::NotFound,
                             ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
@@ -717,7 +731,9 @@ impl ImageViewer {
                 .rotated_image(ids!(rotated_image))
                 .set_texture(cx, Some(texture.clone()));
             self.view.rotated_image(ids!(rotated_image)).redraw(cx);
-            self.view.image(ids!(metadata_view.top_left_container.avatar.img_view.img)).set_texture(cx, Some(texture));
+            self.view
+                .image(ids!(metadata_view.top_left_container.avatar.img_view.img))
+                .set_texture(cx, Some(texture));
         }
         self.animator_cut(cx, ids!(mode.upright));
         self.view
@@ -728,7 +744,9 @@ impl ImageViewer {
                     draw_bg: { scale: 1.0 }
                 },
             );
-        self.view.label(ids!(metadata_view.top_left_container.avatar.text_view.text)).set_text(cx, "?");
+        self.view
+            .label(ids!(metadata_view.top_left_container.avatar.text_view.text))
+            .set_text(cx, "?");
     }
 
     /// Updates the shader uniforms of the rotated image widget with the current rotation,
@@ -882,13 +900,22 @@ impl ImageViewer {
     /// The loading spinner is shown, the error icon is hidden, and the
     /// status label is set to "Loading...".
     pub fn show_loading(&mut self, cx: &mut Cx) {
-        let footer = self.view.view(ids!(inner_template.footer));
-        footer.view(ids!(image_viewer_loading_spview)).set_visible(cx, true);
-        footer.label(ids!(image_viewer_status_label)).set_text(cx, "Loading...");
-        footer.view(ids!(image_viewer_forbidden_view)).set_visible(cx, false);
-        footer.apply_over(cx, live!{
-            height: 50
-        });
+        let footer = self.view.view(ids!(image_layer.footer));
+        footer
+            .view(ids!(image_viewer_loading_spinner_view))
+            .set_visible(cx, true);
+        footer
+            .label(ids!(image_viewer_status_label))
+            .set_text(cx, "Loading...");
+        footer
+            .view(ids!(image_viewer_forbidden_view))
+            .set_visible(cx, false);
+        footer.apply_over(
+            cx,
+            live! {
+                height: 50
+            },
+        );
     }
 
     /// Shows an error message in the footer.
@@ -896,13 +923,22 @@ impl ImageViewer {
     /// The loading spinner is hidden, the error icon is shown, and the
     /// status label is set to the error message provided.
     pub fn show_error(&mut self, cx: &mut Cx, error: &ImageViewerError) {
-        let footer = self.view.view(ids!(inner_template.footer));
-        footer.view(ids!(image_viewer_loading_spview)).set_visible(cx, false);
-        footer.view(ids!(image_viewer_forbidden_view)).set_visible(cx, true);
-        footer.label(ids!(image_viewer_status_label)).set_text(cx, image_viewer_error_to_string(error));
-        footer.apply_over(cx, live!{
-            height: 50
-        });
+        let footer = self.view.view(ids!(image_layer.footer));
+        footer
+            .view(ids!(image_viewer_loading_spinner_view))
+            .set_visible(cx, false);
+        footer
+            .view(ids!(image_viewer_forbidden_view))
+            .set_visible(cx, true);
+        footer
+            .label(ids!(image_viewer_status_label))
+            .set_text(cx, image_viewer_error_to_string(error));
+        footer.apply_over(
+            cx,
+            live! {
+                height: 50
+            },
+        );
     }
 
     /// Hides the footer of the image viewer.
@@ -911,10 +947,13 @@ impl ImageViewer {
     ///
     /// The footer is hidden by setting its height to 0.
     pub fn hide_loading(&mut self, cx: &mut Cx) {
-        let footer = self.view.view(ids!(inner_template.footer));
-        footer.apply_over(cx, live!{
-            height: 0
-        });
+        let footer = self.view.view(ids!(image_layer.footer));
+        footer.apply_over(
+            cx,
+            live! {
+                height: 0
+            },
+        );
     }
 
     /// Sets the metadata view in the image viewer with the provided metadata.
@@ -928,14 +967,21 @@ impl ImageViewer {
         let truncated_name = truncate_image_name(&metadata.image_name);
         let human_readable_size = format_file_size(metadata.image_size);
         let display_text = format!("{} ({})", truncated_name, human_readable_size);
-        meta_view.label(ids!(image_name_and_size))
+        meta_view
+            .label(ids!(image_name_and_size))
             .set_text(cx, &display_text);
         if let Some(timestamp) = metadata.timestamp {
-            meta_view.view(ids!(top_left_container.content.timestamp_view)).set_visible(cx, true);
-            meta_view.timestamp(ids!(top_left_container.content.timestamp_view.timestamp)).set_date_time(cx, timestamp);
+            meta_view
+                .view(ids!(top_left_container.content.timestamp_view))
+                .set_visible(cx, true);
+            meta_view
+                .timestamp(ids!(top_left_container.content.timestamp_view.timestamp))
+                .set_date_time(cx, timestamp);
         }
         if let Some(sender) = &metadata.sender {
-            meta_view.label(ids!(top_left_container.content.username)).set_text(cx, sender);
+            meta_view
+                .label(ids!(top_left_container.content.username))
+                .set_text(cx, sender);
         }
         if let Some(avatar) = &metadata.avatar_ref {
             avatar.copy_content_to(cx, &mut meta_view.avatar(ids!(top_left_container.avatar)));
@@ -964,7 +1010,12 @@ impl ImageViewerRef {
     }
 
     /// Display the image viewer widget with the provided texture, metadata and loading spinner.
-    pub fn show_loading(&mut self, cx: &mut Cx, texture: Option<Texture>, metadata: &Option<MetaData>) {
+    pub fn show_loading(
+        &mut self,
+        cx: &mut Cx,
+        texture: Option<Texture>,
+        metadata: &Option<MetaData>,
+    ) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
@@ -1053,7 +1104,6 @@ fn truncate_image_name(image_name: &str) -> String {
         format!("{}...", &image_name[..max_length.saturating_sub(3)])
     }
 }
-
 
 /// Convert bytes to human-readable file size format
 fn format_file_size(bytes: i32) -> String {

@@ -1344,14 +1344,14 @@ impl RoomScreen {
                     tl.room_members = Some(Arc::new(members));
                 },
                 TimelineUpdate::MediaFetched(media_request_parameter) => {
-                    log!("process_timeline_updates(): media fetched for room {} {:?}", tl.room_id, media_request_parameter);
+                    log!("process_timeline_updates(): media fetched for room {}", tl.room_id);
+                    // Set Image to image viewer modal if the media is not a thumbnail.
+                    let Some(request) = media_request_parameter else { continue };
+                    if let (MediaFormat::File, MediaSource::Plain(mxc_uri)) = (request.format, request.source) {
+                        populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
+                    }
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
-                    if let Some(media_request_parameter) = media_request_parameter {
-                        if let (MediaFormat::File, MediaSource::Plain(mxc_uri)) = (media_request_parameter.format, media_request_parameter.source) {
-                            populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
-                        }
-                    }
                 }
                 TimelineUpdate::MessageEdited { timeline_event_id, result } => {
                     self.view.room_input_bar(ids!(room_input_bar))
@@ -1571,27 +1571,40 @@ impl RoomScreen {
         widget_ref: WidgetRef,
     ) {
         let mut avatar_ref = widget_ref.avatar(ids!(profile.avatar));
-        let mut display_name = widget_ref.label(ids!(content.username_view.username)).text();
-        
+        let mut display_name = widget_ref
+            .label(ids!(content.username_view.username))
+            .text();
+
         // If display_name is empty, look for a non-empty display_name and its avatar in previous items
         if display_name.is_empty() {
-            (display_name, avatar_ref) = find_previous_profile_in_condensed_message(portal_list, index);
+            find_previous_profile_in_condensed_message(portal_list, index, &mut display_name, &mut avatar_ref);
         }
-        let Some(mxc_uri_string) = mxc_uri else { return; };
-        let Some(tl_state) = &mut self.tl_state else { return; };
-        let Some(item) = tl_state.items.get(index) else { return; };
-        let Some(event_tl_item) = item.as_event() else { return; };        
+        let Some(mxc_uri_string) = mxc_uri else {
+            return;
+        };
+        let Some(tl_state) = &mut self.tl_state else {
+            return;
+        };
+        let Some(item) = tl_state.items.get(index) else {
+            return;
+        };
+        let Some(event_tl_item) = item.as_event() else {
+            return;
+        };
         let timestamp_millis = event_tl_item.timestamp();
         let (image_name, image_size) = extract_image_info(event_tl_item);
-        
-        cx.action(ImageViewerAction::Show(LoadState::Loading(texture.clone(), Some(MetaData{
-            sender: Some(display_name),
-            image_name,
-            image_size,
-            timestamp:  unix_time_millis_to_datetime(timestamp_millis),
-            avatar_ref: Some(avatar_ref),
-        }))));
-        
+
+        cx.action(ImageViewerAction::Show(LoadState::Loading(
+            texture.clone(),
+            Some(MetaData {
+                sender: Some(display_name),
+                image_name,
+                image_size,
+                timestamp: unix_time_millis_to_datetime(timestamp_millis),
+                avatar_ref: Some(avatar_ref),
+            }),
+        )));
+
         let mxc_uri = OwnedMxcUri::from(mxc_uri_string);
         populate_matrix_image_modal(cx, mxc_uri, &mut tl_state.media_cache);
     }

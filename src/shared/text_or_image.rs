@@ -197,7 +197,6 @@ impl TextOrImageRef {
     /// If the `TextOrImage` is not displaying an image, this function returns `None`.
     ///
     /// Note that this function will return `None` if the `TextOrImage` widget is not yet laid out.
-    ///
     pub fn get_texture(&self, _cx: &mut Cx) -> Option<Texture> {
         if let Some(inner) = self.borrow() {
             if let Some(image_inner) = inner.view.image(ids!(image_view.image)).borrow() {

@@ -52,7 +52,9 @@ pub fn extract_image_info(event_tl_item: &EventTimelineItem) -> (String, i32) {
     if let Some(message) = event_tl_item.content().as_message() {
         if let MessageType::Image(image_content) = message.msgtype() {
             let name = message.body().to_string();
-            let size = image_content.info.as_ref()
+            let size = image_content
+                .info
+                .as_ref()
                 .and_then(|info| info.size)
                 .map(|s| i32::try_from(s).unwrap_or_default())
                 .unwrap_or(0);
@@ -67,19 +69,24 @@ pub fn extract_image_info(event_tl_item: &EventTimelineItem) -> (String, i32) {
 
 /// Condensed message does not have a profile, so we need to find the previous portal list item.
 /// Searches backwards for a non-empty display name and avatar in previous portal list items.
-/// Returns the first non-empty display name found and its avatar.
-pub fn find_previous_profile_in_condensed_message(portal_list: &PortalListRef, mut current_index: usize) -> (String, AvatarRef) {
+/// Mutates display_name and avatar_ref.
+/// Returns when first non-empty display name is found.
+pub fn find_previous_profile_in_condensed_message(
+    portal_list: &PortalListRef,
+    mut current_index: usize,
+    display_name: &mut String,
+    avatar_ref: &mut AvatarRef,
+) {
     // Start from the current index and work backwards
     while current_index > 0 {
         current_index -= 1;
         if let Some((_id, item_ref)) = portal_list.get_item(current_index) {
-            let display_name = item_ref.label(ids!(content.username_view.username)).text();
-            if !display_name.is_empty() {
-                let avatar_ref = item_ref.avatar(ids!(profile.avatar));
-                return (display_name, avatar_ref);
+            let username = item_ref.label(ids!(content.username_view.username)).text();
+            if !username.is_empty() {
+                *display_name = username;
+                *avatar_ref = item_ref.avatar(ids!(profile.avatar));
+                return;
             }
         }
     }
-    // If no non-empty display name found, return empty string
-    (String::new(), portal_list.get_item(current_index).unwrap_or_default().1.avatar(ids!(profile.avatar)))
 }
