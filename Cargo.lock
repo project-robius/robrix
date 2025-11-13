@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "ab_glyph_rasterizer"
 version = "0.1.8"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 
 [[package]]
 name = "accessory"
@@ -1458,7 +1458,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.1",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1613,7 +1613,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.1",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2422,7 +2422,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.56.0",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -2881,7 +2881,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.53.4",
 ]
 
 [[package]]
@@ -3034,7 +3034,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-live"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -3043,7 +3043,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-wasm-bridge"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -3051,7 +3051,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-widget"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -3060,7 +3060,7 @@ dependencies = [
 [[package]]
 name = "makepad-draw"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "ab_glyph_rasterizer",
  "fxhash",
@@ -3079,7 +3079,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-chinese-bold"
 version = "1.0.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-platform",
 ]
@@ -3087,7 +3087,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-chinese-bold-2"
 version = "1.0.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-platform",
 ]
@@ -3095,7 +3095,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-chinese-regular"
 version = "1.0.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-platform",
 ]
@@ -3103,7 +3103,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-chinese-regular-2"
 version = "1.0.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-platform",
 ]
@@ -3111,7 +3111,7 @@ dependencies = [
 [[package]]
 name = "makepad-fonts-emoji"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-platform",
 ]
@@ -3119,17 +3119,17 @@ dependencies = [
 [[package]]
 name = "makepad-futures"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 
 [[package]]
 name = "makepad-futures-legacy"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 
 [[package]]
 name = "makepad-html"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-live-id",
 ]
@@ -3137,7 +3137,7 @@ dependencies = [
 [[package]]
 name = "makepad-http"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 
 [[package]]
 name = "makepad-jni-sys"
@@ -3148,7 +3148,7 @@ checksum = "9775cbec5fa0647500c3e5de7c850280a88335d1d2d770e5aa2332b801ba7064"
 [[package]]
 name = "makepad-live-compiler"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-derive-live",
  "makepad-live-tokenizer",
@@ -3158,7 +3158,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-live-id-macros",
 ]
@@ -3166,7 +3166,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id-macros"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -3174,7 +3174,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-tokenizer"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-live-id",
  "makepad-math",
@@ -3184,7 +3184,7 @@ dependencies = [
 [[package]]
 name = "makepad-math"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-micro-serde",
 ]
@@ -3192,12 +3192,12 @@ dependencies = [
 [[package]]
 name = "makepad-micro-proc-macro"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 
 [[package]]
 name = "makepad-micro-serde"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-serde-derive",
@@ -3206,7 +3206,7 @@ dependencies = [
 [[package]]
 name = "makepad-micro-serde-derive"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -3214,12 +3214,12 @@ dependencies = [
 [[package]]
 name = "makepad-objc-sys"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 
 [[package]]
 name = "makepad-platform"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "bitflags 2.9.4",
  "hilog-sys",
@@ -3248,7 +3248,7 @@ dependencies = [
 [[package]]
 name = "makepad-rustybuzz"
 version = "0.8.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "bitflags 1.3.2",
  "bytemuck",
@@ -3263,7 +3263,7 @@ dependencies = [
 [[package]]
 name = "makepad-script"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-live-id",
  "makepad-script-derive",
@@ -3273,7 +3273,7 @@ dependencies = [
 [[package]]
 name = "makepad-script-derive"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -3281,7 +3281,7 @@ dependencies = [
 [[package]]
 name = "makepad-shader-compiler"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-live-compiler",
 ]
@@ -3289,12 +3289,12 @@ dependencies = [
 [[package]]
 name = "makepad-ttf-parser"
 version = "0.21.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 
 [[package]]
 name = "makepad-vector"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-ttf-parser",
  "resvg",
@@ -3303,7 +3303,7 @@ dependencies = [
 [[package]]
 name = "makepad-wasm-bridge"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-derive-wasm-bridge",
  "makepad-live-id",
@@ -3312,7 +3312,7 @@ dependencies = [
 [[package]]
 name = "makepad-widgets"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-derive-widget",
  "makepad-draw",
@@ -3331,7 +3331,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-core"
 version = "0.2.14"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "bitflags 2.9.4",
 ]
@@ -3339,7 +3339,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-jpeg"
 version = "0.3.17"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "makepad-zune-core",
 ]
@@ -3347,7 +3347,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-png"
 version = "0.4.10"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 dependencies = [
  "zune-core",
  "zune-inflate",
@@ -5161,7 +5161,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.1",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5316,7 +5316,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "sdfer"
 version = "0.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#f2ce539ba17020ad1a9abf8a7db11ed0a8a8c8be"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_modal_event_handling#8063f631b6f6801a3be3a89190b65f79f9c94261"
 
 [[package]]
 name = "sealed"
@@ -6006,7 +6006,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.1",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
