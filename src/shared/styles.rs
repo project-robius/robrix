@@ -37,7 +37,7 @@ live_design! {
     pub ICON_UPLOAD          = dep("crate://self/resources/icons/upload.svg")
     pub ICON_VIEW_SOURCE     = dep("crate://self/resources/icons/view_source.svg")
     pub ICON_WARNING         = dep("crate://self/resources/icons/warning.svg")
-    
+
     pub TITLE_TEXT = <THEME_FONT_REGULAR>{
         font_size: (13),
     }

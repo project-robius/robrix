@@ -10,7 +10,7 @@ use makepad_widgets::{makepad_micro_serde::*, *};
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
-        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{clear_timeline_states, MessageAction}, rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{callout_tooltip::{
@@ -18,7 +18,8 @@ use crate::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
     }, image_viewer::{ImageViewerAction, ImageViewerWidgetRefExt, LoadState}}, sliding_sync::current_user_id, utils::{
-        OwnedRoomIdRon, room_name_or_id
+        room_name_or_id,
+        OwnedRoomIdRon,
     }, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
