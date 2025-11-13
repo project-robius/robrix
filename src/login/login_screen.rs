@@ -276,7 +276,7 @@ live_design! {
                 login_status_modal = <Modal> {
                     // width: Fit, height: Fit,
                     // align: {x: 0.5, y: 0.5},
-
+                    can_dismiss: false,
                     content: {
                         login_status_modal_inner = <LoginStatusModal> {}
                     }

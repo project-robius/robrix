@@ -29,7 +29,7 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: (COLOR_PRIMARY)
-                border_radius: 4
+                border_radius: 4.0
             }
 
             title_view = <View> {
