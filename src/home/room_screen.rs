@@ -794,6 +794,7 @@ impl Widget for RoomScreen {
                 let room_members = tl.room_members.clone();
                 let room_members_sort = tl.room_members_sort.clone();
                 let room_members_sync_pending = tl.room_members_sync_pending;
+                let is_direct_room = Self::is_direct_room(cx, &room_id);
 
                 // Fetch room data once to avoid duplicate expensive lookups
                 let (room_display_name, room_avatar_url) = get_client()
@@ -812,9 +813,11 @@ impl Widget for RoomScreen {
                     room_members_sync_pending,
                     room_display_name,
                     room_avatar_url,
+                    is_direct_room,
                 }
             } else if let Some(room_id) = self.room_id.clone() {
                 // Fallback case: we have a room_id but no tl_state yet
+                let is_direct_room = Self::is_direct_room(cx, &room_id);
                 RoomScreenProps {
                     room_screen_widget_uid,
                     room_id,
@@ -823,6 +826,7 @@ impl Widget for RoomScreen {
                     room_members_sync_pending: false,
                     room_display_name: None,
                     room_avatar_url: None,
+                    is_direct_room,
                 }
             } else {
                 // No room selected yet, skip event handling that requires room context
@@ -839,6 +843,7 @@ impl Widget for RoomScreen {
                     room_members_sync_pending: false,
                     room_display_name: None,
                     room_avatar_url: None,
+                    is_direct_room: false,
                 }
             };
             let mut room_scope = Scope::with_props(&room_props);
@@ -1093,6 +1098,16 @@ impl Widget for RoomScreen {
             }
         }
         DrawStep::done()
+    }
+}
+
+impl RoomScreen {
+    fn is_direct_room(cx: &mut Cx, room_id: &OwnedRoomId) -> bool {
+        if cx.has_global::<RoomsListRef>() {
+            cx.get_global::<RoomsListRef>().is_direct_room(room_id)
+        } else {
+            false
+        }
     }
 }
 
@@ -2351,6 +2366,7 @@ pub struct RoomScreenProps {
     pub room_members_sync_pending: bool,
     pub room_display_name: Option<String>,
     pub room_avatar_url: Option<OwnedMxcUri>,
+    pub is_direct_room: bool,
 }
 
 

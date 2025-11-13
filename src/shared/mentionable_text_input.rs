@@ -658,6 +658,10 @@ impl MentionableTextInput {
         room_props: &RoomScreenProps,
         is_desktop: bool,
     ) -> bool {
+        // Don't show @room option in direct messages
+        if room_props.is_direct_room {
+            return false;
+        }
         if !self.can_notify_room || !("@room".contains(search_text) || search_text.is_empty()) {
             return false;
         }

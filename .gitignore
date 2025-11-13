@@ -6,4 +6,6 @@
 .vscode
 .DS_Store
 CLAUDE.md
+AGENTS.md
 proxychains.conf
+/specs

@@ -838,6 +838,20 @@ impl RoomsList {
                     .map(|room_info| (room_info.room_avatar.clone(), room_info.room_name.clone()))
             })
     }
+
+    /// Returns whether the room is marked as direct, if known.
+    pub fn is_direct_room(&self, room_id: &OwnedRoomId) -> bool {
+        self.all_joined_rooms
+            .get(room_id)
+            .map(|room_info| room_info.is_direct)
+            .or_else(|| {
+                self.invited_rooms
+                    .borrow()
+                    .get(room_id)
+                    .map(|room_info| room_info.is_direct)
+            })
+            .unwrap_or(false)
+    }
 }
 
 impl Widget for RoomsList {
@@ -1092,6 +1106,14 @@ impl RoomsListRef {
     pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
         let inner = self.borrow()?;
         inner.get_room_avatar_and_name(room_id)
+    }
+
+    /// Don't show @room option in direct messages
+    pub fn is_direct_room(&self, room_id: &OwnedRoomId) -> bool {
+        let Some(inner) = self.borrow() else {
+            return false;
+        };
+        inner.is_direct_room(room_id)
     }
 }
 pub struct RoomsListScopeProps {
