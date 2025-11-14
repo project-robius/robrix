@@ -13,7 +13,7 @@ use matrix_sdk::RoomState;
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, room_filter_input_bar::RoomFilterAction}, utils
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipDirection}, room_filter_input_bar::RoomFilterAction}, utils
 };
 
 live_design! {
@@ -270,15 +270,19 @@ impl Widget for SpacesBarEntry {
 
         let area = self.draw_bg.area();
         let emit_hover_in_action = |this: &Self, cx: &mut Cx| {
+            let is_desktop = cx.display_context.is_desktop();
             cx.widget_action(
                 this.widget_uid(),
                 &scope.path,
-                TooltipAction::HoverIn {
+                TooltipAction::HoverIn(this.space_name.clone(), CalloutTooltipOptions {
                     widget_rect: area.rect(cx),
-                    text: this.space_name.clone(),
-                    bg_color: None,
-                    text_color: None,
-                },
+                    direction: if !is_desktop {
+                        TooltipDirection::Up
+                    } else {
+                        TooltipDirection::Down
+                    },
+                    ..Default::default()
+                }),
             );
         };
 
