@@ -337,7 +337,8 @@ impl Widget for MentionableTextInput {
         // Scope represents the current widget context as passed down from parents
         let scope_room_id = scope.props.get::<RoomScreenProps>()
             .expect("BUG: RoomScreenProps should be available in Scope::props for MentionableTextInput")
-            .room_id
+            .room_name
+            .room_id()
             .clone();
 
         if let Event::Actions(actions) = event {
@@ -486,12 +487,13 @@ impl MentionableTextInput {
 
         let avatar_ref = room_mention_item.avatar(ids!(user_info.room_avatar));
 
-        // Get room avatar fallback text from room display name
-        let room_name_first_char = room_props.room_display_name
-            .as_ref()
-            .map(|name| name.to_string())
-            .and_then(|name| name.graphemes(true).next().map(|s| s.to_uppercase()))
-            .filter(|s| s != "@" && s.chars().all(|c| c.is_alphabetic()))
+        // Get room avatar fallback text from room name (with automatic ID fallback)
+        let room_label = room_props.room_name.to_string();
+        let room_name_first_char = room_label
+            .graphemes(true)
+            .find(|g| *g != "#" && *g != "!" && *g != "@")
+            .map(|s| s.to_uppercase())
+            .filter(|s| s.chars().all(|c| c.is_alphabetic()))
             .unwrap_or_else(|| "R".to_string());
 
         if let Some(avatar_url) = &room_props.room_avatar_url {

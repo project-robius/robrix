@@ -264,7 +264,7 @@ impl RoomInputBar {
                     )
                 );
                 submit_async_request(MatrixRequest::SendMessage {
-                    room_id: room_screen_props.room_id.clone(),
+                    room_id: room_screen_props.room_name.room_id().clone(),
                     message,
                     replied_to: self.replying_to.take().and_then(|(event_tl_item, _emb)|
                         event_tl_item.event_id().map(|event_id|
@@ -292,7 +292,7 @@ impl RoomInputBar {
             if !entered_text.is_empty() {
                 let message = mentionable_text_input.create_message_with_mentions(&entered_text);
                 submit_async_request(MatrixRequest::SendMessage {
-                    room_id: room_screen_props.room_id.clone(),
+                    room_id: room_screen_props.room_name.room_id().clone(),
                     message,
                     replied_to: self.replying_to.take().and_then(|(event_tl_item, _emb)|
                         event_tl_item.event_id().map(|event_id|
@@ -317,7 +317,7 @@ impl RoomInputBar {
         let is_text_input_empty = if let Some(new_text) = text_input.changed(actions) {
             let is_empty = new_text.is_empty();
             submit_async_request(MatrixRequest::SendTypingNotice {
-                room_id: room_screen_props.room_id.clone(),
+                room_id: room_screen_props.room_name.room_id().clone(),
                 typing: !is_empty,
             });
             is_empty

@@ -1,5 +1,4 @@
 use makepad_widgets::*;
-use matrix_sdk::{RoomDisplayName, ruma::OwnedRoomId};
 use tokio::sync::Notify;
 use std::{collections::HashMap, sync::Arc};
 
@@ -163,8 +162,7 @@ impl MainDesktopUI {
                 SelectedRoom::InvitedRoom { room_name } => {
                     new_widget.as_invite_screen().set_displayed_invite(
                         cx,
-                        room_name.room_id().clone(),
-                        room_name.display_name().clone()
+                        room_name.clone()
                     );
                 }
             }
@@ -232,15 +230,15 @@ impl MainDesktopUI {
         &mut self,
         cx: &mut Cx,
         _scope: &mut Scope,
-        room_id: OwnedRoomId,
-        room_name: RoomDisplayName,
+        room_name: RoomName,
     ) {
+        let room_id = room_name.room_id().clone();
         let dock = self.view.dock(ids!(dock));
         let Some((new_widget, true)) = dock.replace_tab(
             cx,
             LiveId::from_str(room_id.as_str()),
             id!(room_screen),
-            Some(RoomName::from((&room_name, &room_id)).to_string()),
+            Some(room_name.to_string()),
             false,
         ) else {
             // Nothing we can really do here except log an error.
@@ -249,10 +247,9 @@ impl MainDesktopUI {
         };
 
         // Set the info to be displayed in the newly-replaced RoomScreen..
-        let combined_room_name = RoomName::new(room_name.clone(), room_id.clone());
         new_widget
             .as_room_screen()
-            .set_displayed_room(cx, combined_room_name);
+            .set_displayed_room(cx, room_name.clone());
 
         // Go through all existing `SelectedRoom` instances and replace the
         // `SelectedRoom::InvitedRoom`s with `SelectedRoom::JoinedRoom`s.
@@ -340,7 +337,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                     self.focus_or_create_tab(cx, selected_room);
                 }
                 RoomsListAction::InviteAccepted { room_name } => {
-                    self.replace_invite_with_joined_room(cx, scope, room_name.room_id().clone(), room_name.display_name().clone());
+                    self.replace_invite_with_joined_room(cx, scope, room_name.clone());
                 }
                 RoomsListAction::None => { }
             }
@@ -369,8 +366,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                                 Some(SelectedRoom::InvitedRoom { room_name }) => {
                                     widget.as_invite_screen().set_displayed_invite(
                                         cx,
-                                        room_name.room_id().clone(),
-                                        room_name.display_name().clone(),
+                                        room_name.clone(),
                                     );
                                 }
                                 _ => { }

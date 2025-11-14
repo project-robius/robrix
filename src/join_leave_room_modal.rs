@@ -3,9 +3,9 @@
 //! Also used as a confirmation dialog for accepting or rejecting room invites.
 
 use makepad_widgets::*;
-use matrix_sdk::{RoomDisplayName, ruma::OwnedRoomId};
+use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}, utils};
+use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomName}};
 
 live_design! {
     use link::theme::*;
@@ -165,15 +165,10 @@ pub enum JoinLeaveModalKind {
 }
 impl JoinLeaveModalKind {
     pub fn room_id(&self) -> &OwnedRoomId {
-        match self {
-            JoinLeaveModalKind::AcceptInvite(invite) => &invite.room_id,
-            JoinLeaveModalKind::RejectInvite(invite) => &invite.room_id,
-            JoinLeaveModalKind::JoinRoom(room) => &room.room_id,
-            JoinLeaveModalKind::LeaveRoom(room) => &room.room_id,
-        }
+        self.room_name().room_id()
     }
 
-    pub fn room_name(&self) -> &RoomDisplayName {
+    pub fn room_name(&self) -> &RoomName {
         match self {
             JoinLeaveModalKind::AcceptInvite(invite) => &invite.room_name,
             JoinLeaveModalKind::RejectInvite(invite) => &invite.room_name,
@@ -253,7 +248,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         );
                         accept_button_text = "Joining...";
                         submit_async_request(MatrixRequest::JoinRoom {
-                            room_id: invite.room_id.clone(),
+                            room_id: invite.room_name.room_id().clone(),
                         });
                     }
                     JoinLeaveModalKind::RejectInvite(invite) => {
@@ -265,7 +260,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         );
                         accept_button_text = "Rejecting...";
                         submit_async_request(MatrixRequest::LeaveRoom {
-                            room_id: invite.room_id.clone(),
+                            room_id: invite.room_name.room_id().clone(),
                         });
                     }
                     JoinLeaveModalKind::JoinRoom(room) => {
@@ -277,7 +272,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         );
                         accept_button_text = "Joining...";
                         submit_async_request(MatrixRequest::JoinRoom {
-                            room_id: room.room_id.clone(),
+                            room_id: room.room_name.room_id().clone(),
                         });
                     }
                     JoinLeaveModalKind::LeaveRoom(room) => {
@@ -289,7 +284,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         );
                         accept_button_text = "Leaving...";
                         submit_async_request(MatrixRequest::LeaveRoom {
-                            room_id: room.room_id.clone(),
+                            room_id: room.room_name.room_id().clone(),
                         });
                     }
                 }

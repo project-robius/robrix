@@ -6,8 +6,6 @@
 //! the current room no longer exists.
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::RoomId;
-
 use crate::utils::RoomName;
 
 live_design! {

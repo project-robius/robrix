@@ -737,7 +737,7 @@ impl RoomName {
     /// Create a RoomName from a room, extracting both display name and ID.
     pub fn from_room(room: &Room) -> Self {
         Self {
-            display_name: room.cached_display_name().map(|n| n.clone()).unwrap_or(RoomDisplayName::Empty),
+            display_name: room.cached_display_name().unwrap_or(RoomDisplayName::Empty),
             room_id: room.room_id().to_owned(),
         }
     }
@@ -827,25 +827,66 @@ pub struct RoomDisplayNameRon(pub RoomDisplayName);
 
 impl SerRon for RoomDisplayNameRon {
     fn ser_ron(&self, d: usize, s: &mut SerRonState) {
-        // Serialize as a JSON string to leverage the existing Serialize impl
-        let json_str = serde_json::to_string(&self.0).unwrap_or_else(|e| {
-            error!("Failed to serialize RoomDisplayName: {e}");
-            serde_json::to_string(&RoomDisplayName::Empty).expect("Empty must serialize")
-        });
-        json_str.ser_ron(d, s);
+        match &self.0 {
+            RoomDisplayName::Empty => "Empty".to_string().ser_ron(d, s),
+            RoomDisplayName::EmptyWas(previous) => {
+                format!("EmptyWas:{previous}").ser_ron(d, s);
+            }
+            RoomDisplayName::Named(name) => {
+                format!("Named:{name}").ser_ron(d, s);
+            }
+            RoomDisplayName::Aliased(alias) => {
+                format!("Aliased:{alias}").ser_ron(d, s);
+            }
+            RoomDisplayName::Calculated(calc) => {
+                format!("Calculated:{calc}").ser_ron(d, s);
+            }
+        }
     }
 }
 
 impl DeRon for RoomDisplayNameRon {
     fn de_ron(s: &mut DeRonState, i: &mut Chars) -> Result<Self, DeRonErr> {
-        let json_str = String::de_ron(s, i)?;
-        serde_json::from_str(&json_str)
-            .map(RoomDisplayNameRon)
-            .map_err(|e| DeRonErr {
-                msg: format!("Failed to deserialize RoomDisplayName: {e}"),
-                line: s.line,
-                col: s.col,
-            })
+        let encoded = String::de_ron(s, i)?;
+        let (variant, value) = encoded
+            .split_once(':')
+            .map(|(tag, rest)| (tag, Some(rest)))
+            .unwrap_or_else(|| (encoded.as_str(), None));
+
+        let err_line = s.line;
+        let err_col = s.col;
+        let display_name = match variant {
+            "Empty" => RoomDisplayName::Empty,
+            "EmptyWas" => RoomDisplayName::EmptyWas(value.map(ToOwned::to_owned).ok_or_else(|| DeRonErr {
+                msg: String::from("EmptyWas RoomDisplayName requires a value"),
+                line: err_line,
+                col: err_col,
+            })?),
+            "Named" => RoomDisplayName::Named(value.map(ToOwned::to_owned).ok_or_else(|| DeRonErr {
+                msg: String::from("Named RoomDisplayName requires a value"),
+                line: err_line,
+                col: err_col,
+            })?),
+            "Aliased" => RoomDisplayName::Aliased(value.map(ToOwned::to_owned).ok_or_else(|| DeRonErr {
+                msg: String::from("Aliased RoomDisplayName requires a value"),
+                line: err_line,
+                col: err_col,
+            })?),
+            "Calculated" => RoomDisplayName::Calculated(value.map(ToOwned::to_owned).ok_or_else(|| DeRonErr {
+                msg: String::from("Calculated RoomDisplayName requires a value"),
+                line: err_line,
+                col: err_col,
+            })?),
+            other => {
+                return Err(DeRonErr {
+                    msg: format!("Unknown RoomDisplayName variant: {other}"),
+                    line: s.line,
+                    col: s.col,
+                });
+            }
+        };
+
+        Ok(RoomDisplayNameRon(display_name))
     }
 }
 

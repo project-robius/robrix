@@ -327,7 +327,7 @@ impl MatchEvent for App {
                 // If we successfully loaded a room that we were waiting to join,
                 // we can now navigate to it and optionally close a previous room.
                 Some(AppStateAction::RoomLoadedSuccessfully(room_id)) if
-                    self.waiting_to_navigate_to_joined_room.as_ref().is_some_and(|(dr, _)| &dr.room_id == room_id) =>
+                    self.waiting_to_navigate_to_joined_room.as_ref().is_some_and(|(dr, _)| dr.room_name.room_id() == room_id) =>
                 {
                     log!("Joined awaited room {}, navigating to it now...", room_id);
                     if let Some((dest_room, room_to_close)) = self.waiting_to_navigate_to_joined_room.take() {
@@ -558,8 +558,9 @@ impl App {
 
         // If the successor room is not loaded, show a join modal.
         let rooms_list_ref = cx.get_global::<RoomsListRef>();
-        if !rooms_list_ref.is_room_loaded(&destination_room.room_id) {
-            log!("Destination room {} not loaded, showing join modal...", destination_room.room_id);
+        let destination_room_id = destination_room.room_name.room_id();
+        if !rooms_list_ref.is_room_loaded(destination_room_id) {
+            log!("Destination room {} not loaded, showing join modal...", destination_room_id);
             self.waiting_to_navigate_to_joined_room = Some((
                 destination_room.clone(),
                 room_to_close.cloned(),
@@ -571,13 +572,17 @@ impl App {
             return;
         }
 
-        log!("Navigating to destination room {} ({:?}), closing room {room_to_close:?}", destination_room.room_id, destination_room.room_name);
+        log!(
+            "Navigating to destination room {} ({}), closing room {room_to_close:?}",
+            destination_room_id,
+            destination_room.room_name
+        );
 
         // Select and scroll to the destination room in the rooms list.
         let new_selected_room = SelectedRoom::JoinedRoom {
-            room_name: RoomName::from((destination_room.room_name.clone(), destination_room.room_id.clone())),
+            room_name: destination_room.room_name.clone(),
         };
-        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room.room_id.clone()));
+        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room_id.clone()));
         cx.widget_action(
             self.ui.widget_uid(),
             &HeapLiveIdPath::default(),

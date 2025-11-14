@@ -796,25 +796,23 @@ impl Widget for RoomScreen {
                 let (room_display_name, room_avatar_url) = get_client()
                     .and_then(|client| client.get_room(&room_id))
                     .map(|room| (
-                        room.cached_display_name(),
+                        room.cached_display_name().unwrap_or(RoomDisplayName::Empty),
                         room.avatar_url()
                     ))
-                    .unwrap_or((None, None));
+                    .unwrap_or((RoomDisplayName::Empty, None));
 
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_id,
+                    room_name: RoomName::new(room_display_name, room_id),
                     room_members,
-                    room_display_name,
                     room_avatar_url,
                 }
             } else if let Some(room_name) = &self.room_name {
                 // Fallback case: we have a room_name but no tl_state yet
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_id: room_name.room_id().clone(),
+                    room_name: room_name.clone(),
                     room_members: None,
-                    room_display_name: Some(room_name.display_name().clone()),
                     room_avatar_url: None,
                 }
             } else {
@@ -824,11 +822,11 @@ impl Widget for RoomScreen {
                     return;
                 }
                 // Use a dummy room props for non-room-specific events
+                let dummy_id = matrix_sdk::ruma::OwnedRoomId::try_from("!dummy:matrix.org").unwrap();
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_id: matrix_sdk::ruma::OwnedRoomId::try_from("!dummy:matrix.org").unwrap(),
+                    room_name: RoomName::new(RoomDisplayName::Empty, dummy_id),
                     room_members: None,
-                    room_display_name: None,
                     room_avatar_url: None,
                 }
             };
@@ -2306,9 +2304,8 @@ impl RoomScreenRef {
 /// from a RoomScreen widget to its child widgets for event/draw handlers.
 pub struct RoomScreenProps {
     pub room_screen_widget_uid: WidgetUid,
-    pub room_id: OwnedRoomId,
+    pub room_name: RoomName,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
-    pub room_display_name: Option<RoomDisplayName>,
     pub room_avatar_url: Option<OwnedMxcUri>,
 }
 

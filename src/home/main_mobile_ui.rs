@@ -88,7 +88,7 @@ impl Widget for MainMobileUI {
                 show_invite = true;
                 self.view
                     .invite_screen(ids!(invite_screen))
-                    .set_displayed_invite(cx, room_name.room_id().clone().into(), room_name.display_name().clone());
+                    .set_displayed_invite(cx, room_name.clone());
             }
             None => {
                 show_welcome = true;
