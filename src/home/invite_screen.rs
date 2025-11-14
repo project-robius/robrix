@@ -265,7 +265,7 @@ pub struct InviteScreen {
     /// This is used to prevent showing multiple popup notifications
     /// (one from the JoinLeaveRoomModal, and one from this invite screen).
     #[rust] has_shown_confirmation: bool,
-    /// The name (which includes ID) of the invited room.
+    /// The name (which includes ID) of the invited room, if one is currently selected.
     #[rust] room_name: Option<RoomName>,
     #[rust] is_loaded: bool,
     #[rust] all_rooms_loaded: bool,
@@ -282,8 +282,8 @@ impl Widget for InviteScreen {
                     self.all_rooms_loaded = rooms_list_ref.all_rooms_loaded();
                     self.redraw(cx);
                     return;
-                } else if let Some(current_room_name) = self.room_name.clone() {
-                    self.set_displayed_invite(cx, current_room_name);
+                } else {
+                    self.set_displayed_invite(cx, room_name.clone());
                 }
             }
         }
@@ -298,9 +298,9 @@ impl Widget for InviteScreen {
             // where this room was restored and has now been successfully loaded from the homeserver.
             for action in actions {
                 if let Some(AppStateAction::RoomLoadedSuccessfully(room_id)) = action.downcast_ref() {
-                    if self.room_name.as_ref().is_some_and(|current| current.room_id() == room_id) {
-                        if let Some(room_name) = self.room_name.clone() {
-                            self.set_displayed_invite(cx, room_name);
+                    if self.room_name.as_ref().is_some_and(|name| name.room_id() == room_id) {
+                        if let Some(current) = self.room_name.clone() {
+                            self.set_displayed_invite(cx, current);
                         }
                         break;
                     }
@@ -526,7 +526,7 @@ impl InviteScreen {
         {
             self.info = Some(InviteDetails {
                 room_info: BasicRoomDetails {
-                    room_name: self.room_name.as_ref().expect("room name must be set").clone(),
+                    room_name: self.room_name.as_ref().expect("room name just set").clone(),
                     room_avatar: invite.room_avatar.clone(),
                 },
                 inviter: invite.inviter_info.clone(),
@@ -537,13 +537,13 @@ impl InviteScreen {
             self.all_rooms_loaded = true;
             self.redraw(cx);
         }
-        if let Some(ref room_name) = self.room_name {
+        if let Some(current) = &self.room_name {
             self.view
                 .restore_status_view(ids!(restore_status_view))
                 .set_content(
                     cx,
                     self.all_rooms_loaded,
-                    room_name,
+                    current,
                 );
         }
         self.view
