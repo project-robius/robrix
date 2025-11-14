@@ -6,6 +6,9 @@
 //! the current room no longer exists.
 
 use makepad_widgets::*;
+use matrix_sdk::ruma::RoomId;
+
+use crate::utils::RoomName;
 
 live_design! {
     use link::theme::*;
@@ -90,16 +93,28 @@ impl RestoreStatusViewRef {
     /// is still being loaded from the homeserver.
     ///
     /// The `room_name` parameter is used to fill in the room name in the error message.
-    pub fn set_content(&self, cx: &mut Cx, all_rooms_loaded: bool, room_name: &str) {
+    pub fn set_content(
+        &self,
+        cx: &mut Cx,
+        all_rooms_loaded: bool,
+        room_name: RoomName,
+        room_id: Option<&RoomId>,
+    ) {
         let Some(inner) = self.borrow() else { return };      
         let restore_status_spinner = inner.view.view(ids!(restore_status_spinner));
         let restore_status_label = inner.view.label(ids!(restore_status_label));
         if all_rooms_loaded {
             restore_status_spinner.set_visible(cx, false);
+            let display_name = match room_id {
+                Some(id) => room_name.display_with_fallback(id),
+                None => room_name.to_string(),
+            };
             restore_status_label.set_text(
                 cx,
-                &format!("Room \"{room_name}\" was not found in the homeserver's list \
-                    of all rooms.\n\nYou may close this screen.")
+                &format!(
+                    "Room \"{display_name}\" was not found in the homeserver's list \
+                    of all rooms.\n\nYou may close this screen."
+                ),
             );
         } else {
             restore_status_spinner.set_visible(cx, true);
@@ -110,4 +125,3 @@ impl RestoreStatusViewRef {
         }
     }
 }
-

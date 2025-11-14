@@ -7,7 +7,7 @@ use url::Url;
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, Cx, Event, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}, RoomDisplayName};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
 use crate::{room::FetchedRoomAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
@@ -240,13 +240,10 @@ pub fn stringify_pagination_error(
 
 /// Returns a string representation of the room name or ID.
 pub fn room_name_or_id(
-    room_name: Option<impl Into<String>>,
+    room_name: impl IntoRoomName,
     room_id: impl AsRef<RoomId>,
 ) -> String {
-    room_name.map_or_else(
-        || format!("Room ID {}", room_id.as_ref()),
-        |name| name.into(),
-    )
+    room_name.into_room_name().display_with_fallback(room_id)
 }
 
 /// Formats a given Unix timestamp in milliseconds into a relative human-readable date.
@@ -723,6 +720,166 @@ impl Deref for OwnedRoomIdRon {
 impl Display for OwnedRoomIdRon {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoomName(pub RoomDisplayName);
+
+impl RoomName {
+    pub fn into_inner(self) -> RoomDisplayName {
+        self.0
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        room_display_name_str(&self.0)
+    }
+
+    pub fn display_with_fallback(&self, room_id: impl AsRef<RoomId>) -> String {
+        match &self.0 {
+            RoomDisplayName::Empty => format!("Unnamed (ID {})", room_id.as_ref()),
+            RoomDisplayName::EmptyWas(name) => format!("Empty Room (was \"{name}\")"),
+            other => other.to_string(),
+        }
+    }
+}
+
+impl Default for RoomName {
+    fn default() -> Self {
+        Self(RoomDisplayName::Empty)
+    }
+}
+
+impl std::ops::Deref for RoomName {
+    type Target = RoomDisplayName;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::borrow::Borrow<RoomDisplayName> for RoomName {
+    fn borrow(&self) -> &RoomDisplayName {
+        &self.0
+    }
+}
+
+impl AsRef<RoomDisplayName> for RoomName {
+    fn as_ref(&self) -> &RoomDisplayName {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for RoomName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl From<RoomDisplayName> for RoomName {
+    fn from(value: RoomDisplayName) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&RoomDisplayName> for RoomName {
+    fn from(value: &RoomDisplayName) -> Self {
+        Self(value.clone())
+    }
+}
+
+impl From<RoomName> for RoomDisplayName {
+    fn from(value: RoomName) -> Self {
+        value.0
+    }
+}
+
+pub fn room_display_name_str(display_name: &RoomDisplayName) -> Option<&str> {
+    match display_name {
+        RoomDisplayName::Empty => None,
+        RoomDisplayName::EmptyWas(name)
+        | RoomDisplayName::Named(name)
+        | RoomDisplayName::Aliased(name)
+        | RoomDisplayName::Calculated(name) => Some(name.as_str()),
+    }
+}
+
+pub trait IntoRoomName {
+    fn into_room_name(self) -> RoomName;
+}
+
+impl IntoRoomName for RoomName {
+    fn into_room_name(self) -> RoomName {
+        self
+    }
+}
+
+impl IntoRoomName for &RoomName {
+    fn into_room_name(self) -> RoomName {
+        self.clone()
+    }
+}
+
+impl IntoRoomName for RoomDisplayName {
+    fn into_room_name(self) -> RoomName {
+        RoomName(self)
+    }
+}
+
+impl IntoRoomName for &RoomDisplayName {
+    fn into_room_name(self) -> RoomName {
+        RoomName(self.clone())
+    }
+}
+
+impl IntoRoomName for String {
+    fn into_room_name(self) -> RoomName {
+        RoomName(RoomDisplayName::Named(self))
+    }
+}
+
+impl IntoRoomName for &str {
+    fn into_room_name(self) -> RoomName {
+        RoomName(RoomDisplayName::Named(self.to_owned()))
+    }
+}
+
+impl<'a> IntoRoomName for Cow<'a, str> {
+    fn into_room_name(self) -> RoomName {
+        RoomName(RoomDisplayName::Named(self.into_owned()))
+    }
+}
+
+impl<T> IntoRoomName for Option<T>
+where
+    T: IntoRoomName,
+{
+    fn into_room_name(self) -> RoomName {
+        self.map(IntoRoomName::into_room_name).unwrap_or_default()
+    }
+}
+
+impl SerRon for RoomName {
+    fn ser_ron(&self, d: usize, s: &mut SerRonState) {
+        let serialized = serde_json::to_string(&self.0).unwrap_or_else(|e| {
+            error!("Failed to serialize RoomDisplayName to ron: {e}");
+            serde_json::to_string(&RoomDisplayName::Empty)
+                .expect("serialization of Empty must succeed")
+        });
+        serialized.ser_ron(d, s);
+    }
+}
+
+impl DeRon for RoomName {
+    fn de_ron(s: &mut DeRonState, i: &mut Chars) -> Result<Self, DeRonErr> {
+        let serialized = String::de_ron(s, i)?;
+        serde_json::from_str::<RoomDisplayName>(&serialized)
+            .map(RoomName)
+            .map_err(|e| DeRonErr {
+                msg: e.to_string(),
+                line: s.line,
+                col: s.col,
+            })
     }
 }
 

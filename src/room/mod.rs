@@ -1,6 +1,6 @@
 use std::{ops::Deref, sync::Arc};
 use makepad_widgets::Cx;
-use matrix_sdk::{room_preview::RoomPreview, ruma::OwnedRoomId, SuccessorRoom};
+use matrix_sdk::{room_preview::RoomPreview, ruma::OwnedRoomId, RoomDisplayName, SuccessorRoom};
 
 use crate::utils::avatar_from_room_name;
 
@@ -22,7 +22,7 @@ pub fn live_design(cx: &mut Cx) {
 #[derive(Clone, Debug)]
 pub struct BasicRoomDetails {
     pub room_id: OwnedRoomId,
-    pub room_name: Option<String>,
+    pub room_name: RoomDisplayName,
     pub room_avatar: FetchedRoomAvatar,
 }
 impl From<&SuccessorRoom> for BasicRoomDetails {
@@ -30,15 +30,18 @@ impl From<&SuccessorRoom> for BasicRoomDetails {
         BasicRoomDetails {
             room_id: successor_room.room_id.clone(),
             room_avatar: avatar_from_room_name(None),
-            room_name: None,
+            room_name: RoomDisplayName::Empty,
         }
     }
 }
 impl From<&FetchedRoomPreview> for BasicRoomDetails {
     fn from(frp: &FetchedRoomPreview) -> Self {
+        let room_name = frp.name.clone()
+            .map(RoomDisplayName::Named)
+            .unwrap_or(RoomDisplayName::Empty);
         BasicRoomDetails {
             room_id: frp.room_id.clone(),
-            room_name: frp.name.clone(),
+            room_name,
             room_avatar: frp.room_avatar.clone(),
         }
     }

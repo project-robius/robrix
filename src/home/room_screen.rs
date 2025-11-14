@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    room::RoomMember, ruma::{
+    room::RoomMember, RoomDisplayName, ruma::{
         events::{
             receipt::Receipt,
             room::{
@@ -34,7 +34,7 @@ use crate::{
     shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+    sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomName}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -491,7 +491,6 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-            
             restore_status_view = <RestoreStatusView> {}
 
             // Widgets within this view will get shifted upwards when the on-screen keyboard is shown.
@@ -557,7 +556,7 @@ pub struct RoomScreen {
     /// The room ID of the currently-shown room.
     #[rust] room_id: Option<OwnedRoomId>,
     /// The display name of the currently-shown room.
-    #[rust] room_name: String,
+    #[rust(RoomDisplayName::Empty)] room_name: RoomDisplayName,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
     /// The set of pinned events in this room.
@@ -699,7 +698,7 @@ impl Widget for RoomScreen {
                             &user_profile_sliding_pane,
                             UserProfilePaneInfo {
                                 profile_and_room_id,
-                                room_name: self.room_name.clone(),
+                                room_name: self.room_name.to_string(),
                                 room_member: None,
                             },
                         );
@@ -797,7 +796,7 @@ impl Widget for RoomScreen {
                 let (room_display_name, room_avatar_url) = get_client()
                     .and_then(|client| client.get_room(&room_id))
                     .map(|room| (
-                        room.cached_display_name().map(|name| name.to_string()),
+                        room.cached_display_name(),
                         room.avatar_url()
                     ))
                     .unwrap_or((None, None));
@@ -815,7 +814,7 @@ impl Widget for RoomScreen {
                     room_screen_widget_uid,
                     room_id,
                     room_members: None,
-                    room_display_name: None,
+                    room_display_name: Some(self.room_name.clone()),
                     room_avatar_url: None,
                 }
             } else {
@@ -902,7 +901,9 @@ impl Widget for RoomScreen {
         // If the room isn't loaded yet, we show the restore status label only.
         if !self.is_loaded {
             let mut restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
-            restore_status_view.set_content(cx, self.all_rooms_loaded, &self.room_name);
+            let room_id = self.room_id.as_deref();
+            let room_name = RoomName::from(self.room_name.clone());
+            restore_status_view.set_content(cx, self.all_rooms_loaded, room_name, room_id);
             return restore_status_view.draw(cx, scope);
         }
         if self.tl_state.is_none() {
@@ -1296,7 +1297,7 @@ impl RoomScreen {
                 TimelineUpdate::PaginationError { error, direction } => {
                     error!("Pagination error ({direction}) in room \"{}\", {}: {error:?}", self.room_name, tl.room_id);
                     enqueue_popup_notification(PopupItem {
-                        message: utils::stringify_pagination_error(&error, &self.room_name),
+                        message: utils::stringify_pagination_error(&error, &self.room_name.to_string()),
                         auto_dismissal_duration: None,
                         kind: PopupKind::Error,
                     });
@@ -1458,7 +1459,7 @@ impl RoomScreen {
                                 },
                                 room_id: self.room_id.clone().unwrap(),
                             },
-                            room_name: self.room_name.clone(),
+                            room_name: self.room_name.to_string(),
                             // TODO: use the extra `via` parameters
                             room_member: None,
                         },
@@ -1915,7 +1916,6 @@ impl RoomScreen {
             // and search our locally-known timeline history for the replied-to message.
         }
         self.redraw(cx);
-       
     }
 
     /// Shows the user profile sliding pane with the given avatar info.
@@ -2044,7 +2044,7 @@ impl RoomScreen {
         //    show/hide UI elements based on the user's permissions.
         // 2. Get the list of members in this room (from the SDK's local cache).
         // 3. Subscribe to our own user's read receipts so that we can update the
-        //    read marker and properly send read receipts while scrolling through the timeline. 
+        //    read marker and properly send read receipts while scrolling through the timeline.
         // 4. Subscribe to typing notices again, now that the room is being shown.
         if self.is_loaded {
             submit_async_request(MatrixRequest::GetRoomPowerLevels {
@@ -2056,7 +2056,7 @@ impl RoomScreen {
                 // Fetch from the local cache, as we already requested to sync
                 // the room members from the homeserver above.
                 local_only: true,
-            }); 
+            });
             submit_async_request(MatrixRequest::SubscribeToTypingNotices {
                 room_id: room_id.clone(),
                 subscribe: true,
@@ -2164,11 +2164,11 @@ impl RoomScreen {
     }
 
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
-    pub fn set_displayed_room<S: Into<Option<String>>>(
+    pub fn set_displayed_room(
         &mut self,
         cx: &mut Cx,
         room_id: OwnedRoomId,
-        room_name: S,
+        room_name: RoomDisplayName,
     ) {
         // If the room is already being displayed, then do nothing.
         if self.room_id.as_ref().is_some_and(|id| id == &room_id) { return; }
@@ -2176,7 +2176,7 @@ impl RoomScreen {
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
         self.loading_pane(ids!(loading_pane)).take_state();
-        self.room_name = room_name_or_id(room_name.into(), &room_id);
+        self.room_name = room_name;
         self.room_id = Some(room_id.clone());
 
         // We initially tell every MentionableTextInput widget that the current user
@@ -2291,11 +2291,11 @@ impl RoomScreen {
 
 impl RoomScreenRef {
     /// See [`RoomScreen::set_displayed_room()`].
-    pub fn set_displayed_room<S: Into<Option<String>>>(
+    pub fn set_displayed_room(
         &self,
         cx: &mut Cx,
         room_id: OwnedRoomId,
-        room_name: S,
+        room_name: RoomDisplayName,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
@@ -2308,7 +2308,7 @@ pub struct RoomScreenProps {
     pub room_screen_widget_uid: WidgetUid,
     pub room_id: OwnedRoomId,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
-    pub room_display_name: Option<String>,
+    pub room_display_name: Option<RoomDisplayName>,
     pub room_avatar_url: Option<OwnedMxcUri>,
 }
 
