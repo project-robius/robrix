@@ -1,7 +1,7 @@
 use makepad_widgets::{makepad_micro_serde::{DeRon, SerRon}, *};
 use serde::{self, Deserialize, Serialize};
 use matrix_sdk::ruma::{OwnedUserId, UserId};
-use crate::{app::{AppState, SelectedRoom}, app_data_dir, persistence::persistent_state_dir};
+use crate::{app::AppState, app_data_dir, persistence::persistent_state_dir};
 
 
 const LATEST_APP_STATE_FILE_NAME: &str = "latest_app_state.ron";
@@ -31,13 +31,9 @@ pub fn save_app_state(
         app_state.serialize_ron(),
     )?;
     for (tab_id, room) in &app_state.saved_dock_state.open_rooms {
-        match room {
-            SelectedRoom::JoinedRoom { room_id, .. }
-            | SelectedRoom::InvitedRoom { room_id, .. } => {
-                if !app_state.saved_dock_state.dock_items.contains_key(tab_id) {
-                    error!("Room id: {} already in dock state", room_id);
-                }
-            }
+        let room_id = room.room_id();
+        if !app_state.saved_dock_state.dock_items.contains_key(tab_id) {
+            error!("Room id: {} already in dock state", room_id);
         }
     }
     log!("Successfully saved app state to persistent storage.");

@@ -2271,14 +2271,13 @@ async fn update_room(
         if old_room.display_name != new_room.display_name {
             log!("Updating room {} name: {:?} --> {:?}", new_room_id, old_room.display_name, new_room.display_name);
 
-            let new_name = new_room
+            let new_display_name = new_room
                 .display_name
                 .clone()
                 .unwrap_or(RoomDisplayName::Empty);
 
             enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
-                room_id: new_room_id.clone(),
-                new_room_name: new_name,
+                new_room_name: RoomName::new(new_display_name, new_room_id.clone()),
             });
         }
 
@@ -2441,7 +2440,8 @@ async fn add_new_room(
                 .display_name
                 .clone()
                 .unwrap_or(RoomDisplayName::Empty);
-            let room_avatar = room_avatar(&new_room.room, RoomName::from(room_display_name.clone())).await;
+            let room_name = RoomName::new(room_display_name, new_room.room_id.clone());
+            let room_avatar = room_avatar(&new_room.room, room_name.clone()).await;
 
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
                 Some(InviterInfo {
@@ -2458,8 +2458,7 @@ async fn add_new_room(
                 None
             };
             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddInvitedRoom(InvitedRoomInfo {
-                room_id: new_room.room_id.clone(),
-                room_name: room_display_name,
+                room_name,
                 inviter_info,
                 room_avatar,
                 canonical_alias: new_room.room.canonical_alias(),
@@ -2522,16 +2521,15 @@ async fn add_new_room(
         .display_name
         .clone()
         .unwrap_or(RoomDisplayName::Empty);
-    let room_name_for_avatar = RoomName::from(room_display_name.clone());
+    let room_name = RoomName::new(room_display_name, new_room.room_id.clone());
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
-        room_id: new_room.room_id.clone(),
         latest,
         tags: new_room.tags.clone().unwrap_or_default(),
         num_unread_messages: new_room.num_unread_messages,
         num_unread_mentions: new_room.num_unread_mentions,
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
-        avatar: avatar_from_room_name(room_name_for_avatar.as_str()),
-        room_name: room_display_name,
+        avatar: avatar_from_room_name(room_name.as_str()),
+        room_name,
         canonical_alias: new_room.room.canonical_alias(),
         alt_aliases: new_room.room.alt_aliases(),
         has_been_paginated: false,
@@ -3158,7 +3156,10 @@ async fn update_latest_event(room: &Room) {
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
     let room_id = room.room_id.clone();
-    let room_name = room.display_name.clone().map(RoomName::from).unwrap_or_default();
+    let room_name = RoomName::new(
+        room.display_name.clone().unwrap_or(RoomDisplayName::Empty),
+        room.room_id.clone()
+    );
     let inner_room = room.room.clone();
     Handle::current().spawn(async move {
         let avatar = room_avatar(&inner_room, room_name).await;

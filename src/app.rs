@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use makepad_widgets::{makepad_micro_serde::*, *};
-use matrix_sdk::{RoomDisplayName, ruma::{OwnedRoomId, RoomId}};
+use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
         main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{clear_timeline_states, MessageAction}, rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate}
@@ -17,11 +17,7 @@ use crate::{
         CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, sliding_sync::current_user_id, utils::{
-        room_name_or_id,
-        OwnedRoomIdRon,
-        RoomName,
-    }, verification::VerificationAction, verification_modal::{
+    }, sliding_sync::current_user_id, utils::RoomName, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -278,7 +274,7 @@ impl MatchEvent for App {
 
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
-                let display_name = room_name_or_id(selected_room.room_name(), selected_room.room_id());
+                let display_name = selected_room.room_name().to_string();
                 self.app_state.selected_room = Some(selected_room);
                 // Set the Stack Navigation header to show the name of the newly-selected room.
                 self.ui
@@ -579,8 +575,7 @@ impl App {
 
         // Select and scroll to the destination room in the rooms list.
         let new_selected_room = SelectedRoom::JoinedRoom {
-            room_id: destination_room.room_id.clone().into(),
-            room_name: destination_room.room_name.clone().into(),
+            room_name: RoomName::from((destination_room.room_name.clone(), destination_room.room_id.clone())),
         };
         enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room.room_id.clone()));
         cx.widget_action(
@@ -627,11 +622,9 @@ pub struct SavedDockState {
 #[derive(Clone, Debug, SerRon, DeRon)]
 pub enum SelectedRoom {
     JoinedRoom {
-        room_id: OwnedRoomIdRon,
         room_name: RoomName,
     },
     InvitedRoom {
-        room_id: OwnedRoomIdRon,
         room_name: RoomName,
     },
 }
@@ -639,15 +632,15 @@ pub enum SelectedRoom {
 impl SelectedRoom {
     pub fn room_id(&self) -> &OwnedRoomId {
         match self {
-            SelectedRoom::JoinedRoom { room_id, .. } => room_id,
-            SelectedRoom::InvitedRoom { room_id, .. } => room_id,
+            SelectedRoom::JoinedRoom { room_name } => room_name.room_id(),
+            SelectedRoom::InvitedRoom { room_name } => room_name.room_id(),
         }
     }
 
-    pub fn room_name(&self) -> &RoomDisplayName {
+    pub fn room_name(&self) -> &RoomName {
         match self {
-            SelectedRoom::JoinedRoom { room_name, .. } => room_name.as_ref(),
-            SelectedRoom::InvitedRoom { room_name, .. } => room_name.as_ref(),
+            SelectedRoom::JoinedRoom { room_name } => room_name,
+            SelectedRoom::InvitedRoom { room_name } => room_name,
         }
     }
 
@@ -659,10 +652,9 @@ impl SelectedRoom {
     /// otherwise, returns `false`.
     pub fn upgrade_invite_to_joined(&mut self, room_id: &RoomId) -> bool {
         match self {
-            SelectedRoom::InvitedRoom { room_id: id, room_name } if id.0 == room_id => {
+            SelectedRoom::InvitedRoom { room_name } if room_name.room_id() == room_id => {
                 let name = room_name.clone();
                 *self = SelectedRoom::JoinedRoom {
-                    room_id: id.clone(),
                     room_name: name,
                 };
                 true

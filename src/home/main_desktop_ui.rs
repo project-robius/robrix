@@ -3,7 +3,7 @@ use matrix_sdk::{RoomDisplayName, ruma::OwnedRoomId};
 use tokio::sync::Notify;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SelectedRoom}, utils::room_name_or_id};
+use crate::{app::{AppState, AppStateAction, SelectedRoom}, utils::RoomName};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 live_design! {
@@ -130,13 +130,13 @@ impl MainDesktopUI {
         // Create a new tab for the room
         let (tab_bar, _pos) = dock.find_tab_bar_of_tab(id!(home_tab)).unwrap();
         let (kind, name) = match &room {
-            SelectedRoom::JoinedRoom { room_id, room_name }  => (
+            SelectedRoom::JoinedRoom { room_name }  => (
                 id!(room_screen),
-                room_name_or_id(room_name.clone().into_inner(), room_id),
+                room_name.to_string(),
             ),
-            SelectedRoom::InvitedRoom { room_id, room_name } => (
+            SelectedRoom::InvitedRoom { room_name } => (
                 id!(invite_screen),
-                room_name_or_id(room_name.clone().into_inner(), room_id),
+                room_name.to_string(),
             ),
         };
         let new_tab_widget = dock.create_and_select_tab(
@@ -154,18 +154,17 @@ impl MainDesktopUI {
         if let Some(new_widget) = new_tab_widget {
             self.room_order.push(room.clone());
             match &room {
-                SelectedRoom::JoinedRoom { room_id, room_name }  => {
+                SelectedRoom::JoinedRoom { room_name }  => {
                     new_widget.as_room_screen().set_displayed_room(
                         cx,
-                        room_id.clone().into(),
-                        room_name.as_ref().clone(),
+                        room_name.clone(),
                     );
                 }
-                SelectedRoom::InvitedRoom { room_id, room_name: _ } => {
+                SelectedRoom::InvitedRoom { room_name } => {
                     new_widget.as_invite_screen().set_displayed_invite(
                         cx,
-                        room_id.clone().into(),
-                        room.room_name().clone()
+                        room_name.room_id().clone(),
+                        room_name.display_name().clone()
                     );
                 }
             }
@@ -241,7 +240,7 @@ impl MainDesktopUI {
             cx,
             LiveId::from_str(room_id.as_str()),
             id!(room_screen),
-            Some(room_name_or_id(&room_name, &room_id)),
+            Some(RoomName::from((&room_name, &room_id)).to_string()),
             false,
         ) else {
             // Nothing we can really do here except log an error.
@@ -250,9 +249,10 @@ impl MainDesktopUI {
         };
 
         // Set the info to be displayed in the newly-replaced RoomScreen..
+        let combined_room_name = RoomName::new(room_name.clone(), room_id.clone());
         new_widget
             .as_room_screen()
-            .set_displayed_room(cx, room_id.clone(), room_name.clone());
+            .set_displayed_room(cx, combined_room_name);
 
         // Go through all existing `SelectedRoom` instances and replace the
         // `SelectedRoom::InvitedRoom`s with `SelectedRoom::JoinedRoom`s.
@@ -339,8 +339,8 @@ impl WidgetMatchEvent for MainDesktopUI {
                     // a redraw to be happening in order to draw the tab content.
                     self.focus_or_create_tab(cx, selected_room);
                 }
-                RoomsListAction::InviteAccepted { room_id, room_name } => {
-                    self.replace_invite_with_joined_room(cx, scope, room_id, room_name);
+                RoomsListAction::InviteAccepted { room_name } => {
+                    self.replace_invite_with_joined_room(cx, scope, room_name.room_id().clone(), room_name.display_name().clone());
                 }
                 RoomsListAction::None => { }
             }
@@ -360,18 +360,17 @@ impl WidgetMatchEvent for MainDesktopUI {
                         dock.load_state(cx, app_state.saved_dock_state.dock_items.clone());
                         for (head_live_id, (_, widget)) in dock.items().iter() {
                             match app_state.saved_dock_state.open_rooms.get(head_live_id) {
-                                Some(SelectedRoom::JoinedRoom { room_id, room_name }) => {
+                                Some(SelectedRoom::JoinedRoom { room_name }) => {
                                     widget.as_room_screen().set_displayed_room(
                                         cx,
-                                        room_id.clone().into(),
-                                        room_name.as_ref().clone(),
+                                        room_name.clone(),
                                     );
                                 }
-                                Some(SelectedRoom::InvitedRoom { room_id, room_name }) => {
+                                Some(SelectedRoom::InvitedRoom { room_name }) => {
                                     widget.as_invite_screen().set_displayed_invite(
                                         cx,
-                                        room_id.clone().into(),
-                                        room_name.as_ref().clone(),
+                                        room_name.room_id().clone(),
+                                        room_name.display_name().clone(),
                                     );
                                 }
                                 _ => { }

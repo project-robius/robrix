@@ -57,8 +57,8 @@ impl Widget for MainMobileUI {
                     RoomsListAction::Selected(_selected_room) => {}
                     // Because the MainMobileUI is drawn based on the AppState only,
                     // all we need to do is update the AppState here.
-                    RoomsListAction::InviteAccepted { room_id, .. } => {
-                        cx.action(AppStateAction::UpgradedInviteToJoinedRoom(room_id));
+                    RoomsListAction::InviteAccepted { room_name } => {
+                        cx.action(AppStateAction::UpgradedInviteToJoinedRoom(room_name.room_id().clone()));
                     }
                     RoomsListAction::None => {}
                 }
@@ -73,22 +73,22 @@ impl Widget for MainMobileUI {
         let show_invite: bool;
 
         match app_state.selected_room.as_ref() {
-            Some(SelectedRoom::JoinedRoom { room_id, room_name }) => {
+            Some(SelectedRoom::JoinedRoom { room_name }) => {
                 show_welcome = false;
                 show_room = true;
                 show_invite = false;
                 // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
                 self.view
                     .room_screen(ids!(room_screen))
-                    .set_displayed_room(cx, room_id.clone().into(), room_name.as_ref().clone());
+                    .set_displayed_room(cx, room_name.clone());
             }
-            Some(SelectedRoom::InvitedRoom { room_id, room_name }) => {
+            Some(SelectedRoom::InvitedRoom { room_name }) => {
                 show_welcome = false;
                 show_room = false;
                 show_invite = true;
                 self.view
                     .invite_screen(ids!(invite_screen))
-                    .set_displayed_invite(cx, room_id.clone().into(), room_name.clone().into());
+                    .set_displayed_invite(cx, room_name.room_id().clone().into(), room_name.display_name().clone());
             }
             None => {
                 show_welcome = true;

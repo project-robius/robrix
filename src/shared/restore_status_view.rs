@@ -93,22 +93,19 @@ impl RestoreStatusViewRef {
     /// is still being loaded from the homeserver.
     ///
     /// The `room_name` parameter is used to fill in the room name in the error message.
+    /// It automatically handles Empty names by falling back to the room ID via its Display impl.
     pub fn set_content(
         &self,
         cx: &mut Cx,
         all_rooms_loaded: bool,
-        room_name: RoomName,
-        room_id: Option<&RoomId>,
+        room_name: &RoomName,
     ) {
-        let Some(inner) = self.borrow() else { return };      
+        let Some(inner) = self.borrow() else { return };
         let restore_status_spinner = inner.view.view(ids!(restore_status_spinner));
         let restore_status_label = inner.view.label(ids!(restore_status_label));
         if all_rooms_loaded {
             restore_status_spinner.set_visible(cx, false);
-            let display_name = match room_id {
-                Some(id) => room_name.display_with_fallback(id),
-                None => room_name.to_string(),
-            };
+            let display_name = room_name.to_string();
             restore_status_label.set_text(
                 cx,
                 &format!(

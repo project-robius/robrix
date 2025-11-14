@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::{RoomDisplayName, ruma::OwnedRoomId};
 
-use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id, RoomName}};
+use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomName}};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -351,7 +351,7 @@ impl Widget for InviteScreen {
                     Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
-                            let room_label = room_name_or_id(&info.room_name, &info.room_id);
+                            let room_label = info.room_name.to_string();
                             let msg = utils::stringify_join_leave_error(error, Some(&room_label), true, true);
                             enqueue_popup_notification(PopupItem { message: msg, kind: PopupKind::Error, auto_dismissal_duration: None });
                         }
@@ -398,8 +398,10 @@ impl Widget for InviteScreen {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if !self.is_loaded {
             let mut restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
-            let room_id = self.room_id.as_ref().map(|id| id.as_ref());
-            restore_status_view.set_content(cx, self.all_rooms_loaded, self.room_name.clone().into(), room_id);
+            if let Some(room_id) = &self.room_id {
+                let room_name = RoomName::from((&self.room_name, room_id));
+                restore_status_view.set_content(cx, self.all_rooms_loaded, &room_name);
+            }
             return restore_status_view.draw(cx, scope);
         }
         let Some(info) = self.info.as_ref() else {
@@ -469,7 +471,7 @@ impl Widget for InviteScreen {
                 );
             }
         }
-        let invite_room_label = room_name_or_id(&info.room_name, &info.room_id);
+        let invite_room_label = info.room_name.to_string();
         room_view.label(ids!(room_name)).set_text(cx, &invite_room_label);
 
         // Third, set the buttons' text based on the invite state.
@@ -526,7 +528,7 @@ impl InviteScreen {
             self.info = Some(InviteDetails {
                 room_info: BasicRoomDetails {
                     room_id: room_id.clone(),
-                    room_name: invite.room_name.clone(),
+                    room_name: self.room_name.clone(),
                     room_avatar: invite.room_avatar.clone(),
                 },
                 inviter: invite.inviter_info.clone(),
@@ -537,13 +539,13 @@ impl InviteScreen {
             self.all_rooms_loaded = true;
             self.redraw(cx);
         }
+        let room_name = RoomName::from((self.room_name.clone(), room_id.clone()));
         self.view
             .restore_status_view(ids!(restore_status_view))
             .set_content(
                 cx,
                 self.all_rooms_loaded,
-                RoomName::from(self.room_name.clone()),
-                Some(room_id.as_ref()),
+                &room_name,
             );
         self.view
             .restore_status_view(ids!(restore_status_view))

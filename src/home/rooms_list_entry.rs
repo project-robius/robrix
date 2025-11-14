@@ -5,7 +5,7 @@ use crate::{
     room::FetchedRoomAvatar, shared::{
         avatar::AvatarWidgetExt,
         html_or_plaintext::HtmlOrPlaintextWidgetExt, unread_badge::UnreadBadgeWidgetExt as _,
-    }, utils::{self, relative_format, room_name_or_id}
+    }, utils::{self, relative_format}
 };
 
 use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListScopeProps};
@@ -259,10 +259,10 @@ impl Widget for RoomsListEntry {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if let Some(room_info) = scope.props.get::<JoinedRoomInfo>() {
-            self.room_id = Some(room_info.room_id.clone());
+            self.room_id = Some(room_info.room_name.room_id().clone());
         }
         else if let Some(room_info) = scope.props.get::<InvitedRoomInfo>() {
-            self.room_id = Some(room_info.room_id.clone());
+            self.room_id = Some(room_info.room_name.room_id().clone());
         }
 
         self.view.draw_walk(cx, scope, walk)
@@ -297,7 +297,7 @@ impl RoomsListEntryContent {
         cx: &mut Cx,
         room_info: &JoinedRoomInfo,
     ) {
-        let display_name = room_name_or_id(&room_info.room_name, &room_info.room_id);
+        let display_name = room_info.room_name.to_string();
         self.view.label(ids!(room_name)).set_text(cx, &display_name);
         if let Some((ts, msg)) = room_info.latest.as_ref() {
             if let Some(human_readable_date) = relative_format(*ts) {
@@ -324,7 +324,7 @@ impl RoomsListEntryContent {
         cx: &mut Cx,
         room_info: &InvitedRoomInfo,
     ) {
-        let display_name = room_name_or_id(&room_info.room_name, &room_info.room_id);
+        let display_name = room_info.room_name.to_string();
         self.view.label(ids!(room_name)).set_text(cx, &display_name);
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(ids!(timestamp)).set_text(cx, "");
