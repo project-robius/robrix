@@ -13,7 +13,7 @@ use matrix_sdk::RoomState;
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipDirection}, room_filter_input_bar::RoomFilterAction}, utils
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, room_filter_input_bar::RoomFilterAction}, utils
 };
 
 live_design! {
@@ -276,10 +276,10 @@ impl Widget for SpacesBarEntry {
                 &scope.path,
                 TooltipAction::HoverIn(this.space_name.clone(), CalloutTooltipOptions {
                     widget_rect: area.rect(cx),
-                    direction: if !is_desktop {
-                        TooltipDirection::Up
+                    position: if !is_desktop {
+                        TooltipPosition::Top
                     } else {
-                        TooltipDirection::Down
+                        TooltipPosition::Bottom
                     },
                     ..Default::default()
                 }),
