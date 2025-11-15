@@ -266,6 +266,7 @@ pub struct InviteScreen {
     /// (one from the JoinLeaveRoomModal, and one from this invite screen).
     #[rust] has_shown_confirmation: bool,
     /// The name (which includes ID) of the invited room, if one is currently selected.
+    /// `None` indicates that no invite is focused (e.g., nothing selected yet).
     #[rust] room_name: Option<RoomName>,
     #[rust] is_loaded: bool,
     #[rust] all_rooms_loaded: bool,
@@ -351,7 +352,7 @@ impl Widget for InviteScreen {
                     Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == info.room_name.room_id() => {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
-                            let room_label = info.room_name.to_string();
+                            let room_label = info.room_name.display_str().to_owned();
                             let msg = utils::stringify_join_leave_error(error, Some(&room_label), true, true);
                             enqueue_popup_notification(PopupItem { message: msg, kind: PopupKind::Error, auto_dismissal_duration: None });
                         }
@@ -470,8 +471,8 @@ impl Widget for InviteScreen {
                 );
             }
         }
-        let invite_room_label = info.room_name.to_string();
-        room_view.label(ids!(room_name)).set_text(cx, &invite_room_label);
+        let invite_room_label = info.room_name.display_str();
+        room_view.label(ids!(room_name)).set_text(cx, invite_room_label);
 
         // Third, set the buttons' text based on the invite state.
         let cancel_button = self.view.button(ids!(cancel_button));

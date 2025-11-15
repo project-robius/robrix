@@ -29,7 +29,7 @@ impl FilterableRoom for JoinedRoomInfo {
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        Cow::Owned(self.room_name.to_string())
+        Cow::Borrowed(self.room_name.display_str())
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -63,7 +63,7 @@ impl FilterableRoom for InvitedRoomInfo {
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        Cow::Owned(self.room_name.to_string())
+        Cow::Borrowed(self.room_name.display_str())
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -192,8 +192,8 @@ pub struct RoomDisplayFilterBuilder {
 ///     .by_room_id()
 ///     .by_room_name()
 ///     .sort_by(|a, b| {
-///         let name_a = a.room_name.as_ref().map_or("", |n| n.as_str());
-///         let name_b = b.room_name.as_ref().map_or("", |n| n.as_str());
+///         let name_a = a.room_name.as_ref().map_or("", |n| n.display_str());
+///         let name_b = b.room_name.as_ref().map_or("", |n| n.display_str());
 ///         name_a.cmp(name_b)
 ///     })
 ///     .build();

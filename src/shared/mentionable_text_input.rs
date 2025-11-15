@@ -488,7 +488,7 @@ impl MentionableTextInput {
         let avatar_ref = room_mention_item.avatar(ids!(user_info.room_avatar));
 
         // Get room avatar fallback text from room name (with automatic ID fallback)
-        let room_label = room_props.room_name.to_string();
+        let room_label = room_props.room_name.display_str();
         let room_name_first_char = room_label
             .graphemes(true)
             .find(|g| *g != "#" && *g != "!" && *g != "@")

@@ -34,7 +34,7 @@ use crate::{
     shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomName}
+    sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, IntoRoomName, MEDIA_THUMBNAIL_FORMAT, RoomName}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -554,6 +554,7 @@ pub struct RoomScreen {
     #[deref] view: View,
 
     /// The name (which includes ID) of the currently-shown room, if any.
+    /// `None` only when no room is selected or the timeline is waiting for data.
     #[rust] room_name: Option<RoomName>,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
@@ -802,7 +803,7 @@ impl Widget for RoomScreen {
 
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_name: RoomName::new(room_display_name, room_id),
+                    room_name: (room_display_name, room_id).into_room_name(),
                     room_members,
                     room_avatar_url,
                 }
@@ -1087,7 +1088,7 @@ impl RoomScreen {
 
     fn current_room_label(&self) -> String {
         self.current_room_name()
-            .map(|name| name.to_string())
+            .map(|name| name.display_str().to_owned())
             .unwrap_or_else(|| "Unknown Room".to_string())
     }
 
@@ -1464,7 +1465,7 @@ impl RoomScreen {
                                 },
                                 room_id: room_name.room_id().clone(),
                             },
-                            room_name: room_name.to_string(),
+                            room_name: room_name.display_str().to_owned(),
                             // TODO: use the extra `via` parameters
                             room_member: None,
                         },

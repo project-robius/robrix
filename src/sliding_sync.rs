@@ -38,7 +38,7 @@ use crate::{
         html_or_plaintext::MatrixLinkPillState,
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
-    }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomName, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
+    }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, IntoRoomName, RoomName, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -2277,7 +2277,7 @@ async fn update_room(
                 .unwrap_or(RoomDisplayName::Empty);
 
             enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
-                new_room_name: RoomName::new(new_display_name, new_room_id.clone()),
+                new_room_name: (new_display_name, new_room_id.clone()).into_room_name(),
             });
         }
 
@@ -2440,7 +2440,7 @@ async fn add_new_room(
                 .display_name
                 .clone()
                 .unwrap_or(RoomDisplayName::Empty);
-            let room_name = RoomName::new(room_display_name, new_room.room_id.clone());
+            let room_name = (room_display_name, new_room.room_id.clone()).into_room_name();
             let room_avatar = room_avatar(&new_room.room, room_name.clone()).await;
 
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
@@ -2521,7 +2521,7 @@ async fn add_new_room(
         .display_name
         .clone()
         .unwrap_or(RoomDisplayName::Empty);
-    let room_name = RoomName::new(room_display_name, new_room.room_id.clone());
+    let room_name = (room_display_name, new_room.room_id.clone()).into_room_name();
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
         latest,
         tags: new_room.tags.clone().unwrap_or_default(),
@@ -3156,10 +3156,11 @@ async fn update_latest_event(room: &Room) {
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
     let room_id = room.room_id.clone();
-    let room_name = RoomName::new(
+    let room_name = (
         room.display_name.clone().unwrap_or(RoomDisplayName::Empty),
         room.room_id.clone()
-    );
+    )
+        .into_room_name();
     let inner_room = room.room.clone();
     Handle::current().spawn(async move {
         let avatar = room_avatar(&inner_room, room_name).await;

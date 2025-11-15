@@ -297,8 +297,8 @@ impl RoomsListEntryContent {
         cx: &mut Cx,
         room_info: &JoinedRoomInfo,
     ) {
-        let display_name = room_info.room_name.to_string();
-        self.view.label(ids!(room_name)).set_text(cx, &display_name);
+        let display_name = room_info.room_name.display_str();
+        self.view.label(ids!(room_name)).set_text(cx, display_name);
         if let Some((ts, msg)) = room_info.latest.as_ref() {
             if let Some(human_readable_date) = relative_format(*ts) {
                 self.view
@@ -324,8 +324,8 @@ impl RoomsListEntryContent {
         cx: &mut Cx,
         room_info: &InvitedRoomInfo,
     ) {
-        let display_name = room_info.room_name.to_string();
-        self.view.label(ids!(room_name)).set_text(cx, &display_name);
+        let display_name = room_info.room_name.display_str();
+        self.view.label(ids!(room_name)).set_text(cx, display_name);
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(ids!(timestamp)).set_text(cx, "");
         let inviter_string = match &room_info.inviter_info {

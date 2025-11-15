@@ -754,10 +754,26 @@ impl RoomName {
         &self.room_id
     }
 
+    /// Returns the preferred display string or falls back to the room ID.
+    ///
+    /// This is the string that should be shown in user-facing UI.
+    #[inline]
+    pub fn display_str(&self) -> &str {
+        room_display_name_str(&self.display_name)
+            .unwrap_or_else(|| self.room_id.as_str())
+    }
+
+    /// Returns the underlying room ID as a string slice.
+    #[inline]
+    pub fn room_id_str(&self) -> &str {
+        self.room_id.as_str()
+    }
+
     /// Get the display name as a string, if it's not Empty.
     ///
     /// Returns `None` for `RoomDisplayName::Empty`.
     /// For other variants (Named, Aliased, Calculated, EmptyWas), returns the string content.
+    /// Prefer [`Self::display_str`] for user-facing copy that should fall back to the room ID.
     pub fn as_str(&self) -> Option<&str> {
         room_display_name_str(&self.display_name)
     }
@@ -794,6 +810,12 @@ impl AsRef<RoomId> for RoomName {
     }
 }
 
+impl AsRef<OwnedRoomId> for RoomName {
+    fn as_ref(&self) -> &OwnedRoomId {
+        &self.room_id
+    }
+}
+
 /// Display implementation that automatically handles Empty names by falling back to room ID.
 ///
 /// - `Empty` → displays room ID
@@ -818,6 +840,51 @@ impl From<(RoomDisplayName, OwnedRoomId)> for RoomName {
 impl From<(&RoomDisplayName, &OwnedRoomId)> for RoomName {
     fn from((display_name, room_id): (&RoomDisplayName, &OwnedRoomId)) -> Self {
         Self::new(display_name.clone(), room_id.clone())
+    }
+}
+
+/// Types that can be converted into a [`RoomName`].
+pub trait IntoRoomName {
+    fn into_room_name(self) -> RoomName;
+}
+
+impl IntoRoomName for RoomName {
+    fn into_room_name(self) -> RoomName {
+        self
+    }
+}
+
+impl IntoRoomName for &RoomName {
+    fn into_room_name(self) -> RoomName {
+        self.clone()
+    }
+}
+
+impl IntoRoomName for (RoomDisplayName, OwnedRoomId) {
+    fn into_room_name(self) -> RoomName {
+        RoomName::from(self)
+    }
+}
+
+impl<'a> IntoRoomName for (&'a RoomDisplayName, &'a OwnedRoomId) {
+    fn into_room_name(self) -> RoomName {
+        RoomName::from(self)
+    }
+}
+
+impl IntoRoomName for &Room {
+    fn into_room_name(self) -> RoomName {
+        RoomName::from_room(self)
+    }
+}
+
+impl IntoRoomName for (&Room, &OwnedRoomId) {
+    fn into_room_name(self) -> RoomName {
+        let (room, room_id) = self;
+        RoomName::new(
+            room.cached_display_name().unwrap_or(RoomDisplayName::Empty),
+            room_id.clone(),
+        )
     }
 }
 
@@ -953,6 +1020,48 @@ pub fn avatar_from_room_name(room_name: Option<&str>) -> FetchedRoomAvatar {
         .map(ToString::to_string)
     ).unwrap_or_else(|| String::from("?"));
     FetchedRoomAvatar::Text(first)
+}
+
+#[cfg(test)]
+mod tests_room_name {
+    use super::*;
+    use std::convert::TryFrom;
+    use makepad_widgets::makepad_micro_serde::DeRon;
+    use matrix_sdk::RoomDisplayName;
+    use matrix_sdk::ruma::OwnedRoomId;
+
+    fn sample_room_id(raw: &str) -> OwnedRoomId {
+        OwnedRoomId::try_from(raw).expect("valid room id")
+    }
+
+    #[test]
+    fn display_str_prefers_display_name() {
+        let room_id = sample_room_id("!preferred:example.org");
+        let room_name = RoomName::new(RoomDisplayName::Named("Hello World".into()), room_id.clone());
+        assert_eq!(room_name.display_str(), "Hello World");
+        assert_eq!(room_name.room_id_str(), room_id.as_str());
+    }
+
+    #[test]
+    fn display_str_falls_back_to_id_when_empty() {
+        let room_id = sample_room_id("!fallback:example.org");
+        let room_name = RoomName::new(RoomDisplayName::Empty, room_id.clone());
+        assert_eq!(room_name.display_str(), room_id.as_str());
+        assert_eq!(room_name.to_string(), room_id.as_str());
+    }
+
+    #[test]
+    fn ser_ron_round_trip_preserves_room_name() {
+        let room_id = sample_room_id("!serialize:example.org");
+        let original = RoomName::new(
+            RoomDisplayName::EmptyWas("Test".into()),
+            room_id,
+        );
+        let mut state = SerRonState { out: String::new() };
+        original.ser_ron(0, &mut state);
+        let restored = RoomName::deserialize_ron(&state.out).expect("round trip succeeds");
+        assert_eq!(restored, original);
+    }
 }
 
 #[cfg(test)]
