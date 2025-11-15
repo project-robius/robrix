@@ -14,7 +14,6 @@ use crate::{
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::callout_tooltip::{
-        CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
     }, sliding_sync::current_user_id, utils::{
@@ -343,12 +342,7 @@ impl MatchEvent for App {
 
             // Handle actions for showing or hiding the tooltip.
             match action.as_widget_action().cast() {
-                TooltipAction::HoverIn {
-                    widget_rect,
-                    text,
-                    text_color,
-                    bg_color,
-                } => {
+                TooltipAction::HoverIn(text, callout_tooltip_options) => {
                     // Don't show any tooltips if the message context menu is currently shown.
                     if self.ui.new_message_context_menu(ids!(new_message_context_menu)).is_currently_shown(cx) {
                         self.ui.callout_tooltip(ids!(app_tooltip)).hide(cx);
@@ -357,11 +351,7 @@ impl MatchEvent for App {
                         self.ui.callout_tooltip(ids!(app_tooltip)).show_with_options(
                             cx,
                             &text,
-                            CalloutTooltipOptions {
-                                widget_rect,
-                                text_color,
-                                bg_color,
-                            },
+                            callout_tooltip_options,
                         );
                     }
                     continue;

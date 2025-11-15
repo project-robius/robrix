@@ -39,7 +39,7 @@ use crate::{
         user_profile_cache::{self, UserProfileUpdate},
     }, shared::{
         avatar::AvatarWidgetExt,
-        callout_tooltip::TooltipAction,
+        callout_tooltip::{CalloutTooltipOptions, TooltipAction},
         styles::*,
         verification_badge::VerificationBadgeWidgetExt,
     }, sliding_sync::current_user_id, utils
@@ -371,12 +371,11 @@ impl Widget for ProfileIcon {
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    TooltipAction::HoverIn {
+                    TooltipAction::HoverIn(text, CalloutTooltipOptions {
                         widget_rect: rect,
-                        text,
                         bg_color,
-                        text_color: None,
-                    },
+                        ..Default::default()
+                    }),
                 );
             }
             Hit::FingerHoverOut(_) => {
