@@ -1072,7 +1072,7 @@ pub struct MetaData {
     pub sender: Option<String>,
     pub timestamp: Option<DateTime<Local>>,
     pub image_name: String,
-    pub image_size: i32,
+    pub image_size: u64,
 }
 
 /// Maximum image name length to be displayed
@@ -1106,12 +1106,7 @@ fn truncate_image_name(image_name: &str) -> String {
 }
 
 /// Convert bytes to human-readable file size format
-fn format_file_size(bytes: i32) -> String {
-    if bytes < 0 {
-        return "Unknown size".to_string();
-    }
-
-    let bytes = bytes as u64;
+fn format_file_size(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
 
     if bytes == 0 {

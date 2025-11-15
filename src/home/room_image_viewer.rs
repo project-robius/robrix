@@ -45,8 +45,8 @@ pub fn populate_matrix_image_modal(
     }
 }
 
-/// Extracts image name and size from an event timeline item.
-pub fn extract_image_info(event_tl_item: &EventTimelineItem) -> (String, i32) {
+/// Gets image name and file size in bytes from an event timeline item.
+pub fn get_image_name_and_filesize(event_tl_item: &EventTimelineItem) -> (String, u64) {
     if let Some(message) = event_tl_item.content().as_message() {
         if let MessageType::Image(image_content) = message.msgtype() {
             let name = message.body().to_string();
@@ -54,21 +54,33 @@ pub fn extract_image_info(event_tl_item: &EventTimelineItem) -> (String, i32) {
                 .info
                 .as_ref()
                 .and_then(|info| info.size)
-                .map(|s| i32::try_from(s).unwrap_or_default())
+                .map(|s| u64::try_from(s).unwrap_or_default())
                 .unwrap_or(0);
-            (name, size)
-        } else {
-            ("Unknown Image".to_string(), 0)
+            return (name, size);
         }
-    } else {
-        ("Unknown Image".to_string(), 0)
     }
+    ("Unknown Image".to_string(), 0)
 }
 
-/// Condensed message does not have a profile, so we need to find the previous portal list item.
-/// Searches backwards for a non-empty display name and avatar in previous portal list items.
-/// Mutates display_name and avatar_ref.
-/// Returns when first non-empty display name is found.
+/// Finds the most recent non-empty profile in a condensed message by searching backwards.
+///
+/// Condensed messages don't have their own profile, so this function searches previous
+/// portal list items to find the most recent non-empty display name and avatar.
+///
+/// The search starts from `current_index - 1` and moves backwards through the portal list.
+/// Stops and returns when the first non-empty display name is found.
+///
+/// # Mutates
+///
+/// * `display_name` - Updated with the found non-empty display name
+/// * `avatar_ref` - Updated with the corresponding avatar reference
+///
+/// # Parameters
+///
+/// * `portal_list` - Reference to the portal list to search through
+/// * `current_index` - Starting index (searches backwards from this position)
+/// * `display_name` - Output parameter for the found display name
+/// * `avatar_ref` - Output parameter for the found avatar reference
 pub fn find_previous_profile_in_condensed_message(
     portal_list: &PortalListRef,
     mut current_index: usize,
