@@ -12,11 +12,9 @@ use crate::{media_cache::{MediaCache, MediaCacheEntry}, shared::{avatar::{Avatar
 
 /// Populates the image viewer modal with the given media content.
 ///
-/// If the media is already cached, it will be immediately displayed.
-/// If the media is not cached, it will be fetched from the server.
-/// If the media fetch fails, an error message will be displayed.
-///
-/// This function requires passing in a reference to `Cx`, which isn't used, but acts as a guarantee that this function must only be called by the main UI thread.
+/// * If the media is already cached, it will be immediately displayed.
+/// * If the media is not cached, it will be fetched from the server.
+/// * If the media fetch fails, an error message will be displayed.
 pub fn populate_matrix_image_modal(
     cx: &mut Cx,
     mxc_uri: OwnedMxcUri,
