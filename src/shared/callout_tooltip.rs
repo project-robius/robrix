@@ -15,7 +15,6 @@ live_design! {
             flow: Overlay,
             width: Fit,
             height: Fit,
-            margin: { left: (0.0), top: (0.0) },
 
             rounded_view = <RoundedView> {
                 width: Fit,
@@ -43,20 +42,21 @@ live_design! {
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         let rect_size = self.rect_size;
+                        let triangle_height = self.triangle_height;
                         // If there is no expected_dimension_x, it means the tooltip size is not calculated yet, do not draw anything
                         if self.expected_dimension_x == 0.0 {
                             return sdf.result;
                         }
                         // Draw rounded box with border equals to triangle_height.
                         sdf.box(
-                            self.triangle_height,
-                            self.triangle_height,
-                            rect_size.x - (self.triangle_height * 2.0),
-                            rect_size.y - (self.triangle_height * 2.0),
+                            triangle_height,
+                            triangle_height,
+                            rect_size.x - (triangle_height * 2.0),
+                            rect_size.y - (triangle_height * 2.0),
                             max(1.0, self.border_radius)
                         )
                         sdf.fill(self.background_color);
-                        let triangle_height = self.triangle_height;                        
+               
                         let mut vertex1 = vec2(0.0, 0.0);
                         let mut vertex2 = vec2(0.0, 0.0);
                         let mut vertex3 = vec2(0.0, 0.0);
@@ -180,6 +180,7 @@ impl CalloutTooltip {
     pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, mut options: CalloutTooltipOptions) {
         let mut tooltip = self.view.tooltip(ids!(tooltip));
         let pos = options.widget_rect.pos;
+        let size = options.widget_rect.size;
         // When there is line break in the text label, the label's width follows the length of the last line.
         // When the previous lines is longer than the last line, text will be cut off.
         // Hence we need to lengthen the last line to be the same length as the longest line.
@@ -204,7 +205,7 @@ impl CalloutTooltip {
         match options.position {
             TooltipPosition::Top => {
                 tooltip_pos.y =
-                    options.widget_rect.pos.y - max(expected_dimension.y, options.widget_rect.size.y);
+                    options.widget_rect.pos.y - max(expected_dimension.y, size.y);
                 callout_position = 180.0;
                 if tooltip_pos.x == screen_size.x - expected_dimension.x && tooltip_pos.x < 0.0 {
                     fixed_width = true;                    
@@ -215,7 +216,7 @@ impl CalloutTooltip {
                 if tooltip_pos.y == screen_size.y - expected_dimension.y {
                     // If the tooltip is too close to the bottom, position it above the widget
                     tooltip_pos.y = options.widget_rect.pos.y
-                        - max(expected_dimension.y, options.widget_rect.size.y);
+                        - max(expected_dimension.y, size.y);
                     callout_position = 180.0;
                     options.position = TooltipPosition::Top;
                 } else {
