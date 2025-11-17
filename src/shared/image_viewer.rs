@@ -38,6 +38,7 @@ pub fn get_png_or_jpg_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageEr
 }
 
 /// Duration for rotation animations in seconds.
+/// 
 /// This value should be consistent with the duration value in set in the animator.
 const ROTATION_ANIMATION_DURATION: f64 = 1.0;
 
@@ -834,7 +835,8 @@ impl ImageViewer {
     }
 
     /// Displays an image in the image viewer widget using the provided texture.
-    /// `texture` is an optional `Texture` that can be set to display an image. If `None`, the image is cleared.
+    /// 
+    /// `Texture` is an optional `Texture` that can be set to display an image. If `None`, the image is cleared.
     pub fn display_using_texture(&mut self, cx: &mut Cx, texture: Option<Texture>) {
         let rotated_image = self.rotated_image(ids!(rotated_image));
         let (width, height) = texture
