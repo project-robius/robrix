@@ -86,7 +86,7 @@ pub enum ImageViewerError {
 /// The strings returned by this function will be appropriate for display in a label or similar widget.
 pub fn image_viewer_error_to_string(error: &ImageViewerError) -> &str {
     match error {
-        ImageViewerError::NotFound => "Full image is not found",
+        ImageViewerError::NotFound => "Full image was not found",
         ImageViewerError::BadData => "Image appears to be empty or corrupted",
         ImageViewerError::UnsupportedFormat => "This image format isn't supported",
         ImageViewerError::ConnectionFailed => "Check your internet connection",
