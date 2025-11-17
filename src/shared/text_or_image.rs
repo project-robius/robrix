@@ -4,6 +4,7 @@
 //! or to display an error message if the image fails to load, etc.
 
 use makepad_widgets::{image_cache::ImageCacheImpl, *};
+use ruma::events::room::MediaSource;
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -124,7 +125,7 @@ impl TextOrImage {
     ///   * If successful, the `image_set_function` should return the size of the image
     ///     in pixels as a tuple, `(width, height)`.
     ///   * If `image_set_function` returns an error, no change is made to this `TextOrImage`.
-    pub fn show_image<F, E>(&mut self, cx: &mut Cx, source_url: Option<String>, image_set_function: F) -> Result<(), E>
+    pub fn show_image<F, E>(&mut self, cx: &mut Cx, source_url: Option<MediaSource>, image_set_function: F) -> Result<(), E>
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
         let image_ref = self.view.image(ids!(image_view.image));
@@ -166,7 +167,7 @@ impl TextOrImageRef {
     }
 
     /// See [TextOrImage::show_image()].
-    pub fn show_image<F, E>(&self, cx: &mut Cx, source_url: Option<String>, image_set_function: F) -> Result<(), E>
+    pub fn show_image<F, E>(&self, cx: &mut Cx, source_url: Option<MediaSource>, image_set_function: F) -> Result<(), E>
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
         if let Some(mut inner) = self.borrow_mut() {
@@ -198,31 +199,29 @@ impl TextOrImageRef {
     ///
     /// Note that this function will return `None` if the `TextOrImage` widget is not yet laid out.
     pub fn get_texture(&self, _cx: &mut Cx) -> Option<Texture> {
-        if let Some(inner) = self.borrow() {
-            if let Some(image_inner) = inner.view.image(ids!(image_view.image)).borrow() {
-                image_inner.get_texture(0).clone()
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+        self.borrow().and_then(|inner| {
+            inner
+                .view
+                .image(ids!(image_view.image))
+                .borrow()
+                .and_then(|image_inner| image_inner.get_texture(0).clone())
+        })
     }
 }
 
 /// Whether a `TextOrImage` instance is currently displaying text or an image.
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone)]
 pub enum TextOrImageStatus {
     #[default]
     Text,
     /// Image source URL stored in this variant to be used 
-    Image(Option<String>),
+    Image(Option<MediaSource>),
 }
 
 /// Actions emitted by the `TextOrImage` based on user interaction with it.
 #[derive(Debug, Clone, DefaultNone)]
 pub enum TextOrImageAction {
     /// The user has clicked the `TextOrImage`, with source URL stored in this variant.
-    Clicked(Option<String>),
+    Clicked(Option<MediaSource>),
     None
 }

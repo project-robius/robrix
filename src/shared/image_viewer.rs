@@ -12,7 +12,7 @@ use makepad_widgets::{
     *,
 };
 
-use crate::shared::{avatar::{AvatarRef, AvatarWidgetExt, AvatarWidgetRefExt}, timestamp::TimestampWidgetRefExt};
+use crate::shared::{avatar::{AvatarRef, AvatarWidgetExt}, timestamp::TimestampWidgetRefExt};
 
 /// Loads the given image `data` into an `ImageBuffer` as either a PNG or JPEG, using the `imghdr` library to determine which format it is.
 ///
@@ -27,11 +27,9 @@ pub fn get_png_or_jpg_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageEr
             ImageBuffer::from_jpg(&data)
         },
         Some(_unsupported) => {
-            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
             Err(ImageError::UnsupportedFormat)
         }
         None => {
-            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
             Err(ImageError::UnsupportedFormat)
         }
     }
@@ -69,22 +67,14 @@ impl Default for Config {
 /// Error types for image loading operations
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ImageViewerError {
-    /// Image not found
     NotFound,
-    /// Access denied
     Unauthorized,
-    /// Connection failed
     ConnectionFailed,
-    /// Bad or corrupted data
     BadData,
-    /// Server error
     ServerError,
-    /// Unsupported format
     UnsupportedFormat,
-    /// Unknown error
     Unknown,
-    /// Image loading timed out
-    Timeout,
+    Offline,
 }
 
 /// Returns a human-readable string describing the given ImageViewerError.
@@ -103,7 +93,7 @@ pub fn image_viewer_error_to_string(error: &ImageViewerError) -> &str {
         ImageViewerError::Unauthorized => "You don't have permission to view this image",
         ImageViewerError::ServerError => "Server temporarily unavailable",
         ImageViewerError::Unknown => "Unable to load image",
-        ImageViewerError::Timeout => "Timed out loading this image",
+        ImageViewerError::Offline => "Please reconnect your internet to load the image",
     }
 }
 
@@ -181,7 +171,7 @@ live_design! {
             color: (COLOR_PRIMARY)
         }
         draw_icon: {
-            svg_file: (ICON_CLOCKWISE),
+            svg_file: (ICON_ROTATE_CW),
             fn get_color(self) -> vec4 {
                 return #x0;
             }
@@ -229,7 +219,7 @@ live_design! {
 
                 rotation_button_anti_clockwise = <Rotation_Button> {
                     draw_icon: {
-                        svg_file: (ICON_CLOCKWISE_ANTI),
+                        svg_file: (ICON_ROTATE_CCW),
                         fn get_color(self) -> vec4 {
                             return #x0;
                         }
@@ -622,35 +612,33 @@ impl Widget for ImageViewer {
         if let Some(_timer) = self.timer.is_event(event) {
             self.is_animating_rotation = false;
         }
-        if let Event::Signal = event {
-            let mut to_remove = false;
-            if let Some((_background_task_id, receiver)) = &mut self.receiver {
-                match receiver.try_recv() {
-                    Ok(Ok(image_buffer)) => {
-                        let rotated_image = self.view.rotated_image(ids!(rotated_image));
-                        let texture = image_buffer.into_new_texture(cx);
-                        rotated_image.set_texture(cx, Some(texture));
-                        to_remove = true;
-                        cx.action(ImageViewerAction::Show(
-                            LoadState::FinishedBackgroundDecoding,
-                        ));
-                    }
-                    Ok(Err(error)) => {
-                        let error = match error {
-                            ImageError::JpgDecode(_) | ImageError::PngDecode(_) => {
-                                ImageViewerError::UnsupportedFormat
-                            }
-                            ImageError::EmptyData => ImageViewerError::BadData,
-                            ImageError::PathNotFound(_) => ImageViewerError::NotFound,
-                            ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
-                            _ => ImageViewerError::BadData,
-                        };
-                        cx.action(ImageViewerAction::Show(LoadState::Error(error)));
-                    }
-                    Err(_) => {}
+        if let (Event::Signal, Some((_background_task_id, receiver))) = (event, &mut self.receiver) {
+            let mut remove_receiver = false;
+            match receiver.try_recv() {
+                Ok(Ok(image_buffer)) => {
+                    let rotated_image = self.view.rotated_image(ids!(rotated_image));
+                    let texture = image_buffer.into_new_texture(cx);
+                    rotated_image.set_texture(cx, Some(texture));
+                    remove_receiver = true;
+                    cx.action(ImageViewerAction::Show(
+                        LoadState::FinishedBackgroundDecoding,
+                    ));
                 }
+                Ok(Err(error)) => {
+                    let error = match error {
+                        ImageError::JpgDecode(_) | ImageError::PngDecode(_) => {
+                            ImageViewerError::UnsupportedFormat
+                        }
+                        ImageError::EmptyData => ImageViewerError::BadData,
+                        ImageError::PathNotFound(_) => ImageViewerError::NotFound,
+                        ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
+                        _ => ImageViewerError::BadData,
+                    };
+                    cx.action(ImageViewerAction::Show(LoadState::Error(error)));
+                }
+                Err(_) => {}
             }
-            if to_remove {
+            if remove_receiver {
                 self.receiver = None;
             }
         }
@@ -763,10 +751,10 @@ impl ImageViewer {
                 .rotated_image(ids!(rotated_image))
                 .set_texture(cx, Some(texture.clone()));
             self.view.rotated_image(ids!(rotated_image)).redraw(cx);
-            self.view
-                .image(ids!(metadata_view.top_left_container.avatar.img_view.img))
-                .set_texture(cx, Some(texture));
+            
         }
+        self.avatar_ref = None;
+        self.avatar_placeholder_rect = None;
         self.animator_cut(cx, ids!(mode.upright));
         self.view
             .rotated_image(ids!(rotated_image_container.rotated_image))
@@ -776,9 +764,6 @@ impl ImageViewer {
                     draw_bg: { scale: 1.0 }
                 },
             );
-        self.view
-            .label(ids!(metadata_view.top_left_container.avatar.text_view.text))
-            .set_text(cx, "?");
     }
 
     /// Updates the shader uniforms of the rotated image widget with the current rotation,
@@ -998,7 +983,7 @@ impl ImageViewer {
     pub fn set_metadata(&mut self, cx: &mut Cx, metadata: &MetaData) {
         let meta_view = self.view.view(ids!(metadata_view));
         let truncated_name = truncate_image_name(&metadata.image_name);
-        let human_readable_size = format_file_size(metadata.image_size);
+        let human_readable_size = format_file_size(metadata.image_file_size);
         let display_text = format!("{} ({})", truncated_name, human_readable_size);
         meta_view
             .label(ids!(image_name_and_size))
@@ -1105,7 +1090,8 @@ pub struct MetaData {
     pub sender: Option<String>,
     pub timestamp: Option<DateTime<Local>>,
     pub image_name: String,
-    pub image_size: u64,
+    // Image size in bytes
+    pub image_file_size: u64,
 }
 
 /// Maximum image name length to be displayed

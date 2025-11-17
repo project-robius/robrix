@@ -1347,12 +1347,11 @@ impl RoomScreen {
                     // Store room members directly in TimelineUiState
                     tl.room_members = Some(Arc::new(members));
                 },
-                TimelineUpdate::MediaFetched(media_request_parameter) => {
+                TimelineUpdate::MediaFetched(request) => {
                     log!("process_timeline_updates(): media fetched for room {}", tl.room_id);
                     // Set Image to image viewer modal if the media is not a thumbnail.
-                    let Some(request) = media_request_parameter else { continue };
-                    if let (MediaFormat::File, MediaSource::Plain(mxc_uri)) = (request.format, request.source) {
-                        populate_matrix_image_modal(cx, mxc_uri, &mut tl.media_cache);
+                    if let (MediaFormat::File, media_source) = (request.format, request.source) {
+                        populate_matrix_image_modal(cx, media_source, &mut tl.media_cache);
                     }
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
@@ -1420,6 +1419,7 @@ impl RoomScreen {
                         .update_tombstone_footer(cx, &tl.room_id, Some(&successor_room_details));
                     tl.tombstone_info = Some(successor_room_details);
                 }
+                TimelineUpdate::LinkPreviewFetched => {}
             }
         }
 
@@ -1568,15 +1568,15 @@ impl RoomScreen {
     fn handle_image_click(
         &mut self,
         cx: &mut Cx,
-        mxc_uri: Option<String>,
+        mxc_uri: Option<MediaSource>,
         texture: std::rc::Rc<Option<Texture>>,
-        index: usize,
+        item_id: usize,
     ) {
-        let Some(mxc_uri_string) = mxc_uri else {
+        let Some(media_source) = mxc_uri else {
             return;
         };
         let Some(tl_state) = self.tl_state.as_mut() else { return };
-        let Some(event_tl_item) = tl_state.items.get(index).and_then(|item| item.as_event()) else { return };
+        let Some(event_tl_item) = tl_state.items.get(item_id).and_then(|item| item.as_event()) else { return };
         let avatar_ref = WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar();
         let (username, _) = avatar_ref.set_avatar_and_get_username(
             cx,
@@ -1587,21 +1587,20 @@ impl RoomScreen {
         );
 
         let timestamp_millis = event_tl_item.timestamp();
-        let (image_name, image_size) = get_image_name_and_filesize(event_tl_item);
+        let (image_name, image_file_size) = get_image_name_and_filesize(event_tl_item);
 
         cx.action(ImageViewerAction::Show(LoadState::Loading(
             texture.clone(),
             Some(MetaData {
                 sender: Some(username),
                 image_name,
-                image_size,
+                image_file_size,
                 timestamp: unix_time_millis_to_datetime(timestamp_millis),
                 avatar_ref: Some(avatar_ref),
             }),
         )));
 
-        let mxc_uri = OwnedMxcUri::from(mxc_uri_string);
-        populate_matrix_image_modal(cx, mxc_uri, &mut tl_state.media_cache);
+        populate_matrix_image_modal(cx, media_source, &mut tl_state.media_cache);
     }
 
 
@@ -2475,7 +2474,7 @@ pub enum TimelineUpdate {
     },
     /// A notice with an option of Media Request Parameters that one or more requested media items (images, videos, etc.)
     /// that should be displayed in this timeline have now been fetched and are available.
-    MediaFetched(Option<MediaRequestParameters>),
+    MediaFetched(MediaRequestParameters),
     /// A notice that one or more members of a this room are currently typing.
     TypingUsers {
         /// The list of users (their displayable name) who are currently typing in this room.
@@ -2496,6 +2495,8 @@ pub enum TimelineUpdate {
     /// A notice that the given room has been tombstoned (closed)
     /// and replaced by the given successor room.
     Tombstoned(SuccessorRoomDetails),
+    /// A notice that link preview data for a URL has been fetched and is now available.
+    LinkPreviewFetched,
 }
 
 thread_local! {
@@ -3345,7 +3346,7 @@ fn populate_image_message_content(
     let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
-                let show_image_result = text_or_image_ref.show_image(cx, Some(mxc_uri.to_string()),|cx, img| {
+                let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri)),|cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
@@ -3361,7 +3362,7 @@ fn populate_image_message_content(
             (MediaCacheEntry::Requested, _media_format) => {
                 // If the image is being fetched, we try to show its blurhash.
                 if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
-                    let show_image_result = text_or_image_ref.show_image(cx, Some(mxc_uri.to_string()), |cx, img| {
+                    let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri)), |cx, img| {
                         let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else {
                             return Err(image_cache::ImageError::EmptyData)
                         };

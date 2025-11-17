@@ -115,7 +115,7 @@ impl Widget for RoomsListHeader {
                                 kind: PopupKind::Error,
                             });
                             // Since there is no timeout for fetching media, send an action to ImageViewer when syncing is offline.
-                            cx.action(ImageViewerAction::Show(LoadState::Error(ImageViewerError::Timeout)));
+                            cx.action(ImageViewerAction::Show(LoadState::Error(ImageViewerError::Offline)));
                         }
                         self.sync_state = new_state.clone();
                         self.redraw(cx);

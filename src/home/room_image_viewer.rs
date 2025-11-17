@@ -1,10 +1,9 @@
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use matrix_sdk::{
-    media::MediaFormat, ruma::{
-        events::room::message::MessageType,
-        OwnedMxcUri
-    }
+    media::MediaFormat, ruma::
+        events::room::{message::MessageType, MediaSource}
+    
 };
 use reqwest::StatusCode;
 
@@ -17,9 +16,12 @@ use crate::{media_cache::{MediaCache, MediaCacheEntry}, shared::image_viewer::{I
 /// * If the media fetch fails, an error message will be displayed.
 pub fn populate_matrix_image_modal(
     cx: &mut Cx,
-    mxc_uri: OwnedMxcUri,
+    media_source: MediaSource,
     media_cache: &mut MediaCache,
 ) {
+    let MediaSource::Plain(mxc_uri) = media_source else {
+        return;
+    };
     // Try to get media from cache or trigger fetch
     let media_entry = media_cache.try_get_media_or_fetch(mxc_uri.clone(), MediaFormat::File);
 
@@ -34,7 +36,6 @@ pub fn populate_matrix_image_modal(
                 StatusCode::INTERNAL_SERVER_ERROR => ImageViewerError::ConnectionFailed,
                 StatusCode::PARTIAL_CONTENT => ImageViewerError::BadData,
                 StatusCode::UNAUTHORIZED => ImageViewerError::Unauthorized,
-                StatusCode::REQUEST_TIMEOUT => ImageViewerError::Timeout,
                 _ => ImageViewerError::Unknown,
             };
             cx.action(ImageViewerAction::Show(LoadState::Error(error)));
