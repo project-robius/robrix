@@ -4,7 +4,7 @@
 //! or to display an error message if the image fails to load, etc.
 
 use makepad_widgets::{image_cache::ImageCacheImpl, *};
-use ruma::events::room::MediaSource;
+use matrix_sdk::ruma::events::room::MediaSource;
 live_design! {
     use link::theme::*;
     use link::shaders::*;
