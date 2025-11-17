@@ -32,9 +32,9 @@ use crate::{
     },
     room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, room_name_or_id, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -620,12 +620,12 @@ impl Widget for RoomScreen {
                     cx.widget_action(
                         room_screen_widget_uid,
                         &scope.path,
-                        TooltipAction::HoverIn {
+                        TooltipAction::HoverIn(tooltip_text, CalloutTooltipOptions{
                             widget_rect,
-                            text: tooltip_text,
-                            text_color: None,
                             bg_color,
-                        }
+                            position: TooltipPosition::Bottom,
+                            ..Default::default()
+                        })
                     );
                 }
                 if reaction_list.hover_out(actions) {
@@ -646,12 +646,12 @@ impl Widget for RoomScreen {
                     cx.widget_action(
                         room_screen_widget_uid,
                         &scope.path,
-                        TooltipAction::HoverIn {
+                        TooltipAction::HoverIn(tooltip_text, CalloutTooltipOptions {
                             widget_rect,
-                            text: tooltip_text,
                             bg_color,
-                            text_color: None,
-                        }
+                            position: TooltipPosition::Bottom,
+                            ..Default::default()
+                        })
                     );
                 }
                 if avatar_row_ref.hover_out(actions) {
