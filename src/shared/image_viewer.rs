@@ -69,7 +69,7 @@ impl Default for Config {
 pub enum ImageViewerError {
     #[error("Image appears to be empty or corrupted")]
     BadData,
-    #[error("Full image is not found")]
+    #[error("Full image was not found")]
     NotFound,
     #[error("Check your internet connection")]
     ConnectionFailed,
