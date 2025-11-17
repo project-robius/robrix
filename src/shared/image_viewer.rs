@@ -321,7 +321,7 @@ live_design! {
                 margin: {left: 20, top: 40}
                 align: { y: 0.5 }
 
-                avatar = <Avatar> {
+                avatar_placeholder = <View> {
                     width: 40, height: 40,
                 }
 
@@ -516,8 +516,9 @@ struct ImageViewer {
     /// The avatar.
     #[rust]
     avatar_ref: Option<AvatarRef>,
-    // #[layout]
-    // layout: Layout,
+    /// The placeholder rect for the avatar.
+    #[rust]
+    avatar_placeholder_rect: Option<Rect>,
 }
 
 impl LiveHook for ImageViewer {
@@ -658,7 +659,32 @@ impl Widget for ImageViewer {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk)
+        let mut layout = Layout::default();
+        layout.flow = Flow::Overlay;
+        cx.begin_turtle(walk, layout);
+        let steps = self.view.draw_walk(cx, scope, walk);
+        if self.avatar_placeholder_rect.is_none() {
+            self.avatar_placeholder_rect = Some(
+                self.view
+                    .avatar(ids!(top_left_container.avatar_placeholder))
+                    .area()
+                    .rect(cx),
+            );
+        }
+        if let (Some(avatar), Some(rect)) = (&self.avatar_ref, self.avatar_placeholder_rect) {
+            let _ = avatar.draw_walk(
+                cx,
+                scope,
+                Walk {
+                    abs_pos: Some(rect.pos),
+                    width: Size::Fixed(rect.size.x),
+                    height: Size::Fixed(rect.size.y),
+                    ..Default::default()
+                },
+            );
+        }
+        cx.end_turtle();
+        steps
     }
 }
 
@@ -968,7 +994,7 @@ impl ImageViewer {
     /// The image name is truncated to 24 characters and appended with "..." if it exceeds the limit.
     /// The human-readable size is calculated based on the image size in bytes.
     pub fn set_metadata(&mut self, cx: &mut Cx, metadata: &MetaData) {
-        let mut meta_view = self.view.view(ids!(metadata_view));
+        let meta_view = self.view.view(ids!(metadata_view));
         let truncated_name = truncate_image_name(&metadata.image_name);
         let human_readable_size = format_file_size(metadata.image_size);
         let display_text = format!("{} ({})", truncated_name, human_readable_size);
@@ -989,12 +1015,7 @@ impl ImageViewer {
                 .set_text(cx, sender);
         }
         if let Some(avatar) = &metadata.avatar_ref {
-            // avatar.copy_content_to(cx, &mut meta_view.avatar(ids!(top_left_container.avatar)));
             self.avatar_ref = Some(avatar.clone());
-            // if let Some(mut avatar_ref) = meta_view.avatar(ids!(top_left_container.avatar)).borrow_mut() {
-            //     avatar_ref = avatar.borrow_mut().unwrap();
-            // }
-            //meta_view.avatar(ids!(top_left_container.avatar)).av = avatar.clone();
         }
     }
 }
