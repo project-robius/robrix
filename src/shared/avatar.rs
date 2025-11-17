@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use makepad_widgets::{image_cache::ImageCacheImpl, *};
+use makepad_widgets::*;
 use matrix_sdk::{ruma::{EventId, OwnedRoomId, OwnedUserId, RoomId, UserId}};
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 
@@ -223,30 +223,6 @@ impl Avatar {
         }
     }
 
-    /// Copies the Avatar's image texture and text label to a new avatar reference.
-    pub fn copy_content_to(&self, cx: &mut Cx, avatar_ref: &mut AvatarRef) {
-        let texture = if self.view(ids!(img_view)).visible() {
-            if let Some(image_inner) = self.image(ids!(img_view.img)).borrow() {
-                image_inner.get_texture(0).clone()
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        
-        let text = self.label(ids!(text_view.text)).text();
-        if let Some(tex) = texture {
-            avatar_ref.view(ids!(img_view)).set_visible(cx, true);
-            avatar_ref.view(ids!(text_view)).set_visible(cx, false);
-            avatar_ref.image(ids!(img_view.img)).set_texture(cx, Some(tex));
-        } else {
-            avatar_ref.view(ids!(img_view)).set_visible(cx, false);
-            avatar_ref.view(ids!(text_view)).set_visible(cx, true);
-            avatar_ref.label(ids!(text_view.text)).set_text(cx, &text);
-        }
-    }
-
     /// Sets the given avatar and returns a displayable username based on the
     /// given profile and user ID of the sender of the event with the given event ID.
     ///
@@ -412,13 +388,6 @@ impl AvatarRef {
             inner.status()
         } else {
             AvatarDisplayStatus::Text
-        }
-    }
-
-    /// See [`Avatar::copy_content_to()`].
-    pub fn copy_content_to(&self, cx: &mut Cx, avatar_ref: &mut AvatarRef) {
-        if let Some(inner) = self.borrow() {
-            inner.copy_content_to(cx, avatar_ref)
         }
     }
 

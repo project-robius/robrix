@@ -12,7 +12,7 @@ use makepad_widgets::{
     *,
 };
 
-use crate::shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, timestamp::TimestampWidgetRefExt};
+use crate::shared::{avatar::{AvatarRef, AvatarWidgetExt, AvatarWidgetRefExt}, timestamp::TimestampWidgetRefExt};
 
 /// Loads the given image `data` into an `ImageBuffer` as either a PNG or JPEG, using the `imghdr` library to determine which format it is.
 ///
@@ -513,6 +513,11 @@ struct ImageViewer {
     /// The mpsc::Receiver used to receive the result of the background task
     #[rust]
     receiver: Option<(u32, Receiver<Result<ImageBuffer, ImageError>>)>,
+    /// The avatar.
+    #[rust]
+    avatar_ref: Option<AvatarRef>,
+    // #[layout]
+    // layout: Layout,
 }
 
 impl LiveHook for ImageViewer {
@@ -963,7 +968,7 @@ impl ImageViewer {
     /// The image name is truncated to 24 characters and appended with "..." if it exceeds the limit.
     /// The human-readable size is calculated based on the image size in bytes.
     pub fn set_metadata(&mut self, cx: &mut Cx, metadata: &MetaData) {
-        let meta_view = self.view.view(ids!(metadata_view));
+        let mut meta_view = self.view.view(ids!(metadata_view));
         let truncated_name = truncate_image_name(&metadata.image_name);
         let human_readable_size = format_file_size(metadata.image_size);
         let display_text = format!("{} ({})", truncated_name, human_readable_size);
@@ -984,7 +989,12 @@ impl ImageViewer {
                 .set_text(cx, sender);
         }
         if let Some(avatar) = &metadata.avatar_ref {
-            avatar.copy_content_to(cx, &mut meta_view.avatar(ids!(top_left_container.avatar)));
+            // avatar.copy_content_to(cx, &mut meta_view.avatar(ids!(top_left_container.avatar)));
+            self.avatar_ref = Some(avatar.clone());
+            // if let Some(mut avatar_ref) = meta_view.avatar(ids!(top_left_container.avatar)).borrow_mut() {
+            //     avatar_ref = avatar.borrow_mut().unwrap();
+            // }
+            //meta_view.avatar(ids!(top_left_container.avatar)).av = avatar.clone();
         }
     }
 }

@@ -26,7 +26,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, find_previous_profile_in_condensed_message, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -483,6 +483,10 @@ live_design! {
         cursor: Default,
         flow: Down,
         spacing: 0.0
+        avatar_template: <Avatar> {
+            width: 48,
+            height: 48,
+        }
 
         room_screen_wrapper = <View> {
             width: Fill, height: Fill,
@@ -566,6 +570,8 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
+    /// The avatar template to used to generate Avatar for image viewer modal.
+    #[live] avatar_template: Option<LivePtr>
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -668,9 +674,7 @@ impl Widget for RoomScreen {
                         cx,
                         mxc_uri,
                         std::rc::Rc::new(texture),
-                        &portal_list,
                         index,
-                        wr
                     );
                     continue;
                 }
@@ -1566,38 +1570,29 @@ impl RoomScreen {
         cx: &mut Cx,
         mxc_uri: Option<String>,
         texture: std::rc::Rc<Option<Texture>>,
-        portal_list: &PortalListRef,
         index: usize,
-        widget_ref: WidgetRef,
     ) {
-        let mut avatar_ref = widget_ref.avatar(ids!(profile.avatar));
-        let mut display_name = widget_ref
-            .label(ids!(content.username_view.username))
-            .text();
-
-        // If display_name is empty, look for a non-empty display_name and its avatar in previous items
-        if display_name.is_empty() {
-            find_previous_profile_in_condensed_message(portal_list, index, &mut display_name, &mut avatar_ref);
-        }
         let Some(mxc_uri_string) = mxc_uri else {
             return;
         };
-        let Some(tl_state) = &mut self.tl_state else {
-            return;
-        };
-        let Some(item) = tl_state.items.get(index) else {
-            return;
-        };
-        let Some(event_tl_item) = item.as_event() else {
-            return;
-        };
+        let Some(tl_state) = self.tl_state.as_mut() else { return };
+        let Some(event_tl_item) = tl_state.items.get(index).and_then(|item| item.as_event()) else { return };
+        let avatar_ref = WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar();
+        let (username, _) = avatar_ref.set_avatar_and_get_username(
+            cx,
+            &tl_state.room_id,
+            event_tl_item.sender(),
+            Some(event_tl_item.sender_profile()),
+            event_tl_item.event_id(),
+        );
+
         let timestamp_millis = event_tl_item.timestamp();
         let (image_name, image_size) = get_image_name_and_filesize(event_tl_item);
 
         cx.action(ImageViewerAction::Show(LoadState::Loading(
             texture.clone(),
             Some(MetaData {
-                sender: Some(display_name),
+                sender: Some(username),
                 image_name,
                 image_size,
                 timestamp: unix_time_millis_to_datetime(timestamp_millis),

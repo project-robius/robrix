@@ -8,7 +8,7 @@ use matrix_sdk::{
 };
 use reqwest::StatusCode;
 
-use crate::{media_cache::{MediaCache, MediaCacheEntry}, shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, image_viewer::{ImageViewerAction, ImageViewerError, LoadState}}};
+use crate::{media_cache::{MediaCache, MediaCacheEntry}, shared::image_viewer::{ImageViewerAction, ImageViewerError, LoadState}};
 
 /// Populates the image viewer modal with the given media content.
 ///
@@ -60,43 +60,4 @@ pub fn get_image_name_and_filesize(event_tl_item: &EventTimelineItem) -> (String
         }
     }
     ("Unknown Image".to_string(), 0)
-}
-
-/// Finds the most recent non-empty profile in a condensed message by searching backwards.
-///
-/// Condensed messages don't have their own profile, so this function searches previous
-/// portal list items to find the most recent non-empty display name and avatar.
-///
-/// The search starts from `current_index - 1` and moves backwards through the portal list.
-/// Stops and returns when the first non-empty display name is found.
-///
-/// # Mutates
-///
-/// * `display_name` - Updated with the found non-empty display name
-/// * `avatar_ref` - Updated with the corresponding avatar reference
-///
-/// # Parameters
-///
-/// * `portal_list` - Reference to the portal list to search through
-/// * `current_index` - Starting index (searches backwards from this position)
-/// * `display_name` - Output parameter for the found display name
-/// * `avatar_ref` - Output parameter for the found avatar reference
-pub fn find_previous_profile_in_condensed_message(
-    portal_list: &PortalListRef,
-    mut current_index: usize,
-    display_name: &mut String,
-    avatar_ref: &mut AvatarRef,
-) {
-    // Start from the current index and work backwards
-    while current_index > 0 {
-        current_index -= 1;
-        if let Some((_id, item_ref)) = portal_list.get_item(current_index) {
-            let username = item_ref.label(ids!(content.username_view.username)).text();
-            if !username.is_empty() {
-                *display_name = username;
-                *avatar_ref = item_ref.avatar(ids!(profile.avatar));
-                return;
-            }
-        }
-    }
 }
