@@ -11,7 +11,7 @@ use makepad_widgets::{
     rotated_image::RotatedImageWidgetExt,
     *,
 };
-
+use thiserror::Error;
 use crate::shared::{avatar::{AvatarRef, AvatarWidgetExt}, timestamp::TimestampWidgetRefExt};
 
 /// Loads the given image `data` into an `ImageBuffer` as either a PNG or JPEG, using the `imghdr` library to determine which format it is.
@@ -65,36 +65,24 @@ impl Default for Config {
 }
 
 /// Error types for image loading operations
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum ImageViewerError {
-    NotFound,
-    Unauthorized,
-    ConnectionFailed,
+    #[error("Image appears to be empty or corrupted")]
     BadData,
+    #[error("Full image is not found")]
+    NotFound,
+    #[error("Check your internet connection")]
+    ConnectionFailed,
+    #[error("You don't have permission to view this image")]
+    Unauthorized,
+    #[error("Server temporarily unavailable")]
     ServerError,
+    #[error("This image format isn't supported")]
     UnsupportedFormat,
+    #[error("Unable to load image")]
     Unknown,
+    #[error("Please reconnect your internet to load the image")]
     Offline,
-}
-
-/// Returns a human-readable string describing the given ImageViewerError.
-///
-/// This can be used to update the label text of an error display.
-///
-/// The error type is matched against a string which describes the error in a way that is visible to the user.
-///
-/// The strings returned by this function will be appropriate for display in a label or similar widget.
-pub fn image_viewer_error_to_string(error: &ImageViewerError) -> &str {
-    match error {
-        ImageViewerError::NotFound => "Full image is not found",
-        ImageViewerError::BadData => "Image appears to be empty or corrupted",
-        ImageViewerError::UnsupportedFormat => "This image format isn't supported",
-        ImageViewerError::ConnectionFailed => "Check your internet connection",
-        ImageViewerError::Unauthorized => "You don't have permission to view this image",
-        ImageViewerError::ServerError => "Server temporarily unavailable",
-        ImageViewerError::Unknown => "Unable to load image",
-        ImageViewerError::Offline => "Please reconnect your internet to load the image",
-    }
 }
 
 /// The Drag state of the image viewer modal
@@ -162,7 +150,7 @@ live_design! {
             }
         }
     }
-    pub Rotation_Button = <RobrixIconButton> {
+    pub RotationButton = <RobrixIconButton> {
         width: Fit, height: Fit,
         margin: 8,
         padding: 3
@@ -217,7 +205,7 @@ live_design! {
 
                 zoom_button_plus = <MagnifyingGlass> { }
 
-                rotation_button_anti_clockwise = <Rotation_Button> {
+                rotation_button_anti_clockwise = <RotationButton> {
                     draw_icon: {
                         svg_file: (ICON_ROTATE_CCW),
                         fn get_color(self) -> vec4 {
@@ -226,7 +214,7 @@ live_design! {
                     }
                 }
 
-                rotation_button_clockwise = <Rotation_Button> { }
+                rotation_button_clockwise = <RotationButton> { }
 
                 close_button = <RobrixIconButton> {
                     width: Fit, height: Fit,
@@ -306,7 +294,7 @@ live_design! {
             flow: Right
 
             top_left_container = <View> {
-                width: 150, height: Fit,
+                width: 200, height: Fit,
                 flow: Right,
                 spacing: 10,
                 margin: {left: 20, top: 40}
@@ -324,7 +312,7 @@ live_design! {
                     username = <Label> {
                         width: Fill, height: Fit,
                         draw_text: {
-                            text_style: <REGULAR_TEXT>{font_size: 14},
+                            text_style: <REGULAR_TEXT>{font_size: 10},
                             color: (COLOR_TEXT)
                         }
                     }
@@ -353,7 +341,7 @@ live_design! {
 
             empty_right_container = <View> {
                 // equal width as the top-left container to keep the image name centered.
-                width: 150, height: Fit,
+                width: 200, height: Fit,
             }
         }
         animator: {
@@ -950,7 +938,7 @@ impl ImageViewer {
             .set_visible(cx, true);
         footer
             .label(ids!(image_viewer_status_label))
-            .set_text(cx, image_viewer_error_to_string(error));
+            .set_text(cx, &error.to_string());
         footer.apply_over(
             cx,
             live! {
@@ -997,12 +985,22 @@ impl ImageViewer {
                 .set_date_time(cx, timestamp);
         }
         if let Some(sender) = &metadata.sender {
+            let truncated_sender = if sender.len() > MAX_USERNAME_LENGTH {
+                format!("{}...", &sender[..MAX_USERNAME_LENGTH - 3])
+            } else {
+                sender.clone()
+            };
             meta_view
                 .label(ids!(top_left_container.content.username))
-                .set_text(cx, sender);
+                .set_text(cx, &truncated_sender);
         }
         if let Some(avatar) = &metadata.avatar_ref {
             self.avatar_ref = Some(avatar.clone());
+        }
+        if cx.display_context.is_desktop() {
+            self.view.view(ids!(metadata_view.empty_right_container)).apply_over(cx, live!{
+                width: 0
+            });
         }
     }
 }
@@ -1096,6 +1094,8 @@ pub struct MetaData {
 
 /// Maximum image name length to be displayed
 const MAX_IMAGE_NAME_LENGTH: usize = 50;
+/// Maximum username length to be displayed
+const MAX_USERNAME_LENGTH: usize = 50;
 
 /// Truncate image name while preserving file extension
 fn truncate_image_name(image_name: &str) -> String {
