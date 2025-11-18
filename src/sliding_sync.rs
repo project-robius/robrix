@@ -25,7 +25,8 @@ use tokio::{
     sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, hash::{Hash, Hasher}, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
+use std::collections::hash_map::DefaultHasher;
 use std::io;
 use crate::{
     app::AppStateAction,
@@ -35,6 +36,7 @@ use crate::{
     home::{
         invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewRateLimitResponse, LinkPreviewDataNonNumeric}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction
     },
+    room::member_search::precompute_member_sort,
     login::login_screen::LoginAction,
     logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{is_logout_in_progress, logout_with_state_machine, LogoutConfig}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
     persistence::{self, load_app_state, ClientSessionPersisted},
@@ -664,11 +666,27 @@ async fn async_worker(
                     match timeline.room().members(RoomMemberships::JOIN).await {
                         Ok(members) => {
                             let count = members.len();
-                            log!("Fetched {count} members for room {room_id} after sync.");
-                            if let Err(err) = sender.send(TimelineUpdate::RoomMembersListFetched { members }) {
-                                warning!("Failed to send RoomMembersListFetched update for room {room_id}: {err:?}");
+                            let mut hasher = DefaultHasher::new();
+                            for member in &members {
+                                member.user_id().hash(&mut hasher);
+                                if let Some(name) = member.display_name() {
+                                    name.hash(&mut hasher);
+                                }
+                            }
+                            let digest = hasher.finish();
+                            let mut digests = ROOM_MEMBERS_DIGESTS.lock().unwrap();
+                            let previous = digests.get(&room_id).copied();
+                            if previous != Some(digest) {
+                                digests.insert(room_id.clone(), digest);
+                                log!("Fetched {count} members for room {room_id} after sync.");
+                                let sort = precompute_member_sort(&members);
+                                if let Err(err) = sender.send(TimelineUpdate::RoomMembersListFetched { members, sort, is_local_fetch: false }) {
+                                    warning!("Failed to send RoomMembersListFetched update for room {room_id}: {err:?}");
+                                } else {
+                                    SignalToUI::set_ui_signal();
+                                }
                             } else {
-                                SignalToUI::set_ui_signal();
+                                log!("Fetched {count} members for room {room_id} after sync (no change, skipping RoomMembersListFetched).");
                             }
                         }
                         Err(err) => {
@@ -759,8 +777,11 @@ async fn async_worker(
 
                     let send_update = |members: Vec<matrix_sdk::room::RoomMember>, source: &str| {
                         log!("{} {} members for room {}", source, members.len(), room_id);
+                        let sort = precompute_member_sort(&members);
                         sender.send(TimelineUpdate::RoomMembersListFetched {
-                            members
+                            members,
+                            sort,
+                            is_local_fetch: true,
                         }).unwrap();
                         SignalToUI::set_ui_signal();
                     };
@@ -1657,6 +1678,7 @@ impl Drop for JoinedRoomDetails {
 
 /// Information about all joined rooms that our client currently know about.
 static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
+static ROOM_MEMBERS_DIGESTS: Mutex<BTreeMap<OwnedRoomId, u64>> = Mutex::new(BTreeMap::new());
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);

@@ -48,7 +48,7 @@ enum MentionSearchState {
     /// Actively searching with background task
     Searching {
         trigger_position: usize,
-        _search_text: String, // Kept for debugging/future use
+        search_text: String,
         receiver: Receiver<SearchResult>,
         accumulated_results: Vec<usize>,
         search_id: u64,
@@ -349,6 +349,8 @@ pub enum MentionableTextInputAction {
         room_id: OwnedRoomId,
         /// Whether member sync is still in progress
         sync_in_progress: bool,
+        /// Whether we currently have cached members
+        has_members: bool,
     },
 }
 
@@ -526,29 +528,50 @@ impl Widget for MentionableTextInput {
                         MentionableTextInputAction::RoomMembersLoaded {
                             room_id,
                             sync_in_progress,
+                            has_members,
                         } => {
                             if &scope_room_id != room_id {
                                 continue;
                             }
 
-                            let room_props = scope
-                                .props
-                                .get::<RoomScreenProps>()
-                                .expect("RoomScreenProps should be available in scope");
-                            let has_members = room_props
-                                .room_members
-                                .as_ref()
-                                .is_some_and(|members| !members.is_empty());
+                            log!(
+                                "MentionableTextInput: RoomMembersLoaded room={} sync_in_progress={} has_members={} is_searching={}",
+                                room_id,
+                                sync_in_progress,
+                                has_members,
+                                self.is_searching()
+                            );
 
-                            // Trust the sync state from room_screen, don't override based on member count
                             self.members_sync_pending = *sync_in_progress;
-                            self.members_available = has_members;
+                            self.members_available = *has_members;
 
-                            if self.members_available && self.is_searching() {
-                                // Force a fresh search now that members are available
-                                let search_text = self.cmd_text_input.search_text();
-                                self.last_search_text = None;
-                                self.update_user_list(cx, &search_text, scope);
+                            if self.members_available {
+                                // CRITICAL FIX: Use saved state instead of reading from text input
+                                // Reading from text input causes race condition (text may be empty when members arrive)
+                                // Extract needed values first to avoid borrow checker issues
+                                let action = match &self.search_state {
+                                    MentionSearchState::WaitingForMembers {
+                                        pending_search_text,
+                                        ..
+                                    } => Some((true, pending_search_text.clone())),
+                                    MentionSearchState::Searching { search_text, .. } => {
+                                        Some((false, search_text.clone()))
+                                    }
+                                    _ => None,
+                                };
+
+                                if let Some((is_waiting, search_text)) = action {
+                                    if is_waiting {
+                                        log!("  → Members loaded, resuming search with saved text='{}'", search_text);
+                                        self.last_search_text = None;
+                                        self.update_user_list(cx, &search_text, scope);
+                                    } else {
+                                        log!("  → Already searching, updating UI with search_text='{}'", search_text);
+                                        self.update_ui_with_results(cx, scope, &search_text);
+                                    }
+                                } else {
+                                    log!("  → Not in searching state, ignoring member load");
+                                }
                             } else if self.is_searching() {
                                 // Still no members returned yet; keep showing loading indicator.
                                 self.cmd_text_input.clear_items();
@@ -966,6 +989,8 @@ impl MentionableTextInput {
 
     /// Core text change handler that manages mention context
     fn handle_text_change(&mut self, cx: &mut Cx, scope: &mut Scope, text: String) {
+        log!("handle_text_change: text='{}' search_state={:?}", text, self.search_state);
+
         // If search was just cancelled, clear the flag and don't re-trigger search
         if self.is_just_cancelled() {
             self.search_state = MentionSearchState::Idle;
@@ -1160,23 +1185,9 @@ impl MentionableTextInput {
             .get::<RoomScreenProps>()
             .expect("RoomScreenProps should be available in scope for MentionableTextInput");
 
-        // Check if we still need to show loading indicator
-        // Show loading while sync is in progress, regardless of partial member data
-        // room_screen will clear members_sync_pending when sync completes
-        let still_loading = self.members_sync_pending;
-
-        if still_loading {
-            // Don't clear items if we're going to show loading again
-            // Just ensure loading indicator is showing
-            if self.loading_indicator_ref.is_none() {
-                self.cmd_text_input.clear_items();
-                self.show_loading_indicator(cx);
-            }
-            self.cmd_text_input.text_input_ref().set_key_focus(cx);
-            return;
-        }
-
-        // We're done loading, safe to clear and reset
+        // If we're in Searching state, we have local data - always show results
+        // Don't wait for remote sync to complete
+        // Remote sync will trigger update when it completes (if data changed)
         self.cmd_text_input.clear_items();
         self.loading_indicator_ref = None;
 
@@ -1227,6 +1238,23 @@ impl MentionableTextInput {
 
     /// Updates the mention suggestion list based on search
     fn update_user_list(&mut self, cx: &mut Cx, search_text: &str, scope: &mut Scope) {
+        // CRITICAL FIX: Get room_props FIRST to read real-time member state
+        // This avoids timing issues where self.members_available is stale
+        let room_props = scope
+            .props
+            .get::<RoomScreenProps>()
+            .expect("RoomScreenProps should be available in scope for MentionableTextInput");
+
+        // Immediately sync local state from props (don't rely on async actions)
+        let has_members_in_props = room_props.room_members
+            .as_ref()
+            .is_some_and(|m| !m.is_empty());
+        self.members_available = has_members_in_props;
+        self.members_sync_pending = room_props.room_members_sync_pending;
+
+        log!("update_user_list: search_text='{}' has_members_in_props={} self.members_available={} search_state={:?}",
+             search_text, has_members_in_props, self.members_available, self.search_state);
+
         // Get trigger position from current state (if in searching mode)
         let trigger_pos = match &self.search_state {
             MentionSearchState::WaitingForMembers {
@@ -1251,17 +1279,16 @@ impl MentionableTextInput {
             }
         };
 
-        // Skip if search text hasn't changed (simple debounce)
+        // Skip if search text hasn't changed AND we're already in Searching state
+        // Don't skip if we're in WaitingForMembers - need to transition to Searching
         if self.last_search_text.as_deref() == Some(search_text) {
-            return;
+            if matches!(self.search_state, MentionSearchState::Searching { .. }) {
+                return; // Already searching with same text, skip
+            }
+            // In WaitingForMembers with same text -> need to start search now that members arrived
         }
 
         self.last_search_text = Some(search_text.to_string());
-
-        let room_props = scope
-            .props
-            .get::<RoomScreenProps>()
-            .expect("RoomScreenProps should be available in scope for MentionableTextInput");
 
         let is_desktop = cx.display_context.is_desktop();
         let max_visible_items = if is_desktop {
@@ -1272,9 +1299,8 @@ impl MentionableTextInput {
 
         let cached_members = match &room_props.room_members {
             Some(members) if !members.is_empty() => {
-                self.members_available = true;
-                // Trust the sync state from room_screen via props
-                self.members_sync_pending = room_props.room_members_sync_pending;
+                // Members available, continue to search
+                // (self.members_available already synced at function start)
                 members.clone()
             }
             _ => {
@@ -1284,7 +1310,7 @@ impl MentionableTextInput {
                 );
 
                 self.cancel_active_search();
-                self.members_available = false;
+                // Note: self.members_available already set to false at function start
                 self.members_sync_pending = true;
 
                 if !already_waiting {
@@ -1329,7 +1355,7 @@ impl MentionableTextInput {
         let cancel_token = Arc::new(AtomicBool::new(false));
         self.search_state = MentionSearchState::Searching {
             trigger_position: trigger_pos,
-            _search_text: search_text.to_string(),
+            search_text: search_text.to_string(),
             receiver,
             accumulated_results: Vec::new(),
             search_id,

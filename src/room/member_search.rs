@@ -414,25 +414,6 @@ fn compute_non_empty_search_indices(
     Some(all_matches.into_iter().map(|(_, idx)| idx).collect())
 }
 
-/// Search room members in background thread with streaming support (backward compatible)
-pub fn search_room_members_streaming(
-    members: Arc<Vec<RoomMember>>,
-    search_text: String,
-    max_results: usize,
-    sender: Sender<SearchResult>,
-    search_id: u64,
-) {
-    search_room_members_streaming_with_sort(
-        members,
-        search_text,
-        max_results,
-        sender,
-        search_id,
-        None,
-        None,
-    )
-}
-
 /// Search room members with optional pre-computed sort data
 pub fn search_room_members_streaming_with_sort(
     members: Arc<Vec<RoomMember>>,

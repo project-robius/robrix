@@ -30,7 +30,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
-    room::{member_search::{precompute_member_sort, PrecomputedMemberSort}, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
+    room::{member_search::PrecomputedMemberSort, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
@@ -1352,36 +1352,44 @@ impl RoomScreen {
                     // Room members have been synced; unconditionally clear pending flag
                     // to fix bug where small rooms (< 50 members) would stay in loading state forever
                     tl.room_members_sync_pending = false;
+                    tl.room_members_remote_synced = true;
 
                     // Notify MentionableTextInput that sync is complete
+                    let has_members = tl
+                        .room_members
+                        .as_ref()
+                        .is_some_and(|members| !members.is_empty());
+
                     cx.action(MentionableTextInputAction::RoomMembersLoaded {
                         room_id: tl.room_id.clone(),
                         sync_in_progress: false,
+                        has_members,
                     });
                 }
-                TimelineUpdate::RoomMembersListFetched { members } => {
+                TimelineUpdate::RoomMembersListFetched { members, sort, is_local_fetch } => {
                     // RoomMembersListFetched: Received members for room
                     // Note: This can be sent from either GetRoomMembers (local cache lookup)
                     // or SyncRoomMemberList (full server sync). We only clear the sync pending
                     // flag when we receive RoomMembersSynced (which is only sent after full sync).
-                    let sort_data = precompute_member_sort(&members);
-                    tl.room_members = Some(Arc::new(members));
+                    let sort_data = sort;
+                    let members = Arc::new(members);
+                    let has_members = !members.is_empty();
+                    tl.room_members = Some(Arc::clone(&members));
                     tl.room_members_sort = Some(Arc::new(sort_data));
 
                     // For non-sync requests (like GetRoomMembers), there won't be a RoomMembersSynced event
                     // So we should clear the sync pending flag if we have members and we're not actually syncing
                     // This fixes the issue where local cache lookups would leave the loading indicator on
-                    let sync_in_progress = if !tl.room_members_sync_pending {
-                        // We're not syncing, this is likely from a local cache lookup
+                    let sync_in_progress = if is_local_fetch {
                         false
                     } else {
-                        // We are syncing, wait for RoomMembersSynced to clear the flag
-                        true
+                        tl.room_members_sync_pending
                     };
 
                     cx.action(MentionableTextInputAction::RoomMembersLoaded {
                         room_id: tl.room_id.clone(),
                         sync_in_progress,
+                        has_members,
                     });
                 }
                 TimelineUpdate::MediaFetched => {
@@ -2018,6 +2026,7 @@ impl RoomScreen {
                 room_members: None,
                 room_members_sort: None,
                 room_members_sync_pending: false,
+                room_members_remote_synced: false,
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
                 items: Vector::new(),
@@ -2037,6 +2046,20 @@ impl RoomScreen {
             };
             (tl_state, true)
         };
+
+        let has_cached_members = tl_state
+            .room_members
+            .as_ref()
+            .is_some_and(|members| !members.is_empty());
+        let mut should_request_local_members = false;
+        if !has_cached_members {
+            should_request_local_members = true;
+        }
+
+        let mut needs_remote_sync = !tl_state.room_members_remote_synced;
+        if !has_cached_members {
+            needs_remote_sync = true;
+        }
 
         // It is possible that this room has already been loaded (received from the server)
         // but that the RoomsList doesn't yet know about it.
@@ -2060,6 +2083,17 @@ impl RoomScreen {
             self.is_loaded = is_loaded_now;
         }
 
+        if is_first_time_being_loaded {
+            needs_remote_sync = true;
+        }
+
+        let mut should_request_full_sync = false;
+        if needs_remote_sync && !tl_state.room_members_sync_pending {
+            should_request_full_sync = true;
+            tl_state.room_members_sync_pending = true;
+            tl_state.room_members_remote_synced = false;
+        }
+
         self.view.restore_status_view(id!(restore_status_view)).set_visible(cx, !self.is_loaded);
 
         // Kick off a back pagination request if it's the first time loading this room,
@@ -2074,21 +2108,6 @@ impl RoomScreen {
                     direction: PaginationDirection::Backwards,
                 });
             }
-
-            // Even though we specify that room member profiles should be lazy-loaded,
-            // the matrix server still doesn't consistently send them to our client properly.
-            // So we kick off a request to fetch the room members here upon first viewing the room.
-            tl_state.room_members_sync_pending = true;
-            submit_async_request(MatrixRequest::SyncRoomMemberList { room_id: room_id.clone() });
-        } else if tl_state
-            .room_members
-            .as_ref()
-            .map(|members| members.is_empty())
-            .unwrap_or(true)
-        {
-            // Room reopened but we lack cached members; trigger a sync to refresh data.
-            tl_state.room_members_sync_pending = true;
-            submit_async_request(MatrixRequest::SyncRoomMemberList { room_id: room_id.clone() });
         }
 
         // Hide the typing notice view initially.
@@ -2104,12 +2123,14 @@ impl RoomScreen {
             submit_async_request(MatrixRequest::GetRoomPowerLevels {
                 room_id: room_id.clone(),
             });
-            submit_async_request(MatrixRequest::GetRoomMembers {
-                room_id: room_id.clone(),
-                memberships: matrix_sdk::RoomMemberships::JOIN,
-                // Prefer cached members; background sync will refresh them as needed.
-                local_only: true,
-            });
+            if should_request_local_members {
+                submit_async_request(MatrixRequest::GetRoomMembers {
+                    room_id: room_id.clone(),
+                    memberships: matrix_sdk::RoomMemberships::JOIN,
+                    // Prefer cached members; background sync will refresh them as needed.
+                    local_only: true,
+                });
+            }
             submit_async_request(MatrixRequest::SubscribeToTypingNotices {
                 room_id: room_id.clone(),
                 subscribe: true,
@@ -2136,6 +2157,10 @@ impl RoomScreen {
         self.process_timeline_updates(cx, &self.portal_list(id!(list)));
 
         self.redraw(cx);
+
+        if should_request_full_sync {
+            submit_async_request(MatrixRequest::SyncRoomMemberList { room_id: room_id.clone() });
+        }
     }
 
     /// Invoke this when this RoomScreen/timeline is being hidden or no longer being shown.
@@ -2179,10 +2204,6 @@ impl RoomScreen {
             room_input_bar_state: self.room_input_bar(id!(room_input_bar)).save_state(),
         };
         tl.saved_state = state;
-        // Clear cached room member data to avoid wasting memory (in case this room is never re-opened).
-        tl.room_members = None;
-        tl.room_members_sort = None;
-        tl.room_members_sync_pending = false;
         // Store this Timeline's `TimelineUiState` in the global map of states.
         TIMELINE_STATES.with_borrow_mut(|ts| ts.insert(tl.room_id.clone(), tl));
     }
@@ -2466,6 +2487,8 @@ pub enum TimelineUpdate {
     /// but doesn't provide the actual data.
     RoomMembersListFetched {
         members: Vec<RoomMember>,
+        sort: crate::room::member_search::PrecomputedMemberSort,
+        is_local_fetch: bool,
     },
     /// A notice that one or more requested media items (images, videos, etc.)
     /// that should be displayed in this timeline have now been fetched and are available.
@@ -2521,6 +2544,8 @@ struct TimelineUiState {
     room_members_sort: Option<Arc<PrecomputedMemberSort>>,
     /// Whether a full member sync is still pending for this room.
     room_members_sync_pending: bool,
+    /// Whether we've successfully completed a remote member sync at least once.
+    room_members_remote_synced: bool,
 
     /// Whether this room's timeline has been fully paginated, which means
     /// that the oldest (first) event in the timeline is locally synced and available.
