@@ -1088,7 +1088,7 @@ impl RoomScreen {
 
     fn current_room_label(&self) -> String {
         self.current_room_name()
-            .map(|name| name.display_str().to_owned())
+            .map(|name| name.display_str().into_owned())
             .unwrap_or_else(|| "Unknown Room".to_string())
     }
 
@@ -1465,7 +1465,7 @@ impl RoomScreen {
                                 },
                                 room_id: room_name.room_id().clone(),
                             },
-                            room_name: room_name.display_str().to_owned(),
+                            room_name: room_name.display_str().into_owned(),
                             // TODO: use the extra `via` parameters
                             room_member: None,
                         },

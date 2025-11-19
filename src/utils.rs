@@ -754,13 +754,22 @@ impl RoomName {
         &self.room_id
     }
 
-    /// Returns the preferred display string or falls back to the room ID.
+    /// Returns the preferred display string or falls back to contextual text/room ID.
     ///
-    /// This is the string that should be shown in user-facing UI.
+    /// - `Empty` → returns the room ID
+    /// - `EmptyWas(name)` → returns `Empty Room (was "name")`
+    /// - Other variants → return the display name verbatim
     #[inline]
-    pub fn display_str(&self) -> &str {
-        room_display_name_str(&self.display_name)
-            .unwrap_or_else(|| self.room_id.as_str())
+    pub fn display_str(&self) -> Cow<'_, str> {
+        match &self.display_name {
+            RoomDisplayName::Empty => Cow::Borrowed(self.room_id.as_str()),
+            RoomDisplayName::EmptyWas(previous) => {
+                Cow::Owned(format!("Empty Room (was \"{}\")", previous))
+            }
+            _ => room_display_name_str(&self.display_name)
+                .map(Cow::Borrowed)
+                .unwrap_or_else(|| Cow::Borrowed(self.room_id.as_str())),
+        }
     }
 
     /// Returns the underlying room ID as a string slice.
@@ -1048,6 +1057,13 @@ mod tests_room_name {
         let room_name = RoomName::new(RoomDisplayName::Empty, room_id.clone());
         assert_eq!(room_name.display_str(), room_id.as_str());
         assert_eq!(room_name.to_string(), room_id.as_str());
+    }
+
+    #[test]
+    fn display_str_includes_context_for_empty_was() {
+        let room_id = sample_room_id("!emptywas:example.org");
+        let room_name = RoomName::new(RoomDisplayName::EmptyWas("Prior Name".into()), room_id);
+        assert_eq!(room_name.display_str(), "Empty Room (was \"Prior Name\")");
     }
 
     #[test]

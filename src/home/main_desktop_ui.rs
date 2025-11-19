@@ -131,11 +131,11 @@ impl MainDesktopUI {
         let (kind, name) = match &room {
             SelectedRoom::JoinedRoom { room_name }  => (
                 id!(room_screen),
-                room_name.display_str().to_owned(),
+                room_name.display_str().into_owned(),
             ),
             SelectedRoom::InvitedRoom { room_name } => (
                 id!(invite_screen),
-                room_name.display_str().to_owned(),
+                room_name.display_str().into_owned(),
             ),
         };
         let new_tab_widget = dock.create_and_select_tab(
@@ -238,7 +238,7 @@ impl MainDesktopUI {
             cx,
             LiveId::from_str(room_id.as_str()),
             id!(room_screen),
-            Some(room_name.display_str().to_owned()),
+            Some(room_name.display_str().into_owned()),
             false,
         ) else {
             // Nothing we can really do here except log an error.

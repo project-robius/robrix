@@ -29,7 +29,7 @@ impl FilterableRoom for JoinedRoomInfo {
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        Cow::Borrowed(self.room_name.display_str())
+        self.room_name.display_str()
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -63,7 +63,7 @@ impl FilterableRoom for InvitedRoomInfo {
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        Cow::Borrowed(self.room_name.display_str())
+        self.room_name.display_str()
     }
 
     fn unread_mentions(&self) -> u64 {
