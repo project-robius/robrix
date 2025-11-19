@@ -58,14 +58,41 @@ pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
 }
 
 /// Loads the App state from persistent storage.
+///
+/// If the file doesn't exist or deserialization fails (e.g., due to incompatible format changes),
+/// this function returns a default `AppState` and backs up the old file if it exists.
 pub async fn load_app_state(user_id: &UserId) -> anyhow::Result<AppState> {
-    let content = match tokio::fs::read_to_string(persistent_state_dir(user_id).join(LATEST_APP_STATE_FILE_NAME)).await {
+    let state_path = persistent_state_dir(user_id).join(LATEST_APP_STATE_FILE_NAME);
+
+    let content = match tokio::fs::read_to_string(&state_path).await {
         Ok(file) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(AppState::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            log!("No saved app state found, using default.");
+            return Ok(AppState::default());
+        }
         Err(e) => return Err(e.into())
     };
-    AppState::deserialize_ron(&content)
-        .map_err(|er| anyhow::Error::msg(er.msg))
+
+    match AppState::deserialize_ron(&content) {
+        Ok(app_state) => {
+            log!("Successfully loaded app state from persistent storage.");
+            Ok(app_state)
+        }
+        Err(e) => {
+            error!("Failed to deserialize app state: {}. This may be due to an incompatible format from a previous version.", e.msg);
+
+            // Backup the old file to preserve user's data
+            let backup_path = state_path.with_extension("ron.bak");
+            if let Err(backup_err) = tokio::fs::rename(&state_path, &backup_path).await {
+                error!("Failed to backup old app state file: {}", backup_err);
+            } else {
+                log!("Old app state backed up to: {:?}", backup_path);
+            }
+
+            log!("Using default app state. Your previous tabs and selections will be reset.");
+            Ok(AppState::default())
+        }
+    }
 }
 
 /// Loads the window geometry's state from persistent storage.
