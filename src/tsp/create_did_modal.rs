@@ -94,7 +94,6 @@ live_design! {
                     }
                     did_webvh = <RadioButtonFlat> {
                         text: "WebVH"
-                        animator: { disabled = { default: on } }
                     }
                     did_peer  = <RadioButtonFlat> {
                         text: "Peer",
@@ -359,13 +358,30 @@ impl WidgetMatchEvent for CreateDidModal {
                             "" => did_server_input.empty_text(),
                             non_empty => non_empty.to_string(),
                         };
+                        
+                        // Determine which DID type is selected from the radio buttons
+                        // Since Web is set as default active in the UI, we check the others first
+        
+                        let did_type = if let Some(widget_idex) = self.view.radio_button_set(ids_array!(
+                            did_type_radio_buttons.did_webvh,
+                            did_type_radio_buttons.did_peer,
+                        )).selected(cx, actions) {
+                            if widget_idex == 0 {
+                                tsp::DidType::WebVh
+                            } else {
+                                tsp::DidType::Peer
+                            }
+                        } else {
+                            tsp::DidType::Web
+                        };
 
                         // Submit the identity creation request to the TSP async worker thread.
                         tsp::submit_tsp_request(tsp::TspRequest::CreateDid {
                             username: username.to_string(),
                             alias,
                             server,
-                            did_server
+                            did_server,
+                            did_type,
                         });
 
                         self.state = CreateDidModalState::WaitingForIdentityCreation;
