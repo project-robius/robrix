@@ -1,9 +1,10 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
+use tokio::sync::mpsc::UnboundedSender;
 use crate::{
-    app::{AppState, SelectedRoom}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}}, shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, room_filter_input_bar::RoomFilterAction}, sliding_sync::{MatrixRequest, PaginationDirection, submit_async_request}, utils::room_name_or_id
+    app::{AppState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, space_lobby::SpaceLobbyAction}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}}, shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, room_filter_input_bar::RoomFilterAction}, sliding_sync::{MatrixRequest, PaginationDirection, submit_async_request}, space_service_sync::SpaceRequest, utils::room_name_or_id
 };
 use super::rooms_list_entry::RoomsListEntryAction;
 
@@ -52,6 +53,7 @@ live_design! {
     use crate::shared::html_or_plaintext::HtmlOrPlaintext;
     use crate::shared::collapsible_header::*;
     use crate::home::rooms_list_entry::*;
+    use crate::home::space_lobby::*;
 
     StatusLabel = <View> {
         width: Fill, height: Fit,
@@ -75,6 +77,8 @@ live_design! {
         width: Fill, height: Fill
         flow: Down
         cursor: Default,
+
+        space_lobby_entry = <SpaceLobbyEntry> {}
 
         list = <PortalList> {
             keep_invisible: false,
@@ -163,6 +167,9 @@ pub enum RoomsListUpdate {
     },
     /// Scroll to the given room.
     ScrollToRoom(OwnedRoomId),
+    /// The background space service is now listening for requests,
+    /// and the sender-side channel endpoint is included.
+    SpaceRequestSender(UnboundedSender<SpaceRequest>),
 }
 
 static PENDING_ROOM_UPDATES: SegQueue<RoomsListUpdate> = SegQueue::new();
@@ -177,7 +184,7 @@ pub fn enqueue_rooms_list_update(update: RoomsListUpdate) {
 /// Actions emitted by the RoomsList widget.
 #[derive(Debug, Clone, DefaultNone)]
 pub enum RoomsListAction {
-    /// A new room was selected.
+    /// A new room or space was selected.
     Selected(SelectedRoom),
     /// A new room was joined from an accepted invite,
     /// meaning that the existing `InviteScreen` should be converted
@@ -310,6 +317,23 @@ pub struct RoomsList {
     /// The set of all joined rooms and their cached info.
     /// This includes both direct rooms and regular rooms.
     #[rust] all_joined_rooms: HashMap<OwnedRoomId, JoinedRoomInfo>,
+
+    /// The space that is currently selected as a display filter for the rooms list, if any.
+    /// * If `None` (default), no space is selected, and all rooms can be shown.
+    /// * If `Some`, the rooms list is in "space" mode. A special "Space Lobby" entry
+    ///   is shown at the top, and only child rooms within this space will be displayed.
+    ///   The ID and displayable name of the space is contained.
+    #[rust] selected_space: Option<(OwnedRoomId, String)>,
+
+    /// The sender used to send Space-related requests to the background service.
+    #[rust] space_request_sender: Option<UnboundedSender<SpaceRequest>>,
+
+    /// A flattened map of all spaces known to the client, and the rooms/spaces they contain.
+    ///
+    /// The key is the space ID, and the value is a set of room IDs or space IDs that are
+    /// direct descendants of that space.
+    /// This can include both joined and non-joined spaces.
+    #[rust] space_map: HashMap<OwnedRoomId, HashSet<OwnedRoomId>>,
 
     /// The currently-active filter function for the list of rooms.
     ///
@@ -629,10 +653,13 @@ impl RoomsList {
                     // Scroll to just above the room to make it more obviously visible.
                     portal_list.smooth_scroll_to(cx, portal_list_index.saturating_sub(1), speed, Some(15));
                 }
+                RoomsListUpdate::SpaceRequestSender(sender) => {
+                    self.space_request_sender = Some(sender);
+                    num_updates -= 1;  // this does not require a redraw.
+                }
             }
         }
         if num_updates > 0 {
-            // log!("RoomsList: processed {} updates to the list of all rooms", num_updates);
             self.redraw(cx);
         }
     }
@@ -664,8 +691,8 @@ impl RoomsList {
         || self.displayed_regular_rooms.contains(room)
     }
 
-    /// Updates the lists of displayed rooms based on the current search filter
-    /// and redraws the RoomsList.
+    /// Updates the display filter and recalculates the lists of displayed rooms
+    /// based on the current search filter. Also redraws the RoomsList.
     fn update_displayed_rooms(&mut self, cx: &mut Cx, keywords: &str) {
         let portal_list = self.view.portal_list(ids!(list));
         if keywords.is_empty() {
@@ -840,11 +867,11 @@ impl Widget for RoomsList {
         let props = RoomsListScopeProps {
             was_scrolling: self.view.portal_list(ids!(list)).was_scrolling(),
         };
-        let list_actions = cx.capture_actions(
+        let rooms_list_actions = cx.capture_actions(
             |cx| self.view.handle_event(cx, event, &mut Scope::with_props(&props))
         );
-        for list_action in list_actions {
-            if let RoomsListEntryAction::Clicked(clicked_room_id) = list_action.as_widget_action().cast() {
+        for action in rooms_list_actions {
+            if let RoomsListEntryAction::Clicked(clicked_room_id) = action.as_widget_action().cast() {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
                     SelectedRoom::JoinedRoom {
                         room_id: jr.room_id.clone().into(),
@@ -868,7 +895,7 @@ impl Widget for RoomsList {
                 );
                 self.redraw(cx);
             }
-            else if let CollapsibleHeaderAction::Toggled { category } = list_action.as_widget_action().cast() {
+            else if let CollapsibleHeaderAction::Toggled { category } = action.as_widget_action().cast() {
                 match category {
                     HeaderCategory::Invites => {
                         self.is_invited_rooms_header_expanded = !self.is_invited_rooms_header_expanded;
@@ -884,6 +911,21 @@ impl Widget for RoomsList {
                 }
                 self.redraw(cx);
             }
+            else if let Some(SpaceLobbyAction::SpaceLobbyEntryClicked) = action.downcast_ref() {
+                let Some((space_id, space_name)) = self.selected_space.clone() else { continue };
+                self.current_active_room = Some(space_id.clone());
+                let new_selected_space = SelectedRoom::Space {
+                    space_id: space_id.into(),
+                    space_name,
+                };
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    RoomsListAction::Selected(new_selected_space),
+                );
+                self.redraw(cx);
+                self.redraw(cx);
+            }
         }
 
         if let Event::Actions(actions) = event {
@@ -891,6 +933,28 @@ impl Widget for RoomsList {
                 if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast() {
                     self.update_displayed_rooms(cx, &keywords);
                     continue;
+                }
+
+                if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
+                    match tab {
+                        SelectedTab::Space { space_id } => {
+                            self.selected_space = Some(space_id.clone());
+                            self.view.view(ids!(space_lobby_entry)).set_visible(cx, true);
+                            TODO:
+                            * show SpaceLobby at top of roomslist
+                            * submit spaces request to get list of children in this space
+                            * modify logic in `update_selected_rooms` to also filter for rooms in the selected_space
+                            * tell dock to save state and close rooms *not* in this space, (or maybe the dock can listen for this action separately)
+                        }
+                        _ => {
+                            self.selected_space = None;
+                            self.view.view(ids!(space_lobby_entry)).set_visible(cx, false);
+                        }
+                    }
+
+
+                    continue;
+
                 }
             }
         }
@@ -1095,4 +1159,89 @@ struct RoomCategoryIndexes {
     first_room_index: usize,
     /// The index after the last room in this category, which is where the next category should start.
     after_rooms_index: usize,
+}
+
+
+
+
+impl Widget for SpaceLobbyEntry {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.animator_handle_event(cx, event).must_redraw() {
+            self.redraw(cx);
+        }
+
+        let area = self.draw_bg.area();
+        let emit_hover_in_action = |this: &Self, cx: &mut Cx| {
+            cx.widget_action(
+                this.widget_uid(),
+                &scope.path,
+                TooltipAction::HoverIn {
+                    widget_rect: area.rect(cx),
+                    text: this.space_name.clone(),
+                    bg_color: None,
+                    text_color: None,
+                },
+            );
+        };
+
+        match event.hits(cx, area) {
+            Hit::FingerHoverIn(_) => {
+                self.animator_play(cx, ids!(hover.on));
+                emit_hover_in_action(self, cx);
+            }
+            Hit::FingerHoverOver(_) => {
+                emit_hover_in_action(self, cx);
+            }
+            Hit::FingerHoverOut(_) => {
+                self.animator_play(cx, ids!(hover.off));
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    TooltipAction::HoverOut,
+                );
+            }
+            Hit::FingerDown(fe) => {
+                self.animator_play(cx, ids!(hover.down));
+                if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
+                    if let Some(space_id) = self.space_id.clone() {
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &scope.path,
+                            SpacesBarAction::ButtonSecondaryClicked { space_id },
+                        );
+                    }
+                }
+            }
+            Hit::FingerLongPress(_lp) => {
+                self.animator_play(cx, ids!(hover.down));
+                emit_hover_in_action(self, cx);
+                if let Some(space_id) = self.space_id.clone() {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        SpacesBarAction::ButtonSecondaryClicked { space_id },
+                    );
+                }
+            }
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                self.animator_play(cx, ids!(hover.on));
+                if let Some(space_id) = self.space_id.clone() {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        SpacesBarAction::ButtonClicked { space_id },
+                    );
+                }
+            }
+            Hit::FingerUp(fe) if !fe.is_over => {
+                self.animator_play(cx, ids!(hover.off));
+            }
+            Hit::FingerMove(_fe) => { }
+            _ => {}
+        }
+    }
+    
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
 }
