@@ -389,6 +389,9 @@ pub struct MentionableTextInput {
     /// Tracks whether we have a populated member list to avoid showing empty-state too early
     #[rust]
     members_available: bool,
+    /// Last known member count for the current room (used to detect refreshed data)
+    #[rust]
+    last_member_count: usize,
     /// Current state of the mention search functionality
     #[rust]
     search_state: MentionSearchState,
@@ -431,13 +434,18 @@ impl Widget for MentionableTextInput {
 
         // Best practice: Always check Scope first to get current context
         // Scope represents the current widget context as passed down from parents
-        let scope_room_id = {
+        let (scope_room_id, scope_member_count) = {
             let room_props = scope
                 .props
                 .get::<RoomScreenProps>()
                 .expect("RoomScreenProps should be available in scope for MentionableTextInput");
             self.members_sync_pending = room_props.room_members_sync_pending;
-            room_props.room_id.clone()
+            let member_count = room_props
+                .room_members
+                .as_ref()
+                .map(|members| members.len())
+                .unwrap_or(0);
+            (room_props.room_id.clone(), member_count)
         };
 
         // Check search channel on every frame if we're searching
@@ -542,6 +550,15 @@ impl Widget for MentionableTextInput {
                                 self.is_searching()
                             );
 
+                            // Save old sync state to detect when remote sync completes
+                            let was_sync_pending = self.members_sync_pending;
+                            let previous_member_count = self.last_member_count;
+                            let current_member_count = scope_member_count;
+                            let member_count_changed = current_member_count != previous_member_count;
+
+                            // Track latest count so we can spot updates even while sync is in-flight
+                            self.last_member_count = current_member_count;
+
                             self.members_sync_pending = *sync_in_progress;
                             self.members_available = *has_members;
 
@@ -561,16 +578,57 @@ impl Widget for MentionableTextInput {
                                 };
 
                                 if let Some((is_waiting, search_text)) = action {
+                                    let member_set_updated = member_count_changed
+                                        && matches!(self.search_state, MentionSearchState::Searching { .. });
+
                                     if is_waiting {
                                         log!("  → Members loaded, resuming search with saved text='{}'", search_text);
                                         self.last_search_text = None;
                                         self.update_user_list(cx, &search_text, scope);
                                     } else {
-                                        log!("  → Already searching, updating UI with search_text='{}'", search_text);
-                                        self.update_ui_with_results(cx, scope, &search_text);
+                                        // Already in Searching state
+                                        // Check if remote sync just completed or member set changed - need to re-search with full member list
+                                        if member_set_updated {
+                                            log!(
+                                                "  → Member list changed ({} -> {}), restarting search with text='{}'",
+                                                previous_member_count,
+                                                current_member_count,
+                                                search_text
+                                            );
+                                            self.last_search_text = None;
+                                            self.update_user_list(cx, &search_text, scope);
+                                        } else if !*sync_in_progress && was_sync_pending {
+                                            log!("  → Remote sync completed while searching, re-searching with full member list, text='{}'", search_text);
+                                            self.last_search_text = None;
+                                            self.update_user_list(cx, &search_text, scope);
+                                        } else {
+                                            log!("  → Already searching, updating UI with search_text='{}'", search_text);
+                                            self.update_ui_with_results(cx, scope, &search_text);
+                                        }
                                     }
                                 } else {
-                                    log!("  → Not in searching state, ignoring member load");
+                                    // Not in WaitingForMembers or Searching state
+                                    // Check if remote sync just completed - if so, refresh UI if there's an active mention trigger
+                                    if !*sync_in_progress && was_sync_pending {
+                                        log!("  → Remote sync just completed while not searching, checking for active mention trigger");
+                                        // Check if there's currently an active mention trigger in the text
+                                        let text = self.cmd_text_input.text_input_ref().text();
+                                        let cursor_pos = self.cmd_text_input.text_input_ref()
+                                            .borrow()
+                                            .map_or(0, |p| p.cursor().index);
+
+                                        if let Some(_trigger_pos) = self.find_mention_trigger_position(&text, cursor_pos) {
+                                            // Extract search text and refresh UI
+                                            let search_text = self.cmd_text_input.search_text().to_lowercase();
+                                            log!("  → Found active mention trigger, refreshing with text='{}'", search_text);
+                                            self.last_search_text = None;
+                                            self.update_user_list(cx, &search_text, scope);
+                                        } else {
+                                            log!("  → No active mention trigger found, sync complete");
+                                        }
+                                    } else {
+                                        log!("  → Not in searching state, ignoring member load");
+                                    }
                                 }
                             } else if self.is_searching() {
                                 // Still no members returned yet; keep showing loading indicator.
@@ -1229,6 +1287,29 @@ impl MentionableTextInput {
             items_added += user_items_added;
         }
 
+        // If remote sync is still in progress, add loading indicator after results
+        // This gives visual feedback that more members may be loading
+        // IMPORTANT: Don't call show_loading_indicator here as it calls clear_items()
+        // which would remove the user list we just added
+        if room_props.room_members_sync_pending {
+            log!("Remote sync still pending, adding loading indicator after partial results");
+
+            // Add loading indicator widget without clearing existing items
+            if let Some(ptr) = self.loading_indicator {
+                let loading_item = WidgetRef::new_from_ptr(cx, Some(ptr));
+                self.cmd_text_input.add_item(loading_item.clone());
+                self.loading_indicator_ref = Some(loading_item.clone());
+
+                // Start the loading animation
+                loading_item
+                    .bouncing_dots(id!(loading_animation))
+                    .start_animation(cx);
+                cx.new_next_frame();
+
+                items_added += 1;
+            }
+        }
+
         // Update popup visibility based on whether we have items
         self.update_popup_visibility(cx, items_added > 0);
 
@@ -1586,6 +1667,7 @@ impl MentionableTextInput {
 
         // Mark members as unavailable until we fetch them again
         self.members_available = false;
+        self.last_member_count = 0;
         self.loading_indicator_ref = None;
 
         // Clear list items

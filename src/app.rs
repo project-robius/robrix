@@ -240,12 +240,13 @@ impl MatchEvent for App {
             }
 
             if let Some(LogoutAction::ClearAppState { on_clear_appstate }) = action.downcast_ref() {
-                // Clear user profile cache, invited_rooms timeline states 
+                // Clear user profile cache, invited_rooms timeline states
                 clear_all_app_state(cx);
                 // Reset all app state to its default.
                 self.app_state = Default::default();
                 on_clear_appstate.notify_one();
-                continue;
+                // Don't continue here - let the action propagate to child widgets (e.g., RoomScreen)
+                // so they can reset their state as well
             }
 
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {

@@ -566,6 +566,8 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
+    /// Room to reload after login (saved during logout to restore user's view)
+    #[rust] pending_room_to_reload: Option<(OwnedRoomId, String)>,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -666,6 +668,42 @@ impl Widget for RoomScreen {
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
             for action in actions {
+                // Handle logout: clear this RoomScreen's state so it will be reinitialized
+                // just like a first-time login when the user logs back in.
+                // We do NOT call show_timeline() here because the Matrix client has been cleared,
+                // so any requests would fail. Instead, we just clear the state and let the normal
+                // flow reinitialize it when the user interacts with the room after logging back in.
+                if let Some(crate::logout::logout_confirm_modal::LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
+                    if let Some(tl) = self.tl_state.take() {
+                        log!("RoomScreen: clearing tl_state for room {} due to logout", tl.room_id);
+                    }
+                    // Save room_id for reloading after login, then clear state
+                    let saved_room_id = self.room_id.clone();
+                    let saved_room_name = self.room_name.clone();
+
+                    self.room_id = None;
+                    self.room_name = String::new();
+                    self.is_loaded = false;
+                    self.all_rooms_loaded = false;
+
+                    // Store the room to reload after login
+                    if let Some(room_id) = saved_room_id {
+                        self.pending_room_to_reload = Some((room_id, saved_room_name));
+                        log!("RoomScreen: saved room to reload after login");
+                    }
+
+                    log!("RoomScreen: fully reset state due to logout");
+                    // Don't return - allow other actions to be processed
+                }
+
+                // Handle login success: reload the room if we were displaying one before logout
+                if let Some(crate::login::login_screen::LoginAction::LoginSuccess) = action.downcast_ref() {
+                    if let Some((room_id, room_name)) = self.pending_room_to_reload.take() {
+                        log!("RoomScreen: reloading room {} after successful login", room_id);
+                        self.set_displayed_room(cx, room_id, room_name);
+                    }
+                }
+
                 // Handle actions related to restoring the previously-saved state of rooms.
                 if let Some(AppStateAction::RoomLoadedSuccessfully(room_id)) = action.downcast_ref() {
                     if self.room_id.as_ref().is_some_and(|r| r == room_id) {
@@ -816,14 +854,16 @@ impl Widget for RoomScreen {
                     is_direct_room,
                 }
             } else if let Some(room_id) = self.room_id.clone() {
-                // Fallback case: we have a room_id but no tl_state yet
+                // Fallback case: we have a room_id but no tl_state yet.
+                // This happens after logout clears tl_state but before show_timeline() is called again.
+                // Set room_members_sync_pending to true to show loading animation in MentionableTextInput.
                 let is_direct_room = Self::is_direct_room(cx, &room_id);
                 RoomScreenProps {
                     room_screen_widget_uid,
                     room_id,
                     room_members: None,
                     room_members_sort: None,
-                    room_members_sync_pending: false,
+                    room_members_sync_pending: true,
                     room_display_name: None,
                     room_avatar_url: None,
                     is_direct_room,
@@ -1377,12 +1417,14 @@ impl RoomScreen {
                     tl.room_members = Some(Arc::clone(&members));
                     tl.room_members_sort = Some(Arc::new(sort_data));
 
-                    // For non-sync requests (like GetRoomMembers), there won't be a RoomMembersSynced event
-                    // So we should clear the sync pending flag if we have members and we're not actually syncing
-                    // This fixes the issue where local cache lookups would leave the loading indicator on
+                    // For local fetches, check if remote sync is still in progress.
+                    // If remote sync is ongoing, keep sync_in_progress=true to show loading animation.
+                    // This prevents showing incomplete local cache (e.g., after logout) as final results.
                     let sync_in_progress = if is_local_fetch {
-                        false
+                        // Local fetch: only clear sync_in_progress if no remote sync is pending
+                        tl.room_members_sync_pending
                     } else {
+                        // Remote fetch: use the actual sync pending state
                         tl.room_members_sync_pending
                     };
 

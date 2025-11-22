@@ -3332,6 +3332,39 @@ pub fn shutdown_background_tasks() {
 }
 
 pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
+    // Get the database path before clearing CLIENT
+    // We need this to delete the Matrix SDK database after logout
+    let db_path_to_delete = if let Some(user_id) = current_user_id() {
+        use crate::persistence::session_file_path;
+        let session_file = session_file_path(&user_id);
+        if session_file.exists() {
+            match tokio::fs::read_to_string(&session_file).await {
+                Ok(serialized_session) => {
+                    match serde_json::from_str::<crate::persistence::FullSessionPersisted>(&serialized_session) {
+                        Ok(session) => {
+                            log!("Will delete Matrix SDK database at: {:?}", session.client_session.db_path);
+                            Some(session.client_session.db_path)
+                        }
+                        Err(e) => {
+                            log!("Failed to parse session file during logout: {}", e);
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    log!("Failed to read session file during logout: {}", e);
+                    None
+                }
+            }
+        } else {
+            log!("Session file not found during logout");
+            None
+        }
+    } else {
+        log!("No current user ID found during logout");
+        None
+    };
+
     // Clear resources normally, allowing them to be properly dropped
     // This prevents memory leaks when users logout and login again without closing the app
     CLIENT.lock().unwrap().take();
@@ -3345,6 +3378,21 @@ pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
 
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
+
+    // Delete the Matrix SDK database directory to ensure fresh state on next login
+    // This prevents stale cached data (like old room members) from appearing after re-login
+    if let Some(db_path) = db_path_to_delete {
+        match tokio::fs::remove_dir_all(&db_path).await {
+            Ok(_) => {
+                log!("Successfully deleted Matrix SDK database at: {:?}", db_path);
+            }
+            Err(e) => {
+                // Don't fail logout if database deletion fails
+                // Just log the error and continue
+                log!("Warning: Failed to delete Matrix SDK database at {:?}: {}", db_path, e);
+            }
+        }
+    }
 
     let on_clear_appstate = Arc::new(Notify::new());
     Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });
