@@ -3476,25 +3476,19 @@ pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
     // Clear resources normally, allowing them to be properly dropped
     // This prevents memory leaks when users logout and login again without closing the app
     CLIENT.lock().unwrap().take();
-    log!("Client cleared during logout");
-    
     SYNC_SERVICE.lock().unwrap().take();
-    log!("Sync service cleared during logout");
-    
     REQUEST_SENDER.lock().unwrap().take();
-    log!("Request sender cleared during logout");
-    
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
-    
+
     let on_clear_appstate = Arc::new(Notify::new());
     Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });
     
     match tokio::time::timeout(config.app_state_cleanup_timeout, on_clear_appstate.notified()).await {
         Ok(_) => {
-            log!("Received signal that app state was cleaned successfully");
+            log!("Received signal that UI-side app state was cleaned successfully");
             Ok(())
         }
-        Err(_) => Err(anyhow!("Timed out waiting for app state cleanup")),
+        Err(_) => Err(anyhow!("Timed out waiting for UI-side app state cleanup")),
     }
 }
