@@ -201,10 +201,6 @@ impl CalloutTooltip {
             TooltipPosition::Top => {
                 tooltip_pos.y = options.widget_rect.pos.y - max(expected_dimension.y, size.y);
                 callout_position = 180.0;
-                if Self::needs_width_fix(tooltip_pos.x, screen_size.x, expected_dimension.x) {
-                    fixed_width = true;
-                    tooltip_pos.x = 0.0;
-                }
             }
             TooltipPosition::Bottom => {
                 if tooltip_pos.y == screen_size.y - expected_dimension.y {
@@ -212,10 +208,6 @@ impl CalloutTooltip {
                     callout_position = 180.0;
                 } else {
                     tooltip_pos.y = options.widget_rect.pos.y + options.widget_rect.size.y;
-                }
-                if Self::needs_width_fix(tooltip_pos.x, screen_size.x, expected_dimension.x) {
-                    fixed_width = true;
-                    tooltip_pos.x = 0.0;
                 }
             }
             TooltipPosition::Left => {
@@ -225,11 +217,6 @@ impl CalloutTooltip {
                 tooltip_pos.y = options.widget_rect.pos.y
                     + 0.5 * (options.widget_rect.size.y - max(expected_dimension.y, options.widget_rect.size.y));
                 callout_position = 90.0;
-                if tooltip_pos.x < 0.0 {
-                    fixed_width = true;
-                    width_to_be_fixed = pos.x - triangle_height;
-                    tooltip_pos.x = 0.0;
-                }
             }
             TooltipPosition::Right => {
                 tooltip_pos.x = options.widget_rect.pos.x + options.widget_rect.size.x;
@@ -239,14 +226,19 @@ impl CalloutTooltip {
                     expected_dimension.x,
                 );
                 callout_position = 270.0;
-                if width_to_be_fixed == expected_dimension.x
-                    && width_to_be_fixed > screen_size.x - pos.x - options.widget_rect.size.x
-                {
-                    fixed_width = true;
-                    width_to_be_fixed = screen_size.x - pos.x - options.widget_rect.size.x;
-                }
             }
         }
+        
+        Self::apply_edge_case_fix(
+            &options.position,
+            &mut tooltip_pos,
+            &mut fixed_width,
+            &mut width_to_be_fixed,
+            screen_size,
+            expected_dimension,
+            &options.widget_rect,
+            triangle_height,
+        );
 
         PositionCalculation {
             tooltip_pos,
@@ -259,6 +251,42 @@ impl CalloutTooltip {
     /// Check if width fixing is needed for edge cases
     fn needs_width_fix(tooltip_x: f64, screen_width: f64, expected_width: f64) -> bool {
         tooltip_x == screen_width - expected_width && tooltip_x < 0.0
+    }
+    
+    /// Apply edge case handling for position and width fixing
+    fn apply_edge_case_fix(
+        position: &TooltipPosition,
+        tooltip_pos: &mut DVec2,
+        fixed_width: &mut bool,
+        width_to_be_fixed: &mut f64,
+        screen_size: DVec2,
+        expected_dimension: DVec2,
+        widget_rect: &Rect,
+        triangle_height: f64,
+    ) {
+        match position {
+            TooltipPosition::Top | TooltipPosition::Bottom => {
+                if Self::needs_width_fix(tooltip_pos.x, screen_size.x, expected_dimension.x) {
+                    *fixed_width = true;
+                    tooltip_pos.x = 0.0;
+                }
+            }
+            TooltipPosition::Left => {
+                if tooltip_pos.x < 0.0 {
+                    *fixed_width = true;
+                    *width_to_be_fixed = widget_rect.pos.x - triangle_height;
+                    tooltip_pos.x = 0.0;
+                }
+            }
+            TooltipPosition::Right => {
+                if *width_to_be_fixed == expected_dimension.x
+                    && *width_to_be_fixed > screen_size.x - widget_rect.pos.x - widget_rect.size.x
+                {
+                    *fixed_width = true;
+                    *width_to_be_fixed = screen_size.x - widget_rect.pos.x - widget_rect.size.x;
+                }
+            }
+        }
     }
 
     /// Apply tooltip configuration with given parameters
@@ -335,7 +363,6 @@ impl CalloutTooltip {
     /// to avoid being cut off, with automatic fallback to opposite directions.
     pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, options: CalloutTooltipOptions) {
         let mut tooltip = self.view.tooltip(ids!(tooltip));
-        let text = "let expected_dimension = tooltip.view(ids!(rounded_view)).area().rect(cx).size; let expected_dimension = tooltip.view(ids!(rounded_view)).area().rect(cx).size; let expected_dimension = tooltip.view(ids!(rounded_view)).area().rect(cx).size;";
         tooltip.set_text(cx, &pad_last_line(text));
 
         let expected_dimension = tooltip.view(ids!(rounded_view)).area().rect(cx).size;
