@@ -328,7 +328,7 @@ live_design! {
                 margin: {top: 40}
                 align: { x: 0.5, }
                 draw_text: {
-                    text_style: <REGULAR_TEXT>{font_size: 14},
+                    text_style: <REGULAR_TEXT>{font_size: 12},
                     color: (COLOR_TEXT),
                     wrap: Word
                 }
@@ -992,7 +992,7 @@ impl ImageViewer {
         if let Some(avatar) = &metadata.avatar_ref {
             self.avatar_ref = Some(avatar.clone());
         }
-        if cx.display_context.is_desktop() {
+        if !cx.display_context.is_desktop() {
             self.view.view(ids!(metadata_view.empty_right_container)).apply_over(cx, live!{
                 width: 0
             });
