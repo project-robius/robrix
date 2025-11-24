@@ -386,12 +386,6 @@ pub struct MentionableTextInput {
     /// Whether the current user can notify everyone in the room (@room mention)
     #[rust]
     can_notify_room: bool,
-    /// Tracks whether we have a populated member list to avoid showing empty-state too early
-    #[rust]
-    members_available: bool,
-    /// Last known member count for the current room (used to detect refreshed data)
-    #[rust]
-    last_member_count: usize,
     /// Current state of the mention search functionality
     #[rust]
     search_state: MentionSearchState,
@@ -404,13 +398,21 @@ pub struct MentionableTextInput {
     /// Whether the background search task has pending results
     #[rust]
     search_results_pending: bool,
-    /// Whether the room is still syncing its full member list
-    #[rust]
-    members_sync_pending: bool,
     /// Active loading indicator widget while we wait for members/results
     #[rust]
     loading_indicator_ref: Option<WidgetRef>,
-    /// Flag to track if popup cleanup is pending after focus loss
+    /// Cached text analysis to avoid repeated grapheme parsing
+    /// Format: (text, graphemes_as_strings, byte_positions)
+    #[rust]
+    cached_text_analysis: Option<(String, Vec<String>, Vec<usize>)>,
+    /// Last known member count - used ONLY for change detection (not rendering)
+    /// Rendering always uses props as source of truth
+    #[rust]
+    last_member_count: usize,
+    /// Last known sync pending state - used ONLY for change detection (not rendering)
+    #[rust]
+    last_sync_pending: bool,
+    /// Whether a deferred popup cleanup is pending after focus loss
     #[rust]
     pending_popup_cleanup: bool,
 }
@@ -439,7 +441,6 @@ impl Widget for MentionableTextInput {
                 .props
                 .get::<RoomScreenProps>()
                 .expect("RoomScreenProps should be available in scope for MentionableTextInput");
-            self.members_sync_pending = room_props.room_members_sync_pending;
             let member_count = room_props
                 .room_members
                 .as_ref()
@@ -457,6 +458,13 @@ impl Widget for MentionableTextInput {
                 }
             }
         }
+        // Handle deferred cleanup after focus loss
+        if let Event::NextFrame(_) = event {
+            if self.pending_popup_cleanup {
+                self.pending_popup_cleanup = false;
+                self.close_mention_popup(cx);
+            }
+        }
 
         if let Event::Actions(actions) = event {
             let text_input_ref = self.cmd_text_input.text_input_ref();
@@ -469,15 +477,7 @@ impl Widget for MentionableTextInput {
 
             // Handle item selection from mention popup
             if let Some(selected) = self.cmd_text_input.item_selected(actions) {
-                // Clear pending popup cleanup since we're processing a selection
-                self.pending_popup_cleanup = false;
                 self.on_user_selected(cx, scope, selected);
-            }
-
-            // If we had a pending cleanup but no selection occurred, do the cleanup now
-            if self.pending_popup_cleanup {
-                self.pending_popup_cleanup = false;
-                self.close_mention_popup(cx);
             }
 
             // Handle build items request
@@ -550,19 +550,26 @@ impl Widget for MentionableTextInput {
                                 self.is_searching()
                             );
 
-                            // Save old sync state to detect when remote sync completes
-                            let was_sync_pending = self.members_sync_pending;
+                            // CRITICAL: Use locally stored previous state for change detection
+                            // (not from props, which is already the new state in the same frame)
                             let previous_member_count = self.last_member_count;
+                            let was_sync_pending = self.last_sync_pending;
+
+                            // Current state: always read from current frame's props to get latest data
                             let current_member_count = scope_member_count;
-                            let member_count_changed = current_member_count != previous_member_count;
+                            let current_sync_pending = *sync_in_progress;
 
-                            // Track latest count so we can spot updates even while sync is in-flight
+                            // Detect actual changes
+                            let member_count_changed = current_member_count != previous_member_count
+                                && current_member_count > 0
+                                && previous_member_count > 0;
+                            let sync_just_completed = !current_sync_pending && was_sync_pending;
+
+                            // Update local state for next comparison
                             self.last_member_count = current_member_count;
+                            self.last_sync_pending = current_sync_pending;
 
-                            self.members_sync_pending = *sync_in_progress;
-                            self.members_available = *has_members;
-
-                            if self.members_available {
+                            if *has_members {
                                 // CRITICAL FIX: Use saved state instead of reading from text input
                                 // Reading from text input causes race condition (text may be empty when members arrive)
                                 // Extract needed values first to avoid borrow checker issues
@@ -597,7 +604,7 @@ impl Widget for MentionableTextInput {
                                             );
                                             self.last_search_text = None;
                                             self.update_user_list(cx, &search_text, scope);
-                                        } else if !*sync_in_progress && was_sync_pending {
+                                        } else if sync_just_completed {
                                             log!("  → Remote sync completed while searching, re-searching with full member list, text='{}'", search_text);
                                             self.last_search_text = None;
                                             self.update_user_list(cx, &search_text, scope);
@@ -609,7 +616,7 @@ impl Widget for MentionableTextInput {
                                 } else {
                                     // Not in WaitingForMembers or Searching state
                                     // Check if remote sync just completed - if so, refresh UI if there's an active mention trigger
-                                    if !*sync_in_progress && was_sync_pending {
+                                    if sync_just_completed {
                                         log!("  → Remote sync just completed while not searching, checking for active mention trigger");
                                         // Check if there's currently an active mention trigger in the text
                                         let text = self.cmd_text_input.text_input_ref().text();
@@ -643,21 +650,18 @@ impl Widget for MentionableTextInput {
                 }
             }
 
-            // Close popup if focus is lost while searching
-            // However, don't reset search state immediately to allow pending item selection events to process
-            // This fixes the issue where mouse clicks would clear state before the selection could be handled
+            // Close popup and clean up search state if focus is lost while searching
+            // This prevents background search tasks from continuing when user is no longer interested
             if !has_focus && self.is_searching() {
-                // Only close the visual popup, but keep the search state for a brief moment
-                // to allow any pending selection events to be processed
                 let popup = self.cmd_text_input.view(id!(popup));
                 popup.set_visible(cx, false);
-                // Mark that we should clean up state after selection is processed
-                // The actual cleanup will happen in the next event cycle if no selection occurs
                 self.pending_popup_cleanup = true;
             }
         }
 
         // Check if we were waiting for members and they're now available
+        // When members arrive, always update regardless of focus state
+        // update_user_list will handle popup visibility based on current focus
         if let MentionSearchState::WaitingForMembers {
             trigger_position: _,
             pending_search_text,
@@ -667,18 +671,11 @@ impl Widget for MentionableTextInput {
                 .props
                 .get::<RoomScreenProps>()
                 .expect("RoomScreenProps should be available in scope");
-            self.members_sync_pending = room_props.room_members_sync_pending;
 
             if let Some(room_members) = &room_props.room_members {
                 if !room_members.is_empty() {
-                    let text_input = self.cmd_text_input.text_input(id!(text_input));
-                    let text_input_area = text_input.area();
-                    let is_focused = cx.has_key_focus(text_input_area);
-
-                    if is_focused {
-                        let search_text = pending_search_text.clone();
-                        self.update_user_list(cx, &search_text, scope);
-                    }
+                    let search_text = pending_search_text.clone();
+                    self.update_user_list(cx, &search_text, scope);
                 }
             }
         }
@@ -932,8 +929,19 @@ impl MentionableTextInput {
     }
 
     /// Update popup visibility and layout based on current state
-    fn update_popup_visibility(&mut self, cx: &mut Cx, has_items: bool) {
+    fn update_popup_visibility(&mut self, cx: &mut Cx, scope: &mut Scope, has_items: bool) {
         let popup = self.cmd_text_input.view(id!(popup));
+
+        // Get current state from props
+        let room_props = scope
+            .props
+            .get::<RoomScreenProps>()
+            .expect("RoomScreenProps should be available in scope");
+        let members_sync_pending = room_props.room_members_sync_pending;
+        let members_available = room_props
+            .room_members
+            .as_ref()
+            .is_some_and(|m| !m.is_empty());
 
         match &self.search_state {
             MentionSearchState::Idle | MentionSearchState::JustCancelled => {
@@ -956,10 +964,10 @@ impl MentionableTextInput {
                     popup.set_visible(cx, true);
                     self.cmd_text_input.text_input_ref().set_key_focus(cx);
                 } else if accumulated_results.is_empty() {
-                    if self.members_sync_pending || self.search_results_pending {
+                    if members_sync_pending || self.search_results_pending {
                         // Still fetching either member list or background search results.
                         self.show_loading_indicator(cx);
-                    } else if self.members_available {
+                    } else if members_available {
                         // Search completed with no results even though we have members.
                         self.show_no_matches_indicator(cx);
                     } else {
@@ -982,9 +990,6 @@ impl MentionableTextInput {
         // Note: We receive scope as parameter but don't use it in this method
         // This is good practice to maintain signature consistency with other methods
         // and allow for future scope-based enhancements
-
-        // Clear pending popup cleanup since we're processing a selection
-        self.pending_popup_cleanup = false;
 
         let text_input_ref = self.cmd_text_input.text_input_ref();
         let current_text = text_input_ref.text();
@@ -1311,7 +1316,7 @@ impl MentionableTextInput {
         }
 
         // Update popup visibility based on whether we have items
-        self.update_popup_visibility(cx, items_added > 0);
+        self.update_popup_visibility(cx, scope, items_added > 0);
 
         // Force immediate redraw to ensure UI updates are visible
         cx.redraw_all();
@@ -1319,22 +1324,18 @@ impl MentionableTextInput {
 
     /// Updates the mention suggestion list based on search
     fn update_user_list(&mut self, cx: &mut Cx, search_text: &str, scope: &mut Scope) {
-        // CRITICAL FIX: Get room_props FIRST to read real-time member state
-        // This avoids timing issues where self.members_available is stale
+        // Get room_props to read real-time member state from props (single source of truth)
         let room_props = scope
             .props
             .get::<RoomScreenProps>()
             .expect("RoomScreenProps should be available in scope for MentionableTextInput");
 
-        // Immediately sync local state from props (don't rely on async actions)
         let has_members_in_props = room_props.room_members
             .as_ref()
             .is_some_and(|m| !m.is_empty());
-        self.members_available = has_members_in_props;
-        self.members_sync_pending = room_props.room_members_sync_pending;
 
-        log!("update_user_list: search_text='{}' has_members_in_props={} self.members_available={} search_state={:?}",
-             search_text, has_members_in_props, self.members_available, self.search_state);
+        log!("update_user_list: search_text='{}' has_members_in_props={} search_state={:?}",
+             search_text, has_members_in_props, self.search_state);
 
         // Get trigger position from current state (if in searching mode)
         let trigger_pos = match &self.search_state {
@@ -1381,7 +1382,6 @@ impl MentionableTextInput {
         let cached_members = match &room_props.room_members {
             Some(members) if !members.is_empty() => {
                 // Members available, continue to search
-                // (self.members_available already synced at function start)
                 members.clone()
             }
             _ => {
@@ -1391,8 +1391,6 @@ impl MentionableTextInput {
                 );
 
                 self.cancel_active_search();
-                // Note: self.members_available already set to false at function start
-                self.members_sync_pending = true;
 
                 if !already_waiting {
                     submit_async_request(MatrixRequest::GetRoomMembers {
@@ -1464,17 +1462,36 @@ impl MentionableTextInput {
     }
 
     /// Detects valid mention trigger positions in text
-    fn find_mention_trigger_position(&self, text: &str, cursor_pos: usize) -> Option<usize> {
+    fn find_mention_trigger_position(&mut self, text: &str, cursor_pos: usize) -> Option<usize> {
         if cursor_pos == 0 {
             return None;
         }
 
+        // Check cache and rebuild if text changed (performance optimization)
+        let (text_graphemes_owned, byte_positions) = if let Some((cached_text, cached_graphemes, cached_positions)) = &self.cached_text_analysis {
+            if cached_text == text {
+                // Cache hit - use cached data
+                (cached_graphemes.clone(), cached_positions.clone())
+            } else {
+                // Cache miss - rebuild and update cache
+                let graphemes_owned: Vec<String> = text.graphemes(true).map(|s| s.to_string()).collect();
+                let positions = utils::build_grapheme_byte_positions(text);
+                self.cached_text_analysis = Some((text.to_string(), graphemes_owned.clone(), positions.clone()));
+                (graphemes_owned, positions)
+            }
+        } else {
+            // No cache - build and cache
+            let graphemes_owned: Vec<String> = text.graphemes(true).map(|s| s.to_string()).collect();
+            let positions = utils::build_grapheme_byte_positions(text);
+            self.cached_text_analysis = Some((text.to_string(), graphemes_owned.clone(), positions.clone()));
+            (graphemes_owned, positions)
+        };
+
+        // Convert owned strings to slices for processing
+        let text_graphemes: Vec<&str> = text_graphemes_owned.iter().map(|s| s.as_str()).collect();
+
         // Use utility function to convert byte position to grapheme index
         let cursor_grapheme_idx = utils::byte_index_to_grapheme_index(text, cursor_pos);
-        let text_graphemes: Vec<&str> = text.graphemes(true).collect();
-
-        // Build byte position mapping to facilitate conversion back to byte positions
-        let byte_positions = utils::build_grapheme_byte_positions(text);
 
         // Simple logic: trigger when cursor is immediately after @ symbol
         // Only trigger if @ is preceded by whitespace or beginning of text
@@ -1663,12 +1680,12 @@ impl MentionableTextInput {
         // Reset last search text to allow new searches
         self.last_search_text = None;
         self.search_results_pending = false;
-        self.members_sync_pending = false;
-
-        // Mark members as unavailable until we fetch them again
-        self.members_available = false;
-        self.last_member_count = 0;
         self.loading_indicator_ref = None;
+
+        // Reset change detection state
+        self.last_member_count = 0;
+        self.last_sync_pending = false;
+        self.pending_popup_cleanup = false;
 
         // Clear list items
         self.cmd_text_input.clear_items();
