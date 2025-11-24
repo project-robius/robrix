@@ -35,11 +35,6 @@ pub fn get_png_or_jpg_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageEr
     }
 }
 
-/// Duration for rotation animations in seconds.
-/// 
-/// This value should be consistent with the duration value in set in the animator.
-const ROTATION_ANIMATION_DURATION: f64 = 1.0;
-
 /// Configuration for zoom and pan settings in the image viewer
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -464,10 +459,6 @@ struct ImageViewer {
     is_animating_rotation: bool,
     #[animator]
     animator: Animator,
-    /// Timer for rotation animation, prevents clicking the rotation buttons too often
-    /// to start the animation
-    #[rust]
-    timer: Timer,
     /// Zoom constraints for the image viewer
     #[rust]
     min_zoom: f32,
@@ -595,11 +586,9 @@ impl Widget for ImageViewer {
             }
         }
         if let Event::TouchUpdate(touch_event) = event {
-            self.handle_touch_update(cx, touch_event);
+            self.handle_pinch_to_zoom(cx, touch_event);
         }
-        if let Some(_timer) = self.timer.is_event(event) {
-            self.is_animating_rotation = false;
-        }
+
         if let (Event::Signal, Some((_background_task_id, receiver))) = (event, &mut self.receiver) {
             let mut remove_receiver = false;
             match receiver.try_recv() {
@@ -630,14 +619,29 @@ impl Widget for ImageViewer {
                 self.receiver = None;
             }
         }
-        self.animator_handle_event(cx, event);
+        if let Event::NextFrame(_) = event {
+            let animator_action = self.animator_handle_event(cx, event);
+            let animation_id = match self.rotation_step {
+                0 => ids!(mode.upright),    // 0°
+                1 => ids!(mode.degree_90),  // 90°
+                2 => ids!(mode.degree_180), // 180°
+                3 => ids!(mode.degree_270), // 270°
+                _ => ids!(mode.upright),
+            };
+            if self.animator.animator_in_state(cx, animation_id) {
+                self.is_animating_rotation = animator_action.is_animating();
+            }
+        }
+        
         self.view.handle_event(cx, event, scope);
         self.match_event(cx, event);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let mut layout = Layout::default();
-        layout.flow = Flow::Overlay;
+        let layout = Layout{
+            flow: Flow::Overlay,
+            ..Default::default()
+        };
         cx.begin_turtle(walk, layout);
         let steps = self.view.draw_walk(cx, scope, walk);
         if self.avatar_placeholder_rect.is_none() {
@@ -693,7 +697,6 @@ impl MatchEvent for ImageViewer {
             .clicked(actions)
         {
             if !self.is_animating_rotation {
-                self.timer = cx.start_timeout(ROTATION_ANIMATION_DURATION);
                 self.is_animating_rotation = true;
                 if self.rotation_step == 3 {
                     self.animator_cut(cx, ids!(mode.degree_neg90));
@@ -709,7 +712,6 @@ impl MatchEvent for ImageViewer {
             .clicked(actions)
         {
             if !self.is_animating_rotation {
-                self.timer = cx.start_timeout(1.0);
                 self.is_animating_rotation = true;
                 if self.rotation_step == 0 {
                     self.rotation_step = 4;
@@ -729,29 +731,21 @@ impl ImageViewer {
         self.is_animating_rotation = false; // Reset animation state
         self.previous_pinch_distance = None; // Reset pinch tracking
         self.mouse_cursor_hover_over_image = false; // Reset hover state
-        self.timer = Timer::default(); // Reset timer
         self.receiver = None;
         self.reset_drag_state(cx);
-        // Clear the rotated image texture with a white background
-        if let Ok(image_buffer) = ImageBuffer::new(&[255], 1, 1) {
-            let texture = image_buffer.into_new_texture(cx);
-            self.view
-                .rotated_image(ids!(rotated_image))
-                .set_texture(cx, Some(texture.clone()));
-            self.view.rotated_image(ids!(rotated_image)).redraw(cx);
-            
-        }
         self.avatar_ref = None;
         self.avatar_placeholder_rect = None;
         self.animator_cut(cx, ids!(mode.upright));
-        self.view
-            .rotated_image(ids!(rotated_image_container.rotated_image))
-            .apply_over(
-                cx,
-                live! {
-                    draw_bg: { scale: 1.0 }
-                },
-            );
+        let rotated_image_ref = self
+            .view
+            .rotated_image(ids!(rotated_image_container.rotated_image));
+        rotated_image_ref.apply_over(
+            cx,
+            live! {
+                draw_bg: { scale: 1.0 }
+            },
+        );
+        rotated_image_ref.set_texture(cx, None);
     }
 
     /// Updates the shader uniforms of the rotated image widget with the current rotation,
@@ -883,7 +877,7 @@ impl ImageViewer {
     /// to calculate a scale factor. The scale factor is then passed to `adjust_zoom` to
     /// adjust the zoom level of the image viewer. When the event contains less than two
     /// touches, the previous pinch distance is reset to `None`.
-    fn handle_touch_update(&mut self, cx: &mut Cx, event: &TouchUpdateEvent) {
+    fn handle_pinch_to_zoom(&mut self, cx: &mut Cx, event: &TouchUpdateEvent) {
         if event.touches.len() == 2 {
             let touch1 = &event.touches[0];
             let touch2 = &event.touches[1];
@@ -985,14 +979,15 @@ impl ImageViewer {
                 .set_date_time(cx, timestamp);
         }
         if let Some(sender) = &metadata.sender {
-            let truncated_sender = if sender.len() > MAX_USERNAME_LENGTH {
-                format!("{}...", &sender[..MAX_USERNAME_LENGTH - 3])
+            if sender.len() > MAX_USERNAME_LENGTH {
+                meta_view
+                    .label(ids!(top_left_container.content.username))
+                    .set_text(cx, &format!("{}...", &sender[..MAX_USERNAME_LENGTH - 3]));
             } else {
-                sender.clone()
+                meta_view
+                    .label(ids!(top_left_container.content.username))
+                    .set_text(cx, sender);
             };
-            meta_view
-                .label(ids!(top_left_container.content.username))
-                .set_text(cx, &truncated_sender);
         }
         if let Some(avatar) = &metadata.avatar_ref {
             self.avatar_ref = Some(avatar.clone());

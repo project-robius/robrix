@@ -1,9 +1,8 @@
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use matrix_sdk::{
-    media::MediaFormat, ruma::
-        events::room::{message::MessageType, MediaSource}
-    
+    media::MediaFormat,
+    ruma::events::room::{message::MessageType, MediaSource},
 };
 use reqwest::StatusCode;
 
@@ -55,7 +54,7 @@ pub fn get_image_name_and_filesize(event_tl_item: &EventTimelineItem) -> (String
                 .info
                 .as_ref()
                 .and_then(|info| info.size)
-                .map(|s| u64::try_from(s).unwrap_or_default())
+                .map(u64::from)
                 .unwrap_or(0);
             return (name, size);
         }
