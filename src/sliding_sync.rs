@@ -672,6 +672,19 @@ async fn async_worker(
                                 if let Some(name) = member.display_name() {
                                     name.hash(&mut hasher);
                                 }
+                                // Include avatar URL in hash to detect avatar changes
+                                if let Some(avatar) = member.avatar_url() {
+                                    avatar.as_str().hash(&mut hasher);
+                                }
+                                // Include power level role in hash to detect permission changes
+                                // This ensures mention list re-sorts when power levels change
+                                use matrix_sdk::room::RoomMemberRole;
+                                let power_rank: u8 = match member.suggested_role_for_power_level() {
+                                    RoomMemberRole::Administrator | RoomMemberRole::Creator => 0,
+                                    RoomMemberRole::Moderator => 1,
+                                    RoomMemberRole::User => 2,
+                                };
+                                power_rank.hash(&mut hasher);
                             }
                             let digest = hasher.finish();
                             let mut digests = ROOM_MEMBERS_DIGESTS.lock().unwrap();

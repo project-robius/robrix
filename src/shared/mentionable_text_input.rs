@@ -462,7 +462,16 @@ impl Widget for MentionableTextInput {
         if let Event::NextFrame(_) = event {
             if self.pending_popup_cleanup {
                 self.pending_popup_cleanup = false;
-                self.close_mention_popup(cx);
+
+                // Only close if input still doesn't have focus and we're not actively searching
+                let text_input_ref = self.cmd_text_input.text_input_ref();
+                let text_input_area = text_input_ref.area();
+                let has_focus = cx.has_key_focus(text_input_area);
+
+                // If user refocused or is actively typing/searching, don't cleanup
+                if !has_focus && !self.is_searching() {
+                    self.close_mention_popup(cx);
+                }
             }
         }
 
@@ -555,8 +564,12 @@ impl Widget for MentionableTextInput {
                             let previous_member_count = self.last_member_count;
                             let was_sync_pending = self.last_sync_pending;
 
-                            // Current state: always read from current frame's props to get latest data
-                            let current_member_count = scope_member_count;
+                            // Current state: read fresh props to avoid stale snapshot from handle_event entry
+                            let current_member_count = scope
+                                .props
+                                .get::<RoomScreenProps>()
+                                .map(|p| p.room_members.as_ref().map(|m| m.len()).unwrap_or(0))
+                                .unwrap_or(scope_member_count);
                             let current_sync_pending = *sync_in_progress;
 
                             // Detect actual changes
@@ -643,7 +656,11 @@ impl Widget for MentionableTextInput {
                                 self.show_loading_indicator(cx);
                                 let popup = self.cmd_text_input.view(id!(popup));
                                 popup.set_visible(cx, true);
-                                self.cmd_text_input.text_input_ref().set_key_focus(cx);
+                                // Only restore focus if input currently has focus
+                                let text_input_area = self.cmd_text_input.text_input_ref().area();
+                                if cx.has_key_focus(text_input_area) {
+                                    self.cmd_text_input.text_input_ref().set_key_focus(cx);
+                                }
                             }
                         }
                     }
@@ -656,6 +673,8 @@ impl Widget for MentionableTextInput {
                 let popup = self.cmd_text_input.view(id!(popup));
                 popup.set_visible(cx, false);
                 self.pending_popup_cleanup = true;
+                // Guarantee cleanup executes even if search completes and stops requesting frames
+                cx.new_next_frame();
             }
         }
 
@@ -953,7 +972,11 @@ impl MentionableTextInput {
                 // Waiting for room members to be loaded
                 self.show_loading_indicator(cx);
                 popup.set_visible(cx, true);
-                self.cmd_text_input.text_input_ref().set_key_focus(cx);
+                // Only restore focus if input currently has focus
+                let text_input_area = self.cmd_text_input.text_input_ref().area();
+                if cx.has_key_focus(text_input_area) {
+                    self.cmd_text_input.text_input_ref().set_key_focus(cx);
+                }
             }
             MentionSearchState::Searching {
                 accumulated_results,
@@ -962,7 +985,11 @@ impl MentionableTextInput {
                 if has_items {
                     // We have search results to display
                     popup.set_visible(cx, true);
-                    self.cmd_text_input.text_input_ref().set_key_focus(cx);
+                    // Only restore focus if input currently has focus
+                    let text_input_area = self.cmd_text_input.text_input_ref().area();
+                    if cx.has_key_focus(text_input_area) {
+                        self.cmd_text_input.text_input_ref().set_key_focus(cx);
+                    }
                 } else if accumulated_results.is_empty() {
                     if members_sync_pending || self.search_results_pending {
                         // Still fetching either member list or background search results.
@@ -975,11 +1002,19 @@ impl MentionableTextInput {
                         self.show_loading_indicator(cx);
                     }
                     popup.set_visible(cx, true);
-                    self.cmd_text_input.text_input_ref().set_key_focus(cx);
+                    // Only restore focus if input currently has focus
+                    let text_input_area = self.cmd_text_input.text_input_ref().area();
+                    if cx.has_key_focus(text_input_area) {
+                        self.cmd_text_input.text_input_ref().set_key_focus(cx);
+                    }
                 } else {
                     // Has accumulated results but no items (should not happen)
                     popup.set_visible(cx, true);
-                    self.cmd_text_input.text_input_ref().set_key_focus(cx);
+                    // Only restore focus if input currently has focus
+                    let text_input_area = self.cmd_text_input.text_input_ref().area();
+                    if cx.has_key_focus(text_input_area) {
+                        self.cmd_text_input.text_input_ref().set_key_focus(cx);
+                    }
                 }
             }
         }
@@ -1414,12 +1449,16 @@ impl MentionableTextInput {
             }
         };
 
-        // We have cached members, ensure popup is visible and focused
+        // We have cached members, ensure popup is visible
         let popup = self.cmd_text_input.view(id!(popup));
         let header_view = self.cmd_text_input.view(id!(popup.header_view));
         header_view.set_visible(cx, true);
         popup.set_visible(cx, true);
-        self.cmd_text_input.text_input_ref().set_key_focus(cx);
+        // Only restore focus if input currently has focus
+        let text_input_area = self.cmd_text_input.text_input_ref().area();
+        if cx.has_key_focus(text_input_area) {
+            self.cmd_text_input.text_input_ref().set_key_focus(cx);
+        }
 
         // Create a new channel for this search
         let (sender, receiver) = std::sync::mpsc::channel();
@@ -1594,8 +1633,9 @@ impl MentionableTextInput {
         // This avoids conflicts with list = { height: Fill }
         popup.set_visible(cx, true);
 
-        // Maintain text input focus
-        if self.is_searching() {
+        // Maintain text input focus only if it currently has focus
+        let text_input_area = self.cmd_text_input.text_input_ref().area();
+        if self.is_searching() && cx.has_key_focus(text_input_area) {
             self.cmd_text_input.text_input_ref().set_key_focus(cx);
         }
     }
@@ -1625,8 +1665,9 @@ impl MentionableTextInput {
         // Let popup auto-size based on content
         popup.apply_over(cx, live! { height: Fit });
 
-        // Maintain text input focus so user can continue typing
-        if self.is_searching() {
+        // Maintain text input focus so user can continue typing, but only if currently focused
+        let text_input_area = self.cmd_text_input.text_input_ref().area();
+        if self.is_searching() && cx.has_key_focus(text_input_area) {
             self.cmd_text_input.text_input_ref().set_key_focus(cx);
         }
     }
