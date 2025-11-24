@@ -158,6 +158,14 @@ pub struct CalloutTooltip {
 // The default height of the triangle in the callout pointer.
 const TRIANGLE_HEIGHT: f64 = 7.5;
 
+#[derive(Debug)]
+struct PositionCalculation {
+    tooltip_pos: DVec2,
+    callout_position: f64,
+    fixed_width: bool,
+    width_to_be_fixed: f64,
+}
+
 impl Widget for CalloutTooltip {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
@@ -169,28 +177,15 @@ impl Widget for CalloutTooltip {
 }
 
 impl CalloutTooltip {
-    /// Shows a tooltip with the given text and options.
-    ///
-    /// The tooltip comes with a callout pointing to its target.
-    ///
-    /// By default, the tooltip will be displayed to the widget's right.
-    ///
-    /// If the widget is too close to the edge of the window, the tooltip is positioned
-    /// to avoid being cut off, with automatic fallback to opposite directions.
-    pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, mut options: CalloutTooltipOptions) {
-        let mut tooltip = self.view.tooltip(ids!(tooltip));
+    /// Calculate tooltip position and layout parameters for a given position
+    fn calculate_position(
+        options: &CalloutTooltipOptions,
+        expected_dimension: DVec2,
+        screen_size: DVec2,
+        triangle_height: f64,
+    ) -> PositionCalculation {
         let pos = options.widget_rect.pos;
         let size = options.widget_rect.size;
-        // When there is line break in the text label, the label's width follows the length of the last line.
-        // When the previous lines is longer than the last line, text will be cut off.
-        // Hence we need to lengthen the last line to be the same length as the longest line.
-        tooltip.set_text(cx, &pad_last_line(text));
-
-        // Expected_dimension size is 0.0 when mouse first moved in and the tooltip may be cut off.
-        // When the mouse is hover over, the expected_dimension is not 0.0 and will be used to re-position the tooltip to avoid cut off.
-        let expected_dimension = tooltip.view(ids!(rounded_view)).area().rect(cx).size;
-
-        let screen_size = tooltip.area().rect(cx).size;
         let mut tooltip_pos = DVec2 {
             x: min(pos.x, screen_size.x - expected_dimension.x),
             y: min(
@@ -201,29 +196,25 @@ impl CalloutTooltip {
         let mut fixed_width = false;
         let mut callout_position = 0.0;
         let mut width_to_be_fixed = screen_size.x;
-        let triangle_height = options.triangle_height.unwrap_or(TRIANGLE_HEIGHT);
+
         match options.position {
             TooltipPosition::Top => {
-                tooltip_pos.y =
-                    options.widget_rect.pos.y - max(expected_dimension.y, size.y);
+                tooltip_pos.y = options.widget_rect.pos.y - max(expected_dimension.y, size.y);
                 callout_position = 180.0;
-                if tooltip_pos.x == screen_size.x - expected_dimension.x && tooltip_pos.x < 0.0 {
-                    fixed_width = true;                    
+                if Self::needs_width_fix(tooltip_pos.x, screen_size.x, expected_dimension.x) {
+                    fixed_width = true;
                     tooltip_pos.x = 0.0;
                 }
             }
             TooltipPosition::Bottom => {
                 if tooltip_pos.y == screen_size.y - expected_dimension.y {
-                    // If the tooltip is too close to the bottom, position it above the widget
-                    tooltip_pos.y = options.widget_rect.pos.y
-                        - max(expected_dimension.y, size.y);
+                    tooltip_pos.y = options.widget_rect.pos.y - max(expected_dimension.y, size.y);
                     callout_position = 180.0;
-                    options.position = TooltipPosition::Top;
                 } else {
                     tooltip_pos.y = options.widget_rect.pos.y + options.widget_rect.size.y;
                 }
-                if tooltip_pos.x == screen_size.x - expected_dimension.x && tooltip_pos.x < 0.0 {
-                    fixed_width = true;                    
+                if Self::needs_width_fix(tooltip_pos.x, screen_size.x, expected_dimension.x) {
+                    fixed_width = true;
                     tooltip_pos.x = 0.0;
                 }
             }
@@ -232,11 +223,9 @@ impl CalloutTooltip {
                     - max(expected_dimension.x, options.widget_rect.size.x)
                     - triangle_height;
                 tooltip_pos.y = options.widget_rect.pos.y
-                    + 0.5
-                        * (options.widget_rect.size.y
-                            - max(expected_dimension.y, options.widget_rect.size.y));
+                    + 0.5 * (options.widget_rect.size.y - max(expected_dimension.y, options.widget_rect.size.y));
                 callout_position = 90.0;
-                if tooltip_pos.x == pos.x - expected_dimension.x - triangle_height && tooltip_pos.x < 0.0 {
+                if tooltip_pos.x < 0.0 {
                     fixed_width = true;
                     width_to_be_fixed = pos.x - triangle_height;
                     tooltip_pos.x = 0.0;
@@ -244,41 +233,49 @@ impl CalloutTooltip {
             }
             TooltipPosition::Right => {
                 tooltip_pos.x = options.widget_rect.pos.x + options.widget_rect.size.x;
-                tooltip_pos.y = options.widget_rect.pos.y + 0.5 * options.widget_rect.size.y
-                    - expected_dimension.y * 0.5;
+                tooltip_pos.y = options.widget_rect.pos.y + 0.5 * options.widget_rect.size.y - expected_dimension.y * 0.5;
                 width_to_be_fixed = max(
                     screen_size.x - (pos.x + options.widget_rect.size.x + triangle_height * 2.0),
                     expected_dimension.x,
                 );
                 callout_position = 270.0;
-                if width_to_be_fixed == expected_dimension.x 
-                        && width_to_be_fixed > screen_size.x - pos.x - options.widget_rect.size.x {
+                if width_to_be_fixed == expected_dimension.x
+                    && width_to_be_fixed > screen_size.x - pos.x - options.widget_rect.size.x
+                {
                     fixed_width = true;
                     width_to_be_fixed = screen_size.x - pos.x - options.widget_rect.size.x;
                 }
             }
         }
 
-        let target = vec2(
-            options.widget_rect.pos.x as f32,
-            options.widget_rect.pos.y as f32,
-        );
-        let tooltip_pos = vec2(tooltip_pos.x as f32, tooltip_pos.y as f32);
-        let target_size = vec2(
-            options.widget_rect.size.x as f32,
-            options.widget_rect.size.y as f32,
-        );
-        // Default colors: white text on dark gray background.
-        let mut text_color = options.text_color.unwrap_or(vec4(1.0, 1.0, 1.0, 1.0));
-        // If expected_dimension's width is 0.0, hide the text by setting it's color to be transparent
-        if expected_dimension.x == 0.0 {
-            text_color.w = 0.0;
-        } else {
-            text_color.w = 1.0;
+        PositionCalculation {
+            tooltip_pos,
+            callout_position,
+            fixed_width,
+            width_to_be_fixed,
         }
-        let bg_color = options.bg_color.unwrap_or(vec4(0.26, 0.30, 0.333, 1.0));
+    }
 
-        if fixed_width {
+    /// Check if width fixing is needed for edge cases
+    fn needs_width_fix(tooltip_x: f64, screen_width: f64, expected_width: f64) -> bool {
+        tooltip_x == screen_width - expected_width && tooltip_x < 0.0
+    }
+
+    /// Apply tooltip configuration with given parameters
+    fn apply_tooltip_config(
+        tooltip: &mut TooltipRef,
+        cx: &mut Cx,
+        position_calc: &PositionCalculation,
+        target: Vec2,
+        target_size: Vec2,
+        expected_dimension: DVec2,
+        triangle_height: f64,
+        text_color: Vec4,
+        bg_color: Vec4,
+    ) {
+        let tooltip_pos = vec2(position_calc.tooltip_pos.x as f32, position_calc.tooltip_pos.y as f32);
+        
+        if position_calc.fixed_width {
             tooltip.apply_over(
                 cx,
                 live!(
@@ -293,18 +290,16 @@ impl CalloutTooltip {
                             target_pos: (target),
                             target_size: (target_size),
                             expected_dimension_x: (expected_dimension.x),
-                            callout_position: (callout_position)
+                            callout_position: (position_calc.callout_position)
                         }
                         tooltip_label = {
-                            width: (width_to_be_fixed - 15.0 * 2.0), // minus rounded_view's padding
+                            width: (position_calc.width_to_be_fixed - 15.0 * 2.0),
                             draw_text: { color: (text_color) }
                         }
                     }
                 }),
             );
         } else {
-            // If width of the tooltip is not fixed, the tooltip label's width is set back to Fit so that
-            // the it will wrap the tooltip text properly
             tooltip.apply_over(
                 cx,
                 live!(
@@ -319,7 +314,7 @@ impl CalloutTooltip {
                             target_pos: (target),
                             target_size: (target_size),
                             expected_dimension_x: (expected_dimension.x),
-                            callout_position: (callout_position)
+                            callout_position: (position_calc.callout_position)
                         }
                         tooltip_label = {
                             width: Fit,
@@ -329,6 +324,55 @@ impl CalloutTooltip {
                 }),
             );
         }
+    }
+    /// Shows a tooltip with the given text and options.
+    ///
+    /// The tooltip comes with a callout pointing to its target.
+    ///
+    /// By default, the tooltip will be displayed to the widget's right.
+    ///
+    /// If the widget is too close to the edge of the window, the tooltip is positioned
+    /// to avoid being cut off, with automatic fallback to opposite directions.
+    pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, options: CalloutTooltipOptions) {
+        let mut tooltip = self.view.tooltip(ids!(tooltip));
+        let text = "let expected_dimension = tooltip.view(ids!(rounded_view)).area().rect(cx).size; let expected_dimension = tooltip.view(ids!(rounded_view)).area().rect(cx).size; let expected_dimension = tooltip.view(ids!(rounded_view)).area().rect(cx).size;";
+        tooltip.set_text(cx, &pad_last_line(text));
+
+        let expected_dimension = tooltip.view(ids!(rounded_view)).area().rect(cx).size;
+        let screen_size = tooltip.area().rect(cx).size;
+        let triangle_height = options.triangle_height.unwrap_or(TRIANGLE_HEIGHT);
+        
+        let position_calc = Self::calculate_position(&options, expected_dimension, screen_size, triangle_height);
+        
+        let target = vec2(
+            options.widget_rect.pos.x as f32,
+            options.widget_rect.pos.y as f32,
+        );
+        let target_size = vec2(
+            options.widget_rect.size.x as f32,
+            options.widget_rect.size.y as f32,
+        );
+        
+        let mut text_color = options.text_color.unwrap_or(vec4(1.0, 1.0, 1.0, 1.0));
+        if expected_dimension.x == 0.0 {
+            text_color.w = 0.0;
+        } else {
+            text_color.w = 1.0;
+        }
+        let bg_color = options.bg_color.unwrap_or(vec4(0.26, 0.30, 0.333, 1.0));
+
+        Self::apply_tooltip_config(
+            &mut tooltip,
+            cx,
+            &position_calc,
+            target,
+            target_size,
+            expected_dimension,
+            triangle_height,
+            text_color,
+            bg_color,
+        );
+        
         tooltip.show(cx);
     }
 
