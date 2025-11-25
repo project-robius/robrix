@@ -158,7 +158,7 @@ impl CalloutTooltip {
     /// bottom of the widget, pointed at the center. If it is too close to bottom, the
     /// tooltip is positioned above the widget.
     pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, options: CalloutTooltipOptions) {
-        let mut tooltip = self.view.tooltip(id!(tooltip));
+        let mut tooltip = self.view.tooltip(ids!(tooltip));
 
         let pos = options.widget_rect.pos;
         // When there is line break in the text label, the label's width follows the length of the last line.
@@ -168,7 +168,7 @@ impl CalloutTooltip {
 
         // Expected_dimension size is 0.0 when mouse first moved in and the tooltip may be cut off.
         // When the mouse is hover over, the expected_dimension is not 0.0 and will be used to re-position the tooltip to avoid cut off.
-        let expected_dimension = tooltip.view(id!(rounded_view)).area().rect(cx).size;
+        let expected_dimension = tooltip.view(ids!(rounded_view)).area().rect(cx).size;
 
         let screen_size = tooltip.area().rect(cx).size;
         let mut tooltip_pos = DVec2 {
@@ -263,12 +263,12 @@ impl CalloutTooltip {
 
     /// Shows the tooltip.
     pub fn show(&mut self, cx: &mut Cx) {
-        self.view.tooltip(id!(tooltip)).show(cx);
+        self.view.tooltip(ids!(tooltip)).show(cx);
     }
 
     /// Hide the tooltip.
     pub fn hide(&mut self, cx: &mut Cx) {
-        self.view.tooltip(id!(tooltip)).hide(cx);
+        self.view.tooltip(ids!(tooltip)).hide(cx);
     }
 }
 

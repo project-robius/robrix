@@ -159,7 +159,7 @@ impl Widget for TspVerifyUser {
 }
 impl MatchEvent for TspVerifyUser {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        if self.view.button(id!(remove_tsp_association_button)).clicked(actions) {
+        if self.view.button(ids!(remove_tsp_association_button)).clicked(actions) {
             enqueue_popup_notification(PopupItem {
                 message: "Removing a TSP association is not yet implemented".into(),
                 auto_dismissal_duration: Some(5.0),
@@ -167,9 +167,9 @@ impl MatchEvent for TspVerifyUser {
             });
         }
 
-        let verify_user_button = self.view.button(id!(verify_user_button));
+        let verify_user_button = self.view.button(ids!(verify_user_button));
         if verify_user_button.clicked(actions) {
-            let did_input = self.view.view(id!(tsp_did_input));
+            let did_input = self.view.view(ids!(tsp_did_input));
             let did = did_input.text().trim().to_string();
             log!("verify_user_button was clicked. DID: {}", did);
             if did.is_empty() {
@@ -238,19 +238,19 @@ impl MatchEvent for TspVerifyUser {
 impl TspVerifyUser {
     /// Repopulates this widget's UI content from its inner verified info.
     fn refresh_from_verified_info(&mut self, cx: &mut Cx) {
-        let verified_tsp_view = self.view.view(id!(verified_tsp));
-        let unverified_tsp_view = self.view.view(id!(unverified_tsp));
+        let verified_tsp_view = self.view.view(ids!(verified_tsp));
+        let unverified_tsp_view = self.view.view(ids!(unverified_tsp));
         match &self.verified_info {
             TspVerifiedInfo::Verified { did } => {
                 verified_tsp_view.set_visible(cx, true);
                 unverified_tsp_view.set_visible(cx, false);
-                verified_tsp_view.text_input(id!(tsp_did_read_only_input)).set_text(cx, did);
+                verified_tsp_view.text_input(ids!(tsp_did_read_only_input)).set_text(cx, did);
             }
             TspVerifiedInfo::Unverified => {
                 verified_tsp_view.set_visible(cx, false);
                 unverified_tsp_view.set_visible(cx, true);
-                unverified_tsp_view.text_input(id!(tsp_did_input)).set_text(cx, "");
-                let verify_user_button = unverified_tsp_view.button(id!(verify_user_button));
+                unverified_tsp_view.text_input(ids!(tsp_did_input)).set_text(cx, "");
+                let verify_user_button = unverified_tsp_view.button(ids!(verify_user_button));
                 verify_user_button.set_enabled(cx, true);
                 verify_user_button.set_text(cx, "Verify this user via TSP");
             }

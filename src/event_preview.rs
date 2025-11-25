@@ -7,7 +7,8 @@
 
 use std::borrow::Cow;
 
-use matrix_sdk::{crypto::types::events::UtdCause, ruma::{events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent}, serde::Raw, UserId}};
+use matrix_sdk::{ruma::{events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent}, serde::Raw, UserId}};
+use matrix_sdk_base::crypto::types::events::UtdCause;
 use matrix_sdk_ui::timeline::{self, AnyOtherFullStateEventContent, EncryptedMessage, EventTimelineItem, MemberProfileChange, MembershipChange, MsgLikeKind, OtherMessageLike, RoomMembershipChange, TimelineItemContent};
 
 use crate::utils;

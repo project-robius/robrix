@@ -257,7 +257,7 @@ impl MatchEvent for AccountSettings {
         // Handle LogoutAction::InProgress to update button state
         for action in actions {
             if let Some(LogoutAction::InProgress(value)) = action.downcast_ref() {
-                let logout_button = self.view.button(id!(logout_button));
+                let logout_button = self.view.button(ids!(logout_button));
                 if *value {
                     logout_button.set_text(cx, "Log out in progress...");
                     logout_button.set_enabled(cx, false);
@@ -271,7 +271,7 @@ impl MatchEvent for AccountSettings {
         
         let Some(own_profile) = &self.own_profile else { return };
 
-        if self.view.button(id!(upload_avatar_button)).clicked(actions) {
+        if self.view.button(ids!(upload_avatar_button)).clicked(actions) {
             // TODO: support uploading a new avatar picture.
             enqueue_popup_notification(PopupItem {
                 message: String::from("Avatar uploading is not yet implemented."),
@@ -280,7 +280,7 @@ impl MatchEvent for AccountSettings {
             });
         }
 
-        if self.view.button(id!(delete_avatar_button)).clicked(actions) {
+        if self.view.button(ids!(delete_avatar_button)).clicked(actions) {
             // TODO: support removing the avatar picture.
             enqueue_popup_notification(PopupItem {
                 message: String::from("Avatar deletion is not yet implemented."),
@@ -289,9 +289,9 @@ impl MatchEvent for AccountSettings {
             });
         }
 
-        let accept_display_name_button = self.view.button(id!(accept_display_name_button));
-        let cancel_display_name_button = self.view.button(id!(cancel_display_name_button));
-        let display_name_input = self.view.text_input(id!(display_name_input));
+        let accept_display_name_button = self.view.button(ids!(accept_display_name_button));
+        let cancel_display_name_button = self.view.button(ids!(cancel_display_name_button));
+        let display_name_input = self.view.text_input(ids!(display_name_input));
         let enable_buttons = |cx: &mut Cx, enable: bool| {
             accept_display_name_button.set_enabled(cx, enable);
             cancel_display_name_button.set_enabled(cx, enable);
@@ -353,7 +353,7 @@ impl MatchEvent for AccountSettings {
             });
         }
 
-        if self.view.button(id!(copy_user_id_button)).clicked(actions) {
+        if self.view.button(ids!(copy_user_id_button)).clicked(actions) {
             cx.copy_to_clipboard(own_profile.user_id.as_str());
             enqueue_popup_notification(PopupItem {
                 message: String::from("Copied your User ID to the clipboard."),
@@ -362,7 +362,7 @@ impl MatchEvent for AccountSettings {
             });
         }
 
-        if self.view.button(id!(manage_account_button)).clicked(actions) {
+        if self.view.button(ids!(manage_account_button)).clicked(actions) {
             // TODO: support opening the user's account management page in a browser,
             //       or perhaps in an in-app pane if that's what is needed for regular UN+PW login.
             enqueue_popup_notification(PopupItem {
@@ -372,7 +372,7 @@ impl MatchEvent for AccountSettings {
             });
         }
 
-        if self.view.button(id!(logout_button)).clicked(actions) {
+        if self.view.button(ids!(logout_button)).clicked(actions) {
             cx.action(LogoutConfirmModalAction::Open);
         }
     }
@@ -388,7 +388,7 @@ impl AccountSettings {
             return;
         };
 
-        let our_own_avatar = self.view.avatar(id!(our_own_avatar));
+        let our_own_avatar = self.view.avatar(ids!(our_own_avatar));
         let mut drew_avatar = false;
         if let Some(avatar_img_data) = own_profile.avatar_state.data() {
             drew_avatar = our_own_avatar.show_image(
@@ -407,10 +407,10 @@ impl AccountSettings {
         }
 
         self.view
-            .text_input(id!(display_name_input))
+            .text_input(ids!(display_name_input))
             .set_text(cx, own_profile.username.as_deref().unwrap_or_default());
         self.view
-            .label(id!(user_id))
+            .label(ids!(user_id))
             .set_text(cx, own_profile.user_id.as_str());
     }
 
@@ -419,13 +419,13 @@ impl AccountSettings {
         self.own_profile = Some(own_profile);
         self.populate_from_profile(cx);
 
-        self.view.button(id!(upload_avatar_button)).reset_hover(cx);
-        self.view.button(id!(delete_avatar_button)).reset_hover(cx);
-        self.view.button(id!(accept_display_name_button)).reset_hover(cx);
-        self.view.button(id!(cancel_display_name_button)).reset_hover(cx);
-        self.view.button(id!(copy_user_id_button)).reset_hover(cx);
-        self.view.button(id!(manage_account_button)).reset_hover(cx);
-        self.view.button(id!(logout_button)).reset_hover(cx);
+        self.view.button(ids!(upload_avatar_button)).reset_hover(cx);
+        self.view.button(ids!(delete_avatar_button)).reset_hover(cx);
+        self.view.button(ids!(accept_display_name_button)).reset_hover(cx);
+        self.view.button(ids!(cancel_display_name_button)).reset_hover(cx);
+        self.view.button(ids!(copy_user_id_button)).reset_hover(cx);
+        self.view.button(ids!(manage_account_button)).reset_hover(cx);
+        self.view.button(ids!(logout_button)).reset_hover(cx);
         self.view.redraw(cx);
     }
 }

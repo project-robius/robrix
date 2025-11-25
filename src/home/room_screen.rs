@@ -19,14 +19,14 @@ use matrix_sdk::{
             sticker::{StickerEventContent, StickerMediaSource},
         },
         matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
-    }, OwnedServerName, SuccessorRoom
+    }, OwnedServerName
 };
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -594,9 +594,9 @@ impl Widget for RoomScreen {
     // Handle events and actions for the RoomScreen widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let room_screen_widget_uid = self.widget_uid();
-        let portal_list = self.portal_list(id!(timeline.list));
-        let user_profile_sliding_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
-        let loading_pane = self.loading_pane(id!(loading_pane));
+        let portal_list = self.portal_list(ids!(timeline.list));
+        let user_profile_sliding_pane = self.user_profile_sliding_pane(ids!(user_profile_sliding_pane));
+        let loading_pane = self.loading_pane(ids!(loading_pane));
 
         // Handle actions here before processing timeline updates.
         // Normally (in most other widgets), the order of event handling doesn't matter much.
@@ -605,7 +605,7 @@ impl Widget for RoomScreen {
         // the set of timeline indices (which would invalidate the index values in any actions).
         if let Event::Actions(actions) = event {
             for (_, wr) in portal_list.items_with_actions(actions) {
-                let reaction_list = wr.reaction_list(id!(reaction_list));
+                let reaction_list = wr.reaction_list(ids!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
                     widget_rect,
                     bg_color,
@@ -637,7 +637,7 @@ impl Widget for RoomScreen {
                         TooltipAction::HoverOut
                     );
                 }
-                let avatar_row_ref = wr.avatar_row(id!(avatar_row));
+                let avatar_row_ref = wr.avatar_row(ids!(avatar_row));
                 if let RoomScreenTooltipActions::HoverInReadReceipt {
                     widget_rect,
                     bg_color,
@@ -748,7 +748,7 @@ impl Widget for RoomScreen {
             /*
             // close message action bar if scrolled.
             if portal_list.scrolled(actions) {
-                let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
+                let message_action_bar_popup = self.popup_notification(ids!(message_action_bar_popup));
                 message_action_bar_popup.close(cx);
             }
             */
@@ -759,7 +759,7 @@ impl Widget for RoomScreen {
             self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
 
             // Handle the jump to bottom button: update its visibility, and handle clicks.
-            self.jump_to_bottom_button(id!(jump_to_bottom)).update_from_actions(
+            self.jump_to_bottom_button(ids!(jump_to_bottom)).update_from_actions(
                 cx,
                 &portal_list,
                 actions,
@@ -780,7 +780,7 @@ impl Widget for RoomScreen {
                     self.room_id = None;
                     self.set_displayed_room(cx, same_room_id, self.room_name.clone());
                 } else {
-                    self.all_rooms_loaded = rooms_list_ref.all_known_rooms_loaded();
+                    self.all_rooms_loaded = rooms_list_ref.all_rooms_loaded();
                     return;
                 }
             }
@@ -905,8 +905,8 @@ impl Widget for RoomScreen {
                 /*
                 match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
                     MessageAction::ActionBarClose => {
-                        let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
-                        let message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
+                        let message_action_bar_popup = self.popup_notification(ids!(message_action_bar_popup));
+                        let message_action_bar = message_action_bar_popup.message_action_bar(ids!(message_action_bar));
 
                         // close only if the active message is requesting it to avoid double closes.
                         if let Some(message_widget_uid) = message_action_bar.message_widget_uid() {
@@ -916,8 +916,8 @@ impl Widget for RoomScreen {
                         }
                     }
                     MessageAction::ActionBarOpen { item_id, message_rect } => {
-                        let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
-                        let message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
+                        let message_action_bar_popup = self.popup_notification(ids!(message_action_bar_popup));
+                        let message_action_bar = message_action_bar_popup.message_action_bar(ids!(message_action_bar));
 
                         let margin_x = 50.;
 
@@ -954,7 +954,7 @@ impl Widget for RoomScreen {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // If the room isn't loaded yet, we show the restore status label only.
         if !self.is_loaded {
-            let mut restore_status_view = self.view.restore_status_view(id!(restore_status_view));
+            let mut restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
             restore_status_view.set_content(cx, self.all_rooms_loaded, &self.room_name);
             return restore_status_view.draw(cx, scope);
         }
@@ -992,7 +992,7 @@ impl Widget for RoomScreen {
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
-                        list.item(cx, item_id, live_id!(Empty));
+                        list.item(cx, item_id, id!(Empty));
                         continue;
                     };
 
@@ -1090,26 +1090,26 @@ impl Widget for RoomScreen {
                                 item_drawn_status,
                             ),
                             unhandled => {
-                                let item = list.item(cx, item_id, live_id!(SmallStateEvent));
-                                item.label(id!(content)).set_text(cx, &format!("[Unsupported] {:?}", unhandled));
+                                let item = list.item(cx, item_id, id!(SmallStateEvent));
+                                item.label(ids!(content)).set_text(cx, &format!("[Unsupported] {:?}", unhandled));
                                 (item, ItemDrawnStatus::both_drawn())
                             }
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(millis)) => {
-                            let item = list.item(cx, item_id, live_id!(DateDivider));
+                            let item = list.item(cx, item_id, id!(DateDivider));
                             let text = unix_time_millis_to_datetime(*millis)
                                 // format the time as a shortened date (Sat, Sept 5, 2021)
                                 .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
                                 .unwrap_or_else(|| format!("{:?}", millis));
-                            item.label(id!(date)).set_text(cx, &text);
+                            item.label(ids!(date)).set_text(cx, &text);
                             (item, ItemDrawnStatus::both_drawn())
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
-                            let item = list.item(cx, item_id, live_id!(ReadMarker));
+                            let item = list.item(cx, item_id, id!(ReadMarker));
                             (item, ItemDrawnStatus::both_drawn())
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::TimelineStart) => {
-                            let item = list.item(cx, item_id, live_id!(Empty));
+                            let item = list.item(cx, item_id, id!(Empty));
                             (item, ItemDrawnStatus::both_drawn())
                         }
                     };
@@ -1156,8 +1156,8 @@ impl RoomScreen {
     ///
     /// Redraws this RoomScreen view if any updates were applied.
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
-        let top_space = self.view(id!(top_space));
-        let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
+        let top_space = self.view(ids!(top_space));
+        let jump_to_bottom = self.jump_to_bottom_button(ids!(jump_to_bottom));
         let curr_first_id = portal_list.first_id();
         let ui = self.widget_uid();
         let Some(tl) = self.tl_state.as_mut() else { return };
@@ -1263,7 +1263,7 @@ impl RoomScreen {
                         // then we should update the status message in that loading pane
                         // and then continue paginating backwards until we find the target event.
                         // Note that we do this here because `clear_cache` will always be true if backwards pagination occurred.
-                        let loading_pane = self.view.loading_pane(id!(loading_pane));
+                        let loading_pane = self.view.loading_pane(ids!(loading_pane));
                         let mut loading_pane_state = loading_pane.take_state();
                         if let LoadingPaneState::BackwardsPaginateUntilEvent {
                             events_paginated, target_event_id, ..
@@ -1310,7 +1310,7 @@ impl RoomScreen {
                         item.as_event()
                             .is_some_and(|ev| ev.event_id() == Some(&target_event_id))
                     );
-                    let loading_pane = self.view.loading_pane(id!(loading_pane));
+                    let loading_pane = self.view.loading_pane(ids!(loading_pane));
 
                     // log!("TargetEventFound: is_valid? {is_valid}. room {}, event {target_event_id}, index {index} of {}\n  --> item: {item:?}", tl.room_id, tl.items.len());
                     if is_valid {
@@ -1440,7 +1440,7 @@ impl RoomScreen {
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
                 TimelineUpdate::MessageEdited { timeline_event_id, result } => {
-                    self.view.room_input_bar(id!(room_input_bar))
+                    self.view.room_input_bar(ids!(room_input_bar))
                         .handle_edit_result(cx, timeline_event_id, result);
                 }
                 TimelineUpdate::PinResult { result, pin, .. } => {
@@ -1482,7 +1482,7 @@ impl RoomScreen {
                 }
                 TimelineUpdate::UserPowerLevels(user_power_levels) => {
                     tl.user_power = user_power_levels;
-                    self.view.room_input_bar(id!(room_input_bar))
+                    self.view.room_input_bar(ids!(room_input_bar))
                         .update_user_power_levels(cx, user_power_levels);
                     // Update the @room mention capability based on the user's power level
                     cx.action(MentionableTextInputAction::PowerLevelsUpdated {
@@ -1497,10 +1497,10 @@ impl RoomScreen {
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
-                TimelineUpdate::Tombstoned(successor_room) => {
-                    self.view.room_input_bar(id!(room_input_bar))
-                        .update_tombstone_footer(cx, &tl.room_id, successor_room.as_ref());
-                    tl.tombstone_info = successor_room;
+                TimelineUpdate::Tombstoned(successor_room_details) => {
+                    self.view.room_input_bar(ids!(room_input_bar))
+                        .update_tombstone_footer(cx, &tl.room_id, Some(&successor_room_details));
+                    tl.tombstone_info = Some(successor_room_details);
                 }
             }
         }
@@ -1519,7 +1519,7 @@ impl RoomScreen {
 
         if let Some(users) = typing_users {
             self.view
-                .typing_notice(id!(typing_notice))
+                .typing_notice(ids!(typing_notice))
                 .show_or_hide(cx, &users);
         }
 
@@ -1693,7 +1693,7 @@ impl RoomScreen {
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
                         let replied_to_info = EmbeddedEvent::from_timeline_item(&event_tl_item);
-                        self.view.room_input_bar(id!(room_input_bar))
+                        self.view.room_input_bar(ids!(room_input_bar))
                             .show_replying_to(cx, (event_tl_item, replied_to_info), &tl.room_id);
                     }
                     else {
@@ -1711,7 +1711,7 @@ impl RoomScreen {
                         .and_then(|tl_item| tl_item.as_event().cloned())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
-                        self.view.room_input_bar(id!(room_input_bar))
+                        self.view.room_input_bar(ids!(room_input_bar))
                             .show_editing_pane(cx, event_tl_item, tl.room_id.clone());
                     }
                     else {
@@ -1731,7 +1731,7 @@ impl RoomScreen {
                         .take(MAX_ITEMS_TO_SEARCH_THROUGH)
                         .find_map(|item| item.as_event().filter(|ev| ev.is_editable()).cloned())
                     {
-                        self.view.room_input_bar(id!(room_input_bar))
+                        self.view.room_input_bar(ids!(room_input_bar))
                             .show_editing_pane(cx, latest_sent_msg, tl.room_id.clone());
                     }
                     else {
@@ -2057,6 +2057,17 @@ impl RoomScreen {
                 successor_room,
             } = timeline_endpoints;
 
+            // Start with the basic tombstone info, and fetch the full details
+            // if the room has been tombstoned.
+            let tombstone_info = if let Some(sr) = successor_room {
+                submit_async_request(MatrixRequest::GetSuccessorRoomDetails {
+                    tombstoned_room_id: room_id.clone(),
+                });
+                Some(SuccessorRoomDetails::Basic(sr))
+            } else {
+                None
+            };
+
             let tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // Initially, we assume the user has all power levels by default.
@@ -2084,7 +2095,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
-                tombstone_info: successor_room,
+                tombstone_info,
             };
             (tl_state, true)
         };
@@ -2136,7 +2147,7 @@ impl RoomScreen {
             tl_state.room_members_remote_synced = false;
         }
 
-        self.view.restore_status_view(id!(restore_status_view)).set_visible(cx, !self.is_loaded);
+        self.view.restore_status_view(ids!(restore_status_view)).set_visible(cx, !self.is_loaded);
 
         // Kick off a back pagination request if it's the first time loading this room,
         // because we want to show the user some messages as soon as possible
@@ -2153,7 +2164,7 @@ impl RoomScreen {
         }
 
         // Hide the typing notice view initially.
-        self.view(id!(typing_notice)).set_visible(cx, false);
+        self.view(ids!(typing_notice)).set_visible(cx, false);
         // If the room is loaded, we need to get a few key states:
         // 1. Get the current user's power levels for this room so that we can
         //    show/hide UI elements based on the user's permissions.
@@ -2196,7 +2207,7 @@ impl RoomScreen {
 
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
         // we can proceed to processing pending background updates.
-        self.process_timeline_updates(cx, &self.portal_list(id!(list)));
+        self.process_timeline_updates(cx, &self.portal_list(ids!(list)));
 
         self.redraw(cx);
 
@@ -2240,10 +2251,10 @@ impl RoomScreen {
             return;
         };
 
-        let portal_list = self.portal_list(id!(list));
+        let portal_list = self.portal_list(ids!(list));
         let state = SavedState {
             first_index_and_scroll: Some((portal_list.first_id(), portal_list.scroll_position())),
-            room_input_bar_state: self.room_input_bar(id!(room_input_bar)).save_state(),
+            room_input_bar_state: self.room_input_bar(ids!(room_input_bar)).save_state(),
         };
         tl.saved_state = state;
         // Store this Timeline's `TimelineUiState` in the global map of states.
@@ -2261,21 +2272,22 @@ impl RoomScreen {
         } = &mut tl_state.saved_state;
         // 1. Restore the position of the timeline.
         if let Some((first_index, scroll_from_first_id)) = first_index_and_scroll {
-            self.portal_list(id!(timeline.list))
+            self.portal_list(ids!(timeline.list))
                 .set_first_id_and_scroll(*first_index, *scroll_from_first_id);
         } else {
             // If the first index is not set, then the timeline has not yet been scrolled by the user,
             // so we set the portal list to "tail" (track) the bottom of the list.
-            self.portal_list(id!(timeline.list)).set_tail_range(true);
+            self.portal_list(ids!(timeline.list)).set_tail_range(true);
         }
 
         // 2. Restore the state of the room input bar.
-        let room_input_bar = self.view.room_input_bar(id!(room_input_bar));
+        let room_input_bar = self.view.room_input_bar(ids!(room_input_bar));
         let saved_room_input_bar_state = std::mem::take(room_input_bar_state);
         room_input_bar.restore_state(
             cx,
             &tl_state.room_id,
             saved_room_input_bar_state,
+            tl_state.user_power,
             tl_state.tombstone_info.as_ref(),
         );
     }
@@ -2292,12 +2304,12 @@ impl RoomScreen {
 
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
-        self.loading_pane(id!(loading_pane)).take_state();
+        self.loading_pane(ids!(loading_pane)).take_state();
         self.room_name = room_name_or_id(room_name.into(), &room_id);
         self.room_id = Some(room_id.clone());
 
         // We initially tell every MentionableTextInput widget that the current user
-        // *does not* has privileges to notify the entire room;
+        // *does not* have privileges to notify the entire room;
         // this gets properly updated when room PowerLevels get fetched.
         cx.action(MentionableTextInputAction::PowerLevelsUpdated {
             room_id: room_id.clone(),
@@ -2552,10 +2564,9 @@ pub enum TimelineUpdate {
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
     OwnUserReadReceipt(Receipt),
-    /// A notice that the given room has been tombstoned,
-    /// includes a `SuccessorRoom` that contains the successor room.
-    /// If the room is not tombstoned, then the `SuccessorRoom` is `None`.
-    Tombstoned(Option<SuccessorRoom>),
+    /// A notice that the given room has been tombstoned (closed)
+    /// and replaced by the given successor room.
+    Tombstoned(SuccessorRoomDetails),
 }
 
 thread_local! {
@@ -2674,9 +2685,9 @@ struct TimelineUiState {
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
 
-    /// If this room has been tombstoned, this has details of its successor room.
-    /// If the room is not tombstoned, this is `None`.
-    tombstone_info: Option<SuccessorRoom>,
+    /// If `Some`, this room has been tombstoned and the details of its successor room
+    /// are contained within. If `None`, the room has not been tombstoned.
+    tombstone_info: Option<SuccessorRoomDetails>,
 }
 
 #[derive(Default, Debug)]
@@ -2835,9 +2846,9 @@ fn populate_message_view(
                 MessageType::Text(TextMessageEventContent { body, formatted, .. }) => {
                      has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
-                        live_id!(CondensedMessage)
+                        id!(CondensedMessage)
                     } else {
-                        live_id!(Message)
+                        id!(Message)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -2845,10 +2856,10 @@ fn populate_message_view(
                     } else {
                         new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
-                            &item.html_or_plaintext(id!(content.message)),
+                            &item.html_or_plaintext(ids!(content.message)),
                             body,
                             formatted.as_ref(),
-                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(&mut item.link_preview(ids!(content.link_preview_view))),
                             Some(media_cache),
                             Some(link_preview_cache),
                         );
@@ -2861,15 +2872,15 @@ fn populate_message_view(
                     is_notice = true;
                     has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
-                        live_id!(CondensedMessage)
+                        id!(CondensedMessage)
                     } else {
-                        live_id!(Message)
+                        id!(Message)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
-                        let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
+                        let html_or_plaintext_ref = item.html_or_plaintext(ids!(content.message));
                         html_or_plaintext_ref.apply_over(cx, live!(
                             html_view = {
                                 html = {
@@ -2886,7 +2897,7 @@ fn populate_message_view(
                             &html_or_plaintext_ref,
                             body,
                             formatted.as_ref(),
-                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(&mut item.link_preview(ids!(content.link_preview_view))),
                             Some(media_cache),
                             Some(link_preview_cache),
                         );
@@ -2896,11 +2907,11 @@ fn populate_message_view(
                 MessageType::ServerNotice(sn) => {
                     is_server_notice = true;
                     has_html_body = false;
-                    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+                    let (item, existed) = list.item_with_existed(cx, item_id, id!(Message));
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
-                        let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
+                        let html_or_plaintext_ref = item.html_or_plaintext(ids!(content.message));
                         html_or_plaintext_ref.apply_over(cx, live!(
                             html_view = {
                                 html = {
@@ -2931,7 +2942,7 @@ fn populate_message_view(
                                 format: MessageFormat::Html,
                                 body: formatted,
                             }),
-                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(&mut item.link_preview(ids!(content.link_preview_view))),
                             Some(media_cache),
                             Some(link_preview_cache),
                         );
@@ -2943,16 +2954,16 @@ fn populate_message_view(
                 MessageType::Emote(EmoteMessageEventContent { body, formatted, .. }) => {
                     has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
-                        live_id!(CondensedMessage)
+                        id!(CondensedMessage)
                     } else {
-                        live_id!(Message)
+                        id!(Message)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
                         // Draw the profile up front here because we need the username for the emote body.
-                        let (username, profile_drawn) = item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
+                        let (username, profile_drawn) = item.avatar(ids!(profile.avatar)).set_avatar_and_get_username(
                             cx,
                             room_id,
                             event_tl_item.sender(),
@@ -2974,10 +2985,10 @@ fn populate_message_view(
                         };
                         let link_previews_drawn = populate_text_message_content(
                             cx,
-                            &item.html_or_plaintext(id!(content.message)),
+                            &item.html_or_plaintext(ids!(content.message)),
                             &body,
                             formatted.as_ref(),
-                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(&mut item.link_preview(ids!(content.link_preview_view))),
                             Some(media_cache),
                             Some(link_preview_cache),
                         );
@@ -2990,9 +3001,9 @@ fn populate_message_view(
                     has_html_body = image.formatted.as_ref()
                         .is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
-                        live_id!(CondensedImageMessage)
+                        id!(CondensedImageMessage)
                     } else {
-                        live_id!(ImageMessage)
+                        id!(ImageMessage)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -3001,7 +3012,7 @@ fn populate_message_view(
                         let image_info = image.info.clone();
                         let is_image_fully_drawn = populate_image_message_content(
                             cx,
-                            &item.text_or_image(id!(content.message)),
+                            &item.text_or_image(ids!(content.message)),
                             image_info,
                             image.source.clone(),
                             msg.body(),
@@ -3014,9 +3025,9 @@ fn populate_message_view(
                 MessageType::Location(location) => {
                     has_html_body = false;
                     let template = if use_compact_view {
-                        live_id!(CondensedMessage)
+                        id!(CondensedMessage)
                     } else {
-                        live_id!(Message)
+                        id!(Message)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -3024,7 +3035,7 @@ fn populate_message_view(
                     } else {
                         let is_location_fully_drawn = populate_location_message_content(
                             cx,
-                            &item.html_or_plaintext(id!(content.message)),
+                            &item.html_or_plaintext(ids!(content.message)),
                             location,
                         );
                         new_drawn_status.content_drawn = is_location_fully_drawn;
@@ -3034,9 +3045,9 @@ fn populate_message_view(
                 MessageType::File(file_content) => {
                     has_html_body = file_content.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
-                        live_id!(CondensedMessage)
+                        id!(CondensedMessage)
                     } else {
-                        live_id!(Message)
+                        id!(Message)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -3044,7 +3055,7 @@ fn populate_message_view(
                     } else {
                         new_drawn_status.content_drawn = populate_file_message_content(
                             cx,
-                            &item.html_or_plaintext(id!(content.message)),
+                            &item.html_or_plaintext(ids!(content.message)),
                             file_content,
                         );
                         (item, false)
@@ -3053,9 +3064,9 @@ fn populate_message_view(
                 MessageType::Audio(audio) => {
                     has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
-                        live_id!(CondensedMessage)
+                        id!(CondensedMessage)
                     } else {
-                        live_id!(Message)
+                        id!(Message)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -3063,7 +3074,7 @@ fn populate_message_view(
                     } else {
                         new_drawn_status.content_drawn = populate_audio_message_content(
                             cx,
-                            &item.html_or_plaintext(id!(content.message)),
+                            &item.html_or_plaintext(ids!(content.message)),
                             audio,
                         );
                         (item, false)
@@ -3072,9 +3083,9 @@ fn populate_message_view(
                 MessageType::Video(video) => {
                     has_html_body = video.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
-                        live_id!(CondensedMessage)
+                        id!(CondensedMessage)
                     } else {
-                        live_id!(Message)
+                        id!(Message)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -3082,7 +3093,7 @@ fn populate_message_view(
                     } else {
                         new_drawn_status.content_drawn = populate_video_message_content(
                             cx,
-                            &item.html_or_plaintext(id!(content.message)),
+                            &item.html_or_plaintext(ids!(content.message)),
                             video,
                         );
                         (item, false)
@@ -3090,7 +3101,7 @@ fn populate_message_view(
                 }
                 MessageType::VerificationRequest(verification) => {
                     has_html_body = verification.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-                    let template = live_id!(Message);
+                    let template = id!(Message);
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
@@ -3111,10 +3122,10 @@ fn populate_message_view(
 
                         new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
-                            &item.html_or_plaintext(id!(content.message)),
+                            &item.html_or_plaintext(ids!(content.message)),
                             &verification.body,
                             Some(&formatted),
-                            Some(&mut item.link_preview(id!(content.link_preview_view))),
+                            Some(&mut item.link_preview(ids!(content.link_preview_view))),
                             Some(media_cache),
                             Some(link_preview_cache),
                         );
@@ -3123,11 +3134,11 @@ fn populate_message_view(
                 }
                 _ => {
                     has_html_body = false;
-                    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+                    let (item, existed) = list.item_with_existed(cx, item_id, id!(Message));
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
-                        item.label(id!(content.message)).set_text(
+                        item.label(ids!(content.message)).set_text(
                             cx,
                             &format!("[Unsupported {:?}]", msg_like_content.kind),
                         );
@@ -3143,9 +3154,9 @@ fn populate_message_view(
             let StickerEventContent { body, info, source, .. } = sticker.content();
 
             let template = if use_compact_view {
-                live_id!(CondensedImageMessage)
+                id!(CondensedImageMessage)
             } else {
-                live_id!(ImageMessage)
+                id!(ImageMessage)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
 
@@ -3156,7 +3167,7 @@ fn populate_message_view(
                     let image_info = info;
                     let is_image_fully_drawn = populate_image_message_content(
                         cx,
-                        &item.text_or_image(id!(content.message)),
+                        &item.text_or_image(ids!(content.message)),
                         Some(Box::new(image_info.clone())),
                         MediaSource::Plain(owned_mxc_url.clone()),
                         body,
@@ -3171,11 +3182,11 @@ fn populate_message_view(
         }
         other => {
             has_html_body = false;
-            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+            let (item, existed) = list.item_with_existed(cx, item_id, id!(Message));
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                item.label(id!(content.message)).set_text(
+                item.label(ids!(content.message)).set_text(
                     cx,
                     &format!("[Unsupported {:?}] ", other),
                 );
@@ -3189,7 +3200,7 @@ fn populate_message_view(
     // the reactions, the read receipts avatar row, and the reply preview.
     // We also must set the message details/metadata for the `item` widget representing this message.
     if !used_cached_item {
-        item.reaction_list(id!(content.reaction_list)).set_list(
+        item.reaction_list(ids!(content.reaction_list)).set_list(
             cx,
             event_tl_item.content().reactions(),
             room_id.to_owned(),
@@ -3197,7 +3208,7 @@ fn populate_message_view(
             item_id,
         );
         populate_read_receipts(&item, cx, room_id, event_tl_item);
-        let replied_to_message_view = item.view(id!(replied_to_message));
+        let replied_to_message_view = item.view(ids!(replied_to_message));
         let (is_reply_fully_drawn, replied_to_event_id) = draw_replied_to_message(
             cx,
             &replied_to_message_view,
@@ -3236,11 +3247,11 @@ fn populate_message_view(
         new_drawn_status.profile_drawn = true;
     } else {
         // log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
-        let username_label = item.label(id!(content.username));
+        let username_label = item.label(ids!(content.username));
 
         if !is_server_notice { // the normal case
             let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
-                item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
+                item.avatar(ids!(profile.avatar)).set_avatar_and_get_username(
                     cx,
                     room_id,
                     event_tl_item.sender(),
@@ -3260,7 +3271,7 @@ fn populate_message_view(
         }
         else {
             // Server notices are drawn with a red color avatar background and username.
-            let avatar = item.avatar(id!(profile.avatar));
+            let avatar = item.avatar(ids!(profile.avatar));
             avatar.show_text(cx, Some(COLOR_FG_DANGER_RED), None, "⚠");
             username_label.set_text(cx, "Server notice");
             username_label.apply_over(cx, live!(
@@ -3279,12 +3290,12 @@ fn populate_message_view(
 
     // Set the timestamp.
     if let Some(dt) = unix_time_millis_to_datetime(ts_millis) {
-        item.timestamp(id!(profile.timestamp)).set_date_time(cx, dt);
+        item.timestamp(ids!(profile.timestamp)).set_date_time(cx, dt);
     }
 
     // Set the "edited" indicator if this message was edited.
     if msg_like_content.as_message().is_some_and(|m| m.is_edited()) {
-        item.edited_indicator(id!(profile.edited_indicator)).set_latest_edit(
+        item.edited_indicator(ids!(profile.edited_indicator)).set_latest_edit(
             cx,
             event_tl_item,
         );
@@ -3318,7 +3329,7 @@ fn populate_message_view(
             };
 
             log!("TSP signature state for event {:?} is {:?}", event_tl_item.event_id(), tsp_sign_state);
-            item.tsp_sign_indicator(id!(profile.tsp_sign_indicator))
+            item.tsp_sign_indicator(ids!(profile.tsp_sign_indicator))
                 .show_with_state(cx, tsp_sign_state);
         }
     }
@@ -3477,7 +3488,7 @@ fn populate_image_message_content(
                 fully_drawn = false;
             }
             (MediaCacheEntry::Failed, _media_format) => {
-                if text_or_image_ref.view(id!(default_image_view)).visible() {
+                if text_or_image_ref.view(ids!(default_image_view)).visible() {
                     fully_drawn = true;
                     return;
                 }
@@ -3713,7 +3724,7 @@ fn draw_replied_to_message(
             TimelineDetails::Ready(replied_to_event) => {
                 let (in_reply_to_username, is_avatar_fully_drawn) =
                     replied_to_message_view
-                        .avatar(id!(replied_to_message_content.reply_preview_avatar))
+                        .avatar(ids!(replied_to_message_content.reply_preview_avatar))
                         .set_avatar_and_get_username(
                             cx,
                             room_id,
@@ -3725,9 +3736,9 @@ fn draw_replied_to_message(
                 fully_drawn = is_avatar_fully_drawn;
 
                 replied_to_message_view
-                    .label(id!(replied_to_message_content.reply_preview_username))
+                    .label(ids!(replied_to_message_content.reply_preview_username))
                     .set_text(cx, in_reply_to_username.as_str());
-                let msg_body = replied_to_message_view.html_or_plaintext(id!(reply_preview_body));
+                let msg_body = replied_to_message_view.html_or_plaintext(ids!(reply_preview_body));
                 populate_preview_of_timeline_item(
                     cx,
                     &msg_body,
@@ -3739,26 +3750,26 @@ fn draw_replied_to_message(
             TimelineDetails::Error(_e) => {
                 fully_drawn = true;
                 replied_to_message_view
-                    .label(id!(replied_to_message_content.reply_preview_username))
+                    .label(ids!(replied_to_message_content.reply_preview_username))
                     .set_text(cx, "[Error fetching username]");
                 replied_to_message_view
-                    .avatar(id!(replied_to_message_content.reply_preview_avatar))
+                    .avatar(ids!(replied_to_message_content.reply_preview_avatar))
                     .show_text(cx, None, None, "?");
                 replied_to_message_view
-                    .html_or_plaintext(id!(replied_to_message_content.reply_preview_body))
+                    .html_or_plaintext(ids!(replied_to_message_content.reply_preview_body))
                     .show_plaintext(cx, "[Error fetching replied-to event]");
             }
             status @ TimelineDetails::Pending | status @ TimelineDetails::Unavailable => {
                 // We don't have the replied-to message yet, so we can't fully draw the preview.
                 fully_drawn = false;
                 replied_to_message_view
-                    .label(id!(replied_to_message_content.reply_preview_username))
+                    .label(ids!(replied_to_message_content.reply_preview_username))
                     .set_text(cx, "[Loading username...]");
                 replied_to_message_view
-                    .avatar(id!(replied_to_message_content.reply_preview_avatar))
+                    .avatar(ids!(replied_to_message_content.reply_preview_avatar))
                     .show_text(cx, None, None, "?");
                 replied_to_message_view
-                    .html_or_plaintext(id!(replied_to_message_content.reply_preview_body))
+                    .html_or_plaintext(ids!(replied_to_message_content.reply_preview_body))
                     .show_plaintext(cx, "[Loading replied-to message...]");
 
                 // Confusingly, we need to fetch the details of the `message` (the event that is the reply),
@@ -3856,7 +3867,7 @@ impl SmallStateEventContent for RedactedMessageEventMarker {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        item.label(id!(content)).set_text(
+        item.label(ids!(content)).set_text(
             cx,
             &text_preview_of_redacted_message(
                 event_tl_item.latest_json(),
@@ -3882,7 +3893,7 @@ impl SmallStateEventContent for EncryptedMessage {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        item.label(id!(content)).set_text(
+        item.label(ids!(content)).set_text(
             cx,
             &text_preview_of_encrypted_message(self).format_with(username, false),
         );
@@ -3904,7 +3915,7 @@ impl SmallStateEventContent for OtherMessageLike {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        item.label(id!(content)).set_text(
+        item.label(ids!(content)).set_text(
             cx,
             &text_preview_of_other_message_like(self).format_with(username, false),
         );
@@ -3927,7 +3938,7 @@ impl SmallStateEventContent for PollState {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        item.label(id!(content)).set_text(
+        item.label(ids!(content)).set_text(
             cx,
             self.fallback_text().unwrap_or_else(|| self.results().question).as_str(),
         );
@@ -3949,12 +3960,12 @@ impl SmallStateEventContent for timeline::OtherState {
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
         let item = if let Some(text_preview) = text_preview_of_other_state(self, false) {
-            item.label(id!(content))
+            item.label(ids!(content))
                 .set_text(cx, &text_preview.format_with(username, false));
             new_drawn_status.content_drawn = true;
             item
         } else {
-            let item = list.item(cx, item_id, live_id!(Empty));
+            let item = list.item(cx, item_id, id!(Empty));
             new_drawn_status = ItemDrawnStatus::new();
             item
         };
@@ -3974,7 +3985,7 @@ impl SmallStateEventContent for MemberProfileChange {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        item.label(id!(content)).set_text(
+        item.label(ids!(content)).set_text(
             cx,
             &text_preview_of_member_profile_change(self, username, false)
                 .format_with(username, false),
@@ -3999,12 +4010,12 @@ impl SmallStateEventContent for RoomMembershipChange {
         let Some(preview) = text_preview_of_room_membership_change(self, false) else {
             // Don't actually display anything for nonexistent/unimportant membership changes.
             return (
-                list.item(cx, item_id, live_id!(Empty)),
+                list.item(cx, item_id, id!(Empty)),
                 ItemDrawnStatus::new(),
             );
         };
 
-        item.label(id!(content))
+        item.label(ids!(content))
             .set_text(cx, &preview.format_with(username, false));
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
@@ -4026,7 +4037,7 @@ fn populate_small_state_event(
     item_drawn_status: ItemDrawnStatus,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
-    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
+    let (item, existed) = list.item_with_existed(cx, item_id, id!(SmallStateEvent));
     // The content of a small state event view may depend on the profile info,
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
     let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
@@ -4044,7 +4055,7 @@ fn populate_small_state_event(
 
     let username = username_opt.unwrap_or_else(|| {
         // As a fallback, call `set_avatar_and_get_username` to get the user's display name.
-        let avatar_ref = item.avatar(id!(avatar));
+        let avatar_ref = item.avatar(ids!(avatar));
 
         let (username, profile_drawn) = avatar_ref.set_avatar_and_get_username(
             cx,
@@ -4055,7 +4066,7 @@ fn populate_small_state_event(
         );
         // Draw the timestamp as part of the profile.
         if let Some(dt) = unix_time_millis_to_datetime(event_tl_item.timestamp()) {
-            item.timestamp(id!(left_container.timestamp)).set_date_time(cx, dt);
+            item.timestamp(ids!(left_container.timestamp)).set_date_time(cx, dt);
         }
         new_drawn_status.profile_drawn = profile_drawn;
         username
@@ -4165,10 +4176,10 @@ impl Widget for Message {
             self.redraw(cx);
         }
 
-        if !self.animator.is_track_animating(cx, id!(highlight))
-            && self.animator_in_state(cx, id!(highlight.on))
+        if !self.animator.is_track_animating(cx, ids!(highlight))
+            && self.animator_in_state(cx, ids!(highlight.on))
         {
-            self.animator_play(cx, id!(highlight.off));
+            self.animator_play(cx, ids!(highlight.off));
         }
 
         let Some(details) = self.details.clone() else { return };
@@ -4176,7 +4187,7 @@ impl Widget for Message {
         // We first handle a click on the replied-to message preview, if present,
         // because we don't want any widgets within the replied-to message to be
         // clickable or otherwise interactive.
-        match event.hits(cx, self.view(id!(replied_to_message)).area()) {
+        match event.hits(cx, self.view(ids!(replied_to_message)).area()) {
             Hit::FingerDown(fe) => {
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                     cx.widget_action(
@@ -4245,11 +4256,11 @@ impl Widget for Message {
                 );
             }
             Hit::FingerHoverIn(..) => {
-                self.animator_play(cx, id!(hover.on));
+                self.animator_play(cx, ids!(hover.on));
                 // TODO: here, show the "action bar" buttons upon hover-in
             }
             Hit::FingerHoverOut(_fho) => {
-                self.animator_play(cx, id!(hover.off));
+                self.animator_play(cx, ids!(hover.off));
                 // TODO: here, hide the "action bar" buttons upon hover-out
             }
             _ => { }
@@ -4259,7 +4270,7 @@ impl Widget for Message {
             for action in actions {
                 match action.as_widget_action().cast() {
                     MessageAction::HighlightMessage(id) if id == details.item_id => {
-                        self.animator_play(cx, id!(highlight.on));
+                        self.animator_play(cx, ids!(highlight.on));
                         self.redraw(cx);
                     }
                     _ => {}

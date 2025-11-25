@@ -16,10 +16,10 @@
 //!
 
 use makepad_widgets::*;
-use matrix_sdk::{room::reply::{EnforceThread, Reply}, SuccessorRoom};
+use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::TombstoneFooterWidgetExt}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
 
 live_design! {
     use link::theme::*;
@@ -42,7 +42,7 @@ live_design! {
 
     pub RoomInputBar = {{RoomInputBar}}<RoundedView> {
         width: Fill,
-        height: Fit { max: Rel(0.625) }
+        height: Fit { max: Rel { base: Full, factor: 0.625 } }
         flow: Down,
 
         // These margins are a hack to make the borders of the RoomInputBar
@@ -75,13 +75,13 @@ live_design! {
         // * the EditingPane, which slides up as an overlay in front of the other views below.
         overlay_wrapper = <View> {
             width: Fill,
-            height: Fit { max: Rel(0.625) }
+            height: Fit { max: Rel { base: Full, factor: 0.625 } }
             flow: Overlay,
 
             // Below that, display a view that holds the message input bar and send button.
             input_bar = <View> {
                 width: Fill,
-                height: Fit { max: Rel(0.625) }
+                height: Fit { max: Rel { base: Full, factor: 0.625 } }
                 flow: Right
                 // Bottom-align everything to ensure that buttons always stick to the bottom
                 // even when the mentionable_text_input box is very tall.
@@ -110,7 +110,7 @@ live_design! {
 
                 mentionable_text_input = <MentionableTextInput> {
                     width: Fill,
-                    height: Fit { max: Rel(0.625) }
+                    height: Fit { max: Rel { base: Full, factor: 0.625 } }
                     margin: { top: 5, bottom: 12, left: 1, right: 1 },
 
                     persistent = {
@@ -185,7 +185,7 @@ impl Widget for RoomInputBar {
             .get::<RoomScreenProps>()
             .expect("BUG: RoomScreenProps should be available in Scope::props for RoomInputBar");
 
-        match event.hits(cx, self.view.view(id!(replying_preview.reply_preview_content)).area()) {
+        match event.hits(cx, self.view.view(ids!(replying_preview.reply_preview_content)).area()) {
             // If the hit occurred on the replying message preview, jump to it.
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                 if let Some(event_id) = self.replying_to.as_ref()
@@ -226,12 +226,12 @@ impl RoomInputBar {
         actions: &Actions,
         room_screen_props: &RoomScreenProps,
     ) {
-        let mentionable_text_input = self.mentionable_text_input(id!(mentionable_text_input));
+        let mentionable_text_input = self.mentionable_text_input(ids!(mentionable_text_input));
         let text_input = mentionable_text_input.text_input_ref();
 
         // Clear the replying-to preview pane if the "cancel reply" button was clicked
         // or if the `Escape` key was pressed within the message input box.
-        if self.button(id!(cancel_reply_button)).clicked(actions)
+        if self.button(ids!(cancel_reply_button)).clicked(actions)
             || text_input.escaped(actions)
         {
             self.clear_replying_to(cx);
@@ -239,7 +239,7 @@ impl RoomInputBar {
         }
 
         // Handle the add location button being clicked.
-        if self.button(id!(location_button)).clicked(actions) {
+        if self.button(ids!(location_button)).clicked(actions) {
             log!("Add location button clicked; requesting current location...");
             if let Err(_e) = init_location_subscriber(cx) {
                 error!("Failed to initialize location subscriber");
@@ -249,13 +249,13 @@ impl RoomInputBar {
                     auto_dismissal_duration: None
                 });
             }
-            self.view.location_preview(id!(location_preview)).show();
+            self.view.location_preview(ids!(location_preview)).show();
             self.redraw(cx);
         }
 
         // Handle the send location button being clicked.
-        if self.button(id!(location_preview.send_location_button)).clicked(actions) {
-            let location_preview = self.location_preview(id!(location_preview));
+        if self.button(ids!(location_preview.send_location_button)).clicked(actions) {
+            let location_preview = self.location_preview(ids!(location_preview));
             if let Some((coords, _system_time_opt)) = location_preview.get_current_data() {
                 let geo_uri = format!("{}{},{}", utils::GEO_URI_SCHEME, coords.latitude, coords.longitude);
                 let message = RoomMessageEventContent::new(
@@ -285,7 +285,7 @@ impl RoomInputBar {
         }
 
         // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
-        if self.button(id!(send_message_button)).clicked(actions)
+        if self.button(ids!(send_message_button)).clicked(actions)
             || text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
         {
             let entered_text = mentionable_text_input.text().trim().to_string();
@@ -343,7 +343,7 @@ impl RoomInputBar {
         }
 
         // If the EditingPane has been hidden, handle that.
-        if self.view.editing_pane(id!(editing_pane)).was_hidden(actions) {
+        if self.view.editing_pane(ids!(editing_pane)).was_hidden(actions) {
             self.on_editing_pane_hidden(cx);
         }
     }
@@ -362,9 +362,9 @@ impl RoomInputBar {
     ) {
         // When the user clicks the reply button next to a message, we need to:
         // 1. Populate and show the ReplyingPreview, of course.
-        let replying_preview = self.view(id!(replying_preview));
+        let replying_preview = self.view(ids!(replying_preview));
         let (replying_preview_username, _) = replying_preview
-            .avatar(id!(reply_preview_content.reply_preview_avatar))
+            .avatar(ids!(reply_preview_content.reply_preview_avatar))
             .set_avatar_and_get_username(
                 cx,
                 room_id,
@@ -374,12 +374,12 @@ impl RoomInputBar {
             );
 
         replying_preview
-            .label(id!(reply_preview_content.reply_preview_username))
+            .label(ids!(reply_preview_content.reply_preview_username))
             .set_text(cx, replying_preview_username.as_str());
 
         populate_preview_of_timeline_item(
             cx,
-            &replying_preview.html_or_plaintext(id!(reply_preview_content.reply_preview_body)),
+            &replying_preview.html_or_plaintext(ids!(reply_preview_content.reply_preview_body)),
             replying_to.0.content(),
             replying_to.0.sender(),
             &replying_preview_username,
@@ -390,13 +390,13 @@ impl RoomInputBar {
 
         // 2. Hide other views that are irrelevant to a reply, e.g.,
         //    the `EditingPane` would improperly cover up the ReplyPreview.
-        self.editing_pane(id!(editing_pane)).force_reset_hide(cx);
+        self.editing_pane(ids!(editing_pane)).force_reset_hide(cx);
         self.on_editing_pane_hidden(cx);
         // 3. Automatically focus the keyboard on the message input box
         //    so that the user can immediately start typing their reply
         //    without having to manually click on the message input box.
         if grab_key_focus {
-            self.text_input(id!(input_bar.mentionable_text_input.text_input)).set_key_focus(cx);
+            self.text_input(ids!(input_bar.mentionable_text_input.text_input)).set_key_focus(cx);
         }
         self.redraw(cx);
     }
@@ -404,7 +404,7 @@ impl RoomInputBar {
     /// Clears (and makes invisible) the preview of the message
     /// that the user is currently replying to.
     fn clear_replying_to(&mut self, cx: &mut Cx) {
-        self.view(id!(replying_preview)).set_visible(cx, false);
+        self.view(ids!(replying_preview)).set_visible(cx, false);
         self.replying_to = None;
     }
 
@@ -417,17 +417,17 @@ impl RoomInputBar {
     ) {
         // We must hide the input_bar while the editing pane is shown,
         // otherwise a very-tall inputted message might show up underneath a shorter editing pane.
-        self.view.view(id!(input_bar)).set_visible(cx, false);
+        self.view.view(ids!(input_bar)).set_visible(cx, false);
 
         // Similarly, we must hide the replying preview and location preview,
         // since those are not relevant to editing an existing message,
         // so keeping them visible might confuse the user.
-        let replying_preview = self.view.view(id!(replying_preview));
+        let replying_preview = self.view.view(ids!(replying_preview));
         self.was_replying_preview_visible = replying_preview.visible();
         replying_preview.set_visible(cx, false);
-        self.view.location_preview(id!(location_preview)).clear();
+        self.view.location_preview(ids!(location_preview)).clear();
 
-        let editing_pane = self.view.editing_pane(id!(editing_pane));
+        let editing_pane = self.view.editing_pane(ids!(editing_pane));
         match behavior {
             ShowEditingPaneBehavior::ShowNew { event_tl_item } => {
                 editing_pane.show(cx, event_tl_item, room_id);
@@ -445,31 +445,32 @@ impl RoomInputBar {
         // In `show_editing_pane()` above, we hid the input_bar while the editing pane
         // was being shown, so here we need to make it visible again.
         // Same goes for the replying_preview, if it was previously shown.
-        self.view.view(id!(input_bar)).set_visible(cx, true);
+        self.view.view(ids!(input_bar)).set_visible(cx, true);
         if self.was_replying_preview_visible && self.replying_to.is_some() {
-            self.view.view(id!(replying_preview)).set_visible(cx, true);
+            self.view.view(ids!(replying_preview)).set_visible(cx, true);
         }
         self.redraw(cx);
         // We don't need to do anything with the editing pane itself here,
         // because it has already been hidden by the time this function gets called.
     } 
 
-    /// Updates this room's tombstone footer based on the given `successor_room`.
+    /// Updates (populates and shows or hides) this room's tombstone footer
+    /// based on the given successor room details.
     fn update_tombstone_footer(
         &mut self,
         cx: &mut Cx,
-        room_id: &OwnedRoomId,
-        successor_room: Option<&SuccessorRoom>,
+        tombstoned_room_id: &OwnedRoomId,
+        successor_room_details: Option<&SuccessorRoomDetails>,
     ) {
-        let tombstone_footer = self.tombstone_footer(id!(tombstone_footer));
-        let input_bar = self.view(id!(input_bar));
+        let tombstone_footer = self.tombstone_footer(ids!(tombstone_footer));
+        let input_bar = self.view(ids!(input_bar));
 
-        if let Some(sr) = successor_room {
-            tombstone_footer.show(cx, room_id, sr);
+        if let Some(srd) = successor_room_details {
+            tombstone_footer.show(cx, tombstoned_room_id, srd);
             input_bar.set_visible(cx, false);
         } else {
             tombstone_footer.hide(cx);
-            if !self.editing_pane(id!(editing_pane)).is_currently_shown(cx) {
+            if !self.editing_pane(ids!(editing_pane)).is_currently_shown(cx) {
                 input_bar.set_visible(cx, true);
             }
         }
@@ -479,7 +480,7 @@ impl RoomInputBar {
     ///
     /// This should be called to update the button state when the message TextInput content changes.
     fn enable_send_message_button(&mut self, cx: &mut Cx, enable: bool) {
-        let send_message_button = self.view.button(id!(send_message_button));
+        let send_message_button = self.view.button(ids!(send_message_button));
         let (fg_color, bg_color) = if enable {
             (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
         } else {
@@ -497,12 +498,25 @@ impl RoomInputBar {
         });
     }
 
+    /// Updates the visibility of select views based on the user's new power levels.
+    ///
+    /// This will show/hide the `input_bar` and the `can_not_send_message_notice` views.
+    fn update_user_power_levels(
+        &mut self,
+        cx: &mut Cx,
+        user_power_levels: UserPowerLevels,
+    ) {
+        let can_send = user_power_levels.can_send_message();
+        self.view.view(ids!(input_bar)).set_visible(cx, can_send);
+        self.view.view(ids!(can_not_send_message_notice)).set_visible(cx, !can_send);
+    }
+
     /// Returns true if the TSP signing checkbox is checked, false otherwise.
     ///
     /// If TSP is not enabled, this will always return false.
     #[cfg(feature = "tsp")]
     fn is_tsp_signing_enabled(&self, cx: &mut Cx) -> bool {
-        self.view.check_box(id!(tsp_sign_checkbox)).active(cx)
+        self.view.check_box(ids!(tsp_sign_checkbox)).active(cx)
     }
 }
 
@@ -534,27 +548,27 @@ impl RoomInputBarRef {
         );
     }
 
-    // Updates the visibility of select views based on the user's new power levels.
+    /// Updates the visibility of select views based on the user's new power levels.
+    ///
+    /// This will show/hide the `input_bar` and the `can_not_send_message_notice` views.
     pub fn update_user_power_levels(
         &self,
         cx: &mut Cx,
         user_power_levels: UserPowerLevels,
     ) {
-        let Some(inner) = self.borrow() else { return };
-        let can_send = user_power_levels.can_send_message();
-        inner.view(id!(input_bar)).set_visible(cx, can_send);
-        inner.view(id!(can_not_send_message_notice)).set_visible(cx, !can_send);
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.update_user_power_levels(cx, user_power_levels);
     }
 
     /// Updates this room's tombstone footer based on the given `tombstone_state`.
     pub fn update_tombstone_footer(
         &self,
         cx: &mut Cx,
-        room_id: &OwnedRoomId,
-        successor_room: Option<&SuccessorRoom>,
+        tombstoned_room_id: &OwnedRoomId,
+        successor_room_details: Option<&SuccessorRoomDetails>,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.update_tombstone_footer(cx, room_id, successor_room);
+        inner.update_tombstone_footer(cx, tombstoned_room_id, successor_room_details);
     }
 
     /// Forwards the result of an edit request to the `EditingPane` widget
@@ -566,7 +580,7 @@ impl RoomInputBarRef {
         edit_result: Result<(), matrix_sdk_ui::timeline::Error>,
     ) {
         let Some(inner) = self.borrow_mut() else { return };
-        inner.editing_pane(id!(editing_pane))
+        inner.editing_pane(ids!(editing_pane))
             .handle_edit_result(cx, timeline_event_item_id, edit_result);
     }
 
@@ -575,12 +589,12 @@ impl RoomInputBarRef {
         let Some(inner) = self.borrow() else { return Default::default() };
         // Clear the location preview. We don't save this state because the
         // current location might change by the next time the user opens this same room.
-        inner.location_preview(id!(location_preview)).clear();
+        inner.location_preview(ids!(location_preview)).clear();
         RoomInputBarState {
             was_replying_preview_visible: inner.was_replying_preview_visible,
             replying_to: inner.replying_to.clone(),
-            editing_pane_state: inner.editing_pane(id!(editing_pane)).save_state(),
-            text_input_state: inner.text_input(id!(input_bar.mentionable_text_input.text_input)).save_state(),
+            editing_pane_state: inner.editing_pane(ids!(editing_pane)).save_state(),
+            text_input_state: inner.text_input(ids!(input_bar.mentionable_text_input.text_input)).save_state(),
         }
     }
 
@@ -589,8 +603,9 @@ impl RoomInputBarRef {
         &self,
         cx: &mut Cx,
         room_id: &OwnedRoomId,
-        state: RoomInputBarState,
-        tombstone_info: Option<&SuccessorRoom>,
+        saved_state: RoomInputBarState,
+        user_power_levels: UserPowerLevels,
+        tombstone_info: Option<&SuccessorRoomDetails>,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         let RoomInputBarState {
@@ -598,12 +613,17 @@ impl RoomInputBarRef {
             text_input_state,
             replying_to,
             editing_pane_state,
-        } = state;
+        } = saved_state;
 
         // Note: we do *not* restore the location preview state here; see `save_state()`.
 
+        // 0. Update select views based on user power levels from the RoomScreen (the `TimelineUiState`).
+        //    This must happen before we restore the state of the `EditingPane`,
+        //    because the call to `show_editing_pane()` might re-update the `input_bar`'s visibility.
+        inner.update_user_power_levels(cx, user_power_levels);
+
         // 1. Restore the state of the TextInput within the MentionableTextInput.
-        inner.text_input(id!(input_bar.mentionable_text_input.text_input))
+        inner.text_input(ids!(input_bar.mentionable_text_input.text_input))
             .restore_state(cx, text_input_state);
 
         // 2. Restore the state of the replying-to preview.
@@ -622,7 +642,7 @@ impl RoomInputBarRef {
                 room_id.clone(),
             );
         } else {
-            inner.editing_pane(id!(editing_pane)).force_reset_hide(cx);
+            inner.editing_pane(ids!(editing_pane)).force_reset_hide(cx);
             inner.on_editing_pane_hidden(cx);
         }
 

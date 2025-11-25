@@ -7,7 +7,7 @@
 # │   Host OS       │   Target        │   Build Tool    │
 # ├─────────────────┼─────────────────┼─────────────────┤
 # │ Ubuntu Latest   │ Linux x86_64    │ cargo build     │
-# │ macOS 13 Intel  │ macOS x86_64    │ cargo build     │
+# │ macOS 15 Intel  │ macOS x86_64    │ cargo build     │
 # │ macOS 14 ARM64  │ macOS ARM64     │ cargo build     │
 # │ Windows 2022    │ Windows x86_64  │ cargo build     │
 # │ macOS 14        │ iOS aarch64     │ cargo-makepad   │
@@ -82,7 +82,8 @@ jobs:
             libxcursor-dev \
             libx11-dev \
             libasound2-dev \
-            libpulse-dev
+            libpulse-dev \
+            libwayland-dev libxkbcommon-dev
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -108,7 +109,7 @@ jobs:
           - os: macos-14
             arch: arm64
           # Intel Macs (x86_64 architecture)
-          - os: macos-13
+          - os: macos-15-intel
             arch: x86_64
     steps:
       - uses: actions/checkout@v4

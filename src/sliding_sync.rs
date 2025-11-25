@@ -6,8 +6,9 @@ use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
+use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, crypto::{DecryptionSettings, TrustRequirement}, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
+    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
         api::client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
             room::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
@@ -16,13 +17,13 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
 };
 use matrix_sdk_ui::{
-    room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator}, sync_service::{self, SyncService}, timeline::{EventTimelineItem, LatestEventValue, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem}, RoomListService, Timeline
+    RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, spaces::SpaceService, sync_service::{self, SyncService}, timeline::{EventTimelineItem, LatestEventValue, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem}
 };
 use robius_open::Uri;
-use ruma::events::tag::Tags;
+use ruma::{events::tag::Tags, OwnedRoomOrAliasId};
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
+    sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, hash::{Hash, Hasher}, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
@@ -34,24 +35,26 @@ use crate::{
     avatar_cache::AvatarUpdate,
     event_preview::text_preview_of_timeline_item,
     home::{
-        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewRateLimitResponse, LinkPreviewDataNonNumeric}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate}, rooms_list_header::RoomsListHeaderAction
+        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction},
+        link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse},
+        room_screen::TimelineUpdate,
+        rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate},
+        rooms_list_header::RoomsListHeaderAction,
+        tombstone_footer::SuccessorRoomDetails,
     },
     room::member_search::precompute_member_sort,
     login::login_screen::LoginAction,
-    logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{is_logout_in_progress, logout_with_state_machine, LogoutConfig}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef},
+    logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{is_logout_in_progress, logout_with_state_machine, LogoutConfig}},
+    media_cache::{MediaCacheEntry, MediaCacheEntryRef},
     persistence::{self, load_app_state, ClientSessionPersisted},
     profile::{
         user_profile::{AvatarState, UserProfile},
-        user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    },
-    room::RoomPreviewAvatar,
-    shared::{
+        user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
+    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
         html_or_plaintext::MatrixLinkPillState,
         jump_to_bottom_button::UnreadMessageCount,
-        popup_list::{enqueue_popup_notification, PopupItem, PopupKind}
-    },
-    utils::{self, avatar_from_room_name, AVATAR_THUMBNAIL_FORMAT},
-    verification::add_verification_event_handlers_and_sync_client
+        popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
+    }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -332,6 +335,22 @@ pub enum MatrixRequest {
         /// * If `false` (recommended), details will be fetched from the server.
         local_only: bool,
     },
+    /// Request to fetch the preview (basic info) for the given room,
+    /// either one that is joined locally or one that is unknown.
+    ///
+    /// Emits a [`RoomPreviewAction::Fetched`] when the fetch operation has completed.
+    GetRoomPreview {
+        // /// The room that made this request, i.e., where we should send the result.
+        // /// * If `Some`, the fetched room preview is sent to this room's timeline.
+        // /// * If `None`, we emit a [`RoomPreviewAction`] contained the fetched room preview.
+        // requesting_room_id: Option<OwnedRoomId>,
+        room_or_alias_id: OwnedRoomOrAliasId,
+        via: Vec<OwnedServerName>,
+    },
+    /// Request to fetch the full details (the room preview) of a tombstoned room.
+    GetSuccessorRoomDetails {
+        tombstoned_room_id: OwnedRoomId,
+    },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
         user_id: OwnedUserId,
@@ -481,7 +500,7 @@ pub enum MatrixRequest {
 pub fn submit_async_request(req: MatrixRequest) {
     if let Some(sender) = REQUEST_SENDER.lock().unwrap().as_ref() {
         sender.send(req)
-            .expect("BUG: async worker task receiver has died!");
+            .expect("BUG: matrix worker task receiver has died!");
     }
 }
 
@@ -501,15 +520,15 @@ pub struct LoginByPassword {
 }
 
 
-/// The entry point for an async worker thread that can run async tasks.
+/// The entry point for the worker task that runs Matrix-related operations.
 ///
-/// All this thread does is wait for [`MatrixRequests`] from the main UI-driven non-async thread(s)
+/// All this task does is wait for [`MatrixRequests`] from the main UI thread
 /// and then executes them within an async runtime context.
-async fn async_worker(
+async fn matrix_worker_task(
     mut request_receiver: UnboundedReceiver<MatrixRequest>,
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
-    log!("Started async_worker task.");
+    log!("Started matrix_worker_task.");
     let mut subscribers_own_user_read_receipts: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
     let mut subscribers_pinned_events: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
 
@@ -519,7 +538,7 @@ async fn async_worker(
                 if let Err(e) = login_sender.send(login_request).await {
                     error!("Error sending login request to login_sender: {e:?}");
                     Cx::post_action(LoginAction::LoginFailure(String::from(
-                        "BUG: failed to send login request to async worker thread."
+                        "BUG: failed to send login request to login worker task."
                     )));
                 }
             }
@@ -813,6 +832,33 @@ async fn async_worker(
                         }
                     }
                 });
+            }
+
+            MatrixRequest::GetRoomPreview { room_or_alias_id, via } => {
+                let Some(client) = get_client() else { continue };
+                let _fetch_task = Handle::current().spawn(async move {
+                    log!("Sending get room preview request for {room_or_alias_id}...");
+                    let res = fetch_room_preview_with_avatar(&client, &room_or_alias_id, via).await;
+                    Cx::post_action(RoomPreviewAction::Fetched(res));
+                });
+            }
+
+            MatrixRequest::GetSuccessorRoomDetails { tombstoned_room_id } => {
+                let Some(client) = get_client() else { continue };
+                let (sender, successor_room) = {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&tombstoned_room_id) else {
+                        error!("BUG: tombstoned room {tombstoned_room_id} info not found for get successor room details request");
+                        continue;
+                    };
+                    (room_info.timeline_update_sender.clone(), room_info.timeline.room().successor_room())
+                };
+                spawn_fetch_successor_room_preview(
+                    client,
+                    successor_room,
+                    tombstoned_room_id,
+                    sender,
+                );
             }
 
             MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
@@ -1505,8 +1551,8 @@ async fn async_worker(
         }
     }
 
-    error!("async_worker task ended unexpectedly");
-    bail!("async_worker task ended unexpectedly")
+    error!("matrix_worker_task task ended unexpectedly");
+    bail!("matrix_worker_task task ended unexpectedly")
 }
 
 
@@ -1558,85 +1604,24 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
         tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
     }).handle().clone();
 
-    // Create a channel to be used between UI thread(s) and the async worker thread.
-    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
-    REQUEST_SENDER.lock().unwrap().replace(sender);
-
-    let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
-    // Start a high-level async task that will start and monitor all other tasks.
-    let rt = rt_handle.clone();
-    let _monitor = rt_handle.spawn(async move {
-        // Spawn the actual async worker thread.
-        let mut worker_join_handle = rt.spawn(async_worker(receiver, login_sender));
-
-        // Start the main loop that drives the Matrix client SDK.
-        let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
-        // Build a Matrix Client in the background so that SSO Server starts earlier.
-        rt.spawn(async move {
-            match build_client(&Cli::default(), app_data_dir()).await {
-                Ok(client_and_session) => {
-                    DEFAULT_SSO_CLIENT.lock().unwrap()
-                        .get_or_insert(client_and_session);
-                }
-                Err(e) => error!("Error: could not create DEFAULT_SSO_CLIENT object: {e}"),
-            };
-            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
-            Cx::post_action(LoginAction::SsoPending(false));
-        });
-
-        #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
-        loop {
-            tokio::select! {
-                result = &mut main_loop_join_handle => {
-                    match result {
-                        Ok(Ok(())) => {
-                            error!("BUG: main async loop task ended unexpectedly!");
-                        }
-                        Ok(Err(e)) => {
-                            error!("Error: main async loop task ended:\n\t{e:?}");
-                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                status: e.to_string(),
-                            });
-                            enqueue_popup_notification(PopupItem { message: format!("Rooms list update error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
-                        },
-                        Err(e) => {
-                            error!("BUG: failed to join main async loop task: {e:?}");
-                        }
-                    }
-                    break;
-                }
-                result = &mut worker_join_handle => {
-                    match result {
-                        Ok(Ok(())) => {
-                            // Check if this is due to logout
-                            if is_logout_in_progress() {
-                                log!("async worker task ended due to logout");
-                            } else {
-                                error!("BUG: async worker task ended unexpectedly!");
-                            }
-                        }
-                        Ok(Err(e)) => {
-                            // Check if this is due to logout
-                            if is_logout_in_progress() {
-                                log!("async worker task ended with error due to logout: {e:?}");
-                            } else {
-                                error!("Error: async worker task ended:\n\t{e:?}");
-                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: e.to_string(),
-                                });
-                                enqueue_popup_notification(PopupItem { message: format!("Rooms list update error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
-
-                            }
-                        },
-                        Err(e) => {
-                            error!("BUG: failed to join async worker task: {e:?}");
-                        }
-                    }
-                    break;
-                }
+    // Proactively build a Matrix Client in the background so that the SSO Server
+    // can have a quicker start if needed (as it's rather slow to build this client).
+    rt_handle.spawn(async move {
+        match build_client(&Cli::default(), app_data_dir()).await {
+            Ok(client_and_session) => {
+                DEFAULT_SSO_CLIENT.lock().unwrap()
+                    .get_or_insert(client_and_session);
             }
-        }
+            Err(e) => error!("Error: could not create DEFAULT_SSO_CLIENT object: {e}"),
+        };
+        DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+        Cx::post_action(LoginAction::SsoPending(false));
     });
+
+    let rt = rt_handle.clone();
+    // Spawn the main async task that drives the Matrix client SDK, which itself will
+    // start and monitor other related background tasks.
+    rt_handle.spawn(start_matrix_client_login_and_sync(rt));
 
     Ok(rt_handle)
 }
@@ -1646,7 +1631,11 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
 /// to the corresponding background async task for that room (its `timeline_subscriber_handler`).
 pub type TimelineRequestSender = watch::Sender<Vec<BackwardsPaginateUntilEventRequest>>;
 
-/// The return type for `take_timeline_endpoints`, containing timeline channels and successor room info.
+/// The return type for [`take_timeline_endpoints()`].
+///
+/// This primarily contains endpoints for channels of communication
+/// between the timeline UI (`RoomScreen`] and the background worker tasks.
+/// If the relevant room was tombstoned, this also includes info about its successor room.
 pub struct TimelineEndpoints {
     pub update_sender: crossbeam_channel::Sender<TimelineUpdate>,
     pub update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
@@ -1769,15 +1758,17 @@ pub fn is_user_ignored(user_id: &UserId) -> bool {
 /// This will only succeed once per room, as only a single channel receiver can exist.
 pub fn take_timeline_endpoints(
     room_id: &OwnedRoomId,
-) -> Option<TimelineEndpoints>
-{
+) -> Option<TimelineEndpoints> {
     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
     all_joined_rooms
         .get_mut(room_id)
         .and_then(|jrd| jrd.timeline_singleton_endpoints.take()
-            .map(|(update_receiver, request_sender)|
-                (jrd.timeline_update_sender.clone(), update_receiver, request_sender, jrd.timeline.room().successor_room())
-            )
+            .map(|(update_receiver, request_sender)| (
+                jrd.timeline_update_sender.clone(),
+                update_receiver,
+                request_sender,
+                jrd.timeline.room().successor_room(),
+            ))
         )
         .map(|(update_sender, update_receiver, request_sender, successor_room)| {
             TimelineEndpoints {
@@ -1859,11 +1850,21 @@ impl RoomListServiceRoomInfo {
     }
 }
 
-async fn async_main_loop(
-    mut login_receiver: Receiver<LoginRequest>,
-) -> Result<()> {
-    // only init subscribe once
-    let _ = tracing_subscriber::fmt::try_init();
+/// Performs the Matrix client login or session restore, and starts the main sync service.
+///
+/// After starting the sync service, this also starts the main room list service loop
+/// and the main space service loop.
+async fn start_matrix_client_login_and_sync(rt: Handle) {
+    // Create a channel for sending requests from the main UI thread to a background worker task.
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
+    REQUEST_SENDER.lock().unwrap().replace(sender);
+
+    let (login_sender, mut login_receiver) = tokio::sync::mpsc::channel(1);
+
+    // Spawn the async worker task that handles matrix requests.
+    // We must do this now such that the matrix worker task can listen for incoming login requests
+    // from the UI, and forward them to this task (via the login_sender --> login_receiver).
+    let mut matrix_worker_task_handle = rt.spawn(matrix_worker_task(receiver, login_sender));
 
     let most_recent_user_id = persistence::most_recent_user_id();
     log!("Most recent user ID: {most_recent_user_id:?}");
@@ -1947,7 +1948,12 @@ async fn async_main_loop(
                     },
                     None => {
                         error!("BUG: login_receiver hung up unexpectedly");
-                        return Err(anyhow::anyhow!("BUG: login_receiver hung up unexpectedly"));
+                        let err = String::from("Please restart Robrix.\n\nUnable to listen for login requests.");
+                        Cx::post_action(LoginAction::LoginFailure(err.clone()));
+                        enqueue_rooms_list_update(RoomsListUpdate::Status {
+                            status: err,
+                        });
+                        return;
                     }
                 }
             }
@@ -1964,27 +1970,39 @@ async fn async_main_loop(
     let logged_in_user_id = client.user_id()
         .expect("BUG: client.user_id() returned None after successful login!");
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
-    // enqueue_popup_notification(status.clone());
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
-    client.event_cache().subscribe().expect("BUG: CLIENT's event cache unable to subscribe");
-
+    // Store this active client in our global Client state so that other tasks can access it.
     if let Some(_existing) = CLIENT.lock().unwrap().replace(client.clone()) {
         error!("BUG: unexpectedly replaced an existing client when initializing the matrix client.");
     }
 
+    // Listen for changes to our verification status and incoming verification requests.
     add_verification_event_handlers_and_sync_client(client.clone());
 
     // Listen for updates to the ignored user list.
     handle_ignore_user_list_subscriber(client.clone());
 
-    let sync_service = SyncService::builder(client.clone())
+    let sync_service = match SyncService::builder(client.clone())
         .with_offline_mode()
         .build()
-        .await?;
+        .await
+    {
+        Ok(ss) => ss,
+        Err(e) => {
+            error!("BUG: failed to create SyncService: {e:?}");
+            let err = format!("Please restart Robrix.\n\nFailed to create Matrix sync service: {e}.");
+            enqueue_popup_notification(PopupItem {
+                message: err.clone(),
+                auto_dismissal_duration: None,
+                kind: PopupKind::Error,
+            });
+            enqueue_rooms_list_update(RoomsListUpdate::Status { status: err });
+            return;
+        }
+    };
 
     // Attempt to load the previously-saved app state.
-    // Include this after re-login.
     handle_load_app_state(logged_in_user_id.to_owned());
     handle_sync_indicator_subscriber(&sync_service);
     handle_sync_service_state_subscriber(sync_service.state());
@@ -1995,6 +2013,97 @@ async fn async_main_loop(
         error!("BUG: unexpectedly replaced an existing sync service when initializing the matrix client.");
     }
 
+    let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
+    let mut space_service_task = rt.spawn(space_service_loop(SpaceService::new(client.clone()), client));
+
+    // Now, this task becomes an infinite loop that monitors the state of the
+    // three core matrix-related background tasks that we just spawned above.
+    #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
+    loop {
+        tokio::select! {
+            result = &mut matrix_worker_task_handle => {
+                match result {
+                    Ok(Ok(())) => {
+                        // Check if this is due to logout
+                        if is_logout_in_progress() {
+                            log!("matrix worker task ended due to logout");
+                        } else {
+                            error!("BUG: matrix worker task ended unexpectedly!");
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        // Check if this is due to logout
+                        if is_logout_in_progress() {
+                            log!("matrix worker task ended with error due to logout: {e:?}");
+                        } else {
+                            error!("Error: matrix worker task ended:\n\t{e:?}");
+                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                status: e.to_string(),
+                            });
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Rooms list update error: {e}"),
+                                kind: PopupKind::Error,
+                                auto_dismissal_duration: None,
+                            });
+                        }
+                    },
+                    Err(e) => {
+                        error!("BUG: failed to join matrix worker task: {e:?}");
+                    }
+                }
+                break;
+            }
+            result = &mut room_list_service_task => {
+                match result {
+                    Ok(Ok(())) => {
+                        error!("BUG: room list service loop task ended unexpectedly!");
+                    }
+                    Ok(Err(e)) => {
+                        error!("Error: room list service loop task ended:\n\t{e:?}");
+                        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                            status: e.to_string(),
+                        });
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Room list service  error: {e}"),
+                            kind: PopupKind::Error,
+                            auto_dismissal_duration: None,
+                        });
+                    },
+                    Err(e) => {
+                        error!("BUG: failed to join room list service loop task: {e:?}");
+                    }
+                }
+                break;
+            }
+            result = &mut space_service_task => {
+                match result {
+                    Ok(Ok(())) => {
+                        error!("BUG: space service loop task ended unexpectedly!");
+                    }
+                    Ok(Err(e)) => {
+                        error!("Error: space service loop task ended:\n\t{e:?}");
+                        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                            status: e.to_string(),
+                        });
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Space service error: {e}"),
+                            kind: PopupKind::Error,
+                            auto_dismissal_duration: None,
+                        });
+                    },
+                    Err(e) => {
+                        error!("BUG: failed to join space service loop task: {e:?}");
+                    }
+                }
+                break;
+            }
+        }
+    }
+}
+
+
+/// The main async task that listens for changes to all rooms.
+async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Result<()> {
     let all_rooms_list = room_list_service.all_rooms().await?;
     handle_room_list_service_loading_state(all_rooms_list.loading_state());
 
@@ -2002,9 +2111,17 @@ async fn async_main_loop(
         // TODO: paginate room list to avoid loading all rooms at once
         all_rooms_list.entries_with_dynamic_adapters(usize::MAX);
 
-    room_list_dynamic_entries_controller.set_filter(
-        Box::new(|_room| true),
-    );
+    // By default, our rooms list should only show rooms that are:
+    // 1. not spaces (those are handled by the SpaceService),
+    // 2. not left (clients don't typically show rooms that the user has already left),
+    // 3. not outdated (don't show tombstoned rooms whose successor is already joined).
+    room_list_dynamic_entries_controller.set_filter(Box::new(
+        filters::new_filter_all(vec![
+            Box::new(filters::new_filter_not(Box::new(filters::new_filter_space()))),
+            Box::new(filters::new_filter_non_left()),
+            Box::new(filters::new_filter_deduplicate_versions()),
+        ])
+    ));
 
     let mut all_known_rooms: Vector<RoomListServiceRoomInfo> = Vector::new();
 
@@ -2314,19 +2431,18 @@ async fn update_room(
             };
 
             if !old_room.is_tombstoned && new_room.is_tombstoned {
+                let successor_room = new_room.room.successor_room();
+                log!("Updating room {new_room_id} to be tombstoned, {successor_room:?}");
                 enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: new_room_id.clone() });
-                if let Some(successor_room) = new_room.room.successor_room() {
-                    if let Some(timeline_update_sender) = get_timeline_update_sender(&new_room_id) {
-                        log!("Updating room {new_room_id} to be tombstoned, {successor_room:?}");
-                        match timeline_update_sender.send(TimelineUpdate::Tombstoned(Some(successor_room))) {
-                            Ok(_) => SignalToUI::set_ui_signal(),
-                            Err(_) => error!("Failed to send the Tombstoned update to room {new_room_id}"),
-                        }
-                    } else {
-                        error!("BUG: could not find JoinedRoomDetails for newly-tombstoned room {new_room_id}");
-                    }
+                if let Some(timeline_update_sender) = get_timeline_update_sender(&new_room_id) {
+                    spawn_fetch_successor_room_preview(
+                        room_list_service.client().clone(),
+                        successor_room,
+                        new_room_id.clone(),
+                        timeline_update_sender,
+                    );
                 } else {
-                    log!("BUG: room {} was tombstoned but had no successor room!", new_room_id);
+                    error!("BUG: could not find JoinedRoomDetails for newly-tombstoned room {new_room_id}");
                 }
             }
 
@@ -2396,11 +2512,12 @@ async fn add_new_room(
         }
         RoomState::Invited => {
             let invite_details = new_room.room.invite_details().await.ok();
-            let Some(client) = get_client() else {
-                return Ok(());
-            };
             let latest_event = if let Some(latest_event) = new_room.room.latest_event() {
-                EventTimelineItem::from_latest_event(client, &new_room.room_id, latest_event).await
+                EventTimelineItem::from_latest_event(
+                    room_list_service.client().clone(),
+                    &new_room.room_id,
+                    latest_event,
+                ).await
             } else {
                 None
             };
@@ -2648,11 +2765,87 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
                 }
                 RoomListLoadingState::Loaded { maximum_number_of_rooms } => {
                     enqueue_rooms_list_update(RoomsListUpdate::LoadedRooms { max_rooms: maximum_number_of_rooms });
+                    // The SDK docs state that we cannot move from the `Loaded` state
+                    // back to the `NotLoaded` state, so we can safely exit this task here.
+                    return;
                 }
             }
         }
     });
 }
+
+/// Spawns an async task to fetch the RoomPreview for the given successor room.
+///
+/// After the fetch completes, this emites a [`RoomPreviewAction`]
+/// containing the fetched room preview or an error if it failed.
+fn spawn_fetch_successor_room_preview(
+    client: Client,
+    successor_room: Option<SuccessorRoom>,
+    tombstoned_room_id: OwnedRoomId,
+    timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
+) {
+    Handle::current().spawn(async move {
+        log!("Updating room {tombstoned_room_id} to be tombstoned, {successor_room:?}");
+        let srd = if let Some(SuccessorRoom { room_id, reason }) = successor_room {
+            match fetch_room_preview_with_avatar(
+                &client,
+                room_id.deref().into(),
+                Vec::new(),
+            ).await {
+                Ok(room_preview) => SuccessorRoomDetails::Full { room_preview, reason },
+                Err(e) => {
+                    log!("Failed to fetch preview of successor room {room_id}, error: {e:?}");
+                    SuccessorRoomDetails::Basic(SuccessorRoom { room_id, reason })
+                }
+            }
+        } else {
+            log!("BUG: room {tombstoned_room_id} was tombstoned but had no successor room!");
+            SuccessorRoomDetails::None
+        };
+
+        match timeline_update_sender.send(TimelineUpdate::Tombstoned(srd)) {
+            Ok(_) => SignalToUI::set_ui_signal(),
+            Err(_) => error!("Failed to send the Tombstoned update to room {tombstoned_room_id}"),
+        }
+    });
+}
+
+/// Fetches the full preview information for the given `room`.
+/// Also fetches that room preview's avatar, if it had an avatar URL.
+async fn fetch_room_preview_with_avatar(
+    client: &Client,
+    room: &RoomOrAliasId,
+    via: Vec<OwnedServerName>,
+) -> Result<FetchedRoomPreview, matrix_sdk::Error> {
+    let room_preview = client.get_room_preview(room, via).await?;
+    // If this room has an avatar URL, fetch it.
+    let room_avatar = if let Some(avatar_url) = room_preview.avatar_url.clone() {
+        let media_request = MediaRequestParameters {
+            source: MediaSource::Plain(avatar_url),
+            format: AVATAR_THUMBNAIL_FORMAT.into(),
+        };
+        match client.media().get_media_content(&media_request, true).await {
+            Ok(avatar_content) => {
+                log!("Fetched avatar for room preview {:?} ({})", room_preview.name, room_preview.room_id);
+                FetchedRoomAvatar::Image(avatar_content.into())
+            }
+            Err(e) => {
+                log!("Failed to fetch avatar for room preview {:?} ({}), error: {e:?}",
+                    room_preview.name, room_preview.room_id
+                );
+                avatar_from_room_name(room_preview.name.as_deref())
+            }
+        }
+    } else {
+        // The successor room did not have an avatar URL
+        avatar_from_room_name(room_preview.name.as_deref())
+    };
+    Ok(FetchedRoomPreview {
+        room_preview,
+        room_avatar,
+    })
+}
+
 
 /// Returns the timestamp and text preview of the given `latest_event` timeline item.
 ///
@@ -2995,7 +3188,7 @@ async fn timeline_subscriber_handler(
 /// Handles the given updated latest event for the given room.
 ///
 /// This function sends a `RoomsListUpdate::UpdateLatestEvent`
-/// to update the latest event in the RoomsList's room preview for the given room.
+/// to update the latest event in the RoomsListEntry for the given room.
 async fn update_latest_event(room: &Room) {
     let Some(client) = get_client() else { return };
     let (sender_username, sender_id, timestamp, content) = match room.new_latest_event().await {
@@ -3058,15 +3251,15 @@ fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
 
 /// Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
-async fn room_avatar(room: &Room, room_name: Option<&str>) -> RoomPreviewAvatar {
+async fn room_avatar(room: &Room, room_name: Option<&str>) -> FetchedRoomAvatar {
     match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-        Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar.into()),
+        Ok(Some(avatar)) => FetchedRoomAvatar::Image(avatar.into()),
         _ => {
             if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
                 if room_members.len() == 2 {
                     if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
                         if let Ok(Some(avatar)) = non_account_member.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-                            return RoomPreviewAvatar::Image(avatar.into());
+                            return FetchedRoomAvatar::Image(avatar.into());
                         }
                     }
                 }
@@ -3189,7 +3382,7 @@ async fn spawn_sso_server(
                     if let Err(e) = login_sender.send(LoginRequest::LoginBySSOSuccess(client, client_session)).await {
                         error!("Error sending login request to login_sender: {e:?}");
                         Cx::post_action(LoginAction::LoginFailure(String::from(
-                            "BUG: failed to send login request to async worker thread."
+                            "BUG: failed to send login request to matrix worker thread."
                         )));
                     }
                     enqueue_rooms_list_update(RoomsListUpdate::Status {
