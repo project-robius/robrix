@@ -415,6 +415,9 @@ pub struct MentionableTextInput {
     /// Whether a deferred popup cleanup is pending after focus loss
     #[rust]
     pending_popup_cleanup: bool,
+    /// Whether focus should be restored in the next draw_walk cycle
+    #[rust]
+    pending_draw_focus_restore: bool,
 }
 
 impl Widget for MentionableTextInput {
@@ -461,11 +464,11 @@ impl Widget for MentionableTextInput {
         // Handle deferred cleanup after focus loss
         if let Event::NextFrame(_) = event {
             if self.pending_popup_cleanup {
+                let text_input_ref = self.cmd_text_input.text_input_ref();
+                let text_input_area = text_input_ref.area();
                 self.pending_popup_cleanup = false;
 
                 // Only close if input still doesn't have focus and we're not actively searching
-                let text_input_ref = self.cmd_text_input.text_input_ref();
-                let text_input_area = text_input_ref.area();
                 let has_focus = cx.has_key_focus(text_input_area);
 
                 // If user refocused or is actively typing/searching, don't cleanup
@@ -694,7 +697,30 @@ impl Widget for MentionableTextInput {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.cmd_text_input.draw_walk(cx, scope, walk)
+        let result = self.cmd_text_input.draw_walk(cx, scope, walk);
+
+        // Restore focus after all child drawing is complete.
+        // This retries until focus is successfully restored, handling cases where
+        // finger_up events might steal focus after our initial restoration attempt.
+        if self.pending_draw_focus_restore {
+            let text_input_ref = self.cmd_text_input.text_input_ref();
+            text_input_ref.set_key_focus(cx);
+            if let Some(mut ti) = text_input_ref.borrow_mut() {
+                ti.reset_blink_timer(cx);
+            }
+            // Check if we successfully got focus
+            let area = text_input_ref.area();
+            if cx.has_key_focus(area) {
+                // Successfully restored focus, clear the flag
+                self.pending_draw_focus_restore = false;
+            } else {
+                // Focus restoration failed (likely due to finger_up event stealing focus)
+                // Keep the flag true and request another frame to retry
+                cx.new_next_frame();
+            }
+        }
+
+        result
     }
 }
 
@@ -1074,13 +1100,17 @@ impl MentionableTextInput {
 
         self.cancel_active_search();
         self.search_state = MentionSearchState::JustCancelled;
+        // Clear cleanup flag to prevent next-frame cleanup from interfering with focus
+        self.pending_popup_cleanup = false;
         self.close_mention_popup(cx);
+        // Schedule focus restoration for the draw cycle.
+        // This will retry until focus is successfully restored, handling cases where
+        // finger_up events might steal focus after our initial restoration attempt.
+        self.pending_draw_focus_restore = true;
     }
 
     /// Core text change handler that manages mention context
     fn handle_text_change(&mut self, cx: &mut Cx, scope: &mut Scope, text: String) {
-        log!("handle_text_change: text='{}' search_state={:?}", text, self.search_state);
-
         // If search was just cancelled, clear the flag and don't re-trigger search
         if self.is_just_cancelled() {
             self.search_state = MentionSearchState::Idle;
@@ -1744,7 +1774,9 @@ impl MentionableTextInput {
         // Ensure header view is reset to visible next time it's triggered
         // This will happen before update_user_list is called in handle_text_change
 
-        self.cmd_text_input.request_text_input_focus();
+        // Note: Do NOT call request_text_input_focus() here.
+        // Focus restoration is handled solely via `pending_draw_focus_restore` in draw_walk
+        // to avoid race conditions between multiple focus mechanisms.
         self.cmd_text_input.redraw(cx);
     }
 
