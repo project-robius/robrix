@@ -828,7 +828,7 @@ impl RoomsList {
     }
 
     /// Returns a room's avatar and displayable name.
-    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
+    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(FetchedRoomAvatar, Option<String>)> {
         self.all_joined_rooms.get(room_id)
             .map(|room_info| (room_info.avatar.clone(), room_info.room_name.clone()))
             .or_else(|| {
@@ -1098,7 +1098,7 @@ impl RoomsListRef {
     }
 
     /// See [`RoomsList::get_room_avatar_and_name()`].
-    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(RoomPreviewAvatar, Option<String>)> {
+    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(FetchedRoomAvatar, Option<String>)> {
         let inner = self.borrow()?;
         inner.get_room_avatar_and_name(room_id)
     }

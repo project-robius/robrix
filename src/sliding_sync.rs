@@ -3565,7 +3565,7 @@ pub fn shutdown_background_tasks() {
     }
 }
 
-pub async fn clean_app_state(config: &LogoutConfig) -> Result<()> {
+pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
     // Get the database path before clearing CLIENT
     // We need this to delete the Matrix SDK database after logout
     let db_path_to_delete = if let Some(user_id) = current_user_id() {

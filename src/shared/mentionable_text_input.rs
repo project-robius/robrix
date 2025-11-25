@@ -647,7 +647,7 @@ impl Widget for MentionableTextInput {
                                 // Still no members returned yet; keep showing loading indicator.
                                 self.cmd_text_input.clear_items();
                                 self.show_loading_indicator(cx);
-                                let popup = self.cmd_text_input.view(id!(popup));
+                                let popup = self.cmd_text_input.view(ids!(popup));
                                 popup.set_visible(cx, true);
                                 // Only restore focus if input currently has focus
                                 let text_input_area = self.cmd_text_input.text_input_ref().area();
@@ -720,20 +720,16 @@ impl MentionableTextInput {
         id
     }
 
-        if members_are_empty && !self.members_loading {
-            // Members list is empty and we're not already showing loading - start loading state
-            self.members_loading = true;
-            self.show_loading_indicator(cx);
-            return true;
-        } else if !members_are_empty && self.members_loading {
-            // Members have been loaded, stop loading state
-            self.members_loading = false;
-            // Reset popup height to ensure proper calculation for user list
-            let popup = self.cmd_text_input.view(ids!(popup));
-            popup.apply_over(cx, live! { height: Fit });
-        } else if members_are_empty && self.members_loading {
-            // Still loading and members are empty - keep showing loading indicator
-            return true;
+    /// Get the current trigger position if in search mode
+    fn get_trigger_position(&self) -> Option<usize> {
+        match &self.search_state {
+            MentionSearchState::WaitingForMembers {
+                trigger_position, ..
+            }
+            | MentionSearchState::Searching {
+                trigger_position, ..
+            } => Some(*trigger_position),
+            _ => None,
         }
     }
 
@@ -745,7 +741,7 @@ impl MentionableTextInput {
     /// Tries to add the `@room` mention item to the list of selectable popup mentions.
     ///
     /// Returns true if @room item was added to the list and will be displayed in the popup.
-    fn try_search_messages_mention_item(
+    fn try_add_room_mention_item(
         &mut self,
         cx: &mut Cx,
         search_text: &str,
@@ -1026,7 +1022,7 @@ impl MentionableTextInput {
         let current_text = text_input_ref.text();
         let head = text_input_ref.borrow().map_or(0, |p| p.cursor().index);
 
-        if let Some(start_idx) = self.current_mention_start_index {
+        if let Some(start_idx) = self.get_trigger_position() {
             let room_mention_label = selected.label(ids!(user_info.room_mention));
             let room_mention_text = room_mention_label.text();
             let room_user_id_text = selected.label(ids!(room_user_id)).text();
@@ -1294,7 +1290,7 @@ impl MentionableTextInput {
         let mut items_added = 0;
 
         // 4. Try to add @room mention item
-        let has_room_item = self.try_search_messages_mention_item(cx, search_text, room_props, is_desktop);
+        let has_room_item = self.try_add_room_mention_item(cx, search_text, room_props, is_desktop);
         if has_room_item {
             items_added += 1;
         }
@@ -1338,7 +1334,7 @@ impl MentionableTextInput {
 
                 // Start the loading animation
                 loading_item
-                    .bouncing_dots(id!(loading_animation))
+                    .bouncing_dots(ids!(loading_animation))
                     .start_animation(cx);
                 cx.new_next_frame();
 
@@ -1446,8 +1442,8 @@ impl MentionableTextInput {
         };
 
         // We have cached members, ensure popup is visible
-        let popup = self.cmd_text_input.view(id!(popup));
-        let header_view = self.cmd_text_input.view(id!(popup.header_view));
+        let popup = self.cmd_text_input.view(ids!(popup));
+        let header_view = self.cmd_text_input.view(ids!(popup.header_view));
         header_view.set_visible(cx, true);
         popup.set_visible(cx, true);
         // Only restore focus if input currently has focus
@@ -1592,7 +1588,7 @@ impl MentionableTextInput {
         if let Some(ref existing_indicator) = self.loading_indicator_ref {
             // Already showing, just ensure animation is running
             existing_indicator
-                .bouncing_dots(id!(loading_animation))
+                .bouncing_dots(ids!(loading_animation))
                 .start_animation(cx);
             cx.new_next_frame();
             return;
@@ -1612,7 +1608,7 @@ impl MentionableTextInput {
 
         // Now that the widget is in the UI tree, start the loading animation
         loading_item
-            .bouncing_dots(id!(loading_animation))
+            .bouncing_dots(ids!(loading_animation))
             .start_animation(cx);
         cx.new_next_frame();
 
