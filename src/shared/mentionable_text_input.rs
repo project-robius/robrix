@@ -462,16 +462,9 @@ impl Widget for MentionableTextInput {
             // Handle build items request
             if self.cmd_text_input.should_build_items(actions) {
                 if has_focus {
-                    // Only update if we're still searching
-                    if self.is_searching() {
-                        let search_text = self.cmd_text_input.search_text();
-                        self.update_user_list(cx, &search_text, scope);
-                    }
-                // TODO: Replace direct access to internal popup view with public API method
-                // Suggested improvement: Use self.cmd_text_input.is_popup_visible() instead
-                // This requires adding is_popup_visible() method to CommandTextInput in makepad
-                // See: https://github.com/makepad/makepad/widgets/src/command_text_input.rs
-                } else if self.cmd_text_input.view(id!(popup)).visible() {
+                    let search_text = self.cmd_text_input.search_text().to_lowercase();
+                    self.update_user_list(cx, &search_text, scope);
+                } else if self.cmd_text_input.view(ids!(popup)).visible() {
                     self.close_mention_popup(cx);
                 }
             }
@@ -551,8 +544,8 @@ impl Widget for MentionableTextInput {
                 }
             }
 
-            // Close popup if focus is lost while searching
-            if !has_focus && self.is_searching() {
+            // Close popup if focus is lost
+            if !has_focus && self.cmd_text_input.view(ids!(popup)).visible() {
                 self.close_mention_popup(cx);
             }
         }
@@ -571,7 +564,9 @@ impl Widget for MentionableTextInput {
 
             if let Some(room_members) = &room_props.room_members {
                 if !room_members.is_empty() {
-                    let text_input = self.cmd_text_input.text_input(id!(text_input));
+                    // Members are now available, update the list
+                    self.members_loading = false;
+                    let text_input = self.cmd_text_input.text_input(ids!(text_input));
                     let text_input_area = text_input.area();
                     let is_focused = cx.has_key_focus(text_input_area);
 
@@ -611,16 +606,20 @@ impl MentionableTextInput {
         id
     }
 
-    /// Get the current trigger position if in search mode
-    fn get_trigger_position(&self) -> Option<usize> {
-        match &self.search_state {
-            MentionSearchState::WaitingForMembers {
-                trigger_position, ..
-            }
-            | MentionSearchState::Searching {
-                trigger_position, ..
-            } => Some(*trigger_position),
-            _ => None,
+        if members_are_empty && !self.members_loading {
+            // Members list is empty and we're not already showing loading - start loading state
+            self.members_loading = true;
+            self.show_loading_indicator(cx);
+            return true;
+        } else if !members_are_empty && self.members_loading {
+            // Members have been loaded, stop loading state
+            self.members_loading = false;
+            // Reset popup height to ensure proper calculation for user list
+            let popup = self.cmd_text_input.view(ids!(popup));
+            popup.apply_over(cx, live! { height: Fit });
+        } else if members_are_empty && self.members_loading {
+            // Still loading and members are empty - keep showing loading indicator
+            return true;
         }
     }
 
@@ -632,7 +631,7 @@ impl MentionableTextInput {
     /// Tries to add the `@room` mention item to the list of selectable popup mentions.
     ///
     /// Returns true if @room item was added to the list and will be displayed in the popup.
-    fn try_add_room_mention_item(
+    fn try_search_messages_mention_item(
         &mut self,
         cx: &mut Cx,
         search_text: &str,
@@ -649,7 +648,7 @@ impl MentionableTextInput {
         let room_mention_item = WidgetRef::new_from_ptr(cx, Some(ptr));
         let mut room_avatar_shown = false;
 
-        let avatar_ref = room_mention_item.avatar(id!(user_info.room_avatar));
+        let avatar_ref = room_mention_item.avatar(ids!(user_info.room_avatar));
 
         // Get room avatar fallback text from room display name
         let room_name_first_char = room_props
@@ -769,12 +768,11 @@ impl MentionableTextInput {
             };
             let item = WidgetRef::new_from_ptr(cx, Some(user_list_item_ptr));
 
-            item.label(id!(user_info.username))
-                .set_text(cx, &display_name);
+            item.label(ids!(user_info.username)).set_text(cx, &display_name);
 
             // Use the full user ID string
             let user_id_str = member.user_id().as_str();
-            item.label(id!(user_id)).set_text(cx, user_id_str);
+            item.label(ids!(user_id)).set_text(cx, user_id_str);
 
             if is_desktop {
                 item.apply_over(
@@ -785,7 +783,7 @@ impl MentionableTextInput {
                         align: {y: 0.5}
                     ),
                 );
-                item.view(id!(user_info.filler)).set_visible(cx, true);
+                item.view(ids!(user_info.filler)).set_visible(cx, true);
             } else {
                 item.apply_over(
                     cx,
@@ -795,10 +793,10 @@ impl MentionableTextInput {
                         spacing: (MOBILE_USERNAME_SPACING)
                     ),
                 );
-                item.view(id!(user_info.filler)).set_visible(cx, false);
+                item.view(ids!(user_info.filler)).set_visible(cx, false);
             }
 
-            let avatar = item.avatar(id!(user_info.avatar));
+            let avatar = item.avatar(ids!(user_info.avatar));
             if let Some(mxc_uri) = member.avatar_url() {
                 match get_or_fetch_avatar(cx, mxc_uri.to_owned()) {
                     AvatarCacheEntry::Loaded(avatar_data) => {
@@ -829,7 +827,7 @@ impl MentionableTextInput {
 
     /// Update popup visibility and layout based on current state
     fn update_popup_visibility(&mut self, cx: &mut Cx, has_items: bool) {
-        let popup = self.cmd_text_input.view(id!(popup));
+        let popup = self.cmd_text_input.view(ids!(popup));
 
         match &self.search_state {
             MentionSearchState::Idle | MentionSearchState::JustCancelled => {
@@ -883,10 +881,10 @@ impl MentionableTextInput {
         let current_text = text_input_ref.text();
         let head = text_input_ref.borrow().map_or(0, |p| p.cursor().index);
 
-        if let Some(start_idx) = self.get_trigger_position() {
-            let room_mention_label = selected.label(id!(user_info.room_mention));
+        if let Some(start_idx) = self.current_mention_start_index {
+            let room_mention_label = selected.label(ids!(user_info.room_mention));
             let room_mention_text = room_mention_label.text();
-            let room_user_id_text = selected.label(id!(room_user_id)).text();
+            let room_user_id_text = selected.label(ids!(room_user_id)).text();
 
             let is_room_mention =
                 { room_mention_text == "Notify the entire room" && room_user_id_text == "@room" };
@@ -897,8 +895,8 @@ impl MentionableTextInput {
                 "@room ".to_string()
             } else {
                 // User selected a specific user
-                let username = selected.label(id!(user_info.username)).text();
-                let user_id_str = selected.label(id!(user_id)).text();
+                let username = selected.label(ids!(user_info.username)).text();
+                let user_id_str = selected.label(ids!(user_id)).text();
                 let Ok(user_id): Result<OwnedUserId, _> = user_id_str.clone().try_into() else {
                     // Invalid user ID format - skip selection
                     return;
@@ -996,8 +994,8 @@ impl MentionableTextInput {
             }
 
             // Ensure header view is visible to prevent header disappearing during consecutive @mentions
-            let popup = self.cmd_text_input.view(id!(popup));
-            let header_view = self.cmd_text_input.view(id!(popup.header_view));
+            let popup = self.cmd_text_input.view(ids!(popup));
+            let header_view = self.cmd_text_input.view(ids!(popup.header_view));
             header_view.set_visible(cx, true);
 
             // Transition to appropriate state and update user list
@@ -1162,8 +1160,8 @@ impl MentionableTextInput {
         };
         let mut items_added = 0;
 
-        // Try to add @room mention item
-        let has_room_item = self.try_add_room_mention_item(cx, search_text, room_props, is_desktop);
+        // 4. Try to add @room mention item
+        let has_room_item = self.try_search_messages_mention_item(cx, search_text, room_props, is_desktop);
         if has_room_item {
             items_added += 1;
         }
@@ -1422,10 +1420,8 @@ impl MentionableTextInput {
         };
         let loading_item = WidgetRef::new_from_ptr(cx, Some(ptr));
 
-        // IMPORTANT: Add the widget to the UI tree FIRST before starting animation
-        // This ensures the widget is properly initialized and can respond to animator commands
-        self.cmd_text_input.add_item(loading_item.clone());
-        self.loading_indicator_ref = Some(loading_item.clone());
+        // Start the loading animation
+        loading_item.bouncing_dots(ids!(loading_animation)).start_animation(cx);
 
         // Now that the widget is in the UI tree, start the loading animation
         loading_item
@@ -1434,8 +1430,8 @@ impl MentionableTextInput {
         cx.new_next_frame();
 
         // Setup popup dimensions for loading state
-        let popup = self.cmd_text_input.view(id!(popup));
-        let header_view = self.cmd_text_input.view(id!(popup.header_view));
+        let popup = self.cmd_text_input.view(ids!(popup));
+        let header_view = self.cmd_text_input.view(ids!(popup.header_view));
 
         // Ensure header is visible
         header_view.set_visible(cx, true);
@@ -1466,8 +1462,8 @@ impl MentionableTextInput {
         self.loading_indicator_ref = None;
 
         // Setup popup dimensions for no matches state
-        let popup = self.cmd_text_input.view(id!(popup));
-        let header_view = self.cmd_text_input.view(id!(popup.header_view));
+        let popup = self.cmd_text_input.view(ids!(popup));
+        let header_view = self.cmd_text_input.view(ids!(popup.header_view));
 
         // Ensure header is visible
         header_view.set_visible(cx, true);
@@ -1546,8 +1542,8 @@ impl MentionableTextInput {
         self.reset_search_state();
 
         // Get popup and header view references
-        let popup = self.cmd_text_input.view(id!(popup));
-        let header_view = self.cmd_text_input.view(id!(popup.header_view));
+        let popup = self.cmd_text_input.view(ids!(popup));
+        let header_view = self.cmd_text_input.view(ids!(popup.header_view));
 
         // Force hide header view - necessary when handling deletion operations
         // When backspace-deleting mentions, we want to completely hide the header

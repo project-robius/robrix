@@ -3,10 +3,7 @@ use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
 use crate::{
-    app::{AppState, SelectedRoom},
-    room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, FetchedRoomAvatar},
-    shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, room_filter_input_bar::RoomFilterAction},
-    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}, utils::room_name_or_id,
+    app::{AppState, SelectedRoom}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}}, shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, room_filter_input_bar::RoomFilterAction}, sliding_sync::{MatrixRequest, PaginationDirection, submit_async_request}, utils::room_name_or_id
 };
 use super::rooms_list_entry::RoomsListEntryAction;
 
@@ -83,7 +80,8 @@ live_design! {
             keep_invisible: false,
             auto_tail: false,
             width: Fill, height: Fill
-            flow: Down, spacing: 0.0
+            flow: Down,
+            spacing: 0.0
 
             collapsible_header = <CollapsibleHeader> {}
             rooms_list_entry = <RoomsListEntry> {}
@@ -348,7 +346,13 @@ pub struct RoomsList {
     /// The ID of the currently-selected room.
     #[rust] current_active_room: Option<OwnedRoomId>,
     /// The maximum number of rooms that will ever be loaded.
+    ///
+    /// This should not be used to determine whether all requested rooms have been loaded,
+    /// because we will likely never receive this many rooms due to the room list service
+    /// excluding rooms that we have filtered out (e.g., left or tombstoned rooms, spaces, etc).
     #[rust] max_known_rooms: Option<u32>,
+    // /// Whether the room list service has loaded all requested rooms from the homeserver.
+    // #[rust] all_rooms_loaded: bool,
 }
 
 impl LiveHook for RoomsList {
@@ -358,15 +362,13 @@ impl LiveHook for RoomsList {
 }
 
 impl RoomsList {
-    /// Determines if all known rooms have been loaded from the homeserver.
-    ///
-    /// Returns `true` if the number of rooms in `all_joined_rooms` and `invited_rooms` equals or exceeds
-    /// `max_known_rooms`.
-    /// Returns `false` if `max_known_rooms` is `None`.
-    pub fn all_known_rooms_loaded(&self) -> bool {
-        self.max_known_rooms.is_some_and(|max_rooms| {
-            self.all_joined_rooms.len() + self.invited_rooms.borrow().len() >= max_rooms as usize
-        })
+    /// Returns whether the homeserver has finished syncing all of the rooms
+    /// that should be synced to our client based on the currently-specified room list filter. 
+    pub fn all_rooms_loaded(&self) -> bool {
+        // TODO: fix this: figure out a way to determine if
+        //       all requested rooms have been received from the homeserver.
+        false
+        // self.all_rooms_loaded
     }
 
     /// Returns `true` if the given `room_id` is in the `all_joined_rooms` or `invited_rooms` list.
@@ -613,7 +615,7 @@ impl RoomsList {
                     }
                 }
                 RoomsListUpdate::ScrollToRoom(room_id) => {
-                    let portal_list = self.view.portal_list(id!(list));
+                    let portal_list = self.view.portal_list(ids!(list));
                     let speed = 50.0;
                     let portal_list_index = if let Some(direct_index) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
                         let (_, direct_rooms_indexes, _) = self.calculate_indexes();
@@ -638,11 +640,7 @@ impl RoomsList {
     /// Updates the status message to show how many rooms have been loaded.
     fn update_status_rooms_count(&mut self) {
         let num_rooms = self.all_joined_rooms.len() + self.invited_rooms.borrow().len();
-        self.status = if let Some(max_rooms) = self.max_known_rooms {
-            format!("Loaded {num_rooms} of {max_rooms} total rooms.")
-        } else {
-            format!("Loaded {num_rooms} rooms.")
-        };
+        self.status = format!("Loaded {num_rooms} rooms.");
     }
 
     /// Updates the status message to show how many rooms are currently displayed
@@ -669,7 +667,7 @@ impl RoomsList {
     /// Updates the lists of displayed rooms based on the current search filter
     /// and redraws the RoomsList.
     fn update_displayed_rooms(&mut self, cx: &mut Cx, keywords: &str) {
-        let portal_list = self.view.portal_list(id!(list));
+        let portal_list = self.view.portal_list(ids!(list));
         if keywords.is_empty() {
             // Reset each of the displayed_* lists to show all rooms.
             self.display_filter = RoomDisplayFilter::default();
@@ -840,7 +838,7 @@ impl Widget for RoomsList {
         // Now, handle any actions on this widget, e.g., a user selecting a room.
         // We use Scope `props` to pass down the current scrolling state of the PortalList.
         let props = RoomsListScopeProps {
-            was_scrolling: self.view.portal_list(id!(list)).was_scrolling(),
+            was_scrolling: self.view.portal_list(ids!(list)).was_scrolling(),
         };
         let list_actions = cx.capture_actions(
             |cx| self.view.handle_event(cx, event, &mut Scope::with_props(&props))
@@ -892,6 +890,7 @@ impl Widget for RoomsList {
             for action in actions {
                 if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast() {
                     self.update_displayed_rooms(cx, &keywords);
+                    continue;
                 }
             }
         }
@@ -948,7 +947,7 @@ impl Widget for RoomsList {
                 let mut scope = Scope::empty();
 
                 if invited_rooms_indexes.header_index == Some(portal_list_index) {
-                    let item = list.item(cx, portal_list_index, live_id!(collapsible_header));
+                    let item = list.item(cx, portal_list_index, id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
                         self.is_invited_rooms_header_expanded,
@@ -960,19 +959,19 @@ impl Widget for RoomsList {
                 else if let Some(invited_room_id) = get_invited_room_id(portal_list_index) {
                     let mut invited_rooms_mut = self.invited_rooms.borrow_mut();
                     if let Some(invited_room) = invited_rooms_mut.get_mut(invited_room_id) {
-                        let item = list.item(cx, portal_list_index, live_id!(rooms_list_entry));
+                        let item = list.item(cx, portal_list_index, id!(rooms_list_entry));
                         invited_room.is_selected =
                             self.current_active_room.as_deref() == Some(invited_room_id);
                         // Pass the room info down to the RoomsListEntry widget via Scope.
                         scope = Scope::with_props(&*invited_room);
                         item.draw_all(cx, &mut scope);
                     } else {
-                        list.item(cx, portal_list_index, live_id!(empty))
+                        list.item(cx, portal_list_index, id!(empty))
                             .draw_all(cx, &mut scope);
                     }
                 }
                 else if direct_rooms_indexes.header_index == Some(portal_list_index) {
-                    let item = list.item(cx, portal_list_index, live_id!(collapsible_header));
+                    let item = list.item(cx, portal_list_index, id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
                         self.is_direct_rooms_header_expanded,
@@ -985,7 +984,7 @@ impl Widget for RoomsList {
                 }
                 else if let Some(direct_room_id) = get_direct_room_id(portal_list_index) {
                     if let Some(direct_room) = self.all_joined_rooms.get_mut(direct_room_id) {
-                        let item = list.item(cx, portal_list_index, live_id!(rooms_list_entry));
+                        let item = list.item(cx, portal_list_index, id!(rooms_list_entry));
                         direct_room.is_selected =
                             self.current_active_room.as_ref() == Some(direct_room_id);
 
@@ -1002,12 +1001,12 @@ impl Widget for RoomsList {
                         scope = Scope::with_props(&*direct_room);
                         item.draw_all(cx, &mut scope);
                     } else {
-                        list.item(cx, portal_list_index, live_id!(empty))
+                        list.item(cx, portal_list_index, id!(empty))
                             .draw_all(cx, &mut scope);
                     }
                 }
                 else if regular_rooms_indexes.header_index == Some(portal_list_index) {
-                    let item = list.item(cx, portal_list_index, live_id!(collapsible_header));
+                    let item = list.item(cx, portal_list_index, id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
                         self.is_regular_rooms_header_expanded,
@@ -1020,7 +1019,7 @@ impl Widget for RoomsList {
                 }
                 else if let Some(regular_room_id) = get_regular_room_id(portal_list_index) {
                     if let Some(regular_room) = self.all_joined_rooms.get_mut(regular_room_id) {
-                        let item = list.item(cx, portal_list_index, live_id!(rooms_list_entry));
+                        let item = list.item(cx, portal_list_index, id!(rooms_list_entry));
                         regular_room.is_selected =
                             self.current_active_room.as_ref() == Some(regular_room_id);
 
@@ -1037,12 +1036,12 @@ impl Widget for RoomsList {
                         scope = Scope::with_props(&*regular_room);
                         item.draw_all(cx, &mut scope);
                     } else {
-                        list.item(cx, portal_list_index, live_id!(empty)).draw_all(cx, &mut scope);
+                        list.item(cx, portal_list_index, id!(empty)).draw_all(cx, &mut scope);
                     }
                 }
                 // Draw the status label as the bottom entry.
                 else if portal_list_index == status_label_id {
-                    let item = list.item(cx, portal_list_index, live_id!(status_label));
+                    let item = list.item(cx, portal_list_index, id!(status_label));
                     item.as_view().apply_over(cx, live!{
                         height: Fit,
                         label = { text: (&self.status) }
@@ -1051,7 +1050,7 @@ impl Widget for RoomsList {
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.
                 else {
-                    list.item(cx, portal_list_index, live_id!(bottom_filler))
+                    list.item(cx, portal_list_index, id!(bottom_filler))
                         .draw_all(cx, &mut scope);
                 }
             }
@@ -1062,19 +1061,15 @@ impl Widget for RoomsList {
 }
 
 impl RoomsListRef {
-    /// See [`RoomsList::all_known_rooms_loaded()`].
-    pub fn all_known_rooms_loaded(&self) -> bool {
-        let Some(inner) = self.borrow() else {
-            return false;
-        };
-        inner.all_known_rooms_loaded()
+    /// See [`RoomsList::all_rooms_loaded()`].
+    pub fn all_rooms_loaded(&self) -> bool {
+        let Some(inner) = self.borrow() else { return false; };
+        inner.all_rooms_loaded()
     }
 
     /// See [`RoomsList::is_room_loaded()`].
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
-        let Some(inner) = self.borrow() else {
-            return false;
-        };
+        let Some(inner) = self.borrow() else { return false; };
         inner.is_room_loaded(room_id)
     }
 }

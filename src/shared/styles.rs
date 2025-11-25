@@ -26,7 +26,9 @@ live_design! {
     pub ICON_LINK            = dep("crate://self/resources/icons/link.svg")
     pub ICON_PIN             = dep("crate://self/resources/icons/pin.svg")
     pub ICON_REPLY           = dep("crate://self/resources/icons/reply.svg")
+    pub ICON_SEARCH          = dep("crate://self/resources/icons/search.svg")
     pub ICON_SEND            = dep("crate://self/resources/icon_send.svg")
+    pub ICON_SQUARES         = dep("crate://self/resources/icons/squares_filled.svg")
     pub ICON_TOMBSTONE       = dep("crate://self/resources/icons/tombstone.svg")
     pub ICON_TRASH           = dep("crate://self/resources/icons/trash.svg")
     pub ICON_UPLOAD          = dep("crate://self/resources/icons/upload.svg")
@@ -101,7 +103,7 @@ live_design! {
 
     pub COLOR_PRIMARY = #ffffff
     pub COLOR_PRIMARY_DARKER = #fefefe
-    pub COLOR_SECONDARY = #EFEFEF
+    pub COLOR_SECONDARY = #E3E3E3
 
     pub COLOR_ACTIVE_PRIMARY = #0f88fe
     pub COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
@@ -122,6 +124,16 @@ live_design! {
 
     pub COLOR_LINK_HOVER = #21B070
 
+
+    pub NAVIGATION_TAB_BAR_SIZE = 68
+    pub COLOR_NAVIGATION_TAB_FG        = (COLOR_TEXT)
+    pub COLOR_NAVIGATION_TAB_FG_HOVER  = (COLOR_TEXT)
+    pub COLOR_NAVIGATION_TAB_FG_ACTIVE = (COLOR_TEXT)
+    pub COLOR_NAVIGATION_TAB_BG        = (COLOR_SECONDARY)
+    pub COLOR_NAVIGATION_TAB_BG_HOVER  = (COLOR_SECONDARY * 0.85)
+    pub COLOR_NAVIGATION_TAB_BG_ACTIVE = #9
+
+    
     // An icon that can be rotated at a custom angle.
     pub IconRotated = <Icon> {
         draw_icon: {
@@ -269,6 +281,8 @@ live_design! {
     }
 }
 
+
+pub const NAVIGATION_TAB_BAR_SIZE: f64 = 68.0;
 /// #FFFFFF
 pub const COLOR_PRIMARY:               Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
 /// #0F88FE

@@ -217,8 +217,8 @@ impl Widget for JoinLeaveRoomModal {
 
 impl WidgetMatchEvent for JoinLeaveRoomModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let accept_button = self.view.button(id!(accept_button));
-        let cancel_button = self.view.button(id!(cancel_button));
+        let accept_button = self.view.button(ids!(accept_button));
+        let cancel_button = self.view.button(ids!(cancel_button));
 
         let cancel_clicked = cancel_button.clicked(actions);
         if cancel_clicked ||
@@ -294,9 +294,9 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     }
                 }
 
-                self.view.label(id!(title)).set_text(cx, title);
-                self.view.label(id!(description)).set_text(cx, &description);
-                self.view.view(id!(tip_view)).set_visible(cx, false);
+                self.view.label(ids!(title)).set_text(cx, title);
+                self.view.label(ids!(description)).set_text(cx, &description);
+                self.view.view(ids!(tip_view)).set_visible(cx, false);
                 accept_button.set_text(cx, accept_button_text);
                 accept_button.set_enabled(cx, false);
                 needs_redraw = true;
@@ -311,8 +311,8 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         kind: PopupKind::Success,
                         auto_dismissal_duration: Some(3.0),
                     });
-                    self.view.label(id!(title)).set_text(cx, "Joined room!");
-                    self.view.label(id!(description)).set_text(cx, &format!(
+                    self.view.label(ids!(title)).set_text(cx, "Joined room!");
+                    self.view.label(ids!(description)).set_text(cx, &format!(
                         "Successfully joined \"{}\".",
                         room_name_or_id(kind.room_name(), room_id),
                     ));
@@ -323,10 +323,10 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     needs_redraw = true;
                 }
                 Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == kind.room_id() => {
-                    self.view.label(id!(title)).set_text(cx, "Error joining room!");
+                    self.view.label(ids!(title)).set_text(cx, "Error joining room!");
                     let was_invite = matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_));
                     let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, was_invite);
-                    self.view.label(id!(description)).set_text(cx, &msg);
+                    self.view.label(ids!(description)).set_text(cx, &msg);
                     enqueue_popup_notification(PopupItem {
                         message: msg,
                         kind: PopupKind::Error,
@@ -363,8 +363,8 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                             popup_msg = "Successfully left room.".into();
                         }
                     }
-                    self.view.label(id!(title)).set_text(cx, title);
-                    self.view.label(id!(description)).set_text(cx, &description);
+                    self.view.label(ids!(title)).set_text(cx, title);
+                    self.view.label(ids!(description)).set_text(cx, &description);
                     enqueue_popup_notification(PopupItem { message: popup_msg, kind: PopupKind::Success, auto_dismissal_duration: Some(5.0) });
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
@@ -389,8 +389,8 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         }
                     }
 
-                    self.view.label(id!(title)).set_text(cx, title);
-                    self.view.label(id!(description)).set_text(cx, &description);
+                    self.view.label(ids!(title)).set_text(cx, title);
+                    self.view.label(ids!(description)).set_text(cx, &description);
                     enqueue_popup_notification(PopupItem { message: popup_msg, kind: PopupKind::Error, auto_dismissal_duration: None });
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
@@ -464,19 +464,19 @@ impl JoinLeaveRoomModal {
             }
         }
 
-        self.view.label(id!(title)).set_text(cx, title);
-        self.view.label(id!(description)).set_text(cx, &description);
+        self.view.label(ids!(title)).set_text(cx, title);
+        self.view.label(ids!(description)).set_text(cx, &description);
         if show_tip {
-            self.view.view(id!(tip_view)).set_visible(cx, true);
-            self.view.label(id!(tip)).set_text(cx, &format!(
+            self.view.view(ids!(tip_view)).set_visible(cx, true);
+            self.view.label(ids!(tip)).set_text(cx, &format!(
                 "Tip: hold Shift when clicking the \"{tip_button}\" button to bypass this prompt.",
             ));
         } else {
-            self.view.view(id!(tip_view)).set_visible(cx, false);
+            self.view.view(ids!(tip_view)).set_visible(cx, false);
         }
 
-        let accept_button = self.button(id!(accept_button));
-        let cancel_button = self.button(id!(cancel_button));
+        let accept_button = self.button(ids!(accept_button));
+        let cancel_button = self.button(ids!(cancel_button));
         accept_button.set_text(cx, "Yes");
         accept_button.set_enabled(cx, true);
         accept_button.set_visible(cx, true);

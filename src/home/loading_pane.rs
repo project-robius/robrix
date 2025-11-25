@@ -174,7 +174,7 @@ impl Widget for LoadingPane {
         let close_pane = {
             matches!(
                 event,
-                Event::Actions(actions) if self.button(id!(cancel_button)).clicked(actions)
+                Event::Actions(actions) if self.button(ids!(cancel_button)).clicked(actions)
             )
             || event.back_pressed()
             || match event.hits_with_capture_overload(cx, area, true) {
@@ -185,7 +185,7 @@ impl Widget for LoadingPane {
                 }
                 Hit::FingerUp(fue) if fue.is_over => {
                     fue.mouse_button().is_some_and(|b| b.is_back())
-                    || !self.view(id!(main_content)).area().rect(cx).contains(fue.abs)
+                    || !self.view(ids!(main_content)).area().rect(cx).contains(fue.abs)
                 }
                 _ => false,
             }
@@ -224,7 +224,7 @@ impl LoadingPane {
     }
 
     pub fn set_state(&mut self, cx: &mut Cx, state: LoadingPaneState) {
-        let cancel_button = self.button(id!(cancel_button));
+        let cancel_button = self.button(ids!(cancel_button));
         match &state {
             LoadingPaneState::BackwardsPaginateUntilEvent {
                 target_event_id,
@@ -251,11 +251,11 @@ impl LoadingPane {
     }
 
     pub fn set_status(&mut self, cx: &mut Cx, status: &str) {
-        self.label(id!(status)).set_text(cx, status);
+        self.label(ids!(status)).set_text(cx, status);
     }
 
     pub fn set_title(&mut self, cx: &mut Cx, title: &str) {
-        self.label(id!(title)).set_text(cx, title);
+        self.label(ids!(title)).set_text(cx, title);
     }
 }
 
