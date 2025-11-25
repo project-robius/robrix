@@ -666,28 +666,14 @@ async fn async_worker(
                     match timeline.room().members(RoomMemberships::JOIN).await {
                         Ok(members) => {
                             let count = members.len();
-                            let mut hasher = DefaultHasher::new();
-                            for member in &members {
-                                member.user_id().hash(&mut hasher);
-                                if let Some(name) = member.display_name() {
-                                    name.hash(&mut hasher);
+                            let digest = compute_members_digest(&members);
+                            let mut digests = match ROOM_MEMBERS_DIGESTS.lock() {
+                                Ok(lock) => lock,
+                                Err(err) => {
+                                    warning!("ROOM_MEMBERS_DIGESTS lock poisoned for room {room_id}: {err}");
+                                    return;
                                 }
-                                // Include avatar URL in hash to detect avatar changes
-                                if let Some(avatar) = member.avatar_url() {
-                                    avatar.as_str().hash(&mut hasher);
-                                }
-                                // Include power level role in hash to detect permission changes
-                                // This ensures mention list re-sorts when power levels change
-                                use matrix_sdk::room::RoomMemberRole;
-                                let power_rank: u8 = match member.suggested_role_for_power_level() {
-                                    RoomMemberRole::Administrator | RoomMemberRole::Creator => 0,
-                                    RoomMemberRole::Moderator => 1,
-                                    RoomMemberRole::User => 2,
-                                };
-                                power_rank.hash(&mut hasher);
-                            }
-                            let digest = hasher.finish();
-                            let mut digests = ROOM_MEMBERS_DIGESTS.lock().unwrap();
+                            };
                             let previous = digests.get(&room_id).copied();
                             if previous != Some(digest) {
                                 digests.insert(room_id.clone(), digest);
@@ -790,13 +776,31 @@ async fn async_worker(
 
                     let send_update = |members: Vec<matrix_sdk::room::RoomMember>, source: &str| {
                         log!("{} {} members for room {}", source, members.len(), room_id);
+                        let digest = compute_members_digest(&members);
+
+                        let mut digests = match ROOM_MEMBERS_DIGESTS.lock() {
+                            Ok(lock) => lock,
+                            Err(err) => {
+                                warning!("ROOM_MEMBERS_DIGESTS lock poisoned for room {room_id}: {err}");
+                                return;
+                            }
+                        };
+                        if digests.get(&room_id) == Some(&digest) {
+                            log!("{source} members for room {room_id} (no change, skipping RoomMembersListFetched).");
+                            return;
+                        }
+                        digests.insert(room_id.clone(), digest);
+
                         let sort = precompute_member_sort(&members);
-                        sender.send(TimelineUpdate::RoomMembersListFetched {
+                        if let Err(err) = sender.send(TimelineUpdate::RoomMembersListFetched {
                             members,
                             sort,
                             is_local_fetch: true,
-                        }).unwrap();
-                        SignalToUI::set_ui_signal();
+                        }) {
+                            warning!("Failed to send RoomMembersListFetched update for room {room_id}: {err:?}");
+                        } else {
+                            SignalToUI::set_ui_signal();
+                        }
                     };
 
                     if local_only {
@@ -1692,6 +1696,30 @@ impl Drop for JoinedRoomDetails {
 /// Information about all joined rooms that our client currently know about.
 static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
 static ROOM_MEMBERS_DIGESTS: Mutex<BTreeMap<OwnedRoomId, u64>> = Mutex::new(BTreeMap::new());
+
+fn power_rank_for_member(member: &RoomMember) -> u8 {
+    use matrix_sdk::room::RoomMemberRole;
+    match member.suggested_role_for_power_level() {
+        RoomMemberRole::Administrator | RoomMemberRole::Creator => 0,
+        RoomMemberRole::Moderator => 1,
+        RoomMemberRole::User => 2,
+    }
+}
+
+fn compute_members_digest(members: &[RoomMember]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    for member in members {
+        member.user_id().hash(&mut hasher);
+        if let Some(name) = member.display_name() {
+            name.hash(&mut hasher);
+        }
+        if let Some(avatar) = member.avatar_url() {
+            avatar.as_str().hash(&mut hasher);
+        }
+        power_rank_for_member(member).hash(&mut hasher);
+    }
+    hasher.finish()
+}
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
