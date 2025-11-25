@@ -26,12 +26,28 @@ use tokio::{
     sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, hash::{Hash, Hasher}, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
+use std::collections::hash_map::DefaultHasher;
 use std::io;
 use crate::{
-    app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::TimelineUpdate, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
-    }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
+    app::AppStateAction,
+    app_data_dir,
+    avatar_cache::AvatarUpdate,
+    event_preview::text_preview_of_timeline_item,
+    home::{
+        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction},
+        link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse},
+        room_screen::TimelineUpdate,
+        rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate},
+        rooms_list_header::RoomsListHeaderAction,
+        tombstone_footer::SuccessorRoomDetails,
+    },
+    room::member_search::precompute_member_sort,
+    login::login_screen::LoginAction,
+    logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{is_logout_in_progress, logout_with_state_machine, LogoutConfig}},
+    media_cache::{MediaCacheEntry, MediaCacheEntryRef},
+    persistence::{self, load_app_state, ClientSessionPersisted},
+    profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
@@ -665,8 +681,42 @@ async fn matrix_worker_task(
                     log!("Sending sync room members request for room {room_id}...");
                     timeline.fetch_members().await;
                     log!("Completed sync room members request for room {room_id}.");
-                    sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
-                    SignalToUI::set_ui_signal();
+
+                    match timeline.room().members(RoomMemberships::JOIN).await {
+                        Ok(members) => {
+                            let count = members.len();
+                            let digest = compute_members_digest(&members);
+                            let mut digests = match ROOM_MEMBERS_DIGESTS.lock() {
+                                Ok(lock) => lock,
+                                Err(err) => {
+                                    warning!("ROOM_MEMBERS_DIGESTS lock poisoned for room {room_id}: {err}");
+                                    return;
+                                }
+                            };
+                            let previous = digests.get(&room_id).copied();
+                            if previous != Some(digest) {
+                                digests.insert(room_id.clone(), digest);
+                                log!("Fetched {count} members for room {room_id} after sync.");
+                                let sort = precompute_member_sort(&members);
+                                if let Err(err) = sender.send(TimelineUpdate::RoomMembersListFetched { members, sort, is_local_fetch: false }) {
+                                    warning!("Failed to send RoomMembersListFetched update for room {room_id}: {err:?}");
+                                } else {
+                                    SignalToUI::set_ui_signal();
+                                }
+                            } else {
+                                log!("Fetched {count} members for room {room_id} after sync (no change, skipping RoomMembersListFetched).");
+                            }
+                        }
+                        Err(err) => {
+                            warning!("Failed to fetch room members from server for room {room_id}: {err:?}");
+                        }
+                    }
+
+                    if let Err(err) = sender.send(TimelineUpdate::RoomMembersSynced) {
+                        warning!("Failed to send RoomMembersSynced update for room {room_id}: {err:?}");
+                    } else {
+                        SignalToUI::set_ui_signal();
+                    }
                 });
             }
 
@@ -745,10 +795,31 @@ async fn matrix_worker_task(
 
                     let send_update = |members: Vec<matrix_sdk::room::RoomMember>, source: &str| {
                         log!("{} {} members for room {}", source, members.len(), room_id);
-                        sender.send(TimelineUpdate::RoomMembersListFetched {
-                            members
-                        }).unwrap();
-                        SignalToUI::set_ui_signal();
+                        let digest = compute_members_digest(&members);
+
+                        let mut digests = match ROOM_MEMBERS_DIGESTS.lock() {
+                            Ok(lock) => lock,
+                            Err(err) => {
+                                warning!("ROOM_MEMBERS_DIGESTS lock poisoned for room {room_id}: {err}");
+                                return;
+                            }
+                        };
+                        if digests.get(&room_id) == Some(&digest) {
+                            log!("{source} members for room {room_id} (no change, skipping RoomMembersListFetched).");
+                            return;
+                        }
+                        digests.insert(room_id.clone(), digest);
+
+                        let sort = precompute_member_sort(&members);
+                        if let Err(err) = sender.send(TimelineUpdate::RoomMembersListFetched {
+                            members,
+                            sort,
+                            is_local_fetch: true,
+                        }) {
+                            warning!("Failed to send RoomMembersListFetched update for room {room_id}: {err:?}");
+                        } else {
+                            SignalToUI::set_ui_signal();
+                        }
                     };
 
                     if local_only {
@@ -1384,7 +1455,7 @@ async fn matrix_worker_task(
                             error!("Matrix client not available for URL preview: {}", url);
                             UrlPreviewError::ClientNotAvailable
                         })?;
-                        
+
                         let token = client.access_token().ok_or_else(|| {
                             error!("Access token not available for URL preview: {}", url);
                             UrlPreviewError::AccessTokenNotAvailable
@@ -1394,7 +1465,6 @@ async fn matrix_worker_task(
                         let endpoint_url = client.homeserver().join("/_matrix/client/v1/media/preview_url")
                             .map_err(UrlPreviewError::UrlParse)?;
                         log!("Fetching URL preview from endpoint: {} for URL: {}", endpoint_url, url);
-                        
                         let response = client
                             .http_client()
                             .get(endpoint_url.clone())
@@ -1407,20 +1477,19 @@ async fn matrix_worker_task(
                                 error!("HTTP request failed for URL preview {}: {}", url, e);
                                 UrlPreviewError::Request(e)
                             })?;
-                        
                         let status = response.status();
                         log!("URL preview response status for {}: {}", url, status);
-                        
+
                         if !status.is_success() && status.as_u16() != 429 {
                             error!("URL preview request failed with status {} for URL: {}", status, url);
                             return Err(UrlPreviewError::HttpStatus(status.as_u16()));
                         }
-                        
+
                         let text = response.text().await.map_err(|e| {
                             error!("Failed to read response text for URL preview {}: {}", url, e);
                             UrlPreviewError::Request(e)
                         })?;
-                        
+
                         log!("URL preview response body length for {}: {} bytes", url, text.len());
                         if text.len() > MAX_LOG_RESPONSE_BODY_LENGTH {
                             log!("URL preview response body preview for {}: {}...", url, &text[..MAX_LOG_RESPONSE_BODY_LENGTH]);
@@ -1444,7 +1513,6 @@ async fn matrix_worker_task(
                                             destination: destination.clone(),
                                             update_sender: update_sender.clone(),
                                         });
-                                        
                                     }
                                 }
                                 Err(e) => {
@@ -1468,7 +1536,7 @@ async fn matrix_worker_task(
 
                     match &result {
                         Ok(preview_data) => {
-                            log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}", 
+                            log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}",
                                  url, preview_data.title, preview_data.site_name);
                         }
                         Err(e) => {
@@ -1616,6 +1684,31 @@ impl Drop for JoinedRoomDetails {
 
 /// Information about all joined rooms that our client currently know about.
 static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
+static ROOM_MEMBERS_DIGESTS: Mutex<BTreeMap<OwnedRoomId, u64>> = Mutex::new(BTreeMap::new());
+
+fn power_rank_for_member(member: &RoomMember) -> u8 {
+    use matrix_sdk::room::RoomMemberRole;
+    match member.suggested_role_for_power_level() {
+        RoomMemberRole::Administrator | RoomMemberRole::Creator => 0,
+        RoomMemberRole::Moderator => 1,
+        RoomMemberRole::User => 2,
+    }
+}
+
+fn compute_members_digest(members: &[RoomMember]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    for member in members {
+        member.user_id().hash(&mut hasher);
+        if let Some(name) = member.display_name() {
+            name.hash(&mut hasher);
+        }
+        if let Some(avatar) = member.avatar_url() {
+            avatar.as_str().hash(&mut hasher);
+        }
+        power_rank_for_member(member).hash(&mut hasher);
+    }
+    hasher.finish()
+}
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
@@ -2279,7 +2372,7 @@ async fn update_room(
         // Then, we check for changes to room data that is only relevant to joined rooms:
         // including the latest event, tags, unread counts, is_direct, tombstoned state, power levels, etc.
         // Invited or left rooms don't care about these details.
-        if matches!(new_room.state, RoomState::Joined) { 
+        if matches!(new_room.state, RoomState::Joined) {
             // For some reason, the latest event API does not reliably catch *all* changes
             // to the latest event in a given room, such as redactions.
             // Thus, we have to re-obtain the latest event on *every* update, regardless of timestamp.
@@ -2647,7 +2740,7 @@ fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
             SYNC_INDICATOR_DELAY,
             SYNC_INDICATOR_HIDE_DELAY
         );
-    
+
     Handle::current().spawn(async move {
        let mut sync_indicator_stream = std::pin::pin!(sync_indicator_stream);
 
@@ -3473,23 +3566,71 @@ pub fn shutdown_background_tasks() {
 }
 
 pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
+    // Get the database path before clearing CLIENT
+    // We need this to delete the Matrix SDK database after logout
+    let db_path_to_delete = if let Some(user_id) = current_user_id() {
+        use crate::persistence::session_file_path;
+        let session_file = session_file_path(&user_id);
+        if session_file.exists() {
+            match tokio::fs::read_to_string(&session_file).await {
+                Ok(serialized_session) => {
+                    match serde_json::from_str::<crate::persistence::FullSessionPersisted>(&serialized_session) {
+                        Ok(session) => {
+                            log!("Will delete Matrix SDK database at: {:?}", session.client_session.db_path);
+                            Some(session.client_session.db_path)
+                        }
+                        Err(e) => {
+                            log!("Failed to parse session file during logout: {}", e);
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    log!("Failed to read session file during logout: {}", e);
+                    None
+                }
+            }
+        } else {
+            log!("Session file not found during logout");
+            None
+        }
+    } else {
+        log!("No current user ID found during logout");
+        None
+    };
+
     // Clear resources normally, allowing them to be properly dropped
     // This prevents memory leaks when users logout and login again without closing the app
     CLIENT.lock().unwrap().take();
     log!("Client cleared during logout");
-    
+
     SYNC_SERVICE.lock().unwrap().take();
     log!("Sync service cleared during logout");
-    
+
     REQUEST_SENDER.lock().unwrap().take();
     log!("Request sender cleared during logout");
-    
+
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
-    
+
+    // Delete the Matrix SDK database directory to ensure fresh state on next login
+    // This prevents stale cached data (like old room members) from appearing after re-login
+    if let Some(db_path) = db_path_to_delete {
+        match tokio::fs::remove_dir_all(&db_path).await {
+            Ok(_) => {
+                log!("Successfully deleted Matrix SDK database at: {:?}", db_path);
+            }
+            Err(e) => {
+                // Don't fail logout if database deletion fails
+                // Just log the error and continue
+                log!("Warning: Failed to delete Matrix SDK database at {:?}: {}", db_path, e);
+            }
+        }
+    }
+
     let on_clear_appstate = Arc::new(Notify::new());
     Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });
-    
+
     match tokio::time::timeout(config.app_state_cleanup_timeout, on_clear_appstate.notified()).await {
         Ok(_) => {
             log!("Received signal that app state was cleaned successfully");

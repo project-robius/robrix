@@ -19,7 +19,6 @@ pub mod unread_badge;
 pub mod verification_badge;
 pub mod restore_status_view;
 
-
 pub fn live_design(cx: &mut Cx) {
     // Order matters here, as some widget definitions depend on others.
     styles::live_design(cx);
