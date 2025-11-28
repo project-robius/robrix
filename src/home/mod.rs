@@ -10,6 +10,7 @@ pub mod loading_pane;
 pub mod location_preview;
 pub mod main_desktop_ui;
 pub mod main_mobile_ui;
+pub mod membership_transitions;
 pub mod room_screen;
 pub mod room_read_receipt;
 pub mod rooms_list;

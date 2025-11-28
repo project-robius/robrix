@@ -18,7 +18,7 @@ use matrix_sdk::{
             },
             sticker::{StickerEventContent, StickerMediaSource},
         },
-        matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
+        matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, UserId
     }, OwnedServerName
 };
 use matrix_sdk_ui::timeline::{
@@ -26,13 +26,13 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, membership_transitions::{CreationCollapsibleList, UserEvent, generate_summary, update_small_state_groups_for_item}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
     room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, membership_transitions::{TransitionType, UserEvent, convert_to_timeline_event, generate_summary, is_small_state_event}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, room_name_or_id, unix_time_millis_to_datetime}
 };
@@ -406,8 +406,7 @@ live_design! {
                 }
                 text: ""
             }
-            
-            
+
             // Center the Avatar vertically with respect to the SmallStateEvent content.
             avatar_row = <AvatarRow> { margin: {top: -1.0} }
         }
@@ -703,33 +702,30 @@ impl Widget for RoomScreen {
                 // Handle collapsible button click in SmallStateEvent
                 if wr.button(ids!(collapsible_button)).clicked(actions) {
                     if let Some(tl_state) = &mut self.tl_state {
-                        println!("item_id: {} collapsible_button clicked tl_state.creation_event {:?} small_state_groups {:?}", item_id, tl_state.creation_event, tl_state.small_state_groups);
-                        let mut is_creation_group = false;
-                        let (creation_hashmap, creation_event, open) = &mut tl_state.creation_event;
-                        if let Some(creation_event) = &creation_event {
-                            if let Some(range) = creation_hashmap.get(&creation_event.sender) {
-                                if range.start == item_id {
-                                    // Toggle the group's open/closed state
-                                    *open = !*open;
-                                    let omit_first_range = (range.start+1)..range.end;
-                                    println!("Toggling creation event group for sender {} range {:?} new open state {}", creation_event.sender, omit_first_range, *open);
-                                    // Force redraw of all items in this group by clearing their cached drawn status
-                                    tl_state.content_drawn_since_last_update.remove(omit_first_range.clone());
-                                    tl_state.profile_drawn_since_last_update.remove(omit_first_range.clone());
-                                    
-                                    // Update button text to reflect new state:
-                                    // ▲ (up arrow) = expanded/open - items are visible
-                                    // ▼ (down arrow) = collapsed/closed - items are hidden
-                                    let button_text = if *open { "▲" } else { "▼" };
-                                    wr.button(ids!(collapsible_button)).set_text(cx, button_text);
-                                    // If the last item is a group of small state events, scroll to the end when it is expanded.
-                                    if range.end == tl_state.items.len() && *open {
-                                        portal_list.smooth_scroll_to_end(cx, 90.0, None);
-                                    }
-                                    is_creation_group = true;
-                                }
+                        let mut is_creation_group = false;                        
+                        if tl_state.creation_collapsible_list.range.start == item_id {
+                            let open = &mut tl_state.creation_collapsible_list.opened;
+                            // Toggle the group's open/closed state
+                            *open = !*open;
+                            let range = tl_state.creation_collapsible_list.range.clone();
+                            let omit_first_range = (range.start + 1)..range.end + 1;
+                            // Force redraw of all items in this group by clearing their cached drawn status
+                            tl_state.content_drawn_since_last_update.remove(omit_first_range.clone());
+                            tl_state.profile_drawn_since_last_update.remove(omit_first_range.clone());
+                            
+                            // Update button text to reflect new state:
+                            // ▲ (up arrow) = expanded/open - items are visible
+                            // ▼ (down arrow) = collapsed/closed - items are hidden
+                            let button_text = if *open { "▲" } else { "▼" };
+                            wr.button(ids!(collapsible_button)).set_text(cx, button_text);
+                            // If the last item is a group of small state events, scroll to the end when it is expanded.
+                            if range.end == tl_state.items.len() && *open {
+                                portal_list.smooth_scroll_to_end(cx, 90.0, None);
                             }
+                            is_creation_group = true;
                         }
+                            
+                        
                         if !is_creation_group {
                             for (range, open, _user_events_map) in &mut tl_state.small_state_groups {
                                 if range.start == item_id {
@@ -739,7 +735,6 @@ impl Widget for RoomScreen {
                                     // Force redraw of all items in this group by clearing their cached drawn status
                                     tl_state.content_drawn_since_last_update.remove(omit_first_range.clone());
                                     tl_state.profile_drawn_since_last_update.remove(omit_first_range.clone());
-                                    println!("Toggling not is_creation_group event group for range {:?} new open state {}", omit_first_range, *open);
 
                                     // Update button text to reflect new state:
                                     // ▲ (up arrow) = expanded/open - items are visible
@@ -1077,9 +1072,10 @@ impl Widget for RoomScreen {
                                     next_event,
                                     poll_state,
                                     item_drawn_status,
+                                    &mut tl_state.room_creator_event,
                                     &mut tl_state.small_state_groups,
                                     &mut tl_state.content_drawn_since_last_update,
-                                    &mut tl_state.creation_event
+                                    &mut tl_state.creation_collapsible_list
                                 ),
                                 MsgLikeKind::Redacted => populate_small_state_event(
                                     cx,
@@ -1091,9 +1087,10 @@ impl Widget for RoomScreen {
                                     next_event,
                                     &RedactedMessageEventMarker,
                                     item_drawn_status,
+                                    &mut tl_state.room_creator_event,
                                     &mut tl_state.small_state_groups,
                                     &mut tl_state.content_drawn_since_last_update,
-                                    &mut tl_state.creation_event
+                                    &mut tl_state.creation_collapsible_list
                                 ),
                                 MsgLikeKind::UnableToDecrypt(utd) => populate_small_state_event(
                                     cx,
@@ -1105,9 +1102,10 @@ impl Widget for RoomScreen {
                                     next_event,
                                     utd,
                                     item_drawn_status,
+                                    &mut tl_state.room_creator_event,
                                     &mut tl_state.small_state_groups,
                                     &mut tl_state.content_drawn_since_last_update,
-                                    &mut tl_state.creation_event
+                                    &mut tl_state.creation_collapsible_list
                                 ),
                                 MsgLikeKind::Other(other) => populate_small_state_event(
                                     cx,
@@ -1119,9 +1117,10 @@ impl Widget for RoomScreen {
                                     next_event,
                                     other,
                                     item_drawn_status,
+                                    &mut tl_state.room_creator_event,
                                     &mut tl_state.small_state_groups,
                                     &mut tl_state.content_drawn_since_last_update,
-                                    &mut tl_state.creation_event
+                                    &mut tl_state.creation_collapsible_list
                                 ),
                             },
                             TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
@@ -1134,9 +1133,10 @@ impl Widget for RoomScreen {
                                 next_event,
                                 membership_change,
                                 item_drawn_status,
+                                &mut tl_state.room_creator_event,
                                 &mut tl_state.small_state_groups,
                                 &mut tl_state.content_drawn_since_last_update,
-                                &mut tl_state.creation_event
+                                &mut tl_state.creation_collapsible_list
                             ),
                             TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
                                 cx,
@@ -1148,9 +1148,10 @@ impl Widget for RoomScreen {
                                 next_event,
                                 profile_change,
                                 item_drawn_status,
+                                &mut tl_state.room_creator_event,
                                 &mut tl_state.small_state_groups,
                                 &mut tl_state.content_drawn_since_last_update,
-                                &mut tl_state.creation_event
+                                &mut tl_state.creation_collapsible_list
                             ),
                             TimelineItemContent::OtherState(other) => populate_small_state_event(
                                 cx,
@@ -1162,9 +1163,10 @@ impl Widget for RoomScreen {
                                 next_event,
                                 other,
                                 item_drawn_status,
+                                &mut tl_state.room_creator_event,
                                 &mut tl_state.small_state_groups,
                                 &mut tl_state.content_drawn_since_last_update,
-                                &mut tl_state.creation_event
+                                &mut tl_state.creation_collapsible_list
                             ),
                             unhandled => {
                                 let item = list.item(cx, item_id, id!(SmallStateEvent));
@@ -1379,14 +1381,10 @@ impl RoomScreen {
                             // Note: If we want to preserve events during shifts, we would need to
                             // update the HashMap keys and UserEvent indices here
                         }
-                        let (creation_hashmap, creation_event, _is_open) = &mut tl.creation_event;
-                        for (_user_id, range) in creation_hashmap.iter_mut() {
-                            let new_start = (range.start as i32 + shift).max(0) as usize;
-                            let new_end = (range.end as i32 + shift).max(0) as usize;
-                            *range = new_start..new_end;
-                        }
-                        if let Some(creation_event) = creation_event {
-                            creation_event.index = (creation_event.index as i32 + shift).max(0) as usize;
+                        if !tl.creation_collapsible_list.range.is_empty() {
+                            let new_start = (tl.creation_collapsible_list.range.start as i32 + shift).max(0) as usize;
+                            let new_end = (tl.creation_collapsible_list.range.end as i32 + shift).max(0) as usize;
+                            tl.creation_collapsible_list.range = new_start..new_end;
                         }
                     }
                     tl.items = new_items;
@@ -2152,8 +2150,9 @@ impl RoomScreen {
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
                 tombstone_info,
+                room_creator_event: None,
                 small_state_groups: Vec::new(),
-                creation_event: (HashMap::new(), None, false),
+                creation_collapsible_list: CreationCollapsibleList::default(),
             };
             (tl_state, true)
         };
@@ -2712,11 +2711,14 @@ struct TimelineUiState {
     /// If `Some`, this room has been tombstoned and the details of its successor room
     /// are contained within. If `None`, the room has not been tombstoned.
     tombstone_info: Option<SuccessorRoomDetails>,
+    
+    /// The user ID of the room creator and the event that created the room, if known.
+    room_creator_event: Option<(OwnedUserId, OwnedEventId)>,
     /// A vector of ranges of small state items that are grouped together in the UI.
     /// 
     /// There is a collapsible to the right of the message of the first item in the group. 
     small_state_groups: Vec<(std::ops::Range<usize>, bool, HashMap<usize, (String, Vec<UserEvent>)>)>,
-    creation_event: (HashMap<std::string::String, std::ops::Range<usize>>, std::option::Option<UserEvent>, bool),
+    creation_collapsible_list: CreationCollapsibleList,
 }
 
 #[derive(Default, Debug)]
@@ -3362,7 +3364,6 @@ fn populate_message_view(
                 .show_with_state(cx, tsp_sign_state);
         }
     }
-    item.as_view().set_visible(cx, true);
     (item, new_drawn_status)
 }
 
@@ -3846,204 +3847,6 @@ pub fn populate_preview_of_timeline_item(
 }
 
 
-
-fn append_user_event(user_event: UserEvent, user_events: &mut HashMap<usize, (String, Vec<UserEvent>)>) {
-    if user_event.transition == TransitionType::UnableToDecrypt {
-        println!("unable to decrypt user event {:?}", user_event);
-    }
-    let item_id = user_event.index;
-    let mut old_group_id = None;
-    let user_state_key = user_event.state_key.clone().unwrap_or_default();
-    let user_state_key = if user_state_key.is_empty() {
-        user_event.sender.clone()
-    } else {
-        user_state_key
-    };
-    for (group_id, (user_id, user_events_vec)) in user_events.iter_mut() {
-        if user_state_key == *user_id {
-            if user_events_vec.iter().filter(|user_event| user_event.index == item_id).count() == 0 {
-                user_events_vec.push(user_event.clone());
-            }
-            if &item_id >= group_id {
-                return;
-            }
-            old_group_id = Some(group_id.clone());
-        }
-    }
-    
-    
-    if let Some(old_group_id) = old_group_id {
-        if let Some(data) = user_events.remove(&old_group_id) {
-            user_events.insert(item_id, data);
-            return;
-        }
-    }
-    user_events.insert(item_id, (user_state_key.clone(), vec![user_event]));
-}
-
-/// Dynamically updates small state groups as timeline items are processed.
-/// This function is called during populate_small_state_event to build groups on-demand.
-/// Since iteration starts from the biggest item_id and goes backwards, we handle reverse grouping.
-/// Returns a tuple whether to display the message, and whether to display the collapsible button and whether collapsible list is expanded and range to redraw
-fn update_small_state_groups_for_item(
-    cx:&mut Cx,
-    room_id: &OwnedRoomId,
-    item_id: usize,
-    mut username: String,
-    current_item: &EventTimelineItem,
-    previous_item: Option<&Arc<TimelineItem>>,
-    next_item: Option<&Arc<TimelineItem>>,
-    small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, HashMap<usize, (String, Vec<UserEvent>)>)>,
-    creation_event: &mut (HashMap<String,std::ops::Range<usize>>, Option<UserEvent>, bool),
-) -> (bool, bool, bool, Range<usize>) {
-    let (current_item_is_small_state, _transition, state_key, _) = is_small_state_event(current_item);
-    if !current_item_is_small_state {
-        return (true, false, false, Range::default()); // Not a small state event, draw as individual item, no debug button
-    }
-
-    // check if the next item (item_id + 1) is a small state event to continue grouping
-    let (next_item_is_small_state, _, _, _) = next_item
-        .and_then(|timeline_item| match timeline_item.kind() {
-            TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
-            _ => None,
-        })
-        .map(is_small_state_event)
-        .unwrap_or((false, TransitionType::NoChange, None, None));
-    let (previous_item_is_small_state, _, _, _) = previous_item
-        .and_then(|timeline_item| match timeline_item.kind() {
-            TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
-            _ => None,
-        })
-        .map(is_small_state_event)
-        .unwrap_or((false, TransitionType::NoChange, None, None));
-    if !previous_item_is_small_state && !next_item_is_small_state {
-        return (true, false, false,  Range::default()); // Isolated small state event, no debug button
-    }
-    if let Some(state_key) = state_key {
-        if !state_key.is_empty() {
-            if let Ok(user_id) = UserId::parse(&state_key) {
-                println!("small state event user_id: {:?}", user_id);
-                let display_name = user_profile_cache::with_user_profile(cx, user_id, true, |profile, room_members| {
-                    room_members
-                        .get(room_id)
-                        .map(|rm| {
-                            rm.display_name().map(|n| n.to_owned())
-                        })
-                        .unwrap_or_else(|| profile.username.clone())
-                });
-                if let Some(display_name) = display_name {
-                    if let Some(display_name) = display_name {
-                        println!("small state event display_name: {:?}", display_name);
-                        username = display_name;
-                    }
-                }
-            }
-        }
-    }
-    let user_event = convert_to_timeline_event(current_item.clone(), username.clone(), item_id);
-    println!("user_event: index: {:?} user_event: {:?}", user_event.index, user_event);
-    let (creation_events_map, creation_user_event, is_open) = creation_event;
-    if user_event.event_type == "m.room.create" {
-        println!("m.room.create: item_id {:?}", item_id );
-        *creation_user_event = Some(user_event.clone());
-        println!("creation_events_map  {:?}", creation_events_map);
-        for (user_id, join_range) in creation_events_map.iter_mut() {
-            if user_id == &user_event.sender {
-                if join_range.start == item_id + 1 {
-                    *join_range = item_id..join_range.end;
-                    println!("join_range changes in creation user event {:?} user_id: {:?}", join_range, user_id);
-                    return (true, true, false, join_range.clone()); // Continue creation group
-                }
-                // *join_range = item_id..join_range.end;
-                // println!("join_range changes in creation user event {:?} user_id: {:?}", join_range, user_id);
-                return (true, true, false, Range::default()); // Continue creation group
-            }
-        }
-        return (true, true, false, Range::default());
-    }
-    println!("item id {:?}, creation_user_event.is_none()",creation_user_event.is_none());
-    println!("item_id {:?}, update before checking membership {:?} transition {:?}", item_id, user_event.membership, user_event.transition );
-    println!("item_id {:?}, update before event_type {:?} ", item_id, user_event.event_type);
-    if creation_user_event.is_none() && (matches!(user_event.event_type.as_str(), 
-        "m.room.create" |
-        "m.room.name" | "m.room.topic" | "m.room.pinned_events" |
-        "m.room.power_levels" | "m.room.join_rules" | "m.room.history_visibility" |
-        "m.room.canonical_alias" |   "m.room.state"
-    ) || user_event.transition == TransitionType::Joined)
-    {
-        println!("item_id {:?} entered creation_events_map {:?}", item_id, creation_events_map);
-        for (user_id, join_range) in creation_events_map.iter_mut() {
-            if user_id == &user_event.sender {
-                if join_range.start == item_id + 1 {
-                    println!("join_range changes outside creation user event {:?}", join_range);
-                    *join_range = item_id..join_range.end;
-                    if let Some(creation_user_event) = creation_user_event {
-                        if creation_user_event.sender != user_event.sender {
-                            return (true, false, *is_open, join_range.clone()); // Start of group, show debug button
-                        }
-                    }
-                }
-                if !join_range.contains(&item_id) {
-                    if item_id < join_range.start {
-                        let old_range = join_range.clone();
-                        *join_range = item_id..(item_id + 1);
-                        return (true, false, *is_open, item_id..old_range.end); // Set range to earlier timeline that might
-                    }
-                }
-                return (true, false, *is_open, join_range.clone()); // Start of group, show debug button
-            }
-        }
-        println!("new creation group created for user {:?} range {:?}", user_event.sender, item_id..(item_id + 2));
-        creation_events_map.insert(user_event.sender.clone(), item_id..(item_id + 2));
-        return (true, false, false, item_id..(item_id + 2)); // New creation group created
-    }
-    if let Some(creation_user_event) = creation_user_event {
-        for (user_id, join_range) in creation_events_map.iter_mut() {
-            if user_id == &creation_user_event.sender {
-                if join_range.start != item_id + 1 {
-                    if join_range.contains(&item_id) {
-                        return (*is_open, false, false, Range::default()); // Item is in group but not at start, no debug button
-                    }
-                }
-            }
-        }
-    }
-    // Check if this item is already part of an existing group or can extend one
-    for (range, is_open, user_events_map) in small_state_groups.iter_mut() {
-        if range.start == item_id {
-            // Add user event to the HashMap using item_id as key with userId and Vec<UserEvent>
-            // println!("range.start");
-            // println!("range {:?} username: {}", range, username);
-            append_user_event(user_event, user_events_map);
-            return (true, range.len() > 2, *is_open, Range::default()); // Start of group, show debug button
-        }
-        if range.contains(&item_id) {
-            // Add user event to the HashMap using item_id as key with userId and Vec<UserEvent>
-            //println!("range {:?} username: {}", range, username);
-            append_user_event(user_event, user_events_map);
-            return (*is_open || range.len() <= 2, false, *is_open,  Range::default()); // Item is in group but not at start, no debug button
-        }
-        
-        // Since we're iterating backwards (from highest to lowest item_id),
-        if range.start == item_id + 1 {
-            // Extend this group backwards to include current item
-            *range = item_id..range.end;
-            append_user_event(user_event, user_events_map);
-            return (*is_open || range.len() <= 2, false, false,  range.clone()); // Extended group, no debug button for this item
-        }
-    }
-    if next_item_is_small_state {
-        let mut user_events_map = HashMap::new();
-        append_user_event(user_event, &mut user_events_map);
-        // Plus 2 to include the next item into the group.
-        small_state_groups.push((item_id..(item_id + 2), false, user_events_map));
-        return (false, false, false, item_id..(item_id + 2));
-    }
-    (false, false, false,  Range::default()) // Return collapsed state, no debug button
-}
-
-
-
 /// A trait for abstracting over the different types of timeline events
 /// that can be displayed in a `SmallStateEvent` widget.
 trait SmallStateEventContent {
@@ -4259,9 +4062,10 @@ fn populate_small_state_event(
     next_event: Option<&Arc<TimelineItem>>,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
+    room_creation: &mut Option<(OwnedUserId, OwnedEventId)>,
     small_state_groups: &mut Vec<(std::ops::Range<usize>, bool, HashMap<usize, (String, Vec<UserEvent>)>)>,
     content_drawn_since_last_update: &mut RangeSet<usize>,
-    creation_event: &mut (HashMap<std::string::String, std::ops::Range<usize>>, std::option::Option<UserEvent>, bool),
+    creation_collapsible_list: &mut CreationCollapsibleList,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let (item, existed) = list.item_with_existed(cx, item_id, id!(SmallStateEvent));
@@ -4304,17 +4108,15 @@ fn populate_small_state_event(
     // - show_collapsible_button: true if this item is the first in a collapsible group
     // - expanded: current expansion state of the group (for button text)
     let (opened, show_collapsible_button, expanded, to_redraw) = update_small_state_groups_for_item(
-        cx,
-        room_id,
         item_id,
         username.clone(),
         event_tl_item,
         prev_event,
         next_event,
+        room_creation,
         small_state_groups,
-        creation_event
+        creation_collapsible_list
     );
-    println!("populate_small_state_event: item_id: {}, opened: {}, show_collapsible_button: {} creation_event: {:?}", item_id, opened, show_collapsible_button, creation_event);
     // Only show the collapsible button on the first item of each group
     item.button(ids!(collapsible_button))
         .set_visible(cx, show_collapsible_button);
@@ -4338,20 +4140,14 @@ fn populate_small_state_event(
             let button_text = if expanded { "▲" } else { "▼" };
             item.button(ids!(collapsible_button))
                 .set_text(cx, button_text);
-            if let Some(creation_user_event) = &creation_event.1 {
-                for (user_id, creation_range) in creation_event.0.iter() {
-                    if event_tl_item.sender().to_string() == *user_id {
-                        if creation_range.start == item_id {
-                            let summary_text = format!("{} created and configured the room", creation_user_event.display_name);
-                            item.view(ids!(small_state_header)).set_visible(cx, true);
-                            item.label(ids!(small_state_header.summary_text)).set_text(cx, &summary_text);
-                            item.view(ids!(body)).set_visible(cx, false);
-                            return (item, new_drawn_status);
-                        }
-                    }
-                }
+            if room_creation.is_some() && creation_collapsible_list.range.start == item_id {
+                let summary_text = format!("{} created and configured the room: {:?}", creation_collapsible_list.username, item_id);
+                item.view(ids!(small_state_header)).set_visible(cx, true);
+                item.label(ids!(small_state_header.summary_text)).set_text(cx, &summary_text);
+                item.view(ids!(body)).set_visible(cx, false);
+                return (item, new_drawn_status);
             }
-            println!("small_state_groups item_id: {} small_state_groups: {:?} ", item_id, 2);
+           
             for (range, _, user_events_map) in small_state_groups {
                 if range.start == item_id {
                     // Pass HashMap directly to generate_summary
@@ -4370,7 +4166,6 @@ fn populate_small_state_event(
         item.view(ids!(small_state_header)).set_visible(cx, false);
         item.view(ids!(body)).set_visible(cx, false);
     }
-    //println!("to_redraw: {:?} item_id: {} content_drawn_since_last_update:{:?}", to_redraw, item_id ,content_drawn_since_last_update);
     if !to_redraw.is_empty() && to_redraw.end > to_redraw.start {
         content_drawn_since_last_update.remove(to_redraw.clone());
         if to_redraw.contains(&item_id) {
