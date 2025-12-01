@@ -3,10 +3,7 @@ use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
 use crate::{
-    app::{AppState, SelectedRoom},
-    room::{room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}, FetchedRoomAvatar},
-    shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, room_filter_input_bar::RoomFilterAction},
-    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}, utils::room_name_or_id,
+    app::{AppState, SelectedRoom}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}}, shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, room_filter_input_bar::RoomFilterAction}, sliding_sync::{MatrixRequest, PaginationDirection, submit_async_request}, utils::room_name_or_id
 };
 use super::rooms_list_entry::RoomsListEntryAction;
 
@@ -83,7 +80,8 @@ live_design! {
             keep_invisible: false,
             auto_tail: false,
             width: Fill, height: Fill
-            flow: Down, spacing: 0.0
+            flow: Down,
+            spacing: 0.0
 
             collapsible_header = <CollapsibleHeader> {}
             rooms_list_entry = <RoomsListEntry> {}
@@ -348,7 +346,13 @@ pub struct RoomsList {
     /// The ID of the currently-selected room.
     #[rust] current_active_room: Option<OwnedRoomId>,
     /// The maximum number of rooms that will ever be loaded.
+    ///
+    /// This should not be used to determine whether all requested rooms have been loaded,
+    /// because we will likely never receive this many rooms due to the room list service
+    /// excluding rooms that we have filtered out (e.g., left or tombstoned rooms, spaces, etc).
     #[rust] max_known_rooms: Option<u32>,
+    // /// Whether the room list service has loaded all requested rooms from the homeserver.
+    // #[rust] all_rooms_loaded: bool,
 }
 
 impl LiveHook for RoomsList {
@@ -358,15 +362,13 @@ impl LiveHook for RoomsList {
 }
 
 impl RoomsList {
-    /// Determines if all known rooms have been loaded from the homeserver.
-    ///
-    /// Returns `true` if the number of rooms in `all_joined_rooms` and `invited_rooms` equals or exceeds
-    /// `max_known_rooms`.
-    /// Returns `false` if `max_known_rooms` is `None`.
-    pub fn all_known_rooms_loaded(&self) -> bool {
-        self.max_known_rooms.is_some_and(|max_rooms| {
-            self.all_joined_rooms.len() + self.invited_rooms.borrow().len() >= max_rooms as usize
-        })
+    /// Returns whether the homeserver has finished syncing all of the rooms
+    /// that should be synced to our client based on the currently-specified room list filter. 
+    pub fn all_rooms_loaded(&self) -> bool {
+        // TODO: fix this: figure out a way to determine if
+        //       all requested rooms have been received from the homeserver.
+        false
+        // self.all_rooms_loaded
     }
 
     /// Returns `true` if the given `room_id` is in the `all_joined_rooms` or `invited_rooms` list.
@@ -638,11 +640,7 @@ impl RoomsList {
     /// Updates the status message to show how many rooms have been loaded.
     fn update_status_rooms_count(&mut self) {
         let num_rooms = self.all_joined_rooms.len() + self.invited_rooms.borrow().len();
-        self.status = if let Some(max_rooms) = self.max_known_rooms {
-            format!("Loaded {num_rooms} of {max_rooms} total rooms.")
-        } else {
-            format!("Loaded {num_rooms} rooms.")
-        };
+        self.status = format!("Loaded {num_rooms} rooms.");
     }
 
     /// Updates the status message to show how many rooms are currently displayed
@@ -892,6 +890,7 @@ impl Widget for RoomsList {
             for action in actions {
                 if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast() {
                     self.update_displayed_rooms(cx, &keywords);
+                    continue;
                 }
             }
         }
@@ -1062,19 +1061,15 @@ impl Widget for RoomsList {
 }
 
 impl RoomsListRef {
-    /// See [`RoomsList::all_known_rooms_loaded()`].
-    pub fn all_known_rooms_loaded(&self) -> bool {
-        let Some(inner) = self.borrow() else {
-            return false;
-        };
-        inner.all_known_rooms_loaded()
+    /// See [`RoomsList::all_rooms_loaded()`].
+    pub fn all_rooms_loaded(&self) -> bool {
+        let Some(inner) = self.borrow() else { return false; };
+        inner.all_rooms_loaded()
     }
 
     /// See [`RoomsList::is_room_loaded()`].
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
-        let Some(inner) = self.borrow() else {
-            return false;
-        };
+        let Some(inner) = self.borrow() else { return false; };
         inner.is_room_loaded(room_id)
     }
 }

@@ -51,9 +51,12 @@ live_design! {
                     //     color_hover: #0f0,
                     // }
                 }
-                body:"
-                Our Matrix client is under heavy development.\nFor now, you can access the rooms you've joined in other clients.\nBut don't worry, we're working on expanding its features.\n
-                Look for the latest announcements in our Matrix channel: <b>#robrix:matrix.org</b><br/>
+                body:"<p>Our Matrix client is under heavy development. Currently, you can access the rooms and spaces that you've joined in other clients.</p>
+                <p><br></p>
+                <p>But don't worry, we're constantly expanding the featureset of Robrix!</p>
+                <p><br></p>
+                <p>Look for the latest announcements in our Matrix channel:</p>
+                <p><b>#robrix:matrix.org</b></p>
                 "
             }
         }

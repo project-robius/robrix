@@ -31,6 +31,7 @@
 //!
 
 use makepad_widgets::*;
+use ruma::OwnedRoomId;
 
 use crate::{
     avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
@@ -53,15 +54,8 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::verification_badge::*;
     use crate::shared::avatar::*;
-
-    NAVIGATION_TAB_BAR_SIZE = 68
-
-    COLOR_NAVIGATION_TAB_FG = #1C274C
-    COLOR_NAVIGATION_TAB_FG_HOVER = #1C274C
-    COLOR_NAVIGATION_TAB_FG_ACTIVE = #1C274C
-    COLOR_NAVIGATION_TAB_BG        = (COLOR_SECONDARY)
-    COLOR_NAVIGATION_TAB_BG_HOVER  = (COLOR_SECONDARY * 0.85)
-    COLOR_NAVIGATION_TAB_BG_ACTIVE = (COLOR_SECONDARY * 0.5)
+    use crate::shared::icon_button::*;
+    use crate::home::spaces_bar::*;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
@@ -126,6 +120,8 @@ live_design! {
         }
 
         draw_text: {
+            instance hover: 0.0
+            instance active: 0.0
             color: (COLOR_NAVIGATION_TAB_FG)
             color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
             color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
@@ -146,6 +142,8 @@ live_design! {
         }
 
         draw_icon: {
+            instance hover: 0.0
+            instance active: 0.0
             uniform color: (COLOR_NAVIGATION_TAB_FG)
             uniform color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
             uniform color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
@@ -194,6 +192,21 @@ live_design! {
     HomeButton = <NavigationTabButton> {
         draw_icon: { svg_file: (ICON_HOME) }
         animator: { active = { default: on } }
+    }
+
+    ToggleSpacesBarButton = <RobrixIconButton> {
+        width: Fill,
+        padding: 16
+        spacing: 0,
+        align: {x: 0.5, y: 0.5}
+        draw_bg: {
+            color: (COLOR_SECONDARY)
+        }
+        draw_icon: {
+            svg_file: (ICON_SQUARES)
+            color: (COLOR_NAVIGATION_TAB_FG)
+        }
+        icon_walk: {width: (NAVIGATION_TAB_BAR_SIZE/2.2), height: Fit, margin: 0 }
     }
 
     SettingsButton = <NavigationTabButton> {
@@ -245,12 +258,9 @@ live_design! {
 
             <Separator> {}
 
-            <Filler> {}
-
-            // TODO: SpacesBar goes here, which should be a vertically-scrollable PortalList
-            //       in this case, and a show/hidable horizontally-scrollable one in Mobile mode.
-            
-            <Filler> {}
+            <CachedWidget> {
+                root_spaces_bar = <SpacesBar> {}
+            }
 
             <Separator> {}
             
@@ -259,7 +269,7 @@ live_design! {
             }
         }
 
-        Mobile = {
+        Mobile = <RoundedView> {
             flow: Right
             align: {x: 0.5, y: 0.5}
             width: Fill,
@@ -268,6 +278,7 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: (COLOR_SECONDARY)
+                border_radius: 4.0
             }
 
             <CachedWidget> {
@@ -277,6 +288,8 @@ live_design! {
             <CachedWidget> {
                 add_room_button = <AddRoomButton> {}
             }
+
+            toggle_spaces_bar_button = <ToggleSpacesBarButton> {}
 
             <CachedWidget> {
                 settings_button = <SettingsButton> {}
@@ -417,6 +430,8 @@ impl Widget for ProfileIcon {
 #[derive(Live, LiveHook, Widget)]
 pub struct NavigationTabBar {
     #[deref] view: AdaptiveView,
+
+    #[rust] is_spaces_bar_shown: bool,
 }
 
 impl Widget for NavigationTabBar {
@@ -437,6 +452,11 @@ impl Widget for NavigationTabBar {
                 _ => { }
             }
 
+            if self.view.button(ids!(toggle_spaces_bar_button)).clicked(actions) {
+                self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
+                cx.action(NavigationBarAction::ToggleSpacesBar);
+            }
+
             for action in actions {
                 // If another widget programmatically selected a new tab,
                 // update our radio buttons accordingly.
@@ -447,7 +467,15 @@ impl Widget for NavigationTabBar {
                             // self.view.radio_button(ids!(add_room_button)).select(cx, scope),
                         }
                         SelectedTab::Settings => self.view.radio_button(ids!(settings_button)).select(cx, scope),
+                        SelectedTab::Space { .. } => {
+                            for rb in radio_button_set.iter() {
+                                if let Some(mut rb_inner) = rb.borrow_mut() {
+                                    rb_inner.animator_play(cx, ids!(active.off));
+                                }
+                            }
+                        }
                     }
+                    continue;
                 }
             }
         }
@@ -460,22 +488,22 @@ impl Widget for NavigationTabBar {
 
 
 /// Which tab is currently selected in the NavigationTabBar.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum SelectedTab {
     #[default]
     Home,
     AddRoom,
     Settings,
     // AlertsInbox,
-
-    // Once we support spaces and shortcut buttons (like directs only, etc),
-    // we can add them here.
+    Space {
+        space_id: OwnedRoomId,
+    }
 }
 
 
 /// Actions for navigating through the top-level views of the app,
 /// e.g., when the user clicks/taps on a button in the NavigationTabBar.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum NavigationBarAction {
     /// Go to the main rooms content view.
     GoToHome,
@@ -488,8 +516,13 @@ pub enum NavigationBarAction {
     /// The given tab was selected programmatically, e.g., after closing the settings screen.
     /// This is needed just to ensure that the proper tab radio button is marked as selected.
     TabSelected(SelectedTab),
+    /// Toggle whether the SpacesBar is shown, i.e., show/hide it.
+    /// This is only applicable in the Mobile view mode, because the SpacesBar
+    /// is always shown in Desktop view mode.
+    ToggleSpacesBar,
+    /// Go the space screen for the given space.
+    GoToSpace { space_id: OwnedRoomId },
     // GoToAlertsInbox
-    // GoToSpace { space_id: OwnedRoomId }, // TODO: uncomment once we impl the SpacesBar
 }
 
 
