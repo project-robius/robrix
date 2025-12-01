@@ -309,6 +309,28 @@ live_design! {
                             is_password: true,
                         }
 
+                        registration_token_area = <View> {
+                            width: Fill, height: Fit
+                            flow: Down
+                            spacing: 4
+                            visible: false
+
+                            <Label> {
+                                width: Fill, height: Fit
+                                draw_text: {
+                                    color: (COLOR_TEXT)
+                                    text_style: <REGULAR_TEXT>{font_size: 10}
+                                }
+                                text: "This server requires a registration token from the administrator."
+                            }
+
+                            registration_token_input = <RobrixTextInput> {
+                                width: Fill, height: Fit
+                                padding: 10,
+                                empty_text: "Registration token"
+                            }
+                        }
+
                         register_button = <MaskableButton> {
                             width: Fill, height: 40
                             padding: 10
@@ -385,6 +407,7 @@ pub struct RegisterScreen {
     #[rust] is_homeserver_editing: bool,
     #[rust] selected_homeserver: String,
     #[rust] sso_pending: bool,
+    #[rust] registration_token_required: bool,
 }
 
 impl RegisterScreen {
@@ -407,6 +430,15 @@ impl RegisterScreen {
         button.apply_over(cx, live! {
             draw_bg: { mask: (mask) }
         });
+    }
+
+    fn set_registration_token_required(&mut self, cx: &mut Cx, required: bool) {
+        self.registration_token_required = required;
+        self.view.view(ids!(registration_token_area)).set_visible(cx, required);
+        if !required {
+            self.view.text_input(ids!(registration_token_input)).set_text(cx, "");
+        }
+        self.redraw(cx);
     }
     
     fn reset_modal_state(&mut self, cx: &mut Cx) {
@@ -442,6 +474,7 @@ impl RegisterScreen {
         self.is_homeserver_editing = false;
         self.selected_homeserver = "matrix.org".to_string();
         self.sso_pending = false;
+        self.set_registration_token_required(cx, false);
 
         // Reset homeserver selection UI
         self.view.view(ids!(homeserver_options)).set_visible(cx, false);
@@ -587,15 +620,18 @@ impl MatchEvent for RegisterScreen {
         let username_input = self.view.text_input(ids!(username_input));
         let password_input = self.view.text_input(ids!(password_input));
         let confirm_password_input = self.view.text_input(ids!(confirm_password_input));
+        let registration_token_input = self.view.text_input(ids!(registration_token_input));
 
         if register_button.clicked(actions)
             || username_input.returned(actions).is_some()
             || password_input.returned(actions).is_some()
             || confirm_password_input.returned(actions).is_some()
+            || registration_token_input.returned(actions).is_some()
         {
             let username = username_input.text();
             let password = password_input.text();
             let confirm_password = confirm_password_input.text();
+            let registration_token = registration_token_input.text();
 
             if username.is_empty() {
                 self.show_warning("Username is required");
@@ -643,7 +679,14 @@ impl MatchEvent for RegisterScreen {
                 username,
                 password,
                 homeserver,
-                registration_token: None,
+                registration_token: {
+                    let token = registration_token.trim();
+                    if token.is_empty() {
+                        None
+                    } else {
+                        Some(token.to_string())
+                    }
+                },
             }));
 
             cx.action(RegisterAction::RegistrationSubmitted);
@@ -657,12 +700,7 @@ impl MatchEvent for RegisterScreen {
                     self.view.modal(ids!(status_modal)).close(cx);
                 }
                 // Reset appropriate button based on registration type
-                if self.sso_pending {
-                    self.sso_pending = false;
-                    self.update_button_mask(&sso_button, cx, 0.0);
-                    sso_button.set_enabled(cx, true);
-                    sso_button.reset_hover(cx);
-                } else {
+                if !self.sso_pending {
                     // Password registration - reset register button
                     self.reset_modal_state(cx);
                 }
@@ -702,6 +740,12 @@ impl MatchEvent for RegisterScreen {
                         let cancel_button = self.view.button(ids!(status_modal_inner.cancel_button));
                         cancel_button.set_text(cx, "Cancel");
                         self.redraw(cx);
+                    }
+                }
+                Some(RegisterAction::RegistrationTokenRequired) => {
+                    if !self.registration_token_required {
+                        self.set_registration_token_required(cx, true);
+                        self.view.text_input(ids!(registration_token_input)).set_key_focus(cx);
                     }
                 }
                 _ => {}
@@ -756,6 +800,8 @@ pub enum RegisterAction {
     SsoRegistrationPending(bool),
     /// SSO registration progress update (e.g., "Opening browser...")
     SsoRegistrationStatus { status: String },
+    /// Password registration flow needs a server-provided token
+    RegistrationTokenRequired,
     None,
 }
 

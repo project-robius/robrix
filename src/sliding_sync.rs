@@ -297,6 +297,7 @@ async fn register_user(register_request: RegisterRequest) -> Result<(Client, Cli
                     match next_stage {
                         AuthType::RegistrationToken => {
                             let Some(token) = sanitized_registration_token.as_ref() else {
+                                Cx::post_action(RegisterAction::RegistrationTokenRequired);
                                 bail!("This server requires a registration token. Please obtain one from the server administrator and try again.");
                             };
                             let mut auth_data = RegistrationToken::new(token.clone());
