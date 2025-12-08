@@ -11,6 +11,7 @@ use indexmap::IndexMap;
 use crate::home::room_read_receipt::{AvatarRowWidgetRefExt, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT};
 
 const MIN_GROUP_SIZE_FOR_COLLAPSE: usize = 3;
+const SUMMARY_LENGTH: usize = 4;
 
 live_design! {
     use link::theme::*;
@@ -96,6 +97,14 @@ pub struct SmallStateGroup {
     /// This simplified structure allows efficient lookup and summary generation.
     /// Event ordering is preserved within each user's Vec<UserEvent> by their index field.
     pub user_events_map: HashMap<OwnedUserId, Vec<UserEvent>>,
+
+    /// Cached summary text to avoid recomputation during rendering.
+    /// This is computed once when the group is created or modified.
+    pub cached_summary: Option<String>,
+
+    /// Cached list of user IDs for avatar display, pre-sorted and limited.
+    /// This avoids expensive sorting and extraction during rendering.
+    pub cached_avatar_user_ids: Option<Vec<OwnedUserId>>,
 }
 
 /// Combined state for managing small state groups and room creation information
@@ -162,6 +171,240 @@ impl Default for CreationCollapsibleList {
         }
     }
 }
+
+impl SmallStateGroup {
+    /// Computes and caches the summary text and avatar user IDs for this group.
+    /// This should be called whenever the group's user_events_map is modified.
+    pub fn update_cached_data(&mut self) {
+        // Cache the summary text
+        self.cached_summary = Some(generate_summary(&self.user_events_map, SUMMARY_LENGTH));
+        
+        // Cache the avatar user IDs
+        self.cached_avatar_user_ids = Some(extract_avatar_user_ids(&self.user_events_map, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT));
+    }
+
+    /// Gets the cached summary text, computing it if not available.
+    pub fn get_summary(&mut self) -> &str {
+        if self.cached_summary.is_none() {
+            self.update_cached_data();
+        }
+        self.cached_summary.as_ref().unwrap()
+    }
+
+    /// Gets the cached avatar user IDs, computing them if not available.
+    pub fn get_avatar_user_ids(&mut self) -> &[OwnedUserId] {
+        if self.cached_avatar_user_ids.is_none() {
+            self.update_cached_data();
+        }
+        self.cached_avatar_user_ids.as_ref().unwrap()
+    }
+}
+
+/// Timeline grouping service that separates business logic from UI rendering.
+/// This service handles all timeline grouping computations and maintains caching.
+pub struct TimelineGroupService;
+
+impl TimelineGroupService {
+    /// Analyzes a timeline item and determines its grouping behavior.
+    /// Returns computed group state without performing UI operations.
+    pub fn compute_item_group_state(
+        item_id: usize,
+        username: String,
+        current_item: &EventTimelineItem,
+        previous_item: Option<&Arc<TimelineItem>>,
+        next_item: Option<&Arc<TimelineItem>>,
+        group_manager: &mut SmallStateGroupManager,
+    ) -> GroupStateResult {
+        let (current_item_is_small_state, previous_item_is_small_state, next_item_is_small_state, display_name) = 
+            analyze_grouping_context(current_item, previous_item, next_item);
+        
+        if !current_item_is_small_state {
+            return GroupStateResult {
+                show: true,
+                show_collapsible_button: false,
+                expanded: false,
+                to_redraw: Range::default(),
+                summary_text: None,
+                avatar_user_ids: None,
+            };
+        }
+
+        if !previous_item_is_small_state && !next_item_is_small_state {
+            return GroupStateResult {
+                show: true,
+                show_collapsible_button: false,
+                expanded: false,
+                to_redraw: Range::default(),
+                summary_text: None,
+                avatar_user_ids: None,
+            };
+        }
+
+        // Handle room creation events as a special case
+        if let Some((show, show_button, expanded, range)) = Self::process_room_creation(
+            item_id, current_item, group_manager
+        ) {
+            let summary_text = if show_button {
+                Some(format!(
+                    "{} created and configured the room",
+                    group_manager.creation_collapsible_list.username
+                ))
+            } else {
+                None
+            };
+            let avatar_user_ids = if let Some((creator_id, _)) = &group_manager.room_creation {
+                Some(vec![creator_id.clone()])
+            } else {
+                None
+            };
+            
+            return GroupStateResult {
+                show,
+                show_collapsible_button: show_button,
+                expanded,
+                to_redraw: range,
+                summary_text,
+                avatar_user_ids,
+            };
+        }
+
+        // Set username for creation collapsible list and create user event
+        group_manager.creation_collapsible_list.username = username.clone();
+        let user_event = convert_to_timeline_event(
+            current_item,
+            display_name.clone().unwrap_or(username.clone()),
+            item_id,
+            None,
+        );
+
+        // Handle creation collapsible list logic
+        if let Some((show, show_button, expanded, range)) = Self::process_room_setup(
+            item_id, &user_event, group_manager
+        ) {
+            return GroupStateResult {
+                show,
+                show_collapsible_button: show_button,
+                expanded,
+                to_redraw: range,
+                summary_text: None,
+                avatar_user_ids: None,
+            };
+        }
+
+        // Try to find and update existing groups
+        if let Some((show, show_button, expanded, range, summary, avatars)) = Self::handle_existing_group(
+            item_id, user_event, group_manager
+        ) {
+            return GroupStateResult {
+                show,
+                show_collapsible_button: show_button,
+                expanded,
+                to_redraw: range,
+                summary_text: summary,
+                avatar_user_ids: avatars,
+            };
+        }
+
+        // Recreate user_event for the remaining cases since it was moved
+        let user_event = convert_to_timeline_event(
+            current_item,
+            display_name.unwrap_or(username),
+            item_id,
+            None,
+        );
+
+        // Create new group if needed
+        if let Some((show, show_button, expanded, range)) = Self::create_new_group(
+            item_id, user_event, next_item_is_small_state, group_manager
+        ) {
+            return GroupStateResult {
+                show,
+                show_collapsible_button: show_button,
+                expanded,
+                to_redraw: range,
+                summary_text: None,
+                avatar_user_ids: None,
+            };
+        }
+
+        // Default return - collapsed state, no collapsible button
+        GroupStateResult {
+            show: false,
+            show_collapsible_button: false,
+            expanded: false,
+            to_redraw: Range::default(),
+            summary_text: None,
+            avatar_user_ids: None,
+        }
+    }
+
+    fn process_room_creation(
+        item_id: usize,
+        current_item: &EventTimelineItem,
+        group_manager: &mut SmallStateGroupManager,
+    ) -> Option<(bool, bool, bool, Range<usize>)> {
+        process_room_creation_event(item_id, current_item, group_manager)
+    }
+
+    fn process_room_setup(
+        item_id: usize,
+        user_event: &UserEvent,
+        group_manager: &mut SmallStateGroupManager,
+    ) -> Option<(bool, bool, bool, Range<usize>)> {
+        process_room_setup_events(item_id, user_event, group_manager)
+    }
+
+    fn handle_existing_group(
+        item_id: usize,
+        user_event: UserEvent,
+        group_manager: &mut SmallStateGroupManager,
+    ) -> Option<ServiceResult> {
+        if let Some((show, show_button, expanded, range)) = find_and_update_existing_group(
+            item_id, user_event, group_manager
+        ) {
+            // Get cached data for the group if it's the start of a group
+            let (summary_text, avatar_user_ids) = if show_button {
+                // Find the group and get its cached data
+                if let Some(group) = group_manager.small_state_groups.iter_mut().find(|g| g.range.start == item_id) {
+                    let summary = Some(group.get_summary().to_string());
+                    let avatars = Some(group.get_avatar_user_ids().to_vec());
+                    (summary, avatars)
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            };
+            
+            Some((show, show_button, expanded, range, summary_text, avatar_user_ids))
+        } else {
+            None
+        }
+    }
+
+    fn create_new_group(
+        item_id: usize,
+        user_event: UserEvent,
+        next_item_is_small_state: bool,
+        group_manager: &mut SmallStateGroupManager,
+    ) -> Option<(bool, bool, bool, Range<usize>)> {
+        create_new_group_if_needed(item_id, user_event, next_item_is_small_state, group_manager)
+    }
+}
+
+/// Result of group state computation, containing all necessary data for rendering.
+#[derive(Debug)]
+pub struct GroupStateResult {
+    pub show: bool,
+    pub show_collapsible_button: bool,
+    pub expanded: bool,
+    pub to_redraw: Range<usize>,
+    pub summary_text: Option<String>,
+    pub avatar_user_ids: Option<Vec<OwnedUserId>>,
+}
+
+/// Type alias for complex service method return types.
+type ServiceResult = (bool, bool, bool, Range<usize>, Option<String>, Option<Vec<OwnedUserId>>);
 
 /// Combines neighboring transitions into compound actions, e.g. [Joined, Left] -> [JoinedAndLeft]
 fn merge_adjacent_transitions(transitions: &[TransitionType]) -> Vec<TransitionType> {
@@ -533,6 +776,11 @@ fn get_effective_user_id(user_event: &UserEvent) -> OwnedUserId {
 /// The HashMap structure maps: user_id -> Vec<UserEvent>
 /// This simplified structure groups events by user ID, avoiding the complexity
 /// of maintaining timeline indices as keys.
+/// Appends a new user event to the given HashMap of user events and invalidates cache.
+/// 
+/// The HashMap structure maps: user_id -> Vec<UserEvent>
+/// This simplified structure groups events by user ID, avoiding the complexity
+/// of maintaining timeline indices as keys.
 fn append_user_event_to_map(
     user_event: UserEvent,
     user_events: &mut HashMap<OwnedUserId, Vec<UserEvent>>,
@@ -546,6 +794,17 @@ fn append_user_event_to_map(
     if !user_events_vec.iter().any(|event| event.index == user_event.index) {
         user_events_vec.push(user_event);
     }
+}
+
+/// Appends a user event to a group and updates its cache.
+fn append_user_event_to_group(
+    user_event: UserEvent,
+    group: &mut SmallStateGroup,
+) {
+    append_user_event_to_map(user_event, &mut group.user_events_map);
+    // Invalidate cache since the group has been modified
+    group.cached_summary = None;
+    group.cached_avatar_user_ids = None;
 }
 
 /// Analyzes a timeline event to determine if it represents a small state change.
@@ -652,21 +911,12 @@ pub fn generate_summary(
     summary_parts.join(", ")
 }
 
-/// Populates the avatar row with user avatars from the user events map.
-/// 
-/// # Arguments
-/// * `cx` - Makepad context
-/// * `avatar_row` - The avatar row widget to populate  
-/// * `room_id` - The room ID for avatar fetching
-/// * `user_events_map` - HashMap of user events to extract user IDs from
-/// * `max_avatars` - Maximum number of avatars to display
-fn populate_avatar_row_for_group(
-    cx: &mut Cx,
-    avatar_row: &WidgetRef,
-    room_id: &matrix_sdk::ruma::RoomId,
+/// Extracts and sorts user IDs from user events map for avatar display.
+/// This is the expensive computation part that should be cached.
+fn extract_avatar_user_ids(
     user_events_map: &HashMap<OwnedUserId, Vec<UserEvent>>,
     max_avatars: usize,
-) {
+) -> Vec<OwnedUserId> {
     // Extract user IDs from the map, sorted by their first event index for consistency
     let mut user_data: Vec<(OwnedUserId, usize)> = user_events_map
         .iter()
@@ -680,21 +930,30 @@ fn populate_avatar_row_for_group(
     user_data.sort_by_key(|(_, first_index)| *first_index);
     
     // Extract just the user IDs and limit to max_avatars
-    let user_ids: Vec<OwnedUserId> = user_data
+    user_data
         .into_iter()
         .take(max_avatars)
         .map(|(user_id, _)| user_id)
-        .collect();
-    
-    // Create a receipts map for the avatar row using the extracted user IDs
+        .collect()
+}
+
+/// Populates the avatar row with user avatars from pre-computed user IDs.
+/// This is now a lightweight operation that just creates the receipts map.
+fn populate_avatar_row_from_user_ids(
+    cx: &mut Cx,
+    avatar_row: &WidgetRef,
+    room_id: &matrix_sdk::ruma::RoomId,
+    user_ids: &[OwnedUserId],
+) {
+    // Create a receipts map for the avatar row using the provided user IDs
     let receipts_map: IndexMap<OwnedUserId, matrix_sdk::ruma::events::receipt::Receipt> = user_ids
-        .into_iter()
+        .iter()
         .map(|user_id| {
             // Create a simple receipt for display purposes
             let receipt = matrix_sdk::ruma::events::receipt::Receipt::new(
                 matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now()
             );
-            (user_id, receipt)
+            (user_id.clone(), receipt)
         })
         .collect();
     
@@ -821,45 +1080,60 @@ fn find_and_update_existing_group(
     user_event: UserEvent,
     group_manager: &mut SmallStateGroupManager,
 ) -> Option<(bool, bool, bool, Range<usize>)> {
-    let group_keys: Vec<Range<usize>> = group_manager
+    let _group_keys: Vec<Range<usize>> = group_manager
         .small_state_groups
         .iter()
         .map(|f| f.range.clone())
         .collect();
 
-    'outer: for SmallStateGroup { range, opened, user_events_map } in group_manager.small_state_groups.iter_mut() {
-        if range.start == item_id {
-            append_user_event_to_map(user_event, user_events_map);
-            return Some((true, range.len() > MIN_GROUP_SIZE_FOR_COLLAPSE, *opened, Range::default()));
+    // First check for direct matches or containment
+    for group in group_manager.small_state_groups.iter_mut() {
+        if group.range.start == item_id {
+            append_user_event_to_group(user_event, group);
+            return Some((true, group.range.len() > MIN_GROUP_SIZE_FOR_COLLAPSE, group.opened, Range::default()));
         }
         
-        if range.contains(&item_id) {
-            append_user_event_to_map(user_event, user_events_map);
+        if group.range.contains(&item_id) {
+            append_user_event_to_group(user_event, group);
             return Some((
-                *opened || range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE,
+                group.opened || group.range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE,
                 false,
-                *opened,
+                group.opened,
                 Range::default(),
             ));
         }
-
-        // Since we're iterating backwards (from highest to lowest item_id),
-        // check if we can extend an existing group backwards
-        if range.start == item_id + 1 {
-            for r in group_keys.iter() {
-                if r.contains(&item_id) {
-                    continue 'outer;
+    }
+    
+    // Check for backward extension (need separate loop to avoid borrow conflicts)
+    let group_ranges: Vec<Range<usize>> = group_manager
+        .small_state_groups
+        .iter()
+        .map(|g| g.range.clone())
+        .collect();
+    
+    for (idx, group) in group_manager.small_state_groups.iter_mut().enumerate() {
+        if group.range.start == item_id + 1 {
+            // Check if item_id is already covered by another group
+            let mut conflict = false;
+            for (other_idx, other_range) in group_ranges.iter().enumerate() {
+                if other_idx != idx && other_range.contains(&item_id) {
+                    conflict = true;
+                    break;
                 }
             }
-            // Extend this group backwards to include current item
-            *range = item_id..range.end;
-            append_user_event_to_map(user_event, user_events_map);
-            return Some((
-                *opened || range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE,
-                false,
-                false,
-                range.clone(),
-            ));
+            
+            if !conflict {
+                // Extend this group backwards to include current item
+                let old_end = group.range.end;
+                group.range = item_id..old_end;
+                append_user_event_to_group(user_event, group);
+                return Some((
+                    group.opened || group.range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE,
+                    false,
+                    false,
+                    item_id..old_end,
+                ));
+            }
         }
     }
     
@@ -878,11 +1152,18 @@ fn create_new_group_if_needed(
         let mut user_events_map = HashMap::new();
         append_user_event_to_map(user_event, &mut user_events_map);
         
-        group_manager.small_state_groups.push(SmallStateGroup {
+        let mut new_group = SmallStateGroup {
             range: item_id..(item_id + 2), // Plus 2 to include the next item into the group
             opened: false,
             user_events_map,
-        });
+            cached_summary: None,
+            cached_avatar_user_ids: None,
+        };
+        
+        // Pre-compute cache for the new group
+        new_group.update_cached_data();
+        
+        group_manager.small_state_groups.push(new_group);
         
         return Some((false, false, false, item_id..(item_id + 2)));
     }
@@ -890,12 +1171,7 @@ fn create_new_group_if_needed(
 }
 
 /// Determines how to render a timeline item based on small state group logic.
-///
-/// This function is called during timeline rendering to build groups on-demand.
-/// Since iteration starts from the highest item_id and goes backwards, we handle reverse grouping.
-/// Returns a tuple whether to display the message, and whether to display the collapsible button and whether collapsible list is expanded and range to redraw
-/// This is required as unexpanded first item in the group needs to display only the header and not the body.
-/// This case will return (true, true, false, Range::default()).
+/// This is now a thin wrapper around the TimelineGroupService.
 pub fn determine_item_group_state(
     item_id: usize,
     username: String,
@@ -904,57 +1180,36 @@ pub fn determine_item_group_state(
     next_item: Option<&Arc<TimelineItem>>,
     group_manager: &mut SmallStateGroupManager,
 ) -> (bool, bool, bool, Range<usize>) {
-    // Check if this is a small state event and get context about neighboring items
-    let (current_item_is_small_state, previous_item_is_small_state, next_item_is_small_state, display_name) = 
-        analyze_grouping_context(current_item, previous_item, next_item);
+    let result = TimelineGroupService::compute_item_group_state(
+        item_id,
+        username,
+        current_item,
+        previous_item,
+        next_item,
+        group_manager,
+    );
     
-    if !current_item_is_small_state {
-        return (true, false, false, Range::default()); // Not a small state event, draw as individual item
-    }
+    (result.show, result.show_collapsible_button, result.expanded, result.to_redraw)
+}
 
-    if !previous_item_is_small_state && !next_item_is_small_state {
-        return (true, false, false, Range::default()); // Isolated small state event, no collapsible button
-    }
-
-    // Handle room creation events as a special case
-    if let Some(result) = process_room_creation_event(item_id, current_item, group_manager) {
-        return result;
-    }
-
-    // Set username for creation collapsible list and create user event
-    group_manager.creation_collapsible_list.username = username.clone();
-    let user_event = convert_to_timeline_event(
-        current_item,
-        display_name.clone().unwrap_or(username.clone()),
+/// New service-based API that returns rich group state information.
+/// This should be preferred over the basic determine_item_group_state function.
+pub fn compute_timeline_item_group_state(
+    item_id: usize,
+    username: String,
+    current_item: &EventTimelineItem,
+    previous_item: Option<&Arc<TimelineItem>>,
+    next_item: Option<&Arc<TimelineItem>>,
+    group_manager: &mut SmallStateGroupManager,
+) -> GroupStateResult {
+    TimelineGroupService::compute_item_group_state(
         item_id,
-        None, // TODO: Pass actual sender profile when available
-    );
-
-    // Handle creation collapsible list logic
-    if let Some(result) = process_room_setup_events(item_id, &user_event, group_manager) {
-        return result;
-    }
-
-    // Try to find and update existing groups
-    if let Some(result) = find_and_update_existing_group(item_id, user_event, group_manager) {
-        return result;
-    }
-
-    // Recreate user_event for the remaining cases since it was moved
-    let user_event = convert_to_timeline_event(
+        username,
         current_item,
-        display_name.unwrap_or(username),
-        item_id,
-        None,
-    );
-
-    // Create new group if needed
-    if let Some(result) = create_new_group_if_needed(item_id, user_event, next_item_is_small_state, group_manager) {
-        return result;
-    }
-
-    // Default return - collapsed state, no collapsible button
-    (false, false, false, Range::default())
+        previous_item,
+        next_item,
+        group_manager,
+    )
 }
 
 /// Handles item_id changes during backward pagination by shifting indices in small state groups
@@ -973,6 +1228,7 @@ pub fn handle_backward_pagination_index_shift(
         range,
         user_events_map,
         opened: _,
+        ..
     } in &mut group_manager.small_state_groups
     {
         let new_start = (range.start as i32 + shift).max(0) as usize;
@@ -1008,7 +1264,7 @@ pub fn handle_backward_pagination_index_shift(
 /// * `opened` - Whether this individual item should be rendered (based on group state)
 /// * `show_collapsible_button` - True if this item is the first in a collapsible group
 /// * `expanded` - Current expansion state of the group (for button text)
-/// * `group_manager` - Reference to the small state group manager
+/// * `group_manager` - Mutable reference to the small state group manager (for cache updates)
 /// * `room_id` - The room ID for avatar fetching
 pub fn render_small_state_event_group_logic(
     cx: &mut Cx,
@@ -1017,7 +1273,7 @@ pub fn render_small_state_event_group_logic(
     opened: bool,
     show_collapsible_button: bool,
     expanded: bool,
-    group_manager: &SmallStateGroupManager,
+    group_manager: &mut SmallStateGroupManager,
     room_id: &matrix_sdk::ruma::RoomId,
 ) {
     // Render logic based on group state
@@ -1041,15 +1297,8 @@ pub fn render_small_state_event_group_logic(
                 
                 // For creation groups, show only the creator's avatar
                 if let Some((creator_id, _)) = &group_manager.room_creation {
-                    let mut creator_map = HashMap::new();
-                    creator_map.insert(creator_id.clone(), vec![]); // Empty events, just for avatar display
-                    populate_avatar_row_for_group(
-                        cx,
-                        item,
-                        room_id,
-                        &creator_map,
-                        1 // Only show creator
-                    );
+                    let creator_ids = vec![creator_id.clone()];
+                    populate_avatar_row_from_user_ids(cx, item, room_id, &creator_ids);
                 }
                 
                 item.label(ids!(small_state_header.summary_text))
@@ -1057,29 +1306,21 @@ pub fn render_small_state_event_group_logic(
                 item.view(ids!(body)).set_visible(cx, false);
                 return;
             }
-            for SmallStateGroup {
-                range,
-                opened: _,
-                user_events_map,
-            } in &group_manager.small_state_groups
-            {
-                if range.start == item_id {
-                    // Pass HashMap directly to generate_summary
-                    let summary_text = generate_summary(user_events_map, 4);
+            // Find the group and use cached data for rendering
+            for group in &mut group_manager.small_state_groups {
+                if group.range.start == item_id {
                     item.view(ids!(small_state_header)).set_visible(cx, true);
                     
-                    // Populate avatar row with users from this group
-                    populate_avatar_row_for_group(
-                        cx,
-                        item, 
-                        room_id, 
-                        user_events_map, 
-                        MAX_VISIBLE_AVATARS_IN_READ_RECEIPT
-                    );
+                    // Use cached summary text (compute if not cached)
+                    let summary_text = group.get_summary();
+                    item.label(ids!(small_state_header.summary_text))
+                        .set_text(cx, summary_text);
+                    
+                    // Use cached avatar user IDs for lightweight avatar population
+                    let avatar_user_ids = group.get_avatar_user_ids();
+                    populate_avatar_row_from_user_ids(cx, item, room_id, avatar_user_ids);
                     
                     item.view(ids!(body)).set_visible(cx, false);
-                    item.label(ids!(small_state_header.summary_text))
-                        .set_text(cx, &summary_text);
                     break;
                 }
             }
@@ -1141,7 +1382,7 @@ pub fn handle_collapsible_button_click(
     }
 
     if !is_creation_group {
-        for SmallStateGroup { range, opened, user_events_map: _ } in &mut group_manager.small_state_groups {
+        for SmallStateGroup { range, opened, .. } in &mut group_manager.small_state_groups {
             if range.start == item_id {
                 // Toggle the group's open/closed state
                 *opened = !*opened;
