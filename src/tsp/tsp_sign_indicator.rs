@@ -2,7 +2,7 @@
 
 use makepad_widgets::*;
 
-use crate::shared::{callout_tooltip::TooltipAction, styles::*};
+use crate::shared::{callout_tooltip::{CalloutTooltipOptions, TooltipAction}, styles::*};
 
 live_design! {
     link tsp_enabled
@@ -105,12 +105,11 @@ impl Widget for TspSignIndicator {
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
-                TooltipAction::HoverIn {
+                TooltipAction::HoverIn(text.to_string(), CalloutTooltipOptions {
                     widget_rect: area.rect(cx),
-                    text: text.to_string(),
                     bg_color,
-                    text_color: None,
-                },
+                    ..Default::default()
+                })
             );
         }
     }
