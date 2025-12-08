@@ -10,6 +10,7 @@ pub mod loading_pane;
 pub mod location_preview;
 pub mod main_desktop_ui;
 pub mod main_mobile_ui;
+pub mod small_state_group_manager;
 pub mod room_screen;
 pub mod room_read_receipt;
 pub mod rooms_list;
@@ -48,4 +49,5 @@ pub fn live_design(cx: &mut Cx) {
     light_themed_dock::live_design(cx);
     event_reaction_list::live_design(cx);
     link_preview::live_design(cx);
+    small_state_group_manager::live_design(cx);
 }

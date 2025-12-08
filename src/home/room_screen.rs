@@ -26,15 +26,15 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, small_state_group_manager::{handle_backward_pagination_index_shift, handle_collapsible_button_click, render_small_state_event_group_logic, SmallStateGroupManager, determine_item_group_state}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
     room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, room_name_or_id, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -80,6 +80,7 @@ live_design! {
     use crate::rooms_list::*;
     use crate::shared::restore_status_view::*;
     use crate::home::link_preview::LinkPreview;
+    use crate::home::small_state_group_manager::SmallStateHeader;
     use link::tsp_link::TspSignIndicator;
 
     COLOR_BG = #xfff8ee
@@ -326,17 +327,16 @@ live_design! {
     SmallStateEvent = <View> {
         width: Fill,
         height: Fit,
-        flow: Right,
-        margin: { top: 4.0, bottom: 4.0}
-        padding: { top: 1.0, bottom: 1.0, right: 10.0 }
+        flow: Down,
         spacing: 0.0
         cursor: Default
-
+        small_state_header = <SmallStateHeader> { }
         body = <View> {
             width: Fill,
             height: Fit
             flow: Right,
-            padding: { left: 7.0, top: 2.0, bottom: 2.0 }
+            margin: { top: 4.0, bottom: 4.0}
+            padding: { left: 7.0, top: 2.0, bottom: 2.0, right: 10.0 }
             spacing: 5.0
 
             left_container = <View> {
@@ -370,6 +370,7 @@ live_design! {
                 }
                 text: ""
             }
+
             // Center the Avatar vertically with respect to the SmallStateEvent content.
             avatar_row = <AvatarRow> { margin: {top: -1.0} }
         }
@@ -602,7 +603,7 @@ impl Widget for RoomScreen {
         // we want to handle those before processing any updates that might change
         // the set of timeline indices (which would invalidate the index values in any actions).
         if let Event::Actions(actions) = event {
-            for (_, wr) in portal_list.items_with_actions(actions) {
+            for (item_id, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(ids!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
                     widget_rect,
@@ -660,6 +661,22 @@ impl Widget for RoomScreen {
                         &scope.path,
                         TooltipAction::HoverOut
                     );
+                }
+
+                // Handle collapsible button click in SmallStateEvent
+                if wr.button(ids!(collapsible_button)).clicked(actions) {
+                    if let Some(tl_state) = &mut self.tl_state {
+                        handle_collapsible_button_click(
+                            cx,
+                            &wr,
+                            item_id,
+                            &portal_list,
+                            &mut tl_state.group_manager,
+                            &mut tl_state.content_drawn_since_last_update,
+                            &mut tl_state.profile_drawn_since_last_update,
+                            tl_state.items.len(),
+                        );
+                    }
                 }
             }
 
@@ -978,8 +995,11 @@ impl Widget for RoomScreen {
                                     item_id,
                                     room_id,
                                     event_tl_item,
+                                    tl_items,
                                     poll_state,
                                     item_drawn_status,
+                                    &mut tl_state.group_manager,
+                                    &mut tl_state.content_drawn_since_last_update,
                                 ),
                                 MsgLikeKind::Redacted => populate_small_state_event(
                                     cx,
@@ -987,8 +1007,11 @@ impl Widget for RoomScreen {
                                     item_id,
                                     room_id,
                                     event_tl_item,
+                                    tl_items,
                                     &RedactedMessageEventMarker,
                                     item_drawn_status,
+                                    &mut tl_state.group_manager,
+                                    &mut tl_state.content_drawn_since_last_update,
                                 ),
                                 MsgLikeKind::UnableToDecrypt(utd) => populate_small_state_event(
                                     cx,
@@ -996,8 +1019,11 @@ impl Widget for RoomScreen {
                                     item_id,
                                     room_id,
                                     event_tl_item,
+                                    tl_items,
                                     utd,
                                     item_drawn_status,
+                                    &mut tl_state.group_manager,
+                                    &mut tl_state.content_drawn_since_last_update,
                                 ),
                                 MsgLikeKind::Other(other) => populate_small_state_event(
                                     cx,
@@ -1005,8 +1031,11 @@ impl Widget for RoomScreen {
                                     item_id,
                                     room_id,
                                     event_tl_item,
+                                    tl_items,
                                     other,
                                     item_drawn_status,
+                                    &mut tl_state.group_manager,
+                                    &mut tl_state.content_drawn_since_last_update,
                                 ),
                             },
                             TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
@@ -1015,8 +1044,11 @@ impl Widget for RoomScreen {
                                 item_id,
                                 room_id,
                                 event_tl_item,
+                                tl_items,
                                 membership_change,
                                 item_drawn_status,
+                                &mut tl_state.group_manager,
+                                &mut tl_state.content_drawn_since_last_update,
                             ),
                             TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
                                 cx,
@@ -1024,8 +1056,11 @@ impl Widget for RoomScreen {
                                 item_id,
                                 room_id,
                                 event_tl_item,
+                                tl_items,
                                 profile_change,
                                 item_drawn_status,
+                                &mut tl_state.group_manager,
+                                &mut tl_state.content_drawn_since_last_update,
                             ),
                             TimelineItemContent::OtherState(other) => populate_small_state_event(
                                 cx,
@@ -1033,8 +1068,11 @@ impl Widget for RoomScreen {
                                 item_id,
                                 room_id,
                                 event_tl_item,
+                                tl_items,
                                 other,
                                 item_drawn_status,
+                                &mut tl_state.group_manager,
+                                &mut tl_state.content_drawn_since_last_update,
                             ),
                             unhandled => {
                                 let item = list.item(cx, item_id, id!(SmallStateEvent));
@@ -1225,7 +1263,16 @@ impl RoomScreen {
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
-                        // log!("process_timeline_updates(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
+                    }
+                    // Handles item_id changes whenever there is a backward pagination.  
+                    if !is_append {
+                        let old_len = tl.items.len();
+                        let new_len = new_items.len();
+                        let shift = new_len.saturating_sub(old_len) as i32;
+                        handle_backward_pagination_index_shift(
+                            shift,
+                            &mut tl.group_manager,
+                        );
                     }
                     tl.items = new_items;
                     done_loading = true;
@@ -1990,6 +2037,7 @@ impl RoomScreen {
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
                 tombstone_info,
+                group_manager: SmallStateGroupManager::default(),
             };
             (tl_state, true)
         };
@@ -2548,6 +2596,9 @@ struct TimelineUiState {
     /// If `Some`, this room has been tombstoned and the details of its successor room
     /// are contained within. If `None`, the room has not been tombstoned.
     tombstone_info: Option<SuccessorRoomDetails>,
+    
+    /// Manager for small state groups, room creation info, and creation collapsible list.
+    group_manager: SmallStateGroupManager,
 }
 
 #[derive(Default, Debug)]
@@ -3193,7 +3244,6 @@ fn populate_message_view(
                 .show_with_state(cx, tsp_sign_state);
         }
     }
-
     (item, new_drawn_status)
 }
 
@@ -3888,9 +3938,14 @@ fn populate_small_state_event(
     item_id: usize,
     room_id: &OwnedRoomId,
     event_tl_item: &EventTimelineItem,
+    tl_items: &Vector<Arc<TimelineItem>>,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
+    group_manager: &mut SmallStateGroupManager,
+    content_drawn_since_last_update: &mut RangeSet<usize>,
 ) -> (WidgetRef, ItemDrawnStatus) {
+    let prev_event = item_id.checked_sub(1).and_then(|i| tl_items.get(i));
+    let next_event = item_id.checked_add(1).and_then(|i| tl_items.get(i));
     let mut new_drawn_status = item_drawn_status;
     let (item, existed) = list.item_with_existed(cx, item_id, id!(SmallStateEvent));
     // The content of a small state event view may depend on the profile info,
@@ -3926,9 +3981,23 @@ fn populate_small_state_event(
         new_drawn_status.profile_drawn = profile_drawn;
         username
     });
-
-    // Proceed to draw the actual event content.
-    event_content.populate_item_content(
+    // Dynamically determine group membership and update groups
+    // Returns: (show, show_collapsible_button, expanded)
+    // - show: whether this individual item should be rendered (based on group state)
+    // - show_collapsible_button: true if this item is the first in a collapsible group
+    // - expanded: current expansion state of the group (for button text)
+    let (show, show_collapsible_button, expanded, to_redraw) = determine_item_group_state(
+        item_id,
+        username.clone(),
+        event_tl_item,
+        prev_event,
+        next_event,
+        group_manager,
+    );
+    // Only show the collapsible button on the first item of each group
+    item.button(ids!(collapsible_button))
+        .set_visible(cx, show_collapsible_button);
+    let (item, mut new_drawn_status) = event_content.populate_item_content(
         cx,
         list,
         item_id,
@@ -3937,7 +4006,27 @@ fn populate_small_state_event(
         &username,
         item_drawn_status,
         new_drawn_status,
-    )
+    );
+    // Handle rendering logic for group state using centralized function
+    render_small_state_event_group_logic(
+        cx,
+        &item,
+        item_id,
+        show,
+        show_collapsible_button,
+        expanded,
+        group_manager,
+        room_id,
+    );
+    
+    // Handle redraw logic for group changes
+    if !to_redraw.is_empty() && to_redraw.end > to_redraw.start {
+        content_drawn_since_last_update.remove(to_redraw.clone());
+        if to_redraw.contains(&item_id) {
+            new_drawn_status.content_drawn = false; // Force redraw if part of a group that changed
+        }
+    }
+    (item, new_drawn_status)
 }
 
 
