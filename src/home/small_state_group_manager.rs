@@ -418,7 +418,7 @@ pub fn convert_to_timeline_event(
         _ => (None, None),
     };
     let (_is_small_state, transition_type, _display_name_from_state) =
-        is_small_state_event(event_item);
+        analyze_timeline_event_type(event_item);
     UserEvent {
         index,
         display_name: user_name,
@@ -548,7 +548,7 @@ fn append_user_event_to_map(
     }
 }
 
-/// Checks if a timeline item is a small state event.
+/// Analyzes a timeline event to determine if it represents a small state change.
 ///
 /// # Arguments
 /// * `event_tl_item` - The timeline item to check
@@ -557,7 +557,7 @@ fn append_user_event_to_map(
 /// * `bool` - Whether this is a small state event
 /// * `TransitionType` - The type of transition
 /// * `Option<String>` - Display name if available
-pub fn is_small_state_event(
+pub fn analyze_timeline_event_type(
     event_tl_item: &EventTimelineItem,
 ) -> (bool, TransitionType, Option<String>) {
     match event_tl_item.content() {
@@ -609,10 +609,10 @@ pub fn generate_summary(
     let mut aggregates: Vec<(Vec<TransitionType>, Vec<String>)> = Vec::new();
 
     for (user_id, events) in user_events {
-        let mut events = events.clone();
-        // Sort events by their timeline index to maintain chronological order
-        events.sort_by_key(|e| e.index);
-        let mut transitions: Vec<_> = events.iter().map(|e| e.transition).collect();
+        // Create sorted indices instead of cloning the entire events vector
+        let mut sorted_indices: Vec<usize> = (0..events.len()).collect();
+        sorted_indices.sort_by_key(|&i| events[i].index);
+        let mut transitions: Vec<_> = sorted_indices.iter().map(|&i| events[i].transition).collect();
 
         // Filter out Joined transitions for room creators
         if transitions.contains(&TransitionType::CreateRoom) {
@@ -620,15 +620,16 @@ pub fn generate_summary(
         }
         
         let canonical = merge_adjacent_transitions(&transitions);
-        let name = events
-            .first()
-            .map(|e| e.display_name.clone())
-            .unwrap_or(user_id.to_string());
+        let name = if let Some(&first_idx) = sorted_indices.first() {
+            &events[first_idx].display_name
+        } else {
+            &user_id.to_string()
+        };
             
         if let Some((_, names)) = aggregates.iter_mut().find(|(seq, _)| seq == &canonical) {
-            names.push(name);
+            names.push(name.to_string());
         } else {
-            aggregates.push((canonical, vec![name]));
+            aggregates.push((canonical, vec![name.to_string()]));
         }
     }
     
@@ -701,14 +702,14 @@ fn populate_avatar_row_for_group(
     avatar_row.avatar_row(ids!(user_event_avatar_row)).set_avatar_row(cx, room_id, None, &receipts_map);
 }
 
-/// Checks if an item is a small state event and determines if it can be grouped.
+/// Analyzes the context around a timeline item to determine grouping eligibility.
 /// Returns whether previous and next items are small state events.
-fn check_small_state_context(
+fn analyze_grouping_context(
     current_item: &EventTimelineItem,
     previous_item: Option<&Arc<TimelineItem>>,
     next_item: Option<&Arc<TimelineItem>>,
 ) -> (bool, bool, bool, Option<String>) {
-    let (current_item_is_small_state, _transition, display_name) = is_small_state_event(current_item);
+    let (current_item_is_small_state, _transition, display_name) = analyze_timeline_event_type(current_item);
     
     if !current_item_is_small_state {
         return (false, false, false, display_name);
@@ -719,7 +720,7 @@ fn check_small_state_context(
             TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
             _ => None,
         })
-        .map(is_small_state_event)
+        .map(analyze_timeline_event_type)
         .unwrap_or((false, TransitionType::NoChange, None));
         
     let (previous_item_is_small_state, _, _) = previous_item
@@ -727,15 +728,15 @@ fn check_small_state_context(
             TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
             _ => None,
         })
-        .map(is_small_state_event)
+        .map(analyze_timeline_event_type)
         .unwrap_or((false, TransitionType::NoChange, None));
 
     (current_item_is_small_state, previous_item_is_small_state, next_item_is_small_state, display_name)
 }
 
-/// Handles room creation event grouping logic.
+/// Processes room creation events for special grouping treatment.
 /// Returns Some(result) if this item was processed as part of room creation, None otherwise.
-fn handle_room_creation_group(
+fn process_room_creation_event(
     item_id: usize,
     current_item: &EventTimelineItem,
     group_manager: &mut SmallStateGroupManager,
@@ -765,9 +766,9 @@ fn handle_room_creation_group(
     None
 }
 
-/// Handles creation collapsible list logic for configuration and join events.
+/// Manages room setup events in the creation collapsible list.
 /// Returns Some(result) if this item was processed as part of creation list, None otherwise.
-fn handle_creation_collapsible_list(
+fn process_room_setup_events(
     item_id: usize,
     user_event: &UserEvent,
     group_manager: &mut SmallStateGroupManager,
@@ -888,14 +889,14 @@ fn create_new_group_if_needed(
     None
 }
 
-/// Dynamically updates small state groups as timeline items are processed.
+/// Determines how to render a timeline item based on small state group logic.
 ///
-/// This function is called during populate_small_state_event to build groups on-demand.
+/// This function is called during timeline rendering to build groups on-demand.
 /// Since iteration starts from the highest item_id and goes backwards, we handle reverse grouping.
 /// Returns a tuple whether to display the message, and whether to display the collapsible button and whether collapsible list is expanded and range to redraw
 /// This is required as unexpanded first item in the group needs to display only the header and not the body.
 /// This case will return (true, true, false, Range::default()).
-pub fn update_small_state_groups_for_item(
+pub fn determine_item_group_state(
     item_id: usize,
     username: String,
     current_item: &EventTimelineItem,
@@ -905,7 +906,7 @@ pub fn update_small_state_groups_for_item(
 ) -> (bool, bool, bool, Range<usize>) {
     // Check if this is a small state event and get context about neighboring items
     let (current_item_is_small_state, previous_item_is_small_state, next_item_is_small_state, display_name) = 
-        check_small_state_context(current_item, previous_item, next_item);
+        analyze_grouping_context(current_item, previous_item, next_item);
     
     if !current_item_is_small_state {
         return (true, false, false, Range::default()); // Not a small state event, draw as individual item
@@ -916,7 +917,7 @@ pub fn update_small_state_groups_for_item(
     }
 
     // Handle room creation events as a special case
-    if let Some(result) = handle_room_creation_group(item_id, current_item, group_manager) {
+    if let Some(result) = process_room_creation_event(item_id, current_item, group_manager) {
         return result;
     }
 
@@ -924,20 +925,28 @@ pub fn update_small_state_groups_for_item(
     group_manager.creation_collapsible_list.username = username.clone();
     let user_event = convert_to_timeline_event(
         current_item,
-        display_name.unwrap_or(username),
+        display_name.clone().unwrap_or(username.clone()),
         item_id,
         None, // TODO: Pass actual sender profile when available
     );
 
     // Handle creation collapsible list logic
-    if let Some(result) = handle_creation_collapsible_list(item_id, &user_event, group_manager) {
+    if let Some(result) = process_room_setup_events(item_id, &user_event, group_manager) {
         return result;
     }
 
     // Try to find and update existing groups
-    if let Some(result) = find_and_update_existing_group(item_id, user_event.clone(), group_manager) {
+    if let Some(result) = find_and_update_existing_group(item_id, user_event, group_manager) {
         return result;
     }
+
+    // Recreate user_event for the remaining cases since it was moved
+    let user_event = convert_to_timeline_event(
+        current_item,
+        display_name.unwrap_or(username),
+        item_id,
+        None,
+    );
 
     // Create new group if needed
     if let Some(result) = create_new_group_if_needed(item_id, user_event, next_item_is_small_state, group_manager) {
@@ -1113,11 +1122,11 @@ pub fn handle_collapsible_button_click(
         let open = &mut group_manager.creation_collapsible_list.opened;
         // Toggle the group's open/closed state
         *open = !*open;
-        let range = group_manager.creation_collapsible_list.range.clone();
+        let range = &group_manager.creation_collapsible_list.range;
         let to_redraw = range.start..range.end + 1;
         // Force redraw of all items in this group by clearing their cached drawn status
         content_drawn_since_last_update.remove(to_redraw.clone());
-        profile_drawn_since_last_update.remove(to_redraw.clone());
+        profile_drawn_since_last_update.remove(to_redraw);
         
         // Update button text to reflect new state:
         // ▼ (down arrow) = expanded/open - items are visible
@@ -1125,7 +1134,7 @@ pub fn handle_collapsible_button_click(
         let button_text = if *open { "▼" } else { "▶" };
         wr.button(ids!(collapsible_button)).set_text(cx, button_text);
         // If the last item is a group of small state events, scroll to the end when it is expanded.
-        if range.end == items_len && *open {
+        if group_manager.creation_collapsible_list.range.end == items_len && *open {
             portal_list.smooth_scroll_to_end(cx, 90.0, None);
         }
         is_creation_group = true;
@@ -1137,8 +1146,9 @@ pub fn handle_collapsible_button_click(
                 // Toggle the group's open/closed state
                 *opened = !*opened;
                 // Force redraw of all items in this group by clearing their cached drawn status
-                content_drawn_since_last_update.remove(range.clone());
-                profile_drawn_since_last_update.remove(range.clone());
+                let range_to_remove = range.clone(); // Only clone when actually needed
+                content_drawn_since_last_update.remove(range_to_remove.clone());
+                profile_drawn_since_last_update.remove(range_to_remove);
 
                 // Update button text to reflect new state:
                 // ▼ (down arrow) = expanded/open - items are visible
