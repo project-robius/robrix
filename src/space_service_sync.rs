@@ -1,139 +1,232 @@
 //! Background tasks that subscribe to the Matrix SpaceService in order to
 //! track changes to the user's joined spaces and send updates the UI.
 
-use std::iter::Peekable;
-
+use std::{collections::{HashMap, hash_map::Entry}, iter::Peekable};
 use eyeball_im::VectorDiff;
-use futures_util::{StreamExt, pin_mut};
+use futures_util::StreamExt;
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{Client, RoomState, media::MediaRequestParameters};
-use matrix_sdk_ui::spaces::{SpaceRoom, SpaceService};
-use ruma::{OwnedMxcUri, events::room::MediaSource};
-use tokio::runtime::Handle;
-use crate::{home::spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}, room::FetchedRoomAvatar, utils};
+use matrix_sdk_ui::spaces::{SpaceRoom, SpaceRoomList, SpaceService, room_list::SpaceRoomListPaginationState};
+use ruma::{OwnedMxcUri, OwnedRoomId, events::room::MediaSource};
+use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}, task::JoinHandle};
+use crate::{home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, room::FetchedRoomAvatar, utils};
 
 /// Whether to enable verbose logging of all spaces service diff updates.
 const LOG_SPACE_SERVICE_DIFFS: bool = cfg!(feature = "log_space_service_diffs");
 
+/// Requests related to obtaining info about Spaces, via the background space service.
+pub enum SpaceRequest {
+    /// Start obtaining the list of rooms in the given space from the homeserver,
+    /// and listen for ongoing updates to that list.
+    SubscribeToSpaceRoomList {
+        space_id: OwnedRoomId,
+    },
+    /// Stop listening to updates for the list of rooms in the given space.
+    ///
+    /// Note: the Matrix SDK offers no way to unsubscribe from a space room list,
+    /// so this just stops the async background task that runs the subscriber loop.
+    UnsubscribeFromSpaceRoomList {
+        space_id: OwnedRoomId,
+    },
+    /// Paginate the given space's room list, i.e., fetch the next batch of rooms in the list.
+    PaginateSpaceRoomList {
+        space_id: OwnedRoomId,
+    },
+    /// Get a copy of the currently-known rooms in the given space.
+    GetRooms {
+        space_id: OwnedRoomId,
+    }
+}
+
+/// Internal requests sent from the [`space_service_loop`] to a specific space's [`space_room_list_loop`].
+enum SpaceRoomListRequest {
+    /// Get a copy of the currently-known rooms in this space.
+    GetRooms,
+    /// Paginate this a copy of the currently-known rooms in this space.
+    Paginate,
+    Shutdown,
+}
+
 
 /// The main async loop task that listens for changes to all spaces.
 pub async fn space_service_loop(space_service: SpaceService, client: Client) -> anyhow::Result<()> {
+    // Create a channel for sending space-related requests from the main UI thread to this background worker.
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<SpaceRequest>();
+    // Give the request sender channel endpoint to the RoomsList widget.
+    enqueue_rooms_list_update(RoomsListUpdate::SpaceRequestSender(sender));
+
+    // The set of async tasks that are handling room list requests for each space,
+    // along with a sender to send `SpaceRoomListRequest`s to those tasks.
+    let mut space_room_list_tasks = HashMap::new();
+    // A closure to make it easier to use/spawn a `space_room_list_loop` task.
+    let get_or_spawn_space_room_list = async |
+        space_room_list_tasks: &mut HashMap<OwnedRoomId, (UnboundedSender<SpaceRoomListRequest>, JoinHandle<()>)>,
+        space_id: &OwnedRoomId,
+    | -> UnboundedSender<SpaceRoomListRequest> {
+        match space_room_list_tasks.entry(space_id.clone()) {
+            Entry::Occupied(occ) => occ.get().0.clone(),
+            Entry::Vacant(vac) => {
+                let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<SpaceRoomListRequest>();
+                let srl = space_service.space_room_list(space_id.clone()).await;
+                let join_handle = Handle::current().spawn(space_room_list_loop(space_id.clone(), receiver, srl));
+                vac.insert((sender, join_handle))
+                    .0.clone()
+            }
+        }
+    };
+
     // Get the set of top-level (root) spaces that the user has joined.
-    let (initial_spaces, spaces_diff_stream) = space_service.subscribe_to_joined_spaces().await;
+    let (initial_spaces, mut spaces_diff_stream) = space_service.subscribe_to_joined_spaces().await;
     for space in &initial_spaces {
         add_new_space(space, &client).await;
     }
     let mut all_joined_spaces: Vector<SpaceRoom> = initial_spaces;
     if LOG_SPACE_SERVICE_DIFFS { log!("space_service: initial set: {all_joined_spaces:?}"); }
 
-    pin_mut!(spaces_diff_stream);
-    while let Some(batch) = spaces_diff_stream.next().await {
-        let mut peekable_diffs = batch.into_iter().peekable();
-        while let Some(diff) = peekable_diffs.next() {
-            match diff {
-                VectorDiff::Append { values: new_spaces } => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Append {}", new_spaces.len()); }
-                    for new_space in new_spaces {
-                        add_new_space(&new_space, &client).await;
-                        all_joined_spaces.push_back(new_space);
+
+    loop { tokio::select! {
+        // Handle new space requests.
+        request_opt = receiver.recv() => {
+            let Some(request) = request_opt else { break };
+            match request {
+                SpaceRequest::GetRooms { space_id } => {
+                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id).await;
+                    if sender.send(SpaceRoomListRequest::GetRooms).is_err() {
+                        error!("BUG: failed to send GetRooms request to space room list loop for space {space_id}");
                     }
                 }
-                VectorDiff::Clear => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Clear"); }
-                    all_joined_spaces.clear();
-                    enqueue_spaces_list_update(SpacesListUpdate::ClearSpaces);
+                SpaceRequest::SubscribeToSpaceRoomList { space_id } => {
+                    let _sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id).await;
                 }
-                VectorDiff::PushFront { value: new_space } => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PushFront"); }
-                    add_new_space(&new_space, &client).await;
-                    all_joined_spaces.push_front(new_space);
-                }
-                VectorDiff::PushBack { value: new_space } => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PushBack"); }
-                    add_new_space(&new_space, &client).await;
-                    all_joined_spaces.push_back(new_space);
-                }
-                remove_diff @ VectorDiff::PopFront => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PopFront"); }
-                    if let Some(space) = all_joined_spaces.pop_front() {
-                        optimize_remove_then_add_into_update(
-                            remove_diff,
-                            space,
-                            &mut peekable_diffs,
-                            &mut all_joined_spaces,
-                            &client,
-                        ).await;
+                SpaceRequest::PaginateSpaceRoomList { space_id } => {
+                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id).await;
+                    if sender.send(SpaceRoomListRequest::Paginate).is_err() {
+                        error!("BUG: failed to send paginate request to space room list loop for space {space_id}");
                     }
                 }
-                remove_diff @ VectorDiff::PopBack => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PopBack"); }
-                    if let Some(space) = all_joined_spaces.pop_back() {
-                        optimize_remove_then_add_into_update(
-                            remove_diff,
-                            space,
-                            &mut peekable_diffs,
-                            &mut all_joined_spaces,
-                            &client,
-                        ).await;
+                SpaceRequest::UnsubscribeFromSpaceRoomList { space_id } => {
+                    if let Some((sender, join_handle)) = space_room_list_tasks.remove(&space_id) {
+                        let _ = sender.send(SpaceRoomListRequest::Shutdown);
+                        let _ = join_handle.await;
                     }
-                }
-                VectorDiff::Insert { index, value: new_space } => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Insert at {index}"); }
-                    add_new_space(&new_space, &client).await;
-                    all_joined_spaces.insert(index, new_space);
-                }
-                VectorDiff::Set { index, value: changed_space } => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Set at {index}"); }
-                    if let Some(old_space) = all_joined_spaces.get(index) {
-                        update_space(old_space, &changed_space, &client).await;
-                    } else {
-                        error!("BUG: space_service diff: Set index {index} was out of bounds.");
-                    }
-                    all_joined_spaces.set(index, changed_space);
-                }
-                remove_diff @ VectorDiff::Remove { index: remove_index } => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Remove at {remove_index}"); }
-                    if remove_index < all_joined_spaces.len() {
-                        let space = all_joined_spaces.remove(remove_index);
-                        optimize_remove_then_add_into_update(
-                            remove_diff,
-                            space,
-                            &mut peekable_diffs,
-                            &mut all_joined_spaces,
-                            &client,
-                        ).await;
-                    } else {
-                        error!("BUG: space_service: diff Remove index {remove_index} out of bounds, len {}", all_joined_spaces.len());
-                    }
-                }
-                VectorDiff::Truncate { length } => {
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Truncate to {length}"); }
-                    // Iterate manually so we can know which spaces are being removed.
-                    while all_joined_spaces.len() > length {
-                        if let Some(space) = all_joined_spaces.pop_back() {
-                            remove_space(&space);
-                        }
-                    }
-                    all_joined_spaces.truncate(length); // sanity check
-                }
-                VectorDiff::Reset { values: new_spaces } => {
-                    // We implement this by clearing all spaces and then adding back the new values.
-                    if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Reset, old length {}, new length {}", all_joined_spaces.len(), new_spaces.len()); }
-                    // Iterate manually so we can know which spaces are being removed.
-                    while let Some(space) = all_joined_spaces.pop_back() {
-                        remove_space(&space);
-                    }
-                    enqueue_spaces_list_update(SpacesListUpdate::ClearSpaces);
-                    for new_space in &new_spaces {
-                        add_new_space(new_space, &client).await;
-                    }
-                    all_joined_spaces = new_spaces;
                 }
             }
         }
-        if LOG_SPACE_SERVICE_DIFFS { log!("space_service: after batch diff: {all_joined_spaces:?}"); }
-    }
+
+        // Handle updates to the list of spaces.
+        batch_opt = spaces_diff_stream.next() => {
+            let Some(batch) = batch_opt else { break };
+            let mut peekable_diffs = batch.into_iter().peekable();
+            while let Some(diff) = peekable_diffs.next() {
+                match diff {
+                    VectorDiff::Append { values: new_spaces } => {
+                        if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Append {}", new_spaces.len()); }
+                        for new_space in new_spaces {
+                            add_new_space(&new_space, &client).await;
+                            all_joined_spaces.push_back(new_space);
+                        }
+                    }
+                    VectorDiff::Clear => {
+                        if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Clear"); }
+                        all_joined_spaces.clear();
+                        enqueue_spaces_list_update(SpacesListUpdate::ClearSpaces);
+                    }
+                    VectorDiff::PushFront { value: new_space } => {
+                        if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PushFront"); }
+                        add_new_space(&new_space, &client).await;
+                        all_joined_spaces.push_front(new_space);
+                    }
+                    VectorDiff::PushBack { value: new_space } => {
+                        if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PushBack"); }
+                        add_new_space(&new_space, &client).await;
+                        all_joined_spaces.push_back(new_space);
+                    }
+                    remove_diff @ VectorDiff::PopFront => {
+                        if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PopFront"); }
+                        if let Some(space) = all_joined_spaces.pop_front() {
+                            optimize_remove_then_add_into_update(
+                                remove_diff,
+                                space,
+                                &mut peekable_diffs,
+                                &mut all_joined_spaces,
+                                &client,
+                            ).await;
+                        }
+                    }
+                    remove_diff @ VectorDiff::PopBack => {
+                        if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PopBack"); }
+                        if let Some(space) = all_joined_spaces.pop_back() {
+                            optimize_remove_then_add_into_update(
+                                remove_diff,
+                                space,
+                                &mut peekable_diffs,
+                                &mut all_joined_spaces,
+                                &client,
+                            ).await;
+                        }
+                    }
+                    VectorDiff::Insert { index, value: new_space } => {
+                        if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Insert at {index}"); }
+                        add_new_space(&new_space, &client).await;
+                        all_joined_spaces.insert(index, new_space);
+                    }
+                    VectorDiff::Set { index, value: changed_space } => {
+                        if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Set at {index}"); }
+                        if let Some(old_space) = all_joined_spaces.get(index) {
+                            update_space(old_space, &changed_space, &client).await;
+                        } else {
+                            error!("BUG: space_service diff: Set index {index} was out of bounds.");
+                        }
+                        all_joined_spaces.set(index, changed_space);
+                    }
+                    remove_diff @ VectorDiff::Remove { index: remove_index } => {
+                        if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Remove at {remove_index}"); }
+                        if remove_index < all_joined_spaces.len() {
+                            let space = all_joined_spaces.remove(remove_index);
+                            optimize_remove_then_add_into_update(
+                                remove_diff,
+                                space,
+                                &mut peekable_diffs,
+                                &mut all_joined_spaces,
+                                &client,
+                            ).await;
+                        } else {
+                            error!("BUG: space_service: diff Remove index {remove_index} out of bounds, len {}", all_joined_spaces.len());
+                        }
+                    }
+                    VectorDiff::Truncate { length } => {
+                        if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Truncate to {length}"); }
+                        // Iterate manually so we can know which spaces are being removed.
+                        while all_joined_spaces.len() > length {
+                            if let Some(space) = all_joined_spaces.pop_back() {
+                                remove_space(&space);
+                            }
+                        }
+                        all_joined_spaces.truncate(length); // sanity check
+                    }
+                    VectorDiff::Reset { values: new_spaces } => {
+                        // We implement this by clearing all spaces and then adding back the new values.
+                        if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Reset, old length {}, new length {}", all_joined_spaces.len(), new_spaces.len()); }
+                        // Iterate manually so we can know which spaces are being removed.
+                        while let Some(space) = all_joined_spaces.pop_back() {
+                            remove_space(&space);
+                        }
+                        enqueue_spaces_list_update(SpacesListUpdate::ClearSpaces);
+                        for new_space in &new_spaces {
+                            add_new_space(new_space, &client).await;
+                        }
+                        all_joined_spaces = new_spaces;
+                    }
+                }
+            }
+            if LOG_SPACE_SERVICE_DIFFS { log!("space_service: after batch diff: {all_joined_spaces:?}"); }
+        }
+
+        else => {
+            break;
+        }
+    } }
 
     anyhow::bail!("Space service sync loop ended unexpectedly")
 }
@@ -391,4 +484,103 @@ async fn fetch_space_avatar(url: OwnedMxcUri, client: &Client) -> matrix_sdk::Re
         .get_media_content(&request, true)
         .await
         .map(|img_data| FetchedRoomAvatar::Image(img_data.into()))
+}
+
+
+
+/// A loop that listens for changes to the set of rooms in a given space.
+async fn space_room_list_loop(
+    space_id: OwnedRoomId,
+    mut receiver: UnboundedReceiver<SpaceRoomListRequest>,
+    space_room_list: SpaceRoomList,
+) {
+    // Define a closure that calls `paginate()` and handles broadcasting the result.
+    let paginate_once = async || match space_room_list.paginate().await {
+        Ok(()) => {
+            Cx::post_action(SpaceRoomListAction::PaginationState {
+                space_id: space_id.clone(),
+                state: space_room_list.pagination_state(),
+            });
+        }
+        Err(error) => Cx::post_action(SpaceRoomListAction::PaginationError {
+            space_id: space_id.clone(),
+            error,
+        }),
+    };
+
+
+    // First, we paginate the space once to get at least *some* child rooms.    
+    paginate_once().await;
+
+    let (mut all_rooms_in_space, mut room_stream) = space_room_list.subscribe_to_room_updates();
+
+    loop { tokio::select! {
+        // Handle new requests.
+        request_opt = receiver.recv() => {
+            let Some(request) = request_opt else { break };
+            match request {
+                SpaceRoomListRequest::GetRooms => {
+                    Cx::post_action(SpaceRoomListAction::UpdatedRooms {
+                        space_id: space_id.clone(),
+                        direct_children: all_rooms_in_space.clone(),
+                    });
+                }
+                SpaceRoomListRequest::Paginate => paginate_once().await,
+                SpaceRoomListRequest::Shutdown => return,
+            }
+        }
+
+        // Handle updates to the list of rooms in this space.
+        batch_opt = room_stream.next() => {
+            let Some(batch) = batch_opt else { break };
+            for diff in batch {
+                diff.apply(&mut all_rooms_in_space);
+            }
+            Cx::post_action(SpaceRoomListAction::UpdatedRooms {
+                space_id: space_id.clone(),
+                direct_children: all_rooms_in_space.clone(),
+            });
+        }
+    } }
+}
+
+
+/// Actions emitted from the SpaceRoomList for a given space.
+pub enum SpaceRoomListAction {
+    UpdatedRooms {
+        space_id: OwnedRoomId,
+        direct_children: Vector<SpaceRoom>,
+    },
+    PaginationState {
+        space_id: OwnedRoomId,
+        state: SpaceRoomListPaginationState,
+    },
+    PaginationError {
+        space_id: OwnedRoomId,
+        error: matrix_sdk::Error,
+    },
+}
+impl std::fmt::Debug for SpaceRoomListAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SpaceRoomListAction::UpdatedRooms { space_id, direct_children } => {
+                f.debug_struct("SpaceRoomListAction::UpdatedRooms")
+                    .field("space_id", space_id)
+                    .field("direct_children_len", &direct_children.len())
+                    .finish()
+            }
+            SpaceRoomListAction::PaginationState { space_id, state } => {
+                f.debug_struct("SpaceRoomListAction::PaginationState")
+                    .field("space_id", space_id)
+                    .field("state", state)
+                    .finish()
+            }
+            SpaceRoomListAction::PaginationError { space_id, error } => {
+                f.debug_struct("SpaceRoomListAction::PaginationError")
+                    .field("space_id", space_id)
+                    .field("error", error)
+                    .finish()
+            }
+        }
+    }
 }

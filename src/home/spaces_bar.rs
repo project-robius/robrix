@@ -23,11 +23,7 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
-    use crate::shared::verification_badge::*;
     use crate::shared::avatar::*;
-
-    ICON_HOME = dep("crate://self/resources/icons/home.svg")
-    ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
 
     // The duration of the animation when showing/hiding the SpacesBar (in Mobile view mode only).
     pub SPACES_BAR_ANIMATION_DURATION_SECS = 0.25
