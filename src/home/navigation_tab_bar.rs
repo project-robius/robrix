@@ -39,7 +39,7 @@ use crate::{
         user_profile_cache::{self, UserProfileUpdate},
     }, shared::{
         avatar::AvatarWidgetExt,
-        callout_tooltip::{CalloutTooltipOptions, TooltipAction},
+        callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition},
         styles::*,
         verification_badge::VerificationBadgeWidgetExt,
     }, sliding_sync::current_user_id, utils
@@ -367,15 +367,21 @@ impl Widget for ProfileIcon {
                     || format!("Not logged in.\n\n{}", verification_str),
                     |p| format!("Logged in as \"{}\".\n\n{}", p.displayable_name(), verification_str)
                 );
-                let rect = area.rect(cx);
+                let mut options = CalloutTooltipOptions {
+                    position: if cx.display_context.is_desktop() { TooltipPosition::Right} else { TooltipPosition::Top},
+                    ..Default::default()
+                };
+                if let Some(c) = bg_color {
+                    options.bg_color = c;
+                }
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    TooltipAction::HoverIn(text, CalloutTooltipOptions {
-                        widget_rect: rect,
-                        bg_color,
-                        ..Default::default()
-                    }),
+                    TooltipAction::HoverIn {
+                        text,
+                        widget_rect: area.rect(cx),
+                        options,
+                    },
                 );
             }
             Hit::FingerHoverOut(_) => {

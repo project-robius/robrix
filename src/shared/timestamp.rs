@@ -63,11 +63,14 @@ impl Widget for Timestamp {
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
-                TooltipAction::HoverIn(self.dt.format(locale_extended_fmt_en_us).to_string(), CalloutTooltipOptions {
+                TooltipAction::HoverIn {
+                    text: self.dt.format(locale_extended_fmt_en_us).to_string(),
                     widget_rect: area.rect(cx),
-                    position: TooltipPosition::Left,
-                    ..Default::default()
-                })
+                    options: CalloutTooltipOptions {
+                        position: TooltipPosition::Right,
+                        ..Default::default()
+                    },
+                },
             );
         }
     }

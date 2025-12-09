@@ -606,9 +606,8 @@ impl Widget for RoomScreen {
                 let reaction_list = wr.reaction_list(ids!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
                     widget_rect,
-                    bg_color,
                     reaction_data,
-                } = reaction_list.hover_in(actions) {
+                } = reaction_list.hovered_in(actions) {
                     let Some(_tl_state) = self.tl_state.as_ref() else { continue };
                     let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
                         user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
@@ -620,25 +619,28 @@ impl Widget for RoomScreen {
                     cx.widget_action(
                         room_screen_widget_uid,
                         &scope.path,
-                        TooltipAction::HoverIn(tooltip_text, CalloutTooltipOptions{
+                        TooltipAction::HoverIn {
+                            text: tooltip_text,
                             widget_rect,
-                            bg_color,
-                            position: TooltipPosition::Bottom,
-                            ..Default::default()
-                        })
+                            options: CalloutTooltipOptions {
+                                position: TooltipPosition::Bottom,
+                                ..Default::default()
+                            },
+                        },
                     );
                 }
-                if reaction_list.hover_out(actions) {
+
+                if reaction_list.hovered_out(actions) {
                     cx.widget_action(
                         room_screen_widget_uid,
                         &scope.path,
-                        TooltipAction::HoverOut
+                        TooltipAction::HoverOut,
                     );
                 }
+
                 let avatar_row_ref = wr.avatar_row(ids!(avatar_row));
                 if let RoomScreenTooltipActions::HoverInReadReceipt {
                     widget_rect,
-                    bg_color,
                     read_receipts
                 } = avatar_row_ref.hover_in(actions) {
                     let Some(room_id) = &self.room_id else { return; };
@@ -646,14 +648,17 @@ impl Widget for RoomScreen {
                     cx.widget_action(
                         room_screen_widget_uid,
                         &scope.path,
-                        TooltipAction::HoverIn(tooltip_text, CalloutTooltipOptions {
+                        TooltipAction::HoverIn {
+                            text: tooltip_text,
                             widget_rect,
-                            bg_color,
-                            position: TooltipPosition::Bottom,
-                            ..Default::default()
-                        })
+                            options: CalloutTooltipOptions {
+                                position: TooltipPosition::Left,
+                                ..Default::default()
+                            },
+                        },
                     );
                 }
+
                 if avatar_row_ref.hover_out(actions) {
                     cx.widget_action(
                         room_screen_widget_uid,
@@ -2320,18 +2325,14 @@ pub enum RoomScreenTooltipActions {
     HoverInReadReceipt {
         /// The rect of the moused over widget
         widget_rect: Rect,
-        /// Color of the background, default is black
-        bg_color: Option<Vec4>,
         /// Includes the list of users who have seen this event
         read_receipts: indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>,
     },
     /// Mouse over event when the mouse is over the reaction button.
     HoverInReactionButton {
-        /// The rect of the moused over widget
+        /// The rectangle (bounds) of the hovered-over widget.
         widget_rect: Rect,
-        /// Color of the background, default is black
-        bg_color: Option<Vec4>,
-        /// Includes the list of users who have reacted to the emoji
+        /// Includes the list of users who have reacted to the emoji.
         reaction_data: ReactionData,
     },
     /// Mouse out event and clear tooltip.

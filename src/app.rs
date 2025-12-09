@@ -342,7 +342,7 @@ impl MatchEvent for App {
 
             // Handle actions for showing or hiding the tooltip.
             match action.as_widget_action().cast() {
-                TooltipAction::HoverIn(text, callout_tooltip_options) => {
+                TooltipAction::HoverIn { text, widget_rect, options } => {
                     // Don't show any tooltips if the message context menu is currently shown.
                     if self.ui.new_message_context_menu(ids!(new_message_context_menu)).is_currently_shown(cx) {
                         self.ui.callout_tooltip(ids!(app_tooltip)).hide(cx);
@@ -351,7 +351,8 @@ impl MatchEvent for App {
                         self.ui.callout_tooltip(ids!(app_tooltip)).show_with_options(
                             cx,
                             &text,
-                            callout_tooltip_options,
+                            widget_rect,
+                            options,
                         );
                     }
                     continue;

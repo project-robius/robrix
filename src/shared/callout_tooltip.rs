@@ -114,49 +114,56 @@ live_design! {
             }
         }
     }
+
     pub CalloutTooltip = {{CalloutTooltip}} {
         tooltip = <CalloutTooltipInner> { }
     }
 }
 
-#[derive(Clone, Debug, Default)]
-/// A struct that holds the options for a callout tooltip
+/// Options that affect how a CalloutTooltip is displayed.
+///
+/// You don't have to specify all values, they each have a sensible default.
+#[derive(Clone, Debug)]
 pub struct CalloutTooltipOptions {
-    /// The screen_size of the widget that the tooltip is pointing to
-    pub widget_rect: Rect,
-    /// The color of the tooltip text.
-    pub text_color: Option<Vec4>,
-    /// The background color of the tooltip.
-    pub bg_color: Option<Vec4>,
-    /// Specify Tooltip position, otherwise the tooltip position will be calculated automatically. Displaying on the right will be priority.
+    /// The color of the tooltip text. Defaults to pure white: #FFFFFF.
+    pub text_color: Vec4,
+    /// The background color of the tooltip. Defaults to dark gray: #424C54.
+    pub bg_color: Vec4,
+    /// The position of the tooltip relative to the widget that it's related to.
     pub position: TooltipPosition,
-    /// The height of the triangle in the callout pointer.
-    pub triangle_height: Option<f64>,
+    /// The height/length of the callout triangle that points to the related widget.
+    pub triangle_height: f64,
+}
+impl Default for CalloutTooltipOptions {
+    fn default() -> Self {
+        Self {
+            text_color: vec4(1.0, 1.0, 1.0, 1.0),
+            bg_color: vec4(0.26, 0.30, 0.333, 1.0),
+            position: TooltipPosition::default(),
+            triangle_height: 7.5,
+        }
+    }
 }
 
-/// The direction of the tooltip
+/// The location of the tooltip with respect to its target widget.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum TooltipPosition {
-    /// Above the target widget.
+    /// The tooltip will be drawn above the target widget.
     Top,
-    /// Below the target widget.
+    /// The tooltip will be drawn below the target widget.
     Bottom,
-    /// To the left of the target widget.
+    /// The tooltip will be drawn to the left of the target widget.
     Left,
-    /// To the right of the target widget.
-    #[default]
-    Right,
+    /// (Default) The tooltip will be drawn to the right of the target widget.
+    #[default] Right,
 }
 
 /// A tooltip widget that a callout pointing towards the referenced widget.
 #[derive(Live, LiveHook, Widget)]
 pub struct CalloutTooltip {
-    #[deref]
-    view: View,
+    #[deref] view: View,
 }
 
-// The default height of the triangle in the callout pointer.
-const TRIANGLE_HEIGHT: f64 = 7.5;
 
 #[derive(Debug)]
 struct PositionCalculation {
@@ -180,16 +187,17 @@ impl CalloutTooltip {
     /// Calculate tooltip position and layout parameters for a given position
     fn calculate_position(
         options: &CalloutTooltipOptions,
+        widget_rect: Rect,
         expected_dimension: DVec2,
         screen_size: DVec2,
         triangle_height: f64,
     ) -> PositionCalculation {
-        let pos = options.widget_rect.pos;
-        let size = options.widget_rect.size;
+        let pos = widget_rect.pos;
+        let size = widget_rect.size;
         let mut tooltip_pos = DVec2 {
             x: min(pos.x, screen_size.x - expected_dimension.x),
             y: min(
-                pos.y + options.widget_rect.size.y,
+                pos.y + widget_rect.size.y,
                 screen_size.y - expected_dimension.y,
             ),
         };
@@ -199,30 +207,30 @@ impl CalloutTooltip {
 
         match options.position {
             TooltipPosition::Top => {
-                tooltip_pos.y = options.widget_rect.pos.y - max(expected_dimension.y, size.y);
+                tooltip_pos.y = widget_rect.pos.y - max(expected_dimension.y, size.y);
                 callout_position = 180.0;
             }
             TooltipPosition::Bottom => {
                 if tooltip_pos.y == screen_size.y - expected_dimension.y {
-                    tooltip_pos.y = options.widget_rect.pos.y - max(expected_dimension.y, size.y);
+                    tooltip_pos.y = widget_rect.pos.y - max(expected_dimension.y, size.y);
                     callout_position = 180.0;
                 } else {
-                    tooltip_pos.y = options.widget_rect.pos.y + options.widget_rect.size.y;
+                    tooltip_pos.y = widget_rect.pos.y + widget_rect.size.y;
                 }
             }
             TooltipPosition::Left => {
-                tooltip_pos.x = options.widget_rect.pos.x
-                    - max(expected_dimension.x, options.widget_rect.size.x)
+                tooltip_pos.x = widget_rect.pos.x
+                    - max(expected_dimension.x, widget_rect.size.x)
                     - triangle_height;
-                tooltip_pos.y = options.widget_rect.pos.y
-                    + 0.5 * (options.widget_rect.size.y - max(expected_dimension.y, options.widget_rect.size.y));
+                tooltip_pos.y = widget_rect.pos.y
+                    + 0.5 * (widget_rect.size.y - max(expected_dimension.y, widget_rect.size.y));
                 callout_position = 90.0;
             }
             TooltipPosition::Right => {
-                tooltip_pos.x = options.widget_rect.pos.x + options.widget_rect.size.x;
-                tooltip_pos.y = options.widget_rect.pos.y + 0.5 * options.widget_rect.size.y - expected_dimension.y * 0.5;
+                tooltip_pos.x = widget_rect.pos.x + widget_rect.size.x;
+                tooltip_pos.y = widget_rect.pos.y + 0.5 * widget_rect.size.y - expected_dimension.y * 0.5;
                 width_to_be_fixed = max(
-                    screen_size.x - (pos.x + options.widget_rect.size.x + triangle_height * 2.0),
+                    screen_size.x - (pos.x + widget_rect.size.x + triangle_height * 2.0),
                     expected_dimension.x,
                 );
                 callout_position = 270.0;
@@ -236,7 +244,7 @@ impl CalloutTooltip {
             &mut width_to_be_fixed,
             screen_size,
             expected_dimension,
-            &options.widget_rect,
+            widget_rect,
             triangle_height,
         );
 
@@ -261,7 +269,7 @@ impl CalloutTooltip {
         width_to_be_fixed: &mut f64,
         screen_size: DVec2,
         expected_dimension: DVec2,
-        widget_rect: &Rect,
+        widget_rect: Rect,
         triangle_height: f64,
     ) {
         match position {
@@ -328,9 +336,7 @@ impl CalloutTooltip {
                 }),
             );
         } else {
-            tooltip.apply_over(
-                cx,
-                live!(
+            tooltip.apply_over(cx, live!(
                 content: {
                     margin: { left: (tooltip_pos.x), top: (tooltip_pos.y) },
                     rounded_view = {
@@ -349,10 +355,11 @@ impl CalloutTooltip {
                             draw_text: { color: (text_color) }
                         }
                     }
-                }),
-            );
+                }
+            ));
         }
     }
+
     /// Shows a tooltip with the given text and options.
     ///
     /// The tooltip comes with a callout pointing to its target.
@@ -361,32 +368,39 @@ impl CalloutTooltip {
     ///
     /// If the widget is too close to the edge of the window, the tooltip is positioned
     /// to avoid being cut off, with automatic fallback to opposite directions.
-    pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, options: CalloutTooltipOptions) {
+    pub fn show_with_options(
+        &mut self,
+        cx: &mut Cx,
+        text: &str,
+        widget_rect: Rect,
+        options: CalloutTooltipOptions,
+    ) {
         let mut tooltip = self.view.tooltip(ids!(tooltip));
         tooltip.set_text(cx, &pad_last_line(text));
 
         let expected_dimension = tooltip.view(ids!(rounded_view)).area().rect(cx).size;
         let screen_size = tooltip.area().rect(cx).size;
-        let triangle_height = options.triangle_height.unwrap_or(TRIANGLE_HEIGHT);
-        
-        let position_calc = Self::calculate_position(&options, expected_dimension, screen_size, triangle_height);
-        
+        let position_calc = Self::calculate_position(
+            &options,
+            widget_rect,
+            expected_dimension,
+            screen_size,
+            options.triangle_height,
+        );
+
         let target = vec2(
-            options.widget_rect.pos.x as f32,
-            options.widget_rect.pos.y as f32,
+            widget_rect.pos.x as f32,
+            widget_rect.pos.y as f32,
         );
         let target_size = vec2(
-            options.widget_rect.size.x as f32,
-            options.widget_rect.size.y as f32,
+            widget_rect.size.x as f32,
+            widget_rect.size.y as f32,
         );
-        
-        let mut text_color = options.text_color.unwrap_or(vec4(1.0, 1.0, 1.0, 1.0));
+
+        let mut text_color = options.text_color;
         if expected_dimension.x == 0.0 {
             text_color.w = 0.0;
-        } else {
-            text_color.w = 1.0;
         }
-        let bg_color = options.bg_color.unwrap_or(vec4(0.26, 0.30, 0.333, 1.0));
 
         Self::apply_tooltip_config(
             &mut tooltip,
@@ -395,11 +409,10 @@ impl CalloutTooltip {
             target,
             target_size,
             expected_dimension,
-            triangle_height,
+            options.triangle_height,
             text_color,
-            bg_color,
+            options.bg_color,
         );
-        
         tooltip.show(cx);
     }
 
@@ -416,9 +429,15 @@ impl CalloutTooltip {
 
 impl CalloutTooltipRef {
     /// See [`CalloutTooltip::show_with_options()`].
-    pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, options: CalloutTooltipOptions) {
+    pub fn show_with_options(
+        &mut self,
+        cx: &mut Cx,
+        text: &str,
+        widget_rect: Rect,
+        options: CalloutTooltipOptions,
+    ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_with_options(cx, text, options);
+            inner.show_with_options(cx, text, widget_rect, options);
         }
     }
     /// See [`CalloutTooltip::show()`].
@@ -435,11 +454,17 @@ impl CalloutTooltipRef {
     }
 }
 
-/// An action emitted to show or hide the `tooltip`.
+/// Actions that can be emitted from anywhere to show or hide the `tooltip`.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum TooltipAction {
-    /// Show the tooltip with tooltip text and options.
-    HoverIn(String, CalloutTooltipOptions),
+    /// Show the tooltip with the given text and options.
+    HoverIn {
+        text: String,
+        /// The location of the widget that the tooltip is positioned relative to.
+        widget_rect: Rect,
+        options: CalloutTooltipOptions,
+    },
+    /// Hide the tooltip.
     HoverOut,
     None,
 }
