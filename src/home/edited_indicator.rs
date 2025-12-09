@@ -11,7 +11,7 @@ use chrono::{DateTime, Local};
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::EventTimelineItem;
 
-use crate::{shared::callout_tooltip::{CalloutTooltipOptions, TooltipAction}, utils::unix_time_millis_to_datetime};
+use crate::{shared::callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, utils::unix_time_millis_to_datetime};
 
 live_design! {
     use link::theme::*;
@@ -84,10 +84,14 @@ impl Widget for EditedIndicator {
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
-                TooltipAction::HoverIn(text, CalloutTooltipOptions {
+                TooltipAction::HoverIn {
+                    text,
                     widget_rect: area.rect(cx),
-                    ..Default::default()
-                }),
+                    options: CalloutTooltipOptions {
+                        position: TooltipPosition::Right,
+                        ..Default::default()
+                    }
+                },
             );
         }
     }

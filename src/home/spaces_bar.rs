@@ -274,15 +274,18 @@ impl Widget for SpacesBarEntry {
             cx.widget_action(
                 this.widget_uid(),
                 &scope.path,
-                TooltipAction::HoverIn(this.space_name.clone(), CalloutTooltipOptions {
+                TooltipAction::HoverIn {
+                    text: this.space_name.clone(),
                     widget_rect: area.rect(cx),
-                    position: if !is_desktop {
-                        TooltipPosition::Top
-                    } else {
-                        TooltipPosition::Bottom
+                    options: CalloutTooltipOptions {
+                        position: if is_desktop {
+                            TooltipPosition::Right
+                        } else {
+                            TooltipPosition::Top
+                        },
+                        ..Default::default()
                     },
-                    ..Default::default()
-                }),
+                },
             );
         };
 
