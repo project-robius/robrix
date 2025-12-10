@@ -428,7 +428,15 @@ impl Widget for MentionableTextInput {
                 if key_event.key_code == KeyCode::Escape {
                     self.cancel_active_search();
                     self.search_state = MentionSearchState::JustCancelled;
-                    self.close_mention_popup(cx);
+
+                    // UI cleanup only - do NOT call close_mention_popup() as it resets
+                    // state to Idle via reset_search_state(), losing the JustCancelled marker
+                    let popup = self.cmd_text_input.view(ids!(popup));
+                    popup.set_visible(cx, false);
+                    self.cmd_text_input.clear_items();
+                    self.loading_indicator_ref = None; // Clear loading indicator
+                    self.pending_popup_cleanup = false; // Prevent next frame from triggering cleanup
+
                     self.redraw(cx);
                     return; // Don't process other events
                 }
@@ -547,14 +555,6 @@ impl Widget for MentionableTextInput {
                                 continue;
                             }
 
-                            log!(
-                                "MentionableTextInput: RoomMembersLoaded room={} sync_in_progress={} has_members={} is_searching={}",
-                                room_id,
-                                sync_in_progress,
-                                has_members,
-                                self.is_searching()
-                            );
-
                             // CRITICAL: Use locally stored previous state for change detection
                             // (not from props, which is already the new state in the same frame)
                             let previous_member_count = self.last_member_count;
@@ -578,6 +578,12 @@ impl Widget for MentionableTextInput {
                             self.last_member_count = current_member_count;
                             self.last_sync_pending = current_sync_pending;
 
+                            // Skip processing if search was cancelled by ESC
+                            // This prevents async callbacks from reopening the popup
+                            if matches!(self.search_state, MentionSearchState::JustCancelled) {
+                                continue;
+                            }
+
                             if *has_members {
                                 // CRITICAL FIX: Use saved state instead of reading from text input
                                 // Reading from text input causes race condition (text may be empty when members arrive)
@@ -598,27 +604,15 @@ impl Widget for MentionableTextInput {
                                         && matches!(self.search_state, MentionSearchState::Searching { .. });
 
                                     if is_waiting {
-                                        log!("  → Members loaded, resuming search with saved text='{}'", search_text);
                                         self.last_search_text = None;
                                         self.update_user_list(cx, &search_text, scope);
                                     } else {
                                         // Already in Searching state
                                         // Check if remote sync just completed or member set changed - need to re-search with full member list
-                                        if member_set_updated {
-                                            log!(
-                                                "  → Member list changed ({} -> {}), restarting search with text='{}'",
-                                                previous_member_count,
-                                                current_member_count,
-                                                search_text
-                                            );
-                                            self.last_search_text = None;
-                                            self.update_user_list(cx, &search_text, scope);
-                                        } else if sync_just_completed {
-                                            log!("  → Remote sync completed while searching, re-searching with full member list, text='{}'", search_text);
+                                        if member_set_updated || sync_just_completed {
                                             self.last_search_text = None;
                                             self.update_user_list(cx, &search_text, scope);
                                         } else {
-                                            log!("  → Already searching, updating UI with search_text='{}'", search_text);
                                             self.update_ui_with_results(cx, scope, &search_text);
                                         }
                                     }
@@ -626,24 +620,16 @@ impl Widget for MentionableTextInput {
                                     // Not in WaitingForMembers or Searching state
                                     // Check if remote sync just completed - if so, refresh UI if there's an active mention trigger
                                     if sync_just_completed {
-                                        log!("  → Remote sync just completed while not searching, checking for active mention trigger");
-                                        // Check if there's currently an active mention trigger in the text
                                         let text = self.cmd_text_input.text_input_ref().text();
                                         let cursor_pos = self.cmd_text_input.text_input_ref()
                                             .borrow()
                                             .map_or(0, |p| p.cursor().index);
 
                                         if let Some(_trigger_pos) = self.find_mention_trigger_position(&text, cursor_pos) {
-                                            // Extract search text and refresh UI
                                             let search_text = self.cmd_text_input.search_text().to_lowercase();
-                                            log!("  → Found active mention trigger, refreshing with text='{}'", search_text);
                                             self.last_search_text = None;
                                             self.update_user_list(cx, &search_text, scope);
-                                        } else {
-                                            log!("  → No active mention trigger found, sync complete");
                                         }
-                                    } else {
-                                        log!("  → Not in searching state, ignoring member load");
                                     }
                                 }
                             } else if self.is_searching() {
@@ -1354,8 +1340,6 @@ impl MentionableTextInput {
         // IMPORTANT: Don't call show_loading_indicator here as it calls clear_items()
         // which would remove the user list we just added
         if room_props.room_members_sync_pending {
-            log!("Remote sync still pending, adding loading indicator after partial results");
-
             // Add loading indicator widget without clearing existing items
             if let Some(ptr) = self.loading_indicator {
                 let loading_item = WidgetRef::new_from_ptr(cx, Some(ptr));
@@ -1386,13 +1370,6 @@ impl MentionableTextInput {
             .props
             .get::<RoomScreenProps>()
             .expect("RoomScreenProps should be available in scope for MentionableTextInput");
-
-        let has_members_in_props = room_props.room_members
-            .as_ref()
-            .is_some_and(|m| !m.is_empty());
-
-        log!("update_user_list: search_text='{}' has_members_in_props={} search_state={:?}",
-             search_text, has_members_in_props, self.search_state);
 
         // Get trigger position from current state (if in searching mode)
         let trigger_pos = match &self.search_state {
@@ -1725,8 +1702,16 @@ impl MentionableTextInput {
     }
 
     fn cancel_active_search(&mut self) {
-        if let MentionSearchState::Searching { cancel_token, .. } = &self.search_state {
-            cancel_token.store(true, Ordering::Relaxed);
+        match &self.search_state {
+            MentionSearchState::Searching { cancel_token, .. } => {
+                cancel_token.store(true, Ordering::Relaxed);
+            }
+            MentionSearchState::WaitingForMembers { .. } => {
+                // WaitingForMembers has no cancel_token, but we need to mark as cancelled.
+                // The state will be set to JustCancelled by the caller, which prevents
+                // RoomMembersLoaded from reopening the popup.
+            }
+            _ => {}
         }
         self.search_results_pending = false;
     }

@@ -2396,11 +2396,6 @@ async fn update_room(
             if old_room.num_unread_messages != new_room.num_unread_messages
                 || old_room.num_unread_mentions != new_room.num_unread_mentions
             {
-                log!("Updating room {}, unread messages {} --> {}, unread mentions {} --> {}",
-                    new_room_id,
-                    old_room.num_unread_messages, new_room.num_unread_messages,
-                    old_room.num_unread_mentions, new_room.num_unread_mentions,
-                );
                 enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                     room_id: new_room_id.clone(),
                     unread_messages: UnreadMessageCount::Known(new_room.num_unread_messages),
