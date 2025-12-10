@@ -25,11 +25,11 @@ pub trait FilterableRoom {
 
 impl FilterableRoom for JoinedRoomInfo {
     fn room_id(&self) -> &RoomId {
-        self.room_name.room_id()
+        self.room_name_id.room_id()
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        self.room_name.display_str()
+        Cow::Owned(self.room_name_id.to_string())
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -59,11 +59,11 @@ impl FilterableRoom for JoinedRoomInfo {
 
 impl FilterableRoom for InvitedRoomInfo {
     fn room_id(&self) -> &RoomId {
-        self.room_name.room_id()
+        self.room_name_id.room_id()
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        self.room_name.display_str()
+        Cow::Owned(self.room_name_id.to_string())
     }
 
     fn unread_mentions(&self) -> u64 {

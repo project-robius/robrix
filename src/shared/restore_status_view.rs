@@ -6,7 +6,7 @@
 //! the current room no longer exists.
 
 use makepad_widgets::*;
-use crate::utils::RoomName;
+use crate::utils::RoomNameId;
 
 live_design! {
     use link::theme::*;
@@ -91,23 +91,22 @@ impl RestoreStatusViewRef {
     /// is still being loaded from the homeserver.
     ///
     /// The `room_name` parameter is used to fill in the room name in the error message.
-    /// It automatically handles Empty names by falling back to the room ID via `RoomName::display_str`.
+    /// Its `Display` implementation automatically handles Empty names by falling back to the room ID.
     pub fn set_content(
         &self,
         cx: &mut Cx,
         all_rooms_loaded: bool,
-        room_name: &RoomName,
+        room_name: &RoomNameId,
     ) {
         let Some(inner) = self.borrow() else { return };
         let restore_status_spinner = inner.view.view(ids!(restore_status_spinner));
         let restore_status_label = inner.view.label(ids!(restore_status_label));
         if all_rooms_loaded {
             restore_status_spinner.set_visible(cx, false);
-            let display_name = room_name.display_str();
             restore_status_label.set_text(
                 cx,
                 &format!(
-                    "Room \"{display_name}\" was not found in the homeserver's list \
+                    "Room \"{room_name}\" was not found in the homeserver's list \
                     of all rooms.\n\nYou may close this screen."
                 ),
             );

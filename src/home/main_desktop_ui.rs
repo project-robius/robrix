@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use tokio::sync::Notify;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SelectedRoom}, utils::RoomName};
+use crate::{app::{AppState, AppStateAction, SelectedRoom}, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 live_design! {
@@ -129,13 +129,13 @@ impl MainDesktopUI {
         // Create a new tab for the room
         let (tab_bar, _pos) = dock.find_tab_bar_of_tab(id!(home_tab)).unwrap();
         let (kind, name) = match &room {
-            SelectedRoom::JoinedRoom { room_name }  => (
+            SelectedRoom::JoinedRoom { room_name_id }  => (
                 id!(room_screen),
-                room_name.display_str().into_owned(),
+                room_name_id.to_string(),
             ),
-            SelectedRoom::InvitedRoom { room_name } => (
+            SelectedRoom::InvitedRoom { room_name_id } => (
                 id!(invite_screen),
-                room_name.display_str().into_owned(),
+                room_name_id.to_string(),
             ),
         };
         let new_tab_widget = dock.create_and_select_tab(
@@ -153,16 +153,16 @@ impl MainDesktopUI {
         if let Some(new_widget) = new_tab_widget {
             self.room_order.push(room.clone());
             match &room {
-                SelectedRoom::JoinedRoom { room_name }  => {
+                SelectedRoom::JoinedRoom { room_name_id }  => {
                     new_widget.as_room_screen().set_displayed_room(
                         cx,
-                        room_name.clone(),
+                        room_name_id.clone(),
                     );
                 }
-                SelectedRoom::InvitedRoom { room_name } => {
+                SelectedRoom::InvitedRoom { room_name_id } => {
                     new_widget.as_invite_screen().set_displayed_invite(
                         cx,
-                        room_name.clone()
+                        room_name_id.clone()
                     );
                 }
             }
@@ -230,7 +230,7 @@ impl MainDesktopUI {
         &mut self,
         cx: &mut Cx,
         _scope: &mut Scope,
-        room_name: RoomName,
+        room_name: RoomNameId,
     ) {
         let room_id = room_name.room_id().clone();
         let dock = self.view.dock(ids!(dock));
@@ -238,7 +238,7 @@ impl MainDesktopUI {
             cx,
             LiveId::from_str(room_id.as_str()),
             id!(room_screen),
-            Some(room_name.display_str().into_owned()),
+            Some(room_name.to_string()),
             false,
         ) else {
             // Nothing we can really do here except log an error.
@@ -357,16 +357,16 @@ impl WidgetMatchEvent for MainDesktopUI {
                         dock.load_state(cx, app_state.saved_dock_state.dock_items.clone());
                         for (head_live_id, (_, widget)) in dock.items().iter() {
                             match app_state.saved_dock_state.open_rooms.get(head_live_id) {
-                                Some(SelectedRoom::JoinedRoom { room_name }) => {
+                                Some(SelectedRoom::JoinedRoom { room_name_id }) => {
                                     widget.as_room_screen().set_displayed_room(
                                         cx,
-                                        room_name.clone(),
+                                        room_name_id.clone(),
                                     );
                                 }
-                                Some(SelectedRoom::InvitedRoom { room_name }) => {
+                                Some(SelectedRoom::InvitedRoom { room_name_id }) => {
                                     widget.as_invite_screen().set_displayed_invite(
                                         cx,
-                                        room_name.clone(),
+                                        room_name_id.clone(),
                                     );
                                 }
                                 _ => { }

@@ -5,7 +5,7 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomName}};
+use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
 
 live_design! {
     use link::theme::*;
@@ -168,7 +168,7 @@ impl JoinLeaveModalKind {
         self.room_name().room_id()
     }
 
-    pub fn room_name(&self) -> &RoomName {
+    pub fn room_name(&self) -> &RoomNameId {
         match self {
             JoinLeaveModalKind::AcceptInvite(invite) => &invite.room_name,
             JoinLeaveModalKind::RejectInvite(invite) => &invite.room_name,

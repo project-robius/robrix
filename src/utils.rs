@@ -723,12 +723,12 @@ impl Display for OwnedRoomIdRon {
 /// - Type-safe room name handling throughout the codebase
 /// - Simplified Display implementation that doesn't require passing room_id separately
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RoomName {
+pub struct RoomNameId {
     display_name: RoomDisplayName,
     room_id: OwnedRoomId,
 }
 
-impl RoomName {
+impl RoomNameId {
     /// Create a new RoomName with the given display name and room ID.
     pub fn new(display_name: RoomDisplayName, room_id: OwnedRoomId) -> Self {
         Self { display_name, room_id }
@@ -754,37 +754,10 @@ impl RoomName {
         &self.room_id
     }
 
-    /// Returns the preferred display string or falls back to contextual text/room ID.
-    ///
-    /// - `Empty` → returns the room ID
-    /// - `EmptyWas(name)` → returns `Empty Room (was "name")`
-    /// - Other variants → return the display name verbatim
-    #[inline]
-    pub fn display_str(&self) -> Cow<'_, str> {
-        match &self.display_name {
-            RoomDisplayName::Empty => Cow::Borrowed(self.room_id.as_str()),
-            RoomDisplayName::EmptyWas(previous) => {
-                Cow::Owned(format!("Empty Room (was \"{}\")", previous))
-            }
-            _ => room_display_name_str(&self.display_name)
-                .map(Cow::Borrowed)
-                .unwrap_or_else(|| Cow::Borrowed(self.room_id.as_str())),
-        }
-    }
-
     /// Returns the underlying room ID as a string slice.
     #[inline]
     pub fn room_id_str(&self) -> &str {
         self.room_id.as_str()
-    }
-
-    /// Get the display name as a string, if it's not Empty.
-    ///
-    /// Returns `None` for `RoomDisplayName::Empty`.
-    /// For other variants (Named, Aliased, Calculated, EmptyWas), returns the string content.
-    /// Prefer [`Self::display_str`] for user-facing copy that should fall back to the room ID.
-    pub fn as_str(&self) -> Option<&str> {
-        room_display_name_str(&self.display_name)
     }
 
     /// Check if the display name is Empty (not EmptyWas or other variants).
@@ -793,13 +766,29 @@ impl RoomName {
         matches!(self.display_name, RoomDisplayName::Empty)
     }
 
+    /// Get the display name as a string for avatar generation.
+    ///
+    /// Returns `None` for `RoomDisplayName::Empty` (no name to use for avatar).
+    /// For `EmptyWas`, returns the previous name (preserving the old name for avatar).
+    /// For other variants, returns the string representation.
+    /// Unlike `Display::to_string()`, this does NOT fall back to the room ID for Empty names.
+    pub fn name_for_avatar(&self) -> Option<String> {
+        match &self.display_name {
+            RoomDisplayName::Empty => None,
+            // Preserve the previous name for avatar generation
+            // so "EmptyWas(Alice)" shows "A" not "E"
+            RoomDisplayName::EmptyWas(name) => Some(name.clone()),
+            other => Some(other.to_string()),
+        }
+    }
+
     /// Convert into the inner display name and room ID.
     pub fn into_parts(self) -> (RoomDisplayName, OwnedRoomId) {
         (self.display_name, self.room_id)
     }
 }
 
-impl std::ops::Deref for RoomName {
+impl std::ops::Deref for RoomNameId {
     type Target = RoomDisplayName;
 
     fn deref(&self) -> &Self::Target {
@@ -807,19 +796,19 @@ impl std::ops::Deref for RoomName {
     }
 }
 
-impl AsRef<RoomDisplayName> for RoomName {
+impl AsRef<RoomDisplayName> for RoomNameId {
     fn as_ref(&self) -> &RoomDisplayName {
         &self.display_name
     }
 }
 
-impl AsRef<RoomId> for RoomName {
+impl AsRef<RoomId> for RoomNameId {
     fn as_ref(&self) -> &RoomId {
         &self.room_id
     }
 }
 
-impl AsRef<OwnedRoomId> for RoomName {
+impl AsRef<OwnedRoomId> for RoomNameId {
     fn as_ref(&self) -> &OwnedRoomId {
         &self.room_id
     }
@@ -830,70 +819,31 @@ impl AsRef<OwnedRoomId> for RoomName {
 /// - `Empty` → displays room ID
 /// - `EmptyWas(name)` → displays "Empty Room (was "name")"
 /// - Other variants → displays the name as-is
-impl std::fmt::Display for RoomName {
+impl std::fmt::Display for RoomNameId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.display_name {
-            RoomDisplayName::Empty => write!(f, "{}", self.room_id),
+            RoomDisplayName::Empty => write!(f, "Room ID {}", self.room_id),
             RoomDisplayName::EmptyWas(name) => write!(f, "Empty Room (was \"{}\")", name),
             other => write!(f, "{}", other),
         }
     }
 }
 
-impl From<(RoomDisplayName, OwnedRoomId)> for RoomName {
+impl From<(RoomDisplayName, OwnedRoomId)> for RoomNameId {
     fn from((display_name, room_id): (RoomDisplayName, OwnedRoomId)) -> Self {
         Self::new(display_name, room_id)
     }
 }
 
-impl From<(&RoomDisplayName, &OwnedRoomId)> for RoomName {
+impl From<(&RoomDisplayName, &OwnedRoomId)> for RoomNameId {
     fn from((display_name, room_id): (&RoomDisplayName, &OwnedRoomId)) -> Self {
         Self::new(display_name.clone(), room_id.clone())
     }
 }
 
-/// Types that can be converted into a [`RoomName`].
-pub trait IntoRoomName {
-    fn into_room_name(self) -> RoomName;
-}
-
-impl IntoRoomName for RoomName {
-    fn into_room_name(self) -> RoomName {
-        self
-    }
-}
-
-impl IntoRoomName for &RoomName {
-    fn into_room_name(self) -> RoomName {
-        self.clone()
-    }
-}
-
-impl IntoRoomName for (RoomDisplayName, OwnedRoomId) {
-    fn into_room_name(self) -> RoomName {
-        RoomName::from(self)
-    }
-}
-
-impl<'a> IntoRoomName for (&'a RoomDisplayName, &'a OwnedRoomId) {
-    fn into_room_name(self) -> RoomName {
-        RoomName::from(self)
-    }
-}
-
-impl IntoRoomName for &Room {
-    fn into_room_name(self) -> RoomName {
-        RoomName::from_room(self)
-    }
-}
-
-impl IntoRoomName for (&Room, &OwnedRoomId) {
-    fn into_room_name(self) -> RoomName {
-        let (room, room_id) = self;
-        RoomName::new(
-            room.cached_display_name().unwrap_or(RoomDisplayName::Empty),
-            room_id.clone(),
-        )
+impl From<&Room> for RoomNameId {
+    fn from(room: &Room) -> Self {
+        Self::from_room(room)
     }
 }
 
@@ -981,7 +931,7 @@ impl From<RoomDisplayNameRon> for RoomDisplayName {
 /// Simplified SerRon implementation for RoomName using tuple of Ron helpers.
 ///
 /// Serializes as: (RoomDisplayNameRon, OwnedRoomIdRon)
-impl SerRon for RoomName {
+impl SerRon for RoomNameId {
     fn ser_ron(&self, d: usize, s: &mut SerRonState) {
         s.out.push('(');
         RoomDisplayNameRon(self.display_name.clone()).ser_ron(d, s);
@@ -994,7 +944,7 @@ impl SerRon for RoomName {
 /// Simplified DeRon implementation for RoomName using tuple of Ron helpers.
 ///
 /// Deserializes from: (RoomDisplayNameRon, OwnedRoomIdRon)
-impl DeRon for RoomName {
+impl DeRon for RoomNameId {
     fn de_ron(s: &mut DeRonState, i: &mut Chars) -> Result<Self, DeRonErr> {
         s.paren_open(i)?;
         let display_name_ron = RoomDisplayNameRon::de_ron(s, i)?;
@@ -1002,20 +952,10 @@ impl DeRon for RoomName {
         let room_id_ron = OwnedRoomIdRon::de_ron(s, i)?;
         s.paren_close(i)?;
 
-        Ok(RoomName {
+        Ok(RoomNameId {
             display_name: display_name_ron.0,
             room_id: room_id_ron.0,
         })
-    }
-}
-
-pub fn room_display_name_str(display_name: &RoomDisplayName) -> Option<&str> {
-    match display_name {
-        RoomDisplayName::Empty => None,
-        RoomDisplayName::EmptyWas(name)
-        | RoomDisplayName::Named(name)
-        | RoomDisplayName::Aliased(name)
-        | RoomDisplayName::Calculated(name) => Some(name.as_str()),
     }
 }
 
@@ -1044,38 +984,37 @@ mod tests_room_name {
     }
 
     #[test]
-    fn display_str_prefers_display_name() {
+    fn to_string_prefers_display_name() {
         let room_id = sample_room_id("!preferred:example.org");
-        let room_name = RoomName::new(RoomDisplayName::Named("Hello World".into()), room_id.clone());
-        assert_eq!(room_name.display_str(), "Hello World");
+        let room_name = RoomNameId::new(RoomDisplayName::Named("Hello World".into()), room_id.clone());
+        assert_eq!(room_name.to_string(), "Hello World");
         assert_eq!(room_name.room_id_str(), room_id.as_str());
     }
 
     #[test]
-    fn display_str_falls_back_to_id_when_empty() {
+    fn to_string_falls_back_to_id_when_empty() {
         let room_id = sample_room_id("!fallback:example.org");
-        let room_name = RoomName::new(RoomDisplayName::Empty, room_id.clone());
-        assert_eq!(room_name.display_str(), room_id.as_str());
-        assert_eq!(room_name.to_string(), room_id.as_str());
+        let room_name = RoomNameId::new(RoomDisplayName::Empty, room_id.clone());
+        assert_eq!(room_name.to_string(), format!("Room ID {}", room_id.as_str()));
     }
 
     #[test]
-    fn display_str_includes_context_for_empty_was() {
+    fn to_string_includes_context_for_empty_was() {
         let room_id = sample_room_id("!emptywas:example.org");
-        let room_name = RoomName::new(RoomDisplayName::EmptyWas("Prior Name".into()), room_id);
-        assert_eq!(room_name.display_str(), "Empty Room (was \"Prior Name\")");
+        let room_name = RoomNameId::new(RoomDisplayName::EmptyWas("Prior Name".into()), room_id);
+        assert_eq!(room_name.to_string(), "Empty Room (was \"Prior Name\")");
     }
 
     #[test]
     fn ser_ron_round_trip_preserves_room_name() {
         let room_id = sample_room_id("!serialize:example.org");
-        let original = RoomName::new(
+        let original = RoomNameId::new(
             RoomDisplayName::EmptyWas("Test".into()),
             room_id,
         );
         let mut state = SerRonState { out: String::new() };
         original.ser_ron(0, &mut state);
-        let restored = RoomName::deserialize_ron(&state.out).expect("round trip succeeds");
+        let restored = RoomNameId::deserialize_ron(&state.out).expect("round trip succeeds");
         assert_eq!(restored, original);
     }
 }

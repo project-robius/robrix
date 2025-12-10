@@ -34,7 +34,7 @@ use crate::{
     shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, IntoRoomName, MEDIA_THUMBNAIL_FORMAT, RoomName, unix_time_millis_to_datetime}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -491,6 +491,7 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
+
             restore_status_view = <RestoreStatusView> {}
 
             // Widgets within this view will get shifted upwards when the on-screen keyboard is shown.
@@ -553,9 +554,8 @@ live_design! {
 pub struct RoomScreen {
     #[deref] view: View,
 
-    /// The name (which includes ID) of the currently-shown room, if any.
-    /// `None` only when no room is selected or the timeline is waiting for data.
-    #[rust] room_name: Option<RoomName>,
+    /// The name and ID of the currently-shown room, if any.
+    #[rust] room_name_id: Option<RoomNameId>,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
     /// The set of pinned events in this room.
@@ -670,10 +670,12 @@ impl Widget for RoomScreen {
 
             for action in actions {
                 // Handle actions related to restoring the previously-saved state of rooms.
-                if let Some(AppStateAction::RoomLoadedSuccessfully(room_id)) = action.downcast_ref() {
-                    if self.room_name.as_ref().is_some_and(|rn| rn.room_id() == room_id) {
-                        if let Some(room_name) = self.room_name.clone() {
-                            self.room_name = None;
+                if let Some(AppStateAction::RoomLoadedSuccessfully(loaded)) = action.downcast_ref() {
+                    if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == loaded.room_id()) {
+                        // `set_displayed_room()` does nothing if the room is unchanged,
+                        // so we clear it first to force a refresh.
+                        if let Some(room_name) = self.room_name_id.clone() {
+                            self.room_name_id = None;
                             self.set_displayed_room(cx, room_name);
                         }
                         return;
@@ -697,7 +699,7 @@ impl Widget for RoomScreen {
                 // Handle the action that requests to show the user profile sliding pane.
                 if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
                     // Only show the user profile in room that this avatar belongs to
-                    if self.room_name.as_ref().is_some_and(|rn| rn.room_id() == &profile_and_room_id.room_id) {
+                    if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == &profile_and_room_id.room_id) {
                         self.show_user_profile(
                             cx,
                             &user_profile_sliding_pane,
@@ -736,14 +738,14 @@ impl Widget for RoomScreen {
         // 1. to check if the room has been loaded from the homeserver yet, or
         // 2. that its timeline events have been updated in the background.
         if let Event::Signal = event {
-            if let (false, Some(room_name), true) = (self.is_loaded, self.room_name.as_ref(), cx.has_global::<RoomsListRef>()) {
+            if let (false, Some(room_name), true) = (self.is_loaded, self.room_name_id.as_ref(), cx.has_global::<RoomsListRef>()) {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
                 if rooms_list_ref.is_room_loaded(room_name.room_id()) {
                     // This room has been loaded now, so we call `set_displayed_room()`
-                    // to fully display it. Temporarily clear the assignment
-                    // so `set_displayed_room()` refreshes the view.
+                    // to fully display it. That function does nothing if the room is unchanged,
+                    // so we clear it first.
                     let room_name_copy = room_name.clone();
-                    self.room_name = None;
+                    self.room_name_id = None;
                     self.set_displayed_room(cx, room_name_copy);
                 } else {
                     self.all_rooms_loaded = rooms_list_ref.all_rooms_loaded();
@@ -808,11 +810,11 @@ impl Widget for RoomScreen {
 
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_name: (room_display_name, room_id).into_room_name(),
+                    room_name: RoomNameId::new(room_display_name, room_id),
                     room_members,
                     room_avatar_url,
                 }
-            } else if let Some(room_name) = &self.room_name {
+            } else if let Some(room_name) = &self.room_name_id {
                 // Fallback case: we have a room_name but no tl_state yet
                 RoomScreenProps {
                     room_screen_widget_uid,
@@ -821,7 +823,8 @@ impl Widget for RoomScreen {
                     room_avatar_url: None,
                 }
             } else {
-                // No room selected yet, skip event handling that requires room context
+                // No room selected yet. We need actual room context to properly handle events,
+                // so we skip event handling entirely rather than using dummy/invalid room data.
                 log!("RoomScreen handling event with no room context, skipping room-dependent event handling");
                 return;
             };
@@ -893,10 +896,12 @@ impl Widget for RoomScreen {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // If the room isn't loaded yet, we show the restore status label only.
         if !self.is_loaded {
+            let Some(room_name) = &self.room_name_id else {
+                // No room selected yet, nothing to show.
+                return DrawStep::done();
+            };
             let mut restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
-            if let Some(room_name) = &self.room_name {
-                restore_status_view.set_content(cx, self.all_rooms_loaded, room_name);
-            }
+            restore_status_view.set_content(cx, self.all_rooms_loaded, room_name);
             return restore_status_view.draw(cx, scope);
         }
         if self.tl_state.is_none() {
@@ -907,6 +912,8 @@ impl Widget for RoomScreen {
 
 
         let room_screen_widget_uid = self.widget_uid();
+        // Cache the room label for logging before we borrow tl_state mutably.
+        let room_label = self.current_room_label();
 
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // Here, we only need to handle drawing the portal list.
@@ -1070,7 +1077,9 @@ impl Widget for RoomScreen {
             // If the list is not filling the viewport, we need to back paginate the timeline
             // until we have enough events items to fill the viewport.
             if !tl_state.fully_paginated && !list.is_filling_viewport() {
-                log!("Automatically paginating timeline to fill viewport for room ({})", room_id);
+                log!("Automatically paginating timeline to fill viewport for room \"{}\" ({})",
+                    room_label, room_id,
+                );
                 submit_async_request(MatrixRequest::PaginateRoomTimeline {
                     room_id: room_id.clone(),
                     num_events: 50,
@@ -1083,17 +1092,17 @@ impl Widget for RoomScreen {
 }
 
 impl RoomScreen {
-    fn current_room_name(&self) -> Option<&RoomName> {
-        self.room_name.as_ref()
+    fn current_room_name(&self) -> Option<&RoomNameId> {
+        self.room_name_id.as_ref()
     }
 
     fn current_room_id(&self) -> Option<&OwnedRoomId> {
-        self.current_room_name().map(RoomName::room_id)
+        self.current_room_name().map(RoomNameId::room_id)
     }
 
     fn current_room_label(&self) -> String {
         self.current_room_name()
-            .map(|name| name.display_str().into_owned())
+            .map(|name| name.to_string())
             .unwrap_or_else(|| "Unknown Room".to_string())
     }
 
@@ -1444,7 +1453,7 @@ impl RoomScreen {
         action: &Action,
         pane: &UserProfileSlidingPaneRef,
     ) -> bool {
-        let Some(room_name) = self.room_name.as_ref().cloned() else {
+        let Some(room_name_id) = self.room_name_id.clone() else {
             return false;
         };
         // A closure that handles both MatrixToUri and MatrixUri links,
@@ -1468,9 +1477,9 @@ impl RoomScreen {
                                     username: None,
                                     avatar_state: AvatarState::Unknown,
                                 },
-                                room_id: room_name.room_id().clone(),
+                                room_id: room_name_id.room_id().clone(),
                             },
-                            room_name: room_name.display_str().into_owned(),
+                            room_name: room_name_id.to_string(),
                             // TODO: use the extra `via` parameters
                             room_member: None,
                         },
@@ -1478,7 +1487,7 @@ impl RoomScreen {
                     true
                 }
                 MatrixId::Room(room_id) => {
-                    if room_name.room_id() == room_id {
+                    if room_name_id.room_id() == room_id {
                         enqueue_popup_notification(PopupItem {
                             message: "You are already viewing that room.".into(),
                             kind: PopupKind::Error,
@@ -2021,7 +2030,9 @@ impl RoomScreen {
             let rooms_list_ref = cx.get_global::<RoomsListRef>();
             let is_loaded_now = rooms_list_ref.is_room_loaded(&room_id);
             if is_loaded_now && !self.is_loaded {
-                log!("Detected that room ({}) is now loaded for the first time", room_id);
+                log!("Detected that room \"{}\" ({}) is now loaded for the first time",
+                    self.current_room_label(), room_id,
+                );
                 is_first_time_being_loaded = true;
             }
             self.is_loaded = is_loaded_now;
@@ -2034,7 +2045,9 @@ impl RoomScreen {
         // when they first open the room, and there might not be any messages yet.
         if is_first_time_being_loaded {
             if !tl_state.fully_paginated {
-                log!("Sending a first-time backwards pagination request for room {}", room_id);
+                log!("Sending a first-time backwards pagination request for room \"{}\" {}",
+                    self.current_room_label(), room_id,
+                );
                 submit_async_request(MatrixRequest::PaginateRoomTimeline {
                     room_id: room_id.clone(),
                     num_events: 50,
@@ -2178,17 +2191,17 @@ impl RoomScreen {
     pub fn set_displayed_room(
         &mut self,
         cx: &mut Cx,
-        room_name: RoomName,
+        room_name: RoomNameId,
     ) {
         // If the room is already being displayed, then do nothing.
-        if self.room_name.as_ref().is_some_and(|rn| rn.room_id() == room_name.room_id()) { return; }
+        if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_name.room_id()) { return; }
 
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
         self.loading_pane(ids!(loading_pane)).take_state();
 
         let room_id = room_name.room_id().clone();
-        self.room_name = Some(room_name);
+        self.room_name_id = Some(room_name);
 
         // We initially tell every MentionableTextInput widget that the current user
         // *does not* have privileges to notify the entire room;
@@ -2305,7 +2318,7 @@ impl RoomScreenRef {
     pub fn set_displayed_room(
         &self,
         cx: &mut Cx,
-        room_name: RoomName,
+        room_name: RoomNameId,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_name);
@@ -2316,7 +2329,7 @@ impl RoomScreenRef {
 /// from a RoomScreen widget to its child widgets for event/draw handlers.
 pub struct RoomScreenProps {
     pub room_screen_widget_uid: WidgetUid,
-    pub room_name: RoomName,
+    pub room_name: RoomNameId,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
     pub room_avatar_url: Option<OwnedMxcUri>,
 }

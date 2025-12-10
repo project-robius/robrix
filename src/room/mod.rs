@@ -2,7 +2,7 @@ use std::{ops::Deref, sync::Arc};
 use makepad_widgets::Cx;
 use matrix_sdk::{room_preview::RoomPreview, RoomDisplayName, SuccessorRoom};
 
-use crate::utils::{avatar_from_room_name, IntoRoomName, RoomName};
+use crate::utils::{avatar_from_room_name, RoomNameId};
 
 pub mod reply_preview;
 pub mod room_input_bar;
@@ -21,13 +21,13 @@ pub fn live_design(cx: &mut Cx) {
 /// [`SuccessorRoom`] or a [`FetchedRoomPreview`].
 #[derive(Clone, Debug)]
 pub struct BasicRoomDetails {
-    pub room_name: RoomName,
+    pub room_name: RoomNameId,
     pub room_avatar: FetchedRoomAvatar,
 }
 impl From<&SuccessorRoom> for BasicRoomDetails {
     fn from(successor_room: &SuccessorRoom) -> Self {
         BasicRoomDetails {
-            room_name: (RoomDisplayName::Empty, successor_room.room_id.clone()).into_room_name(),
+            room_name: RoomNameId::new(RoomDisplayName::Empty, successor_room.room_id.clone()),
             room_avatar: avatar_from_room_name(None),
         }
     }
@@ -37,7 +37,7 @@ impl From<&FetchedRoomPreview> for BasicRoomDetails {
         let room_name = frp.name.clone()
             .map(RoomDisplayName::Named)
             .unwrap_or(RoomDisplayName::Empty);
-        let room_name = (room_name, frp.room_id.clone()).into_room_name();
+        let room_name = RoomNameId::new(room_name, frp.room_id.clone());
         BasicRoomDetails {
             room_name,
             room_avatar: frp.room_avatar.clone(),

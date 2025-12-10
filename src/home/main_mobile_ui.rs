@@ -73,7 +73,7 @@ impl Widget for MainMobileUI {
         let show_invite: bool;
 
         match app_state.selected_room.as_ref() {
-            Some(SelectedRoom::JoinedRoom { room_name }) => {
+            Some(SelectedRoom::JoinedRoom { room_name_id: room_name }) => {
                 show_welcome = false;
                 show_room = true;
                 show_invite = false;
@@ -82,7 +82,7 @@ impl Widget for MainMobileUI {
                     .room_screen(ids!(room_screen))
                     .set_displayed_room(cx, room_name.clone());
             }
-            Some(SelectedRoom::InvitedRoom { room_name }) => {
+            Some(SelectedRoom::InvitedRoom { room_name_id: room_name }) => {
                 show_welcome = false;
                 show_room = false;
                 show_invite = true;
