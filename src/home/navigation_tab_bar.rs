@@ -494,6 +494,7 @@ pub enum SelectedTab {
     // AlertsInbox,
     Space {
         space_id: OwnedRoomId,
+        space_name: String,
     }
 }
 
@@ -531,7 +532,10 @@ pub enum NavigationBarAction {
     /// Close the Settings view (`SettingsScreen`), returning to the previous view.
     CloseSettings,
     /// Go the space screen for the given space.
-    GoToSpace { space_id: OwnedRoomId },
+    GoToSpace {
+        space_id: OwnedRoomId,
+        space_name: String,
+    },
 
     // TODO: add GoToAlertsInbox, once we add that button/screen
 

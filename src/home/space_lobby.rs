@@ -7,6 +7,7 @@
 //!
 
 use makepad_widgets::*;
+use ruma::OwnedRoomId;
 
 
 live_design! {
@@ -19,12 +20,14 @@ live_design! {
     use crate::shared::avatar::*;
 
     // An entry in the RoomsList that will show the SpaceLobby when clicked.
-    SpaceLobbyEntry = {{SpaceLobbyEntry}}<RoundedView> {
+    pub SpaceLobbyEntry = {{SpaceLobbyEntry}}<RoundedView> {
         visible: false, // only visible when a space is selected
         width: Fill,
-        height: Fit,
+        height: 35, // same as CollapsibleHeader
         flow: Right,
         align: {y: 0.5}
+        padding: 5,
+        margin: {top: 5, bottom: 10}
         cursor: Hand
 
         show_bg: true
@@ -34,7 +37,7 @@ live_design! {
 
             color: (COLOR_NAVIGATION_TAB_BG)
             uniform color_hover: (COLOR_NAVIGATION_TAB_BG_HOVER)
-            uniform color_active: (COLOR_NAVIGATION_TAB_BG_ACTIVE)
+            uniform color_active: (COLOR_ACTIVE_PRIMARY)
 
             border_size: 0.0
             border_color: #0000
@@ -75,8 +78,9 @@ live_design! {
         }
 
         icon = <Icon> {
-            width: 30,
-            height: 30,
+            width: 25,
+            height: 25,
+            margin: {right: 2}
             align: {x: 0.5, y: 0.5}
             draw_icon: {
                 svg_file: (ICON_HOME)
@@ -101,7 +105,7 @@ live_design! {
                     )
                 }
             }
-            icon_walk: { width: 25, height: 25 }
+            icon_walk: { width: 14, height: Fit, margin: {left: -1, bottom: 1} }
         }
 
         space_lobby_label = <Label> {
@@ -118,8 +122,7 @@ live_design! {
                 uniform color_hover: (COLOR_TEXT)
                 uniform color_active: (COLOR_PRIMARY)
 
-                text_style: <THEME_FONT_BOLD>{font_size: 9}
-                // text_style: <REGULAR_TEXT>{font_size: 9}
+                text_style: <REGULAR_TEXT>{font_size: 11},
                 wrap: Ellipsis,
 
                 fn get_color(self) -> vec4 {
@@ -134,7 +137,7 @@ live_design! {
                     )
                 }
             }
-            text: "Space Lobby"
+            text: "Go to Space Lobby"
         }
 
         animator: {
@@ -167,10 +170,33 @@ live_design! {
             }
         }
     }
+
+    // The main view that shows the lobby (homepage) for a space.
+    pub SpaceLobbyScreen = {{SpaceLobbyScreen}} {
+        width: Fill, height: Fill,
+        padding: {top: 100}
+        align: {x: 0.5}
+
+        show_bg: true
+        draw_bg: {
+            color: (COLOR_PRIMARY)
+        }
+
+        title = <Label> {
+            flow: RightWrap,
+            align: {x: 0.5}
+            draw_text: {
+                text_style: <TITLE_TEXT>{font_size: 13},
+                color: #000
+                wrap: Word
+            }
+            text: "Space Lobby Screen is not yet implemented"
+        }
+    }
 }
 
 
-
+/// A clickable entry shown in the RoomsList that will show the space lobby when clicked.
 #[derive(Live, LiveHook, Widget)]
 pub struct SpaceLobbyEntry {
     #[deref] view: View,
@@ -191,7 +217,7 @@ impl Widget for SpaceLobbyEntry {
             Hit::FingerHoverOut(_) => {
                 self.animator_play(cx, ids!(hover.off));
             }
-            Hit::FingerDown(fe) => {
+            Hit::FingerDown(_fe) => {
                 self.animator_play(cx, ids!(hover.down));
             }
             Hit::FingerLongPress(_lp) => {
@@ -208,7 +234,7 @@ impl Widget for SpaceLobbyEntry {
             _ => {}
         }
     }
-    
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
     }
@@ -218,4 +244,47 @@ impl Widget for SpaceLobbyEntry {
 #[derive(Debug)]
 pub enum SpaceLobbyAction {
     SpaceLobbyEntryClicked,
+}
+
+
+/// The view showing the lobby/homepage for a given space.
+#[derive(Live, LiveHook, Widget)]
+pub struct SpaceLobbyScreen {
+    #[deref] view: View,
+    #[rust] space_id_and_name: Option<(OwnedRoomId, String)>,
+}
+
+impl Widget for SpaceLobbyScreen {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+    }
+    
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl SpaceLobbyScreen {
+    pub fn set_displayed_space(&mut self, cx: &mut Cx, space_id: OwnedRoomId, space_name: String) {
+        // If this space is already being displayed, then do nothing.
+        if self.space_id_and_name.as_ref().is_some_and(|(id, _)| id == &space_id) { return; }
+
+        self.view.label(ids!(title)).set_text(
+            cx,
+            &format!("Space Lobby Screen is not yet implemented.\n\n\
+                Space Name: {space_name}\n\nSpace ID: {space_id}"
+            )
+        );
+
+        // TODO: populate the rest of the space lobby screen content
+
+        self.space_id_and_name = Some((space_id, space_name));
+    }
+}
+
+impl SpaceLobbyScreenRef {
+    pub fn set_displayed_space(&self, cx: &mut Cx, space_id: OwnedRoomId, space_name: String) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_displayed_space(cx, space_id, space_name);
+    }
 }

@@ -3,7 +3,7 @@ use matrix_sdk::ruma::OwnedRoomId;
 use tokio::sync::Notify;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SelectedRoom}, utils::room_name_or_id};
+use crate::{app::{AppState, AppStateAction, SelectedRoom}, home::space_lobby::SpaceLobbyScreenWidgetRefExt, utils::room_name_or_id};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 live_design! {
@@ -17,6 +17,7 @@ live_design! {
     use crate::home::welcome_screen::WelcomeScreen;
     use crate::home::room_screen::RoomScreen;
     use crate::home::invite_screen::InviteScreen;
+    use crate::home::space_lobby::SpaceLobbyScreen;
 
     pub MainDesktopUI = {{MainDesktopUI}} {
         dock = <Dock> {
@@ -54,6 +55,7 @@ live_design! {
             welcome_screen = <WelcomeScreen> {}
             room_screen = <RoomScreen> {}
             invite_screen = <InviteScreen> {}
+            space_lobby_screen = <SpaceLobbyScreen> {}
         }
     }
 }
@@ -138,6 +140,10 @@ impl MainDesktopUI {
                 id!(invite_screen),
                 room_name_or_id(room_name.as_ref(), room_id),
             ),
+            SelectedRoom::Space { space_id: _, space_name } => (
+                id!(space_lobby_screen),
+                space_name.clone(),
+            ),
         };
         let new_tab_widget = dock.create_and_select_tab(
             cx,
@@ -166,6 +172,13 @@ impl MainDesktopUI {
                         cx,
                         room_id.clone().into(),
                         room.room_name().cloned()
+                    );
+                }
+                SelectedRoom::Space { space_id, space_name } => {
+                    new_widget.as_space_lobby_screen().set_displayed_space(
+                        cx,
+                        space_id.clone().into(),
+                        space_name.clone(),
                     );
                 }
             }

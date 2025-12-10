@@ -21,7 +21,7 @@ live_design! {
     pub RoomsListHeader = {{RoomsListHeader}} {
         width: Fill,
         height: 30,
-        padding: {bottom: 5}
+        padding: {bottom: 4}
         flow: Right,
         visible: true,
         align: {x: 0, y: 0.5}

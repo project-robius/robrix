@@ -243,8 +243,10 @@ live_design! {
 /// Actions emitted by and handled by the SpacesBar widget (and its children).
 #[derive(Clone, Debug, DefaultNone)]
 pub enum SpacesBarAction {
-    ButtonClicked { space_id: OwnedRoomId },
-    ButtonSecondaryClicked { space_id: OwnedRoomId },
+    /// The user primary-clicked/tapped a space entry in the SpacesBar.
+    ButtonClicked { space_id: OwnedRoomId, space_name: String },
+    /// The user secondary-clicked/long-pressed a space entry in the SpacesBar.
+    ButtonSecondaryClicked { space_id: OwnedRoomId, space_name: String },
     None,
 }
 
@@ -254,8 +256,7 @@ pub struct SpacesBarEntry {
     #[deref] view: View,
     #[animator] animator: Animator,
 
-    #[rust] space_id: Option<OwnedRoomId>,
-    #[rust] space_name: String,
+    #[rust] space_id_and_name: Option<(OwnedRoomId, String)>,
 }
 
 impl Widget for SpacesBarEntry {
@@ -271,7 +272,10 @@ impl Widget for SpacesBarEntry {
                 &scope.path,
                 TooltipAction::HoverIn {
                     widget_rect: area.rect(cx),
-                    text: this.space_name.clone(),
+                    text: this.space_id_and_name.as_ref().map_or(
+                        String::from("Unknown Space Name"),
+                        |(_id, sn)| sn.clone(),
+                    ),
                     bg_color: None,
                     text_color: None,
                 },
@@ -297,11 +301,11 @@ impl Widget for SpacesBarEntry {
             Hit::FingerDown(fe) => {
                 self.animator_play(cx, ids!(hover.down));
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
-                    if let Some(space_id) = self.space_id.clone() {
+                    if let Some((space_id, space_name)) = self.space_id_and_name.clone() {
                         cx.widget_action(
                             self.widget_uid(),
                             &scope.path,
-                            SpacesBarAction::ButtonSecondaryClicked { space_id },
+                            SpacesBarAction::ButtonSecondaryClicked { space_id, space_name },
                         );
                     }
                 }
@@ -309,21 +313,21 @@ impl Widget for SpacesBarEntry {
             Hit::FingerLongPress(_lp) => {
                 self.animator_play(cx, ids!(hover.down));
                 emit_hover_in_action(self, cx);
-                if let Some(space_id) = self.space_id.clone() {
+                if let Some((space_id, space_name)) = self.space_id_and_name.clone() {
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
-                        SpacesBarAction::ButtonSecondaryClicked { space_id },
+                        SpacesBarAction::ButtonSecondaryClicked { space_id, space_name },
                     );
                 }
             }
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                 self.animator_play(cx, ids!(hover.on));
-                if let Some(space_id) = self.space_id.clone() {
+                if let Some((space_id, space_name)) = self.space_id_and_name.clone() {
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
-                        SpacesBarAction::ButtonClicked { space_id },
+                        SpacesBarAction::ButtonClicked { space_id, space_name },
                     );
                 }
             }
@@ -342,8 +346,7 @@ impl Widget for SpacesBarEntry {
 
 impl SpacesBarEntry {
     fn set_metadata(&mut self, cx: &mut Cx, space_id: OwnedRoomId, space_name: String, is_selected: bool) {
-        self.space_id = Some(space_id);
-        self.space_name = space_name;
+        self.space_id_and_name = Some((space_id, space_name));
         let active_val = is_selected as u8 as f64;
         self.apply_over(cx, live!{
             draw_bg: { active: (active_val) },
@@ -505,10 +508,10 @@ impl Widget for SpacesBar {
                 }
 
                 // Update which space is currently selected.
-                if let SpacesBarAction::ButtonClicked { space_id } = action.as_widget_action().cast() {
+                if let SpacesBarAction::ButtonClicked { space_id, space_name } = action.as_widget_action().cast() {
                     self.selected_space = Some(space_id.clone());
                     self.redraw(cx);
-                    cx.action(NavigationBarAction::GoToSpace { space_id });
+                    cx.action(NavigationBarAction::GoToSpace { space_id, space_name });
                     continue;
                 }
 
@@ -516,7 +519,7 @@ impl Widget for SpacesBar {
                 // we must unselect/deselect the currently-selected space.
                 if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
                     match tab {
-                        SelectedTab::Space { space_id } => {
+                        SelectedTab::Space { space_id, .. } => {
                             self.selected_space = Some(space_id.clone());
                             self.redraw(cx);
                         }
