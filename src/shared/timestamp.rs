@@ -4,6 +4,8 @@
 use chrono::{DateTime, Local};
 use makepad_widgets::*;
 
+use crate::shared::callout_tooltip::{CalloutTooltipOptions, TooltipPosition};
+
 use super::callout_tooltip::TooltipAction;
 
 live_design! {
@@ -62,11 +64,12 @@ impl Widget for Timestamp {
                 self.widget_uid(),
                 &scope.path,
                 TooltipAction::HoverIn {
-                    widget_rect: area.rect(cx),
-                    // "%c" produces a locale-specific date and time representation
                     text: self.dt.format(locale_extended_fmt_en_us).to_string(),
-                    bg_color: None,
-                    text_color: None,
+                    widget_rect: area.rect(cx),
+                    options: CalloutTooltipOptions {
+                        position: TooltipPosition::Right,
+                        ..Default::default()
+                    },
                 },
             );
         }
