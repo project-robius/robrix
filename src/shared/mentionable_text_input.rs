@@ -492,9 +492,6 @@ impl Widget for MentionableTextInput {
             let text_input_area = text_input_ref.area();
             let has_focus = cx.has_key_focus(text_input_area);
 
-            // ESC key is now handled in the main event handler using KeyUp event
-            // This avoids conflicts with escaped() method being consumed by other components
-
             // Handle item selection from mention popup
             if let Some(selected) = self.cmd_text_input.item_selected(actions) {
                 self.on_user_selected(cx, scope, selected);
@@ -534,8 +531,11 @@ impl Widget for MentionableTextInput {
                             if &scope_room_id != room_id {
                                 continue;
                             }
+                            log!("PowerLevelsUpdated received: room_id={}, can_notify_room={}, scope_room_id={}",
+                                 room_id, can_notify_room, scope_room_id);
 
                             if self.can_notify_room != *can_notify_room {
+                                log!("Updating can_notify_room from {} to {}", self.can_notify_room, can_notify_room);
                                 self.can_notify_room = *can_notify_room;
                                 if self.is_searching() && has_focus {
                                     let search_text =
@@ -1216,18 +1216,11 @@ impl MentionableTextInput {
 
         // Update UI immediately if we got new results
         if should_update_ui {
-            // Get accumulated results from state for UI update
-            let results_for_ui = if let MentionSearchState::Searching {
-                accumulated_results,
-                ..
-            } = &self.search_state
-            {
-                accumulated_results.clone()
-            } else {
-                Vec::new()
-            };
-
-            if !results_for_ui.is_empty() {
+            if matches!(
+                &self.search_state,
+                MentionSearchState::Searching { accumulated_results, .. }
+                if !accumulated_results.is_empty()
+            ) {
                 // Results are already sorted in member_search.rs and indices are unique
                 let query = search_text
                     .as_ref()
@@ -1241,17 +1234,11 @@ impl MentionableTextInput {
         if is_complete {
             self.search_results_pending = false;
             // Search is complete - get results for final UI update
-            let final_results = if let MentionSearchState::Searching {
-                accumulated_results,
-                ..
-            } = &self.search_state
-            {
-                accumulated_results.clone()
-            } else {
-                Vec::new()
-            };
-
-            if final_results.is_empty() {
+            if matches!(
+                &self.search_state,
+                MentionSearchState::Searching { accumulated_results, .. }
+                if accumulated_results.is_empty()
+            ) {
                 // No user results, but still update UI (may show @room)
                 let query = search_text
                     .as_ref()
@@ -1277,6 +1264,8 @@ impl MentionableTextInput {
                 // Channel was closed - search completed or failed
                 self.search_results_pending = false;
                 self.handle_search_channel_closed(cx, scope);
+                // Stop checking - channel is closed, no more results will arrive
+                return false;
             }
         }
 

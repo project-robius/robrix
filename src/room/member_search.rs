@@ -425,12 +425,14 @@ pub fn search_room_members_streaming_with_sort(
     cancel_token: Option<Arc<AtomicBool>>,
 ) {
     let current_user_id = current_user_id();
+    let search_text_arc = Arc::new(search_text);
 
+    // Early exit if cancelled - send completion signal so UI doesn't wait indefinitely
     if is_cancelled(&cancel_token) {
+        let _ = send_search_update(&sender, &cancel_token, search_id, &search_text_arc, Vec::new(), true);
         return;
     }
 
-    let search_text_arc = Arc::new(search_text);
     let search_query = search_text_arc.as_str();
     let precomputed_ref = precomputed_sort.as_deref();
     let cancel_ref = &cancel_token;
@@ -445,7 +447,11 @@ pub fn search_room_members_streaming_with_sort(
             cancel_ref,
         ) {
             Some(indices) => indices,
-            None => return,
+            None => {
+                // Cancelled during computation - send completion signal
+                let _ = send_search_update(&sender, &cancel_token, search_id, &search_text_arc, Vec::new(), true);
+                return;
+            }
         }
     } else {
         match compute_non_empty_search_indices(
@@ -457,7 +463,11 @@ pub fn search_room_members_streaming_with_sort(
             cancel_ref,
         ) {
             Some(indices) => indices,
-            None => return,
+            None => {
+                // Cancelled during computation - send completion signal
+                let _ = send_search_update(&sender, &cancel_token, search_id, &search_text_arc, Vec::new(), true);
+                return;
+            }
         }
     };
 

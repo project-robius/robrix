@@ -440,12 +440,14 @@ impl MatchEvent for App {
 }
 
 /// Clears all thread-local UI caches (user profiles, invited rooms, and timeline states).
-/// The `cx` parameter ensures that these thread-local caches are cleared on the main UI thread, 
+/// The `cx` parameter ensures that these thread-local caches are cleared on the main UI thread,
 fn clear_all_app_state(cx: &mut Cx) {
     clear_user_profile_cache(cx);
     clear_all_invited_rooms(cx);
     clear_timeline_states(cx);
     clear_avatar_cache(cx);
+    // Clear room members digests to ensure members are re-fetched after re-login
+    crate::sliding_sync::clear_room_members_digests();
 }
 
 impl AppMain for App {

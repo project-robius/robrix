@@ -1710,6 +1710,17 @@ fn compute_members_digest(members: &[RoomMember]) -> u64 {
     hasher.finish()
 }
 
+/// Clears the cached room members digests.
+///
+/// This must be called during logout to ensure that after re-login,
+/// the room members will be properly fetched and sent to the UI,
+/// even if the member list hasn't changed.
+pub fn clear_room_members_digests() {
+    if let Ok(mut digests) = ROOM_MEMBERS_DIGESTS.lock() {
+        digests.clear();
+    }
+}
+
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
 
