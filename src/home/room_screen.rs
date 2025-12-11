@@ -32,9 +32,9 @@ use crate::{
     },
     room::{member_search::PrecomputedMemberSort, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, room_name_or_id, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -608,9 +608,8 @@ impl Widget for RoomScreen {
                 let reaction_list = wr.reaction_list(ids!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
                     widget_rect,
-                    bg_color,
                     reaction_data,
-                } = reaction_list.hover_in(actions) {
+                } = reaction_list.hovered_in(actions) {
                     let Some(_tl_state) = self.tl_state.as_ref() else { continue };
                     let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
                         user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
@@ -623,24 +622,27 @@ impl Widget for RoomScreen {
                         room_screen_widget_uid,
                         &scope.path,
                         TooltipAction::HoverIn {
-                            widget_rect,
                             text: tooltip_text,
-                            text_color: None,
-                            bg_color,
-                        }
+                            widget_rect,
+                            options: CalloutTooltipOptions {
+                                position: TooltipPosition::Bottom,
+                                ..Default::default()
+                            },
+                        },
                     );
                 }
-                if reaction_list.hover_out(actions) {
+
+                if reaction_list.hovered_out(actions) {
                     cx.widget_action(
                         room_screen_widget_uid,
                         &scope.path,
-                        TooltipAction::HoverOut
+                        TooltipAction::HoverOut,
                     );
                 }
+
                 let avatar_row_ref = wr.avatar_row(ids!(avatar_row));
                 if let RoomScreenTooltipActions::HoverInReadReceipt {
                     widget_rect,
-                    bg_color,
                     read_receipts
                 } = avatar_row_ref.hover_in(actions) {
                     let Some(room_id) = &self.room_id else { return; };
@@ -649,13 +651,16 @@ impl Widget for RoomScreen {
                         room_screen_widget_uid,
                         &scope.path,
                         TooltipAction::HoverIn {
-                            widget_rect,
                             text: tooltip_text,
-                            bg_color,
-                            text_color: None,
-                        }
+                            widget_rect,
+                            options: CalloutTooltipOptions {
+                                position: TooltipPosition::Left,
+                                ..Default::default()
+                            },
+                        },
                     );
                 }
+
                 if avatar_row_ref.hover_out(actions) {
                     cx.widget_action(
                         room_screen_widget_uid,
@@ -2452,18 +2457,14 @@ pub enum RoomScreenTooltipActions {
     HoverInReadReceipt {
         /// The rect of the moused over widget
         widget_rect: Rect,
-        /// Color of the background, default is black
-        bg_color: Option<Vec4>,
         /// Includes the list of users who have seen this event
         read_receipts: indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>,
     },
     /// Mouse over event when the mouse is over the reaction button.
     HoverInReactionButton {
-        /// The rect of the moused over widget
+        /// The rectangle (bounds) of the hovered-over widget.
         widget_rect: Rect,
-        /// Color of the background, default is black
-        bg_color: Option<Vec4>,
-        /// Includes the list of users who have reacted to the emoji
+        /// Includes the list of users who have reacted to the emoji.
         reaction_data: ReactionData,
     },
     /// Mouse out event and clear tooltip.
