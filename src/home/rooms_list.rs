@@ -484,17 +484,16 @@ impl RoomsList {
                             // Room was not displayed but should now be displayed.
                             (false, true) => {
                                 if room.is_direct {
-                                    self.displayed_direct_rooms.push(room_id.clone());
+                                    self.displayed_direct_rooms.push(room_id);
                                 } else {
-                                    self.displayed_regular_rooms.push(room_id.clone());
+                                    self.displayed_regular_rooms.push(room_id);
                                 }
                             }
                         }
                     }
                     // If not a joined room, try to update invited room
                     else {
-                        let invited_rooms_ref = get_invited_rooms(cx);
-                        let mut invited_rooms = invited_rooms_ref.borrow_mut();
+                        let mut invited_rooms = self.invited_rooms.borrow_mut();
                         if let Some(invited_room) = invited_rooms.get_mut(&room_id) {
                             let was_displayed = (self.display_filter)(invited_room);
                             invited_room.room_name_id = new_room_name;
@@ -507,9 +506,7 @@ impl RoomsList {
                                         .map(|index| self.displayed_invited_rooms.remove(index));
                                 }
                                 (false, true) => {
-                                    if !self.displayed_invited_rooms.contains(&room_id) {
-                                        self.displayed_invited_rooms.push(room_id.clone());
-                                    }
+                                    self.displayed_invited_rooms.push(room_id.clone());
                                 }
                             }
                         } else {

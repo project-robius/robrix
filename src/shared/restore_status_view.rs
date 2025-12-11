@@ -106,7 +106,7 @@ impl RestoreStatusViewRef {
             restore_status_label.set_text(
                 cx,
                 &format!(
-                    "Room \"{room_name}\" was not found in the homeserver's list \
+                    "Room {room_name} was not found in the homeserver's list \
                     of all rooms.\n\nYou may close this screen."
                 ),
             );

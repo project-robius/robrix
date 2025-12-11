@@ -2271,13 +2271,8 @@ async fn update_room(
         if old_room.display_name != new_room.display_name {
             log!("Updating room {} name: {:?} --> {:?}", new_room_id, old_room.display_name, new_room.display_name);
 
-            let new_display_name = new_room
-                .display_name
-                .clone()
-                .unwrap_or(RoomDisplayName::Empty);
-
             enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
-                new_room_name: (new_display_name, new_room_id.clone()).into(),
+                new_room_name: (new_room.display_name.clone(), new_room_id.clone()).into(),
             });
         }
 
@@ -2436,11 +2431,7 @@ async fn add_new_room(
             let latest = latest_event.as_ref().map(
                 |ev| get_latest_event_details(ev, &new_room.room_id)
             );
-            let room_display_name = new_room
-                .display_name
-                .clone()
-                .unwrap_or(RoomDisplayName::Empty);
-            let room_name: RoomNameId = (room_display_name, new_room.room_id.clone()).into();
+            let room_name: RoomNameId = (new_room.display_name.clone(), new_room.room_id.clone()).into();
             let room_avatar = room_avatar(&new_room.room, room_name.clone()).await;
 
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
@@ -2517,11 +2508,7 @@ async fn add_new_room(
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can
     // send the `AddJoinedRoom` update to the UI, because the UI might immediately
     // issue a `MatrixRequest` that relies on that room being in `ALL_JOINED_ROOMS`.
-    let room_display_name = new_room
-        .display_name
-        .clone()
-        .unwrap_or(RoomDisplayName::Empty);
-    let room_name: RoomNameId = (room_display_name, new_room.room_id.clone()).into();
+    let room_name: RoomNameId = (new_room.display_name.clone(), new_room.room_id.clone()).into();
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
         latest,
         tags: new_room.tags.clone().unwrap_or_default(),
@@ -3156,10 +3143,7 @@ async fn update_latest_event(room: &Room) {
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
     let room_id = room.room_id.clone();
-    let room_name: RoomNameId = (
-        room.display_name.clone().unwrap_or(RoomDisplayName::Empty),
-        room.room_id.clone()
-    ).into();
+    let room_name: RoomNameId = (room.display_name.clone(), room.room_id.clone()).into();
     let inner_room = room.room.clone();
     Handle::current().spawn(async move {
         let avatar = room_avatar(&inner_room, room_name).await;

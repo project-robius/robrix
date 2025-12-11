@@ -320,8 +320,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                 Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == kind.room_id() => {
                     self.view.label(ids!(title)).set_text(cx, "Error joining room!");
                     let was_invite = matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_));
-                    let room_label = kind.room_name().to_string();
-                    let msg = utils::stringify_join_leave_error(error, Some(room_label.as_str()), true, was_invite);
+                    let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, was_invite);
                     self.view.label(ids!(description)).set_text(cx, &msg);
                     enqueue_popup_notification(PopupItem {
                         message: msg,
@@ -372,16 +371,15 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     let title: &str;
                     let description: String;
                     let popup_msg: String;
-                    let room_label = kind.room_name().to_string();
                     match kind {
                         JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_) => {
                             title = "Error rejecting invite!";
-                            description = utils::stringify_join_leave_error(error, Some(room_label.as_str()), false, true);
+                            description = utils::stringify_join_leave_error(error, kind.room_name(), false, true);
                             popup_msg = "Failed to reject invite.".into();
                         }
                         JoinLeaveModalKind::JoinRoom(_) | JoinLeaveModalKind::LeaveRoom(_) => {
                             title = "Error leaving room!";
-                            description = utils::stringify_join_leave_error(error, Some(room_label.as_str()), false, false);
+                            description = utils::stringify_join_leave_error(error, kind.room_name(), false, false);
                             popup_msg = "Failed to leave room.".into();
                         }
                     }

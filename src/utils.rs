@@ -145,22 +145,18 @@ pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Optio
 /// Returns a string error message, handling special cases related to joining/leaving rooms.
 pub fn stringify_join_leave_error(
     error: &matrix_sdk::Error,
-    room_name: Option<&str>,
+    room_name_id: &RoomNameId,
     was_join: bool,
     was_invite: bool,
 ) -> String {
-    let room_str = room_name.map_or_else(
-        || String::from("room"),
-        |r| format!("\"{r}\""),
-    );
     let msg_opt = match error {
         // The below is a stupid hack to workaround `WrongRoomState` being private.
         // We get the string representation of the error and then search for the "got" state.
         matrix_sdk::Error::WrongRoomState(wrs) => {
             if was_join && wrs.to_string().contains(", got: Joined") {
-                Some(format!("Failed to join {room_str}: it has already been joined."))
+                Some(format!("Failed to join {room_name_id}: it has already been joined."))
             } else if !was_join && wrs.to_string().contains(", got: Left") {
-                Some(format!("Failed to leave {room_str}: it has already been left."))
+                Some(format!("Failed to leave {room_name_id}: it has already been left."))
             } else {
                 None
             }
@@ -172,7 +168,7 @@ pub fn stringify_join_leave_error(
             if error.as_client_api_error().is_some_and(|e| e.status_code.as_u16() == 404) =>
         {
             Some(format!(
-                "Failed to {} {room_str}: the room no longer exists on the server.{}",
+                "Failed to {} {room_name_id}: the room no longer exists on the server.{}",
                 if was_join { "join" } else { "leave" },
                 if was_join && was_invite { "\n\nYou may safely reject this invite." } else { "" },
             ))
@@ -187,7 +183,7 @@ pub fn stringify_join_leave_error(
             (false, true) => "reject invite to",
             (false, false) => "leave",
         },
-        room_str,
+        room_name_id,
         error
     ))
 }
@@ -838,6 +834,12 @@ impl From<(RoomDisplayName, OwnedRoomId)> for RoomNameId {
 impl From<(&RoomDisplayName, &OwnedRoomId)> for RoomNameId {
     fn from((display_name, room_id): (&RoomDisplayName, &OwnedRoomId)) -> Self {
         Self::new(display_name.clone(), room_id.clone())
+    }
+}
+
+impl From<(Option<RoomDisplayName>, OwnedRoomId)> for RoomNameId {
+    fn from((display_name, room_id): (Option<RoomDisplayName>, OwnedRoomId)) -> Self {
+        Self::new(display_name.unwrap_or(RoomDisplayName::Empty), room_id)
     }
 }
 

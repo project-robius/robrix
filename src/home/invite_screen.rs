@@ -349,8 +349,7 @@ impl Widget for InviteScreen {
                     Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == info.room_name.room_id() => {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
-                            let room_label = info.room_name.to_string();
-                            let msg = utils::stringify_join_leave_error(error, Some(&room_label), true, true);
+                            let msg = utils::stringify_join_leave_error(error, &info.room_name, true, true);
                             enqueue_popup_notification(PopupItem { message: msg, kind: PopupKind::Error, auto_dismissal_duration: None });
                         }
                         continue;
