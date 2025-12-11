@@ -809,7 +809,7 @@ impl Widget for RoomScreen {
 
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_name: RoomNameId::new(room_display_name, room_id),
+                    room_name_id: RoomNameId::new(room_display_name, room_id),
                     room_members,
                     room_avatar_url,
                 }
@@ -817,7 +817,7 @@ impl Widget for RoomScreen {
                 // Fallback case: we have a room_name but no tl_state yet
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_name: room_name.clone(),
+                    room_name_id: room_name.clone(),
                     room_members: None,
                     room_avatar_url: None,
                 }
@@ -830,7 +830,7 @@ impl Widget for RoomScreen {
                 // Use a dummy room props for non-room-specific events
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_name: RoomNameId::new(
+                    room_name_id: RoomNameId::new(
                         RoomDisplayName::Empty,
                         matrix_sdk::ruma::OwnedRoomId::try_from("!dummy:matrix.org").unwrap(),
                     ),
@@ -2339,7 +2339,7 @@ impl RoomScreenRef {
 /// from a RoomScreen widget to its child widgets for event/draw handlers.
 pub struct RoomScreenProps {
     pub room_screen_widget_uid: WidgetUid,
-    pub room_name: RoomNameId,
+    pub room_name_id: RoomNameId,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
     pub room_avatar_url: Option<OwnedMxcUri>,
 }
