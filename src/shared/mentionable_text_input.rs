@@ -1,5 +1,98 @@
-//! MentionableTextInput component provides text input with @mention capabilities
-//! Can be used in any context where user mentions are needed (message input, editing)
+//! MentionableTextInput component provides text input with @mention capabilities.
+//!
+//! Can be used in any context where user mentions are needed (message input, editing).
+//!
+//! # Architecture Overview
+//!
+//! This component uses a **state machine** pattern combined with **background thread execution**
+//! to provide responsive @mention search functionality even in large rooms.
+//!
+//! ## State Machine
+//!
+//! The search functionality is driven by [`MentionSearchState`], which has four states:
+//!
+//! ```text
+//! ┌──────────────────────────────────────────────────────────────────────────┐
+//! │                         State Transitions                                │
+//! │                                                                          │
+//! │   ┌──────┐    user types @    ┌───────────────────┐                      │
+//! │   │ Idle │ ─────────────────► │ WaitingForMembers │ (if no cached data)  │
+//! │   └──────┘                    └─────────┬─────────┘                      │
+//! │      ▲                                  │                                │
+//! │      │                                  │ members loaded                 │
+//! │      │                                  ▼                                │
+//! │      │         ┌─────────────────────────────────────┐                   │
+//! │      │         │            Searching                │                   │
+//! │      │         │  - receiver: channel for results    │                   │
+//! │      │         │  - accumulated_results: Vec<usize>  │                   │
+//! │      │         │  - cancel_token: Arc<AtomicBool>    │                   │
+//! │      │         └──────────────┬──────────────────────┘                   │
+//! │      │                        │                                          │
+//! │      │    ┌───────────────────┼───────────────────┐                      │
+//! │      │    │                   │                   │                      │
+//! │      │    ▼                   ▼                   ▼                      │
+//! │      │  search           user selects         user presses               │
+//! │      │  completes        a mention            ESC                        │
+//! │      │    │                   │                   │                      │
+//! │      │    │                   │                   ▼                      │
+//! │      │    │                   │           ┌───────────────┐              │
+//! │      │    │                   │           │ JustCancelled │              │
+//! │      │    │                   │           └───────┬───────┘              │
+//! │      │    │                   │                   │                      │
+//! │      └────┴───────────────────┴───────────────────┘                      │
+//! │                         reset to Idle                                    │
+//! └──────────────────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! - **Idle**: Default state, no active search
+//! - **WaitingForMembers**: Triggered @ detected, waiting for room member data to load
+//! - **Searching**: Background search task running, receiving streaming results via channel
+//! - **JustCancelled**: ESC pressed, prevents immediate re-trigger on next keystroke
+//!
+//! ## Background Thread Execution
+//!
+//! To keep the UI responsive during searches in large rooms, the actual member search
+//! is offloaded to a background thread via [`cpu_worker::spawn_cpu_job`]:
+//!
+//! ```text
+//! ┌─────────────────────┐         ┌─────────────────────┐
+//! │    UI Thread        │         │   Background Thread │
+//! │                     │         │                     │
+//! │  update_user_list() │         │                     │
+//! │         │           │         │                     │
+//! │         ▼           │         │                     │
+//! │  spawn_cpu_job() ───┼────────►│  SearchRoomMembers  │
+//! │         │           │         │         │           │
+//! │         ▼           │         │         ▼           │
+//! │  cx.new_next_frame()│         │  search members...  │
+//! │         │           │         │         │           │
+//! │         ▼           │  MPSC   │         ▼           │
+//! │  check_search_      │◄────────┼─ send batch (10)    │
+//! │  channel()          │ Channel │         │           │
+//! │         │           │         │         ▼           │
+//! │         ▼           │         │  send batch (10)    │
+//! │  update UI with     │◄────────┼─        │           │
+//! │  streaming results  │         │         ▼           │
+//! │                     │         │  send completion    │
+//! └─────────────────────┘         └─────────────────────┘
+//! ```
+//!
+//! Key features:
+//! - Results are streamed in batches of 10 for progressive UI updates
+//! - Cancellation is supported via `Arc<AtomicBool>` token
+//! - Each search has a unique `search_id` to ignore stale results
+//!
+//! ## Focus Management
+//!
+//! The component handles complex focus scenarios:
+//! - `pending_popup_cleanup`: Defers popup closure when focus is lost during search
+//! - `pending_draw_focus_restore`: Retries focus restoration in draw_walk until successful
+//!
+//! ## Key Components
+//!
+//! - [`SearchResult`]: Result type sent through the channel from background thread
+//! - [`MentionSearchState`]: State machine enum managing search lifecycle
+//! - [`MentionableTextInputAction`]: Actions for external communication (power levels, member updates)
 //!
 use crate::avatar_cache::*;
 use crate::shared::avatar::AvatarWidgetRefExt;

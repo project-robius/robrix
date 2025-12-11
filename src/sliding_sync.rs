@@ -3571,6 +3571,103 @@ pub fn shutdown_background_tasks() {
     }
 }
 
+/// Validates that a path is safe to delete by ensuring it is strictly within the app data directory.
+///
+/// # Security
+///
+/// This function prevents arbitrary directory deletion attacks where a malicious or corrupted
+/// session file could specify a path outside the app's data directory (e.g., `~` or `/`).
+///
+/// The validation performs the following checks:
+/// 1. Canonicalizes both the target path and the app data directory to resolve symlinks
+/// 2. Verifies the target path starts with the app data directory prefix
+/// 3. Ensures the path is not the app data directory itself (must be a subdirectory)
+///
+/// # Returns
+///
+/// - `Ok(PathBuf)` - The canonicalized path if it's safe to delete
+/// - `Err(io::Error)` - If the path is outside the sandbox or canonicalization fails
+fn validate_path_within_app_data(path: &Path) -> io::Result<std::path::PathBuf> {
+    use std::path::PathBuf;
+
+    // Get the app data directory and canonicalize it
+    let app_data = app_data_dir();
+    let canonical_app_data = app_data.canonicalize().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("Failed to canonicalize app data directory: {}", e),
+        )
+    })?;
+
+    // Canonicalize the target path to resolve any symlinks or relative components
+    // This prevents symlink attacks where the path appears to be inside app_data
+    // but actually points elsewhere
+    let canonical_path = path.canonicalize().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("Failed to canonicalize target path {:?}: {}", path, e),
+        )
+    })?;
+
+    // Verify the canonical path starts with the canonical app data directory
+    if !canonical_path.starts_with(&canonical_app_data) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "Security: Path {:?} is outside app data directory {:?}",
+                canonical_path, canonical_app_data
+            ),
+        ));
+    }
+
+    // Ensure we're not deleting the app data directory itself
+    if canonical_path == canonical_app_data {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Security: Cannot delete the app data directory itself",
+        ));
+    }
+
+    // Additional check: ensure the path has at least one more component after app_data
+    // This prevents edge cases with trailing slashes or dot components
+    let relative = canonical_path.strip_prefix(&canonical_app_data).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Security: Failed to compute relative path within app data",
+        )
+    })?;
+
+    if relative.as_os_str().is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Security: Path resolves to app data directory itself",
+        ));
+    }
+
+    Ok(canonical_path)
+}
+
+/// Clears all application state during logout, including the Matrix SDK database.
+///
+/// # Why Delete the Matrix SDK Database?
+///
+/// Each login creates a **new database directory** with a timestamp-based name
+/// (e.g., `db_2025-12-12_10_30_45_123456`). This database stores:
+/// - Encryption keys and device information
+/// - Room state and membership caches
+/// - Message history and sync tokens
+///
+/// If we don't delete the old database on logout:
+/// 1. **Stale data leakage**: Old room member lists may appear after re-login
+/// 2. **Disk space accumulation**: Each login creates a new directory, old ones never cleaned
+/// 3. **Data confusion**: Some code paths might read cached data from previous sessions,
+///    causing issues like showing wrong user's room members in @mention search
+///
+/// # Security Note
+///
+/// The database path is read from a session file that could potentially be tampered with.
+/// Before deletion, the path is validated via [`validate_path_within_app_data`] to ensure
+/// it is strictly within the app's data directory, preventing arbitrary directory deletion.
 pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
     // Get the database path before clearing CLIENT
     // We need this to delete the Matrix SDK database after logout
@@ -3621,15 +3718,28 @@ pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
 
     // Delete the Matrix SDK database directory to ensure fresh state on next login
     // This prevents stale cached data (like old room members) from appearing after re-login
+    //
+    // SECURITY: The db_path comes from a session file which could be tampered with.
+    // We MUST validate that the path is strictly within our app data directory
+    // before performing any deletion to prevent arbitrary directory deletion attacks.
     if let Some(db_path) = db_path_to_delete {
-        match tokio::fs::remove_dir_all(&db_path).await {
-            Ok(_) => {
-                log!("Successfully deleted Matrix SDK database at: {:?}", db_path);
+        match validate_path_within_app_data(&db_path) {
+            Ok(validated_path) => {
+                match tokio::fs::remove_dir_all(&validated_path).await {
+                    Ok(_) => {
+                        log!("Successfully deleted Matrix SDK database at: {:?}", validated_path);
+                    }
+                    Err(e) => {
+                        // Don't fail logout if database deletion fails
+                        // Just log the error and continue
+                        log!("Warning: Failed to delete Matrix SDK database at {:?}: {}", validated_path, e);
+                    }
+                }
             }
             Err(e) => {
-                // Don't fail logout if database deletion fails
-                // Just log the error and continue
-                log!("Warning: Failed to delete Matrix SDK database at {:?}: {}", db_path, e);
+                // Security validation failed - do NOT delete the path
+                // This could indicate a tampered session file or symlink attack
+                error!("Security: Refusing to delete database path {:?}: {}", db_path, e);
             }
         }
     }
