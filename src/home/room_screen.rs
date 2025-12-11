@@ -672,8 +672,7 @@ impl Widget for RoomScreen {
                 // Handle actions related to restoring the previously-saved state of rooms.
                 if let Some(AppStateAction::RoomLoadedSuccessfully(loaded)) = action.downcast_ref() {
                     if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == loaded.room_id()) {
-                        // `set_displayed_room()` does nothing if the room is unchanged,
-                        // so we clear it first to force a refresh.
+                        // `set_displayed_room()` does nothing if the room_name_id is unchanged, so we clear it first.
                         if let Some(room_name) = self.room_name_id.clone() {
                             self.room_name_id = None;
                             self.set_displayed_room(cx, room_name);
@@ -742,7 +741,7 @@ impl Widget for RoomScreen {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
                 if rooms_list_ref.is_room_loaded(room_name.room_id()) {
                     // This room has been loaded now, so we call `set_displayed_room()`
-                    // to fully display it. That function does nothing if the room is unchanged,
+                    // to fully display it. That function does nothing if the room_name_id is unchanged,
                     // so we clear it first.
                     let room_name_copy = room_name.clone();
                     self.room_name_id = None;
@@ -823,10 +822,21 @@ impl Widget for RoomScreen {
                     room_avatar_url: None,
                 }
             } else {
-                // No room selected yet. We need actual room context to properly handle events,
-                // so we skip event handling entirely rather than using dummy/invalid room data.
-                log!("RoomScreen handling event with no room context, skipping room-dependent event handling");
-                return;
+                // No room selected yet, skip event handling that requires room context
+                log!("RoomScreen handling event with no room_name_id and no tl_state, skipping room-dependent event handling");
+                if !is_pane_shown || !is_interactive_hit {
+                    return;
+                }
+                // Use a dummy room props for non-room-specific events
+                RoomScreenProps {
+                    room_screen_widget_uid,
+                    room_name: RoomNameId::new(
+                        RoomDisplayName::Empty,
+                        matrix_sdk::ruma::OwnedRoomId::try_from("!dummy:matrix.org").unwrap(),
+                    ),
+                    room_members: None,
+                    room_avatar_url: None,
+                }
             };
             let mut room_scope = Scope::with_props(&room_props);
 
@@ -1453,14 +1463,14 @@ impl RoomScreen {
         action: &Action,
         pane: &UserProfileSlidingPaneRef,
     ) -> bool {
-        let Some(room_name_id) = self.room_name_id.clone() else {
-            return false;
-        };
         // A closure that handles both MatrixToUri and MatrixUri links,
         // and returns whether the link was handled.
         let mut handle_matrix_link = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
             match id {
                 MatrixId::User(user_id) => {
+                    let Some(room_name_id) = self.room_name_id.as_ref() else {
+                        return false;
+                    };
                     // There is no synchronous way to get the user's full profile info
                     // including the details of their room membership,
                     // so we fill in with the details we *do* know currently,
@@ -1487,7 +1497,7 @@ impl RoomScreen {
                     true
                 }
                 MatrixId::Room(room_id) => {
-                    if room_name_id.room_id() == room_id {
+                    if self.room_name_id.as_ref().is_some_and(|r| r.room_id() == room_id) {
                         enqueue_popup_notification(PopupItem {
                             message: "You are already viewing that room.".into(),
                             kind: PopupKind::Error,
