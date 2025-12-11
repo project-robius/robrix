@@ -5,7 +5,7 @@
 //! 1. a narrow vertical strip, when in Desktop (widescreen) mode,
 //! 2. a wide, short horizontal strip, when in Mobile (narrowscreen) mode.
 
-use std::{borrow::Cow, collections::HashMap};
+use std::collections::HashMap;
 
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
@@ -485,6 +485,10 @@ pub struct SpacesBar {
     /// by applying the `display_filter` to the set of `all_joined_spaces`.
     #[rust] displayed_spaces: Vec<OwnedRoomId>,
 
+    /// Whether the list of `displayed_spaces` is currently filtered:
+    /// `true` if filtered, `false` if showing everything.
+    #[rust] is_filtered: bool,
+
     /// The ID of the currently-selected space in this SpacesBar.
     /// Only one space can be selected at once.
     #[rust] selected_space: Option<OwnedRoomId>,
@@ -560,10 +564,10 @@ impl Widget for SpacesBar {
                         let item = list.item(cx, portal_list_index, id!(StatusLabel));
                         item.label(ids!(label)).set_text(
                             cx,
-                            if self.all_joined_spaces.is_empty() {
-                                "Found no\njoined spaces."
-                            } else {
+                            if self.is_filtered {
                                 "Found no\nmatching spaces."
+                            } else {
+                                "Found no\njoined spaces."
                             }
                         );
                         item
@@ -614,15 +618,14 @@ impl Widget for SpacesBar {
                     }
                     else if portal_list_index == len {
                         let item = list.item(cx, portal_list_index, id!(StatusLabel));
-                        item.label(ids!(label)).set_text(
-                            cx,
-                            match len {
-                                0 => Cow::from("Found no\nmatching spaces."),
-                                1 => Cow::from("Found 1\nmatching space."),
-                                2..100 => Cow::from(format!("Found {len}\nmatching spaces.")),
-                                100..  => Cow::from(String::from("Found 99+\nmatching spaces.")),
-                            }.as_ref(),
-                        );
+                        let descriptor = if self.is_filtered { "matching" } else { "joined" }; 
+                        let text = match len {
+                            0      => format!("Found no\n{descriptor} spaces."),
+                            1      => format!("Found 1\n{descriptor} space."),
+                            2..100 => format!("Found {len}\n{descriptor} spaces."),
+                            100..  => format!("Found 99+\n{descriptor} spaces."),
+                        };
+                        item.label(ids!(label)).set_text(cx, &text);
                         item
                     }
                     else {
@@ -792,6 +795,7 @@ impl SpacesBar {
         let portal_list = self.view.portal_list(ids!(spaces_list));
         if keywords.is_empty() {
             // Reset each of the displayed_* lists to show all rooms.
+            self.is_filtered = false;
             self.display_filter = RoomDisplayFilter::default();
             self.displayed_spaces = self.all_joined_spaces.keys().cloned().collect();
             portal_list.set_first_id_and_scroll(0, 0.0);
@@ -806,6 +810,7 @@ impl SpacesBar {
             .set_filter_criteria(RoomFilterCriteria::All)
             .build();
         self.display_filter = filter;
+        self.is_filtered = true;
 
         let filtered_spaces_iter = self.all_joined_spaces.iter()
             .filter(|(_, space)| (self.display_filter)(*space));

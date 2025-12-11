@@ -80,10 +80,10 @@ live_design! {
         icon = <Icon> {
             width: 25,
             height: 25,
-            margin: {right: 2}
+            margin: {left: 5, right: 3}
             align: {x: 0.5, y: 0.5}
             draw_icon: {
-                svg_file: (ICON_HOME)
+                svg_file: (ICON_HIERARCHY)
 
                 instance active: 0.0
                 instance hover: 0.0
@@ -105,7 +105,7 @@ live_design! {
                     )
                 }
             }
-            icon_walk: { width: 14, height: Fit, margin: {left: -1, bottom: 1} }
+            icon_walk: { width: 25, height: 20, margin: {left: 0, bottom: 0} }
         }
 
         space_lobby_label = <Label> {
@@ -137,7 +137,7 @@ live_design! {
                     )
                 }
             }
-            text: "Go to Space Lobby"
+            text: "Explore this Space"
         }
 
         animator: {
