@@ -111,6 +111,18 @@ impl Widget for MainDesktopUI {
 
 impl MainDesktopUI {
     /// Focuses on a room if it is already open, otherwise creates a new tab for the room.
+    ///
+    /// # Duplicate Tab Prevention
+    ///
+    /// This method uses [`Self::find_open_room_live_id`] to check if the room is already open,
+    /// rather than directly comparing `LiveId::from_str(room_id)`. This is necessary because
+    /// the dock may store `LiveId`s with different prefixes depending on how the tab was created:
+    ///
+    /// - Tabs restored from saved app state may have prefixed `LiveId`s
+    /// - Tabs created directly use `LiveId::from_str(room_id)` without prefix
+    ///
+    /// By looking up the actual stored `LiveId` via room_id comparison, we avoid creating
+    /// duplicate tabs when a room is already open but its `LiveId` format differs.
     fn focus_or_create_tab(&mut self, cx: &mut Cx, room: SelectedRoom) {
         let dock = self.view.dock(ids!(dock));
 

@@ -3588,8 +3588,6 @@ pub fn shutdown_background_tasks() {
 /// - `Ok(PathBuf)` - The canonicalized path if it's safe to delete
 /// - `Err(io::Error)` - If the path is outside the sandbox or canonicalization fails
 fn validate_path_within_app_data(path: &Path) -> io::Result<std::path::PathBuf> {
-    use std::path::PathBuf;
-
     // Get the app data directory and canonicalize it
     let app_data = app_data_dir();
     let canonical_app_data = app_data.canonicalize().map_err(|e| {
