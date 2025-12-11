@@ -259,10 +259,10 @@ impl Widget for RoomsListEntry {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if let Some(room_info) = scope.props.get::<JoinedRoomInfo>() {
-            self.room_id = Some(room_info.room_id.clone());
+            self.room_id = Some(room_info.room_name_id.room_id().clone());
         }
         else if let Some(room_info) = scope.props.get::<InvitedRoomInfo>() {
-            self.room_id = Some(room_info.room_id.clone());
+            self.room_id = Some(room_info.room_name_id.room_id().clone());
         }
 
         self.view.draw_walk(cx, scope, walk)
@@ -297,9 +297,7 @@ impl RoomsListEntryContent {
         cx: &mut Cx,
         room_info: &JoinedRoomInfo,
     ) {
-        if let Some(ref name) = room_info.room_name {
-            self.view.label(ids!(room_name)).set_text(cx, name);
-        }
+        self.view.label(ids!(room_name)).set_text(cx, &room_info.room_name_id.to_string());
         if let Some((ts, msg)) = room_info.latest.as_ref() {
             if let Some(human_readable_date) = relative_format(*ts) {
                 self.view
@@ -325,11 +323,7 @@ impl RoomsListEntryContent {
         cx: &mut Cx,
         room_info: &InvitedRoomInfo,
     ) {
-        self.view.label(ids!(room_name)).set_text(
-            cx,
-            room_info.room_name.as_deref()
-                .unwrap_or("Invite to unnamed room"),
-        );
+        self.view.label(ids!(room_name)).set_text(cx, &room_info.room_name_id.to_string());
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(ids!(timestamp)).set_text(cx, "");
         let inviter_string = match &room_info.inviter_info {
