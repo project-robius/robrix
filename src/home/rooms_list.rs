@@ -712,7 +712,13 @@ impl RoomsList {
         if self.filter_keywords.is_empty() {
             // Reset each of the displayed_* lists to show all rooms.
             self.display_filter = RoomDisplayFilter::default();
-            self.displayed_invited_rooms = self.invited_rooms.borrow().keys().cloned().collect();
+            self.displayed_invited_rooms = self.invited_rooms.borrow()
+                .keys()
+                .filter(|room_id| self.selected_space.as_ref()
+                    .map_or(true, |(space_id, _)| self.is_room_in_space(space_id, room_id))
+                )
+                .cloned()
+                .collect();
 
             self.displayed_direct_rooms.clear();
             self.displayed_regular_rooms.clear();
