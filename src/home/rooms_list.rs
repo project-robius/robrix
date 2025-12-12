@@ -1,10 +1,11 @@
-use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Rc, sync::Arc};
+use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map::Entry}, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
+use matrix_sdk_ui::spaces::room_list::SpaceRoomListPaginationState;
 use tokio::sync::mpsc::UnboundedSender;
 use crate::{
-    app::{AppState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}}, shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, room_filter_input_bar::RoomFilterAction}, sliding_sync::{MatrixRequest, PaginationDirection, submit_async_request}, space_service_sync::SpaceRequest, utils::room_name_or_id
+    app::{AppState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn}}, shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, room_filter_input_bar::RoomFilterAction}, sliding_sync::{MatrixRequest, PaginationDirection, submit_async_request}, space_service_sync::{SpaceRequest, SpaceRoomListAction}, utils::room_name_or_id
 };
 use super::rooms_list_entry::RoomsListEntryAction;
 
@@ -304,6 +305,14 @@ pub enum InviteState {
     RoomLeft,
 }
 
+/// The value in the RoomsList's `space_map` that contains info about a space.
+#[derive(Default)]
+struct SpaceMapValue {
+    is_fully_paginated: bool,
+    /// The set room IDs or space IDs that are direct children of this space.
+    direct_children: Arc<HashSet<OwnedRoomId>>,
+}
+
 
 #[derive(Live, Widget)]
 pub struct RoomsList {
@@ -330,10 +339,8 @@ pub struct RoomsList {
 
     /// A flattened map of all spaces known to the client, and the rooms/spaces they contain.
     ///
-    /// The key is the space ID, and the value is a set of room IDs or space IDs that are
-    /// direct descendants of that space.
     /// This can include both joined and non-joined spaces.
-    #[rust] space_map: HashMap<OwnedRoomId, HashSet<OwnedRoomId>>,
+    #[rust] space_map: HashMap<OwnedRoomId, SpaceMapValue>,
 
     /// The currently-active filter function for the list of rooms.
     ///
@@ -341,6 +348,11 @@ pub struct RoomsList {
     /// when its value changes. Instead, you must manually invoke it on the set of `all_joined_rooms`
     /// in order to update the set of `displayed_rooms` accordingly.
     #[rust] display_filter: RoomDisplayFilter,
+
+    /// The latest keywords entered into the `RoomFilterInputBar`.
+    ///
+    /// If empty, there are no filter keywords in use, and all rooms/spaces should be shown.
+    #[rust] filter_keywords: String,
 
     /// The list of invited rooms currently displayed in the UI, in order from top to bottom.
     /// This is a strict subset of the rooms in `all_invited_rooms`, and should be determined
@@ -418,7 +430,7 @@ impl RoomsList {
                             self.displayed_invited_rooms.push(room_id);
                         }
                     }
-                    self.update_status_rooms_count();
+                    self.set_status_to_rooms_count();
                     // Signal the UI to update the RoomScreen
                     SignalToUI::set_ui_signal();
                 }
@@ -457,7 +469,7 @@ impl RoomsList {
                             RoomsListAction::InviteAccepted { room_id, room_name }
                         );
                     }
-                    self.update_status_rooms_count();
+                    self.set_status_to_rooms_count();
                     // Signal the UI to update the RoomScreen
                     SignalToUI::set_ui_signal();
                 }
@@ -576,7 +588,7 @@ impl RoomsList {
                             .map(|index| self.displayed_invited_rooms.remove(index));
                     }
 
-                    self.update_status_rooms_count();
+                    self.set_status_to_rooms_count();
                 }
                 RoomsListUpdate::ClearRooms => {
                     self.all_joined_rooms.clear();
@@ -584,14 +596,14 @@ impl RoomsList {
                     self.displayed_regular_rooms.clear();
                     self.invited_rooms.borrow_mut().clear();
                     self.displayed_invited_rooms.clear();
-                    self.update_status_rooms_count();
+                    self.set_status_to_rooms_count();
                 }
                 RoomsListUpdate::NotLoaded => {
                     self.status = "Loading rooms (waiting for homeserver)...".to_string();
                 }
                 RoomsListUpdate::LoadedRooms { max_rooms } => {
                     self.max_known_rooms = max_rooms;
-                    self.update_status_rooms_count();
+                    self.set_status_to_rooms_count();
                 },
                 RoomsListUpdate::Tags { room_id, new_tags } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
@@ -665,14 +677,14 @@ impl RoomsList {
     }
 
     /// Updates the status message to show how many rooms have been loaded.
-    fn update_status_rooms_count(&mut self) {
+    fn set_status_to_rooms_count(&mut self) {
         let num_rooms = self.all_joined_rooms.len() + self.invited_rooms.borrow().len();
         self.status = format!("Loaded {num_rooms} rooms.");
     }
 
     /// Updates the status message to show how many rooms are currently displayed
     /// that match the current search filter.
-    fn update_status_matching_rooms(&mut self) {
+    fn set_status_to_matching_rooms(&mut self) {
         let num_rooms = self.displayed_invited_rooms.len()
             + self.displayed_direct_rooms.len()
             + self.displayed_regular_rooms.len();
@@ -691,25 +703,32 @@ impl RoomsList {
         || self.displayed_regular_rooms.contains(room)
     }
 
-    /// Updates the display filter and recalculates the lists of displayed rooms
-    /// based on the current search filter. Also redraws the RoomsList.
-    fn update_displayed_rooms(&mut self, cx: &mut Cx, keywords: &str) {
+    /// Updates and redraws the lists of displayed rooms in the RoomsList.
+    /// 
+    /// This will update the display filter based on the current filter keywords
+    /// and the currently-selected space (if any).
+    fn update_displayed_rooms(&mut self, cx: &mut Cx) {
         let portal_list = self.view.portal_list(ids!(list));
-        if keywords.is_empty() {
+        if self.filter_keywords.is_empty() {
             // Reset each of the displayed_* lists to show all rooms.
             self.display_filter = RoomDisplayFilter::default();
             self.displayed_invited_rooms = self.invited_rooms.borrow().keys().cloned().collect();
 
             self.displayed_direct_rooms.clear();
             self.displayed_regular_rooms.clear();
-            for (id, jr) in &self.all_joined_rooms {
-                if jr.is_direct {
-                    self.displayed_direct_rooms.push(id.clone());
-                } else {
-                    self.displayed_regular_rooms.push(id.clone());
+            for (room_id, jr) in &self.all_joined_rooms {
+                // If we have a selected space, only display rooms that are in that space.
+                if self.selected_space.as_ref()
+                    .map_or(true, |(space_id, _)| self.is_room_in_space(space_id, room_id))
+                {
+                    if jr.is_direct {
+                        self.displayed_direct_rooms.push(room_id.clone());
+                    } else {
+                        self.displayed_regular_rooms.push(room_id.clone());
+                    }
                 }
             }
-            self.update_status_rooms_count();
+            self.set_status_to_rooms_count();
             portal_list.set_first_id_and_scroll(0, 0.0);
             self.redraw(cx);
             return;
@@ -718,7 +737,7 @@ impl RoomsList {
         // Create a new filter function based on the given keywords
         // and store it in this RoomsList such that we can apply it to newly-added rooms.
         let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
-            .set_keywords(keywords.to_owned())
+            .set_keywords(self.filter_keywords.clone())
             .set_filter_criteria(RoomFilterCriteria::All)
             .build();
         self.display_filter = filter;
@@ -731,7 +750,7 @@ impl RoomsList {
         self.displayed_regular_rooms = new_displayed_regular_rooms;
         self.displayed_direct_rooms = new_displayed_direct_rooms;
 
-        self.update_status_matching_rooms();
+        self.set_status_to_matching_rooms();
         portal_list.set_first_id_and_scroll(0, 0.0);
         self.redraw(cx);
     }
@@ -742,7 +761,12 @@ impl RoomsList {
         let invited_rooms_ref = self.invited_rooms.borrow();
         let filtered_invited_rooms_iter = invited_rooms_ref
             .iter()
-            .filter(|(_, room)| (self.display_filter)(*room));
+            .filter(|(room_id, room)|
+                (self.display_filter)(*room) &&
+                // If we have a selected space, only display rooms that are in that space.
+                self.selected_space.as_ref()
+                    .map_or(true, |(space_id, _)| self.is_room_in_space(space_id, room_id))
+            );
 
         if let Some(sort_fn) = sort_fn {
             let mut filtered_invited_rooms = filtered_invited_rooms_iter
@@ -770,8 +794,14 @@ impl RoomsList {
             }
         };
 
-        let filtered_joined_rooms_iter = self.all_joined_rooms.iter()
-            .filter(|(_, room)| (self.display_filter)(*room));
+        let filtered_joined_rooms_iter = self.all_joined_rooms
+            .iter()
+            .filter(|(room_id, room)|
+                (self.display_filter)(*room) &&
+                // If we have a selected space, only display rooms that are in that space.
+                self.selected_space.as_ref()
+                    .map_or(true, |(space_id, _)| self.is_room_in_space(space_id, room_id))
+            );
 
         if let Some(sort_fn) = sort_fn {
             let mut filtered_rooms = filtered_joined_rooms_iter.collect::<Vec<_>>();
@@ -853,6 +883,75 @@ impl RoomsList {
             regular_rooms_indexes,
         )
     }
+
+    /// Handle any incoming updates to spaces' room lists and pagination state.
+    fn handle_space_room_list_action(&mut self, cx: &mut Cx, action: &SpaceRoomListAction) {
+        match action {
+            SpaceRoomListAction::UpdatedChildren { space_id, direct_children } => {
+                match self.space_map.entry(space_id.clone()) {
+                    Entry::Occupied(mut occ) => {
+                        occ.get_mut().direct_children = direct_children.clone();
+                    }
+                    Entry::Vacant(vac) => {
+                        vac.insert_entry(SpaceMapValue {
+                            is_fully_paginated: false,
+                            direct_children: direct_children.clone(),
+                        });
+                    }
+                }
+                if self.selected_space.as_ref().is_some_and(|(id, _)| id == space_id) {
+                    self.update_displayed_rooms(cx);
+                }
+            }
+            SpaceRoomListAction::PaginationState { space_id, state } => {
+                let is_fully_paginated = matches!(state, SpaceRoomListPaginationState::Idle { end_reached: true });
+                // Only re-fetch the list of rooms in this space if it was not already fully paginated.
+                let should_fetch_rooms: bool;
+                match self.space_map.entry(space_id.clone()) {
+                    Entry::Occupied(mut occ) => {
+                        let value_mut = occ.get_mut();
+                        should_fetch_rooms = !value_mut.is_fully_paginated;
+                        value_mut.is_fully_paginated = is_fully_paginated;
+                    }
+                    Entry::Vacant(vac) => {
+                        vac.insert_entry(SpaceMapValue { is_fully_paginated, ..Default::default() });
+                        should_fetch_rooms = true;
+                    }
+                }
+                if should_fetch_rooms {
+                    let Some(sender) = self.space_request_sender.as_ref() else {
+                        error!("BUG: RoomsList: no space request sender was available to get rooms after pagination.");
+                        return;
+                    };
+                    if sender.send(SpaceRequest::GetChildren { space_id: space_id.clone() }).is_err() {
+                        error!("BUG: RoomsList: failed to send GetRooms request for space {space_id}.");
+                    }
+                }
+            }
+            SpaceRoomListAction::PaginationError { space_id, error } => {
+                error!("RoomsList: failed to paginate rooms in space {space_id}: {error:?}");
+                enqueue_popup_notification(PopupItem {
+                    message: format!("Failed to fetch more rooms in this space. Try again later."),
+                    auto_dismissal_duration: None,
+                    kind: PopupKind::Error,
+                });
+            }
+        }
+    }
+
+    /// Returns whether the given target room or space is within the given parent space.
+    fn is_room_in_space(&self, parent_space: &OwnedRoomId, target: &OwnedRoomId) -> bool {
+        for child in self.space_map.get(parent_space).map(|v| v.direct_children.iter()).into_iter().flatten() {
+            if target == child {
+                return true;
+            }
+            // If the child is a space itself, check that space recursively too.
+            if self.is_room_in_space(child, target) {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 impl Widget for RoomsList {
@@ -933,19 +1032,41 @@ impl Widget for RoomsList {
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast() {
-                    self.update_displayed_rooms(cx, &keywords);
+                    self.filter_keywords = keywords;
+                    self.update_displayed_rooms(cx);
                     continue;
                 }
 
+                // Handle a space navigation tab being selected or de-selected.
                 if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
                     match tab {
                         SelectedTab::Space { space_id, space_name } => {
+                            if self.selected_space.as_ref().is_some_and(|(id, _)| id == space_id) {
+                                continue;
+                            }
+
                             self.selected_space = Some((space_id.clone(), space_name.clone()));
                             self.view.space_lobby_entry(ids!(space_lobby_entry)).set_visible(cx, true);
 
+                            // If we don't have the full rooms list for this newly-selected space, then fetch it.
+                            if self.space_map.get(space_id).is_none_or(|v| !v.is_fully_paginated) {
+                                let Some(sender) = self.space_request_sender.as_ref() else {
+                                    error!("BUG: RoomsList: no space request sender was available.");
+                                    continue;
+                                };
+
+                                if sender.send(SpaceRequest::SubscribeToSpaceRoomList { space_id: space_id.clone() }).is_err() {
+                                    error!("BUG: RoomsList: failed to send SubscribeToSpaceRoomList request for space {space_name} ({space_id}).");
+                                }
+                                if sender.send(SpaceRequest::PaginateSpaceRoomList { space_id: space_id.clone() }).is_err() {
+                                    error!("BUG: RoomsList: failed to send PaginateSpaceRoomList request for space {space_name} ({space_id}).");
+                                }
+                                if sender.send(SpaceRequest::GetChildren { space_id: space_id.clone() }).is_err() {
+                                    error!("BUG: RoomsList: failed to send GetRooms request for space {space_name} ({space_id}).");
+                                }
+                            }
+
                             // TODO:
-                            // * submit spaces request to get list of children in this space
-                            // * modify logic in `update_displayed_rooms` to also filter for rooms in the selected_space
                             // * tell dock to save state and close rooms *not* in this space, (or maybe the dock can listen for this action separately)
                         }
                         _ => {
@@ -954,9 +1075,13 @@ impl Widget for RoomsList {
                         }
                     }
 
-
+                    self.update_displayed_rooms(cx);
                     continue;
+                }
 
+                if let Some(space_room_list_action) = action.downcast_ref() {
+                    self.handle_space_room_list_action(cx, space_room_list_action);
+                    continue;
                 }
             }
         }

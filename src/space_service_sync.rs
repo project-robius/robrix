@@ -1,7 +1,7 @@
 //! Background tasks that subscribe to the Matrix SpaceService in order to
 //! track changes to the user's joined spaces and send updates the UI.
 
-use std::{collections::{HashMap, hash_map::Entry}, iter::Peekable};
+use std::{collections::{HashMap, HashSet, hash_map::Entry}, iter::Peekable, sync::Arc};
 use eyeball_im::VectorDiff;
 use futures_util::StreamExt;
 use imbl::Vector;
@@ -33,17 +33,17 @@ pub enum SpaceRequest {
     PaginateSpaceRoomList {
         space_id: OwnedRoomId,
     },
-    /// Get a copy of the currently-known rooms in the given space.
-    GetRooms {
+    /// Get a copy of the currently-known children (rooms and spaces) in the given space.
+    GetChildren {
         space_id: OwnedRoomId,
     }
 }
 
 /// Internal requests sent from the [`space_service_loop`] to a specific space's [`space_room_list_loop`].
 enum SpaceRoomListRequest {
-    /// Get a copy of the currently-known rooms in this space.
-    GetRooms,
-    /// Paginate this a copy of the currently-known rooms in this space.
+    /// Get a copy of the currently-known chil.ren (rooms & spaces) in this space.
+    GetChildren,
+    /// Paginate this space to get info about more of its children.
     Paginate,
     Shutdown,
 }
@@ -90,9 +90,9 @@ pub async fn space_service_loop(space_service: SpaceService, client: Client) -> 
         request_opt = receiver.recv() => {
             let Some(request) = request_opt else { break };
             match request {
-                SpaceRequest::GetRooms { space_id } => {
+                SpaceRequest::GetChildren { space_id } => {
                     let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id).await;
-                    if sender.send(SpaceRoomListRequest::GetRooms).is_err() {
+                    if sender.send(SpaceRoomListRequest::GetChildren).is_err() {
                         error!("BUG: failed to send GetRooms request to space room list loop for space {space_id}");
                     }
                 }
@@ -508,6 +508,11 @@ async fn space_room_list_loop(
         }),
     };
 
+    /// An inner function that creates a HashSet from the set of all rooms in this space.
+    fn to_hash_set(all_rooms_in_space: &Vector<SpaceRoom>) -> Arc<HashSet<OwnedRoomId>> {
+        Arc::new(HashSet::from_iter(all_rooms_in_space.iter().map(|c| c.room_id.clone())))
+    }
+
 
     // First, we paginate the space once to get at least *some* child rooms.    
     paginate_once().await;
@@ -519,10 +524,10 @@ async fn space_room_list_loop(
         request_opt = receiver.recv() => {
             let Some(request) = request_opt else { break };
             match request {
-                SpaceRoomListRequest::GetRooms => {
-                    Cx::post_action(SpaceRoomListAction::UpdatedRooms {
+                SpaceRoomListRequest::GetChildren => {
+                    Cx::post_action(SpaceRoomListAction::UpdatedChildren {
                         space_id: space_id.clone(),
-                        direct_children: all_rooms_in_space.clone(),
+                        direct_children: to_hash_set(&all_rooms_in_space),
                     });
                 }
                 SpaceRoomListRequest::Paginate => paginate_once().await,
@@ -536,9 +541,9 @@ async fn space_room_list_loop(
             for diff in batch {
                 diff.apply(&mut all_rooms_in_space);
             }
-            Cx::post_action(SpaceRoomListAction::UpdatedRooms {
+            Cx::post_action(SpaceRoomListAction::UpdatedChildren {
                 space_id: space_id.clone(),
-                direct_children: all_rooms_in_space.clone(),
+                direct_children: to_hash_set(&all_rooms_in_space),
             });
         }
     } }
@@ -547,14 +552,20 @@ async fn space_room_list_loop(
 
 /// Actions emitted from the SpaceRoomList for a given space.
 pub enum SpaceRoomListAction {
-    UpdatedRooms {
+    /// The list of rooms & spaces that are direct children of the given space has changed.
+    UpdatedChildren {
         space_id: OwnedRoomId,
-        direct_children: Vector<SpaceRoom>,
+        /// The *direct* children (both rooms and nested spaces) of this space.
+        direct_children: Arc<HashSet<OwnedRoomId>>,
     },
+    /// The state of the background pagination process that was fetching the list
+    /// of rooms in the given space has changed.
     PaginationState {
         space_id: OwnedRoomId,
         state: SpaceRoomListPaginationState,
     },
+    /// There was an error in the background pagination process that was fetching
+    /// the list of rooms in the given space.
     PaginationError {
         space_id: OwnedRoomId,
         error: matrix_sdk::Error,
@@ -563,8 +574,8 @@ pub enum SpaceRoomListAction {
 impl std::fmt::Debug for SpaceRoomListAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SpaceRoomListAction::UpdatedRooms { space_id, direct_children } => {
-                f.debug_struct("SpaceRoomListAction::UpdatedRooms")
+            SpaceRoomListAction::UpdatedChildren { space_id, direct_children } => {
+                f.debug_struct("SpaceRoomListAction::UpdatedChildren")
                     .field("space_id", space_id)
                     .field("direct_children_len", &direct_children.len())
                     .finish()
