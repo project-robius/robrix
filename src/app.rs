@@ -603,11 +603,31 @@ pub struct AppState {
 }
 
 /// A snapshot of the main dock: all state needed to restore the dock tabs/layout.
+///
+/// # Cross-Version Hash Drift Warning
+///
+/// The `LiveId` keys in `dock_items` and `open_rooms` are derived from `LiveId::from_str(room_id)`.
+/// However, the hash value may change when upgrading Makepad or the Rust toolchain, causing
+/// persisted `LiveId`s to no longer match freshly computed ones. This leads to duplicate tabs
+/// when restoring state across versions.
+///
+/// **Current mitigation**: `MainDesktopUI::find_open_room_live_id` performs a reverse-lookup
+/// by `room_id` to find the actual stored `LiveId`, avoiding hash mismatch issues at runtime.
+///
+// TODO: A more thorough fix would be to use `room_id` (String) as the persistence key instead
+// of `LiveId`, and derive `LiveId` at runtime when needed. This would eliminate cross-version
+// hash drift entirely and make the persisted format stable across Makepad/toolchain upgrades.
 #[derive(Clone, Default, Debug, DeRon, SerRon)]
 pub struct SavedDockState {
     /// All items contained in the dock, keyed by their LiveId.
+    ///
+    // TODO: Consider using `OwnedRoomId` (String) as the key instead of `LiveId` to avoid
+    // cross-version hash drift. See struct-level documentation for details.
     pub dock_items: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by the LiveId of their tab.
+    ///
+    // TODO: Consider using `OwnedRoomId` (String) as the key instead of `LiveId` to avoid
+    // cross-version hash drift. See struct-level documentation for details.
     pub open_rooms: HashMap<LiveId, SelectedRoom>,
     /// The order in which the rooms were opened, in chronological order
     /// from first opened (at the beginning) to last opened (at the end).
