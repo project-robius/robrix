@@ -30,7 +30,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
-    room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
+    room::{loading_screen::{loading_tab_live_id, show_room_loading_tab}, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
@@ -1483,8 +1483,14 @@ impl RoomScreen {
                         log!("TODO: jump to known room {}", room_id);
                     } else {
                         log!("TODO: fetch and display room preview for room {}", room_id);
+                        show_room_loading_tab(
+                            loading_tab_live_id(room_id.as_str()),
+                            "Loading...",
+                            Some("Loading...".to_string()),
+                            Some("Loading Room ID...".to_string()),
+                        );
                     }
-                    false
+                    true
                 }
                 MatrixId::RoomAlias(room_alias) => {
                     log!("TODO: open room alias {}", room_alias);
@@ -1492,7 +1498,13 @@ impl RoomScreen {
                     //       while our background async task calls Client::resolve_room_alias()
                     //       and then either jumps to the room if known, or fetches and displays
                     //       a room preview for that room.
-                    false
+                    show_room_loading_tab(
+                        loading_tab_live_id(room_alias.alias()),
+                        "Loading...",
+                        Some("Loading...".to_string()),
+                        Some("Loading Room Alias...".to_string()),
+                    );
+                    true
                 }
                 MatrixId::Event(room_id, event_id) => {
                     log!("TODO: open event {} in room {}", event_id, room_id);
