@@ -2,10 +2,9 @@ use std::{
     borrow::Cow, cmp::Ordering, collections::{BTreeMap, HashSet}, ops::Deref
 };
 use bitflags::bitflags;
-use matrix_sdk::ruma::{
-    events::tag::{TagName, Tags},
-    OwnedRoomAliasId, RoomAliasId, RoomId,
-};
+use matrix_sdk::{RoomDisplayName, ruma::{
+    OwnedRoomAliasId, RoomAliasId, RoomId, events::tag::{TagName, Tags}
+}};
 
 use crate::{home::rooms_list::{InvitedRoomInfo, JoinedRoomInfo}, home::spaces_bar::JoinedSpaceInfo};
 
@@ -97,7 +96,13 @@ impl FilterableRoom for JoinedSpaceInfo {
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        self.space_name_id.to_string().into()
+        match self.space_name_id.display_name() {
+            RoomDisplayName::Aliased(name)
+            | RoomDisplayName::Calculated(name)
+            | RoomDisplayName::EmptyWas(name)
+            | RoomDisplayName::Named(name) => name.into(),
+            RoomDisplayName::Empty => self.space_name_id.to_string().into(),
+        }
     }
 
     fn unread_mentions(&self) -> u64 {
