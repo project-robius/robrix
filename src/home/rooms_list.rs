@@ -182,7 +182,7 @@ pub enum RoomsListAction {
     /// meaning that the existing `InviteScreen` should be converted
     /// to a `RoomScreen` to display now-joined room.
     InviteAccepted {
-        room_name: RoomNameId,
+        room_name_id: RoomNameId,
     },
     None,
 }
@@ -425,7 +425,7 @@ impl RoomsList {
                                 self.widget_uid(),
                                 &scope.path,
                                 RoomsListAction::InviteAccepted {
-                                    room_name: room.room_name_id.clone(),
+                                    room_name_id: room.room_name_id.clone(),
                                 }
                             );
                         }

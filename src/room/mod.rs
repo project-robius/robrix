@@ -21,13 +21,13 @@ pub fn live_design(cx: &mut Cx) {
 /// [`SuccessorRoom`] or a [`FetchedRoomPreview`].
 #[derive(Clone, Debug)]
 pub struct BasicRoomDetails {
-    pub room_name: RoomNameId,
+    pub room_name_id: RoomNameId,
     pub room_avatar: FetchedRoomAvatar,
 }
 impl From<&SuccessorRoom> for BasicRoomDetails {
     fn from(successor_room: &SuccessorRoom) -> Self {
         BasicRoomDetails {
-            room_name: RoomNameId::new(RoomDisplayName::Empty, successor_room.room_id.clone()),
+            room_name_id: RoomNameId::new(RoomDisplayName::Empty, successor_room.room_id.clone()),
             room_avatar: avatar_from_room_name(None),
         }
     }
@@ -39,7 +39,7 @@ impl From<&FetchedRoomPreview> for BasicRoomDetails {
             .unwrap_or(RoomDisplayName::Empty);
         let room_name = RoomNameId::new(room_name, frp.room_id.clone());
         BasicRoomDetails {
-            room_name,
+            room_name_id: room_name,
             room_avatar: frp.room_avatar.clone(),
         }
     }

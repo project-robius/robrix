@@ -673,10 +673,8 @@ impl Widget for RoomScreen {
                 if let Some(AppStateAction::RoomLoadedSuccessfully(loaded)) = action.downcast_ref() {
                     if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == loaded.room_id()) {
                         // `set_displayed_room()` does nothing if the room_name_id is unchanged, so we clear it first.
-                        if let Some(room_name) = self.room_name_id.clone() {
-                            self.room_name_id = None;
-                            self.set_displayed_room(cx, room_name);
-                        }
+                        self.room_name_id = None;
+                        self.set_displayed_room(cx, loaded);
                         return;
                     }
                 }
@@ -737,15 +735,14 @@ impl Widget for RoomScreen {
         // 1. to check if the room has been loaded from the homeserver yet, or
         // 2. that its timeline events have been updated in the background.
         if let Event::Signal = event {
-            if let (false, Some(room_name), true) = (self.is_loaded, self.room_name_id.as_ref(), cx.has_global::<RoomsListRef>()) {
+            if let (false, Some(room_name_id), true) = (self.is_loaded, self.room_name_id.as_ref(), cx.has_global::<RoomsListRef>()) {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
-                if rooms_list_ref.is_room_loaded(room_name.room_id()) {
-                    // This room has been loaded now, so we call `set_displayed_room()`
-                    // to fully display it. That function does nothing if the room_name_id is unchanged,
-                    // so we clear it first.
-                    let room_name_copy = room_name.clone();
+                if rooms_list_ref.is_room_loaded(room_name_id.room_id()) {
+                    let room_name_clone = room_name_id.clone();
+                    // This room has been loaded now, so we call `set_displayed_room()`.
+                    // We first clear the `room_name_id`, otherwise that function will do nothing.
                     self.room_name_id = None;
-                    self.set_displayed_room(cx, room_name_copy);
+                    self.set_displayed_room(cx, &room_name_clone);
                 } else {
                     self.all_rooms_loaded = rooms_list_ref.all_rooms_loaded();
                     return;
@@ -2201,17 +2198,17 @@ impl RoomScreen {
     pub fn set_displayed_room(
         &mut self,
         cx: &mut Cx,
-        room_name: RoomNameId,
+        room_name_id: &RoomNameId,
     ) {
         // If the room is already being displayed, then do nothing.
-        if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_name.room_id()) { return; }
+        if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_name_id.room_id()) { return; }
 
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
         self.loading_pane(ids!(loading_pane)).take_state();
 
-        let room_id = room_name.room_id().clone();
-        self.room_name_id = Some(room_name);
+        let room_id = room_name_id.room_id().clone();
+        self.room_name_id = Some(room_name_id.clone());
 
         // We initially tell every MentionableTextInput widget that the current user
         // *does not* have privileges to notify the entire room;
@@ -2328,10 +2325,10 @@ impl RoomScreenRef {
     pub fn set_displayed_room(
         &self,
         cx: &mut Cx,
-        room_name: RoomNameId,
+        room_name_id: &RoomNameId,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_displayed_room(cx, room_name);
+        inner.set_displayed_room(cx, room_name_id);
     }
 }
 

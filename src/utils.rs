@@ -7,7 +7,7 @@ use url::Url;
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, Cx, Event, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}, Room, RoomDisplayName};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}, RoomDisplayName};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
 use crate::{room::FetchedRoomAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
@@ -718,7 +718,7 @@ impl Display for OwnedRoomIdRon {
 /// - Automatic fallback to room ID when displaying empty names
 /// - Type-safe room name handling throughout the codebase
 /// - Simplified Display implementation that doesn't require passing room_id separately
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct RoomNameId {
     display_name: RoomDisplayName,
     room_id: OwnedRoomId,
@@ -730,13 +730,13 @@ impl RoomNameId {
         Self { display_name, room_id }
     }
 
-    /// Create a RoomName from a room, extracting both display name and ID.
-    pub fn from_room(room: &Room) -> Self {
-        Self {
-            display_name: room.cached_display_name().unwrap_or(RoomDisplayName::Empty),
-            room_id: room.room_id().to_owned(),
-        }
-    }
+    // /// Create a RoomName from a room, extracting both display name and ID.
+    // pub fn from_room(room: &Room) -> Self {
+    //     Self {
+    //         display_name: room.cached_display_name().unwrap_or(RoomDisplayName::Empty),
+    //         room_id: room.room_id().to_owned(),
+    //     }
+    // }
 
     /// Get a reference to the underlying display name.
     #[inline]
@@ -784,6 +784,20 @@ impl RoomNameId {
     }
 }
 
+impl std::fmt::Debug for RoomNameId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut ds = f.debug_struct("RoomNameId");
+        match &self.display_name {
+            RoomDisplayName::Empty => ds.field("name", &"Empty"),
+            RoomDisplayName::EmptyWas(name) => ds.field("name", &format!("Empty Room (was \"{name}\")")),
+            RoomDisplayName::Aliased(name)
+            | RoomDisplayName::Calculated(name)
+            | RoomDisplayName::Named(name) => ds.field("name", name)
+        };
+        ds.field("ID", &self.room_id)
+            .finish()
+    }
+}
 impl std::ops::Deref for RoomNameId {
     type Target = RoomDisplayName;
 
@@ -791,19 +805,16 @@ impl std::ops::Deref for RoomNameId {
         &self.display_name
     }
 }
-
 impl AsRef<RoomDisplayName> for RoomNameId {
     fn as_ref(&self) -> &RoomDisplayName {
         &self.display_name
     }
 }
-
 impl AsRef<RoomId> for RoomNameId {
     fn as_ref(&self) -> &RoomId {
         &self.room_id
     }
 }
-
 impl AsRef<OwnedRoomId> for RoomNameId {
     fn as_ref(&self) -> &OwnedRoomId {
         &self.room_id
@@ -843,11 +854,11 @@ impl From<(Option<RoomDisplayName>, OwnedRoomId)> for RoomNameId {
     }
 }
 
-impl From<&Room> for RoomNameId {
-    fn from(room: &Room) -> Self {
-        Self::from_room(room)
-    }
-}
+// impl From<&Room> for RoomNameId {
+//     fn from(room: &Room) -> Self {
+//         Self::from_room(room)
+//     }
+// }
 
 /// A RON-(de)serializable wrapper around [`RoomDisplayName`].
 #[derive(Clone, Debug)]

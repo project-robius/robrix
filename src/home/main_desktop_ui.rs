@@ -156,13 +156,13 @@ impl MainDesktopUI {
                 SelectedRoom::JoinedRoom { room_name_id }  => {
                     new_widget.as_room_screen().set_displayed_room(
                         cx,
-                        room_name_id.clone(),
+                        room_name_id,
                     );
                 }
                 SelectedRoom::InvitedRoom { room_name_id } => {
                     new_widget.as_invite_screen().set_displayed_invite(
                         cx,
-                        room_name_id.clone()
+                        room_name_id,
                     );
                 }
             }
@@ -230,26 +230,25 @@ impl MainDesktopUI {
         &mut self,
         cx: &mut Cx,
         _scope: &mut Scope,
-        room_name: RoomNameId,
+        room_name_id: &RoomNameId,
     ) {
-        let room_id = room_name.room_id().clone();
         let dock = self.view.dock(ids!(dock));
         let Some((new_widget, true)) = dock.replace_tab(
             cx,
-            LiveId::from_str(room_id.as_str()),
+            LiveId::from_str(room_name_id.room_id().as_str()),
             id!(room_screen),
-            Some(room_name.to_string()),
+            Some(room_name_id.to_string()),
             false,
         ) else {
             // Nothing we can really do here except log an error.
-            error!("BUG: failed to replace InviteScreen tab with RoomScreen for {room_id}");
+            error!("BUG: failed to replace InviteScreen tab with RoomScreen for {room_name_id}");
             return;
         };
 
         // Set the info to be displayed in the newly-replaced RoomScreen..
         new_widget
             .as_room_screen()
-            .set_displayed_room(cx, room_name.clone());
+            .set_displayed_room(cx, room_name_id);
 
         // Go through all existing `SelectedRoom` instances and replace the
         // `SelectedRoom::InvitedRoom`s with `SelectedRoom::JoinedRoom`s.
@@ -257,11 +256,11 @@ impl MainDesktopUI {
             .chain(self.room_order.iter_mut())
             .chain(self.open_rooms.values_mut())
         {
-            selected_room.upgrade_invite_to_joined(&room_id);
+            selected_room.upgrade_invite_to_joined(room_name_id.room_id());
         }
 
         // Finally, emit an action to update the AppState with the new room.
-        cx.action(AppStateAction::UpgradedInviteToJoinedRoom(room_id));
+        cx.action(AppStateAction::UpgradedInviteToJoinedRoom(room_name_id.room_id().clone()));
     }
 }
 
@@ -329,15 +328,15 @@ impl WidgetMatchEvent for MainDesktopUI {
             }
 
             // Handle RoomsList actions, which are updates from the rooms list.
-            match widget_action.cast() {
+            match widget_action.cast_ref() {
                 RoomsListAction::Selected(selected_room) => {
                     // Note that this cannot be performed within draw_walk() as the draw flow prevents from
                     // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
                     // a redraw to be happening in order to draw the tab content.
-                    self.focus_or_create_tab(cx, selected_room);
+                    self.focus_or_create_tab(cx, selected_room.clone());
                 }
-                RoomsListAction::InviteAccepted { room_name } => {
-                    self.replace_invite_with_joined_room(cx, scope, room_name.clone());
+                RoomsListAction::InviteAccepted { room_name_id } => {
+                    self.replace_invite_with_joined_room(cx, scope, room_name_id);
                 }
                 RoomsListAction::None => { }
             }
@@ -360,13 +359,13 @@ impl WidgetMatchEvent for MainDesktopUI {
                                 Some(SelectedRoom::JoinedRoom { room_name_id }) => {
                                     widget.as_room_screen().set_displayed_room(
                                         cx,
-                                        room_name_id.clone(),
+                                        room_name_id,
                                     );
                                 }
                                 Some(SelectedRoom::InvitedRoom { room_name_id }) => {
                                     widget.as_invite_screen().set_displayed_invite(
                                         cx,
-                                        room_name_id.clone(),
+                                        room_name_id,
                                     );
                                 }
                                 _ => { }
