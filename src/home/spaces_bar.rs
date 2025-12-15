@@ -9,11 +9,11 @@ use std::collections::HashMap;
 
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::RoomState;
+use matrix_sdk::{RoomDisplayName, RoomState};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, room_filter_input_bar::RoomFilterAction}, utils
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, room_filter_input_bar::RoomFilterAction}, utils::{self, RoomNameId}
 };
 
 live_design! {
@@ -244,9 +244,9 @@ live_design! {
 #[derive(Clone, Debug, DefaultNone)]
 pub enum SpacesBarAction {
     /// The user primary-clicked/tapped a space entry in the SpacesBar.
-    ButtonClicked { space_id: OwnedRoomId, space_name: String },
+    ButtonClicked { space_name_id: RoomNameId },
     /// The user secondary-clicked/long-pressed a space entry in the SpacesBar.
-    ButtonSecondaryClicked { space_id: OwnedRoomId, space_name: String },
+    ButtonSecondaryClicked { space_name_id: RoomNameId },
     None,
 }
 
@@ -256,7 +256,7 @@ pub struct SpacesBarEntry {
     #[deref] view: View,
     #[animator] animator: Animator,
 
-    #[rust] space_id_and_name: Option<(OwnedRoomId, String)>,
+    #[rust] space_name_id: Option<RoomNameId>,
 }
 
 impl Widget for SpacesBarEntry {
@@ -267,17 +267,24 @@ impl Widget for SpacesBarEntry {
 
         let area = self.draw_bg.area();
         let emit_hover_in_action = |this: &Self, cx: &mut Cx| {
+            let is_desktop = cx.display_context.is_desktop();
             cx.widget_action(
                 this.widget_uid(),
                 &scope.path,
                 TooltipAction::HoverIn {
                     widget_rect: area.rect(cx),
-                    text: this.space_id_and_name.as_ref().map_or(
+                    text: this.space_name_id.as_ref().map_or(
                         String::from("Unknown Space Name"),
-                        |(_id, sn)| sn.clone(),
+                        |sni| sni.to_string(),
                     ),
-                    bg_color: None,
-                    text_color: None,
+                    options: CalloutTooltipOptions {
+                        position: if is_desktop {
+                            TooltipPosition::Right
+                        } else {
+                            TooltipPosition::Top
+                        },
+                        ..Default::default()
+                    },
                 },
             );
         };
@@ -301,11 +308,11 @@ impl Widget for SpacesBarEntry {
             Hit::FingerDown(fe) => {
                 self.animator_play(cx, ids!(hover.down));
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
-                    if let Some((space_id, space_name)) = self.space_id_and_name.clone() {
+                    if let Some(space_name_id) = self.space_name_id.clone() {
                         cx.widget_action(
                             self.widget_uid(),
                             &scope.path,
-                            SpacesBarAction::ButtonSecondaryClicked { space_id, space_name },
+                            SpacesBarAction::ButtonSecondaryClicked { space_name_id },
                         );
                     }
                 }
@@ -313,21 +320,21 @@ impl Widget for SpacesBarEntry {
             Hit::FingerLongPress(_lp) => {
                 self.animator_play(cx, ids!(hover.down));
                 emit_hover_in_action(self, cx);
-                if let Some((space_id, space_name)) = self.space_id_and_name.clone() {
+                if let Some(space_name_id) = self.space_name_id.clone() {
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
-                        SpacesBarAction::ButtonSecondaryClicked { space_id, space_name },
+                        SpacesBarAction::ButtonSecondaryClicked { space_name_id },
                     );
                 }
             }
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                 self.animator_play(cx, ids!(hover.on));
-                if let Some((space_id, space_name)) = self.space_id_and_name.clone() {
+                if let Some(space_name_id) = self.space_name_id.clone() {
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
-                        SpacesBarAction::ButtonClicked { space_id, space_name },
+                        SpacesBarAction::ButtonClicked { space_name_id },
                     );
                 }
             }
@@ -345,8 +352,8 @@ impl Widget for SpacesBarEntry {
 }
 
 impl SpacesBarEntry {
-    fn set_metadata(&mut self, cx: &mut Cx, space_id: OwnedRoomId, space_name: String, is_selected: bool) {
-        self.space_id_and_name = Some((space_id, space_name));
+    fn set_metadata(&mut self, cx: &mut Cx, space_name_id: RoomNameId, is_selected: bool) {
+        self.space_name_id = Some(space_name_id);
         let active_val = is_selected as u8 as f64;
         self.apply_over(cx, live!{
             draw_bg: { active: (active_val) },
@@ -355,19 +362,17 @@ impl SpacesBarEntry {
     }
 }
 impl SpacesBarEntryRef {
-    pub fn set_metadata(&self, cx: &mut Cx, space_id: OwnedRoomId, space_name: String, is_selected: bool) {
+    pub fn set_metadata(&self, cx: &mut Cx, space_name_id: RoomNameId, is_selected: bool) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_metadata(cx, space_id, space_name, is_selected);
+        inner.set_metadata(cx, space_name_id, is_selected);
     }
 }
 
 pub struct JoinedSpaceInfo {
-    /// The ID of the space.
-    pub space_id: OwnedRoomId,
+    /// The display name and ID of the space.
+    pub space_name_id: RoomNameId,
     /// The canonical alias of the space, if any.
     pub canonical_alias: Option<OwnedRoomAliasId>,
-    /// Calculated display name based on the space's name, aliases, and members.
-    pub display_name: String,
     /// The topic of the space, if any.
     pub topic: Option<String>,
     /// The fully-fetched avatar for this space.
@@ -512,10 +517,10 @@ impl Widget for SpacesBar {
                 }
 
                 // Update which space is currently selected.
-                if let SpacesBarAction::ButtonClicked { space_id, space_name } = action.as_widget_action().cast() {
-                    self.selected_space = Some(space_id.clone());
+                if let SpacesBarAction::ButtonClicked { space_name_id } = action.as_widget_action().cast() {
+                    self.selected_space = Some(space_name_id.room_id().clone());
                     self.redraw(cx);
-                    cx.action(NavigationBarAction::GoToSpace { space_id, space_name });
+                    cx.action(NavigationBarAction::GoToSpace { space_name_id });
                     continue;
                 }
 
@@ -523,8 +528,8 @@ impl Widget for SpacesBar {
                 // we must unselect/deselect the currently-selected space.
                 if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
                     match tab {
-                        SelectedTab::Space { space_id, .. } => {
-                            self.selected_space = Some(space_id.clone());
+                        SelectedTab::Space { space_name_id } => {
+                            self.selected_space = Some(space_name_id.room_id().clone());
                             self.redraw(cx);
                         }
                         _ => {
@@ -586,7 +591,8 @@ impl Widget for SpacesBar {
                     {
                         let item = list.item(cx, portal_list_index, id!(SpacesBarEntry));
                         // Populate the space name and avatar (although this isn't visible by default).
-                        item.label(ids!(space_name)).set_text(cx, &space.display_name);
+                        let space_name = space.space_name_id.to_string();
+                        item.label(ids!(space_name)).set_text(cx, &space_name);
                         let avatar_ref = item.avatar(ids!(avatar));
                         match &space.space_avatar {
                             FetchedRoomAvatar::Text(text) => {
@@ -603,16 +609,15 @@ impl Widget for SpacesBar {
                                         cx,
                                         None,
                                         None,
-                                        &space.display_name,
+                                        &space_name,
                                     );
                                 }
                             }
                         }
                         item.as_spaces_bar_entry().set_metadata(
                             cx,
-                            space.space_id.clone(),
-                            space.display_name.clone(),
-                            self.selected_space.as_ref().is_some_and(|id| id == &space.space_id),
+                            space.space_name_id.clone(),
+                            self.selected_space.as_ref().is_some_and(|id| id == space.space_name_id.room_id()),
                         );
                         item
                     }
@@ -672,7 +677,7 @@ impl SpacesBar {
             num_updates += 1;
             match update {
                 SpacesListUpdate::AddJoinedSpace(joined_space) => {
-                    let space_id = joined_space.space_id.clone();
+                    let space_id = joined_space.space_name_id.room_id().clone();
                     let should_display = (self.display_filter)(&joined_space);
                     let replaced = self.all_joined_spaces.insert(space_id.clone(), joined_space);
                     if replaced.is_none() {
@@ -696,7 +701,10 @@ impl SpacesBar {
                 SpacesListUpdate::UpdateSpaceName { space_id, new_space_name } => {
                     if let Some(space) = self.all_joined_spaces.get_mut(&space_id) {
                         let was_displayed = (self.display_filter)(space);
-                        space.display_name = new_space_name;
+                        space.space_name_id = RoomNameId::new(
+                            RoomDisplayName::Named(new_space_name),
+                            space_id.clone(),
+                        );
                         let should_display = (self.display_filter)(space);
                         adjust_displayed_spaces(was_displayed, should_display, space_id, &mut self.displayed_spaces);
                     } else {

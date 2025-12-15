@@ -116,7 +116,6 @@ impl Widget for AvatarRow {
                     &scope.path,
                     RoomScreenTooltipActions::HoverInReadReceipt {
                         widget_rect,
-                        bg_color: None,
                         read_receipts: read_receipts.clone(),
                     },
                 );

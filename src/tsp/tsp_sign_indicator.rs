@@ -2,7 +2,7 @@
 
 use makepad_widgets::*;
 
-use crate::shared::{callout_tooltip::TooltipAction, styles::*};
+use crate::shared::{callout_tooltip::{CalloutTooltipOptions, TooltipAction}, styles::*};
 
 live_design! {
     link tsp_enabled
@@ -91,25 +91,27 @@ impl Widget for TspSignIndicator {
             let (text, bg_color) = match self.state {
                 TspSignState::Unknown => (
                     "The sender's TSP signature is unknown.\n\nClick on their avatar to verify their TSP identity.",
-                    Some(COLOR_FG_DISABLED),
+                    COLOR_FG_DISABLED,
                 ),
                 TspSignState::Verified => (
                     "This message was signed with the user's verified TSP identity.",
-                    Some(COLOR_FG_ACCEPT_GREEN),
+                    COLOR_FG_ACCEPT_GREEN, 
                 ),
                 TspSignState::WrongSignature => (
                     "Warning: this message's TSP signature does NOT match the expected sender signature.",
-                    Some(COLOR_FG_DANGER_RED),
+                    COLOR_FG_DANGER_RED,
                 ),
             };
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
                 TooltipAction::HoverIn {
-                    widget_rect: area.rect(cx),
                     text: text.to_string(),
-                    bg_color,
-                    text_color: None,
+                    widget_rect: area.rect(cx),
+                    options: CalloutTooltipOptions {
+                        bg_color,
+                        ..Default::default()
+                    },
                 },
             );
         }

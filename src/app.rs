@@ -14,13 +14,9 @@ use crate::{
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::callout_tooltip::{
-        CalloutTooltipOptions,
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, sliding_sync::current_user_id, utils::{
-        room_name_or_id,
-        OwnedRoomIdRon,
-    }, verification::VerificationAction, verification_modal::{
+    }, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -277,7 +273,7 @@ impl MatchEvent for App {
 
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
-                let display_name = room_name_or_id(selected_room.room_name(), selected_room.room_id());
+                let display_name = selected_room.room_name().to_string();
                 self.app_state.selected_room = Some(selected_room);
                 // Set the Stack Navigation header to show the name of the newly-selected room.
                 self.ui
@@ -329,10 +325,11 @@ impl MatchEvent for App {
                 }
                 // If we successfully loaded a room that we were waiting to join,
                 // we can now navigate to it and optionally close a previous room.
-                Some(AppStateAction::RoomLoadedSuccessfully(room_id)) if
-                    self.waiting_to_navigate_to_joined_room.as_ref().is_some_and(|(dr, _)| &dr.room_id == room_id) =>
+                Some(AppStateAction::RoomLoadedSuccessfully(room_name_id)) if
+                    self.waiting_to_navigate_to_joined_room.as_ref()
+                        .is_some_and(|(dr, _)| dr.room_name_id.room_id() == room_name_id.room_id()) =>
                 {
-                    log!("Joined awaited room {}, navigating to it now...", room_id);
+                    log!("Joined awaited room {room_name_id:?}, navigating to it now...");
                     if let Some((dest_room, room_to_close)) = self.waiting_to_navigate_to_joined_room.take() {
                         self.navigate_to_room(cx, room_to_close.as_ref(), &dest_room);
                     }
@@ -343,12 +340,7 @@ impl MatchEvent for App {
 
             // Handle actions for showing or hiding the tooltip.
             match action.as_widget_action().cast() {
-                TooltipAction::HoverIn {
-                    widget_rect,
-                    text,
-                    text_color,
-                    bg_color,
-                } => {
+                TooltipAction::HoverIn { text, widget_rect, options } => {
                     // Don't show any tooltips if the message context menu is currently shown.
                     if self.ui.new_message_context_menu(ids!(new_message_context_menu)).is_currently_shown(cx) {
                         self.ui.callout_tooltip(ids!(app_tooltip)).hide(cx);
@@ -357,11 +349,8 @@ impl MatchEvent for App {
                         self.ui.callout_tooltip(ids!(app_tooltip)).show_with_options(
                             cx,
                             &text,
-                            CalloutTooltipOptions {
-                                widget_rect,
-                                text_color,
-                                bg_color,
-                            },
+                            widget_rect,
+                            options,
                         );
                     }
                     continue;
@@ -561,8 +550,9 @@ impl App {
 
         // If the successor room is not loaded, show a join modal.
         let rooms_list_ref = cx.get_global::<RoomsListRef>();
-        if !rooms_list_ref.is_room_loaded(&destination_room.room_id) {
-            log!("Destination room {} not loaded, showing join modal...", destination_room.room_id);
+        let destination_room_id = destination_room.room_name_id.room_id();
+        if !rooms_list_ref.is_room_loaded(destination_room_id) {
+            log!("Destination room {} not loaded, showing join modal...", destination_room_id);
             self.waiting_to_navigate_to_joined_room = Some((
                 destination_room.clone(),
                 room_to_close.cloned(),
@@ -574,14 +564,17 @@ impl App {
             return;
         }
 
-        log!("Navigating to destination room {} ({:?}), closing room {room_to_close:?}", destination_room.room_id, destination_room.room_name);
+        log!(
+            "Navigating to destination room {} ({}), closing room {room_to_close:?}",
+            destination_room_id,
+            destination_room.room_name_id
+        );
 
         // Select and scroll to the destination room in the rooms list.
         let new_selected_room = SelectedRoom::JoinedRoom {
-            room_id: destination_room.room_id.clone().into(),
-            room_name: destination_room.room_name.clone(),
+            room_name_id: destination_room.room_name_id.clone(),
         };
-        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room.room_id.clone()));
+        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room_id.clone()));
         cx.widget_action(
             self.ui.widget_uid(),
             &HeapLiveIdPath::default(),
@@ -626,33 +619,30 @@ pub struct SavedDockState {
 #[derive(Clone, Debug, SerRon, DeRon)]
 pub enum SelectedRoom {
     JoinedRoom {
-        room_id: OwnedRoomIdRon,
-        room_name: Option<String>,
+        room_name_id: RoomNameId,
     },
     InvitedRoom {
-        room_id: OwnedRoomIdRon,
-        room_name: Option<String>,
+        room_name_id: RoomNameId,
     },
     Space {
-        space_id: OwnedRoomIdRon,
-        space_name: String,
+        space_name_id: RoomNameId,
     },
 }
 
 impl SelectedRoom {
     pub fn room_id(&self) -> &OwnedRoomId {
         match self {
-            SelectedRoom::JoinedRoom { room_id, .. } => room_id,
-            SelectedRoom::InvitedRoom { room_id, .. } => room_id,
-            SelectedRoom::Space { space_id, .. } => space_id,
+            SelectedRoom::JoinedRoom { room_name_id } => room_name_id.room_id(),
+            SelectedRoom::InvitedRoom { room_name_id } => room_name_id.room_id(),
+            SelectedRoom::Space { space_name_id } => space_name_id.room_id(),
         }
     }
 
-    pub fn room_name(&self) -> Option<&String> {
+    pub fn room_name(&self) -> &RoomNameId {
         match self {
-            SelectedRoom::JoinedRoom { room_name, .. } => room_name.as_ref(),
-            SelectedRoom::InvitedRoom { room_name, .. } => room_name.as_ref(),
-            SelectedRoom::Space { space_name, .. } => Some(&space_name),
+            SelectedRoom::JoinedRoom { room_name_id } => room_name_id,
+            SelectedRoom::InvitedRoom { room_name_id } => room_name_id,
+            SelectedRoom::Space { space_name_id } => &space_name_id,
         }
     }
 
@@ -664,11 +654,10 @@ impl SelectedRoom {
     /// otherwise, returns `false`.
     pub fn upgrade_invite_to_joined(&mut self, room_id: &RoomId) -> bool {
         match self {
-            SelectedRoom::InvitedRoom { room_id: id, room_name } if id.0 == room_id => {
-                let name = room_name.take();
+            SelectedRoom::InvitedRoom { room_name_id } if room_name_id.room_id() == room_id => {
+                let name = room_name_id.clone();
                 *self = SelectedRoom::JoinedRoom {
-                    room_id: id.clone(),
-                    room_name: name,
+                    room_name_id: name,
                 };
                 true
             }
@@ -701,7 +690,7 @@ pub enum AppStateAction {
     /// and is now known to our client.
     ///
     /// The RoomScreen for this room can now fully display the room's timeline.
-    RoomLoadedSuccessfully(OwnedRoomId),
+    RoomLoadedSuccessfully(RoomNameId),
     /// A request to navigate to a different room, optionally closing a prior/current room.
     NavigateToRoom {
         room_to_close: Option<OwnedRoomId>,

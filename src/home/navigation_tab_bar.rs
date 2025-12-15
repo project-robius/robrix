@@ -31,7 +31,6 @@
 //!
 
 use makepad_widgets::*;
-use ruma::OwnedRoomId;
 
 use crate::{
     avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
@@ -39,10 +38,10 @@ use crate::{
         user_profile_cache::{self, UserProfileUpdate},
     }, shared::{
         avatar::AvatarWidgetExt,
-        callout_tooltip::TooltipAction,
+        callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition},
         styles::*,
         verification_badge::VerificationBadgeWidgetExt,
-    }, sliding_sync::current_user_id, utils
+    }, sliding_sync::current_user_id, utils::{self, RoomNameId}
 };
 
 live_design! {
@@ -364,15 +363,20 @@ impl Widget for ProfileIcon {
                     || format!("Not logged in.\n\n{}", verification_str),
                     |p| format!("Logged in as \"{}\".\n\n{}", p.displayable_name(), verification_str)
                 );
-                let rect = area.rect(cx);
+                let mut options = CalloutTooltipOptions {
+                    position: if cx.display_context.is_desktop() { TooltipPosition::Right} else { TooltipPosition::Top},
+                    ..Default::default()
+                };
+                if let Some(c) = bg_color {
+                    options.bg_color = c;
+                }
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
                     TooltipAction::HoverIn {
-                        widget_rect: rect,
                         text,
-                        bg_color,
-                        text_color: None,
+                        widget_rect: area.rect(cx),
+                        options,
                     },
                 );
             }
@@ -492,10 +496,7 @@ pub enum SelectedTab {
     AddRoom,
     Settings,
     // AlertsInbox,
-    Space {
-        space_id: OwnedRoomId,
-        space_name: String,
-    }
+    Space { space_name_id: RoomNameId },
 }
 
 
@@ -532,10 +533,7 @@ pub enum NavigationBarAction {
     /// Close the Settings view (`SettingsScreen`), returning to the previous view.
     CloseSettings,
     /// Go the space screen for the given space.
-    GoToSpace {
-        space_id: OwnedRoomId,
-        space_name: String,
-    },
+    GoToSpace { space_name_id: RoomNameId },
 
     // TODO: add GoToAlertsInbox, once we add that button/screen
 

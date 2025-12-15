@@ -7,7 +7,7 @@
 //!
 
 use makepad_widgets::*;
-use ruma::OwnedRoomId;
+use crate::utils::RoomNameId;
 
 
 live_design! {
@@ -251,7 +251,7 @@ pub enum SpaceLobbyAction {
 #[derive(Live, LiveHook, Widget)]
 pub struct SpaceLobbyScreen {
     #[deref] view: View,
-    #[rust] space_id_and_name: Option<(OwnedRoomId, String)>,
+    #[rust] space_name_id: Option<RoomNameId>,
 }
 
 impl Widget for SpaceLobbyScreen {
@@ -265,26 +265,26 @@ impl Widget for SpaceLobbyScreen {
 }
 
 impl SpaceLobbyScreen {
-    pub fn set_displayed_space(&mut self, cx: &mut Cx, space_id: OwnedRoomId, space_name: String) {
+    pub fn set_displayed_space(&mut self, cx: &mut Cx, space_name_id: &RoomNameId) {
         // If this space is already being displayed, then do nothing.
-        if self.space_id_and_name.as_ref().is_some_and(|(id, _)| id == &space_id) { return; }
+        if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == space_name_id.room_id()) { return; }
 
-        self.view.label(ids!(title)).set_text(
-            cx,
-            &format!("Space Lobby Screen is not yet implemented.\n\n\
-                Space Name: {space_name}\n\nSpace ID: {space_id}"
-            )
-        );
+        self.view.label(ids!(title)).set_text(cx, &format!(
+            "Space Lobby Screen is not yet implemented.\n\n\
+            Space Name: {}\n\nSpace ID: {}",
+            space_name_id.to_string(),
+            space_name_id.room_id(),
+        ));
 
         // TODO: populate the rest of the space lobby screen content
 
-        self.space_id_and_name = Some((space_id, space_name));
+        self.space_name_id = Some(space_name_id.clone());
     }
 }
 
 impl SpaceLobbyScreenRef {
-    pub fn set_displayed_space(&self, cx: &mut Cx, space_id: OwnedRoomId, space_name: String) {
+    pub fn set_displayed_space(&self, cx: &mut Cx, space_name_id: &RoomNameId) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_displayed_space(cx, space_id, space_name);
+        inner.set_displayed_space(cx, space_name_id);
     }
 }
