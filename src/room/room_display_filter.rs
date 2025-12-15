@@ -7,7 +7,7 @@ use matrix_sdk::ruma::{
     OwnedRoomAliasId, RoomAliasId, RoomId,
 };
 
-use crate::home::{rooms_list::{InvitedRoomInfo, JoinedRoomInfo}, spaces_bar::JoinedSpaceInfo};
+use crate::{home::rooms_list::{InvitedRoomInfo, JoinedRoomInfo}, home::spaces_bar::JoinedSpaceInfo};
 
 static EMPTY_TAGS: Tags = BTreeMap::new();
 
@@ -25,11 +25,11 @@ pub trait FilterableRoom {
 
 impl FilterableRoom for JoinedRoomInfo {
     fn room_id(&self) -> &RoomId {
-        &self.room_id
+        self.room_name_id.room_id()
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        self.room_name.as_deref().map(Into::into).unwrap_or_default()
+        Cow::Owned(self.room_name_id.to_string())
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -59,11 +59,11 @@ impl FilterableRoom for JoinedRoomInfo {
 
 impl FilterableRoom for InvitedRoomInfo {
     fn room_id(&self) -> &RoomId {
-        &self.room_id
+        self.room_name_id.room_id()
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        self.room_name.as_deref().map(Into::into).unwrap_or_default()
+        Cow::Owned(self.room_name_id.to_string())
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -192,8 +192,8 @@ pub struct RoomDisplayFilterBuilder {
 ///     .by_room_id()
 ///     .by_room_name()
 ///     .sort_by(|a, b| {
-///         let name_a = a.room_name.as_ref().map_or("", |n| n.as_str());
-///         let name_b = b.room_name.as_ref().map_or("", |n| n.as_str());
+///         let name_a = a.room_name.as_ref().map_or("", |n| n.display_str());
+///         let name_b = b.room_name.as_ref().map_or("", |n| n.display_str());
 ///         name_a.cmp(name_b)
 ///     })
 ///     .build();
