@@ -489,7 +489,7 @@ impl Widget for NavigationTabBar {
 
 
 /// Which tab is currently selected in the NavigationTabBar.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum SelectedTab {
     #[default]
     Home,
@@ -522,7 +522,7 @@ pub enum SelectedTab {
 ///      to changes in the top-level app-wide navigation selection.
 /// 3. Other actions that aren't requests/responses to navigate to a different view.
 ///    * This only includes the `ToggleSpacesBar` variant.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum NavigationBarAction {
     /// Go to the main rooms content view.
     GoToHome,

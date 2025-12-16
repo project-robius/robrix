@@ -2,24 +2,32 @@
 //!
 //! See `handle_startup()` for the first code that runs on app startup.
 
-// Ignore clippy warnings in `DeRon` macro derive bodies.
-#![allow(clippy::question_mark)]
-
 use std::collections::HashMap;
-use makepad_widgets::{makepad_micro_serde::*, *};
+use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
+use serde::{Deserialize, Serialize};
 use crate::{
-    avatar_cache::clear_avatar_cache, home::{
-        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{clear_timeline_states, MessageAction}, rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate}
-    }, join_leave_room_modal::{
+    avatar_cache::clear_avatar_cache,
+    home::{
+        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+    },
+    join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::callout_tooltip::{
+    },
+    login::login_screen::LoginAction,
+    logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt},
+    persistence,
+    profile::user_profile_cache::clear_user_profile_cache,
+    room::BasicRoomDetails,
+    shared::callout_tooltip::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
-        VerificationModalAction,
-        VerificationModalWidgetRefExt,
-    }
+    },
+    serialization::{LiveIdSerde, DockItemSerde},
+    sliding_sync::current_user_id,
+    utils::RoomNameId,
+    verification::VerificationAction,
+    verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt},
 };
 
 live_design! {
@@ -532,9 +540,11 @@ impl App {
         room_to_close: Option<&OwnedRoomId>,
         destination_room: &BasicRoomDetails,
     ) {
+        // TODO: fix this with a dedicated action based on the room ID, not the dock tab ID.
+        //
         // A closure that closes the given `room_to_close`, if it exists in an open tab.
         let close_room_closure_opt = room_to_close.and_then(|to_close|
-            self.app_state.saved_dock_state.open_rooms
+            self.app_state.saved_dock_state_home.open_rooms
                 .iter()
                 .find_map(|(tab_id, r)| (r.room_id() == to_close).then_some(*tab_id))
         ).map(|tab_id| {
@@ -543,7 +553,7 @@ impl App {
                 cx.widget_action(
                     widget_uid,
                     &HeapLiveIdPath::default(),
-                    DockAction::TabCloseWasPressed(tab_id),
+                    DockAction::TabCloseWasPressed(tab_id.into()),
                 );
             }
         });
@@ -590,43 +600,43 @@ impl App {
 
 /// App-wide state that is stored persistently across multiple app runs
 /// and shared/updated across various parts of the app.
-#[derive(Clone, Default, Debug, DeRon, SerRon)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct AppState {
     /// The currently-selected room, which is highlighted (selected) in the RoomsList
     /// and considered "active" in the main rooms screen.
     pub selected_room: Option<SelectedRoom>,
-    /// A saved "snapshot" of the dock's UI state.
-    pub saved_dock_state: SavedDockState,
+    /// The saved "snapshot" of the dock's UI layout/state for the main "all rooms" home view.
+    pub saved_dock_state_home: SavedDockState,
+    /// The saved "snapshot" of the dock's UI layout/state for each space,
+    /// keyed by the space ID.
+    pub saved_dock_state_spaces: HashMap<OwnedRoomId, SavedDockState>,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
 }
 
 /// A snapshot of the main dock: all state needed to restore the dock tabs/layout.
-#[derive(Clone, Default, Debug, DeRon, SerRon)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct SavedDockState {
-    /// All items contained in the dock, keyed by their LiveId.
-    pub dock_items: HashMap<LiveId, DockItem>,
-    /// The rooms that are currently open, keyed by the LiveId of their tab.
-    pub open_rooms: HashMap<LiveId, SelectedRoom>,
+    /// All items contained in the dock, keyed by their room or space ID.
+    pub dock_items: HashMap<LiveIdSerde, DockItemSerde>,
+    /// The rooms that are currently open, keyed by their room or space ID.
+    pub open_rooms: HashMap<LiveIdSerde, SelectedRoom>,
     /// The order in which the rooms were opened, in chronological order
     /// from first opened (at the beginning) to last opened (at the end).
     pub room_order: Vec<SelectedRoom>,
+    /// The selected room tab in this dock when the dock state was saved.
+    pub selected_room: Option<SelectedRoom>,
 }
+
 
 /// Represents a room currently or previously selected by the user.
 ///
 /// One `SelectedRoom` is considered equal to another if their `room_id`s are equal.
-#[derive(Clone, Debug, SerRon, DeRon)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SelectedRoom {
-    JoinedRoom {
-        room_name_id: RoomNameId,
-    },
-    InvitedRoom {
-        room_name_id: RoomNameId,
-    },
-    Space {
-        space_name_id: RoomNameId,
-    },
+    JoinedRoom { room_name_id: RoomNameId },
+    InvitedRoom { room_name_id: RoomNameId },
+    Space { space_name_id: RoomNameId },
 }
 
 impl SelectedRoom {
@@ -684,7 +694,8 @@ pub enum AppStateAction {
     /// The given room has successfully been upgraded from being displayed
     /// as an InviteScreen to a RoomScreen.
     UpgradedInviteToJoinedRoom(OwnedRoomId),
-    /// The app state was restored from persistent storage.
+    /// The given app state was loaded from persistent storage
+    /// and is ready to be restored.
     RestoreAppStateFromPersistentState(AppState),
     /// The given room was successfully loaded from the homeserver
     /// and is now known to our client.

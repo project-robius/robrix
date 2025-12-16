@@ -1,8 +1,9 @@
 use makepad_widgets::*;
+use ruma::OwnedRoomId;
 use tokio::sync::Notify;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SelectedRoom}, home::space_lobby::SpaceLobbyScreenWidgetRefExt, utils::RoomNameId};
+use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, space_lobby::SpaceLobbyScreenWidgetRefExt}, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 live_design! {
@@ -41,7 +42,10 @@ live_design! {
                 kind: rooms_sidebar // this template is defined below.
             }
 
-            main = Tabs{tabs:[home_tab], selected:0}
+            main = Tabs {
+                tabs: [home_tab],
+                selected: 0,
+            }
 
             home_tab = Tab {
                 name: "Home"
@@ -59,10 +63,15 @@ live_design! {
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Live, Widget)]
 pub struct MainDesktopUI {
     #[deref]
     view: View,
+
+    /// The default layout that should be loaded into the dock
+    /// when there is no previously-saved content to restore.
+    /// This is a Rust-level instance of the dock content defined in the above live DSL.
+    #[rust] default_layout: SavedDockState,
 
     /// The rooms that are currently open, keyed by the LiveId of their tab.
     #[rust]
@@ -82,13 +91,26 @@ pub struct MainDesktopUI {
     #[rust]
     most_recently_selected_room: Option<SelectedRoom>,
 
+    /// The ID of the currently-selected space, if any.
+    ///
+    /// This determines which set of rooms this dock is currently showing.
+    /// If `None`, we're displaying the main home view of all rooms from any space.
+    #[rust] selected_space: Option<OwnedRoomId>,
+
     /// Boolean to indicate if we've drawn the MainDesktopUi previously in the desktop view.
     ///
-    /// When switching mobile view to desktop, we need to restore the app state.
-    /// If false, this widget emits an action to load the dock from the saved dock state.
-    /// If true, this widget proceeds to draw the desktop UI as normal.
+    /// When switching mobile view to desktop, we need to restore the saved app state to the UI.
+    /// * If false, this widget emits an action to load the dock from the saved dock state.
+    /// * If true, this widget proceeds to draw the desktop UI as normal.
     #[rust]
     drawn_previously: bool,
+}
+
+impl LiveHook for MainDesktopUI {
+    fn after_new_from_doc(&mut self, _: &mut Cx) {
+        self.default_layout = self.save_dock_state();
+        log!("Saved default dock layout: {:#?}", self.default_layout);
+    }
 }
 
 impl Widget for MainDesktopUI {
@@ -98,12 +120,10 @@ impl Widget for MainDesktopUI {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // When changing from mobile to Desktop, we need to restore the app state.
+        // When changing from Mobile to Desktop view mode for the first time since app boot,
+        // we need to restore the UI state of the dock from the current app state.
         if !self.drawn_previously {
-            let app_state = scope.data.get_mut::<AppState>().unwrap();
-            if !app_state.saved_dock_state.open_rooms.is_empty() {
-                cx.action(MainDesktopUiAction::LoadDockFromAppState);
-            }
+            cx.action(MainDesktopUiAction::LoadDockFromAppState);
             self.drawn_previously = true;
         }
         self.view.draw_walk(cx, scope, walk)
@@ -113,12 +133,12 @@ impl Widget for MainDesktopUI {
 impl MainDesktopUI {
     /// Focuses on a room if it is already open, otherwise creates a new tab for the room.
     fn focus_or_create_tab(&mut self, cx: &mut Cx, room: SelectedRoom) {
-        let dock = self.view.dock(ids!(dock));
-
         // Do nothing if the room to select is already created and focused.
         if self.most_recently_selected_room.as_ref().is_some_and(|r| r == &room) {
             return;
         }
+
+        let dock = self.view.dock(ids!(dock));
 
         // If the room is already open, select (jump to) its existing tab
         let room_id_as_live_id = LiveId::from_str(room.room_id().as_str());
@@ -274,6 +294,114 @@ impl MainDesktopUI {
         // Finally, emit an action to update the AppState with the new room.
         cx.action(AppStateAction::UpgradedInviteToJoinedRoom(room_name_id.room_id().clone()));
     }
+
+    /// Saves a copy of the current UI state of the dock into the given app state,
+    /// properly accounting for which space is currently selected.
+    fn save_dock_state_to(&mut self, app_state: &mut AppState) {
+        if self.open_rooms.is_empty() {
+            return;
+        } 
+        let saved_dock_state = self.save_dock_state();
+        if let Some(space_id) = self.selected_space.as_ref() {
+            app_state.saved_dock_state_spaces.insert(
+                space_id.clone(),
+                saved_dock_state,
+            );
+        } else {
+            app_state.saved_dock_state_home = saved_dock_state;
+        }
+    }
+
+    /// An inner function that creates a `SavedDockState` from the current contents of this widget. 
+    fn save_dock_state(&self) -> SavedDockState {
+        let dock = self.view.dock(ids!(dock));
+        SavedDockState {
+            dock_items: dock.clone_state()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
+            open_rooms: self.open_rooms
+                .iter()
+                .map(|(k, v)| (k.clone().into(), v.clone().into()))
+                .collect(),
+            room_order: self.room_order.clone(),
+            selected_room: self.most_recently_selected_room.clone(),
+        }
+    }
+
+    /// Loads and populates the dock from the saved dock state for the currently-selected space.
+    ///
+    /// If the saved state is empty (has no open rooms), we use the default dock layout
+    /// defined in the DSL: one splitter with the RoomsList on the left and a Welcome tab on the right.
+    fn load_dock_state_from(&mut self, cx: &mut Cx, app_state: &mut AppState) {
+        let dock = self.view.dock(ids!(dock));
+        let to_restore_opt = if let Some(ss) = self.selected_space.as_ref() {
+            app_state.saved_dock_state_spaces.get(ss)
+        } else {
+            Some(&app_state.saved_dock_state_home)
+        };
+        let to_restore = match to_restore_opt {
+            None => &self.default_layout,
+            Some(sds) if sds.open_rooms.is_empty() => &self.default_layout,
+            Some(sds) => sds,
+        };
+        let SavedDockState { dock_items, open_rooms, room_order, selected_room } = to_restore;
+
+        self.room_order = room_order.clone();
+        self.open_rooms = open_rooms
+            .iter()
+            .map(|(k, v)| (k.clone().into(), v.clone()))
+            .collect();
+
+        if let Some(mut dock) = dock.borrow_mut() {
+            dock.load_state(
+                cx,
+                dock_items
+                    .into_iter()
+                    .map(|(k, v)| (k.clone().into(), v.clone().into()))
+                    .collect()
+            );
+            // Populate the content within each restored dock tab.
+            if !self.open_rooms.is_empty() {
+                for (head_live_id, (_, widget)) in dock.items().iter() {
+                    match self.open_rooms.get(&head_live_id.clone().into()) {
+                        Some(SelectedRoom::JoinedRoom { room_name_id }) => {
+                            widget.as_room_screen().set_displayed_room(
+                                cx,
+                                room_name_id,
+                            );
+                        }
+                        Some(SelectedRoom::InvitedRoom { room_name_id }) => {
+                            widget.as_invite_screen().set_displayed_invite(
+                                cx,
+                                room_name_id,
+                            );
+                        }
+                        Some(SelectedRoom::Space { space_name_id }) => {
+                            widget.as_space_lobby_screen().set_displayed_space(
+                                cx,
+                                space_name_id,
+                            );
+                        }
+                        None => { }
+                    }
+                }
+            }
+        } else {
+            error!("BUG: failed to borrow dock widget to restore state upon LoadDockFromAppState action.");
+            return;
+        }
+        // Note: the borrow of `dock` must end here *before* we call `self.focus_or_create_tab()`.
+
+        // Now that we've loaded the dock content, we can re-select the selected room.
+        let selected_room = selected_room.clone();
+        if let Some(selected_room) = selected_room.clone() {
+            self.focus_or_create_tab(cx, selected_room);
+        }
+        app_state.selected_room = selected_room;
+        self.view.redraw(cx);
+    }
 }
 
 impl WidgetMatchEvent for MainDesktopUI {
@@ -285,6 +413,26 @@ impl WidgetMatchEvent for MainDesktopUI {
             if let Some(MainDesktopUiAction::CloseAllTabs { on_close_all }) = action.downcast_ref() {
                 self.close_all_tabs(cx);
                 on_close_all.notify_one();
+                continue;
+            }
+
+            // If the currently-selected space has been changed, we must handle that
+            // by switching the dock to show the layout for another space.
+            if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
+                let new_space = match (tab, self.selected_space.as_ref()) {
+                    (SelectedTab::Space { space_name_id }, space_id_opt)
+                        if space_id_opt.is_none_or(|id| id != space_name_id.room_id()) => 
+                    {
+                        Some(space_name_id.room_id().clone())
+                    }
+                    (SelectedTab::Home, Some(_)) => None,
+                    _ => continue,
+                };
+                let app_state = scope.data.get_mut::<AppState>().unwrap();
+                self.save_dock_state_to(app_state);
+                self.selected_space = new_space;
+                self.load_dock_state_from(cx, app_state);
+                self.redraw(cx);
                 continue;
             }
 
@@ -357,51 +505,11 @@ impl WidgetMatchEvent for MainDesktopUI {
             match action.downcast_ref() {
                 Some(MainDesktopUiAction::LoadDockFromAppState) => {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
-                    let dock = self.view.dock(ids!(dock));
-                    self.room_order = app_state.saved_dock_state.room_order.clone();
-                    self.open_rooms = app_state.saved_dock_state.open_rooms.clone();
-                    if app_state.saved_dock_state.dock_items.is_empty() {
-                        return;
-                    }
-
-                    if let Some(mut dock) = dock.borrow_mut() {
-                        dock.load_state(cx, app_state.saved_dock_state.dock_items.clone());
-                        for (head_live_id, (_, widget)) in dock.items().iter() {
-                            match app_state.saved_dock_state.open_rooms.get(head_live_id) {
-                                Some(SelectedRoom::JoinedRoom { room_name_id }) => {
-                                    widget.as_room_screen().set_displayed_room(
-                                        cx,
-                                        room_name_id,
-                                    );
-                                }
-                                Some(SelectedRoom::InvitedRoom { room_name_id }) => {
-                                    widget.as_invite_screen().set_displayed_invite(
-                                        cx,
-                                        room_name_id,
-                                    );
-                                }
-                                _ => { }
-                            }
-                        }
-                    } else {
-                        error!("BUG: failed to borrow dock widget to restore state upon LoadDockFromAppState action.");
-                        continue;
-                    }
-                    // Note: the borrow of `dock` must end here *before* we call `self.focus_or_create_tab()`.
-
-                    if let Some(selected_room) = &app_state.selected_room {
-                        self.focus_or_create_tab(cx, selected_room.clone());
-                    }
-                    self.view.redraw(cx);
+                    self.load_dock_state_from(cx, app_state);
                 }
                 Some(MainDesktopUiAction::SaveDockIntoAppState) => {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
-                    let dock = self.view.dock(ids!(dock));
-                    if let Some(dock_items) = dock.clone_state() {
-                        app_state.saved_dock_state.dock_items = dock_items;
-                    }
-                    app_state.saved_dock_state.open_rooms = self.open_rooms.clone();
-                    app_state.saved_dock_state.room_order = self.room_order.clone();
+                    self.save_dock_state_to(app_state);
                 }
                 _ => {}
             }

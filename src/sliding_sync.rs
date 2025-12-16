@@ -2585,15 +2585,15 @@ fn handle_ignore_user_list_subscriber(client: Client) {
 
 /// Asynchronously loads and restores the app state from persistent storage for the given user.
 ///
-/// If the loaded dock state contains open rooms and dock items, it logs a message and posts an action
-/// to restore the app state in the UI. If loading fails, it enqueues a notification
-/// with the error message.
+/// If the loaded dock state contains open rooms and dock items, this function emits an action
+/// to instruct the UI to restore the app state.
+/// If loading fails, it shows a popup notification with the error message.
 fn handle_load_app_state(user_id: OwnedUserId) {
     Handle::current().spawn(async move {
         match load_app_state(&user_id).await {
             Ok(app_state) => {
-                if !app_state.saved_dock_state.open_rooms.is_empty()
-                    && !app_state.saved_dock_state.dock_items.is_empty()
+                if !app_state.saved_dock_state_home.open_rooms.is_empty()
+                    && !app_state.saved_dock_state_home.dock_items.is_empty()
                 {
                     log!("Loaded room panel state from app data directory. Restoring now...");
                     Cx::post_action(AppStateAction::RestoreAppStateFromPersistentState(app_state));

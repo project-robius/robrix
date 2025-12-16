@@ -1,10 +1,12 @@
-use makepad_widgets::{makepad_micro_serde::{DeRon, SerRon}, *};
+use std::io::Write;
+
+use makepad_widgets::*;
 use serde::{self, Deserialize, Serialize};
 use matrix_sdk::ruma::{OwnedUserId, UserId};
 use crate::{app::AppState, app_data_dir, persistence::persistent_state_dir};
 
 
-const LATEST_APP_STATE_FILE_NAME: &str = "latest_app_state.ron";
+const LATEST_APP_STATE_FILE_NAME: &str = "latest_app_state.json";
 
 const WINDOW_GEOM_STATE_FILE_NAME: &str = "window_geom_state.json";
 
@@ -26,15 +28,12 @@ pub fn save_app_state(
     app_state: AppState,
     user_id: OwnedUserId,
 ) -> anyhow::Result<()> {
-    std::fs::write(
-        persistent_state_dir(&user_id).join(LATEST_APP_STATE_FILE_NAME),
-        app_state.serialize_ron(),
+    let file = std::fs::File::create(
+        persistent_state_dir(&user_id).join(LATEST_APP_STATE_FILE_NAME)
     )?;
-    for (tab_id, selected_room) in &app_state.saved_dock_state.open_rooms {
-        if !app_state.saved_dock_state.dock_items.contains_key(tab_id) {
-            error!("BUG: {selected_room:?} already in dock state!");
-        }
-    }
+    let mut writer = std::io::BufWriter::new(file);
+    serde_json::to_writer(&mut writer, &app_state)?;
+    writer.flush()?;
     log!("Successfully saved app state to persistent storage.");
     Ok(())
 }
@@ -62,26 +61,24 @@ pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
 /// this function returns a default `AppState` and backs up the old file if it exists.
 pub async fn load_app_state(user_id: &UserId) -> anyhow::Result<AppState> {
     let state_path = persistent_state_dir(user_id).join(LATEST_APP_STATE_FILE_NAME);
-
-    let content = match tokio::fs::read_to_string(&state_path).await {
-        Ok(file) => file,
+    let file_bytes = match tokio::fs::read(&state_path).await {
+        Ok(fb) => fb,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             log!("No saved app state found, using default.");
             return Ok(AppState::default());
         }
         Err(e) => return Err(e.into())
     };
-
-    match AppState::deserialize_ron(&content) {
+    match serde_json::from_slice(&file_bytes) {
         Ok(app_state) => {
             log!("Successfully loaded app state from persistent storage.");
             Ok(app_state)
         }
         Err(e) => {
-            error!("Failed to deserialize app state: {}. This may be due to an incompatible format from a previous version.", e.msg);
+            error!("Failed to deserialize app state: {e}. This may be due to an incompatible format from a previous version.");
 
             // Backup the old file to preserve user's data
-            let backup_path = state_path.with_extension("ron.bak");
+            let backup_path = state_path.with_extension("json.bak");
             if let Err(backup_err) = tokio::fs::rename(&state_path, &backup_path).await {
                 error!("Failed to backup old app state file: {}", backup_err);
             } else {
