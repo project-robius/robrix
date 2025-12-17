@@ -1101,9 +1101,6 @@ impl Widget for RoomsList {
                                     error!("BUG: RoomsList: failed to send GetRooms request for space {space_name_id}.");
                                 }
                             }
-
-                            // TODO:
-                            // * tell dock to save state and close rooms *not* in this space, (or maybe the dock can listen for this action separately)
                         }
                         _ => {
                             self.selected_space = None;

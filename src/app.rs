@@ -540,28 +540,22 @@ impl App {
         room_to_close: Option<&OwnedRoomId>,
         destination_room: &BasicRoomDetails,
     ) {
-        // TODO: fix this with a dedicated action based on the room ID, not the dock tab ID.
-        //
         // A closure that closes the given `room_to_close`, if it exists in an open tab.
-        let close_room_closure_opt = room_to_close.and_then(|to_close|
-            self.app_state.saved_dock_state_home.open_rooms
-                .iter()
-                .find_map(|(tab_id, r)| (r.room_id() == to_close).then_some(*tab_id))
-        ).map(|tab_id| {
+        let close_room_closure_opt = room_to_close.map(|to_close| {
+            let tab_id = LiveId::from_str(to_close.as_str());
             let widget_uid = self.ui.widget_uid();
             move |cx: &mut Cx| {
                 cx.widget_action(
                     widget_uid,
                     &HeapLiveIdPath::default(),
-                    DockAction::TabCloseWasPressed(tab_id.into()),
+                    DockAction::TabCloseWasPressed(tab_id),
                 );
             }
         });
 
         // If the successor room is not loaded, show a join modal.
-        let rooms_list_ref = cx.get_global::<RoomsListRef>();
         let destination_room_id = destination_room.room_name_id.room_id();
-        if !rooms_list_ref.is_room_loaded(destination_room_id) {
+        if !cx.get_global::<RoomsListRef>().is_room_loaded(destination_room_id) {
             log!("Destination room {} not loaded, showing join modal...", destination_room_id);
             self.waiting_to_navigate_to_joined_room = Some((
                 destination_room.clone(),
