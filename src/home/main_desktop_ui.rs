@@ -3,7 +3,7 @@ use ruma::OwnedRoomId;
 use tokio::sync::Notify;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, space_lobby::SpaceLobbyScreenWidgetRefExt}, utils::RoomNameId};
+use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 live_design! {
@@ -109,7 +109,6 @@ pub struct MainDesktopUI {
 impl LiveHook for MainDesktopUI {
     fn after_new_from_doc(&mut self, _: &mut Cx) {
         self.default_layout = self.save_dock_state();
-        log!("Saved default dock layout: {:#?}", self.default_layout);
     }
 }
 
@@ -120,9 +119,13 @@ impl Widget for MainDesktopUI {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // When changing from Mobile to Desktop view mode for the first time since app boot,
-        // we need to restore the UI state of the dock from the current app state.
         if !self.drawn_previously {
+            // When changing from Mobile to Desktop view mode, we need to restore the state
+            // of this widget, which we get from the `AppState` passed down via `scope`.
+            // This includes the currently selected space, which we get from the RoomsList widget.
+            // We must set `selected_space` first before the load operation occurs, in order for
+            // the proper space-specific instance of the saved dock UI layout/state to be selected.
+            self.selected_space = cx.get_global::<RoomsListRef>().get_selected_space_id();
             cx.action(MainDesktopUiAction::LoadDockFromAppState);
             self.drawn_previously = true;
         }
@@ -400,7 +403,7 @@ impl MainDesktopUI {
             self.focus_or_create_tab(cx, selected_room);
         }
         app_state.selected_room = selected_room;
-        self.view.redraw(cx);
+        self.redraw(cx);
     }
 }
 

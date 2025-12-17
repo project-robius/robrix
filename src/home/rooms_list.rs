@@ -1299,6 +1299,16 @@ impl RoomsListRef {
         let Some(inner) = self.borrow() else { return false; };
         inner.is_room_loaded(room_id)
     }
+
+    /// Returns the currently-selected space (the one selected in the SpacesBar).
+    pub fn get_selected_space(&self) -> Option<RoomNameId> {
+        self.borrow()?.selected_space.clone()
+    }
+
+    /// Same as [`Self::get_selected_space()`], but only returns the space ID.
+    pub fn get_selected_space_id(&self) -> Option<OwnedRoomId> {
+        self.borrow()?.selected_space.as_ref().map(|ss| ss.room_id().clone())
+    }
 }
 
 pub struct RoomsListScopeProps {
