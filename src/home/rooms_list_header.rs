@@ -127,17 +127,15 @@ impl Widget for RoomsListHeader {
                     _ => {}
                 }
 
-                match action.downcast_ref() {
-                    Some(NavigationBarAction::TabSelected(tab)) => {
-                        match tab {
-                            SelectedTab::Space { space_name_id } => {
-                                self.view.label(ids!(header_title)).set_text(cx, &space_name_id.to_string());
-                            }
-                            _ => self.view.label(ids!(header_title)).set_text(cx, "All Rooms"),
+                if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
+                    let header_title = self.view.label(ids!(header_title));
+                    match tab {
+                        SelectedTab::Space { space_name_id } => {
+                            header_title.set_text(cx, &space_name_id.to_string());
                         }
-                        continue;
+                        _ => header_title.set_text(cx, "All Rooms"),
                     }
-                    _ => {}
+                    continue;
                 }
             }
         }

@@ -326,7 +326,7 @@ impl MainDesktopUI {
                 .collect(),
             open_rooms: self.open_rooms
                 .iter()
-                .map(|(k, v)| (k.clone().into(), v.clone().into()))
+                .map(|(k, v)| ((*k).into(), v.clone()))
                 .collect(),
             room_order: self.room_order.clone(),
             selected_room: self.most_recently_selected_room.clone(),
@@ -354,21 +354,21 @@ impl MainDesktopUI {
         self.room_order = room_order.clone();
         self.open_rooms = open_rooms
             .iter()
-            .map(|(k, v)| (k.clone().into(), v.clone()))
+            .map(|(k, v)| ((*k).into(), v.clone()))
             .collect();
 
         if let Some(mut dock) = dock.borrow_mut() {
             dock.load_state(
                 cx,
                 dock_items
-                    .into_iter()
-                    .map(|(k, v)| (k.clone().into(), v.clone().into()))
+                    .iter()
+                    .map(|(k, v)| ((*k).into(), v.clone().into()))
                     .collect()
             );
             // Populate the content within each restored dock tab.
             if !self.open_rooms.is_empty() {
                 for (head_live_id, (_, widget)) in dock.items().iter() {
-                    match self.open_rooms.get(&head_live_id.clone().into()) {
+                    match self.open_rooms.get(head_live_id) {
                         Some(SelectedRoom::JoinedRoom { room_name_id }) => {
                             widget.as_room_screen().set_displayed_room(
                                 cx,

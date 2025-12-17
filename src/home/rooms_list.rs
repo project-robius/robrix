@@ -750,7 +750,7 @@ impl RoomsList {
             self.displayed_invited_rooms = self.invited_rooms.borrow()
                 .keys()
                 .filter(|room_id| self.selected_space.as_ref()
-                    .map_or(true, |space| self.is_room_in_space(space.room_id(), room_id))
+                    .is_none_or(|space| self.is_room_in_space(space.room_id(), room_id))
                 )
                 .cloned()
                 .collect();
@@ -760,7 +760,7 @@ impl RoomsList {
             for (room_id, jr) in &self.all_joined_rooms {
                 // If we have a selected space, only display rooms that are in that space.
                 if self.selected_space.as_ref()
-                    .map_or(true, |space| self.is_room_in_space(space.room_id(), room_id))
+                    .is_none_or(|space| self.is_room_in_space(space.room_id(), room_id))
                 {
                     if jr.is_direct {
                         self.displayed_direct_rooms.push(room_id.clone());
@@ -806,7 +806,7 @@ impl RoomsList {
                 (self.display_filter)(*room) &&
                 // If we have a selected space, only display rooms that are in that space.
                 self.selected_space.as_ref()
-                    .map_or(true, |space| self.is_room_in_space(space.room_id(), room_id))
+                    .is_none_or(|space| self.is_room_in_space(space.room_id(), room_id))
             );
 
         if let Some(sort_fn) = sort_fn {
@@ -841,7 +841,7 @@ impl RoomsList {
                 (self.display_filter)(*room) &&
                 // If we have a selected space, only display rooms that are in that space.
                 self.selected_space.as_ref()
-                    .map_or(true, |space| self.is_room_in_space(space.room_id(), room_id))
+                    .is_none_or(|space| self.is_room_in_space(space.room_id(), room_id))
             );
 
         if let Some(sort_fn) = sort_fn {
@@ -972,7 +972,7 @@ impl RoomsList {
             SpaceRoomListAction::PaginationError { space_id, error } => {
                 error!("RoomsList: failed to paginate rooms in space {space_id}: {error:?}");
                 enqueue_popup_notification(PopupItem {
-                    message: format!("Failed to fetch more rooms in this space. Try again later."),
+                    message: "Failed to fetch more rooms in this space. Try again later.".to_string(),
                     auto_dismissal_duration: None,
                     kind: PopupKind::Error,
                 });

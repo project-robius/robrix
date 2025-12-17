@@ -652,7 +652,7 @@ impl SelectedRoom {
         match self {
             SelectedRoom::JoinedRoom { room_name_id } => room_name_id,
             SelectedRoom::InvitedRoom { room_name_id } => room_name_id,
-            SelectedRoom::Space { space_name_id } => &space_name_id,
+            SelectedRoom::Space { space_name_id } => space_name_id,
         }
     }
 

@@ -92,7 +92,7 @@ impl FilterableRoom for InvitedRoomInfo {
 
 impl FilterableRoom for JoinedSpaceInfo {
     fn room_id(&self) -> &RoomId {
-        &self.space_name_id.room_id()
+        self.space_name_id.room_id()
     }
 
     fn room_name(&self) -> Cow<'_, str> {

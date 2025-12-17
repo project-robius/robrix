@@ -272,7 +272,7 @@ impl SpaceLobbyScreen {
         self.view.label(ids!(title)).set_text(cx, &format!(
             "Space Lobby Screen is not yet implemented.\n\n\
             Space Name: {}\n\nSpace ID: {}",
-            space_name_id.to_string(),
+            space_name_id,
             space_name_id.room_id(),
         ));
 
