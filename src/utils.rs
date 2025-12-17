@@ -1,12 +1,10 @@
-// Ignore clippy warnings in `DeRon` macro derive bodies.
-#![allow(clippy::question_mark)]
-
-use std::{borrow::Cow, fmt::Display, ops::{Deref, DerefMut}, str::{Chars, FromStr}, time::SystemTime};
+use std::{borrow::Cow, ops::{Deref, DerefMut}, time::SystemTime};
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, Cx, Event, ImageRef};
+use makepad_widgets::{Cx, Event, ImageRef, error, image_cache::ImageError};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}, RoomDisplayName};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
@@ -655,70 +653,16 @@ pub fn build_grapheme_byte_positions(text: &str) -> Vec<usize> {
     positions
 }
 
-/// A RON-(de)serializable wrapper around [`OwnedRoomId`].
-#[derive(Clone, Debug)]
-pub struct OwnedRoomIdRon(pub OwnedRoomId);
-impl SerRon for OwnedRoomIdRon {
-    /// Serialize a `OwnedRoomId` to its string form, using ron.
-    fn ser_ron(&self, d: usize, s: &mut SerRonState) {
-        self.0.to_string().ser_ron(d, s);
-    }
-}
-impl DeRon for OwnedRoomIdRon {
-    fn de_ron(s: &mut DeRonState, i: &mut Chars) -> Result<Self, DeRonErr> {
-        OwnedRoomId::from_str(&String::de_ron(s, i)?)
-            .map(OwnedRoomIdRon)
-            .map_err(|e| DeRonErr {
-                msg: e.to_string(),
-                line: s.line,
-                col: s.col,
-            })
-    }
-}
-impl From<OwnedRoomId> for OwnedRoomIdRon {
-    fn from(room_id: OwnedRoomId) -> Self {
-        OwnedRoomIdRon(room_id)
-    }
-}
-impl<'a> From<&'a OwnedRoomIdRon> for &'a OwnedRoomId {
-    fn from(room_id: &'a OwnedRoomIdRon) -> Self {
-        &room_id.0
-    }
-}
-impl From<OwnedRoomIdRon> for OwnedRoomId {
-    fn from(room_id: OwnedRoomIdRon) -> Self {
-        room_id.0
-    }
-}
-impl<'a> From<&'a OwnedRoomIdRon> for &'a RoomId {
-    fn from(room_id: &'a OwnedRoomIdRon) -> Self {
-        &room_id.0
-    }
-}
-impl AsRef<RoomId> for OwnedRoomIdRon {
-    fn as_ref(&self) -> &RoomId {
-        &self.0
-    }
-}
-impl Deref for OwnedRoomIdRon {
-    type Target = OwnedRoomId;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl Display for OwnedRoomIdRon {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-/// A room name that includes both the display name and room ID for automatic fallback.
+/// The name and ID of a room or space.
+///
+/// Two `RoomNameId`s are considered equal if they have the same room ID;
+/// the name string is ignored for purposes of equality testing.
 ///
 /// This type combines `RoomDisplayName` with `OwnedRoomId` to provide:
-/// - Automatic fallback to room ID when displaying empty names
-/// - Type-safe room name handling throughout the codebase
-/// - Simplified Display implementation that doesn't require passing room_id separately
-#[derive(Clone, PartialEq, Eq)]
+/// * Automatic fallback to room ID when displaying empty/unknown room names.
+/// * Type-safe room name handling throughout the codebase.
+/// * Simplified `Display` implementation that doesn't require passing room_id separately.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct RoomNameId {
     display_name: RoomDisplayName,
     room_id: OwnedRoomId,
@@ -730,30 +674,16 @@ impl RoomNameId {
         Self { display_name, room_id }
     }
 
-    // /// Create a RoomName from a room, extracting both display name and ID.
-    // pub fn from_room(room: &Room) -> Self {
-    //     Self {
-    //         display_name: room.cached_display_name().unwrap_or(RoomDisplayName::Empty),
-    //         room_id: room.room_id().to_owned(),
-    //     }
-    // }
-
     /// Get a reference to the underlying display name.
     #[inline]
     pub fn display_name(&self) -> &RoomDisplayName {
         &self.display_name
     }
 
-    /// Get a reference to the room ID.
+    /// Get a reference to the room ID or space ID.
     #[inline]
     pub fn room_id(&self) -> &OwnedRoomId {
         &self.room_id
-    }
-
-    /// Returns the underlying room ID as a string slice.
-    #[inline]
-    pub fn room_id_str(&self) -> &str {
-        self.room_id.as_str()
     }
 
     /// Check if the display name is Empty (not EmptyWas or other variants).
@@ -784,6 +714,12 @@ impl RoomNameId {
     }
 }
 
+impl PartialEq for RoomNameId {
+    fn eq(&self, other: &Self) -> bool {
+        self.room_id == other.room_id
+    }
+}
+impl Eq for RoomNameId { }
 impl std::fmt::Debug for RoomNameId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut ds = f.debug_struct("RoomNameId");
@@ -820,7 +756,6 @@ impl AsRef<OwnedRoomId> for RoomNameId {
         &self.room_id
     }
 }
-
 /// Display implementation that automatically handles Empty names by falling back to room ID.
 ///
 /// - `Empty` → displays room ID
@@ -835,140 +770,19 @@ impl std::fmt::Display for RoomNameId {
         }
     }
 }
-
 impl From<(RoomDisplayName, OwnedRoomId)> for RoomNameId {
     fn from((display_name, room_id): (RoomDisplayName, OwnedRoomId)) -> Self {
         Self::new(display_name, room_id)
     }
 }
-
 impl From<(&RoomDisplayName, &OwnedRoomId)> for RoomNameId {
     fn from((display_name, room_id): (&RoomDisplayName, &OwnedRoomId)) -> Self {
         Self::new(display_name.clone(), room_id.clone())
     }
 }
-
 impl From<(Option<RoomDisplayName>, OwnedRoomId)> for RoomNameId {
     fn from((display_name, room_id): (Option<RoomDisplayName>, OwnedRoomId)) -> Self {
         Self::new(display_name.unwrap_or(RoomDisplayName::Empty), room_id)
-    }
-}
-
-// impl From<&Room> for RoomNameId {
-//     fn from(room: &Room) -> Self {
-//         Self::from_room(room)
-//     }
-// }
-
-/// A RON-(de)serializable wrapper around [`RoomDisplayName`].
-#[derive(Clone, Debug)]
-pub struct RoomDisplayNameRon(pub RoomDisplayName);
-
-impl SerRon for RoomDisplayNameRon {
-    fn ser_ron(&self, d: usize, s: &mut SerRonState) {
-        match &self.0 {
-            RoomDisplayName::Empty => "Empty".to_string().ser_ron(d, s),
-            RoomDisplayName::EmptyWas(previous) => {
-                format!("EmptyWas:{previous}").ser_ron(d, s);
-            }
-            RoomDisplayName::Named(name) => {
-                format!("Named:{name}").ser_ron(d, s);
-            }
-            RoomDisplayName::Aliased(alias) => {
-                format!("Aliased:{alias}").ser_ron(d, s);
-            }
-            RoomDisplayName::Calculated(calc) => {
-                format!("Calculated:{calc}").ser_ron(d, s);
-            }
-        }
-    }
-}
-
-impl DeRon for RoomDisplayNameRon {
-    fn de_ron(s: &mut DeRonState, i: &mut Chars) -> Result<Self, DeRonErr> {
-        let encoded = String::de_ron(s, i)?;
-        let (variant, value) = encoded
-            .split_once(':')
-            .map(|(tag, rest)| (tag, Some(rest)))
-            .unwrap_or_else(|| (encoded.as_str(), None));
-
-        let err_line = s.line;
-        let err_col = s.col;
-        let display_name = match variant {
-            "Empty" => RoomDisplayName::Empty,
-            "EmptyWas" => RoomDisplayName::EmptyWas(value.map(ToOwned::to_owned).ok_or_else(|| DeRonErr {
-                msg: String::from("EmptyWas RoomDisplayName requires a value"),
-                line: err_line,
-                col: err_col,
-            })?),
-            "Named" => RoomDisplayName::Named(value.map(ToOwned::to_owned).ok_or_else(|| DeRonErr {
-                msg: String::from("Named RoomDisplayName requires a value"),
-                line: err_line,
-                col: err_col,
-            })?),
-            "Aliased" => RoomDisplayName::Aliased(value.map(ToOwned::to_owned).ok_or_else(|| DeRonErr {
-                msg: String::from("Aliased RoomDisplayName requires a value"),
-                line: err_line,
-                col: err_col,
-            })?),
-            "Calculated" => RoomDisplayName::Calculated(value.map(ToOwned::to_owned).ok_or_else(|| DeRonErr {
-                msg: String::from("Calculated RoomDisplayName requires a value"),
-                line: err_line,
-                col: err_col,
-            })?),
-            other => {
-                return Err(DeRonErr {
-                    msg: format!("Unknown RoomDisplayName variant: {other}"),
-                    line: s.line,
-                    col: s.col,
-                });
-            }
-        };
-
-        Ok(RoomDisplayNameRon(display_name))
-    }
-}
-
-impl From<RoomDisplayName> for RoomDisplayNameRon {
-    fn from(name: RoomDisplayName) -> Self {
-        RoomDisplayNameRon(name)
-    }
-}
-
-impl From<RoomDisplayNameRon> for RoomDisplayName {
-    fn from(ron: RoomDisplayNameRon) -> Self {
-        ron.0
-    }
-}
-
-/// Simplified SerRon implementation for RoomName using tuple of Ron helpers.
-///
-/// Serializes as: (RoomDisplayNameRon, OwnedRoomIdRon)
-impl SerRon for RoomNameId {
-    fn ser_ron(&self, d: usize, s: &mut SerRonState) {
-        s.out.push('(');
-        RoomDisplayNameRon(self.display_name.clone()).ser_ron(d, s);
-        s.out.push_str(", ");
-        OwnedRoomIdRon(self.room_id.clone()).ser_ron(d, s);
-        s.out.push(')');
-    }
-}
-
-/// Simplified DeRon implementation for RoomName using tuple of Ron helpers.
-///
-/// Deserializes from: (RoomDisplayNameRon, OwnedRoomIdRon)
-impl DeRon for RoomNameId {
-    fn de_ron(s: &mut DeRonState, i: &mut Chars) -> Result<Self, DeRonErr> {
-        s.paren_open(i)?;
-        let display_name_ron = RoomDisplayNameRon::de_ron(s, i)?;
-        s.eat_comma_paren(i)?;
-        let room_id_ron = OwnedRoomIdRon::de_ron(s, i)?;
-        s.paren_close(i)?;
-
-        Ok(RoomNameId {
-            display_name: display_name_ron.0,
-            room_id: room_id_ron.0,
-        })
     }
 }
 
@@ -984,11 +798,11 @@ pub fn avatar_from_room_name(room_name: Option<&str>) -> FetchedRoomAvatar {
     FetchedRoomAvatar::Text(first)
 }
 
+
 #[cfg(test)]
 mod tests_room_name {
     use super::*;
     use std::convert::TryFrom;
-    use makepad_widgets::makepad_micro_serde::DeRon;
     use matrix_sdk::RoomDisplayName;
     use matrix_sdk::ruma::OwnedRoomId;
 
@@ -1001,7 +815,7 @@ mod tests_room_name {
         let room_id = sample_room_id("!preferred:example.org");
         let room_name = RoomNameId::new(RoomDisplayName::Named("Hello World".into()), room_id.clone());
         assert_eq!(room_name.to_string(), "Hello World");
-        assert_eq!(room_name.room_id_str(), room_id.as_str());
+        assert_eq!(room_name.room_id().as_str(), room_id.as_str());
     }
 
     #[test]
@@ -1016,19 +830,6 @@ mod tests_room_name {
         let room_id = sample_room_id("!emptywas:example.org");
         let room_name = RoomNameId::new(RoomDisplayName::EmptyWas("Prior Name".into()), room_id);
         assert_eq!(room_name.to_string(), "Empty Room (was \"Prior Name\")");
-    }
-
-    #[test]
-    fn ser_ron_round_trip_preserves_room_name() {
-        let room_id = sample_room_id("!serialize:example.org");
-        let original = RoomNameId::new(
-            RoomDisplayName::EmptyWas("Test".into()),
-            room_id,
-        );
-        let mut state = SerRonState { out: String::new() };
-        original.ser_ron(0, &mut state);
-        let restored = RoomNameId::deserialize_ron(&state.out).expect("round trip succeeds");
-        assert_eq!(restored, original);
     }
 }
 

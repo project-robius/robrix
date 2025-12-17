@@ -2585,15 +2585,15 @@ fn handle_ignore_user_list_subscriber(client: Client) {
 
 /// Asynchronously loads and restores the app state from persistent storage for the given user.
 ///
-/// If the loaded dock state contains open rooms and dock items, it logs a message and posts an action
-/// to restore the app state in the UI. If loading fails, it enqueues a notification
-/// with the error message.
+/// If the loaded dock state contains open rooms and dock items, this function emits an action
+/// to instruct the UI to restore the app state.
+/// If loading fails, it shows a popup notification with the error message.
 fn handle_load_app_state(user_id: OwnedUserId) {
     Handle::current().spawn(async move {
         match load_app_state(&user_id).await {
             Ok(app_state) => {
-                if !app_state.saved_dock_state.open_rooms.is_empty()
-                    && !app_state.saved_dock_state.dock_items.is_empty()
+                if !app_state.saved_dock_state_home.open_rooms.is_empty()
+                    && !app_state.saved_dock_state_home.dock_items.is_empty()
                 {
                     log!("Loaded room panel state from app data directory. Restoring now...");
                     Cx::post_action(AppStateAction::RestoreAppStateFromPersistentState(app_state));
@@ -3474,25 +3474,19 @@ pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
     // Clear resources normally, allowing them to be properly dropped
     // This prevents memory leaks when users logout and login again without closing the app
     CLIENT.lock().unwrap().take();
-    log!("Client cleared during logout");
-    
     SYNC_SERVICE.lock().unwrap().take();
-    log!("Sync service cleared during logout");
-    
     REQUEST_SENDER.lock().unwrap().take();
-    log!("Request sender cleared during logout");
-    
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
-    
+
     let on_clear_appstate = Arc::new(Notify::new());
     Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });
     
     match tokio::time::timeout(config.app_state_cleanup_timeout, on_clear_appstate.notified()).await {
         Ok(_) => {
-            log!("Received signal that app state was cleaned successfully");
+            log!("Received signal that UI-side app state was cleaned successfully");
             Ok(())
         }
-        Err(_) => Err(anyhow!("Timed out waiting for app state cleanup")),
+        Err(_) => Err(anyhow!("Timed out waiting for UI-side app state cleanup")),
     }
 }
