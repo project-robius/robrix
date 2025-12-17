@@ -306,7 +306,7 @@ impl MainDesktopUI {
         } 
         let saved_dock_state = self.save_dock_state();
         if let Some(space_id) = self.selected_space.as_ref() {
-            app_state.saved_dock_state_spaces.insert(
+            app_state.saved_dock_state_per_space.insert(
                 space_id.clone(),
                 saved_dock_state,
             );
@@ -340,7 +340,7 @@ impl MainDesktopUI {
     fn load_dock_state_from(&mut self, cx: &mut Cx, app_state: &mut AppState) {
         let dock = self.view.dock(ids!(dock));
         let to_restore_opt = if let Some(ss) = self.selected_space.as_ref() {
-            app_state.saved_dock_state_spaces.get(ss)
+            app_state.saved_dock_state_per_space.get(ss)
         } else {
             Some(&app_state.saved_dock_state_home)
         };

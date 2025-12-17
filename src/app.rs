@@ -603,7 +603,7 @@ pub struct AppState {
     pub saved_dock_state_home: SavedDockState,
     /// The saved "snapshot" of the dock's UI layout/state for each space,
     /// keyed by the space ID.
-    pub saved_dock_state_spaces: HashMap<OwnedRoomId, SavedDockState>,
+    pub saved_dock_state_per_space: HashMap<OwnedRoomId, SavedDockState>,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
 }
