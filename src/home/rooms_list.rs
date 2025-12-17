@@ -928,10 +928,10 @@ impl RoomsList {
     /// Returns a room's avatar and displayable name.
     pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(FetchedRoomAvatar, Option<String>)> {
         self.all_joined_rooms.get(room_id)
-            .map(|room_info| (room_info.avatar.clone(), room_info.room_name.clone()))
+            .map(|room_info| (room_info.avatar.clone(), room_info.room_name_id.name_for_avatar()))
             .or_else(|| {
                 self.invited_rooms.borrow().get(room_id)
-                    .map(|room_info| (room_info.room_avatar.clone(), room_info.room_name.clone()))
+                    .map(|room_info| (room_info.room_avatar.clone(), room_info.room_name_id.name_for_avatar()))
             })
     }
 
@@ -947,6 +947,8 @@ impl RoomsList {
                     .map(|room_info| room_info.is_direct)
             })
             .unwrap_or(false)
+    }
+
     /// Handle any incoming updates to spaces' room lists and pagination state.
     fn handle_space_room_list_action(&mut self, cx: &mut Cx, action: &SpaceRoomListAction) {
         match action {
@@ -1331,6 +1333,8 @@ impl RoomsListRef {
             return false;
         };
         inner.is_direct_room(room_id)
+    }
+
     /// Returns the currently-selected space (the one selected in the SpacesBar).
     pub fn get_selected_space(&self) -> Option<RoomNameId> {
         self.borrow()?.selected_space.clone()

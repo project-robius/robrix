@@ -565,7 +565,7 @@ pub struct RoomScreen {
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
     /// Room to reload after login (saved during logout to restore user's view)
-    #[rust] pending_room_to_reload: Option<(OwnedRoomId, String)>,
+    #[rust] pending_room_to_reload: Option<RoomNameId>,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -680,18 +680,15 @@ impl Widget for RoomScreen {
                     if let Some(tl) = self.tl_state.take() {
                         log!("RoomScreen: clearing tl_state for room {} due to logout", tl.room_id);
                     }
-                    // Save room_id for reloading after login, then clear state
-                    let saved_room_id = self.room_id.clone();
-                    let saved_room_name = self.room_name.clone();
+                    // Save room_name_id for reloading after login, then clear state
+                    let saved_room_name_id = self.room_name_id.take();
 
-                    self.room_id = None;
-                    self.room_name = String::new();
                     self.is_loaded = false;
                     self.all_rooms_loaded = false;
 
                     // Store the room to reload after login
-                    if let Some(room_id) = saved_room_id {
-                        self.pending_room_to_reload = Some((room_id, saved_room_name));
+                    if let Some(room_name_id) = saved_room_name_id {
+                        self.pending_room_to_reload = Some(room_name_id);
                         log!("RoomScreen: saved room to reload after login");
                     }
 
@@ -701,9 +698,9 @@ impl Widget for RoomScreen {
 
                 // Handle login success: reload the room if we were displaying one before logout
                 if let Some(crate::login::login_screen::LoginAction::LoginSuccess) = action.downcast_ref() {
-                    if let Some((room_id, room_name)) = self.pending_room_to_reload.take() {
-                        log!("RoomScreen: reloading room {} after successful login", room_id);
-                        self.set_displayed_room(cx, room_id, room_name);
+                    if let Some(room_name_id) = self.pending_room_to_reload.take() {
+                        log!("RoomScreen: reloading room {} after successful login", room_name_id.room_id());
+                        self.set_displayed_room(cx, &room_name_id);
                     }
                 }
 
@@ -847,24 +844,22 @@ impl Widget for RoomScreen {
 
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_name_id: RoomNameId::new(room_display_name, room_id),
+                    room_name_id: RoomNameId::new(room_display_name.clone(), room_id),
                     room_members,
                     room_members_sort,
                     room_members_sync_pending,
-                    room_display_name,
+                    room_display_name: Some(room_display_name.to_string()),
                     room_avatar_url,
                     is_direct_room,
                 }
-            } else if let Some(room_id) = self.room_id.clone() {
-                // Fallback case: we have a room_id but no tl_state yet.
+            } else if let Some(room_name_id) = &self.room_name_id {
+                // Fallback case: we have a room_name_id but no tl_state yet.
                 // This happens after logout clears tl_state but before show_timeline() is called again.
                 // Set room_members_sync_pending to true to show loading animation in MentionableTextInput.
-                let is_direct_room = Self::is_direct_room(cx, &room_id);
-            } else if let Some(room_name) = &self.room_name_id {
-                // Fallback case: we have a room_name but no tl_state yet
+                let is_direct_room = Self::is_direct_room(cx, room_name_id.room_id());
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_name_id: room_name.clone(),
+                    room_name_id: room_name_id.clone(),
                     room_members: None,
                     room_members_sort: None,
                     room_members_sync_pending: true,

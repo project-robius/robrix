@@ -169,6 +169,7 @@ impl MainDesktopUI {
         // If the room is already open, select (jump to) its existing tab.
         // We use `find_open_room_live_id` to look up by room_id, because the dock
         // may store LiveIds with a prefix that differs from `LiveId::from_str(room_id)`.
+        let dock = self.view.dock(ids!(dock));
         if let Some(existing_live_id) = self.find_open_room_live_id(room.room_id()) {
             dock.select_tab(cx, existing_live_id);
             self.most_recently_selected_room = Some(room);

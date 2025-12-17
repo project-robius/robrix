@@ -550,7 +550,7 @@ impl Widget for MentionableTextInput {
                 .as_ref()
                 .map(|members| members.len())
                 .unwrap_or(0);
-            (room_props.room_id.clone(), member_count)
+            (room_props.room_name_id.room_id().clone(), member_count)
         };
 
         // Check search channel on every frame if we're searching
@@ -872,9 +872,11 @@ impl MentionableTextInput {
         // Get room avatar fallback text from room name (with automatic ID fallback)
         let room_label = room_props.room_name_id.to_string();
         let room_name_first_char = room_label
-            .as_ref()
-            .and_then(|name| name.graphemes(true).next().map(|s| s.to_uppercase()))
+            .graphemes(true)
+            .next()
+            .map(|s| s.to_uppercase())
             .filter(|s| s != "@" && s.chars().all(|c| c.is_alphabetic()))
+            .unwrap_or_default();
 
         if let Some(avatar_url) = &room_props.room_avatar_url {
             match get_or_fetch_avatar(cx, avatar_url.to_owned()) {
@@ -1509,7 +1511,7 @@ impl MentionableTextInput {
 
                 if !already_waiting {
                     submit_async_request(MatrixRequest::GetRoomMembers {
-                        room_id: room_props.room_id.clone(),
+                        room_id: room_props.room_name_id.room_id().clone(),
                         memberships: RoomMemberships::JOIN,
                         local_only: true,
                     });
