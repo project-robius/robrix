@@ -1,8 +1,5 @@
 //! Functions for loading and saving the TSP wallet state to persistent storage.
 
-// Ignore clippy warnings in `DeRon` macro derive bodies.
-#![allow(clippy::question_mark)]
-
 use std::collections::BTreeMap;
 
 use makepad_widgets::*;

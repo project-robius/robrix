@@ -50,7 +50,7 @@ pub fn set_global_popup_list(cx: &mut Cx, parent_ref: &WidgetRef) {
 }
 
 /// Kind of a popup notification.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum PopupKind {
     /// Shows no icon at all.
     #[default]

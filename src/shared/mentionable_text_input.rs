@@ -869,13 +869,12 @@ impl MentionableTextInput {
 
         let avatar_ref = room_mention_item.avatar(ids!(user_info.room_avatar));
 
-        // Get room avatar fallback text from room display name
-        let room_name_first_char = room_props
-            .room_display_name
+        // Get room avatar fallback text from room name (with automatic ID fallback)
+        let room_label = room_props.room_name_id.to_string();
+        let room_name_first_char = room_label
             .as_ref()
             .and_then(|name| name.graphemes(true).next().map(|s| s.to_uppercase()))
             .filter(|s| s != "@" && s.chars().all(|c| c.is_alphabetic()))
-            .unwrap_or_else(|| "R".to_string());
 
         if let Some(avatar_url) = &room_props.room_avatar_url {
             match get_or_fetch_avatar(cx, avatar_url.to_owned()) {

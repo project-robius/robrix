@@ -47,6 +47,7 @@ pub mod verification;
 
 pub mod cpu_worker;
 pub mod utils;
+pub mod serialization;
 pub mod temp_storage;
 pub mod location;
 
