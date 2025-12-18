@@ -319,15 +319,8 @@ impl MainDesktopUI {
     fn save_dock_state(&self) -> SavedDockState {
         let dock = self.view.dock(ids!(dock));
         SavedDockState {
-            dock_items: dock.clone_state()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(k, v)| (k.into(), v.into()))
-                .collect(),
-            open_rooms: self.open_rooms
-                .iter()
-                .map(|(k, v)| ((*k).into(), v.clone()))
-                .collect(),
+            dock_items: dock.clone_state().unwrap_or_default(),
+            open_rooms: self.open_rooms.clone(),
             room_order: self.room_order.clone(),
             selected_room: self.most_recently_selected_room.clone(),
         }
@@ -352,19 +345,10 @@ impl MainDesktopUI {
         let SavedDockState { dock_items, open_rooms, room_order, selected_room } = to_restore;
 
         self.room_order = room_order.clone();
-        self.open_rooms = open_rooms
-            .iter()
-            .map(|(k, v)| ((*k).into(), v.clone()))
-            .collect();
+        self.open_rooms = open_rooms.clone();
 
         if let Some(mut dock) = dock.borrow_mut() {
-            dock.load_state(
-                cx,
-                dock_items
-                    .iter()
-                    .map(|(k, v)| ((*k).into(), v.clone().into()))
-                    .collect()
-            );
+            dock.load_state(cx, dock_items.clone());
             // Populate the content within each restored dock tab.
             if !self.open_rooms.is_empty() {
                 for (head_live_id, (_, widget)) in dock.items().iter() {

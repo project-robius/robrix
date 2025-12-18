@@ -2586,7 +2586,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
 /// Asynchronously loads and restores the app state from persistent storage for the given user.
 ///
 /// If the loaded dock state contains open rooms and dock items, this function emits an action
-/// to instruct the UI to restore the app state.
+/// to instruct the UI to restore the app state for the main home view (all rooms).
 /// If loading fails, it shows a popup notification with the error message.
 fn handle_load_app_state(user_id: OwnedUserId) {
     Handle::current().spawn(async move {
