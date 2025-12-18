@@ -662,7 +662,6 @@ impl RoomsList {
                 }
                 RoomsListUpdate::LoadedRooms { max_rooms } => {
                     self.max_known_rooms = max_rooms;
-                    self.update_status();
                 },
                 RoomsListUpdate::Tags { room_id, new_tags } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
@@ -816,27 +815,25 @@ impl RoomsList {
                     }
                 }
             }
-            self.update_status();
-            portal_list.set_first_id_and_scroll(0, 0.0);
-            self.redraw(cx);
-            return;
         }
+        // Generate the displayed rooms with a keyword filter applied.
+        else {
+            // Create a new filter function based on the given keywords
+            // and store it in this RoomsList such that we can apply it to newly-added rooms.
+            let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
+                .set_keywords(self.filter_keywords.clone())
+                .set_filter_criteria(RoomFilterCriteria::All)
+                .build();
+            self.display_filter = filter;
 
-        // Create a new filter function based on the given keywords
-        // and store it in this RoomsList such that we can apply it to newly-added rooms.
-        let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
-            .set_keywords(self.filter_keywords.clone())
-            .set_filter_criteria(RoomFilterCriteria::All)
-            .build();
-        self.display_filter = filter;
+            self.displayed_invited_rooms = self.generate_displayed_invited_rooms(sort_fn.as_deref());
 
-        self.displayed_invited_rooms = self.generate_displayed_invited_rooms(sort_fn.as_deref());
+            let (new_displayed_regular_rooms, new_displayed_direct_rooms) =
+                self.generate_displayed_joined_rooms(sort_fn.as_deref());
 
-        let (new_displayed_regular_rooms, new_displayed_direct_rooms) =
-            self.generate_displayed_joined_rooms(sort_fn.as_deref());
-
-        self.displayed_regular_rooms = new_displayed_regular_rooms;
-        self.displayed_direct_rooms = new_displayed_direct_rooms;
+            self.displayed_regular_rooms = new_displayed_regular_rooms;
+            self.displayed_direct_rooms = new_displayed_direct_rooms;
+        }
 
         self.update_status();
         portal_list.set_first_id_and_scroll(0, 0.0);
