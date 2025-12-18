@@ -74,12 +74,24 @@ live_design! {
 
     StatusLabel = <View> {
         width: Fill, height: Fit,
+        flow: Right,
         align: { x: 0.5, y: 0.5 }
         padding: 15.0,
+
+        loading_spinner = <LoadingSpinner> {
+            visible: false,
+            width: 20,
+            height: 20,
+            draw_bg: {
+                color: (COLOR_ACTIVE_PRIMARY)
+                border_size: 3.0,
+            }
+        }
 
         label = <Label> {
             padding: 0
             width: Fill,
+            flow: RightWrap,
             align: { x: 0.5, y: 0.5 }
             draw_text: {
                 wrap: Word,
@@ -450,7 +462,7 @@ impl RoomsList {
                             self.displayed_invited_rooms.push(room_id);
                         }
                     }
-                    self.set_status_to_rooms_count();
+                    self.update_status();
                     // Signal the UI to update the RoomScreen
                     SignalToUI::set_ui_signal();
                 }
@@ -492,7 +504,7 @@ impl RoomsList {
                             );
                         }
                     }
-                    self.set_status_to_rooms_count();
+                    self.update_status();
                     // Signal the UI to update the RoomScreen
                     SignalToUI::set_ui_signal();
                 }
@@ -635,7 +647,7 @@ impl RoomsList {
                     }
 
                     self.hidden_rooms.remove(&room_id);
-                    self.set_status_to_rooms_count();
+                    self.update_status();
                 }
                 RoomsListUpdate::ClearRooms => {
                     self.all_joined_rooms.clear();
@@ -643,14 +655,14 @@ impl RoomsList {
                     self.displayed_regular_rooms.clear();
                     self.invited_rooms.borrow_mut().clear();
                     self.displayed_invited_rooms.clear();
-                    self.set_status_to_rooms_count();
+                    self.update_status();
                 }
                 RoomsListUpdate::NotLoaded => {
                     self.status = "Loading rooms (waiting for homeserver)...".to_string();
                 }
                 RoomsListUpdate::LoadedRooms { max_rooms } => {
                     self.max_known_rooms = max_rooms;
-                    self.set_status_to_rooms_count();
+                    self.update_status();
                 },
                 RoomsListUpdate::Tags { room_id, new_tags } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
@@ -738,23 +750,29 @@ impl RoomsList {
         }
     }
 
-    /// Updates the status message to show how many rooms have been loaded.
-    fn set_status_to_rooms_count(&mut self) {
-        let num_rooms = self.all_joined_rooms.len() + self.invited_rooms.borrow().len();
-        self.status = format!("Loaded {num_rooms} rooms.");
-    }
-
-    /// Updates the status message to show how many rooms are currently displayed
-    /// that match the current search filter.
-    fn set_status_to_matching_rooms(&mut self) {
+    /// Updates the status message to show how many rooms have been loaded
+    /// or how many rooms match the current room filter keywords.
+    ///
+    /// Note: this *does not* actually redraw the status message or rooms list;
+    ///       that must be done separately.
+    fn update_status(&mut self) {
         let num_rooms = self.displayed_invited_rooms.len()
             + self.displayed_direct_rooms.len()
             + self.displayed_regular_rooms.len();
-        self.status = match num_rooms {
-            0 => "No matching rooms found.".to_string(),
-            1 => "Found 1 matching room.".to_string(),
-            n => format!("Found {} matching rooms.", n),
-        }
+
+        let mut text = match (self.filter_keywords.is_empty(), num_rooms) {
+            (true, 0)  => "No joined rooms found".to_string(),
+            (true, 1)  => "Loaded 1 room".to_string(),
+            (true, n)  => format!("Loaded {n} rooms"),
+            (false, 0) => "No matching rooms found".to_string(),
+            (false, 1) => "Found 1 matching room".to_string(),
+            (false, n) => format!("Found {n} matching rooms"),
+        };
+        match self.selected_space.is_some() {
+            true => text.push_str(" in this space."),
+            false => text.push('.'),
+        };
+        self.status = text;
     }
 
     /// Returns true if the given room is contained in any of the displayed room sets,
@@ -798,7 +816,7 @@ impl RoomsList {
                     }
                 }
             }
-            self.set_status_to_rooms_count();
+            self.update_status();
             portal_list.set_first_id_and_scroll(0, 0.0);
             self.redraw(cx);
             return;
@@ -820,7 +838,7 @@ impl RoomsList {
         self.displayed_regular_rooms = new_displayed_regular_rooms;
         self.displayed_direct_rooms = new_displayed_direct_rooms;
 
-        self.set_status_to_matching_rooms();
+        self.update_status();
         portal_list.set_first_id_and_scroll(0, 0.0);
         self.redraw(cx);
     }
