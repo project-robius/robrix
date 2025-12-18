@@ -549,6 +549,7 @@ impl App {
                     &HeapLiveIdPath::default(),
                     DockAction::TabCloseWasPressed(tab_id),
                 );
+                enqueue_rooms_list_update(RoomsListUpdate::HideRoom { room_id: to_close.clone() });
             }
         });
 

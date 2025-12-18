@@ -181,6 +181,14 @@ pub enum RoomsListUpdate {
     TombstonedRoom {
         room_id: OwnedRoomId
     },
+    /// Hide the given room from being displayed.
+    ///
+    /// This is useful for temporarily preventing a room from being shown,
+    /// e.g., after a room has been left but before the homeserver has registered
+    /// that we left it and removed it via the RoomListService.
+    HideRoom {
+        room_id: OwnedRoomId,
+    },
     /// Scroll to the given room.
     ScrollToRoom(OwnedRoomId),
     /// The background space service is now listening for requests,
@@ -334,7 +342,7 @@ pub struct RoomsList {
     #[rust] invited_rooms: Rc<RefCell<HashMap<OwnedRoomId, InvitedRoomInfo>>>,
 
     /// The set of all joined rooms and their cached info.
-    /// This includes both direct rooms and regular rooms.
+    /// This includes both direct rooms and regular rooms, but not invited rooms.
     #[rust] all_joined_rooms: HashMap<OwnedRoomId, JoinedRoomInfo>,
 
     /// The space that is currently selected as a display filter for the rooms list, if any.
@@ -350,6 +358,9 @@ pub struct RoomsList {
     ///
     /// This can include both joined and non-joined spaces.
     #[rust] space_map: HashMap<OwnedRoomId, SpaceMapValue>,
+
+    /// Rooms that are explicitly hidden and should never be shown in the rooms list.
+    #[rust] hidden_rooms: HashSet<OwnedRoomId>,
 
     /// The currently-active filter function for the list of rooms.
     ///
@@ -623,6 +634,7 @@ impl RoomsList {
                             .map(|index| self.displayed_invited_rooms.remove(index));
                     }
 
+                    self.hidden_rooms.remove(&room_id);
                     self.set_status_to_rooms_count();
                 }
                 RoomsListUpdate::ClearRooms => {
@@ -683,6 +695,21 @@ impl RoomsList {
                         }
                     } else {
                         warning!("Warning: couldn't find room {room_id} to update the tombstone status");
+                    }
+                }
+                RoomsListUpdate::HideRoom { room_id } => {
+                    self.hidden_rooms.insert(room_id.clone());
+                    if let Some(i) = self.displayed_regular_rooms.iter().position(|r| r == &room_id) {
+                        self.displayed_regular_rooms.remove(i);
+                        continue;
+                    }
+                    if let Some(i) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
+                        self.displayed_direct_rooms.remove(i);
+                        continue;
+                    }
+                    if let Some(i) = self.displayed_invited_rooms.iter().position(|r| r == &room_id) {
+                        self.displayed_invited_rooms.remove(i);
+                        continue;
                     }
                 }
                 RoomsListUpdate::ScrollToRoom(room_id) => {
@@ -749,8 +776,9 @@ impl RoomsList {
             self.display_filter = RoomDisplayFilter::default();
             self.displayed_invited_rooms = self.invited_rooms.borrow()
                 .keys()
-                .filter(|room_id| self.selected_space.as_ref()
-                    .is_none_or(|space| self.is_room_in_space(space.room_id(), room_id))
+                .filter(|&room_id| !self.hidden_rooms.contains(room_id)
+                    && self.selected_space.as_ref()
+                        .is_none_or(|space| self.is_room_in_space(space.room_id(), room_id))
                 )
                 .cloned()
                 .collect();
@@ -758,9 +786,10 @@ impl RoomsList {
             self.displayed_direct_rooms.clear();
             self.displayed_regular_rooms.clear();
             for (room_id, jr) in &self.all_joined_rooms {
-                // If we have a selected space, only display rooms that are in that space.
-                if self.selected_space.as_ref()
-                    .is_none_or(|space| self.is_room_in_space(space.room_id(), room_id))
+                if !self.hidden_rooms.contains(room_id)
+                    // If we have a selected space, only display rooms that are in that space.
+                    && self.selected_space.as_ref()
+                        .is_none_or(|space| self.is_room_in_space(space.room_id(), room_id))
                 {
                     if jr.is_direct {
                         self.displayed_direct_rooms.push(room_id.clone());
@@ -802,10 +831,11 @@ impl RoomsList {
         let invited_rooms_ref = self.invited_rooms.borrow();
         let filtered_invited_rooms_iter = invited_rooms_ref
             .iter()
-            .filter(|(room_id, room)|
-                (self.display_filter)(*room) &&
+            .filter(|&(room_id, room)|
+                !self.hidden_rooms.contains(room_id)
+                && (self.display_filter)(room)
                 // If we have a selected space, only display rooms that are in that space.
-                self.selected_space.as_ref()
+                && self.selected_space.as_ref()
                     .is_none_or(|space| self.is_room_in_space(space.room_id(), room_id))
             );
 
@@ -837,10 +867,11 @@ impl RoomsList {
 
         let filtered_joined_rooms_iter = self.all_joined_rooms
             .iter()
-            .filter(|(room_id, room)|
-                (self.display_filter)(*room) &&
+            .filter(|&(room_id, room)|
+                !self.hidden_rooms.contains(room_id)
+                && (self.display_filter)(room)
                 // If we have a selected space, only display rooms that are in that space.
-                self.selected_space.as_ref()
+                && self.selected_space.as_ref()
                     .is_none_or(|space| self.is_room_in_space(space.room_id(), room_id))
             );
 
