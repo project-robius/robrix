@@ -23,7 +23,6 @@ use crate::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
     },
-    serialization::{LiveIdSerde, DockItemSerde},
     sliding_sync::current_user_id,
     utils::RoomNameId,
     verification::VerificationAction,
@@ -612,9 +611,9 @@ pub struct AppState {
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct SavedDockState {
     /// All items contained in the dock, keyed by their room or space ID.
-    pub dock_items: HashMap<LiveIdSerde, DockItemSerde>,
+    pub dock_items: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by their room or space ID.
-    pub open_rooms: HashMap<LiveIdSerde, SelectedRoom>,
+    pub open_rooms: HashMap<LiveId, SelectedRoom>,
     /// The order in which the rooms were opened, in chronological order
     /// from first opened (at the beginning) to last opened (at the end).
     pub room_order: Vec<SelectedRoom>,
