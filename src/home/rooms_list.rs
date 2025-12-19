@@ -958,6 +958,7 @@ impl RoomsList {
 
     /// Handle any incoming updates to spaces' room lists and pagination state.
     fn handle_space_room_list_action(&mut self, cx: &mut Cx, action: &SpaceRoomListAction) {
+        log!("RoomsList got {action:?}");
         match action {
             SpaceRoomListAction::UpdatedChildren { space_id, direct_children } => {
                 match self.space_map.entry(space_id.clone()) {
@@ -990,13 +991,25 @@ impl RoomsList {
                         should_fetch_rooms = true;
                     }
                 }
+                let Some(sender) = self.space_request_sender.as_ref() else {
+                    error!("BUG: RoomsList: no space request sender was available after pagination state update.");
+                    return;
+                };
                 if should_fetch_rooms {
-                    let Some(sender) = self.space_request_sender.as_ref() else {
-                        error!("BUG: RoomsList: no space request sender was available to get rooms after pagination.");
-                        return;
-                    };
                     if sender.send(SpaceRequest::GetChildren { space_id: space_id.clone() }).is_err() {
                         error!("BUG: RoomsList: failed to send GetRooms request for space {space_id}.");
+                    }
+                }
+
+                // In order to determine which rooms are in a given top-level space,
+                // we also must know all of the rooms within that space's sub spaces.
+                // Thus, we must continue paginating this space until we fully fetch
+                // all of its children, such that we can see if any of them are sub-spaces,
+                // and then we'll paaginate those as well.
+                if !is_fully_paginated {
+                    log!("Sending pagination request for Space {space_id}...");
+                    if sender.send(SpaceRequest::PaginateSpaceRoomList { space_id: space_id.clone() }).is_err() {
+                        error!("BUG: RoomsList: failed to send pagination request for space {space_id}.");
                     }
                 }
             }
@@ -1108,7 +1121,7 @@ impl Widget for RoomsList {
                 if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
                     match tab {
                         SelectedTab::Space { space_name_id } => {
-                            if self.selected_space.as_ref().is_some_and(|sel_space| sel_space.room_id() == space_name_id.room_id()) {
+                            if self.selected_space.as_ref().is_some_and(|s| s.room_id() == space_name_id.room_id()) {
                                 continue;
                             }
 
@@ -1117,6 +1130,7 @@ impl Widget for RoomsList {
 
                             // If we don't have the full rooms list for this newly-selected space, then fetch it.
                             if self.space_map.get(space_name_id.room_id()).is_none_or(|v| !v.is_fully_paginated) {
+                                log!("Space {space_name_id:?} was selected but not fully paginated.");
                                 let Some(sender) = self.space_request_sender.as_ref() else {
                                     error!("BUG: RoomsList: no space request sender was available.");
                                     continue;

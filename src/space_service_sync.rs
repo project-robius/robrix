@@ -8,7 +8,7 @@ use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{Client, RoomState, media::MediaRequestParameters};
 use matrix_sdk_ui::spaces::{SpaceRoom, SpaceRoomList, SpaceService, room_list::SpaceRoomListPaginationState};
-use ruma::{OwnedMxcUri, OwnedRoomId, events::room::MediaSource};
+use ruma::{OwnedMxcUri, OwnedRoomId, events::room::MediaSource, room::RoomType};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}, task::JoinHandle};
 use crate::{home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, room::FetchedRoomAvatar, utils::{self, RoomNameId}};
 
@@ -497,7 +497,10 @@ async fn space_room_list_loop(
     space_room_list: SpaceRoomList,
 ) {
     // Define a closure that calls `paginate()` and handles broadcasting the result.
-    let paginate_once = async || match space_room_list.paginate().await {
+    let paginate_once = async || match space_room_list.paginate().await
+        .inspect(|_| log!("Space {space_id} successfully paginated once."))
+        .inspect_err(|e| log!("Space {space_id} failed to be paginated once, err: {e:?}"))
+    {
         Ok(()) => {
             Cx::post_action(SpaceRoomListAction::PaginationState {
                 space_id: space_id.clone(),
@@ -515,11 +518,24 @@ async fn space_room_list_loop(
         Arc::new(HashSet::from_iter(all_rooms_in_space.iter().map(|c| c.room_id.clone())))
     }
 
+    /// An inner function that is used to find sub-spaces within
+    /// newly-discovered space rooms (within this parent space).
+    fn look_for_sub_spaces<'a>(space_rooms: impl Iterator<Item = &'a SpaceRoom>) {
+        for sr in space_rooms {
+            if sr.children_count > 0
+                || matches!(sr.room_type, Some(RoomType::Space))
+            {
+                log!("FOUND SUBSPACE: {sr:#?}");
+            }
+        }
+    }
+
 
     // First, we paginate the space once to get at least *some* child rooms.    
     paginate_once().await;
 
     let (mut all_rooms_in_space, mut room_stream) = space_room_list.subscribe_to_room_updates();
+    look_for_sub_spaces(all_rooms_in_space.iter());
 
     loop { tokio::select! {
         // Handle new requests.
@@ -532,7 +548,10 @@ async fn space_room_list_loop(
                         direct_children: to_hash_set(&all_rooms_in_space),
                     });
                 }
-                SpaceRoomListRequest::Paginate => paginate_once().await,
+                SpaceRoomListRequest::Paginate => {
+                    log!("Received pagination request for space {space_id}.");
+                    paginate_once().await;
+                }
                 SpaceRoomListRequest::Shutdown => return,
             }
         }
@@ -541,6 +560,17 @@ async fn space_room_list_loop(
         batch_opt = room_stream.next() => {
             let Some(batch) = batch_opt else { break };
             for diff in batch {
+                // Manually inspect any diff that could result in new space room(s),
+                // such that we can check to see if any of them are nested/sub-spaces.
+                match &diff {
+                    VectorDiff::Append { values }
+                    | VectorDiff::Reset { values } => look_for_sub_spaces(values.iter()),
+                    VectorDiff::PushFront { value }
+                    | VectorDiff::PushBack { value }
+                    | VectorDiff::Insert { value, .. }
+                    | VectorDiff::Set { value, .. } => look_for_sub_spaces(std::iter::once(value)),
+                    _ => { }
+                };
                 diff.apply(&mut all_rooms_in_space);
             }
             Cx::post_action(SpaceRoomListAction::UpdatedChildren {
