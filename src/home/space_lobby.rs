@@ -1,7 +1,7 @@
 //! Contains two widgets related to the top-level view of a space.
 //!
 //! 1. `SpaceLobby`: shows details about a space, including its name, avatar,
-//!    members, topic, and the full list of rooms and sub-spaces within it.
+//!    members, topic, and the full list of rooms and subspaces within it.
 //! 2. `SpaceLobbyEntry`: the button that can be shown in a RoomsList
 //!    that allows the user to click on it to show the `SpaceLobby`.
 //!
