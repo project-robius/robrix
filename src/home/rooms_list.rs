@@ -21,7 +21,7 @@ use crate::{
         room_filter_input_bar::RoomFilterAction,
     },
     sliding_sync::{MatrixRequest, PaginationDirection, submit_async_request},
-    space_service_sync::{SpaceRequest, SpaceRoomListAction}, utils::RoomNameId,
+    space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction}, utils::RoomNameId,
 };
 use super::rooms_list_entry::RoomsListEntryAction;
 
@@ -256,6 +256,9 @@ pub struct JoinedRoomInfo {
     pub is_direct: bool,
     /// Whether this room is tombstoned (shut down and replaced with a successor room).
     pub is_tombstoned: bool,
+
+    // TODO: we could store the parent chain(s) of this room, i.e., which spaces
+    //       they are children of. One room can be in multiple spaces.
 }
 
 /// UI-related info about a room that the user has been invited to.
@@ -325,12 +328,23 @@ pub enum InviteState {
 
 /// The value in the RoomsList's `space_map` that contains info about a space.
 #[derive(Default)]
-struct SpaceMapValue {
+struct SpaceMapValue { 
+    /// Whether this space is fully paginated, meaning that our client has obtained
+    /// the full list of direct children within this space.
+    ///
+    /// Note that it *does not* mean that all nested/subspaces within this space
+    /// have been fully paginated themselves.
     is_fully_paginated: bool,
-    /// The set room IDs or space IDs that are direct children of this space.
-    direct_children: Arc<HashSet<OwnedRoomId>>,
+    /// The set of rooms that are direct children of this space, excluding subspaces.
+    direct_child_rooms: Arc<HashSet<OwnedRoomId>>,
+    /// The nested subspaces (only spaces) that are direct children of this space.
+    direct_subspaces: Arc<HashSet<OwnedRoomId>>,
+    /// The chain of parents that this space has, ordered from highest to lowest level.
+    ///
+    /// That is, the first element is this space's top-level ancestor space,
+    /// while the last element is this space's immediate parent.
+    parent_chain: ParentChain,
 }
-
 
 #[derive(Live, Widget)]
 pub struct RoomsList {
@@ -354,7 +368,10 @@ pub struct RoomsList {
     /// The sender used to send Space-related requests to the background service.
     #[rust] space_request_sender: Option<UnboundedSender<SpaceRequest>>,
 
-    /// A flattened map of all spaces known to the client, and the rooms/spaces they contain.
+    /// A flattened map of all spaces known to the client.
+    ///
+    /// The key is a Space ID, and the value contains a list of all regular rooms
+    /// and nested subspaces *directly* within that space.
     ///
     /// This can include both joined and non-joined spaces.
     #[rust] space_map: HashMap<OwnedRoomId, SpaceMapValue>,
@@ -778,7 +795,7 @@ impl RoomsList {
                 .keys()
                 .filter(|&room_id| !self.hidden_rooms.contains(room_id)
                     && self.selected_space.as_ref()
-                        .is_none_or(|space| self.is_room_in_space(space.room_id(), room_id))
+                        .is_none_or(|space| self.is_room_indirectly_in_space(space.room_id(), room_id))
                 )
                 .cloned()
                 .collect();
@@ -789,7 +806,7 @@ impl RoomsList {
                 if !self.hidden_rooms.contains(room_id)
                     // If we have a selected space, only display rooms that are in that space.
                     && self.selected_space.as_ref()
-                        .is_none_or(|space| self.is_room_in_space(space.room_id(), room_id))
+                        .is_none_or(|space| self.is_room_indirectly_in_space(space.room_id(), room_id))
                 {
                     if jr.is_direct {
                         self.displayed_direct_rooms.push(room_id.clone());
@@ -836,7 +853,7 @@ impl RoomsList {
                 && (self.display_filter)(room)
                 // If we have a selected space, only display rooms that are in that space.
                 && self.selected_space.as_ref()
-                    .is_none_or(|space| self.is_room_in_space(space.room_id(), room_id))
+                    .is_none_or(|space| self.is_room_indirectly_in_space(space.room_id(), room_id))
             );
 
         if let Some(sort_fn) = sort_fn {
@@ -872,7 +889,7 @@ impl RoomsList {
                 && (self.display_filter)(room)
                 // If we have a selected space, only display rooms that are in that space.
                 && self.selected_space.as_ref()
-                    .is_none_or(|space| self.is_room_in_space(space.room_id(), room_id))
+                    .is_none_or(|space| self.is_room_indirectly_in_space(space.room_id(), room_id))
             );
 
         if let Some(sort_fn) = sort_fn {
@@ -958,25 +975,32 @@ impl RoomsList {
 
     /// Handle any incoming updates to spaces' room lists and pagination state.
     fn handle_space_room_list_action(&mut self, cx: &mut Cx, action: &SpaceRoomListAction) {
-        log!("RoomsList got {action:?}");
         match action {
-            SpaceRoomListAction::UpdatedChildren { space_id, direct_children } => {
+            SpaceRoomListAction::UpdatedChildren { space_id, parent_chain, direct_child_rooms, direct_subspaces } => {
                 match self.space_map.entry(space_id.clone()) {
                     Entry::Occupied(mut occ) => {
-                        occ.get_mut().direct_children = direct_children.clone();
+                        let occ_mut = occ.get_mut();
+                        occ_mut.parent_chain = parent_chain.clone();
+                        occ_mut.direct_child_rooms = Arc::clone(direct_child_rooms);
+                        occ_mut.direct_subspaces   = Arc::clone(direct_subspaces);
                     }
                     Entry::Vacant(vac) => {
                         vac.insert_entry(SpaceMapValue {
                             is_fully_paginated: false,
-                            direct_children: direct_children.clone(),
+                            parent_chain: parent_chain.clone(),
+                            direct_child_rooms: Arc::clone(direct_child_rooms),
+                            direct_subspaces:   Arc::clone(direct_subspaces),
                         });
                     }
                 }
-                if self.selected_space.as_ref().is_some_and(|sel_space| sel_space.room_id() == space_id) {
+                if self.selected_space.as_ref().is_some_and(|sel_space|
+                    sel_space.room_id() == space_id
+                    || parent_chain.contains(sel_space.room_id())
+                ) {
                     self.update_displayed_rooms(cx);
                 }
             }
-            SpaceRoomListAction::PaginationState { space_id, state } => {
+            SpaceRoomListAction::PaginationState { space_id, parent_chain, state } => {
                 let is_fully_paginated = matches!(state, SpaceRoomListPaginationState::Idle { end_reached: true });
                 // Only re-fetch the list of rooms in this space if it was not already fully paginated.
                 let should_fetch_rooms: bool;
@@ -987,7 +1011,11 @@ impl RoomsList {
                         value_mut.is_fully_paginated = is_fully_paginated;
                     }
                     Entry::Vacant(vac) => {
-                        vac.insert_entry(SpaceMapValue { is_fully_paginated, ..Default::default() });
+                        vac.insert_entry(SpaceMapValue {
+                            is_fully_paginated,
+                            parent_chain: parent_chain.clone(),
+                            ..Default::default()
+                        });
                         should_fetch_rooms = true;
                     }
                 }
@@ -996,19 +1024,25 @@ impl RoomsList {
                     return;
                 };
                 if should_fetch_rooms {
-                    if sender.send(SpaceRequest::GetChildren { space_id: space_id.clone() }).is_err() {
+                    if sender.send(SpaceRequest::GetChildren {
+                        space_id: space_id.clone(),
+                        parent_chain: parent_chain.clone(),
+                    }).is_err() {
                         error!("BUG: RoomsList: failed to send GetRooms request for space {space_id}.");
                     }
                 }
 
                 // In order to determine which rooms are in a given top-level space,
-                // we also must know all of the rooms within that space's sub spaces.
+                // we also must know all of the rooms within that space's subspaces.
                 // Thus, we must continue paginating this space until we fully fetch
-                // all of its children, such that we can see if any of them are sub-spaces,
+                // all of its children, such that we can see if any of them are subspaces,
                 // and then we'll paaginate those as well.
                 if !is_fully_paginated {
                     log!("Sending pagination request for Space {space_id}...");
-                    if sender.send(SpaceRequest::PaginateSpaceRoomList { space_id: space_id.clone() }).is_err() {
+                    if sender.send(SpaceRequest::PaginateSpaceRoomList {
+                        space_id: space_id.clone(),
+                        parent_chain: parent_chain.clone(),
+                    }).is_err() {
                         error!("BUG: RoomsList: failed to send pagination request for space {space_id}.");
                     }
                 }
@@ -1024,15 +1058,18 @@ impl RoomsList {
         }
     }
 
-    /// Returns whether the given target room or space is within the given parent space.
-    fn is_room_in_space(&self, parent_space: &OwnedRoomId, target: &OwnedRoomId) -> bool {
-        for child in self.space_map.get(parent_space).map(|v| v.direct_children.iter()).into_iter().flatten() {
-            if target == child {
+    /// Returns whether the given target room or space is indirectly within the given parent space.
+    ///
+    /// This will recursively search all nested spaces within the given `parent_space`.
+    fn is_room_indirectly_in_space(&self, parent_space: &OwnedRoomId, target: &OwnedRoomId) -> bool {
+        if let Some(smv) = self.space_map.get(parent_space) {
+            if smv.direct_child_rooms.contains(target) {
                 return true;
             }
-            // If the child is a space itself, check that space recursively too.
-            if self.is_room_in_space(child, target) {
-                return true;
+            for subspace in smv.direct_subspaces.iter() {
+                if self.is_room_indirectly_in_space(subspace, target) {
+                    return true;
+                }
             }
         }
         false
@@ -1128,21 +1165,34 @@ impl Widget for RoomsList {
                             self.selected_space = Some(space_name_id.clone());
                             self.view.space_lobby_entry(ids!(space_lobby_entry)).set_visible(cx, true);
 
-                            // If we don't have the full rooms list for this newly-selected space, then fetch it.
-                            if self.space_map.get(space_name_id.room_id()).is_none_or(|v| !v.is_fully_paginated) {
+                            // If we don't have the full list of children in this newly-selected space, then fetch it.
+                            let (is_fully_paginated, parent_chain) = self.space_map
+                                .get(space_name_id.room_id())
+                                .map(|smv| (smv.is_fully_paginated, smv.parent_chain.clone()))
+                                .unwrap_or_default();
+                            if !is_fully_paginated {
                                 log!("Space {space_name_id:?} was selected but not fully paginated.");
                                 let Some(sender) = self.space_request_sender.as_ref() else {
                                     error!("BUG: RoomsList: no space request sender was available.");
                                     continue;
                                 };
 
-                                if sender.send(SpaceRequest::SubscribeToSpaceRoomList { space_id: space_name_id.room_id().clone() }).is_err() {
+                                if sender.send(SpaceRequest::SubscribeToSpaceRoomList {
+                                    space_id: space_name_id.room_id().clone(),
+                                    parent_chain: parent_chain.clone(),
+                                }).is_err() {
                                     error!("BUG: RoomsList: failed to send SubscribeToSpaceRoomList request for space {space_name_id}.");
                                 }
-                                if sender.send(SpaceRequest::PaginateSpaceRoomList { space_id: space_name_id.room_id().clone() }).is_err() {
+                                if sender.send(SpaceRequest::PaginateSpaceRoomList {
+                                    space_id: space_name_id.room_id().clone(),
+                                    parent_chain: parent_chain.clone(),
+                                }).is_err() {
                                     error!("BUG: RoomsList: failed to send PaginateSpaceRoomList request for space {space_name_id}.");
                                 }
-                                if sender.send(SpaceRequest::GetChildren { space_id: space_name_id.room_id().clone() }).is_err() {
+                                if sender.send(SpaceRequest::GetChildren {
+                                    space_id: space_name_id.room_id().clone(),
+                                    parent_chain,
+                                }).is_err() {
                                     error!("BUG: RoomsList: failed to send GetRooms request for space {space_name_id}.");
                                 }
                             }

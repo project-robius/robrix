@@ -15,12 +15,20 @@ use crate::{home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spa
 /// Whether to enable verbose logging of all spaces service diff updates.
 const LOG_SPACE_SERVICE_DIFFS: bool = cfg!(feature = "log_space_service_diffs");
 
+/// The chain of parent spaces for a given room or subspace.
+///
+/// The first element is the top-level space ancestor,
+/// while the last element is the direct parent.
+pub type ParentChain = SmallVec<[OwnedRoomId; 2]>;
+
+
 /// Requests related to obtaining info about Spaces, via the background space service.
 pub enum SpaceRequest {
     /// Start obtaining the list of rooms in the given space from the homeserver,
     /// and listen for ongoing updates to that list.
     SubscribeToSpaceRoomList {
         space_id: OwnedRoomId,
+        parent_chain: ParentChain,
     },
     /// Stop listening to updates for the list of rooms in the given space.
     ///
@@ -32,10 +40,12 @@ pub enum SpaceRequest {
     /// Paginate the given space's room list, i.e., fetch the next batch of rooms in the list.
     PaginateSpaceRoomList {
         space_id: OwnedRoomId,
+        parent_chain: ParentChain,
     },
     /// Get a copy of the currently-known children (rooms and spaces) in the given space.
     GetChildren {
         space_id: OwnedRoomId,
+        parent_chain: ParentChain,
     }
 }
 
@@ -49,27 +59,39 @@ enum SpaceRoomListRequest {
 }
 
 
-/// The main async loop task that listens for changes to all spaces.
-pub async fn space_service_loop(space_service: SpaceService, client: Client) -> anyhow::Result<()> {
-    // Create a channel for sending space-related requests from the main UI thread to this background worker.
-    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<SpaceRequest>();
+/// The main async loop task that listens for changes to all top-level joined spaces.
+pub async fn space_service_loop(
+    space_service: SpaceService,
+    client: Client,
+) -> anyhow::Result<()> {
+    // Create a channel for sending space-related requests to this background worker.
+    let (space_request_sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<SpaceRequest>();
     // Give the request sender channel endpoint to the RoomsList widget.
-    enqueue_rooms_list_update(RoomsListUpdate::SpaceRequestSender(sender));
+    enqueue_rooms_list_update(RoomsListUpdate::SpaceRequestSender(space_request_sender.clone()));
 
-    // The set of async tasks that are handling room list requests for each space,
+    // The set of async tasks that are handling room list requests for each top-level joined space,
     // along with a sender to send `SpaceRoomListRequest`s to those tasks.
     let mut space_room_list_tasks = HashMap::new();
     // A closure to make it easier to use/spawn a `space_room_list_loop` task.
     let get_or_spawn_space_room_list = async |
         space_room_list_tasks: &mut HashMap<OwnedRoomId, (UnboundedSender<SpaceRoomListRequest>, JoinHandle<()>)>,
         space_id: &OwnedRoomId,
+        parent_chain: &ParentChain,
     | -> UnboundedSender<SpaceRoomListRequest> {
         match space_room_list_tasks.entry(space_id.clone()) {
             Entry::Occupied(occ) => occ.get().0.clone(),
             Entry::Vacant(vac) => {
                 let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<SpaceRoomListRequest>();
-                let srl = space_service.space_room_list(space_id.clone()).await;
-                let join_handle = Handle::current().spawn(space_room_list_loop(space_id.clone(), receiver, srl));
+                let space_room_list = space_service.space_room_list(space_id.clone()).await;
+                let join_handle = Handle::current().spawn(
+                    space_room_list_loop(
+                        space_id.clone(),
+                        parent_chain.clone(),
+                        receiver,
+                        space_room_list,
+                        space_request_sender.clone(),
+                    )
+                );
                 vac.insert((sender, join_handle))
                     .0.clone()
             }
@@ -90,17 +112,17 @@ pub async fn space_service_loop(space_service: SpaceService, client: Client) -> 
         request_opt = receiver.recv() => {
             let Some(request) = request_opt else { break };
             match request {
-                SpaceRequest::GetChildren { space_id } => {
-                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id).await;
+                SpaceRequest::GetChildren { space_id, parent_chain } => {
+                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id, &parent_chain).await;
                     if sender.send(SpaceRoomListRequest::GetChildren).is_err() {
                         error!("BUG: failed to send GetRooms request to space room list loop for space {space_id}");
                     }
                 }
-                SpaceRequest::SubscribeToSpaceRoomList { space_id } => {
-                    let _sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id).await;
+                SpaceRequest::SubscribeToSpaceRoomList { space_id, parent_chain } => {
+                    let _sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id, &parent_chain).await;
                 }
-                SpaceRequest::PaginateSpaceRoomList { space_id } => {
-                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id).await;
+                SpaceRequest::PaginateSpaceRoomList { space_id, parent_chain } => {
+                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id, &parent_chain).await;
                     if sender.send(SpaceRoomListRequest::Paginate).is_err() {
                         error!("BUG: failed to send paginate request to space room list loop for space {space_id}");
                     }
@@ -489,53 +511,48 @@ async fn fetch_space_avatar(url: OwnedMxcUri, client: &Client) -> matrix_sdk::Re
 }
 
 
+/// Returns true if the given `SpaceRoom` is a space itself;
+/// otherwise, returns false, indicating it is a regular room.
+#[inline]
+fn is_space(sr: &SpaceRoom) -> bool {
+    sr.children_count > 0
+    || matches!(sr.room_type, Some(RoomType::Space))
+}
+
 
 /// A loop that listens for changes to the set of rooms in a given space.
 async fn space_room_list_loop(
     space_id: OwnedRoomId,
+    parent_chain: ParentChain,
     mut receiver: UnboundedReceiver<SpaceRoomListRequest>,
     space_room_list: SpaceRoomList,
+    request_sender: UnboundedSender<SpaceRequest>,
 ) {
-    // Define a closure that calls `paginate()` and handles broadcasting the result.
-    let paginate_once = async || match space_room_list.paginate().await
-        .inspect(|_| log!("Space {space_id} successfully paginated once."))
-        .inspect_err(|e| log!("Space {space_id} failed to be paginated once, err: {e:?}"))
-    {
-        Ok(()) => {
-            Cx::post_action(SpaceRoomListAction::PaginationState {
-                space_id: space_id.clone(),
-                state: space_room_list.pagination_state(),
-            });
-        }
+    // Define a closure that calls `paginate()` and broadcasts the result.
+    let paginate_once = async || match space_room_list.paginate().await {
+        Ok(()) => Cx::post_action(SpaceRoomListAction::PaginationState {
+            space_id: space_id.clone(),
+            parent_chain: parent_chain.clone(),
+            state: space_room_list.pagination_state(),
+        }),
         Err(error) => Cx::post_action(SpaceRoomListAction::PaginationError {
             space_id: space_id.clone(),
             error,
         }),
     };
 
-    /// An inner function that creates a HashSet from the set of all rooms in this space.
-    fn to_hash_set(all_rooms_in_space: &Vector<SpaceRoom>) -> Arc<HashSet<OwnedRoomId>> {
-        Arc::new(HashSet::from_iter(all_rooms_in_space.iter().map(|c| c.room_id.clone())))
-    }
-
-    /// An inner function that is used to find sub-spaces within
-    /// newly-discovered space rooms (within this parent space).
-    fn look_for_sub_spaces<'a>(space_rooms: impl Iterator<Item = &'a SpaceRoom>) {
-        for sr in space_rooms {
-            if sr.children_count > 0
-                || matches!(sr.room_type, Some(RoomType::Space))
-            {
-                log!("FOUND SUBSPACE: {sr:#?}");
-            }
-        }
-    }
-
-
     // First, we paginate the space once to get at least *some* child rooms.    
     paginate_once().await;
 
-    let (mut all_rooms_in_space, mut room_stream) = space_room_list.subscribe_to_room_updates();
-    look_for_sub_spaces(all_rooms_in_space.iter());
+    // The set of subspaces within this `space_id` that are already known to us.
+    let mut known_subspaces = HashSet::new();
+
+    let (mut all_rooms_in_space, mut space_room_stream) = space_room_list.subscribe_to_room_updates();
+    handle_subspaces(&space_id, &parent_chain, &mut known_subspaces, all_rooms_in_space.iter(), &request_sender);
+
+    // A tuple of: the latest `(direct child rooms, and direct subspaces)` within this space.
+    // This makes it very cheap & fast to repeatedly handle `GetChildren` requests.
+    let mut cached_hash_sets = space_children_to_hash_sets(&all_rooms_in_space);
 
     loop { tokio::select! {
         // Handle new requests.
@@ -545,7 +562,9 @@ async fn space_room_list_loop(
                 SpaceRoomListRequest::GetChildren => {
                     Cx::post_action(SpaceRoomListAction::UpdatedChildren {
                         space_id: space_id.clone(),
-                        direct_children: to_hash_set(&all_rooms_in_space),
+                        parent_chain: parent_chain.clone(),
+                        direct_child_rooms: Arc::clone(&cached_hash_sets.0),
+                        direct_subspaces: Arc::clone(&cached_hash_sets.1),
                     });
                 }
                 SpaceRoomListRequest::Paginate => {
@@ -556,44 +575,114 @@ async fn space_room_list_loop(
             }
         }
 
-        // Handle updates to the list of rooms in this space.
-        batch_opt = room_stream.next() => {
+        // Handle updates to the list of rooms and subspaces in this space.
+        batch_opt = space_room_stream.next() => {
             let Some(batch) = batch_opt else { break };
             for diff in batch {
                 // Manually inspect any diff that could result in new space room(s),
-                // such that we can check to see if any of them are nested/sub-spaces.
+                // such that we can check to see if any of them are nested subspaces.
                 match &diff {
                     VectorDiff::Append { values }
-                    | VectorDiff::Reset { values } => look_for_sub_spaces(values.iter()),
+                    | VectorDiff::Reset { values } => handle_subspaces(
+                        &space_id,
+                        &parent_chain,
+                        &mut known_subspaces,
+                        values.iter(),
+                        &request_sender,
+                    ),
                     VectorDiff::PushFront { value }
                     | VectorDiff::PushBack { value }
                     | VectorDiff::Insert { value, .. }
-                    | VectorDiff::Set { value, .. } => look_for_sub_spaces(std::iter::once(value)),
+                    | VectorDiff::Set { value, .. } => handle_subspaces(
+                        &space_id,
+                        &parent_chain,
+                        &mut known_subspaces,
+                        std::iter::once(value),
+                        &request_sender,
+                    ),
                     _ => { }
                 };
                 diff.apply(&mut all_rooms_in_space);
             }
+            // Here: children have changed, so we re-calculate the sets of child rooms and subspaces.
+            cached_hash_sets = space_children_to_hash_sets(&all_rooms_in_space);
             Cx::post_action(SpaceRoomListAction::UpdatedChildren {
                 space_id: space_id.clone(),
-                direct_children: to_hash_set(&all_rooms_in_space),
+                parent_chain: parent_chain.clone(),
+                direct_child_rooms: Arc::clone(&cached_hash_sets.0),
+                direct_subspaces: Arc::clone(&cached_hash_sets.1),
             });
         }
     } }
 }
 
+/// Finds nested/subspaces within a list of space rooms and submits a request
+/// to subscribe to and fetch the list of diret children for each nested subspace.
+fn handle_subspaces<'a>(
+    parent_space_id: &OwnedRoomId,
+    parent_chain: &ParentChain,
+    known_subspaces: &mut HashSet<OwnedRoomId>,
+    changed_space_rooms: impl Iterator<Item = &'a SpaceRoom>,
+    request_sender: &UnboundedSender<SpaceRequest>,
+) {
+    for sr in changed_space_rooms.filter(|&sr| is_space(sr)) {        
+        if known_subspaces.contains(&sr.room_id) {
+            continue;
+        }
+
+        known_subspaces.insert(sr.room_id.clone());
+        let new_parent_chain = {
+            let mut npc = ParentChain::with_capacity(parent_chain.len() + 1);
+            npc.clone_from(&parent_chain);
+            npc.push(parent_space_id.clone());
+            npc
+        };
+        if request_sender.send(SpaceRequest::SubscribeToSpaceRoomList {
+            space_id: sr.room_id.clone(),
+            parent_chain: new_parent_chain,
+        }).is_err() {
+            error!("BUG: failed to send subscribe request to nested/subspace {}.", sr.room_id);
+        }
+    }
+}
+
+/// Returns two HashSets of all direct children within a space:
+/// 1. the set of child rooms directly within this space.
+/// 2. the set of subspaces directly within this space.
+fn space_children_to_hash_sets(
+    all_rooms_in_space: &Vector<SpaceRoom>
+) -> (Arc<HashSet<OwnedRoomId>>, Arc<HashSet<OwnedRoomId>>) {
+    let mut direct_child_rooms = HashSet::new();
+    let mut direct_subspaces = HashSet::new();
+    for sr in all_rooms_in_space.iter() {
+        if is_space(sr) {
+            direct_subspaces.insert(sr.room_id.clone());
+        } else {
+            direct_child_rooms.insert(sr.room_id.clone());
+        }
+    }
+    (Arc::new(direct_child_rooms), Arc::new(direct_subspaces))
+}
 
 /// Actions emitted from the SpaceRoomList for a given space.
 pub enum SpaceRoomListAction {
     /// The list of rooms & spaces that are direct children of the given space has changed.
+    ///
+    /// This is very cheap to call repeatedly since the results are cached in the background task
+    /// upon each change to the given space's list of direct children.
     UpdatedChildren {
         space_id: OwnedRoomId,
-        /// The *direct* children (both rooms and nested spaces) of this space.
-        direct_children: Arc<HashSet<OwnedRoomId>>,
+        parent_chain: ParentChain,
+        /// The child rooms within this space itself, excluding nested rooms/subspaces.
+        direct_child_rooms: Arc<HashSet<OwnedRoomId>>,
+        /// The nested subspaces (only spaces) directly within this space.
+        direct_subspaces: Arc<HashSet<OwnedRoomId>>,
     },
     /// The state of the background pagination process that was fetching the list
     /// of rooms in the given space has changed.
     PaginationState {
         space_id: OwnedRoomId,
+        parent_chain: ParentChain,
         state: SpaceRoomListPaginationState,
     },
     /// There was an error in the background pagination process that was fetching
@@ -606,15 +695,18 @@ pub enum SpaceRoomListAction {
 impl std::fmt::Debug for SpaceRoomListAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SpaceRoomListAction::UpdatedChildren { space_id, direct_children } => {
+            SpaceRoomListAction::UpdatedChildren { space_id, parent_chain, direct_child_rooms, direct_subspaces } => {
                 f.debug_struct("SpaceRoomListAction::UpdatedChildren")
                     .field("space_id", space_id)
-                    .field("direct_children_len", &direct_children.len())
+                    .field("parent_chain", &parent_chain)
+                    .field("num_direct_child_rooms", &direct_child_rooms.len())
+                    .field("num_direct_subspaces", &direct_subspaces.len())
                     .finish()
             }
-            SpaceRoomListAction::PaginationState { space_id, state } => {
+            SpaceRoomListAction::PaginationState { space_id, parent_chain, state } => {
                 f.debug_struct("SpaceRoomListAction::PaginationState")
                     .field("space_id", space_id)
+                    .field("parent_chain", &parent_chain)
                     .field("state", state)
                     .finish()
             }
