@@ -11,13 +11,14 @@ use makepad_widgets::{
     rotated_image::RotatedImageWidgetExt,
     *,
 };
+use matrix_sdk::ruma::OwnedRoomId;
+use matrix_sdk_ui::timeline::EventTimelineItem;
 use thiserror::Error;
-use crate::shared::{avatar::{AvatarRef, AvatarWidgetExt}, timestamp::TimestampWidgetRefExt};
+use crate::shared::{avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt};
 
 /// Loads the given image `data` into an `ImageBuffer` as either a PNG or JPEG, using the `imghdr` library to determine which format it is.
 ///
 /// Returns an error if either load fails or if the image format is unknown.
-///
 pub fn get_png_or_jpg_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageError> {
     match imghdr::from_bytes(&data) {
         Some(imghdr::Type::Png) => {
@@ -286,26 +287,26 @@ live_design! {
 
         metadata_view = <View> {
             width: Fill, height: Fill
-            flow: Right
+            flow: RightWrap
 
             top_left_container = <View> {
-                width: 200, height: Fit,
+                width: Fit, height: Fit,
                 flow: Right,
                 spacing: 10,
                 margin: {left: 20, top: 40}
                 align: { y: 0.5 }
 
-                avatar_placeholder = <View> {
+                avatar = <Avatar> {
                     width: 40, height: 40,
                 }
 
                 content = <View> {
-                    width: Fill, height: Fit,
+                    width: Fit, height: Fit,
                     flow: Down,
                     spacing: 4,
 
                     username = <Label> {
-                        width: Fill, height: Fit,
+                        width: Fit, height: Fit,
                         draw_text: {
                             text_style: <REGULAR_TEXT>{font_size: 10},
                             color: (COLOR_TEXT)
@@ -313,30 +314,27 @@ live_design! {
                     }
 
                     timestamp_view = <View> {
-                        width: Fill, height: Fit
+                        width: Fit, height: Fit
 
                         timestamp = <Timestamp> {
-                            width: Fill, height: Fit,
+                            width: Fit, height: Fit,
                             margin: { left: 5 }
                         }
                     }
                 }
             }
-
-            image_name_and_size = <Label> {
-                width: Fill, height: Fit,
-                margin: {top: 40}
-                align: { x: 0.5, }
-                draw_text: {
-                    text_style: <REGULAR_TEXT>{font_size: 12},
-                    color: (COLOR_TEXT),
-                    wrap: Word
-                }
-            }
-
-            empty_right_container = <View> {
-                // equal width as the top-left container to keep the image name centered.
+            image_name_and_size_view = <View> {
                 width: 200, height: Fit,
+                image_name_and_size = <Label> {
+                    width: Fill, height: Fit,
+                    margin: {top: 40}
+                    align: { x: 0.5, }
+                    draw_text: {
+                        text_style: <REGULAR_TEXT>{font_size: 12},
+                        color: (COLOR_TEXT),
+                        wrap: Word
+                    }
+                }
             }
         }
         animator: {
@@ -483,12 +481,6 @@ struct ImageViewer {
     /// The mpsc::Receiver used to receive the result of the background task
     #[rust]
     receiver: Option<(u32, Receiver<Result<ImageBuffer, ImageError>>)>,
-    /// The avatar.
-    #[rust]
-    avatar_ref: Option<AvatarRef>,
-    /// The placeholder rect for the avatar.
-    #[rust]
-    avatar_placeholder_rect: Option<Rect>,
 }
 
 impl LiveHook for ImageViewer {
@@ -638,34 +630,7 @@ impl Widget for ImageViewer {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let layout = Layout{
-            flow: Flow::Overlay,
-            ..Default::default()
-        };
-        cx.begin_turtle(walk, layout);
-        let steps = self.view.draw_walk(cx, scope, walk);
-        if self.avatar_placeholder_rect.is_none() {
-            self.avatar_placeholder_rect = Some(
-                self.view
-                    .avatar(ids!(top_left_container.avatar_placeholder))
-                    .area()
-                    .rect(cx),
-            );
-        }
-        if let (Some(avatar), Some(rect)) = (&self.avatar_ref, self.avatar_placeholder_rect) {
-            let _ = avatar.draw_walk(
-                cx,
-                scope,
-                Walk {
-                    abs_pos: Some(rect.pos),
-                    width: Size::Fixed(rect.size.x),
-                    height: Size::Fixed(rect.size.y),
-                    ..Default::default()
-                },
-            );
-        }
-        cx.end_turtle();
-        steps
+        self.view.draw_walk(cx, scope, walk)
     }
 }
 
@@ -733,8 +698,6 @@ impl ImageViewer {
         self.mouse_cursor_hover_over_image = false; // Reset hover state
         self.receiver = None;
         self.reset_drag_state(cx);
-        self.avatar_ref = None;
-        self.avatar_placeholder_rect = None;
         self.animator_cut(cx, ids!(mode.upright));
         let rotated_image_ref = self
             .view
@@ -978,7 +941,16 @@ impl ImageViewer {
                 .timestamp(ids!(top_left_container.content.timestamp_view.timestamp))
                 .set_date_time(cx, timestamp);
         }
-        if let Some(sender) = &metadata.sender {
+
+        if let Some((room_id, event_timeline_item)) = &metadata.avatar_parameter {            
+            let (sender, _) =self.view.avatar(ids!(top_left_container.avatar))
+                .set_avatar_and_get_username(
+                    cx,
+                    room_id,
+                    event_timeline_item.sender(),
+                    Some(event_timeline_item.sender_profile()),
+                    event_timeline_item.event_id(),
+                );
             if sender.len() > MAX_USERNAME_LENGTH {
                 meta_view
                     .label(ids!(top_left_container.content.username))
@@ -986,16 +958,8 @@ impl ImageViewer {
             } else {
                 meta_view
                     .label(ids!(top_left_container.content.username))
-                    .set_text(cx, sender);
+                    .set_text(cx, &sender);
             };
-        }
-        if let Some(avatar) = &metadata.avatar_ref {
-            self.avatar_ref = Some(avatar.clone());
-        }
-        if !cx.display_context.is_desktop() {
-            self.view.view(ids!(metadata_view.empty_right_container)).apply_over(cx, live!{
-                width: 0
-            });
         }
     }
 }
@@ -1079,8 +1043,9 @@ pub enum LoadState {
 #[derive(Debug, Clone)]
 /// Metadata for an image.
 pub struct MetaData {
-    pub avatar_ref: Option<AvatarRef>,
-    pub sender: Option<String>,
+    // Optional avatar parameter containing room ID and event timeline item
+    // to be used for the avatar.
+    pub avatar_parameter: Option<(OwnedRoomId, EventTimelineItem)>,
     pub timestamp: Option<DateTime<Local>>,
     pub image_name: String,
     // Image size in bytes

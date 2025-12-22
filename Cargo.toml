@@ -78,7 +78,7 @@ reqwest = { version = "0.12", default-features = false, features = [
     "http2",
     "macos-system-configuration",
 ] }
-thiserror = "2.0.17"
+thiserror = "2.0.16"
 
 
 [features]

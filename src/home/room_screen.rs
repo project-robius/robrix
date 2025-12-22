@@ -1577,14 +1577,6 @@ impl RoomScreen {
         };
         let Some(tl_state) = self.tl_state.as_mut() else { return };
         let Some(event_tl_item) = tl_state.items.get(item_id).and_then(|item| item.as_event()) else { return };
-        let avatar_ref = WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar();
-        let (username, _) = avatar_ref.set_avatar_and_get_username(
-            cx,
-            &tl_state.room_id,
-            event_tl_item.sender(),
-            Some(event_tl_item.sender_profile()),
-            event_tl_item.event_id(),
-        );
 
         let timestamp_millis = event_tl_item.timestamp();
         let (image_name, image_file_size) = get_image_name_and_filesize(event_tl_item);
@@ -1592,11 +1584,13 @@ impl RoomScreen {
         cx.action(ImageViewerAction::Show(LoadState::Loading(
             texture.clone(),
             Some(MetaData {
-                sender: Some(username),
                 image_name,
                 image_file_size,
                 timestamp: unix_time_millis_to_datetime(timestamp_millis),
-                avatar_ref: Some(avatar_ref),
+                avatar_parameter: Some((
+                    tl_state.room_id.clone(),
+                    event_tl_item.clone(),
+                )),
             }),
         )));
 
