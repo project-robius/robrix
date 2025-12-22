@@ -246,12 +246,13 @@ impl MatchEvent for App {
             }
 
             if let Some(LogoutAction::ClearAppState { on_clear_appstate }) = action.downcast_ref() {
-                // Clear user profile cache, invited_rooms timeline states 
+                // Clear user profile cache, invited_rooms timeline states
                 clear_all_app_state(cx);
                 // Reset all app state to its default.
                 self.app_state = Default::default();
                 on_clear_appstate.notify_one();
-                continue;
+                // Don't continue here - let the action propagate to child widgets (e.g., RoomScreen)
+                // so they can reset their state as well
             }
 
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
@@ -435,12 +436,14 @@ impl MatchEvent for App {
 }
 
 /// Clears all thread-local UI caches (user profiles, invited rooms, and timeline states).
-/// The `cx` parameter ensures that these thread-local caches are cleared on the main UI thread, 
+/// The `cx` parameter ensures that these thread-local caches are cleared on the main UI thread,
 fn clear_all_app_state(cx: &mut Cx) {
     clear_user_profile_cache(cx);
     clear_all_invited_rooms(cx);
     clear_timeline_states(cx);
     clear_avatar_cache(cx);
+    // Clear room members digests to ensure members are re-fetched after re-login
+    crate::sliding_sync::clear_room_members_digests();
 }
 
 impl AppMain for App {
@@ -609,6 +612,23 @@ pub struct AppState {
 }
 
 /// A snapshot of the main dock: all state needed to restore the dock tabs/layout.
+///
+/// # Cross-Version Hash Drift Warning
+///
+/// The `LiveId` keys in `dock_items` and `open_rooms` are derived from `LiveId::from_str(room_id)`.
+/// However, the hash value may change when upgrading Makepad or the Rust toolchain, causing
+/// persisted `LiveId`s to no longer match freshly computed ones. This leads to duplicate tabs
+/// when restoring state across versions.
+///
+/// **Current mitigation**: `MainDesktopUI::find_open_room_live_id` performs a reverse-lookup
+/// by `room_id` to find the actual stored `LiveId`, avoiding hash mismatch issues at runtime.
+///
+// TODO: A more thorough fix would be to use `room_id` (String) as the persistence key instead
+// of `LiveId`, and derive `LiveId` at runtime when needed. This would eliminate cross-version
+// hash drift entirely and make the persisted format stable across Makepad/toolchain upgrades.
+//
+// TODO: Consider using `OwnedRoomId` (String) as the key instead of `LiveId` to avoid
+// cross-version hash drift. See struct-level documentation for details.
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct SavedDockState {
     /// All items contained in the dock, keyed by their room or space ID.

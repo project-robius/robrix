@@ -988,6 +988,30 @@ impl RoomsList {
         )
     }
 
+    /// Returns a room's avatar and displayable name.
+    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(FetchedRoomAvatar, Option<String>)> {
+        self.all_joined_rooms.get(room_id)
+            .map(|room_info| (room_info.avatar.clone(), room_info.room_name_id.name_for_avatar()))
+            .or_else(|| {
+                self.invited_rooms.borrow().get(room_id)
+                    .map(|room_info| (room_info.room_avatar.clone(), room_info.room_name_id.name_for_avatar()))
+            })
+    }
+
+    /// Returns whether the room is marked as direct, if known.
+    pub fn is_direct_room(&self, room_id: &OwnedRoomId) -> bool {
+        self.all_joined_rooms
+            .get(room_id)
+            .map(|room_info| room_info.is_direct)
+            .or_else(|| {
+                self.invited_rooms
+                    .borrow()
+                    .get(room_id)
+                    .map(|room_info| room_info.is_direct)
+            })
+            .unwrap_or(false)
+    }
+
     /// Handle any incoming updates to spaces' room lists and pagination state.
     fn handle_space_room_list_action(&mut self, cx: &mut Cx, action: &SpaceRoomListAction) {
         match action {
@@ -1403,6 +1427,20 @@ impl RoomsListRef {
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
         let Some(inner) = self.borrow() else { return false; };
         inner.is_room_loaded(room_id)
+    }
+
+    /// See [`RoomsList::get_room_avatar_and_name()`].
+    pub fn get_room_avatar_and_name(&self, room_id: &OwnedRoomId) -> Option<(FetchedRoomAvatar, Option<String>)> {
+        let inner = self.borrow()?;
+        inner.get_room_avatar_and_name(room_id)
+    }
+
+    /// Don't show @room option in direct messages
+    pub fn is_direct_room(&self, room_id: &OwnedRoomId) -> bool {
+        let Some(inner) = self.borrow() else {
+            return false;
+        };
+        inner.is_direct_room(room_id)
     }
 
     /// Returns the currently-selected space (the one selected in the SpacesBar).

@@ -135,21 +135,48 @@ impl Widget for MainDesktopUI {
 
 impl MainDesktopUI {
     /// Focuses on a room if it is already open, otherwise creates a new tab for the room.
+    ///
+    /// # Duplicate Tab Prevention (Cross-Version Hash Drift)
+    ///
+    /// This method uses [`Self::find_open_room_live_id`] to check if the room is already open,
+    /// rather than directly comparing `LiveId::from_str(room_id)`. This is necessary because
+    /// persisted `LiveId`s may differ from freshly computed ones due to **cross-version hash drift**.
+    ///
+    /// ## Root Cause
+    ///
+    /// The 64-bit value of `LiveId::from_str` depends on Makepad's hash implementation (and
+    /// potentially compiler/stdlib hash seeds). When upgrading Makepad or the Rust toolchain,
+    /// the hash algorithm or seed may change. Persisted data (in `open_rooms`/`dock_items`)
+    /// contains "old hash values," while the new runtime computes "new hash values." This
+    /// causes `contains_key`/`select_tab` lookups to fail, and the room is incorrectly
+    /// treated as "not open," resulting in duplicate tabs.
+    ///
+    /// ## Current Fix
+    ///
+    /// By reverse-looking up the actual stored `LiveId` via `room_id` comparison (using
+    /// [`Self::find_open_room_live_id`]), we correctly identify already-open rooms regardless
+    /// of hash drift between versions.
+    ///
+    // TODO: A more thorough fix would be to use `room_id` (String) as the persistence key
+    // instead of `LiveId`, and derive `LiveId` at runtime. This would eliminate cross-version
+    // hash drift entirely. See `SavedDockState` in `src/app.rs`.
     fn focus_or_create_tab(&mut self, cx: &mut Cx, room: SelectedRoom) {
         // Do nothing if the room to select is already created and focused.
         if self.most_recently_selected_room.as_ref().is_some_and(|r| r == &room) {
             return;
         }
 
+        // If the room is already open, select (jump to) its existing tab.
+        // We use `find_open_room_live_id` to look up by room_id, because the dock
+        // may store LiveIds with a prefix that differs from `LiveId::from_str(room_id)`.
         let dock = self.view.dock(ids!(dock));
-
-        // If the room is already open, select (jump to) its existing tab
-        let room_id_as_live_id = LiveId::from_str(room.room_id().as_str());
-        if self.open_rooms.contains_key(&room_id_as_live_id) {
-            dock.select_tab(cx, room_id_as_live_id);
+        if let Some(existing_live_id) = self.find_open_room_live_id(room.room_id()) {
+            dock.select_tab(cx, existing_live_id);
             self.most_recently_selected_room = Some(room);
             return;
         }
+
+        let room_id_as_live_id = LiveId::from_str(room.room_id().as_str());
 
         // Create a new tab for the room
         let (tab_bar, _pos) = dock.find_tab_bar_of_tab(id!(home_tab)).unwrap();
@@ -201,13 +228,28 @@ impl MainDesktopUI {
                     );
                 }
             }
+            // Only update open_rooms after successful tab creation to avoid orphan entries
+            self.open_rooms.insert(room_id_as_live_id, room.clone());
+            self.most_recently_selected_room = Some(room);
             cx.action(MainDesktopUiAction::SaveDockIntoAppState);
         } else {
             error!("BUG: failed to create tab for {room:?}");
         }
+    }
 
-        self.open_rooms.insert(room_id_as_live_id, room.clone());
-        self.most_recently_selected_room = Some(room);
+    /// Finds the `LiveId` of an already-open room by its `room_id`.
+    ///
+    /// This reverse-lookup is necessary to handle **cross-version hash drift**: when Makepad
+    /// or the toolchain is upgraded, `LiveId::from_str(room_id)` may compute a different hash
+    /// than what was persisted. By matching on the stable `room_id` value instead of the
+    /// potentially-drifted `LiveId`, we correctly identify rooms regardless of version changes.
+    ///
+    /// See [`Self::focus_or_create_tab`] for more details on the root cause.
+    fn find_open_room_live_id(&self, room_id: &OwnedRoomId) -> Option<LiveId> {
+        self.open_rooms
+            .iter()
+            .find(|(_, selected_room)| selected_room.room_id() == room_id)
+            .map(|(live_id, _)| *live_id)
     }
 
     /// Closes a tab in the dock and focuses on the latest open room.

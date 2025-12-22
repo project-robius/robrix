@@ -8,6 +8,7 @@ pub mod reply_preview;
 pub mod room_input_bar;
 pub mod room_display_filter;
 pub mod typing_notice;
+pub mod member_search;
 
 pub fn live_design(cx: &mut Cx) {
     reply_preview::live_design(cx);
