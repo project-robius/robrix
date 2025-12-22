@@ -617,7 +617,7 @@ async fn space_room_list_loop(
 }
 
 /// Finds nested/subspaces within a list of space rooms and submits a request
-/// to subscribe to and fetch the list of diret children for each nested subspace.
+/// to subscribe to and fetch the list of direct children for each nested subspace.
 fn handle_subspaces<'a>(
     parent_space_id: &OwnedRoomId,
     parent_chain: &ParentChain,
@@ -633,7 +633,7 @@ fn handle_subspaces<'a>(
         known_subspaces.insert(sr.room_id.clone());
         let new_parent_chain = {
             let mut npc = ParentChain::with_capacity(parent_chain.len() + 1);
-            npc.clone_from(&parent_chain);
+            npc.clone_from(parent_chain);
             npc.push(parent_space_id.clone());
             npc
         };
