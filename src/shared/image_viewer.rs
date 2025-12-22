@@ -433,6 +433,7 @@ live_design! {
 }
 
 /// Actions emitted by the `ImageViewer` widget.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerAction {
     /// No action.
@@ -1027,6 +1028,7 @@ impl ImageViewerRef {
 }
 
 /// Represents the possible states of an image load operation.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum LoadState {
     /// The image is currently being loaded with its loading image texture.
