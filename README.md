@@ -185,7 +185,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
 - [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
 - [x] User settings screen
-- [ ] Dedicated view of spaces
+- [x] Dedicated view of spaces: https://github.com/project-robius/robrix/pull/636
 - [x] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81, https://github.com/project-robius/robrix/pull/585
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
 - [ ] Room browser, search for public rooms
@@ -195,7 +195,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Administrative abilities: ban, kick, etc
 - [ ] Room creation/settings/info screen
 - [ ] Room members pane
-- [ ] Offline mode with persistent event cache: https://github.com/project-robius/robrix/pull/445
+- [x] Offline mode with persistent event cache: https://github.com/project-robius/robrix/pull/445
 
 
 ## Packaging Robrix for Distribution on Desktop Platforms
@@ -270,4 +270,4 @@ You can immediately double-click the `Robrix.app` bundle to run it, or you can d
 If you'd like to modify the .dmg background, here is the [Google Drawings file used to generate the MacOS .dmg background image](https://docs.google.com/drawings/d/10ALUgNV7v-4bRTIE5Wb2vNyXpl2Gj3YJcl7Q2AGpvDw/edit?usp=sharing).
 
 ## Credits
-X logo: https://www.vecteezy.com/png/42148611-new-twitter-x-logo-twitter-icon-x-social-media-icon (shobumiah)
+* X logo: https://www.vecteezy.com/png/42148611-new-twitter-x-logo-twitter-icon-x-social-media-icon (shobumiah)
