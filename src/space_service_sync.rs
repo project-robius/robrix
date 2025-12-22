@@ -568,7 +568,6 @@ async fn space_room_list_loop(
                     });
                 }
                 SpaceRoomListRequest::Paginate => {
-                    log!("Received pagination request for space {space_id}.");
                     paginate_once().await;
                 }
                 SpaceRoomListRequest::Shutdown => return,

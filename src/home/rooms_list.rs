@@ -1053,7 +1053,6 @@ impl RoomsList {
                 // all of its children, such that we can see if any of them are subspaces,
                 // and then we'll paaginate those as well.
                 if !is_fully_paginated {
-                    log!("Sending pagination request for Space {space_id}...");
                     if sender.send(SpaceRequest::PaginateSpaceRoomList {
                         space_id: space_id.clone(),
                         parent_chain: parent_chain.clone(),
@@ -1186,7 +1185,6 @@ impl Widget for RoomsList {
                                 .map(|smv| (smv.is_fully_paginated, smv.parent_chain.clone()))
                                 .unwrap_or_default();
                             if !is_fully_paginated {
-                                log!("Space {space_name_id:?} was selected but not fully paginated.");
                                 let Some(sender) = self.space_request_sender.as_ref() else {
                                     error!("BUG: RoomsList: no space request sender was available.");
                                     continue;
