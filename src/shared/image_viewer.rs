@@ -1034,7 +1034,7 @@ impl ImageViewerRef {
                 }
             },
             LoadState::Error(error) => {
-                self.show_error(cx, &error);
+                self.show_error(cx, error);
             }
         }
     }
