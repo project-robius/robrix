@@ -440,14 +440,8 @@ pub enum ImageViewerAction {
     None,
     /// Display the ImageViewer widget based on the LoadState.
     Show(LoadState),
-}
-
-/// Actions emitted to interact with the modal widget containing the image viewer.
-#[derive(Clone, Debug, Default)]
-pub enum ImageViewerModalAction {
-    Open,
-    #[default]
-    Close
+    /// Hide the ImageViewer widget.
+    Hide
 }
 
 #[derive(Live, Widget)]
@@ -648,7 +642,7 @@ impl MatchEvent for ImageViewer {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         if self.view.button(ids!(close_button)).clicked(actions) {
             self.reset(cx);
-            cx.action(ImageViewerModalAction::Close)
+            cx.action(ImageViewerAction::Hide)
         }
         if self
             .view

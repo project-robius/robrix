@@ -22,7 +22,7 @@ use crate::{
     shared::{callout_tooltip::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, image_viewer::ImageViewerModalAction}, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, image_viewer::{ImageViewerAction, LoadState}}, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -408,11 +408,11 @@ impl MatchEvent for App {
                 continue;
             }
             match action.downcast_ref() {
-                Some(ImageViewerModalAction::Open) => {
+                Some(ImageViewerAction::Show(LoadState::Loading(_, _))) => {
                     self.ui.modal(ids!(image_viewer_modal)).open(cx);
                     continue;
                 }
-                Some(ImageViewerModalAction::Close) => {
+                Some(ImageViewerAction::Hide) => {
                     self.ui.modal(ids!(image_viewer_modal)).close(cx);
                     continue;
                 }
