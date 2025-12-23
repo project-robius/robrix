@@ -697,29 +697,26 @@ impl MatchEvent for ImageViewer {
             }
         }
         for action in actions.iter() {
-            match action.downcast_ref() {
-                Some(ImageViewerAction::Show(state)) => {
-                    match state {
-                        LoadState::Loading(texture, metadata) => {
-                            self.display_using_texture(cx, texture.clone());
-                            if let Some(metadata) = metadata {
-                                self.set_metadata(cx, metadata);
-                            }
-                            self.show_loading(cx);
+            if let Some(ImageViewerAction::Show(state)) = action.downcast_ref() {
+                match state {
+                    LoadState::Loading(texture, metadata) => {
+                        self.display_using_texture(cx, texture.clone());
+                        if let Some(metadata) = metadata {
+                            self.set_metadata(cx, metadata);
                         }
-                        LoadState::Loaded(image_bytes) => {
-                            self.show_loaded(cx, image_bytes);
-                        }
-                        LoadState::FinishedBackgroundDecoding => {
-                            self.is_loaded = true;
-                            self.hide_loading(cx);
-                        },
-                        LoadState::Error(error) => {
-                            self.show_error(cx, error);
-                        }
+                        self.show_loading(cx);
+                    }
+                    LoadState::Loaded(image_bytes) => {
+                        self.show_loaded(cx, image_bytes);
+                    }
+                    LoadState::FinishedBackgroundDecoding => {
+                        self.is_loaded = true;
+                        self.hide_loading(cx);
+                    },
+                    LoadState::Error(error) => {
+                        self.show_error(cx, error);
                     }
                 }
-                _ => {}
             }
         }
     }
