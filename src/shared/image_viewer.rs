@@ -440,8 +440,14 @@ pub enum ImageViewerAction {
     None,
     /// Display the ImageViewer widget based on the LoadState.
     Show(LoadState),
-    /// Close the ImageViewer widget.
-    Hide,
+}
+
+/// Actions emitted to interact with the modal widget containing the image viewer.
+#[derive(Clone, Debug, Default)]
+pub enum ImageViewerModalAction {
+    Open,
+    #[default]
+    Close
 }
 
 #[derive(Live, Widget)]
@@ -642,7 +648,7 @@ impl MatchEvent for ImageViewer {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         if self.view.button(ids!(close_button)).clicked(actions) {
             self.reset(cx);
-            cx.action(ImageViewerAction::Hide);
+            cx.action(ImageViewerModalAction::Close)
         }
         if self
             .view
@@ -688,6 +694,32 @@ impl MatchEvent for ImageViewer {
                 }
                 self.rotation_step = (self.rotation_step - 1) % 4; // Rotate 90 degrees clockwise
                 self.update_rotation_animation(cx);
+            }
+        }
+        for action in actions.iter() {
+            match action.downcast_ref() {
+                Some(ImageViewerAction::Show(state)) => {
+                    match state {
+                        LoadState::Loading(texture, metadata) => {
+                            self.display_using_texture(cx, texture.clone());
+                            if let Some(metadata) = metadata {
+                                self.set_metadata(cx, metadata);
+                            }
+                            self.show_loading(cx);
+                        }
+                        LoadState::Loaded(image_bytes) => {
+                            self.show_loaded(cx, image_bytes);
+                        }
+                        LoadState::FinishedBackgroundDecoding => {
+                            self.is_loaded = true;
+                            self.hide_loading(cx);
+                        },
+                        LoadState::Error(error) => {
+                            self.show_error(cx, error);
+                        }
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -1016,27 +1048,6 @@ impl ImageViewerRef {
             return;
         };
         inner.reset(cx);
-    }
-
-    /// Show Image viewer based on the LoadState without possibility of interacting with the image viewer modal.
-    pub fn show(&mut self, cx: &mut Cx, state: &LoadState) {
-        match state {
-            LoadState::Loading(texture, metadata) => {
-                self.show_loading(cx, texture.clone(), metadata);
-            }
-            LoadState::Loaded(image_bytes) => {
-                self.show_loaded(cx, image_bytes);
-            }
-            LoadState::FinishedBackgroundDecoding => {
-                if let Some(mut inner) = self.borrow_mut() {
-                    inner.is_loaded = true;
-                    inner.hide_loading(cx);
-                }
-            },
-            LoadState::Error(error) => {
-                self.show_error(cx, error);
-            }
-        }
     }
 }
 
