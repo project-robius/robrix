@@ -1018,7 +1018,7 @@ impl ImageViewerRef {
         inner.reset(cx);
     }
 
-    /// Show based on the LoadState.
+    /// Show Image viewer based on the LoadState without possibility of interacting with the image viewer modal.
     pub fn show(&mut self, cx: &mut Cx, state: &LoadState) {
         match state {
             LoadState::Loading(texture, metadata) => {
