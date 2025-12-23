@@ -393,34 +393,25 @@ pub struct RoomsList {
 
     /// The currently-active filter function for the list of rooms.
     ///
-    /// Note: for performance reasons, this does not get automatically applied
-    /// when its value changes. Instead, you must manually invoke it on the set of `all_joined_rooms`
-    /// in order to update the set of `displayed_rooms` accordingly.
+    /// ## Important Notes
+    /// 1. Do not use this directly. Instead, use the `should_display_room!()` macro.
+    /// 2. This does *not* get auto-applied when it changes, for performance reasons.
     #[rust] display_filter: RoomDisplayFilter,
 
-    /// The latest keywords entered into the `RoomFilterInputBar`.
+    /// The latest keywords (trimmed) entered into the `RoomFilterInputBar`.
     ///
     /// If empty, there are no filter keywords in use, and all rooms/spaces should be shown.
     #[rust] filter_keywords: String,
 
-    /// The list of invited rooms currently displayed in the UI, in order from top to bottom.
-    /// This is a strict subset of the rooms in `all_invited_rooms`, and should be determined
-    /// by applying the `display_filter` to the set of `all_invited_rooms`.
+    /// The list of invited rooms currently displayed in the UI.
     #[rust] displayed_invited_rooms: Vec<OwnedRoomId>,
     #[rust(false)] is_invited_rooms_header_expanded: bool,
 
-    /// The list of direct rooms currently displayed in the UI, in order from top to bottom.
-    /// This is a strict subset of the rooms present in `all_joined_rooms`,
-    /// and should be determined by applying the `display_filter && is_direct`
-    /// to the set of `all_joined_rooms`.
+    /// The list of direct rooms currently displayed in the UI.
     #[rust] displayed_direct_rooms: Vec<OwnedRoomId>,
     #[rust(false)] is_direct_rooms_header_expanded: bool,
 
-    /// The list of regular (non-direct) joined rooms currently displayed in the UI,
-    /// in order from top to bottom.
-    /// This is a strict subset of the rooms in `all_joined_rooms`,
-    /// and should be determined by applying the `display_filter && !is_direct`
-    /// to the set of `all_joined_rooms`.
+    /// The list of regular (non-direct) joined rooms currently displayed in the UI.
     ///
     /// **Direct rooms are excluded** from this; they are in `displayed_direct_rooms`.
     #[rust] displayed_regular_rooms: Vec<OwnedRoomId>,
@@ -428,8 +419,10 @@ pub struct RoomsList {
 
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
+
     /// The ID of the currently-selected room.
     #[rust] current_active_room: Option<OwnedRoomId>,
+
     /// The maximum number of rooms that will ever be loaded.
     ///
     /// This should not be used to determine whether all requested rooms have been loaded,
@@ -445,6 +438,18 @@ impl LiveHook for RoomsList {
         self.invited_rooms = ALL_INVITED_ROOMS.with(Rc::clone);
     }
 }
+
+/// A macro that returns whether a given Room should be displayed in the RoomsList.
+/// This is only intended for usage within RoomsList methods.
+macro_rules! should_display_room {
+    ($self:expr, $room_id:expr, $room:expr) => {
+        !$self.hidden_rooms.contains($room_id)
+            && ($self.display_filter)($room)
+            && $self.selected_space.as_ref()
+                .is_none_or(|space| $self.is_room_indirectly_in_space(space.room_id(), $room_id))
+    };
+}
+
 
 impl RoomsList {
     /// Returns whether the homeserver has finished syncing all of the rooms
@@ -470,6 +475,13 @@ impl RoomsList {
             match update {
                 RoomsListUpdate::AddInvitedRoom(invited_room) => {
                     let room_id = invited_room.room_name_id.room_id().clone();
+
+                    // //////////////////////////////////////////////////////////////////
+                    // TODO: in this block and in all the other blocks below,
+                    //       we need to check if there is a selected_space in order to
+                    //       determine whether to display the new/changed room.
+                    // //////////////////////////////////////////////////////////////////
+
                     let should_display = (self.display_filter)(&invited_room);
                     let _replaced = self.invited_rooms.borrow_mut().insert(room_id.clone(), invited_room);
                     if let Some(_old_room) = _replaced {
@@ -791,69 +803,30 @@ impl RoomsList {
         self.status = text;
     }
 
-    /// Returns true if the given room is contained in any of the displayed room sets,
-    /// i.e., either the invited rooms or the joined rooms.
-    fn is_room_displayable(&self, room: &OwnedRoomId) -> bool {
-        self.displayed_invited_rooms.contains(room)
-        || self.displayed_direct_rooms.contains(room)
-        || self.displayed_regular_rooms.contains(room)
-    }
-
     /// Updates and redraws the lists of displayed rooms in the RoomsList.
     /// 
     /// This will update the display filter based on the current filter keywords
     /// and the currently-selected space (if any).
     fn update_displayed_rooms(&mut self, cx: &mut Cx) {
-        let portal_list = self.view.portal_list(ids!(list));
-        if self.filter_keywords.is_empty() {
-            // Reset each of the displayed_* lists to show all rooms.
-            self.display_filter = RoomDisplayFilter::default();
-            self.displayed_invited_rooms = self.invited_rooms.borrow()
-                .keys()
-                .filter(|&room_id| !self.hidden_rooms.contains(room_id)
-                    && self.selected_space.as_ref()
-                        .is_none_or(|space| self.is_room_indirectly_in_space(space.room_id(), room_id))
-                )
-                .cloned()
-                .collect();
-
-            self.displayed_direct_rooms.clear();
-            self.displayed_regular_rooms.clear();
-            for (room_id, jr) in &self.all_joined_rooms {
-                if !self.hidden_rooms.contains(room_id)
-                    // If we have a selected space, only display rooms that are in that space.
-                    && self.selected_space.as_ref()
-                        .is_none_or(|space| self.is_room_indirectly_in_space(space.room_id(), room_id))
-                {
-                    if jr.is_direct {
-                        self.displayed_direct_rooms.push(room_id.clone());
-                    } else {
-                        self.displayed_regular_rooms.push(room_id.clone());
-                    }
-                }
-            }
-        }
-        // Generate the displayed rooms with a keyword filter applied.
-        else {
-            // Create a new filter function based on the given keywords
-            // and store it in this RoomsList such that we can apply it to newly-added rooms.
-            let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
+        // Determine and set the filter function and sort function.
+        let (display_fn, sort_fn) = if self.filter_keywords.is_empty() {
+            (RoomDisplayFilter::default(), None)
+        } else {
+            // Create a new filter function based on the given keywords.
+            RoomDisplayFilterBuilder::new()
                 .set_keywords(self.filter_keywords.clone())
                 .set_filter_criteria(RoomFilterCriteria::All)
-                .build();
-            self.display_filter = filter;
+                .build()
+        };
+        self.display_filter = display_fn;
 
-            self.displayed_invited_rooms = self.generate_displayed_invited_rooms(sort_fn.as_deref());
-
-            let (new_displayed_regular_rooms, new_displayed_direct_rooms) =
-                self.generate_displayed_joined_rooms(sort_fn.as_deref());
-
-            self.displayed_regular_rooms = new_displayed_regular_rooms;
-            self.displayed_direct_rooms = new_displayed_direct_rooms;
-        }
+        self.displayed_invited_rooms = self.generate_displayed_invited_rooms(sort_fn.as_deref());
+        let (regular, direct) = self.generate_displayed_joined_rooms(sort_fn.as_deref());
+        self.displayed_regular_rooms = regular;
+        self.displayed_direct_rooms = direct;
 
         self.update_status();
-        portal_list.set_first_id_and_scroll(0, 0.0);
+        self.view.portal_list(ids!(list)).set_first_id_and_scroll(0, 0.0);
         self.redraw(cx);
     }
 
@@ -863,13 +836,7 @@ impl RoomsList {
         let invited_rooms_ref = self.invited_rooms.borrow();
         let filtered_invited_rooms_iter = invited_rooms_ref
             .iter()
-            .filter(|&(room_id, room)|
-                !self.hidden_rooms.contains(room_id)
-                && (self.display_filter)(room)
-                // If we have a selected space, only display rooms that are in that space.
-                && self.selected_space.as_ref()
-                    .is_none_or(|space| self.is_room_indirectly_in_space(space.room_id(), room_id))
-            );
+            .filter(|&(room_id, room)| should_display_room!(self, room_id, room));
 
         if let Some(sort_fn) = sort_fn {
             let mut filtered_invited_rooms = filtered_invited_rooms_iter
@@ -877,14 +844,17 @@ impl RoomsList {
             filtered_invited_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(*room_a, *room_b));
             filtered_invited_rooms
                 .into_iter()
-                .map(|(room_id, _)| room_id.clone()).collect()
+                .map(|(room_id, _)| room_id.clone())
+                .collect()
         } else {
-            filtered_invited_rooms_iter.map(|(room_id, _)| room_id.clone()).collect()
+            filtered_invited_rooms_iter
+                .map(|(room_id, _)| room_id.clone())
+                .collect()
         }
     }
 
-    /// Generates the lists of displayed direct rooms and displayed regular rooms
-    /// based on the current filter and the given sort function.
+    /// Generates a tuple of (displayed regular rooms, displayed direct rooms)
+    /// based on the current `display_filter` function and the given sort function.
     fn generate_displayed_joined_rooms(&self, sort_fn: Option<&SortFn>) -> (Vec<OwnedRoomId>, Vec<OwnedRoomId>) {
         let mut new_displayed_regular_rooms = Vec::new();
         let mut new_displayed_direct_rooms = Vec::new();
@@ -899,13 +869,7 @@ impl RoomsList {
 
         let filtered_joined_rooms_iter = self.all_joined_rooms
             .iter()
-            .filter(|&(room_id, room)|
-                !self.hidden_rooms.contains(room_id)
-                && (self.display_filter)(room)
-                // If we have a selected space, only display rooms that are in that space.
-                && self.selected_space.as_ref()
-                    .is_none_or(|space| self.is_room_indirectly_in_space(space.room_id(), room_id))
-            );
+            .filter(|&(room_id, room)| should_display_room!(self, room_id, room));
 
         if let Some(sort_fn) = sort_fn {
             let mut filtered_rooms = filtered_joined_rooms_iter.collect::<Vec<_>>();
@@ -1232,8 +1196,7 @@ impl Widget for RoomsList {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         // Update the currently-selected room from the AppState data.
         self.current_active_room = app_state.selected_room.as_ref()
-            .map(|sel_room| sel_room.room_id().clone())
-            .filter(|room_id| self.is_room_displayable(room_id));
+            .map(|sel_room| sel_room.room_id().clone());
 
         // Based on the various displayed room lists and is_expanded state of each room header,
         // calculate the indices in the PortalList where the headers and rooms should be drawn.

@@ -134,8 +134,11 @@ impl FilterableRoom for JoinedSpaceInfo {
 pub type RoomFilterFn = dyn Fn(&dyn FilterableRoom) -> bool;
 pub type SortFn = dyn Fn(&dyn FilterableRoom, &dyn FilterableRoom) -> Ordering;
 
+fn default_room_filter_fn(_: &dyn FilterableRoom) -> bool {
+    true
+}
 
-/// A filter function that is called for each room to determine whether it should be displayed.
+/// A filter function that determines whether a given room should be displayed.
 ///
 /// If the function returns `true`, the room is displayed; otherwise, it is not shown.
 /// The default value is a filter function that always returns `true`.
@@ -152,16 +155,20 @@ pub type SortFn = dyn Fn(&dyn FilterableRoom, &dyn FilterableRoom) -> Ordering;
 ///    .collect();
 /// // Then redraw the rooms_list widget.
 /// ```
-pub struct RoomDisplayFilter(Box<RoomFilterFn>);
+pub struct RoomDisplayFilter(Option<Box<RoomFilterFn>>);
 impl Default for RoomDisplayFilter {
     fn default() -> Self {
-        RoomDisplayFilter(Box::new(|_| true))
+        RoomDisplayFilter(None)
     }
 }
 impl Deref for RoomDisplayFilter {
-    type Target = Box<RoomFilterFn>;
+    type Target = RoomFilterFn;
     fn deref(&self) -> &Self::Target {
-        &self.0
+        if let Some(rdf) = &self.0 {
+            rdf.deref()
+        } else {
+            &default_room_filter_fn
+        }
     }
 }
 
@@ -347,14 +354,16 @@ impl RoomDisplayFilterBuilder {
         let keywords = self.keywords;
         let filter_criteria = self.filter_criteria;
 
-        let filter = RoomDisplayFilter(Box::new(move |room| {
-            if keywords.is_empty() || filter_criteria.is_empty() {
-                return true;
-            }
-            let keywords = keywords.trim().to_lowercase();
-            Self::matches_filter(room, &keywords, self.filter_criteria)
-        }));
-
+        let filter = if keywords.is_empty() || filter_criteria.is_empty() {
+            RoomDisplayFilter::default()
+        } else {
+            RoomDisplayFilter(Some(Box::new(
+                move |room| {
+                    let keywords = keywords.trim().to_lowercase();
+                    Self::matches_filter(room, &keywords, self.filter_criteria)
+                }
+            )))
+        };
         (filter, self.sort_fn)
     }
 }
