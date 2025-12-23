@@ -407,20 +407,20 @@ impl MatchEvent for App {
                 self.ui.modal(ids!(verification_modal)).close(cx);
                 continue;
             }
-            let mut image_viewer_inner = self.ui.image_viewer(ids!(image_viewer_inner));
+            let mut image_viewer_modal_inner = self.ui.image_viewer(ids!(image_viewer_modal_inner));
             match action.downcast_ref() {
                 Some(ImageViewerAction::Show(LoadState::Loading(texture, metadata))) => {
                     self.ui.modal(ids!(image_viewer_modal)).open(cx);
-                    image_viewer_inner.show_loading(cx, texture.clone(), metadata);
+                    image_viewer_modal_inner.show_loading(cx, texture.clone(), metadata);
                     continue;
                 }
                 Some(ImageViewerAction::Show(load_state)) => {
-                    image_viewer_inner.show(cx, load_state);
+                    image_viewer_modal_inner.show(cx, load_state);
                     continue;
                 }
                 Some(ImageViewerAction::Hide) => {
                     self.ui.modal(ids!(image_viewer_modal)).close(cx);
-                    image_viewer_inner.reset(cx);
+                    image_viewer_modal_inner.reset(cx);
                     continue;
                 }
                 _ => {}
