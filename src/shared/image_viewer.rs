@@ -1025,7 +1025,7 @@ impl ImageViewerRef {
                 self.show_loading(cx, texture.clone(), metadata);
             }
             LoadState::Loaded(image_bytes) => {
-                self.show_loaded(cx, &image_bytes);
+                self.show_loaded(cx, image_bytes);
             }
             LoadState::FinishedBackgroundDecoding => {
                 if let Some(mut inner) = self.borrow_mut() {
