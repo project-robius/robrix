@@ -30,7 +30,7 @@ use crate::{
     },
     room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, LoadState, MetaData}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, LoadState, ImageViewerMetaData}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -481,10 +481,6 @@ live_design! {
         cursor: Default,
         flow: Down,
         spacing: 0.0
-        avatar_template: <Avatar> {
-            width: 48,
-            height: 48,
-        }
 
         room_screen_wrapper = <View> {
             width: Fill, height: Fill,
@@ -566,8 +562,6 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
-    /// The avatar template to used to generate Avatar for image viewer modal.
-    #[live] avatar_template: Option<LivePtr>
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -674,7 +668,7 @@ impl Widget for RoomScreen {
                     self.handle_image_click(
                         cx,
                         mxc_uri,
-                        std::rc::Rc::new(texture),
+                        texture,
                         index,
                     );
                     continue;
@@ -1595,7 +1589,7 @@ impl RoomScreen {
         &mut self,
         cx: &mut Cx,
         mxc_uri: Option<MediaSource>,
-        texture: std::rc::Rc<Option<Texture>>,
+        texture: Option<Texture>,
         item_id: usize,
     ) {
         let Some(media_source) = mxc_uri else {
@@ -1609,7 +1603,7 @@ impl RoomScreen {
 
         cx.action(ImageViewerAction::Show(LoadState::Loading(
             texture.clone(),
-            Some(MetaData {
+            Some(ImageViewerMetaData {
                 image_name,
                 image_file_size,
                 timestamp: unix_time_millis_to_datetime(timestamp_millis),

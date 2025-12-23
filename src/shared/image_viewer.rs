@@ -38,7 +38,7 @@ pub fn get_png_or_jpg_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageEr
 
 /// Configuration for zoom and pan settings in the image viewer
 #[derive(Clone, Debug)]
-pub struct Config {
+pub struct ImageViewerZoomConfig {
     /// Minimum zoom level (default: 0.5)
     pub min_zoom: f32,
     /// Maximum zoom level (default: 4.0)
@@ -49,7 +49,7 @@ pub struct Config {
     pub pan_sensitivity: f64,
 }
 
-impl Default for Config {
+impl Default for ImageViewerZoomConfig {
     fn default() -> Self {
         Self {
             min_zoom: 0.5,
@@ -482,6 +482,9 @@ struct ImageViewer {
     /// The mpsc::Receiver used to receive the result of the background task
     #[rust]
     receiver: Option<(u32, Receiver<Result<ImageBuffer, ImageError>>)>,
+    /// Whether the full image file has been loaded
+    #[rust]
+    is_loaded: bool,
 }
 
 impl LiveHook for ImageViewer {
@@ -698,6 +701,7 @@ impl ImageViewer {
         self.previous_pinch_distance = None; // Reset pinch tracking
         self.mouse_cursor_hover_over_image = false; // Reset hover state
         self.receiver = None;
+        self.is_loaded = false;
         self.reset_drag_state(cx);
         self.animator_cut(cx, ids!(mode.upright));
         let rotated_image_ref = self
@@ -874,12 +878,7 @@ impl ImageViewer {
         footer
             .view(ids!(image_viewer_forbidden_view))
             .set_visible(cx, false);
-        footer.apply_over(
-            cx,
-            live! {
-                height: 50
-            },
-        );
+        footer.set_visible(cx, true);
     }
 
     /// Shows an error message in the footer.
@@ -887,6 +886,9 @@ impl ImageViewer {
     /// The loading spinner is hidden, the error icon is shown, and the
     /// status label is set to the error message provided.
     pub fn show_error(&mut self, cx: &mut Cx, error: &ImageViewerError) {
+        if self.is_loaded {
+            return;
+        }
         let footer = self.view.view(ids!(image_layer.footer));
         footer
             .view(ids!(image_viewer_loading_spinner_view))
@@ -897,12 +899,7 @@ impl ImageViewer {
         footer
             .label(ids!(image_viewer_status_label))
             .set_text(cx, &error.to_string());
-        footer.apply_over(
-            cx,
-            live! {
-                height: 50
-            },
-        );
+        footer.set_visible(cx, true);
     }
 
     /// Hides the footer of the image viewer.
@@ -912,12 +909,7 @@ impl ImageViewer {
     /// The footer is hidden by setting its height to 0.
     pub fn hide_loading(&mut self, cx: &mut Cx) {
         let footer = self.view.view(ids!(image_layer.footer));
-        footer.apply_over(
-            cx,
-            live! {
-                height: 0
-            },
-        );
+        footer.set_visible(cx, false);
     }
 
     /// Sets the metadata view in the image viewer with the provided metadata.
@@ -926,7 +918,7 @@ impl ImageViewer {
     ///
     /// The image name is truncated to 24 characters and appended with "..." if it exceeds the limit.
     /// The human-readable size is calculated based on the image size in bytes.
-    pub fn set_metadata(&mut self, cx: &mut Cx, metadata: &MetaData) {
+    pub fn set_metadata(&mut self, cx: &mut Cx, metadata: &ImageViewerMetaData) {
         let meta_view = self.view.view(ids!(metadata_view));
         let truncated_name = truncate_image_name(&metadata.image_name);
         let human_readable_size = format_file_size(metadata.image_file_size);
@@ -967,7 +959,7 @@ impl ImageViewer {
 
 impl ImageViewerRef {
     /// Configure zoom and pan settings for the image viewer
-    pub fn configure_zoom(&mut self, config: Config) {
+    pub fn configure_zoom(&mut self, config: ImageViewerZoomConfig) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
@@ -990,7 +982,7 @@ impl ImageViewerRef {
         &mut self,
         cx: &mut Cx,
         texture: Option<Texture>,
-        metadata: &Option<MetaData>,
+        metadata: &Option<ImageViewerMetaData>,
     ) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
@@ -1025,6 +1017,27 @@ impl ImageViewerRef {
         };
         inner.reset(cx);
     }
+
+    /// Show based on the LoadState.
+    pub fn show(&mut self, cx: &mut Cx, state: &LoadState) {
+        match state {
+            LoadState::Loading(texture, metadata) => {
+                self.show_loading(cx, texture.clone(), metadata);
+            }
+            LoadState::Loaded(image_bytes) => {
+                self.show_loaded(cx, &image_bytes);
+            }
+            LoadState::FinishedBackgroundDecoding => {
+                if let Some(mut inner) = self.borrow_mut() {
+                    inner.is_loaded = true;
+                    inner.hide_loading(cx);
+                }
+            },
+            LoadState::Error(error) => {
+                self.show_error(cx, &error);
+            }
+        }
+    }
 }
 
 /// Represents the possible states of an image load operation.
@@ -1033,7 +1046,7 @@ impl ImageViewerRef {
 pub enum LoadState {
     /// The image is currently being loaded with its loading image texture.
     /// This texture is usually the image texture that's being selected.
-    Loading(std::rc::Rc<Option<Texture>>, Option<MetaData>),
+    Loading(Option<Texture>, Option<ImageViewerMetaData>),
     /// The image has been successfully loaded given the data.
     Loaded(Arc<[u8]>),
     /// The image has been decoded from background thread.
@@ -1044,7 +1057,7 @@ pub enum LoadState {
 
 #[derive(Debug, Clone)]
 /// Metadata for an image.
-pub struct MetaData {
+pub struct ImageViewerMetaData {
     // Optional avatar parameter containing room ID and event timeline item
     // to be used for the avatar.
     pub avatar_parameter: Option<(OwnedRoomId, EventTimelineItem)>,

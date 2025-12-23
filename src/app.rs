@@ -411,24 +411,12 @@ impl MatchEvent for App {
             match action.downcast_ref() {
                 Some(ImageViewerAction::Show(LoadState::Loading(texture, metadata))) => {
                     self.ui.modal(ids!(image_viewer_modal)).open(cx);
-                    image_viewer_inner.show_loading(cx, texture.as_ref().clone(), metadata);
+                    image_viewer_inner.show_loading(cx, texture.clone(), metadata);
                     continue;
                 }
-                Some(ImageViewerAction::Show(LoadState::Loaded(image_bytes))) => {
-                    image_viewer_inner.show_loaded(cx, image_bytes);
+                Some(ImageViewerAction::Show(load_state)) => {
+                    image_viewer_inner.show(cx, load_state);
                     continue;
-                }
-                Some(ImageViewerAction::Show(LoadState::FinishedBackgroundDecoding)) => {
-                    image_viewer_inner.hide_loading(cx);
-                    continue;
-                }
-                Some(ImageViewerAction::Show(LoadState::Error(error))) => {
-                    // This action is emitted when syncing is offline even when the image viewer modal is not opened.
-                    // Hence, we need to check if the modal is open before showing the error.
-                    if self.ui.modal(ids!(image_viewer_modal)).is_open() {
-                        image_viewer_inner.show_error(cx, error);
-                        continue;
-                    }
                 }
                 Some(ImageViewerAction::Hide) => {
                     self.ui.modal(ids!(image_viewer_modal)).close(cx);
