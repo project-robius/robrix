@@ -102,7 +102,7 @@ live_design! {
                         image_viewer_modal = <Modal> {
                             content: {
                                 width: Fill, height: Fill,
-                                image_viewer_inner = <ImageViewer> {}
+                                image_viewer_modal_inner = <ImageViewer> {}
                             }
                         }
                         <PopupList> {}
