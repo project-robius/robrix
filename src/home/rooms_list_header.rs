@@ -8,7 +8,7 @@ use std::mem::discriminant;
 use makepad_widgets::*;
 use matrix_sdk_ui::sync_service::State;
 
-use crate::shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind};
+use crate::{home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, shared::popup_list::{PopupItem, PopupKind, enqueue_popup_notification}};
 
 live_design! {
     use link::theme::*;
@@ -21,24 +21,28 @@ live_design! {
     pub RoomsListHeader = {{RoomsListHeader}} {
         width: Fill,
         height: 30,
-        padding: {bottom: 5}
+        padding: {bottom: 4}
         flow: Right,
         visible: true,
         align: {x: 0, y: 0.5}
         spacing: 3,
 
         header_title = <Label> {
+            width: Fill,
+            height: Fit,
             flow: Right, // do not wrap
             text: "All Rooms"
             draw_text: {
                 color: #x0
                 text_style: <TITLE_TEXT>{}
+                wrap: Ellipsis
             }
         },
 
         <View> {
             width: Fit, height: Fit,
             align: {x: 0, y: 0.5},
+            margin: {right: 3}
             flow: Overlay,
 
             loading_spinner = <LoadingSpinner> {
@@ -100,6 +104,7 @@ impl Widget for RoomsListHeader {
                         self.view.view(ids!(synced_icon)).set_visible(cx, !*is_syncing);
                         self.view.view(ids!(offline_icon)).set_visible(cx, false);
                         self.redraw(cx);
+                        continue;
                     }
                     Some(RoomsListHeaderAction::StateUpdate(new_state)) => {
                         if discriminant(&self.sync_state) == discriminant(new_state) {
@@ -117,8 +122,20 @@ impl Widget for RoomsListHeader {
                         }
                         self.sync_state = new_state.clone();
                         self.redraw(cx);
+                        continue;
                     }
                     _ => {}
+                }
+
+                if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
+                    let header_title = self.view.label(ids!(header_title));
+                    match tab {
+                        SelectedTab::Space { space_name_id } => {
+                            header_title.set_text(cx, &space_name_id.to_string());
+                        }
+                        _ => header_title.set_text(cx, "All Rooms"),
+                    }
+                    continue;
                 }
             }
         }

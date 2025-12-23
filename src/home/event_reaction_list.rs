@@ -217,7 +217,6 @@ impl ReactionList {
             &scope.path,
             RoomScreenTooltipActions::HoverInReactionButton {
                 widget_rect: button_ref.area().rect(cx),
-                bg_color: None,
                 reaction_data,
             },
         );
@@ -319,27 +318,21 @@ impl ReactionListRef {
         inner.timeline_event_id = Some(timeline_event_item_id);
     }
 
-    /// Handles hover in action and returns the appropriate `RoomScreenTooltipActions`.
+    /// Returns any `RoomScreenTooltipActions` that occurred in the given list of `actions`.
     ///
     /// This function checks if there is a widget action associated with the current
-    /// widget's unique identifier in the provided `actions`. If an action exists,
-    /// it is cast to `RoomScreenTooltipActions` and returned. Otherwise, it returns
-    /// `RoomScreenTooltipActions::None`.
-    ///
-    /// # Arguments
-    ///
-    /// * `actions` - A reference to the `Actions` that may contain widget actions
-    ///   relevant to this widget.
-    pub fn hover_in(&self, actions: &Actions) -> RoomScreenTooltipActions {
+    /// widget's unique identifier in the provided `actions`.
+    /// If an action exists, it is cast to `RoomScreenTooltipActions` and returned.
+    /// Otherwise, it returns `RoomScreenTooltipActions::None`.
+    pub fn hovered_in(&self, actions: &Actions) -> RoomScreenTooltipActions {
         if let Some(item) = actions.find_widget_action(self.widget_uid()) {
             item.cast()
         } else {
             RoomScreenTooltipActions::None
         }
     }
-    /// Handles widget actions and returns `true` if the hover out action was found in the provided `actions`.
-    /// Otherwise, returns `false`.
-    pub fn hover_out(&self, actions: &Actions) -> bool {
+    /// Returns whether the given `actions` contained a `RoomScreenTooltipActions::HoverOut` action.
+    pub fn hovered_out(&self, actions: &Actions) -> bool {
         if let Some(item) = actions.find_widget_action(self.widget_uid()) {
             matches!(item.cast(), RoomScreenTooltipActions::HoverOut)
         } else {

@@ -18,6 +18,8 @@ live_design! {
     pub ICON_EDIT            = dep("crate://self/resources/icons/edit.svg")
     pub ICON_EXTERNAL_LINK   = dep("crate://self/resources/icons/external_link.svg")
     pub ICON_IMPORT          = dep("crate://self/resources/icons/import.svg") // TODO: FIX
+    pub ICON_HIERARCHY       = dep("crate://self/resources/icons/hierarchy.svg")
+    pub ICON_HOME            = dep("crate://self/resources/icons/home.svg")
     pub ICON_HTML_FILE       = dep("crate://self/resources/icons/html_file.svg")
     pub ICON_INFO            = dep("crate://self/resources/icons/info.svg")
     pub ICON_JOIN_ROOM       = dep("crate://self/resources/icons/join_room.svg")
@@ -28,6 +30,7 @@ live_design! {
     pub ICON_REPLY           = dep("crate://self/resources/icons/reply.svg")
     pub ICON_SEARCH          = dep("crate://self/resources/icons/search.svg")
     pub ICON_SEND            = dep("crate://self/resources/icon_send.svg")
+    pub ICON_SETTINGS        = dep("crate://self/resources/icons/settings.svg")
     pub ICON_SQUARES         = dep("crate://self/resources/icons/squares_filled.svg")
     pub ICON_TOMBSTONE       = dep("crate://self/resources/icons/tombstone.svg")
     pub ICON_TRASH           = dep("crate://self/resources/icons/trash.svg")

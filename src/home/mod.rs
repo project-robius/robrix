@@ -18,6 +18,7 @@ pub mod rooms_list_entry;
 pub mod rooms_list_header;
 pub mod rooms_sidebar;
 pub mod search_messages;
+pub mod space_lobby;
 pub mod spaces_bar;
 pub mod navigation_tab_bar;
 pub mod welcome_screen;
@@ -30,6 +31,7 @@ pub fn live_design(cx: &mut Cx) {
     home_screen::live_design(cx);
     loading_pane::live_design(cx);
     location_preview::live_design(cx);
+    space_lobby::live_design(cx);
     rooms_list_entry::live_design(cx);
     rooms_list_header::live_design(cx);
     rooms_list::live_design(cx);
