@@ -155,12 +155,8 @@ fn default_room_filter_fn(_: &dyn FilterableRoom) -> bool {
 ///    .collect();
 /// // Then redraw the rooms_list widget.
 /// ```
+#[derive(Default)]
 pub struct RoomDisplayFilter(Option<Box<RoomFilterFn>>);
-impl Default for RoomDisplayFilter {
-    fn default() -> Self {
-        RoomDisplayFilter(None)
-    }
-}
 impl Deref for RoomDisplayFilter {
     type Target = RoomFilterFn;
     fn deref(&self) -> &Self::Target {

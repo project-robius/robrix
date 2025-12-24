@@ -1,3 +1,21 @@
+//! The `RoomsList` widget displays a filterable list of rooms
+//! that can be clicked on to open the room timeline (`RoomScreen`).
+//!
+//! It is responsible for receiving room-related updates from the background task
+//! that runs the room list service.
+//! It also receives space-related updates from the background task that runs
+//! the space sync service(s).
+//!
+//! Generally, it maintains several key states:
+//! * The set of all joined rooms, which is displayed separately as "direct" rooms
+//!   and non-direct regular rooms.
+//! * The set of invited rooms, which have not yet been joined.
+//! * The map of spaces and their child rooms and nested subspaces.
+//!
+//! This widget is a global singleton and is thus accessible via `Cx::get_global()`,
+//! so you can use it from other widgets or functions on the main UI thread
+//! that need to query basic info about a particular room or space.
+
 use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map::Entry}, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
@@ -441,6 +459,12 @@ impl LiveHook for RoomsList {
 
 /// A macro that returns whether a given Room should be displayed in the RoomsList.
 /// This is only intended for usage within RoomsList methods.
+///
+/// ## Arguments
+/// 1. `self: &RoomsList`: an immutable reference to the `RoomsList` widget struct.
+/// 2. `room_id: &OwnedRoomId`: an immutable reference to the room's ID.
+/// 3. `room: &dyn impl FilterableRoom`: an immutable reference to the room info,
+///     which must implement the [`FilterableRoom`] trait.
 macro_rules! should_display_room {
     ($self:expr, $room_id:expr, $room:expr) => {
         !$self.hidden_rooms.contains($room_id)
@@ -475,14 +499,7 @@ impl RoomsList {
             match update {
                 RoomsListUpdate::AddInvitedRoom(invited_room) => {
                     let room_id = invited_room.room_name_id.room_id().clone();
-
-                    // //////////////////////////////////////////////////////////////////
-                    // TODO: in this block and in all the other blocks below,
-                    //       we need to check if there is a selected_space in order to
-                    //       determine whether to display the new/changed room.
-                    // //////////////////////////////////////////////////////////////////
-
-                    let should_display = (self.display_filter)(&invited_room);
+                    let should_display = should_display_room!(self, &room_id, &invited_room);
                     let _replaced = self.invited_rooms.borrow_mut().insert(room_id.clone(), invited_room);
                     if let Some(_old_room) = _replaced {
                         error!("BUG: Added invited room {room_id} that already existed");
@@ -498,7 +515,7 @@ impl RoomsList {
                 RoomsListUpdate::AddJoinedRoom(joined_room) => {
                     let room_id = joined_room.room_name_id.room_id().clone();
                     let is_direct = joined_room.is_direct;
-                    let should_display = (self.display_filter)(&joined_room);
+                    let should_display = should_display_room!(self, &room_id, &joined_room);
                     let replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
                     if replaced.is_none() {
                         if should_display {
@@ -562,64 +579,60 @@ impl RoomsList {
                     }
                 }
                 RoomsListUpdate::UpdateRoomName { new_room_name } => {
+
+                    // TODO: broadcast a new AppState action to ensure that this room's or space's new name
+                    //       gets updated in all of the `SelectedRoom` instances throughout Robrix,
+                    //       e.g., the name of the room in the Dock Tab or the StackNav header.
+
                     let room_id = new_room_name.room_id().clone();
                     // Try to update joined room first
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
-                        let was_displayed = (self.display_filter)(room);
-                        // Update with the new RoomName (preserves EmptyWas semantics)
-                        room.room_name_id = new_room_name.clone();
-                        let should_display = (self.display_filter)(room);
-                        match (was_displayed, should_display) {
-                            // No need to update the displayed rooms list.
-                            (true, true) | (false, false) => { }
-                            // Room was displayed but should no longer be displayed.
-                            (true, false) => {
-                                if room.is_direct {
-                                    self.displayed_direct_rooms.iter()
-                                        .position(|r| r == &room_id)
-                                        .map(|index| self.displayed_direct_rooms.remove(index));
-                                } else {
-                                    self.displayed_regular_rooms.iter()
-                                        .position(|r| r == &room_id)
-                                        .map(|index| self.displayed_regular_rooms.remove(index));
-                                }
+                        room.room_name_id = new_room_name;
+                        let is_direct = room.is_direct;
+                        let should_display = should_display_room!(self, &room_id, room);
+                        let (pos_in_list, displayed_list) = if is_direct {
+                            (
+                                self.displayed_direct_rooms.iter().position(|r| r == &room_id),
+                                &mut self.displayed_direct_rooms,
+                            )
+                        } else {
+                            (
+                                self.displayed_regular_rooms.iter().position(|r| r == &room_id),
+                                &mut self.displayed_regular_rooms,
+                            )
+                        };
+                        if should_display {
+                            if pos_in_list.is_none() {
+                                displayed_list.push(room_id);
                             }
-                            // Room was not displayed but should now be displayed.
-                            (false, true) => {
-                                if room.is_direct {
-                                    self.displayed_direct_rooms.push(room_id);
-                                } else {
-                                    self.displayed_regular_rooms.push(room_id);
-                                }
-                            }
+                        } else {
+                            pos_in_list.map(|i| displayed_list.remove(i));
                         }
                     }
                     // If not a joined room, try to update invited room
                     else {
                         let mut invited_rooms = self.invited_rooms.borrow_mut();
                         if let Some(invited_room) = invited_rooms.get_mut(&room_id) {
-                            let was_displayed = (self.display_filter)(invited_room);
                             invited_room.room_name_id = new_room_name;
-                            let should_display = (self.display_filter)(invited_room);
-                            match (was_displayed, should_display) {
-                                (true, true) | (false, false) => { }
-                                (true, false) => {
-                                    self.displayed_invited_rooms.iter()
-                                        .position(|r| r == &room_id)
-                                        .map(|index| self.displayed_invited_rooms.remove(index));
+                            let should_display = should_display_room!(self, &room_id, invited_room);
+                            let pos_in_list = self.displayed_invited_rooms.iter()
+                                .position(|r| r == &room_id);
+                            if should_display {
+                                if pos_in_list.is_none() {
+                                    self.displayed_invited_rooms.push(room_id);
                                 }
-                                (false, true) => {
-                                    self.displayed_invited_rooms.push(room_id.clone());
-                                }
+                            } else {
+                                pos_in_list.map(|i| self.displayed_invited_rooms.remove(i));
                             }
                         } else {
-                            warning!("Warning: couldn't find invited room {} to update room name", room_id);
+                            warning!("Warning: couldn't find room {new_room_name} to update its name.");
                         }
                     }
                 }
                 RoomsListUpdate::UpdateIsDirect { room_id, is_direct } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
-                        if room.is_direct == is_direct {
+                        let was_direct = room.is_direct;
+                        if was_direct == is_direct {
                             continue;
                         }
                         enqueue_popup_notification(PopupItem {
@@ -628,23 +641,23 @@ impl RoomsList {
                                 if room.is_direct { "direct" } else { "regular" },
                                 if is_direct { "direct" } else { "regular" }
                             ),
-                            auto_dismissal_duration: None,
+                            auto_dismissal_duration: Some(5.0),
                             kind: PopupKind::Info,
                         });
-                        // If the room was currently displayed, remove it from the proper list.
-                        if (self.display_filter)(room) {
-                            let list_to_remove_from = if room.is_direct {
-                                &mut self.displayed_direct_rooms
-                            } else {
-                                &mut self.displayed_regular_rooms
-                            };
-                            list_to_remove_from.iter()
-                                .position(|r| r == &room_id)
-                                .map(|index| list_to_remove_from.remove(index));
-                        }
-                        // Update the room. If it should now be displayed, add it to the correct list.
+
+                        // Remove the room from the previous list (direct or regular).
+                        let list_to_remove_from = if was_direct {
+                            &mut self.displayed_direct_rooms
+                        } else {
+                            &mut self.displayed_regular_rooms
+                        };
+                        list_to_remove_from.iter()
+                            .position(|r| r == &room_id)
+                            .map(|index| list_to_remove_from.remove(index));
+
+                        // Update the room. If it should be displayed, add it to the proper list.
                         room.is_direct = is_direct;
-                        if (self.display_filter)(room) {
+                        if should_display_room!(self, &room_id, room) {
                             if is_direct {
                                 self.displayed_direct_rooms.push(room_id);
                             } else {
@@ -658,15 +671,14 @@ impl RoomsList {
                 RoomsListUpdate::RemoveRoom { room_id, new_state: _ } => {
                     if let Some(removed) = self.all_joined_rooms.remove(&room_id) {
                         log!("Removed room {room_id} from the list of all joined rooms");
-                        if removed.is_direct {
-                            self.displayed_direct_rooms.iter()
-                                .position(|r| r == &room_id)
-                                .map(|index| self.displayed_direct_rooms.remove(index));
+                        let list_to_remove_from = if removed.is_direct {
+                            &mut self.displayed_direct_rooms
                         } else {
-                            self.displayed_regular_rooms.iter()
-                                .position(|r| r == &room_id)
-                                .map(|index| self.displayed_regular_rooms.remove(index));
-                        }
+                            &mut self.displayed_regular_rooms
+                        };
+                        list_to_remove_from.iter()
+                            .position(|r| r == &room_id)
+                            .map(|index| list_to_remove_from.remove(index));
                     }
                     else if let Some(_removed) = self.invited_rooms.borrow_mut().remove(&room_id) {
                         log!("Removed room {room_id} from the list of all invited rooms");
@@ -706,32 +718,26 @@ impl RoomsList {
                 }
                 RoomsListUpdate::TombstonedRoom { room_id } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
-                        let was_displayed = (self.display_filter)(room);
                         room.is_tombstoned = true;
-                        let should_display = (self.display_filter)(room);
-                        match (was_displayed, should_display) {
-                            // No need to update the displayed rooms list.
-                            (true, true) | (false, false) => { }
-                            // Room was displayed but should no longer be displayed.
-                            (true, false) => {
-                                if room.is_direct {
-                                    self.displayed_direct_rooms.iter()
-                                        .position(|r| r == &room_id)
-                                        .map(|index| self.displayed_direct_rooms.remove(index));
-                                } else {
-                                    self.displayed_regular_rooms.iter()
-                                        .position(|r| r == &room_id)
-                                        .map(|index| self.displayed_regular_rooms.remove(index));
-                                }
+                        let is_direct = room.is_direct;
+                        let should_display = should_display_room!(self, &room_id, room);
+                        let (pos_in_list, displayed_list) = if is_direct {
+                            (
+                                self.displayed_direct_rooms.iter().position(|r| r == &room_id),
+                                &mut self.displayed_direct_rooms,
+                            )
+                        } else {
+                            (
+                                self.displayed_regular_rooms.iter().position(|r| r == &room_id),
+                                &mut self.displayed_regular_rooms,
+                            )
+                        };
+                        if should_display {
+                            if pos_in_list.is_none() {
+                                displayed_list.push(room_id);
                             }
-                            // Room was not displayed but should now be displayed.
-                            (false, true) => {
-                                if room.is_direct {
-                                    self.displayed_direct_rooms.push(room_id);
-                                } else {
-                                    self.displayed_regular_rooms.push(room_id);
-                                }
-                            }
+                        } else {
+                            pos_in_list.map(|i| displayed_list.remove(i));
                         }
                     } else {
                         warning!("Warning: couldn't find room {room_id} to update the tombstone status");
@@ -739,15 +745,15 @@ impl RoomsList {
                 }
                 RoomsListUpdate::HideRoom { room_id } => {
                     self.hidden_rooms.insert(room_id.clone());
+                    // Hiding a regular room is the most common case (e.g., after its successor is joined),
+                    // so we check that list first.
                     if let Some(i) = self.displayed_regular_rooms.iter().position(|r| r == &room_id) {
                         self.displayed_regular_rooms.remove(i);
-                        continue;
                     }
-                    if let Some(i) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
+                    else if let Some(i) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
                         self.displayed_direct_rooms.remove(i);
-                        continue;
                     }
-                    if let Some(i) = self.displayed_invited_rooms.iter().position(|r| r == &room_id) {
+                    else if let Some(i) = self.displayed_invited_rooms.iter().position(|r| r == &room_id) {
                         self.displayed_invited_rooms.remove(i);
                         continue;
                     }
