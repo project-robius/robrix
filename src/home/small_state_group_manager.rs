@@ -788,12 +788,9 @@ pub fn is_small_state(timeline_item: Option<&Arc<TimelineItem>>) -> bool {
             _ => None,
         })
         .map(|e| {
-            match e.content() {
-                TimelineItemContent::MembershipChange(_) | TimelineItemContent::ProfileChange(_) |
-                TimelineItemContent::OtherState(_) => true,
-                TimelineItemContent::MsgLike(MsgLikeContent { kind: MsgLikeKind::Poll(_) | MsgLikeKind::Redacted | MsgLikeKind::UnableToDecrypt(_), .. }) => true,
-                _ => false,
-            }
+            matches!(e.content(), TimelineItemContent::MembershipChange(_) | TimelineItemContent::ProfileChange(_) |
+                TimelineItemContent::OtherState(_) | TimelineItemContent::MsgLike(MsgLikeContent { kind: MsgLikeKind::Poll(_) | 
+                MsgLikeKind::Redacted | MsgLikeKind::UnableToDecrypt(_), .. }))
         })
         .unwrap_or(false)
 }
@@ -907,7 +904,7 @@ fn populate_avatar_row_from_user_ids(
 
 /// Processes room creation events for special grouping treatment.
 /// 
-/// Returns an optional tuple containing a boolean flag (whether to display it) nd a collapsible button state.
+/// Returns an optional tuple containing a boolean flag (whether to display it) and a collapsible button state.
 fn process_room_creation_event(
     current_item: &UserEvent,
     previous_item_is_small_state: bool,
@@ -941,7 +938,7 @@ fn process_room_creation_event(
 
 /// Manages room setup events in the creation collapsible list.
 /// 
-/// Returns an optional tuple containing a boolean flag (whether to display it) nd a collapsible button state.
+/// Returns an optional tuple containing a boolean flag (whether to display it) and a collapsible button state.
 fn process_room_setup_events(
     user_event: &UserEvent,
     group_manager: &mut SmallStateGroupManager,
@@ -987,7 +984,7 @@ fn process_room_setup_events(
 
 /// Finds and updates existing small state groups.
 /// 
-/// Returns an optional tuple containing a boolean flag (whether to display it) nd a collapsible button state.
+/// Returns an optional tuple containing a boolean flag (whether to display it) and a collapsible button state.
 fn find_and_update_existing_group(
     user_event: &UserEvent,
     group_manager: &mut SmallStateGroupManager,
@@ -1221,7 +1218,7 @@ mod tests {
             transition: transition_type,
             display_name: sender.to_string(),
             state_key: None,
-            event_id: EventId::parse("$bY-3JMD1c4gGBiGVAey0s-NdY_5NPRwYtMoXImd0LaA").ok(),
+            event_id: EventId::parse("$bY-3JMD1c4gGBiGVAey0s-ndY_5NPRwYtMoXImd0LaA").ok(),
             sender: UserId::parse(sender).ok(),
         }, is_previous_small_state, is_next_small_state)
     }
