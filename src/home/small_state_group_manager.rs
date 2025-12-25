@@ -1,8 +1,7 @@
 use makepad_widgets::*;
-use matrix_sdk::ruma::{events::FullStateEventContent, OwnedEventId, OwnedUserId, UserId};
+use matrix_sdk::ruma::{OwnedEventId, OwnedUserId, UserId};
 use matrix_sdk_ui::timeline::{
-    AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, MsgLikeContent,
-    MsgLikeKind, TimelineItem, TimelineItemContent, TimelineItemKind,
+    AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, MsgLikeContent, MsgLikeKind, TimelineItem, TimelineItemContent, TimelineItemKind
 };
 use rangemap::RangeSet;
 use std::{collections::HashMap, ops::Range, sync::Arc};
@@ -10,7 +9,9 @@ use indexmap::IndexMap;
 
 use crate::home::room_read_receipt::{AvatarRowWidgetRefExt, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT};
 
+// Minimum number of sequential small state events to collapse 
 const MIN_GROUP_SIZE_FOR_COLLAPSE: usize = 3;
+// Maximum number of user names to display before coalescing
 const SUMMARY_LENGTH: usize = 4;
 
 live_design! {
@@ -28,6 +29,7 @@ live_design! {
         flow: Right,
         align: { y: 0.5 }
         spacing: 7.0
+
         user_event_avatar_row = <AvatarRow> {
             margin: { left: 10.0 },
         }
@@ -44,6 +46,7 @@ live_design! {
                 color: (SMALL_STATE_TEXT_COLOR)
             }
         }
+
         // Collapsible button for small state event groups
         // Shows on the first item of each group to toggle expansion
         // Text is dynamically updated: ▶ (collapsed) or ▼ (expanded)
@@ -118,8 +121,195 @@ pub struct SmallStateGroupManager {
     pub small_state_groups: Vec<SmallStateGroup>,
 }
 
+impl SmallStateGroupManager {
+    /// Analyzes a timeline item and determines its grouping behavior.
+    /// 
+    /// Returns computed group state result without performing UI operations.
+    pub fn compute_group_state(
+        &mut self,
+        username: String,
+        current_item: &UserEvent,
+        previous_item_is_small_state: bool,
+        next_item_is_small_state: bool,
+    ) -> GroupStateResult {
+        if !previous_item_is_small_state && !next_item_is_small_state {
+            return GroupStateResult {
+                show: true,
+                collapsible_button: CollapsibleButton::None,
+                summary_text: None,
+                avatar_user_ids: None,
+            };
+        }
+
+        // Handle room creation events as a special case
+        if let Some((show, collapsible_button)) = process_room_creation_event(
+            current_item, previous_item_is_small_state, self
+        ) {
+            let summary_text = if collapsible_button != CollapsibleButton::None {
+                Some(format!(
+                    "{} created and configured the room",
+                    self.creation_collapsible_list.username
+                ))
+            } else {
+                None
+            };
+            let avatar_user_ids = if let Some((creator_id, _)) = &self.room_creation {
+                Some(vec![creator_id.clone()])
+            } else {
+                None
+            };
+            
+            return GroupStateResult {
+                show: show || !previous_item_is_small_state,
+                collapsible_button,
+                summary_text,
+                avatar_user_ids,
+            };
+        }
+
+        // Set username for creation collapsible list and create user event
+        self.creation_collapsible_list.username = username.clone();
+
+        // Handle creation collapsible list logic
+        if let Some((show, collapsible_button)) = process_room_setup_events(
+            current_item, self
+        ) {
+            return GroupStateResult {
+                show,
+                collapsible_button,
+                summary_text: None,
+                avatar_user_ids: None,
+            };
+        }
+
+        // Try to find and update existing groups
+        if let Some((show, collapsible_button)) = find_and_update_existing_group(
+            current_item, self, previous_item_is_small_state
+        ) {
+            // Get cached data for the group if it's the start of a group
+            let (summary_text, avatar_user_ids) = if collapsible_button != CollapsibleButton::None {
+                // Find the group and get its cached data
+                if let Some(group) = self.small_state_groups.iter_mut().find(|g| g.range.start == current_item.index) {
+                    let summary = Some(group.get_summary().to_string());
+                    let avatars = Some(group.get_avatar_user_ids().to_vec());
+                    (summary, avatars)
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            };
+            
+            return GroupStateResult {
+                show,
+                collapsible_button,
+                summary_text,
+                avatar_user_ids,
+            };
+        }
+
+        // Create new group if needed
+        if let Some((show, collapsible_button)) = create_new_group_if_needed(
+        current_item, previous_item_is_small_state,next_item_is_small_state, self
+        ) {
+            return GroupStateResult {
+                show,
+                collapsible_button,
+                summary_text: None,
+                avatar_user_ids: None,
+            };
+        }
+        // Default return - collapsed state, no collapsible button
+        GroupStateResult {
+            show: true,
+            collapsible_button: CollapsibleButton::None,
+            summary_text: None,
+            avatar_user_ids: None,
+        }
+    }
+
+    /// Handles the rendering logic for small state events based on their group state.
+    /// This function manages visibility, collapsible button states, and summary text display
+    /// for timeline items that are part of collapsible groups.
+    ///
+    /// # Arguments
+    /// * `cx` - Makepad context for UI operations
+    /// * `item` - The widget reference for the timeline item
+    /// * `item_id` - The index of this item in the timeline
+    /// * `opened` - Whether this individual item should be rendered (based on group state)
+    /// * `collapsible_button` - Collapsible button state for this item
+    /// * `room_id` - The room ID for avatar fetching
+    pub fn render_collapsible_button_and_body(
+        &mut self,
+        cx: &mut Cx,
+        item: &WidgetRef,
+        item_id: usize,
+        opened: bool,
+        collapsible_button: CollapsibleButton,
+        room_id: &matrix_sdk::ruma::RoomId,
+    ) {
+        // Render logic based on group state
+        if opened {
+            // This item should be visible - set appropriate button text if this is a group leader
+            if collapsible_button != CollapsibleButton::None {
+                // Update button text to show current group state:
+                // ▶ = group is expanded (click to collapse)
+                // ▼ = group is collapsed (click to expand)
+                let button_text = if collapsible_button == CollapsibleButton::Expanded { "▼" } else { "▶" };
+                item.button(ids!(collapsible_button))
+                    .set_text(cx, button_text);
+                if self.room_creation.is_some()
+                    && self.creation_collapsible_list.range.start == item_id
+                {
+                    let summary_text = format!(
+                        "{} created and configured the room",
+                        self.creation_collapsible_list.username
+                    );
+                    item.view(ids!(small_state_header)).set_visible(cx, true);
+                    
+                    // For creation groups, show only the creator's avatar
+                    if let Some((creator_id, _)) = &self.room_creation {
+                        let creator_ids = vec![creator_id.clone()];
+                        populate_avatar_row_from_user_ids(cx, item, room_id, &creator_ids);
+                    }
+                    
+                    item.label(ids!(small_state_header.summary_text))
+                        .set_text(cx, &summary_text);
+                    item.view(ids!(body)).set_visible(cx, false);
+                    return;
+                }
+                // Find the group and use cached data for rendering
+                for group in &mut self.small_state_groups {
+                    if group.range.start == item_id {
+                        item.view(ids!(small_state_header)).set_visible(cx, true);
+                        
+                        // Use cached summary text (compute if not cached)
+                        let summary_text = group.get_summary();
+                        item.label(ids!(small_state_header.summary_text))
+                            .set_text(cx, summary_text);
+                        
+                        // Use cached avatar user IDs for lightweight avatar population
+                        let avatar_user_ids = group.get_avatar_user_ids();
+                        populate_avatar_row_from_user_ids(cx, item, room_id, avatar_user_ids);
+                        
+                        item.view(ids!(body)).set_visible(cx, false);
+                        break;
+                    }
+                }
+                item.view(ids!(body)).set_visible(cx, collapsible_button == CollapsibleButton::Expanded);
+            } else {
+                item.view(ids!(small_state_header)).set_visible(cx, false);
+                item.view(ids!(body)).set_visible(cx, true);
+            }
+        } else {
+            item.view(ids!(small_state_header)).set_visible(cx, false);
+            item.view(ids!(body)).set_visible(cx, false);
+        }
+    }
+}
+/// Represent Small state type.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TransitionType {
+pub enum SmallStateType {
     CreateRoom,
     ConfigureRoom,
     Joined,
@@ -143,15 +333,90 @@ pub enum TransitionType {
     HiddenEvent,
 }
 
-#[derive(Debug, Clone)]
+impl From<MembershipChange> for SmallStateType {
+    fn from(change: MembershipChange) -> Self {
+        use matrix_sdk_ui::timeline::MembershipChange;
+        match change {
+            MembershipChange::Joined => SmallStateType::Joined,
+            MembershipChange::Left => SmallStateType::Left,
+            MembershipChange::Banned => SmallStateType::Banned,
+            MembershipChange::Unbanned => SmallStateType::Unbanned,
+            MembershipChange::Kicked => SmallStateType::Kicked,
+            MembershipChange::Invited => SmallStateType::Invited,
+            MembershipChange::KickedAndBanned => SmallStateType::Banned,
+            MembershipChange::InvitationAccepted => SmallStateType::Joined,
+            MembershipChange::InvitationRejected => SmallStateType::InvitationRejected,
+            MembershipChange::InvitationRevoked => SmallStateType::InvitationRevoked,
+            MembershipChange::Knocked => SmallStateType::HiddenEvent,
+            MembershipChange::KnockAccepted => SmallStateType::Joined,
+            MembershipChange::KnockRetracted => SmallStateType::HiddenEvent,
+            MembershipChange::None => SmallStateType::NoChange,
+            MembershipChange::Error => SmallStateType::NoChange,
+            MembershipChange::NotImplemented => SmallStateType::NoChange,
+            MembershipChange::KnockDenied => SmallStateType::HiddenEvent,
+        }
+    }
+}
+
+impl From<&AnyOtherFullStateEventContent> for SmallStateType {
+    fn from(content: &AnyOtherFullStateEventContent) -> Self {
+        match content {
+            AnyOtherFullStateEventContent::RoomServerAcl(_) => SmallStateType::ServerAcl,
+            AnyOtherFullStateEventContent::RoomCreate(_) => SmallStateType::CreateRoom,
+            AnyOtherFullStateEventContent::_Custom { .. } => SmallStateType::HiddenEvent,
+            // All other room state events are configuration changes
+            _ => SmallStateType::ConfigureRoom,
+        }
+    }
+}
+
+impl From<&TimelineItemContent> for SmallStateType {
+    fn from(content: &TimelineItemContent) -> Self {
+        use matrix_sdk_ui::timeline::TimelineItemContent;
+        match content {
+            TimelineItemContent::MembershipChange(change) => {
+                change.change()
+                    .map(SmallStateType::from)
+                    .unwrap_or_default()
+            }
+            TimelineItemContent::ProfileChange(change) => {
+                match (change.avatar_url_change(), change.displayname_change()) {
+                    (Some(_), _) => SmallStateType::ChangedAvatar,
+                    (None, Some(_)) => SmallStateType::ChangedName,
+                    _ => SmallStateType::NoChange,
+                }
+            }
+            TimelineItemContent::OtherState(other_state) => {
+                SmallStateType::from(other_state.content())
+            }
+            TimelineItemContent::MsgLike(MsgLikeContent { kind, .. }) => {
+                match kind {
+                    MsgLikeKind::Poll(_) => SmallStateType::NoChange,
+                    MsgLikeKind::Redacted => SmallStateType::MessageRemoved,
+                    MsgLikeKind::UnableToDecrypt(_) => SmallStateType::UnableToDecrypt,
+                    _ => SmallStateType::NoChange,
+                }
+            }
+            _ => SmallStateType::NoChange,
+        }
+    }
+}
+
+/// Condensed version of a `EventTimelineItem`, used for generating summaries.
+#[derive(Debug, Clone, Default)]
 pub struct UserEvent {
-    pub transition: TransitionType,
+    /// The transition type
+    pub transition: SmallStateType,
+    /// The index of the event in the timeline
     pub index: usize,
-    pub sender: OwnedUserId,
+    /// The sender of the event
+    pub sender: Option<OwnedUserId>,
+    /// The display name of the sender
     pub display_name: String,
+    /// The state key of the event
     pub state_key: Option<String>,
-    pub membership: Option<String>,
-    pub sender_profile: Option<crate::profile::user_profile::UserProfile>,
+    /// The ID of the event
+    pub event_id: Option<OwnedEventId>,
 }
 
 /// State for the creation collapsible list
@@ -174,6 +439,7 @@ impl Default for CreationCollapsibleList {
 
 impl SmallStateGroup {
     /// Computes and caches the summary text and avatar user IDs for this group.
+    /// 
     /// This should be called whenever the group's user_events_map is modified.
     pub fn update_cached_data(&mut self) {
         // Cache the summary text
@@ -200,214 +466,32 @@ impl SmallStateGroup {
     }
 }
 
-/// Timeline grouping service that separates business logic from UI rendering.
-/// This service handles all timeline grouping computations and maintains caching.
-pub struct TimelineGroupService;
-
-impl TimelineGroupService {
-    /// Analyzes a timeline item and determines its grouping behavior.
-    /// Returns computed group state without performing UI operations.
-    pub fn compute_item_group_state(
-        item_id: usize,
-        username: String,
-        current_item: &EventTimelineItem,
-        previous_item: Option<&Arc<TimelineItem>>,
-        next_item: Option<&Arc<TimelineItem>>,
-        group_manager: &mut SmallStateGroupManager,
-    ) -> GroupStateResult {
-        let (current_item_is_small_state, previous_item_is_small_state, next_item_is_small_state, display_name) = 
-            analyze_grouping_context(current_item, previous_item, next_item);
-        
-        if !current_item_is_small_state {
-            return GroupStateResult {
-                show: true,
-                show_collapsible_button: false,
-                expanded: false,
-                to_redraw: Range::default(),
-                summary_text: None,
-                avatar_user_ids: None,
-            };
-        }
-
-        if !previous_item_is_small_state && !next_item_is_small_state {
-            return GroupStateResult {
-                show: true,
-                show_collapsible_button: false,
-                expanded: false,
-                to_redraw: Range::default(),
-                summary_text: None,
-                avatar_user_ids: None,
-            };
-        }
-
-        // Handle room creation events as a special case
-        if let Some((show, show_button, expanded, range)) = Self::process_room_creation(
-            item_id, current_item, group_manager
-        ) {
-            let summary_text = if show_button {
-                Some(format!(
-                    "{} created and configured the room",
-                    group_manager.creation_collapsible_list.username
-                ))
-            } else {
-                None
-            };
-            let avatar_user_ids = if let Some((creator_id, _)) = &group_manager.room_creation {
-                Some(vec![creator_id.clone()])
-            } else {
-                None
-            };
-            
-            return GroupStateResult {
-                show,
-                show_collapsible_button: show_button,
-                expanded,
-                to_redraw: range,
-                summary_text,
-                avatar_user_ids,
-            };
-        }
-
-        // Set username for creation collapsible list and create user event
-        group_manager.creation_collapsible_list.username = username.clone();
-        let user_event = convert_to_timeline_event(
-            current_item,
-            display_name.clone().unwrap_or(username.clone()),
-            item_id,
-            None,
-        );
-
-        // Handle creation collapsible list logic
-        if let Some((show, show_button, expanded, range)) = Self::process_room_setup(
-            item_id, &user_event, group_manager
-        ) {
-            return GroupStateResult {
-                show,
-                show_collapsible_button: show_button,
-                expanded,
-                to_redraw: range,
-                summary_text: None,
-                avatar_user_ids: None,
-            };
-        }
-
-        // Try to find and update existing groups
-        if let Some((show, show_button, expanded, range, summary, avatars)) = Self::handle_existing_group(
-            item_id, user_event, group_manager
-        ) {
-            return GroupStateResult {
-                show,
-                show_collapsible_button: show_button,
-                expanded,
-                to_redraw: range,
-                summary_text: summary,
-                avatar_user_ids: avatars,
-            };
-        }
-
-        // Recreate user_event for the remaining cases since it was moved
-        let user_event = convert_to_timeline_event(
-            current_item,
-            display_name.unwrap_or(username),
-            item_id,
-            None,
-        );
-
-        // Create new group if needed
-        if let Some((show, show_button, expanded, range)) = Self::create_new_group(
-            item_id, user_event, next_item_is_small_state, group_manager
-        ) {
-            return GroupStateResult {
-                show,
-                show_collapsible_button: show_button,
-                expanded,
-                to_redraw: range,
-                summary_text: None,
-                avatar_user_ids: None,
-            };
-        }
-
-        // Default return - collapsed state, no collapsible button
-        GroupStateResult {
-            show: false,
-            show_collapsible_button: false,
-            expanded: false,
-            to_redraw: Range::default(),
-            summary_text: None,
-            avatar_user_ids: None,
-        }
-    }
-
-    fn process_room_creation(
-        item_id: usize,
-        current_item: &EventTimelineItem,
-        group_manager: &mut SmallStateGroupManager,
-    ) -> Option<(bool, bool, bool, Range<usize>)> {
-        process_room_creation_event(item_id, current_item, group_manager)
-    }
-
-    fn process_room_setup(
-        item_id: usize,
-        user_event: &UserEvent,
-        group_manager: &mut SmallStateGroupManager,
-    ) -> Option<(bool, bool, bool, Range<usize>)> {
-        process_room_setup_events(item_id, user_event, group_manager)
-    }
-
-    fn handle_existing_group(
-        item_id: usize,
-        user_event: UserEvent,
-        group_manager: &mut SmallStateGroupManager,
-    ) -> Option<ServiceResult> {
-        if let Some((show, show_button, expanded, range)) = find_and_update_existing_group(
-            item_id, user_event, group_manager
-        ) {
-            // Get cached data for the group if it's the start of a group
-            let (summary_text, avatar_user_ids) = if show_button {
-                // Find the group and get its cached data
-                if let Some(group) = group_manager.small_state_groups.iter_mut().find(|g| g.range.start == item_id) {
-                    let summary = Some(group.get_summary().to_string());
-                    let avatars = Some(group.get_avatar_user_ids().to_vec());
-                    (summary, avatars)
-                } else {
-                    (None, None)
-                }
-            } else {
-                (None, None)
-            };
-            
-            Some((show, show_button, expanded, range, summary_text, avatar_user_ids))
-        } else {
-            None
-        }
-    }
-
-    fn create_new_group(
-        item_id: usize,
-        user_event: UserEvent,
-        next_item_is_small_state: bool,
-        group_manager: &mut SmallStateGroupManager,
-    ) -> Option<(bool, bool, bool, Range<usize>)> {
-        create_new_group_if_needed(item_id, user_event, next_item_is_small_state, group_manager)
-    }
-}
 
 /// Result of group state computation, containing all necessary data for rendering.
 #[derive(Debug)]
 pub struct GroupStateResult {
+    /// Whether to show this item in the timeline
+    /// 
+    /// This is always `true` for item that is first in a collapsible group.
+    /// This is `false` for items under collapsed groups. 
     pub show: bool,
-    pub show_collapsible_button: bool,
-    pub expanded: bool,
-    pub to_redraw: Range<usize>,
+    /// Whether to show the collapsible button
+    /// 
+    /// This is always `false` for items that are not the first in a collapsible group.
+    pub collapsible_button: CollapsibleButton,
     pub summary_text: Option<String>,
     pub avatar_user_ids: Option<Vec<OwnedUserId>>,
 }
 
-/// Type alias for complex service method return types.
-type ServiceResult = (bool, bool, bool, Range<usize>, Option<String>, Option<Vec<OwnedUserId>>);
-
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub enum CollapsibleButton {
+    Expanded,
+    Collapsed,
+    #[default]
+    None
+}
 /// Combines neighboring transitions into compound actions, e.g. [Joined, Left] -> [JoinedAndLeft]
-fn merge_adjacent_transitions(transitions: &[TransitionType]) -> Vec<TransitionType> {
+fn merge_adjacent_transitions(transitions: &[SmallStateType]) -> Vec<SmallStateType> {
     let mut res = Vec::new();
     let mut i = 0;
     while i < transitions.len() {
@@ -415,13 +499,13 @@ fn merge_adjacent_transitions(transitions: &[TransitionType]) -> Vec<TransitionT
         if i + 1 < transitions.len() {
             let t2 = transitions[i + 1];
             match (t, t2) {
-                (TransitionType::Joined, TransitionType::Left) => {
-                    res.push(TransitionType::JoinedAndLeft);
+                (SmallStateType::Joined, SmallStateType::Left) => {
+                    res.push(SmallStateType::JoinedAndLeft);
                     i += 2;
                     continue;
                 }
-                (TransitionType::Left, TransitionType::Joined) => {
-                    res.push(TransitionType::LeftAndJoined);
+                (SmallStateType::Left, SmallStateType::Joined) => {
+                    res.push(SmallStateType::LeftAndJoined);
                     i += 2;
                     continue;
                 }
@@ -435,7 +519,7 @@ fn merge_adjacent_transitions(transitions: &[TransitionType]) -> Vec<TransitionT
 }
 
 /// Groups consecutive identical transitions with their count (e.g. [JoinedAndLeft, JoinedAndLeft] -> (JoinedAndLeft, 2))
-pub fn group_repeated_transitions(transitions: &[TransitionType]) -> Vec<(TransitionType, usize)> {
+fn group_repeated_transitions(transitions: &[SmallStateType]) -> Vec<(SmallStateType, usize)> {
     let mut res = Vec::new();
     for &t in transitions {
         if let Some((last, count)) = res.last_mut() {
@@ -451,15 +535,15 @@ pub fn group_repeated_transitions(transitions: &[TransitionType]) -> Vec<(Transi
 
 /// Creates human-readable text for a transition type with user count and repetition count
 fn format_transition_text(
-    transition: TransitionType,
+    transition: SmallStateType,
     user_count: usize,
     repeat_count: usize,
 ) -> String {
     let is_plural = user_count > 1;
     match transition {
-        TransitionType::CreateRoom => "created and configured the room".to_string(),
-        TransitionType::ConfigureRoom => "".to_string(),
-        TransitionType::Joined => {
+        SmallStateType::CreateRoom => "created and configured the room".to_string(),
+        SmallStateType::ConfigureRoom => "".to_string(),
+        SmallStateType::Joined => {
             if repeat_count > 1 {
                 if is_plural {
                     format!("joined (×{})", repeat_count)
@@ -474,7 +558,7 @@ fn format_transition_text(
                 }
             }
         }
-        TransitionType::Left => {
+        SmallStateType::Left => {
             if repeat_count > 1 {
                 if is_plural {
                     format!("left (×{})", repeat_count)
@@ -489,112 +573,112 @@ fn format_transition_text(
                 }
             }
         }
-        TransitionType::JoinedAndLeft => {
+        SmallStateType::JoinedAndLeft => {
             if repeat_count > 1 {
                 format!("joined and left (×{})", repeat_count)
             } else {
                 "joined and left".to_string()
             }
         }
-        TransitionType::LeftAndJoined => {
+        SmallStateType::LeftAndJoined => {
             if repeat_count > 1 {
                 format!("left and rejoined (×{})", repeat_count)
             } else {
                 "left and rejoined".to_string()
             }
         }
-        TransitionType::ChangedName => {
+        SmallStateType::ChangedName => {
             if repeat_count > 1 {
                 format!("changed their name (×{})", repeat_count)
             } else {
                 "changed their name".to_string()
             }
         }
-        TransitionType::ChangedAvatar => {
+        SmallStateType::ChangedAvatar => {
             if repeat_count > 1 {
                 format!("changed their profile picture (×{})", repeat_count)
             } else {
                 "changed their profile picture".to_string()
             }
         }
-        TransitionType::Invited => {
+        SmallStateType::Invited => {
             if repeat_count > 1 {
                 format!("was invited (×{})", repeat_count)
             } else {
                 "was invited".to_string()
             }
         }
-        TransitionType::Banned => {
+        SmallStateType::Banned => {
             if repeat_count > 1 {
                 format!("was banned (×{})", repeat_count)
             } else {
                 "was banned".to_string()
             }
         }
-        TransitionType::Unbanned => {
+        SmallStateType::Unbanned => {
             if repeat_count > 1 {
                 format!("was unbanned (×{})", repeat_count)
             } else {
                 "was unbanned".to_string()
             }
         }
-        TransitionType::InvitationRejected => {
+        SmallStateType::InvitationRejected => {
             if repeat_count > 1 {
                 format!("rejected invite (×{})", repeat_count)
             } else {
                 "rejected invite".to_string()
             }
         }
-        TransitionType::InvitationRevoked => {
+        SmallStateType::InvitationRevoked => {
             if repeat_count > 1 {
                 format!("invite withdrawn (×{})", repeat_count)
             } else {
                 "invite withdrawn".to_string()
             }
         }
-        TransitionType::Kicked => {
+        SmallStateType::Kicked => {
             if repeat_count > 1 {
                 format!("was kicked (×{})", repeat_count)
             } else {
                 "was kicked".to_string()
             }
         }
-        TransitionType::ServerAcl => {
+        SmallStateType::ServerAcl => {
             if repeat_count > 1 {
                 format!("updated server ACLs (×{})", repeat_count)
             } else {
                 "updated server ACLs".to_string()
             }
         }
-        TransitionType::ChangedPins => {
+        SmallStateType::ChangedPins => {
             if repeat_count > 1 {
                 format!("changed pinned messages (×{})", repeat_count)
             } else {
                 "changed pinned messages".to_string()
             }
         }
-        TransitionType::MessageRemoved => {
+        SmallStateType::MessageRemoved => {
             if repeat_count > 1 {
                 format!("removed a message (×{})", repeat_count)
             } else {
                 "removed a message".to_string()
             }
         }
-        TransitionType::HiddenEvent => {
+        SmallStateType::HiddenEvent => {
             if repeat_count > 1 {
                 format!("did a hidden event (×{})", repeat_count)
             } else {
                 "did a hidden event".to_string()
             }
         }
-        TransitionType::NoChange => {
+        SmallStateType::NoChange => {
             if repeat_count > 1 {
                 format!("made no changes (×{})", repeat_count)
             } else {
                 "made no changes".to_string()
             }
         }
-        TransitionType::UnableToDecrypt => {
+        SmallStateType::UnableToDecrypt => {
             if repeat_count > 1 {
                 format!("decryption failed (×{})", repeat_count)
             } else {
@@ -605,7 +689,7 @@ fn format_transition_text(
 }
 
 /// Produce an English-readable name list, with "and N others"
-pub fn format_user_list(user_names: &[String], max_display_count: usize) -> String {
+fn format_user_list(user_names: &[String], max_display_count: usize) -> String {
     match user_names.len() {
         0 => "".into(),
         1 => user_names[0].clone(),
@@ -624,149 +708,38 @@ pub fn format_user_list(user_names: &[String], max_display_count: usize) -> Stri
     }
 }
 
-/// Converts a `EventTimelineItem` to a `UserEvent`.
-///
-/// This function takes an `EventTimelineItem`, the user name of the event sender, and an index.
-/// It then returns a `UserEvent` with the index, display name, transition type,
-/// sender, state key, and membership change.
-///
-/// The transition type is determined using `is_small_state_event`.
-///
-/// The state key is set to `Some(event_item.state_key().to_string())` if the event item
-/// is a membership change or an other state event.
-///
-/// The membership change is set to `Some(s.to_string())` if the event item is a membership change,
-/// where `s` is one of "join", "leave", "invite", or "ban".
-pub fn convert_to_timeline_event(
+/// Convert an event timeline item to a user event
+pub fn convert_event_tl_item_to_user_event(
     event_item: &EventTimelineItem,
-    user_name: String,
     index: usize,
-    sender_profile: Option<crate::profile::user_profile::UserProfile>,
 ) -> UserEvent {
-    use matrix_sdk_ui::timeline::{MembershipChange, TimelineItemContent};
-    let (state_key, membership) = match event_item.content() {
+    use matrix_sdk_ui::timeline::TimelineItemContent;
+    let state_key = match event_item.content() {
         TimelineItemContent::MembershipChange(change) => {
-            let state_key = Some(change.user_id().to_string());
-            let membership = match change.change() {
-                Some(MembershipChange::Joined) => Some("join"),
-                Some(MembershipChange::Left) => Some("leave"),
-                Some(MembershipChange::Invited) => Some("invite"),
-                Some(MembershipChange::Banned) => Some("ban"),
-                _ => None,
-            }
-            .map(|s| s.to_string());
-            (state_key, membership)
+            Some(change.user_id().to_string())
         }
-        TimelineItemContent::OtherState(other) => (Some(other.state_key().to_string()), None),
-        _ => (None, None),
+        TimelineItemContent::OtherState(other) => Some(other.state_key().to_string()),
+        _ => None,
     };
-    let (_is_small_state, transition_type, _display_name_from_state) =
-        analyze_timeline_event_type(event_item);
+    let transition_type: SmallStateType = event_item.content().into();
+
     UserEvent {
         index,
-        display_name: user_name,
+        display_name: event_item.sender().to_string(),
         transition: transition_type,
-        sender: event_item.sender().into(),
+        sender: Some(event_item.sender().into()),
         state_key,
-        membership,
-        sender_profile,
+        event_id: event_item.event_id().map(|e|e.to_owned()),
     }
 }
 
-/// Convert Matrix membership change → transition type
-pub fn get_transition_from_membership_change(change: MembershipChange) -> TransitionType {
-    use matrix_sdk_ui::timeline::MembershipChange;
-    match change {
-        MembershipChange::Joined => TransitionType::Joined,
-        MembershipChange::Left => TransitionType::Left,
-        MembershipChange::Banned => TransitionType::Banned,
-        MembershipChange::Unbanned => TransitionType::Unbanned,
-        MembershipChange::Kicked => TransitionType::Kicked,
-        MembershipChange::Invited => TransitionType::Invited,
-        MembershipChange::KickedAndBanned => TransitionType::Banned,
-        MembershipChange::InvitationAccepted => TransitionType::Joined,
-        MembershipChange::InvitationRejected => TransitionType::InvitationRejected,
-        MembershipChange::InvitationRevoked => TransitionType::InvitationRevoked,
-        MembershipChange::Knocked => TransitionType::HiddenEvent,
-        MembershipChange::KnockAccepted => TransitionType::Joined,
-        MembershipChange::KnockRetracted => TransitionType::HiddenEvent,
-        MembershipChange::None => TransitionType::NoChange,
-        MembershipChange::Error => TransitionType::NoChange,
-        MembershipChange::NotImplemented => TransitionType::NoChange,
-        MembershipChange::KnockDenied => TransitionType::HiddenEvent,
-    }
-}
 
-/// Convert other room state events → transition type
-pub fn get_transition_from_other_events(
-    content: &AnyOtherFullStateEventContent,
-    _state_key: &str,
-) -> TransitionType {
-    match content {
-        AnyOtherFullStateEventContent::RoomServerAcl(_) => TransitionType::ServerAcl,
-        AnyOtherFullStateEventContent::RoomPinnedEvents(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::RoomName(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::RoomTopic(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::RoomAvatar(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::RoomCanonicalAlias(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::RoomCreate(_) => TransitionType::CreateRoom,
-        AnyOtherFullStateEventContent::RoomEncryption(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::RoomGuestAccess(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::RoomHistoryVisibility(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::RoomJoinRules(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::RoomPowerLevels(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::RoomThirdPartyInvite(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::RoomTombstone(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::RoomAliases(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::SpaceChild(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::SpaceParent(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::PolicyRuleRoom(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::PolicyRuleServer(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::PolicyRuleUser(_) => TransitionType::ConfigureRoom,
-        AnyOtherFullStateEventContent::_Custom { .. } => TransitionType::HiddenEvent,
-    }
-}
-
-/// Appends a new user event to the given list of user events.
-///
-/// If the given transition is `HiddenEvent`, this function does nothing.
-///
-/// Otherwise, it appends a new `UserEvent` to the list of user events for the given user ID.
-/// If the user ID is not found in the list, a new entry is created.
-///
-/// If the user ID is found, but there is no existing `UserEvent` with the same index,
-/// a new `UserEvent` is appended to the list of user events for that user ID.
-///
-/// The function prints debug messages to help with debugging.
-pub fn append_user_event(
-    user_event: UserEvent,
-    user_events: &mut Vec<(OwnedUserId, Vec<UserEvent>)>,
-) {
-    if let TransitionType::HiddenEvent = user_event.transition {
-        return;
-    }
-    if let Some((_, events)) = user_events
-        .iter_mut()
-        .find(|(id, _)| id == &user_event.sender)
-    {
-        if events
-            .iter()
-            .filter(|inner_user_event| inner_user_event.index == user_event.index)
-            .count()
-            == 0
-        {
-            events.push(user_event);
-        }
-    } else {
-        user_events.push((user_event.sender.clone(), vec![user_event]));
-    }
-}
 
 /// Gets the effective user ID for a user event, preferring state_key over sender.
 /// This handles cases where the state_key represents the actual user being affected.
-fn get_effective_user_id(user_event: &UserEvent) -> OwnedUserId {
+fn get_effective_user_id(user_event: &UserEvent) -> Option<OwnedUserId> {
     match user_event.state_key.as_ref().map(UserId::parse) {
-        Some(Ok(user_id)) => user_id,
+        Some(Ok(user_id)) => Some(user_id),
         _ => user_event.sender.clone(),
     }
 }
@@ -776,17 +749,11 @@ fn get_effective_user_id(user_event: &UserEvent) -> OwnedUserId {
 /// The HashMap structure maps: user_id -> Vec<UserEvent>
 /// This simplified structure groups events by user ID, avoiding the complexity
 /// of maintaining timeline indices as keys.
-/// Appends a new user event to the given HashMap of user events and invalidates cache.
-/// 
-/// The HashMap structure maps: user_id -> Vec<UserEvent>
-/// This simplified structure groups events by user ID, avoiding the complexity
-/// of maintaining timeline indices as keys.
 fn append_user_event_to_map(
     user_event: UserEvent,
     user_events: &mut HashMap<OwnedUserId, Vec<UserEvent>>,
 ) {
-    let effective_user_id = get_effective_user_id(&user_event);
-    
+    let Some(effective_user_id) = get_effective_user_id(&user_event) else { return };
     // Get or create the user's event list
     let user_events_vec = user_events.entry(effective_user_id).or_default();
     
@@ -796,7 +763,7 @@ fn append_user_event_to_map(
     }
 }
 
-/// Appends a user event to a group and updates its cache.
+/// Appends a user event to a group and invalidates its cache.
 fn append_user_event_to_group(
     user_event: UserEvent,
     group: &mut SmallStateGroup,
@@ -807,51 +774,30 @@ fn append_user_event_to_group(
     group.cached_avatar_user_ids = None;
 }
 
-/// Analyzes a timeline event to determine if it represents a small state change.
+/// Checks if a timeline item represents a small state change (membership change, profile change, poll, redacted, or unable to decrypt).
 ///
 /// # Arguments
-/// * `event_tl_item` - The timeline item to check
+/// * `timeline_item` - The timeline item to check
 ///
 /// # Returns
 /// * `bool` - Whether this is a small state event
-/// * `TransitionType` - The type of transition
-/// * `Option<String>` - Display name if available
-pub fn analyze_timeline_event_type(
-    event_tl_item: &EventTimelineItem,
-) -> (bool, TransitionType, Option<String>) {
-    match event_tl_item.content() {
-        TimelineItemContent::MembershipChange(change) => {
-            let transition = change
-                .change()
-                .map(get_transition_from_membership_change)
-                .unwrap_or_default();
-            (true, transition, change.display_name())
-        }
-        TimelineItemContent::ProfileChange(change) => {
-            let transition_type = match (change.avatar_url_change(), change.displayname_change()) {
-                (Some(_), _) => TransitionType::ChangedAvatar,
-                (None, Some(_)) => TransitionType::ChangedName,
-                _ => TransitionType::NoChange,
-            };
-            (true, transition_type, None)
-        }
-        TimelineItemContent::OtherState(other_state) => {
-            let transition =
-                get_transition_from_other_events(other_state.content(), other_state.state_key());
-            (true, transition, None)
-        }
-        TimelineItemContent::MsgLike(MsgLikeContent { kind, .. }) => {
-            let transition = match kind {
-                MsgLikeKind::Poll(_) => TransitionType::NoChange,
-                MsgLikeKind::Redacted => TransitionType::MessageRemoved,
-                MsgLikeKind::UnableToDecrypt(_) => TransitionType::UnableToDecrypt,
-                _ => return (false, TransitionType::NoChange, None),
-            };
-            (true, transition, None)
-        }
-        _ => (false, TransitionType::NoChange, None),
-    }
+pub fn is_small_state(timeline_item: Option<&Arc<TimelineItem>>) -> bool {
+    timeline_item
+        .and_then(|timeline_item| match timeline_item.kind() {
+            TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
+            _ => None,
+        })
+        .map(|e| {
+            match e.content() {
+                TimelineItemContent::MembershipChange(_) | TimelineItemContent::ProfileChange(_) |
+                TimelineItemContent::OtherState(_) => true,
+                TimelineItemContent::MsgLike(MsgLikeContent { kind: MsgLikeKind::Poll(_) | MsgLikeKind::Redacted | MsgLikeKind::UnableToDecrypt(_), .. }) => true,
+                _ => false,
+            }
+        })
+        .unwrap_or(false)
 }
+
 
 /// Generates a summary string from user events.
 ///
@@ -860,12 +806,12 @@ pub fn analyze_timeline_event_type(
 /// * `summary_length` - Maximum number of user names to display before coalescing
 /// # Returns
 /// * `String` - The generated summary string
-pub fn generate_summary(
+fn generate_summary(
     user_events: &HashMap<OwnedUserId, Vec<UserEvent>>,
     summary_length: usize,
 ) -> String {
     // Aggregate by transition sequence
-    let mut aggregates: Vec<(Vec<TransitionType>, Vec<String>)> = Vec::new();
+    let mut aggregates: Vec<(Vec<SmallStateType>, Vec<String>)> = Vec::new();
 
     for (user_id, events) in user_events {
         // Create sorted indices instead of cloning the entire events vector
@@ -874,8 +820,8 @@ pub fn generate_summary(
         let mut transitions: Vec<_> = sorted_indices.iter().map(|&i| events[i].transition).collect();
 
         // Filter out Joined transitions for room creators
-        if transitions.contains(&TransitionType::CreateRoom) {
-            transitions.retain(|&t| t != TransitionType::Joined);
+        if transitions.contains(&SmallStateType::CreateRoom) {
+            transitions.retain(|&t| t != SmallStateType::Joined);
         }
         
         let canonical = merge_adjacent_transitions(&transitions);
@@ -912,6 +858,7 @@ pub fn generate_summary(
 }
 
 /// Extracts and sorts user IDs from user events map for avatar display.
+/// 
 /// This is the expensive computation part that should be cached.
 fn extract_avatar_user_ids(
     user_events_map: &HashMap<OwnedUserId, Vec<UserEvent>>,
@@ -938,18 +885,16 @@ fn extract_avatar_user_ids(
 }
 
 /// Populates the avatar row with user avatars from pre-computed user IDs.
-/// This is now a lightweight operation that just creates the receipts map.
 fn populate_avatar_row_from_user_ids(
     cx: &mut Cx,
     avatar_row: &WidgetRef,
     room_id: &matrix_sdk::ruma::RoomId,
     user_ids: &[OwnedUserId],
 ) {
-    // Create a receipts map for the avatar row using the provided user IDs
+    // Reuse read receipts logic to populate the avatar row.
     let receipts_map: IndexMap<OwnedUserId, matrix_sdk::ruma::events::receipt::Receipt> = user_ids
         .iter()
         .map(|user_id| {
-            // Create a simple receipt for display purposes
             let receipt = matrix_sdk::ruma::events::receipt::Receipt::new(
                 matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now()
             );
@@ -957,149 +902,117 @@ fn populate_avatar_row_from_user_ids(
         })
         .collect();
     
-    // Use set_avatar_row to populate the avatars  
     avatar_row.avatar_row(ids!(user_event_avatar_row)).set_avatar_row(cx, room_id, None, &receipts_map);
 }
 
-/// Analyzes the context around a timeline item to determine grouping eligibility.
-/// Returns whether previous and next items are small state events.
-fn analyze_grouping_context(
-    current_item: &EventTimelineItem,
-    previous_item: Option<&Arc<TimelineItem>>,
-    next_item: Option<&Arc<TimelineItem>>,
-) -> (bool, bool, bool, Option<String>) {
-    let (current_item_is_small_state, _transition, display_name) = analyze_timeline_event_type(current_item);
-    
-    if !current_item_is_small_state {
-        return (false, false, false, display_name);
-    }
-
-    let (next_item_is_small_state, _, _) = next_item
-        .and_then(|timeline_item| match timeline_item.kind() {
-            TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
-            _ => None,
-        })
-        .map(analyze_timeline_event_type)
-        .unwrap_or((false, TransitionType::NoChange, None));
-        
-    let (previous_item_is_small_state, _, _) = previous_item
-        .and_then(|timeline_item| match timeline_item.kind() {
-            TimelineItemKind::Event(event_tl_item) => Some(event_tl_item),
-            _ => None,
-        })
-        .map(analyze_timeline_event_type)
-        .unwrap_or((false, TransitionType::NoChange, None));
-
-    (current_item_is_small_state, previous_item_is_small_state, next_item_is_small_state, display_name)
-}
-
 /// Processes room creation events for special grouping treatment.
-/// Returns Some(result) if this item was processed as part of room creation, None otherwise.
+/// 
+/// Returns an optional tuple containing a boolean flag (whether to display it) nd a collapsible button state.
 fn process_room_creation_event(
-    item_id: usize,
-    current_item: &EventTimelineItem,
+    current_item: &UserEvent,
+    previous_item_is_small_state: bool,
     group_manager: &mut SmallStateGroupManager,
-) -> Option<(bool, bool, bool, Range<usize>)> {
+) -> Option<(bool, CollapsibleButton)> {
     if group_manager.room_creation.is_some() {
         return None;
     }
-
-    if let TimelineItemContent::OtherState(other_state) = current_item.content() {
-        if let AnyOtherFullStateEventContent::RoomCreate(FullStateEventContent::Original { .. }) = other_state.content() {
-            let creator_id = current_item.sender().to_owned();
-            if let Some(event_id) = current_item.event_id() {
-                group_manager.room_creation = Some((creator_id, event_id.to_owned()));
-                group_manager.creation_collapsible_list.range.start = item_id;
-                if group_manager.creation_collapsible_list.range.end <= item_id {
-                    group_manager.creation_collapsible_list.range.end = item_id + 1;
-                }
-                return Some((
-                    true,
-                    true,
-                    group_manager.creation_collapsible_list.opened,
-                    group_manager.creation_collapsible_list.range.clone(),
-                ));
+    let item_id = current_item.index;
+    if current_item.transition == SmallStateType::CreateRoom {
+        if let (Some(creator_id), Some(event_id)) = (current_item.sender.clone(), current_item.event_id.clone()) {
+            group_manager.room_creation = Some((creator_id, event_id.to_owned()));
+            group_manager.creation_collapsible_list.range.start = item_id;
+            if group_manager.creation_collapsible_list.range.end <= item_id {
+                group_manager.creation_collapsible_list.range.end = item_id + 1;
             }
+            return Some((
+                true,
+                if previous_item_is_small_state {
+                    CollapsibleButton::None
+                } else if group_manager.creation_collapsible_list.opened {
+                    CollapsibleButton::Expanded
+                } else {
+                    CollapsibleButton::Collapsed
+                }
+            ));
         }
     }
     None
 }
 
 /// Manages room setup events in the creation collapsible list.
-/// Returns Some(result) if this item was processed as part of creation list, None otherwise.
+/// 
+/// Returns an optional tuple containing a boolean flag (whether to display it) nd a collapsible button state.
 fn process_room_setup_events(
-    item_id: usize,
     user_event: &UserEvent,
     group_manager: &mut SmallStateGroupManager,
-) -> Option<(bool, bool, bool, Range<usize>)> {
+) -> Option<(bool, CollapsibleButton)> {
+    let item_id = user_event.index;
     // Check if this is the start of the creation collapsible list
     if item_id == group_manager.creation_collapsible_list.range.start
         && !group_manager.creation_collapsible_list.range.is_empty()
     {
         return Some((
             true,
-            true,
-            group_manager.creation_collapsible_list.opened,
-            group_manager.creation_collapsible_list.range.clone(),
+            if group_manager.creation_collapsible_list.opened {
+                CollapsibleButton::Expanded
+            } else {
+                CollapsibleButton::Collapsed
+            },
         ));
     }
 
     // Handle configure room and joined events in creation list
-    if matches!(user_event.transition, TransitionType::ConfigureRoom | TransitionType::Joined) {
+    if matches!(user_event.transition, SmallStateType::ConfigureRoom | SmallStateType::Joined) {
         if group_manager.creation_collapsible_list.range.is_empty() {
-            return Some((true, false, true, Range::default()));
+            return None;
         }
         
         if group_manager.creation_collapsible_list.range.end == item_id {
             group_manager.creation_collapsible_list.range.end = item_id + 1;
             return Some((
                 group_manager.creation_collapsible_list.opened,
-                false,
-                group_manager.creation_collapsible_list.opened,
-                item_id..item_id + 2, // +2 to include the next item to be redrawn
+                CollapsibleButton::None,
             ));
         }
         
         if group_manager.creation_collapsible_list.range.contains(&item_id) {
             return Some((
                 group_manager.creation_collapsible_list.opened,
-                false,
-                group_manager.creation_collapsible_list.opened,
-                Range::default(),
+                CollapsibleButton::None,
             ));
         }
     }
-    
     None
 }
 
 /// Finds and updates existing small state groups.
-/// Returns Some(result) if item was added to an existing group, None otherwise.
+/// 
+/// Returns an optional tuple containing a boolean flag (whether to display it) nd a collapsible button state.
 fn find_and_update_existing_group(
-    item_id: usize,
-    user_event: UserEvent,
+    user_event: &UserEvent,
     group_manager: &mut SmallStateGroupManager,
-) -> Option<(bool, bool, bool, Range<usize>)> {
-    let _group_keys: Vec<Range<usize>> = group_manager
-        .small_state_groups
-        .iter()
-        .map(|f| f.range.clone())
-        .collect();
-
+    previous_item_is_small_state: bool,
+) -> Option<(bool, CollapsibleButton)> {
+    let item_id = user_event.index;
     // First check for direct matches or containment
     for group in group_manager.small_state_groups.iter_mut() {
         if group.range.start == item_id {
-            append_user_event_to_group(user_event, group);
-            return Some((true, group.range.len() > MIN_GROUP_SIZE_FOR_COLLAPSE, group.opened, Range::default()));
+            append_user_event_to_group(user_event.clone(), group);
+            let collapsible_button = if group.range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE || previous_item_is_small_state {
+                CollapsibleButton::None
+            } else if group.opened {
+                CollapsibleButton::Expanded
+            } else {
+                CollapsibleButton::Collapsed
+            };
+            return Some((true, collapsible_button));
         }
         
         if group.range.contains(&item_id) {
-            append_user_event_to_group(user_event, group);
+            append_user_event_to_group(user_event.clone(), group);
             return Some((
                 group.opened || group.range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE,
-                false,
-                group.opened,
-                Range::default(),
+                CollapsibleButton::None,
             ));
         }
     }
@@ -1126,12 +1039,14 @@ fn find_and_update_existing_group(
                 // Extend this group backwards to include current item
                 let old_end = group.range.end;
                 group.range = item_id..old_end;
-                append_user_event_to_group(user_event, group);
+                append_user_event_to_group(user_event.clone(), group);
                 return Some((
-                    group.opened || group.range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE,
-                    false,
-                    false,
-                    item_id..old_end,
+                    group.opened || group.range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE || !previous_item_is_small_state,
+                    if previous_item_is_small_state {
+                        CollapsibleButton::None
+                    } else {
+                        CollapsibleButton::Collapsed
+                    },
                 ));
             }
         }
@@ -1141,17 +1056,18 @@ fn find_and_update_existing_group(
 }
 
 /// Creates a new group if the next item is also a small state event.
+/// 
 /// Returns Some(result) if a new group was created, None otherwise.
 fn create_new_group_if_needed(
-    item_id: usize,
-    user_event: UserEvent,
+    user_event: &UserEvent,
+    previous_item_is_small_state: bool,
     next_item_is_small_state: bool,
     group_manager: &mut SmallStateGroupManager,
-) -> Option<(bool, bool, bool, Range<usize>)> {
+) -> Option<(bool, CollapsibleButton)> {
     if next_item_is_small_state {
         let mut user_events_map = HashMap::new();
-        append_user_event_to_map(user_event, &mut user_events_map);
-        
+        append_user_event_to_map(user_event.clone(), &mut user_events_map);
+        let item_id = user_event.index;
         let mut new_group = SmallStateGroup {
             range: item_id..(item_id + 2), // Plus 2 to include the next item into the group
             opened: false,
@@ -1163,57 +1079,18 @@ fn create_new_group_if_needed(
         // Pre-compute cache for the new group
         new_group.update_cached_data();
         
-        group_manager.small_state_groups.push(new_group);
-        
-        return Some((false, false, false, item_id..(item_id + 2)));
+        group_manager.small_state_groups.push(new_group.clone());
+        let collapsible_button = if new_group.range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE || previous_item_is_small_state {
+            CollapsibleButton::None
+        } else {
+            CollapsibleButton::Collapsed
+        };
+        return Some((true, collapsible_button));
     }
     None
 }
 
-/// Determines how to render a timeline item based on small state group logic.
-/// This is now a thin wrapper around the TimelineGroupService.
-pub fn determine_item_group_state(
-    item_id: usize,
-    username: String,
-    current_item: &EventTimelineItem,
-    previous_item: Option<&Arc<TimelineItem>>,
-    next_item: Option<&Arc<TimelineItem>>,
-    group_manager: &mut SmallStateGroupManager,
-) -> (bool, bool, bool, Range<usize>) {
-    let result = TimelineGroupService::compute_item_group_state(
-        item_id,
-        username,
-        current_item,
-        previous_item,
-        next_item,
-        group_manager,
-    );
-    
-    (result.show, result.show_collapsible_button, result.expanded, result.to_redraw)
-}
-
-/// New service-based API that returns rich group state information.
-/// This should be preferred over the basic determine_item_group_state function.
-pub fn compute_timeline_item_group_state(
-    item_id: usize,
-    username: String,
-    current_item: &EventTimelineItem,
-    previous_item: Option<&Arc<TimelineItem>>,
-    next_item: Option<&Arc<TimelineItem>>,
-    group_manager: &mut SmallStateGroupManager,
-) -> GroupStateResult {
-    TimelineGroupService::compute_item_group_state(
-        item_id,
-        username,
-        current_item,
-        previous_item,
-        next_item,
-        group_manager,
-    )
-}
-
-/// Handles item_id changes during backward pagination by shifting indices in small state groups
-/// and creation collapsible lists when new items are prepended to the timeline.
+/// Handles item_id changes during backward pagination by shifting indices in small SmallStateGroupManager
 ///
 /// # Arguments
 /// * `old_len` - The length of the timeline before adding new items
@@ -1253,89 +1130,9 @@ pub fn handle_backward_pagination_index_shift(
     }
 }
 
-/// Handles the rendering logic for small state events based on their group state.
-/// This function manages visibility, collapsible button states, and summary text display
-/// for timeline items that are part of collapsible groups.
-///
-/// # Arguments
-/// * `cx` - Makepad context for UI operations
-/// * `item` - The widget reference for the timeline item
-/// * `item_id` - The index of this item in the timeline
-/// * `opened` - Whether this individual item should be rendered (based on group state)
-/// * `show_collapsible_button` - True if this item is the first in a collapsible group
-/// * `expanded` - Current expansion state of the group (for button text)
-/// * `group_manager` - Mutable reference to the small state group manager (for cache updates)
-/// * `room_id` - The room ID for avatar fetching
-pub fn render_small_state_event_group_logic(
-    cx: &mut Cx,
-    item: &WidgetRef,
-    item_id: usize,
-    opened: bool,
-    show_collapsible_button: bool,
-    expanded: bool,
-    group_manager: &mut SmallStateGroupManager,
-    room_id: &matrix_sdk::ruma::RoomId,
-) {
-    // Render logic based on group state
-    if opened {
-        // This item should be visible - set appropriate button text if this is a group leader
-        if show_collapsible_button {
-            // Update button text to show current group state:
-            // ▶ = group is expanded (click to collapse)
-            // ▼ = group is collapsed (click to expand)
-            let button_text = if expanded { "▼" } else { "▶" };
-            item.button(ids!(collapsible_button))
-                .set_text(cx, button_text);
-            if group_manager.room_creation.is_some()
-                && group_manager.creation_collapsible_list.range.start == item_id
-            {
-                let summary_text = format!(
-                    "{} created and configured the room",
-                    group_manager.creation_collapsible_list.username
-                );
-                item.view(ids!(small_state_header)).set_visible(cx, true);
-                
-                // For creation groups, show only the creator's avatar
-                if let Some((creator_id, _)) = &group_manager.room_creation {
-                    let creator_ids = vec![creator_id.clone()];
-                    populate_avatar_row_from_user_ids(cx, item, room_id, &creator_ids);
-                }
-                
-                item.label(ids!(small_state_header.summary_text))
-                    .set_text(cx, &summary_text);
-                item.view(ids!(body)).set_visible(cx, false);
-                return;
-            }
-            // Find the group and use cached data for rendering
-            for group in &mut group_manager.small_state_groups {
-                if group.range.start == item_id {
-                    item.view(ids!(small_state_header)).set_visible(cx, true);
-                    
-                    // Use cached summary text (compute if not cached)
-                    let summary_text = group.get_summary();
-                    item.label(ids!(small_state_header.summary_text))
-                        .set_text(cx, summary_text);
-                    
-                    // Use cached avatar user IDs for lightweight avatar population
-                    let avatar_user_ids = group.get_avatar_user_ids();
-                    populate_avatar_row_from_user_ids(cx, item, room_id, avatar_user_ids);
-                    
-                    item.view(ids!(body)).set_visible(cx, false);
-                    break;
-                }
-            }
-            item.view(ids!(body)).set_visible(cx, expanded);
-        } else {
-            item.view(ids!(small_state_header)).set_visible(cx, false);
-            item.view(ids!(body)).set_visible(cx, true);
-        }
-    } else {
-        item.view(ids!(small_state_header)).set_visible(cx, false);
-        item.view(ids!(body)).set_visible(cx, false);
-    }
-}
 
 /// Handles collapsible button click events for small state event groups.
+/// 
 /// This function manages toggling the open/closed state of groups and updates
 /// the UI accordingly including button text and clearing cached drawn status.
 ///
@@ -1403,5 +1200,117 @@ pub fn handle_collapsible_button_click(
                 return;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use matrix_sdk::ruma::UserId;
+    use ruma::EventId;
+
+    fn create_test_user_event(
+        index: usize,
+        transition_type: SmallStateType,
+        is_previous_small_state: bool,
+        is_next_small_state: bool,
+    ) -> (UserEvent, bool, bool) {
+        let sender = "@alice:example.com";
+        (UserEvent {
+            index,
+            transition: transition_type,
+            display_name: sender.to_string(),
+            state_key: None,
+            event_id: EventId::parse("$bY-3JMD1c4gGBiGVAey0s-NdY_5NPRwYtMoXImd0LaA").ok(),
+            sender: UserId::parse(sender).ok(),
+        }, is_previous_small_state, is_next_small_state)
+    }
+
+    #[test]
+    fn test_compute_group_state() {
+        let mut group_manager = SmallStateGroupManager::default();
+        let user_events = vec![
+            create_test_user_event(5, SmallStateType::Left, true, true),
+            create_test_user_event(4, SmallStateType::Left, true, true),
+            create_test_user_event(3, SmallStateType::Left, true, true), 
+            create_test_user_event(2, SmallStateType::Left, false, true)
+        ];
+        let mut results = HashMap::new();
+        for (user_event, previous_item_is_small_state, next_item_is_small_state)  in user_events.clone() {
+            let result = group_manager.compute_group_state(
+                "Alice".to_string(),
+                &user_event,
+                previous_item_is_small_state, // previous not small state
+                next_item_is_small_state, // next not small state
+            );
+            results.insert(user_event.index, result);
+        }
+        for (user_event, previous_item_is_small_state, next_item_is_small_state)  in user_events.clone() {
+            let result = group_manager.compute_group_state(
+                "Alice".to_string(),
+                &user_event,
+                previous_item_is_small_state, // previous not small state
+                next_item_is_small_state, // next not small state
+            );
+            results.insert(user_event.index, result);
+        }
+        assert!(results.get(&2).unwrap().show);
+        assert!(results.get(&2).unwrap().collapsible_button != CollapsibleButton::None);
+
+    }
+
+    #[test]
+    fn test_compute_group_state_2_items() {
+        let mut group_manager = SmallStateGroupManager::default();
+        let user_events = vec![
+            create_test_user_event(14, SmallStateType::ChangedName, true, false),
+            create_test_user_event(13, SmallStateType::ChangedName, false, true),
+        ];
+        let mut results = HashMap::new();
+        for (user_event, previous_item_is_small_state, next_item_is_small_state)  in user_events.clone() {
+            let result = group_manager.compute_group_state(
+                "Alice".to_string(),
+                &user_event,
+                previous_item_is_small_state, // previous not small state
+                next_item_is_small_state, // next not small state
+            );
+            results.insert(user_event.index, result);
+        }
+        for (user_event, previous_item_is_small_state, next_item_is_small_state)  in user_events.clone() {
+            let result = group_manager.compute_group_state(
+                "Alice".to_string(),
+                &user_event,
+                previous_item_is_small_state, // previous not small state
+                next_item_is_small_state, // next not small state
+            );
+            results.insert(user_event.index, result);
+        }
+        assert!(results.get(&13).unwrap().show);
+        assert!(results.get(&13).unwrap().collapsible_button == CollapsibleButton::None);
+    }
+
+    #[test]
+    fn test_compute_group_state_joined_items_out_creation() {
+        let mut group_manager = SmallStateGroupManager::default();
+        let user_events = vec![
+            create_test_user_event(16, SmallStateType::Joined, true, false),
+            create_test_user_event(15, SmallStateType::Joined, true, true),
+            create_test_user_event(14, SmallStateType::Joined, true, true),
+            create_test_user_event(13, SmallStateType::Joined, false, true),
+            create_test_user_event(3, SmallStateType::Joined, true, false),
+            create_test_user_event(2, SmallStateType::CreateRoom, false, true),
+        ];
+        let mut results = HashMap::new();
+        for (user_event, previous_item_is_small_state, next_item_is_small_state)  in user_events.clone() {
+            let result = group_manager.compute_group_state(
+                "Alice".to_string(),
+                &user_event,
+                previous_item_is_small_state, // previous not small state
+                next_item_is_small_state, // next not small state
+            );
+            results.insert(user_event.index, result);
+        }
+        assert!(results.get(&13).unwrap().show);
+        assert!(results.get(&13).unwrap().collapsible_button != CollapsibleButton::None);
     }
 }

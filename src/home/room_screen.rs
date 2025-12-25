@@ -26,7 +26,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, small_state_group_manager::{handle_backward_pagination_index_shift, handle_collapsible_button_click, render_small_state_event_group_logic, SmallStateGroupManager, determine_item_group_state}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, small_state_group_manager::{CollapsibleButton, SmallStateGroupManager, handle_backward_pagination_index_shift, handle_collapsible_button_click}, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -1007,7 +1007,6 @@ impl Widget for RoomScreen {
                                     poll_state,
                                     item_drawn_status,
                                     &mut tl_state.group_manager,
-                                    &mut tl_state.content_drawn_since_last_update,
                                 ),
                                 MsgLikeKind::Redacted => populate_small_state_event(
                                     cx,
@@ -1019,7 +1018,6 @@ impl Widget for RoomScreen {
                                     &RedactedMessageEventMarker,
                                     item_drawn_status,
                                     &mut tl_state.group_manager,
-                                    &mut tl_state.content_drawn_since_last_update,
                                 ),
                                 MsgLikeKind::UnableToDecrypt(utd) => populate_small_state_event(
                                     cx,
@@ -1031,7 +1029,6 @@ impl Widget for RoomScreen {
                                     utd,
                                     item_drawn_status,
                                     &mut tl_state.group_manager,
-                                    &mut tl_state.content_drawn_since_last_update,
                                 ),
                                 MsgLikeKind::Other(other) => populate_small_state_event(
                                     cx,
@@ -1043,7 +1040,6 @@ impl Widget for RoomScreen {
                                     other,
                                     item_drawn_status,
                                     &mut tl_state.group_manager,
-                                    &mut tl_state.content_drawn_since_last_update,
                                 ),
                             },
                             TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
@@ -1056,7 +1052,6 @@ impl Widget for RoomScreen {
                                 membership_change,
                                 item_drawn_status,
                                 &mut tl_state.group_manager,
-                                &mut tl_state.content_drawn_since_last_update,
                             ),
                             TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
                                 cx,
@@ -1068,7 +1063,6 @@ impl Widget for RoomScreen {
                                 profile_change,
                                 item_drawn_status,
                                 &mut tl_state.group_manager,
-                                &mut tl_state.content_drawn_since_last_update,
                             ),
                             TimelineItemContent::OtherState(other) => populate_small_state_event(
                                 cx,
@@ -1080,7 +1074,6 @@ impl Widget for RoomScreen {
                                 other,
                                 item_drawn_status,
                                 &mut tl_state.group_manager,
-                                &mut tl_state.content_drawn_since_last_update,
                             ),
                             unhandled => {
                                 let item = list.item(cx, item_id, id!(SmallStateEvent));
@@ -3269,6 +3262,7 @@ fn populate_message_view(
                 .show_with_state(cx, tsp_sign_state);
         }
     }
+
     (item, new_drawn_status)
 }
 
@@ -3967,7 +3961,6 @@ fn populate_small_state_event(
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
     group_manager: &mut SmallStateGroupManager,
-    content_drawn_since_last_update: &mut RangeSet<usize>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let prev_event = item_id.checked_sub(1).and_then(|i| tl_items.get(i));
     let next_event = item_id.checked_add(1).and_then(|i| tl_items.get(i));
@@ -4011,18 +4004,22 @@ fn populate_small_state_event(
     // - show: whether this individual item should be rendered (based on group state)
     // - show_collapsible_button: true if this item is the first in a collapsible group
     // - expanded: current expansion state of the group (for button text)
-    let (show, show_collapsible_button, expanded, to_redraw) = determine_item_group_state(
-        item_id,
+    let user_event = crate::home::small_state_group_manager::convert_event_tl_item_to_user_event(event_tl_item, item_id);
+    let is_previous_small_state = crate::home::small_state_group_manager::is_small_state(prev_event);
+    let is_next_small_state = crate::home::small_state_group_manager::is_small_state(next_event);
+
+    let result = group_manager.compute_group_state(
         username.clone(),
-        event_tl_item,
-        prev_event,
-        next_event,
-        group_manager,
+        &user_event,
+        is_previous_small_state,
+        is_next_small_state,
     );
+
+    let (show, collapsible_button) = (result.show, result.collapsible_button);
     // Only show the collapsible button on the first item of each group
     item.button(ids!(collapsible_button))
-        .set_visible(cx, show_collapsible_button);
-    let (item, mut new_drawn_status) = event_content.populate_item_content(
+        .set_visible(cx, collapsible_button != CollapsibleButton::None);
+    let (item, new_drawn_status) = event_content.populate_item_content(
         cx,
         list,
         item_id,
@@ -4033,24 +4030,15 @@ fn populate_small_state_event(
         new_drawn_status,
     );
     // Handle rendering logic for group state using centralized function
-    render_small_state_event_group_logic(
+    group_manager.render_collapsible_button_and_body(
         cx,
         &item,
         item_id,
         show,
-        show_collapsible_button,
-        expanded,
-        group_manager,
+        collapsible_button,
         room_id,
     );
-    
-    // Handle redraw logic for group changes
-    if !to_redraw.is_empty() && to_redraw.end > to_redraw.start {
-        content_drawn_since_last_update.remove(to_redraw.clone());
-        if to_redraw.contains(&item_id) {
-            new_drawn_status.content_drawn = false; // Force redraw if part of a group that changed
-        }
-    }
+
     (item, new_drawn_status)
 }
 
