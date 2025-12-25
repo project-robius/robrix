@@ -1218,7 +1218,7 @@ mod tests {
             transition: transition_type,
             display_name: sender.to_string(),
             state_key: None,
-            event_id: EventId::parse("$bY-3JMD1c4gGBiGVAey0s-ndY_5NPRwYtMoXImd0LaA").ok(),
+            event_id: EventId::parse("$bY-3JMD1c4gGBiGVAey0s-nv_5NPRwYtMoXImd0LaA").ok(),
             sender: UserId::parse(sender).ok(),
         }, is_previous_small_state, is_next_small_state)
     }
