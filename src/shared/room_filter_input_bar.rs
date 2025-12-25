@@ -105,6 +105,13 @@ impl WidgetMatchEvent for RoomFilterInputBar {
 
         // Handle user changing the input text
         if let Some(keywords) = input.changed(actions) {
+            // Trim whitespace, and only alloc a new string if it was trimmed.
+            let keywords_trimmed = keywords.trim();
+            let keywords = if keywords_trimmed.len() < keywords.len() {
+                keywords_trimmed.to_string()
+            } else {
+                keywords
+            };
             clear_button.set_visible(cx, !keywords.is_empty());
             clear_button.reset_hover(cx);
             cx.widget_action(

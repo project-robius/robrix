@@ -29,7 +29,6 @@ pub mod shared;
 mod event_preview;
 pub mod room;
 
-
 /// All content related to TSP (Trust Spanning Protocol) wallets/identities.
 #[cfg(feature = "tsp")]
 pub mod tsp;

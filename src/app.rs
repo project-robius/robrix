@@ -19,14 +19,13 @@ use crate::{
     persistence,
     profile::user_profile_cache::clear_user_profile_cache,
     room::BasicRoomDetails,
-    shared::callout_tooltip::{
+    shared::{callout_tooltip::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    },
-    sliding_sync::current_user_id,
-    utils::RoomNameId,
-    verification::VerificationAction,
-    verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt},
+    }, image_viewer::{ImageViewerAction, LoadState}}, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+        VerificationModalAction,
+        VerificationModalWidgetRefExt,
+    }
 };
 
 live_design! {
@@ -43,6 +42,7 @@ live_design! {
     use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
+    use crate::shared::image_viewer::ImageViewer;
     use link::tsp_link::TspVerificationModal;
 
 
@@ -99,6 +99,12 @@ live_design! {
                             login_screen = <LoginScreen> {}
                         }
 
+                        image_viewer_modal = <Modal> {
+                            content: {
+                                width: Fill, height: Fill,
+                                image_viewer_modal_inner = <ImageViewer> {}
+                            }
+                        }
                         <PopupList> {}
                         
                         // Context menus should be shown in front of other UI elements,
@@ -401,7 +407,17 @@ impl MatchEvent for App {
                 self.ui.modal(ids!(verification_modal)).close(cx);
                 continue;
             }
-
+            match action.downcast_ref() {
+                Some(ImageViewerAction::Show(LoadState::Loading(_, _))) => {
+                    self.ui.modal(ids!(image_viewer_modal)).open(cx);
+                    continue;
+                }
+                Some(ImageViewerAction::Hide) => {
+                    self.ui.modal(ids!(image_viewer_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
             // Handle actions to open/close the TSP verification modal.
             #[cfg(feature = "tsp")] {
                 use std::ops::Deref;

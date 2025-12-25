@@ -8,7 +8,7 @@ use std::mem::discriminant;
 use makepad_widgets::*;
 use matrix_sdk_ui::sync_service::State;
 
-use crate::{home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, shared::popup_list::{PopupItem, PopupKind, enqueue_popup_notification}};
+use crate::{home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, shared::{image_viewer::{ImageViewerAction, ImageViewerError, LoadState}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}}};
 
 live_design! {
     use link::theme::*;
@@ -119,6 +119,8 @@ impl Widget for RoomsListHeader {
                                 auto_dismissal_duration: None,
                                 kind: PopupKind::Error,
                             });
+                            // Since there is no timeout for fetching media, send an action to ImageViewer when syncing is offline.
+                            cx.action(ImageViewerAction::Show(LoadState::Error(ImageViewerError::Offline)));
                         }
                         self.sync_state = new_state.clone();
                         self.redraw(cx);

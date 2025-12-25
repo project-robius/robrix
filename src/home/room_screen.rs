@@ -7,37 +7,36 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    room::RoomMember, RoomDisplayName, ruma::{
-        events::{
+    OwnedServerName, RoomDisplayName, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
+        EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId, events::{
             receipt::Receipt,
             room::{
-                message::{
+                ImageInfo, MediaSource, message::{
                     AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
-                },
-                ImageInfo, MediaSource
+                }
             },
             sticker::{StickerEventContent, StickerMediaSource},
-        },
-        matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
-    }, OwnedServerName
+        }, matrix_uri::MatrixId, uint
+    }
 };
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::RoomsListRef, small_state_group_manager::{CollapsibleButton, SmallStateGroupManager, handle_backward_pagination_index_shift, handle_collapsible_button_click}, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
     room::{room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
+use crate::home::small_state_group_manager;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::shared::mentionable_text_input::MentionableTextInputAction;
 
@@ -207,7 +206,7 @@ live_design! {
                 height: Fit
                 flow: Down,
                 padding: 0.0
-                <View> {
+                username_view = <View> {
                     flow: Right,
                     width: Fill,
                     height: Fit,
@@ -601,7 +600,7 @@ impl Widget for RoomScreen {
         // we want to handle those before processing any updates that might change
         // the set of timeline indices (which would invalidate the index values in any actions).
         if let Event::Actions(actions) = event {
-            for (item_id, wr) in portal_list.items_with_actions(actions) {
+            for (index, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(ids!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
                     widget_rect,
@@ -665,14 +664,24 @@ impl Widget for RoomScreen {
                         TooltipAction::HoverOut
                     );
                 }
-
+                let content_message = wr.text_or_image(ids!(content.message));
+                if let TextOrImageAction::Clicked(mxc_uri) = actions.find_widget_action(content_message.widget_uid()).cast() {
+                    let texture = content_message.get_texture(cx);
+                    self.handle_image_click(
+                        cx,
+                        mxc_uri,
+                        texture,
+                        index,
+                    );
+                    continue;
+                }
                 // Handle collapsible button click in SmallStateEvent
                 if wr.button(ids!(collapsible_button)).clicked(actions) {
                     if let Some(tl_state) = &mut self.tl_state {
-                        handle_collapsible_button_click(
+                        small_state_group_manager::handle_collapsible_button_click(
                             cx,
                             &wr,
-                            item_id,
+                            index,
                             &portal_list,
                             &mut tl_state.group_manager,
                             &mut tl_state.content_drawn_since_last_update,
@@ -1287,7 +1296,7 @@ impl RoomScreen {
                         let old_len = tl.items.len();
                         let new_len = new_items.len();
                         let shift = new_len.saturating_sub(old_len) as i32;
-                        handle_backward_pagination_index_shift(
+                        small_state_group_manager::handle_backward_pagination_index_shift(
                             shift,
                             &mut tl.group_manager,
                         );
@@ -1395,8 +1404,12 @@ impl RoomScreen {
                     // Store room members directly in TimelineUiState
                     tl.room_members = Some(Arc::new(members));
                 },
-                TimelineUpdate::MediaFetched => {
+                TimelineUpdate::MediaFetched(request) => {
                     log!("process_timeline_updates(): media fetched for room {}", tl.room_id);
+                    // Set Image to image viewer modal if the media is not a thumbnail.
+                    if let (MediaFormat::File, media_source) = (request.format, request.source) {
+                        populate_matrix_image_modal(cx, media_source, &mut tl.media_cache);
+                    }
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
@@ -1463,6 +1476,7 @@ impl RoomScreen {
                         .update_tombstone_footer(cx, &tl.room_id, Some(&successor_room_details));
                     tl.tombstone_info = Some(successor_room_details);
                 }
+                TimelineUpdate::LinkPreviewFetched => {}
             }
         }
 
@@ -1609,6 +1623,39 @@ impl RoomScreen {
             false
         }
     }
+
+    /// Handles image clicks in message content by opening the image viewer.
+    fn handle_image_click(
+        &mut self,
+        cx: &mut Cx,
+        mxc_uri: Option<MediaSource>,
+        texture: Option<Texture>,
+        item_id: usize,
+    ) {
+        let Some(media_source) = mxc_uri else {
+            return;
+        };
+        let Some(tl_state) = self.tl_state.as_mut() else { return };
+        let Some(event_tl_item) = tl_state.items.get(item_id).and_then(|item| item.as_event()) else { return };
+
+        let timestamp_millis = event_tl_item.timestamp();
+        let (image_name, image_file_size) = get_image_name_and_filesize(event_tl_item);
+        cx.action(ImageViewerAction::Show(LoadState::Loading(
+            texture.clone(),
+            Some(ImageViewerMetaData {
+                image_name,
+                image_file_size,
+                timestamp: unix_time_millis_to_datetime(timestamp_millis),
+                avatar_parameter: Some((
+                    tl_state.room_id.clone(),
+                    event_tl_item.clone(),
+                )),
+            }),
+        )));
+
+        populate_matrix_image_modal(cx, media_source, &mut tl_state.media_cache);
+    }
+
 
     /// Handles any [`MessageAction`]s received by this RoomScreen.
     fn handle_message_actions(
@@ -2059,7 +2106,7 @@ impl RoomScreen {
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
                 tombstone_info,
-                group_manager: SmallStateGroupManager::default(),
+                group_manager: small_state_group_manager::SmallStateGroupManager::default(),
             };
             (tl_state, true)
         };
@@ -2476,9 +2523,9 @@ pub enum TimelineUpdate {
     RoomMembersListFetched {
         members: Vec<RoomMember>,
     },
-    /// A notice that one or more requested media items (images, videos, etc.)
+    /// A notice with an option of Media Request Parameters that one or more requested media items (images, videos, etc.)
     /// that should be displayed in this timeline have now been fetched and are available.
-    MediaFetched,
+    MediaFetched(MediaRequestParameters),
     /// A notice that one or more members of a this room are currently typing.
     TypingUsers {
         /// The list of users (their displayable name) who are currently typing in this room.
@@ -2499,6 +2546,8 @@ pub enum TimelineUpdate {
     /// A notice that the given room has been tombstoned (closed)
     /// and replaced by the given successor room.
     Tombstoned(SuccessorRoomDetails),
+    /// A notice that link preview data for a URL has been fetched and is now available.
+    LinkPreviewFetched,
 }
 
 thread_local! {
@@ -2616,7 +2665,7 @@ struct TimelineUiState {
     tombstone_info: Option<SuccessorRoomDetails>,
     
     /// Manager for small state groups, room creation info, and creation collapsible list.
-    group_manager: SmallStateGroupManager,
+    group_manager: small_state_group_manager::SmallStateGroupManager,
 }
 
 #[derive(Default, Debug)]
@@ -3351,7 +3400,7 @@ fn populate_image_message_content(
     let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
-                let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri)),|cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
@@ -3367,7 +3416,7 @@ fn populate_image_message_content(
             (MediaCacheEntry::Requested, _media_format) => {
                 // If the image is being fetched, we try to show its blurhash.
                 if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
-                    let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                    let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri)), |cx, img| {
                         let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else {
                             return Err(image_cache::ImageError::EmptyData)
                         };
@@ -3411,7 +3460,7 @@ fn populate_image_message_content(
                 }
                 fully_drawn = false;
             }
-            (MediaCacheEntry::Failed, _media_format) => {
+            (MediaCacheEntry::Failed(_status_code), _media_format) => {
                 if text_or_image_ref.view(ids!(default_image_view)).visible() {
                     fully_drawn = true;
                     return;
@@ -3960,7 +4009,7 @@ fn populate_small_state_event(
     tl_items: &Vector<Arc<TimelineItem>>,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
-    group_manager: &mut SmallStateGroupManager,
+    group_manager: &mut small_state_group_manager::SmallStateGroupManager,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let prev_event = item_id.checked_sub(1).and_then(|i| tl_items.get(i));
     let next_event = item_id.checked_add(1).and_then(|i| tl_items.get(i));
@@ -4004,9 +4053,9 @@ fn populate_small_state_event(
     // - show: whether this individual item should be rendered (based on group state)
     // - show_collapsible_button: true if this item is the first in a collapsible group
     // - expanded: current expansion state of the group (for button text)
-    let user_event = crate::home::small_state_group_manager::convert_event_tl_item_to_user_event(event_tl_item, item_id);
-    let is_previous_small_state = crate::home::small_state_group_manager::is_small_state(prev_event);
-    let is_next_small_state = crate::home::small_state_group_manager::is_small_state(next_event);
+    let user_event = small_state_group_manager::convert_event_tl_item_to_user_event(event_tl_item, item_id);
+    let is_previous_small_state = small_state_group_manager::is_small_state(prev_event);
+    let is_next_small_state = small_state_group_manager::is_small_state(next_event);
 
     let result = group_manager.compute_group_state(
         username.clone(),
@@ -4018,7 +4067,7 @@ fn populate_small_state_event(
     let (show, collapsible_button) = (result.show, result.collapsible_button);
     // Only show the collapsible button on the first item of each group
     item.button(ids!(collapsible_button))
-        .set_visible(cx, collapsible_button != CollapsibleButton::None);
+        .set_visible(cx, collapsible_button != small_state_group_manager::CollapsibleButton::None);
     let (item, new_drawn_status) = event_content.populate_item_content(
         cx,
         list,

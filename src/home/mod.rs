@@ -25,6 +25,7 @@ pub mod welcome_screen;
 pub mod event_reaction_list;
 pub mod new_message_context_menu;
 pub mod link_preview;
+pub mod room_image_viewer;
 
 pub fn live_design(cx: &mut Cx) {
     search_messages::live_design(cx);
