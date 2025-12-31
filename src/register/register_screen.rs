@@ -699,8 +699,11 @@ impl MatchEvent for RegisterScreen {
                 if *was_internal {
                     self.view.modal(ids!(status_modal)).close(cx);
                 }
-                // Reset appropriate button based on registration type
-                if !self.sso_pending {
+                if self.sso_pending {
+                    // SSO flow canceled/dismissed - re-enable SSO button so user can retry
+                    self.sso_pending = false;
+                    self.update_button_mask(&sso_button, cx, 0.0);
+                } else {
                     // Password registration - reset register button
                     self.reset_modal_state(cx);
                 }

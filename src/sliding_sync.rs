@@ -96,9 +96,9 @@ impl From<LoginByPassword> for Cli {
     }
 }
 
-fn next_supported_uia_stage(uiaa_info: &UiaaInfo, have_registration_token: bool) -> Option<AuthType> {
-    fn is_stage_supported(stage: &AuthType, have_registration_token: bool) -> bool {
-        matches!(stage, AuthType::Dummy) || (have_registration_token && matches!(stage, AuthType::RegistrationToken))
+fn next_supported_uia_stage(uiaa_info: &UiaaInfo) -> Option<AuthType> {
+    fn is_stage_supported(stage: &AuthType) -> bool {
+        matches!(stage, AuthType::Dummy | AuthType::RegistrationToken)
     }
 
     fn stage_completed(uiaa_info: &UiaaInfo, stage: &AuthType) -> bool {
@@ -106,7 +106,7 @@ fn next_supported_uia_stage(uiaa_info: &UiaaInfo, have_registration_token: bool)
     }
 
     for flow in &uiaa_info.flows {
-        if flow.stages.iter().all(|stage| is_stage_supported(stage, have_registration_token)) {
+        if flow.stages.iter().all(is_stage_supported) {
             for stage in &flow.stages {
                 if !stage_completed(uiaa_info, stage) {
                     return Some(stage.clone());
@@ -290,7 +290,7 @@ async fn register_user(register_request: RegisterRequest) -> Result<(Client, Cli
             // Check if it's a UIA error that we can handle
             if let Some(mut uiaa_info) = e.as_uiaa_response().cloned() {
                 loop {
-                    let Some(next_stage) = next_supported_uia_stage(&uiaa_info, sanitized_registration_token.is_some()) else {
+                    let Some(next_stage) = next_supported_uia_stage(&uiaa_info) else {
                         bail!("This server requires verification steps that are not yet supported. Please use the web client to register.");
                     };
 
