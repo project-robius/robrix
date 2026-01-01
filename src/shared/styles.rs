@@ -108,6 +108,7 @@ live_design! {
     pub COLOR_SELECT_TEXT = #A6CDFE
 
     pub COLOR_PRIMARY = #ffffff
+    pub COLOR_PRIMARY_50_TRANSPARENT = #ffffff80
     pub COLOR_PRIMARY_DARKER = #fefefe
     pub COLOR_SECONDARY = #E3E3E3
 
