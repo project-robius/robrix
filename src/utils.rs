@@ -669,9 +669,14 @@ pub struct RoomNameId {
 }
 
 impl RoomNameId {
-    /// Create a new RoomName with the given display name and room ID.
+    /// Create a new `RoomNameId` with the given display name and room ID.
     pub fn new(display_name: RoomDisplayName, room_id: OwnedRoomId) -> Self {
         Self { display_name, room_id }
+    }
+
+    /// Creates a new `RoomNameId` with an empty display name.
+    pub fn empty(room_id: OwnedRoomId) -> Self {
+        Self::new(RoomDisplayName::Empty, room_id)
     }
 
     /// Get a reference to the underlying display name.
@@ -686,7 +691,7 @@ impl RoomNameId {
         &self.room_id
     }
 
-    /// Check if the display name is Empty (not EmptyWas or other variants).
+    /// Returns `true` if the display name is `Empty` only (not `EmptyWas` or other).
     #[inline]
     pub fn is_empty(&self) -> bool {
         matches!(self.display_name, RoomDisplayName::Empty)
@@ -709,7 +714,7 @@ impl RoomNameId {
     }
 
     /// Convert into the inner display name and room ID.
-    pub fn into_parts(self) -> (RoomDisplayName, OwnedRoomId) {
+    pub fn into_inner(self) -> (RoomDisplayName, OwnedRoomId) {
         (self.display_name, self.room_id)
     }
 }

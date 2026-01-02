@@ -340,7 +340,7 @@ impl MatchEvent for App {
                 // we can now navigate to it and optionally close a previous room.
                 Some(AppStateAction::RoomLoadedSuccessfully(room_name_id)) if
                     self.waiting_to_navigate_to_joined_room.as_ref()
-                        .is_some_and(|(dr, _)| dr.room_name_id.room_id() == room_name_id.room_id()) =>
+                        .is_some_and(|(dr, _)| dr.room_id() == room_name_id.room_id()) =>
                 {
                     log!("Joined awaited room {room_name_id:?}, navigating to it now...");
                     if let Some((dest_room, room_to_close)) = self.waiting_to_navigate_to_joined_room.take() {
@@ -570,7 +570,7 @@ impl App {
         });
 
         // If the successor room is not loaded, show a join modal.
-        let destination_room_id = destination_room.room_name_id.room_id();
+        let destination_room_id = destination_room.room_id();
         if !cx.get_global::<RoomsListRef>().is_room_loaded(destination_room_id) {
             log!("Destination room {} not loaded, showing join modal...", destination_room_id);
             self.waiting_to_navigate_to_joined_room = Some((
@@ -584,15 +584,14 @@ impl App {
             return;
         }
 
-        log!(
-            "Navigating to destination room {} ({}), closing room {room_to_close:?}",
-            destination_room_id,
-            destination_room.room_name_id
+        log!("Navigating to destination room {:?}, closing room {:?}",
+            destination_room.room_name_id(),
+            room_to_close,
         );
 
         // Select and scroll to the destination room in the rooms list.
         let new_selected_room = SelectedRoom::JoinedRoom {
-            room_name_id: destination_room.room_name_id.clone(),
+            room_name_id: destination_room.room_name_id().clone(),
         };
         enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room_id.clone()));
         cx.widget_action(
