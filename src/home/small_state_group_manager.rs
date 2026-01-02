@@ -3,11 +3,12 @@ use matrix_sdk::ruma::{OwnedEventId, OwnedUserId, UserId};
 use matrix_sdk_ui::timeline::{
     AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, MsgLikeContent, MsgLikeKind, TimelineItem, TimelineItemContent, TimelineItemKind
 };
-use rangemap::RangeSet;
+use rangemap::{RangeMap, RangeSet};
 use std::{collections::HashMap, ops::Range, sync::Arc};
 use indexmap::IndexMap;
 
 use crate::home::room_read_receipt::{AvatarRowWidgetRefExt, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT};
+use imbl::Vector;
 
 // Minimum number of sequential small state events to collapse 
 const MIN_GROUP_SIZE_FOR_COLLAPSE: usize = 3;
@@ -26,44 +27,59 @@ live_design! {
         height: Fit
         visible: false
         padding: { left: 7.0, top: 2.0, bottom: 2.0 }
-        flow: Right,
-        align: { y: 0.5 }
-        spacing: 7.0
+        flow: Down,
+        spacing: 4.0
 
-        user_event_avatar_row = <AvatarRow> {
-            margin: { left: 10.0 },
-        }
-        
-        summary_text = <Label> {
-            width: Fill, height: Fit
-            flow: RightWrap,
-            padding: 0,
-            draw_text: {
-                wrap: Word,
-                text_style: <THEME_FONT_REGULAR>{
-                    font_size: (SMALL_STATE_FONT_SIZE),
-                },
-                color: (SMALL_STATE_TEXT_COLOR)
+        // Main content row with avatar and summary text
+        content_row = <View> {
+            width: Fill,
+            height: Fit
+            flow: Right,
+            align: { y: 0.5 }
+            spacing: 7.0
+            
+            user_event_avatar_row = <AvatarRow> {
+                margin: { left: 10.0 },
+            }
+            
+            summary_text = <Label> {
+                width: Fill, height: Fit
+                flow: RightWrap,
+                padding: 0,
+                draw_text: {
+                    wrap: Word,
+                    text_style: <THEME_FONT_REGULAR>{
+                        font_size: (SMALL_STATE_FONT_SIZE),
+                    },
+                    color: (SMALL_STATE_TEXT_COLOR)
+                }
             }
         }
 
-        // Collapsible button for small state event groups
-        // Shows on the first item of each group to toggle expansion
-        // Text is dynamically updated: ▶ (collapsed) or ▼ (expanded)
-        collapsible_button = <Button> {
-            width: Fit,
-            height: Fit,
-            margin: { left: 5, right: 5 }
-            padding: { left: 4, right: 4, top: 2, bottom: 2 }
-            text: "▼"  // Default to collapsed state
-            draw_text: {
-                text_style: <SMALL_STATE_TEXT_STYLE> {},
-                color: #666
-            }
-            draw_bg: {
-                fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    return sdf.result
+        // Collapsible button for small state event groups, styled like link previews
+        // Shows below the content for better visibility and consistency
+        collapsible_button_container = <View> {
+            width: Fill, height: Fit,
+            flow: Right,
+            align: {x: 0.5, y: 0.5},
+            padding: {top: 4},
+            visible: false,
+            
+            collapsible_button = <Button> {
+                width: Fit, height: Fit,
+                padding: {top: 2, bottom: 2, left: 8, right: 8},
+                draw_text: {
+                    text_style: <THEME_FONT_REGULAR> {
+                        font_size: 10.0,
+                    },
+                    color: #666666,
+                }
+                text: "▼ Show more events"
+                draw_bg: {
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        return sdf.result
+                    }
                 }
             }
         }
@@ -78,7 +94,7 @@ live_design! {
 ///
 /// The group is identified by a range of timeline item indices, and contains a mapping
 /// of user events within that range for generating summaries.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SmallStateGroup {
     /// The range of timeline item indices that belong to this group.
     ///
@@ -117,12 +133,99 @@ pub struct SmallStateGroupManager {
     pub room_creation: Option<(OwnedUserId, OwnedEventId)>,
     /// Creation collapsible list state
     pub creation_collapsible_list: CreationCollapsibleList,
-    /// List of small state groups
-    pub small_state_groups: Vec<SmallStateGroup>,
+    /// Map of small state groups by their start index for efficient lookup
+    pub small_state_groups: RangeMap<usize, SmallStateGroup>,
 }
 
 impl SmallStateGroupManager {
+    /// Analyzes a complete range of timeline items and creates/updates groups accordingly.
+    /// This replaces the incremental approach with a complete analysis of adjacent small state events.
+    /// 
+    /// # Arguments
+    /// * `timeline_items` - The complete timeline items vector
+    /// * `changed_indices` - The range of indices that have been updated and need re-analysis
+    /// * `clear_cache` - Whether to clear all existing groups and rebuild from scratch
+    pub fn analyze_and_update_groups(
+        &mut self,
+        timeline_items: &Vector<Arc<TimelineItem>>,
+        changed_indices: Range<usize>,
+        clear_cache: bool,
+    ) {
+        if clear_cache {
+            // Clear all existing groups and rebuild from scratch
+            self.small_state_groups.clear();
+            
+            // Analyze the entire timeline to find all small state ranges
+            let mut i = 0;
+            while i < timeline_items.len() {
+                if let Some(range) = find_complete_small_state_range(timeline_items, i) {
+                    self.create_group_from_range(timeline_items, &range);
+                    i = range.end; // Skip to the end of this range
+                } else {
+                    i += 1;
+                }
+            }
+        } else {
+            // Only re-analyze the changed indices
+            // First, remove any existing groups that intersect with the changed range
+            let intersecting_ranges: Vec<Range<usize>> = self.small_state_groups
+                .overlapping(&changed_indices)
+                .map(|(range, _)| range.clone())
+                .collect();
+            
+            for range in intersecting_ranges {
+                self.small_state_groups.remove(range);
+            }
+            
+            // Now re-analyze the changed range to create new groups
+            let mut i = changed_indices.start;
+            while i < changed_indices.end.min(timeline_items.len()) {
+                if let Some(range) = find_complete_small_state_range(timeline_items, i) {
+                    self.create_group_from_range(timeline_items, &range);
+                    i = range.end; // Skip to the end of this range
+                } else {
+                    i += 1;
+                }
+            }
+        }
+    }
+    
+    /// Creates a new group from a complete range of timeline items.
+    fn create_group_from_range(
+        &mut self,
+        timeline_items: &Vector<Arc<TimelineItem>>,
+        range: &Range<usize>,
+    ) {
+        let mut user_events_map = HashMap::new();
+        
+        // Process all items in the range to build the user events map
+        for index in range.clone() {
+            if let Some(timeline_item) = timeline_items.get(index) {
+                if let TimelineItemKind::Event(event_tl_item) = timeline_item.kind() {
+                    let user_event = convert_event_tl_item_to_user_event(event_tl_item, index);
+                    append_user_event_to_map(user_event, &mut user_events_map);
+                }
+            }
+        }
+        
+        if !user_events_map.is_empty() {
+            let mut new_group = SmallStateGroup {
+                range: range.clone(),
+                opened: false, // Default to collapsed
+                user_events_map,
+                cached_summary: None,
+                cached_avatar_user_ids: None,
+            };
+            
+            // Pre-compute cache for the new group
+            new_group.update_cached_data();
+            
+            self.small_state_groups.insert(range.clone(), new_group);
+        }
+    }
+    
     /// Analyzes a timeline item and determines its grouping behavior.
+    /// This now uses the pre-computed groups from analyze_and_update_groups().
     /// 
     /// Returns computed group state result without performing UI operations.
     pub fn compute_group_state(
@@ -130,17 +233,10 @@ impl SmallStateGroupManager {
         username: String,
         current_item: &UserEvent,
         previous_item_is_small_state: bool,
-        next_item_is_small_state: bool,
+        _next_item_is_small_state: bool,
     ) -> GroupStateResult {
-        if !previous_item_is_small_state && !next_item_is_small_state {
-            return GroupStateResult {
-                show: true,
-                collapsible_button: CollapsibleButton::None,
-                summary_text: None,
-                avatar_user_ids: None,
-            };
-        }
-
+        let item_id = current_item.index;
+        
         // Handle room creation events as a special case
         if let Some((show, collapsible_button)) = process_room_creation_event(
             current_item, previous_item_is_small_state, self
@@ -167,7 +263,7 @@ impl SmallStateGroupManager {
             };
         }
 
-        // Set username for creation collapsible list and create user event
+        // Set username for creation collapsible list
         self.creation_collapsible_list.username = username.clone();
 
         // Handle creation collapsible list logic
@@ -181,45 +277,52 @@ impl SmallStateGroupManager {
                 avatar_user_ids: None,
             };
         }
-
-        // Try to find and update existing groups
-        if let Some((show, collapsible_button)) = find_and_update_existing_group(
-            current_item, self, previous_item_is_small_state
-        ) {
-            // Get cached data for the group if it's the start of a group
-            let (summary_text, avatar_user_ids) = if collapsible_button != CollapsibleButton::None {
-                // Find the group and get its cached data
-                if let Some(group) = self.small_state_groups.iter_mut().find(|g| g.range.start == current_item.index) {
-                    let summary = Some(group.get_summary().to_string());
-                    let avatars = Some(group.get_avatar_user_ids().to_vec());
-                    (summary, avatars)
+        
+        // Check if this item is the start of a pre-computed group
+        if let Some((range, group)) = self.small_state_groups.get_key_value(&item_id) {
+            if range.start == item_id {
+                let collapsible_button = if group.range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE || previous_item_is_small_state {
+                    CollapsibleButton::None
+                } else if group.opened {
+                    CollapsibleButton::Expanded
                 } else {
-                    (None, None)
-                }
-            } else {
-                (None, None)
-            };
-            
-            return GroupStateResult {
-                show,
-                collapsible_button,
-                summary_text,
-                avatar_user_ids,
-            };
+                    CollapsibleButton::Collapsed
+                };
+                
+                let summary_text = if collapsible_button != CollapsibleButton::None {
+                    group.cached_summary.clone()
+                } else {
+                    None
+                };
+                
+                let avatar_user_ids = if collapsible_button != CollapsibleButton::None {
+                    group.cached_avatar_user_ids.clone()
+                } else {
+                    None
+                };
+                
+                return GroupStateResult {
+                    show: true,
+                    collapsible_button,
+                    summary_text,
+                    avatar_user_ids,
+                };
+            }
         }
-
-        // Create new group if needed
-        if let Some((show, collapsible_button)) = create_new_group_if_needed(
-        current_item, previous_item_is_small_state,next_item_is_small_state, self
-        ) {
-            return GroupStateResult {
-                show,
-                collapsible_button,
-                summary_text: None,
-                avatar_user_ids: None,
-            };
+        
+        // Check if this item is contained within a pre-computed group
+        for (_start_idx, group) in self.small_state_groups.iter() {
+            if group.range.contains(&item_id) {
+                return GroupStateResult {
+                    show: group.opened || group.range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE,
+                    collapsible_button: CollapsibleButton::None,
+                    summary_text: None,
+                    avatar_user_ids: None,
+                };
+            }
         }
-        // Default return - collapsed state, no collapsible button
+        
+        // Default: show the item with no grouping
         GroupStateResult {
             show: true,
             collapsible_button: CollapsibleButton::None,
@@ -252,12 +355,19 @@ impl SmallStateGroupManager {
         if opened {
             // This item should be visible - set appropriate button text if this is a group leader
             if collapsible_button != CollapsibleButton::None {
-                // Update button text to show current group state:
-                // ▶ = group is expanded (click to collapse)
-                // ▼ = group is collapsed (click to expand)
-                let button_text = if collapsible_button == CollapsibleButton::Expanded { "▼" } else { "▶" };
-                item.button(ids!(collapsible_button))
-                    .set_text(cx, button_text);
+                // Update button text to show current group state following link preview pattern
+                // Find the group that contains this item to get the event count
+                if let Some((_range, group)) = self.small_state_groups.get_key_value(&item_id) {
+                    let event_count = group.range.len();
+                    let button_text = if collapsible_button == CollapsibleButton::Expanded {
+                        "▲ Show fewer events".to_string()
+                    } else {
+                        format!("▼ Show {} more events", event_count - 1)
+                    };
+                    item.view(ids!(small_state_header.collapsible_button_container)).set_visible(cx, true);
+                    item.button(ids!(small_state_header.collapsible_button_container.collapsible_button))
+                        .set_text(cx, &button_text);
+                }
                 if self.room_creation.is_some()
                     && self.creation_collapsible_list.range.start == item_id
                 {
@@ -269,31 +379,46 @@ impl SmallStateGroupManager {
                     
                     // For creation groups, show only the creator's avatar
                     if let Some((creator_id, _)) = &self.room_creation {
-                        let creator_ids = vec![creator_id.clone()];
-                        populate_avatar_row_from_user_ids(cx, item, room_id, &creator_ids);
+                        let receipts_map: IndexMap<OwnedUserId, matrix_sdk::ruma::events::receipt::Receipt> = vec![
+                            (creator_id.clone(), matrix_sdk::ruma::events::receipt::Receipt::new(
+                                matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now()
+                            ))
+                        ].into_iter().collect();
+                        
+                        item.avatar_row(ids!(small_state_header.content_row.user_event_avatar_row))
+                            .set_avatar_row(cx, room_id, None, &receipts_map);
                     }
                     
-                    item.label(ids!(small_state_header.summary_text))
+                    item.label(ids!(small_state_header.content_row.summary_text))
                         .set_text(cx, &summary_text);
                     item.view(ids!(body)).set_visible(cx, false);
                     return;
                 }
                 // Find the group and use cached data for rendering
-                for group in &mut self.small_state_groups {
-                    if group.range.start == item_id {
+                if let Some((range, group)) = self.small_state_groups.get_key_value(&item_id) {
+                    if range.start == item_id {
                         item.view(ids!(small_state_header)).set_visible(cx, true);
                         
-                        // Use cached summary text (compute if not cached)
-                        let summary_text = group.get_summary();
-                        item.label(ids!(small_state_header.summary_text))
-                            .set_text(cx, summary_text);
+                        // Use cached summary text
+                        if let Some(summary_text) = &group.cached_summary {
+                            item.label(ids!(small_state_header.content_row.summary_text))
+                                .set_text(cx, summary_text);
+                        }
                         
                         // Use cached avatar user IDs for lightweight avatar population
-                        let avatar_user_ids = group.get_avatar_user_ids();
-                        populate_avatar_row_from_user_ids(cx, item, room_id, avatar_user_ids);
+                        if let Some(avatar_user_ids) = &group.cached_avatar_user_ids {
+                            item.avatar_row(ids!(small_state_header.content_row.user_event_avatar_row))
+                                .set_avatar_row(cx, room_id, None, &IndexMap::from_iter(
+                                    avatar_user_ids.iter().map(|user_id| {
+                                        let receipt = matrix_sdk::ruma::events::receipt::Receipt::new(
+                                            matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now()
+                                        );
+                                        (user_id.clone(), receipt)
+                                    })
+                                ));
+                        }
                         
                         item.view(ids!(body)).set_visible(cx, false);
-                        break;
                     }
                 }
                 item.view(ids!(body)).set_visible(cx, collapsible_button == CollapsibleButton::Expanded);
@@ -403,7 +528,7 @@ impl From<&TimelineItemContent> for SmallStateType {
 }
 
 /// Condensed version of a `EventTimelineItem`, used for generating summaries.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UserEvent {
     /// The transition type
     pub transition: SmallStateType,
@@ -763,16 +888,6 @@ fn append_user_event_to_map(
     }
 }
 
-/// Appends a user event to a group and invalidates its cache.
-fn append_user_event_to_group(
-    user_event: UserEvent,
-    group: &mut SmallStateGroup,
-) {
-    append_user_event_to_map(user_event, &mut group.user_events_map);
-    // Invalidate cache since the group has been modified
-    group.cached_summary = None;
-    group.cached_avatar_user_ids = None;
-}
 
 /// Checks if a timeline item represents a small state change (membership change, profile change, poll, redacted, or unable to decrypt).
 ///
@@ -793,6 +908,55 @@ pub fn is_small_state(timeline_item: Option<&Arc<TimelineItem>>) -> bool {
                 MsgLikeKind::Redacted | MsgLikeKind::UnableToDecrypt(_), .. }))
         })
         .unwrap_or(false)
+}
+
+/// Finds the complete range of adjacent small state events that should be grouped together.
+/// This function looks backward and forward from the given index to find all consecutive
+/// small state events that can form a single group.
+/// 
+/// # Arguments
+/// * `timeline_items` - The timeline items vector
+/// * `starting_index` - The index to start searching from
+/// 
+/// # Returns
+/// * `Option<Range<usize>>` - The complete range of indices that should be grouped, or None if no group should be created
+pub fn find_complete_small_state_range(
+    timeline_items: &Vector<Arc<TimelineItem>>,
+    starting_index: usize,
+) -> Option<Range<usize>> {
+    // First check if the starting item is a small state event
+    if !is_small_state(timeline_items.get(starting_index)) {
+        return None;
+    }
+    
+    // Find the start of the range by going backwards
+    let mut range_start = starting_index;
+    while range_start > 0 {
+        if is_small_state(timeline_items.get(range_start - 1)) {
+            range_start -= 1;
+        } else {
+            break;
+        }
+    }
+    
+    // Find the end of the range by going forwards
+    let mut range_end = starting_index + 1;
+    while range_end < timeline_items.len() {
+        if is_small_state(timeline_items.get(range_end)) {
+            range_end += 1;
+        } else {
+            break;
+        }
+    }
+    
+    let range = range_start..range_end;
+    
+    // Only return a range if it contains enough items to warrant grouping
+    if range.len() >= MIN_GROUP_SIZE_FOR_COLLAPSE {
+        Some(range)
+    } else {
+        None
+    }
 }
 
 
@@ -881,26 +1045,6 @@ fn extract_avatar_user_ids(
         .collect()
 }
 
-/// Populates the avatar row with user avatars from pre-computed user IDs.
-fn populate_avatar_row_from_user_ids(
-    cx: &mut Cx,
-    avatar_row: &WidgetRef,
-    room_id: &matrix_sdk::ruma::RoomId,
-    user_ids: &[OwnedUserId],
-) {
-    // Reuse read receipts logic to populate the avatar row.
-    let receipts_map: IndexMap<OwnedUserId, matrix_sdk::ruma::events::receipt::Receipt> = user_ids
-        .iter()
-        .map(|user_id| {
-            let receipt = matrix_sdk::ruma::events::receipt::Receipt::new(
-                matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now()
-            );
-            (user_id.clone(), receipt)
-        })
-        .collect();
-    
-    avatar_row.avatar_row(ids!(user_event_avatar_row)).set_avatar_row(cx, room_id, None, &receipts_map);
-}
 
 /// Processes room creation events for special grouping treatment.
 /// 
@@ -982,139 +1126,44 @@ fn process_room_setup_events(
     None
 }
 
-/// Finds and updates existing small state groups.
-/// 
-/// Returns an optional tuple containing a boolean flag (whether to display it) and a collapsible button state.
-fn find_and_update_existing_group(
-    user_event: &UserEvent,
-    group_manager: &mut SmallStateGroupManager,
-    previous_item_is_small_state: bool,
-) -> Option<(bool, CollapsibleButton)> {
-    let item_id = user_event.index;
-    // First check for direct matches or containment
-    for group in group_manager.small_state_groups.iter_mut() {
-        if group.range.start == item_id {
-            append_user_event_to_group(user_event.clone(), group);
-            let collapsible_button = if group.range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE || previous_item_is_small_state {
-                CollapsibleButton::None
-            } else if group.opened {
-                CollapsibleButton::Expanded
-            } else {
-                CollapsibleButton::Collapsed
-            };
-            return Some((true, collapsible_button));
-        }
-        
-        if group.range.contains(&item_id) {
-            append_user_event_to_group(user_event.clone(), group);
-            return Some((
-                group.opened || group.range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE,
-                CollapsibleButton::None,
-            ));
-        }
-    }
-    
-    // Check for backward extension (need separate loop to avoid borrow conflicts)
-    let group_ranges: Vec<Range<usize>> = group_manager
-        .small_state_groups
-        .iter()
-        .map(|g| g.range.clone())
-        .collect();
-    
-    for (idx, group) in group_manager.small_state_groups.iter_mut().enumerate() {
-        if group.range.start == item_id + 1 {
-            // Check if item_id is already covered by another group
-            let mut conflict = false;
-            for (other_idx, other_range) in group_ranges.iter().enumerate() {
-                if other_idx != idx && other_range.contains(&item_id) {
-                    conflict = true;
-                    break;
-                }
-            }
-            
-            if !conflict {
-                // Extend this group backwards to include current item
-                let old_end = group.range.end;
-                group.range = item_id..old_end;
-                append_user_event_to_group(user_event.clone(), group);
-                return Some((
-                    group.opened || group.range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE || !previous_item_is_small_state,
-                    if previous_item_is_small_state {
-                        CollapsibleButton::None
-                    } else {
-                        CollapsibleButton::Collapsed
-                    },
-                ));
-            }
-        }
-    }
-    
-    None
-}
-
-/// Creates a new group if the next item is also a small state event.
-/// 
-/// Returns Some(result) if a new group was created, None otherwise.
-fn create_new_group_if_needed(
-    user_event: &UserEvent,
-    previous_item_is_small_state: bool,
-    next_item_is_small_state: bool,
-    group_manager: &mut SmallStateGroupManager,
-) -> Option<(bool, CollapsibleButton)> {
-    if next_item_is_small_state {
-        let mut user_events_map = HashMap::new();
-        append_user_event_to_map(user_event.clone(), &mut user_events_map);
-        let item_id = user_event.index;
-        let mut new_group = SmallStateGroup {
-            range: item_id..(item_id + 2), // Plus 2 to include the next item into the group
-            opened: false,
-            user_events_map,
-            cached_summary: None,
-            cached_avatar_user_ids: None,
-        };
-        
-        // Pre-compute cache for the new group
-        new_group.update_cached_data();
-        
-        group_manager.small_state_groups.push(new_group.clone());
-        let collapsible_button = if new_group.range.len() <= MIN_GROUP_SIZE_FOR_COLLAPSE || previous_item_is_small_state {
-            CollapsibleButton::None
-        } else {
-            CollapsibleButton::Collapsed
-        };
-        return Some((true, collapsible_button));
-    }
-    None
-}
 
 /// Handles item_id changes during backward pagination by shifting indices in small SmallStateGroupManager
 ///
 /// # Arguments
-/// * `old_len` - The length of the timeline before adding new items
-/// * `new_len` - The length of the timeline after adding new items  
+/// * `shift` - The amount to shift indices by (positive for forward shift, negative for backward)
 /// * `group_manager` - Mutable reference to the small state group manager to update
 pub fn handle_backward_pagination_index_shift(
     shift: i32,
     group_manager: &mut SmallStateGroupManager,
 ) {
-    // Apply the shift to the small_state_groups
-    for SmallStateGroup {
-        range,
-        user_events_map,
-        opened: _,
-        ..
-    } in &mut group_manager.small_state_groups
-    {
-        let new_start = (range.start as i32 + shift).max(0) as usize;
-        let new_end = (range.end as i32 + shift).max(0) as usize;
-        *range = new_start..new_end;
-
+    // Collect all existing groups to avoid borrow checker issues
+    let old_groups: Vec<(Range<usize>, SmallStateGroup)> = group_manager
+        .small_state_groups
+        .iter()
+        .map(|(range, group)| (range.clone(), group.clone()))
+        .collect();
+    
+    // Clear the existing range map
+    group_manager.small_state_groups.clear();
+    
+    // Re-insert groups with shifted indices
+    for (old_range, mut group) in old_groups {
+        let new_start = (old_range.start as i32 + shift).max(0) as usize;
+        let new_end = (old_range.end as i32 + shift).max(0) as usize;
+        let new_range = new_start..new_end;
+        
+        // Update the group's internal range
+        group.range = new_range.clone();
+        
         // Update the user events map indices
-        for user_events in user_events_map.values_mut() {
+        for user_events in group.user_events_map.values_mut() {
             for user_event in user_events.iter_mut() {
                 user_event.index = (user_event.index as i32 + shift).max(0) as usize;
             }
         }
+        
+        // Insert the updated group
+        group_manager.small_state_groups.insert(new_range, group);
     }
 
     // Apply the shift to the creation collapsible list
@@ -1163,11 +1212,13 @@ pub fn handle_collapsible_button_click(
         content_drawn_since_last_update.remove(to_redraw.clone());
         profile_drawn_since_last_update.remove(to_redraw);
         
-        // Update button text to reflect new state:
-        // ▼ (down arrow) = expanded/open - items are visible
-        // ▶(right arrow) = collapsed/closed - items are hidden
-        let button_text = if *open { "▼" } else { "▶" };
-        wr.button(ids!(collapsible_button)).set_text(cx, button_text);
+        // Update button text to reflect new state following link preview pattern
+        let button_text = if *open { 
+            "▲ Show fewer events".to_string()
+        } else { 
+            format!("▼ Show {} more events", range.len() - 1)
+        };
+        wr.button(ids!(small_state_header.collapsible_button_container.collapsible_button)).set_text(cx, button_text.as_str());
         // If the last item is a group of small state events, scroll to the end when it is expanded.
         if group_manager.creation_collapsible_list.range.end == items_len && *open {
             portal_list.smooth_scroll_to_end(cx, 90.0, None);
@@ -1176,26 +1227,38 @@ pub fn handle_collapsible_button_click(
     }
 
     if !is_creation_group {
-        for SmallStateGroup { range, opened, .. } in &mut group_manager.small_state_groups {
-            if range.start == item_id {
-                // Toggle the group's open/closed state
-                *opened = !*opened;
-                // Force redraw of all items in this group by clearing their cached drawn status
-                let range_to_remove = range.clone(); // Only clone when actually needed
-                content_drawn_since_last_update.remove(range_to_remove.clone());
-                profile_drawn_since_last_update.remove(range_to_remove);
+        // Find the group that starts at item_id
+        let group_to_update = group_manager.small_state_groups
+            .iter()
+            .find(|(range, _)| range.start == item_id)
+            .map(|(range, group)| (range.clone(), group.clone()));
+        
+        if let Some((range, mut group)) = group_to_update {
+            // Remove the old group
+            group_manager.small_state_groups.remove(range.clone());
+            
+            // Toggle the group's open/closed state
+            group.opened = !group.opened;
+            
+            // Force redraw of all items in this group by clearing their cached drawn status
+            content_drawn_since_last_update.remove(range.clone());
+            profile_drawn_since_last_update.remove(range.clone());
 
-                // Update button text to reflect new state:
-                // ▼ (down arrow) = expanded/open - items are visible
-                // ▶ (right arrow) = collapsed/closed - items are hidden
-                let button_text = if *opened { "▼" } else { "▶" };
-                wr.button(ids!(collapsible_button)).set_text(cx, button_text);
-                // If the last item is a group of small state events, scroll to the end when it is expanded.
-                if range.end == items_len && *opened {
-                    portal_list.smooth_scroll_to_end(cx, 90.0, None);
-                }
-                return;
+            // Update button text to reflect new state following link preview pattern
+            let button_text = if group.opened { 
+                "▲ Show fewer events".to_string()
+            } else { 
+                format!("▼ Show {} more events", range.len() - 1)
+            };
+            wr.button(ids!(small_state_header.collapsible_button_container.collapsible_button)).set_text(cx, button_text.as_str());
+            
+            // If the last item is a group of small state events, scroll to the end when it is expanded.
+            if range.end == items_len && group.opened {
+                portal_list.smooth_scroll_to_end(cx, 90.0, None);
             }
+            
+            // Re-insert the updated group
+            group_manager.small_state_groups.insert(range, group);
         }
     }
 }
@@ -1226,34 +1289,48 @@ mod tests {
     #[test]
     fn test_compute_group_state() {
         let mut group_manager = SmallStateGroupManager::default();
+        
+        // Test the group state computation with a manually created group
         let user_events = vec![
-            create_test_user_event(5, SmallStateType::Left, true, true),
-            create_test_user_event(4, SmallStateType::Left, true, true),
-            create_test_user_event(3, SmallStateType::Left, true, true), 
-            create_test_user_event(2, SmallStateType::Left, false, true)
+            create_test_user_event(5, SmallStateType::Left, true, false), // Last item in group
+            create_test_user_event(4, SmallStateType::Left, true, true),  // Middle item
+            create_test_user_event(3, SmallStateType::Left, true, true),  // Middle item 
+            create_test_user_event(2, SmallStateType::Left, false, true)  // First item in group
         ];
+        
+        // Manually create a group for testing
+        let range = 2..6;
+        let mut user_events_map = HashMap::new();
+        for (user_event, _, _) in &user_events {
+            append_user_event_to_map(user_event.clone(), &mut user_events_map);
+        }
+        let mut new_group = SmallStateGroup {
+            range: range.clone(),
+            opened: false,
+            user_events_map,
+            cached_summary: None,
+            cached_avatar_user_ids: None,
+        };
+        new_group.update_cached_data();
+        group_manager.small_state_groups.insert(range, new_group);
+        
         let mut results = HashMap::new();
-        for (user_event, previous_item_is_small_state, next_item_is_small_state)  in user_events.clone() {
+        for (user_event, previous_item_is_small_state, next_item_is_small_state) in user_events {
             let result = group_manager.compute_group_state(
                 "Alice".to_string(),
                 &user_event,
-                previous_item_is_small_state, // previous not small state
-                next_item_is_small_state, // next not small state
+                previous_item_is_small_state,
+                next_item_is_small_state,
             );
             results.insert(user_event.index, result);
         }
-        for (user_event, previous_item_is_small_state, next_item_is_small_state)  in user_events.clone() {
-            let result = group_manager.compute_group_state(
-                "Alice".to_string(),
-                &user_event,
-                previous_item_is_small_state, // previous not small state
-                next_item_is_small_state, // next not small state
-            );
-            results.insert(user_event.index, result);
-        }
+        
+        // The first item (index 2) should show with a collapsible button since it's the start of the group
         assert!(results.get(&2).unwrap().show);
         assert!(results.get(&2).unwrap().collapsible_button != CollapsibleButton::None);
-
+        
+        // Other items should not show when the group is collapsed
+        assert!(!results.get(&3).unwrap().show);
     }
 
     #[test]
@@ -1263,50 +1340,67 @@ mod tests {
             create_test_user_event(14, SmallStateType::ChangedName, true, false),
             create_test_user_event(13, SmallStateType::ChangedName, false, true),
         ];
+        
+        // With only 2 items, no group should be created since MIN_GROUP_SIZE_FOR_COLLAPSE is 3
+        // So the items should show individually without collapsible buttons
         let mut results = HashMap::new();
-        for (user_event, previous_item_is_small_state, next_item_is_small_state)  in user_events.clone() {
+        for (user_event, previous_item_is_small_state, next_item_is_small_state) in user_events {
             let result = group_manager.compute_group_state(
                 "Alice".to_string(),
                 &user_event,
-                previous_item_is_small_state, // previous not small state
-                next_item_is_small_state, // next not small state
+                previous_item_is_small_state,
+                next_item_is_small_state,
             );
             results.insert(user_event.index, result);
         }
-        for (user_event, previous_item_is_small_state, next_item_is_small_state)  in user_events.clone() {
-            let result = group_manager.compute_group_state(
-                "Alice".to_string(),
-                &user_event,
-                previous_item_is_small_state, // previous not small state
-                next_item_is_small_state, // next not small state
-            );
-            results.insert(user_event.index, result);
-        }
+        
+        // Both items should show without collapsible buttons since the group is too small
         assert!(results.get(&13).unwrap().show);
         assert!(results.get(&13).unwrap().collapsible_button == CollapsibleButton::None);
+        assert!(results.get(&14).unwrap().show);
+        assert!(results.get(&14).unwrap().collapsible_button == CollapsibleButton::None);
     }
 
     #[test]
     fn test_compute_group_state_joined_items_out_creation() {
         let mut group_manager = SmallStateGroupManager::default();
+        
+        // Create a group of joined events (indices 13-16) that should be grouped
+        let range = 13..17;
         let user_events = vec![
             create_test_user_event(16, SmallStateType::Joined, true, false),
             create_test_user_event(15, SmallStateType::Joined, true, true),
             create_test_user_event(14, SmallStateType::Joined, true, true),
             create_test_user_event(13, SmallStateType::Joined, false, true),
-            create_test_user_event(3, SmallStateType::Joined, true, false),
-            create_test_user_event(2, SmallStateType::CreateRoom, false, true),
         ];
+        
+        // Manually create a group for testing
+        let mut user_events_map = HashMap::new();
+        for (user_event, _, _) in &user_events {
+            append_user_event_to_map(user_event.clone(), &mut user_events_map);
+        }
+        let mut new_group = SmallStateGroup {
+            range: range.clone(),
+            opened: false,
+            user_events_map,
+            cached_summary: None,
+            cached_avatar_user_ids: None,
+        };
+        new_group.update_cached_data();
+        group_manager.small_state_groups.insert(range, new_group);
+        
         let mut results = HashMap::new();
-        for (user_event, previous_item_is_small_state, next_item_is_small_state)  in user_events.clone() {
+        for (user_event, previous_item_is_small_state, next_item_is_small_state) in user_events {
             let result = group_manager.compute_group_state(
                 "Alice".to_string(),
                 &user_event,
-                previous_item_is_small_state, // previous not small state
-                next_item_is_small_state, // next not small state
+                previous_item_is_small_state,
+                next_item_is_small_state,
             );
             results.insert(user_event.index, result);
         }
+        
+        // The first item (index 13) should show with a collapsible button
         assert!(results.get(&13).unwrap().show);
         assert!(results.get(&13).unwrap().collapsible_button != CollapsibleButton::None);
     }

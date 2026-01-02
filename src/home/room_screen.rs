@@ -1291,8 +1291,9 @@ impl RoomScreen {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
                     }
-                    // Handles item_id changes whenever there is a backward pagination.  
-                    if !is_append {
+                    // Handle index changes and group updates based on the update type
+                    if clear_cache {
+                        // Clear cache indicates all indices changed (typically back pagination)
                         let old_len = tl.items.len();
                         let new_len = new_items.len();
                         let shift = new_len.saturating_sub(old_len) as i32;
@@ -1301,7 +1302,15 @@ impl RoomScreen {
                             &mut tl.group_manager,
                         );
                     }
+                    
                     tl.items = new_items;
+                    
+                    // Update small state groups based on changed indices
+                    tl.group_manager.analyze_and_update_groups(
+                        &tl.items,
+                        changed_indices.clone(),
+                        clear_cache,
+                    );
                     done_loading = true;
                 }
                 TimelineUpdate::NewUnreadMessagesCount(unread_messages_count) => {
@@ -4066,7 +4075,7 @@ fn populate_small_state_event(
 
     let (show, collapsible_button) = (result.show, result.collapsible_button);
     // Only show the collapsible button on the first item of each group
-    item.button(ids!(collapsible_button))
+    item.view(ids!(small_state_header.collapsible_button_container))
         .set_visible(cx, collapsible_button != small_state_group_manager::CollapsibleButton::None);
     let (item, new_drawn_status) = event_content.populate_item_content(
         cx,
