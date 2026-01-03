@@ -185,6 +185,7 @@ impl JoinLeaveModalKind {
 
 /// Actions handled by the parent widget of the [`JoinLeaveRoomModal`].
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum JoinLeaveRoomModalAction {
     /// The modal should be opened by its parent widget.
     Open {

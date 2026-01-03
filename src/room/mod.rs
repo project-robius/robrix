@@ -59,7 +59,7 @@ impl BasicRoomDetails {
             Self::RoomId(room_name_id)
             | Self::Name(room_name_id)
             | Self::NameAndAvatar { room_name_id, ..} => room_name_id.room_id(),
-            Self::FetchedRoomPreview(frp) => &frp.room_name_id.room_id(),
+            Self::FetchedRoomPreview(frp) => frp.room_name_id.room_id(),
         }
     }
 
@@ -82,7 +82,7 @@ impl BasicRoomDetails {
         match self {
             Self::RoomId(_)
             | Self::Name(_) => &EMPTY_AVATAR,
-            Self::NameAndAvatar { room_avatar, ..} => &room_avatar,
+            Self::NameAndAvatar { room_avatar, ..} => room_avatar,
             Self::FetchedRoomPreview(frp) => &frp.room_avatar,
         }
     }
@@ -133,7 +133,7 @@ impl FetchedRoomPreview {
     pub fn from(room_preview: RoomPreview, room_avatar: FetchedRoomAvatar) -> Self {
         let display_name = room_preview.name.map_or(
             RoomDisplayName::Empty,
-            |name| RoomDisplayName::Named(name),
+            RoomDisplayName::Named,
         );
         Self {
             room_name_id: RoomNameId::new(display_name, room_preview.room_id),
