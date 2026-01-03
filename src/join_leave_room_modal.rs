@@ -157,7 +157,6 @@ pub enum JoinLeaveModalKind {
     /// The user wants to reject an invite to a room.
     RejectInvite(InviteDetails),
     /// The user wants to join a room that they have not joined yet.
-    #[allow(unused)]
     JoinRoom(BasicRoomDetails),
     /// The user wants to leave an already-joined room.
     #[allow(unused)]
@@ -166,19 +165,29 @@ pub enum JoinLeaveModalKind {
 impl JoinLeaveModalKind {
     pub fn room_id(&self) -> &OwnedRoomId {
         match self {
-            JoinLeaveModalKind::AcceptInvite(invite) => invite.room_id(),
-            JoinLeaveModalKind::RejectInvite(invite) => invite.room_id(),
-            JoinLeaveModalKind::JoinRoom(details)    => details.room_id(),
-            JoinLeaveModalKind::LeaveRoom(details)   => details.room_id(),
+            JoinLeaveModalKind::AcceptInvite(invite)
+            | JoinLeaveModalKind::RejectInvite(invite) => invite.room_id(),
+            JoinLeaveModalKind::JoinRoom(details)
+            |JoinLeaveModalKind::LeaveRoom(details) => details.room_id(),
         }
     }
 
     pub fn room_name(&self) -> &RoomNameId {
         match self {
-            JoinLeaveModalKind::AcceptInvite(invite) => invite.room_name_id(),
-            JoinLeaveModalKind::RejectInvite(invite) => invite.room_name_id(),
-            JoinLeaveModalKind::JoinRoom(details)    => details.room_name_id(),
-            JoinLeaveModalKind::LeaveRoom(details)   => details.room_name_id(),
+            JoinLeaveModalKind::AcceptInvite(invite)
+            | JoinLeaveModalKind::RejectInvite(invite) => invite.room_name_id(),
+            JoinLeaveModalKind::JoinRoom(details)
+            | JoinLeaveModalKind::LeaveRoom(details)   => details.room_name_id(),
+        }
+    }
+
+    #[allow(unused)] // remove when we use it in navigate_to_room
+    pub fn basic_room_details(&self) -> &BasicRoomDetails {
+        match self {
+            JoinLeaveModalKind::AcceptInvite(invite)
+            | JoinLeaveModalKind::RejectInvite(invite) => &invite.room_info,
+            JoinLeaveModalKind::JoinRoom(details)
+            | JoinLeaveModalKind::LeaveRoom(details) => details,
         }
     }
 }
@@ -415,6 +424,8 @@ impl JoinLeaveRoomModal {
         self.final_success = None;
     }
 
+    /// Populates this modal with the proper info based on 
+    /// the given `kind of join or leave action.
     fn set_kind(
         &mut self,
         cx: &mut Cx,
@@ -500,8 +511,7 @@ impl JoinLeaveRoomModalRef {
         kind: JoinLeaveModalKind,
         show_tip: bool,
     ) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.set_kind(cx, kind, show_tip);
-        }
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_kind(cx, kind, show_tip);
     }
 }
