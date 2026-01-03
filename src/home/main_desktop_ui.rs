@@ -424,7 +424,7 @@ impl WidgetMatchEvent for MainDesktopUI {
             }
 
             // Handle actions emitted by the dock within the MainDesktopUI
-            match widget_action.cast() { // TODO: don't we need to call `widget_uid_eq(dock.widget_uid())` here?
+            match widget_action.cast() {
                 // Whenever a tab (except for the home_tab) is pressed, notify the app state.
                 DockAction::TabWasPressed(tab_id) => {
                     if tab_id == id!(home_tab) {

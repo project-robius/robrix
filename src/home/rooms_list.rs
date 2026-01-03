@@ -309,7 +309,7 @@ pub struct InvitedRoomInfo {
     pub inviter_info: Option<InviterInfo>,
     /// The timestamp and Html text content of the latest message in this room.
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
-    /// The state of this how this invite is being handled by the client backend
+    /// The state of how this invite is being handled by the client backend
     /// and what should be shown in the UI.
     ///
     /// We maintain this state here instead of in the `InviteScreen`
@@ -1372,6 +1372,19 @@ impl RoomsListRef {
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
         let Some(inner) = self.borrow() else { return false; };
         inner.is_room_loaded(room_id)
+    }
+
+    /// Returns the name of the given room, if it is known and loaded.
+    pub fn get_room_name(&self, room_id: &OwnedRoomId) -> Option<RoomNameId> {
+        let inner = self.borrow()?;
+        inner.all_joined_rooms
+            .get(room_id)
+            .map(|jr| jr.room_name_id.clone())
+            .or_else(||
+                inner.invited_rooms.borrow()
+                    .get(room_id)
+                    .map(|ir| ir.room_name_id.clone())
+            )
     }
 
     /// Returns the currently-selected space (the one selected in the SpacesBar).

@@ -2745,10 +2745,7 @@ async fn fetch_room_preview_with_avatar(
         // The successor room did not have an avatar URL
         avatar_from_room_name(room_preview.name.as_deref())
     };
-    Ok(FetchedRoomPreview {
-        room_preview,
-        room_avatar,
-    })
+    Ok(FetchedRoomPreview::from(room_preview, room_avatar))
 }
 
 

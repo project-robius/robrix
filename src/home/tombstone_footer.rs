@@ -120,7 +120,14 @@ impl Widget for TombstoneFooter {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
             if self.view.button(ids!(join_successor_button)).clicked(actions) {
-                self.navigate_to_successor_room(cx, scope);
+                let Some(destination_room) = self.successor_info.clone() else {
+                    error!("BUG: cannot navigate to replacement room: no successor room information.");
+                    return;
+                };
+                cx.action(AppStateAction::NavigateToRoom {
+                    room_to_close: self.room_id.clone(),
+                    destination_room,
+                });
             }
         }
         self.view.handle_event(cx, event, scope);
@@ -189,38 +196,22 @@ impl TombstoneFooter {
                                 cx,
                                 None,
                                 None,
-                                room_preview.name.as_deref().unwrap_or("?"),
+                                room_preview.room_name_id.name_for_avatar().as_deref().unwrap_or("?"),
                             );
                         }
                     }
                 }
-                match room_preview.name.as_deref() {
+                match room_preview.room_name_id.name_for_avatar().as_deref() {
                     Some(n) => successor_room_name.set_text(cx, n),
-                    _ => successor_room_name.set_text(cx, &format!("Unnamed Room, ID: {}", room_preview.room_id)),
+                    _ => successor_room_name.set_text(cx, &format!("Unnamed Room, ID: {}", room_preview.room_name_id.room_id())),
                 }
-                self.successor_info = Some(room_preview.into());
+                self.successor_info = Some(room_preview.clone().into());
             }
         }
 
         join_successor_button.reset_hover(cx);
         self.room_id = Some(tombstoned_room_id.clone());
         self.set_visible(cx, true);
-    }
-
-    /// Navigate to the successor room or show join room modal if not loaded.
-    ///
-    /// If the successor room is not loaded, show a join room modal. Otherwise,
-    /// close the tombstone room and show the successor room in the room list.
-    fn navigate_to_successor_room(&mut self, cx: &mut Cx, _scope: &mut Scope) {
-        let Some(destination_room) = self.successor_info.clone() else {
-            error!("BUG: cannot navigate to replacement room: no successor room information.");
-            return;
-        };
-
-        cx.action(AppStateAction::NavigateToRoom {
-            room_to_close: self.room_id.clone(),
-            destination_room,
-        });
     }
 
     /// Hides the tombstone footer and clears any successor room information.
