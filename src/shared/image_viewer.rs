@@ -41,8 +41,6 @@ pub fn get_png_or_jpg_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageEr
 pub struct ImageViewerZoomConfig {
     /// Minimum zoom level (default: 0.5)
     pub min_zoom: f32,
-    /// Maximum zoom level (default: 4.0)
-    pub max_zoom: f32,
     /// Zoom scale factor for zoom in/out operations (default: 1.2)
     pub zoom_scale_factor: f32,
     /// Pan sensitivity multiplier for drag operations (default: 2.0)
@@ -53,7 +51,6 @@ impl Default for ImageViewerZoomConfig {
     fn default() -> Self {
         Self {
             min_zoom: 0.5,
-            max_zoom: 4.0,
             zoom_scale_factor: 1.2,
             pan_sensitivity: 2.0,
         }
@@ -118,11 +115,12 @@ live_design! {
 
         magnifying_glass_button = <RobrixIconButton> {
             width: Fit, height: Fit,
+            align: {x: 1.0, y: 0.0},
             spacing: 0,
-            margin: 8,
-            padding: 3
+            margin: {top: 4.5} // vertically align with the title
+            padding: 7, // Ensure the height is the same as the Close button. Height of Close button is 15 * 2 + 14 = 44.
             draw_bg: {
-                color: (COLOR_PRIMARY)
+                color: (COLOR_SECONDARY)
             }
             draw_icon: {
                 svg_file: (ICON_ZOOM),
@@ -147,12 +145,14 @@ live_design! {
         }
     }
     pub RotationButton = <RobrixIconButton> {
-        width: Fit, height: Fit,
-        margin: 8,
-        padding: 3
-        align: {x: 0.5, y: 0.5}
+        width: Fit,
+        height: Fit,
+        align: {x: 1.0, y: 0.0},
+        spacing: 0,
+        margin: {top: 4.5} // vertically align with the title
+        padding: 7,
         draw_bg: {
-            color: (COLOR_PRIMARY)
+            color: (COLOR_SECONDARY)
         }
         draw_icon: {
             svg_file: (ICON_ROTATE_CW),
@@ -160,14 +160,14 @@ live_design! {
                 return #x0;
             }
         }
-        icon_walk: {width: 30, height: 30, margin: {right: -10} }
+        icon_walk: {width: 30, height: 30, }
     }
     pub ImageViewer = {{ImageViewer}} {
         width: Fill, height: Fill,
         flow: Overlay
         show_bg: true
         draw_bg: {
-            color: (COLOR_PRIMARY)
+            color: (COLOR_PRIMARY_50_TRANSPARENT)
         }
 
         image_layer = <View> {
@@ -175,65 +175,14 @@ live_design! {
             align: {x: 0.5, y: 0.5}
             show_bg: true
             draw_bg: {
-                color: (COLOR_PRIMARY)
+                color: (COLOR_PRIMARY_50_TRANSPARENT)
             }
             flow: Down
-            
-            header = <View> {
-                width: Fill, height: 50
-                flow: Right
-                align: {x: 1.0, y: 0.5},
-    
-                zoom_button_minus = <MagnifyingGlass> {
-                    sign_label = <View> {
-                        width: Fill, height: Fill,
-                        align: { x: 0.4, y: 0.35 }
-
-                        magnifying_glass_sign = <Label> {
-                            text: "-",
-                            draw_text: {
-                                text_style: <THEME_FONT_BOLD>{font_size: 15},
-                                color: #000000
-                            }
-                        }
-                    }
-                }
-
-                zoom_button_plus = <MagnifyingGlass> { }
-
-                rotation_button_anti_clockwise = <RotationButton> {
-                    draw_icon: {
-                        svg_file: (ICON_ROTATE_CCW),
-                        fn get_color(self) -> vec4 {
-                            return #x0;
-                        }
-                    }
-                }
-
-                rotation_button_clockwise = <RotationButton> { }
-
-                close_button = <RobrixIconButton> {
-                    width: Fit, height: Fit,
-                    spacing: 0,
-                    padding: 5
-                    draw_bg: {
-                        color: (COLOR_PRIMARY)
-                    }
-                    draw_icon: {
-                        svg_file: (ICON_CLOSE),
-                        fn get_color(self) -> vec4 {
-                            return #x0;
-                        }
-                    }
-                    icon_walk: { width: 25, height: 25 }
-                }
-            }
 
             rotated_image_container = <View> {
                 width: Fill, height: Fill,
-                flow: Overlay
+                flow: Down
                 align: {x: 0.5, y: 0.5}
-
                 rotated_image = <RotatedImage> {
                     width: Fill, height: Fill,
                     draw_bg: {
@@ -282,6 +231,80 @@ live_design! {
                         color: (COLOR_TEXT)
                     }
                 }
+            }
+        }
+
+        header = <View> {
+            width: Fill, height: 50
+            flow: Right
+            margin: {right: 20, top: 40}
+            align: {x: 1.0, y: 0.5},
+
+            zoom_button_minus = <MagnifyingGlass> {
+                sign_label = <View> {
+                    width: Fill, height: Fill,
+                    align: { x: 0.4, y: 0.35 }
+
+                    magnifying_glass_sign = <Label> {
+                        text: "-",
+                        draw_text: {
+                            text_style: <THEME_FONT_BOLD>{font_size: 15},
+                            color: #000000
+                        }
+                    }
+                }
+            }
+
+            zoom_button_plus = <MagnifyingGlass> { }
+
+            rotation_button_anti_clockwise = <RotationButton> {
+                draw_icon: {
+                    svg_file: (ICON_ROTATE_CCW),
+                    fn get_color(self) -> vec4 {
+                        return #x0;
+                    }
+                }
+            }
+
+            rotation_button_clockwise = <RotationButton> { }
+
+            reset_button = <RobrixIconButton> {
+                width: Fit,
+                height: Fit,
+                align: {x: 1.0, y: 0.0},
+                spacing: 0,
+                margin: {top: 4.5} // vertically align with the title
+                padding: 10,
+                draw_bg: {
+                    color: (COLOR_SECONDARY)
+                }
+                draw_icon: {
+                    svg_file: (ICON_JUMP),
+                    fn get_color(self) -> vec4 {
+                        return #x0;
+                    }
+                }
+                icon_walk: {width: 25, height: 25}
+            }
+
+            // The "X" close button on the top right
+            close_button = <RobrixIconButton> {
+                width: Fit,
+                height: Fit,
+                align: {x: 1.0, y: 0.0},
+                spacing: 0,
+                margin: {top: 4.5} // vertically align with the title
+                padding: 15,
+                draw_bg: {
+                    color: (COLOR_SECONDARY)
+                }
+                draw_icon: {
+                    svg_file: (ICON_CLOSE),
+                    fn get_color(self) -> vec4 {
+                        return #x0;
+                    }
+                }
+                icon_walk: {width: 14, height: 14}
             }
         }
 
@@ -342,7 +365,7 @@ live_design! {
                 default: upright,
                 degree_neg90 = {
                     redraw: false,
-                    from: {all: Forward {duration: 1.0}}
+                    from: {all: Forward {duration: 0.2}}
                     apply: {
                         image_layer = {
                             rotated_image_container = {
@@ -355,7 +378,7 @@ live_design! {
                 }
                 upright = {
                     redraw: false,
-                    from: {all: Forward {duration: 1.0}}
+                    from: {all: Forward {duration: 0.2}}
                     apply: {
                         image_layer = {
                             rotated_image_container = {
@@ -368,7 +391,7 @@ live_design! {
                 }
                 degree_90 = {
                     redraw: false,
-                    from: {all: Forward {duration: 1.0}}
+                    from: {all: Forward {duration: 0.2}}
                     apply: {
                         image_layer = {
                             rotated_image_container = {
@@ -381,7 +404,7 @@ live_design! {
                 }
                 degree_180 = {
                     redraw: false,
-                    from: {all: Forward {duration: 1.0}}
+                    from: {all: Forward {duration: 0.2}}
                     apply: {
                         image_layer = {
                             rotated_image_container = {
@@ -394,7 +417,7 @@ live_design! {
                 }
                 degree_270 = {
                     redraw: false,
-                    from: {all: Forward {duration: 1.0}}
+                    from: {all: Forward {duration: 0.2}}
                     apply: {
                         image_layer = {
                             rotated_image_container = {
@@ -461,8 +484,6 @@ struct ImageViewer {
     /// Zoom constraints for the image viewer
     #[rust]
     min_zoom: f32,
-    #[rust]
-    max_zoom: f32,
     /// Zoom scale factor for zoom in/out operations
     #[rust]
     zoom_scale_factor: f32,
@@ -485,12 +506,22 @@ struct ImageViewer {
     /// Whether the full image file has been loaded
     #[rust]
     is_loaded: bool,
+    /// The size of the image container.
+    /// 
+    /// Used to compute the necessary width and height for the full screen image.
+    #[rust]
+    image_container_size: DVec2,
+    /// The texture containing the loaded image
+    #[rust]
+    texture: Option<Texture>,
+    /// The event to trigger displaying with the loaded image after peek_walk_turtle of the widget.
+    #[rust]
+    next_frame: NextFrame,
 }
 
 impl LiveHook for ImageViewer {
     fn after_new_from_doc(&mut self, _cx: &mut Cx) {
         self.min_zoom = 0.5;
-        self.max_zoom = 4.0;
         self.zoom_scale_factor = 1.2;
         self.pan_sensitivity = 2.0;
     }
@@ -498,6 +529,8 @@ impl LiveHook for ImageViewer {
 
 impl Widget for ImageViewer {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+        self.match_event(cx, event);
         let rotated_image = self.view.rotated_image(ids!(rotated_image));
         // Handle cursor changes on mouse hover
         match event.hits(cx, rotated_image.area()) {
@@ -534,10 +567,13 @@ impl Widget for ImageViewer {
                     let new_offset = current_offset + drag_delta * self.pan_sensitivity;
 
                     let rotated_image_container = self.view.rotated_image(ids!(rotated_image));
+                    let size = rotated_image_container.area().rect(cx).size;
                     rotated_image_container.apply_over(
                         cx,
                         live! {
                             margin: { top: (new_offset.y), left: (new_offset.x) },
+                            width: (size.x),
+                            height: (size.y)
                         },
                     );
 
@@ -615,7 +651,9 @@ impl Widget for ImageViewer {
                 self.receiver = None;
             }
         }
-        if let Event::NextFrame(_) = event {
+        if self.next_frame.is_event(event).is_some() {
+            self.display_using_texture(cx);
+        } else if let Event::NextFrame(_) = event {
             let animator_action = self.animator_handle_event(cx, event);
             let animation_id = match self.rotation_step {
                 0 => ids!(mode.upright),    // 0°
@@ -628,12 +666,18 @@ impl Widget for ImageViewer {
                 self.is_animating_rotation = animator_action.is_animating();
             }
         }
-        
-        self.view.handle_event(cx, event, scope);
-        self.match_event(cx, event);
+        if event.back_pressed() || matches!(event, Event::KeyDown(KeyEvent { key_code: KeyCode::Escape, .. })) {
+            self.reset(cx);
+            cx.action(ImageViewerAction::Hide);
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if self.image_container_size.length() == 0.0 {
+            let rect = cx.peek_walk_turtle(walk);
+            self.image_container_size = rect.size;
+            self.next_frame = cx.new_next_frame();
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -642,7 +686,10 @@ impl MatchEvent for ImageViewer {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         if self.view.button(ids!(close_button)).clicked(actions) {
             self.reset(cx);
-            cx.action(ImageViewerAction::Hide)
+            cx.action(ImageViewerAction::Hide);
+        }
+        if self.view.button(ids!(reset_button)).clicked(actions) {
+            self.reset(cx);
         }
         if self
             .view
@@ -694,7 +741,8 @@ impl MatchEvent for ImageViewer {
             if let Some(ImageViewerAction::Show(state)) = action.downcast_ref() {
                 match state {
                     LoadState::Loading(texture, metadata) => {
-                        self.display_using_texture(cx, texture.clone());
+                        self.texture = texture.clone();
+                        self.next_frame = cx.new_next_frame();
                         if let Some(metadata) = metadata {
                             self.set_metadata(cx, metadata);
                         }
@@ -725,6 +773,7 @@ impl ImageViewer {
         self.mouse_cursor_hover_over_image = false; // Reset hover state
         self.receiver = None;
         self.is_loaded = false;
+        self.image_container_size = DVec2::new();
         self.reset_drag_state(cx);
         self.animator_cut(cx, ids!(mode.upright));
         let rotated_image_ref = self
@@ -795,18 +844,28 @@ impl ImageViewer {
     /// Displays an image in the image viewer widget using the provided texture.
     /// 
     /// `Texture` is an optional `Texture` that can be set to display an image. If `None`, the image is cleared.
-    pub fn display_using_texture(&mut self, cx: &mut Cx, texture: Option<Texture>) {
+    pub fn display_using_texture(&mut self, cx: &mut Cx) {
+        if self.image_container_size.length() == 0.0 {
+            return;
+        }
+        let texture = self.texture.clone();
         let rotated_image = self.rotated_image(ids!(rotated_image));
-        let (width, height) = texture
+        let (texture_width, texture_height) = texture
             .as_ref()
             .and_then(|texture| texture.get_format(cx).vec_width_height())
             .unwrap_or_default();
+        let aspect_ratio = texture_width as f64 / texture_height as f64;
+        let (width, height) = if aspect_ratio > 1.0 {
+            (self.image_container_size.x, self.image_container_size.x / aspect_ratio)
+        } else {
+            (self.image_container_size.y * aspect_ratio, self.image_container_size.y)
+        };
         rotated_image.set_texture(cx, texture);
         rotated_image.apply_over(
             cx,
             live! {
-                width: (width as f64),
-                height: (height as f64),
+                width: (width),
+                height: (height),
             },
         );
     }
@@ -825,8 +884,7 @@ impl ImageViewer {
 
         // Calculate target zoom level and clamp it to bounds
         let target_zoom = self.drag_state.zoom_level * zoom_factor;
-        let clamped_zoom = target_zoom.clamp(self.min_zoom, self.max_zoom);
-
+        let clamped_zoom = target_zoom.max(self.min_zoom);
         // If the clamped zoom is the same as current zoom, no change needed
         if (clamped_zoom - self.drag_state.zoom_level).abs() < 0.001 {
             return;
@@ -987,7 +1045,6 @@ impl ImageViewerRef {
             return;
         };
         inner.min_zoom = config.min_zoom;
-        inner.max_zoom = config.max_zoom;
         inner.zoom_scale_factor = config.zoom_scale_factor;
         inner.pan_sensitivity = config.pan_sensitivity;
     }
@@ -1010,7 +1067,8 @@ impl ImageViewerRef {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.display_using_texture(cx, texture);
+        inner.texture = texture.clone();
+        inner.next_frame = cx.new_next_frame();
         if let Some(metadata) = metadata {
             inner.set_metadata(cx, metadata);
         }
