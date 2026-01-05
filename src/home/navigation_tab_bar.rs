@@ -1,33 +1,31 @@
-//! The NavigationTabBar shows a bar of radio-button icons
-//! on the left side bar or along the bottom.
-//! These buttons allow the user navigate/switch between
-//! the top-level views in Robrix.
+//! The NavigationTabBar shows a bar of icon buttons that allow the user to
+//! navigate or switch between various top-level views in Robrix.
+//!
+//! The bar is positioned either within the left side bar (in the wide "Desktop" view mode)
+//! or along the bottom of the app window (in the narrow "Mobile" view mode).
 //!
 //! Their order in Mobile view (horizontally from left to right) is:
-//! 1. Home [house icon]: the main view with the rooms list and the room content
-//!    * TODO: add a SpacesBar: a skinny scrollable PortalList showing all Spaces avatars.
-//!      * In the Mobile view, this will be shown horizontally on the bottom of the main view
-//!        (just above the current NavigationTabBar).
-//!      * In the Desktop view, this will be "embedded" within the NavigationTabBar itself.
-//!        We could optionally allow users to "pop it out", just to the right of the NavigationTabBar
-//!        such that it could occupy the full height of the app window.
-//! 2. Add/Join [plus sign icon]: a new view to handle adding (joining) existing rooms, exploring public rooms,
-//!    or creating new rooms/spaces.
+//! 1. Home (house icon): the main view that shows all rooms across all spaces.
+//! 2. Add Room (plus sign icon): a separate view that allows adding (joining) existing rooms,
+//!    exploring public rooms, or creating new rooms/spaces.
 //! 3. Spaces: a button that toggles the `SpacesBar` (shows/hides it).
-//!    This is NOT a regular radio button.
-//! 4. Activity [an inbox, alert bell, or notifications icon]:  like Cinny, this shows a new view
-//!    with a list of notifications, mentions, invitations, etc.
-//! 5. Profile/Settings [ProfileIcon]: the existing ProfileIcon with the verification badge.
-//!    Upon click, this shows the SettingsScreen as normal.
+//!    * This is NOT a regular radio button, it's a separate toggle. 
+//!    * This is only shown in Mobile view mode, because the `SpacesBar` is always shown
+//!      within the NavigationTabBar itself in Desktop view mode.
+//! 4. Activity (an inbox, alert bell, or notifications icon): a separate view that shows
+//!    a list of notifications, mentions, invitations, etc.
+//! 5. Profile/Settings (user profile avatar): the existing `ProfileIcon` with a
+//!    verification badge.
+//!    * Upon click, this shows the SettingsScreen as normal.
 //!
 //! The order in Desktop view (vertically from top to bottom) is:
-//! 1. Profile/Settings
-//! 2. Home
+//! 1. Home
+//! 2. Add/Join
 //! 3. ----- separator -----
-//!      (the Spaces Bar)
+//!      SpacesBar content
 //!    ----- separator -----
 //! 4. Activity/Inbox
-//! 5. Add/Join
+//! 5. Profile/Settings
 //!
 
 use makepad_widgets::*;
@@ -331,9 +329,8 @@ impl Widget for ProfileIcon {
             }
         }
 
-        // TODO: handle login/logout actions, as well as actions related to
-        //       the currently-logged-in user's account (such as them changing
-        //       their avatar, display name, etc.)
+        // TODO: handle actions related to the currently-logged-in user account,
+        //       such as changing their avatar, display name, etc.
 
         if let Event::Actions(actions) = event {
             for action in actions {

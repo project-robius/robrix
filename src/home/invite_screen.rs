@@ -310,7 +310,7 @@ impl Widget for InviteScreen {
                 self.invite_state = InviteState::WaitingForLeaveResult;
                 if modifiers.shift {
                     submit_async_request(MatrixRequest::LeaveRoom {
-                        room_id: info.room_name_id.room_id().clone(),
+                        room_id: info.room_id().clone(),
                     });
                     self.has_shown_confirmation = false;
                 } else {
@@ -325,7 +325,7 @@ impl Widget for InviteScreen {
                 self.invite_state = InviteState::WaitingForJoinResult;
                 if modifiers.shift {
                     submit_async_request(MatrixRequest::JoinRoom {
-                        room_id: info.room_name_id.room_id().clone(),
+                        room_id: info.room_id().clone(),
                     });
                     self.has_shown_confirmation = false;
                 } else {
@@ -339,17 +339,17 @@ impl Widget for InviteScreen {
 
             for action in actions {
                 match action.downcast_ref() {
-                    Some(JoinRoomResultAction::Joined { room_id }) if room_id == info.room_name_id.room_id() => {
+                    Some(JoinRoomResultAction::Joined { room_id }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::WaitingForJoinedRoom;
                         if !self.has_shown_confirmation {
                             enqueue_popup_notification(PopupItem{ message: "Successfully joined room.".into(), kind: PopupKind::Success, auto_dismissal_duration: Some(5.0) });
                         }
                         continue;
                     }
-                    Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == info.room_name_id.room_id() => {
+                    Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
-                            let msg = utils::stringify_join_leave_error(error, &info.room_name_id, true, true);
+                            let msg = utils::stringify_join_leave_error(error, info.room_name_id(), true, true);
                             enqueue_popup_notification(PopupItem { message: msg, kind: PopupKind::Error, auto_dismissal_duration: None });
                         }
                         continue;
@@ -358,14 +358,14 @@ impl Widget for InviteScreen {
                 }
 
                 match action.downcast_ref() {
-                    Some(LeaveRoomResultAction::Left { room_id }) if room_id == info.room_name_id.room_id() => {
+                    Some(LeaveRoomResultAction::Left { room_id }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::RoomLeft;
                         if !self.has_shown_confirmation {
                             enqueue_popup_notification(PopupItem { message: "Successfully rejected invite.".into(), kind: PopupKind::Success, auto_dismissal_duration: Some(5.0) });
                         }
                         continue;
                     }
-                    Some(LeaveRoomResultAction::Failed { room_id, error }) if room_id == info.room_name_id.room_id() => {
+                    Some(LeaveRoomResultAction::Failed { room_id, error }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
                             enqueue_popup_notification(PopupItem { message: format!("Failed to reject invite: {error}"), kind: PopupKind::Error, auto_dismissal_duration: None });
@@ -450,7 +450,7 @@ impl Widget for InviteScreen {
         // Second, populate the room info, if we have it.
         let room_view = self.view.view(ids!(room_view));
         let room_avatar = room_view.avatar(ids!(room_avatar));
-        match &info.room_avatar {
+        match &info.room_avatar() {
             FetchedRoomAvatar::Text(text) => {
                 room_avatar.show_text(
                     cx,
@@ -467,7 +467,7 @@ impl Widget for InviteScreen {
                 );
             }
         }
-        let invite_room_label = info.room_name_id.to_string();
+        let invite_room_label = info.room_name_id().to_string();
         room_view.label(ids!(room_name)).set_text(cx, &invite_room_label);
 
         // Third, set the buttons' text based on the invite state.
@@ -521,7 +521,7 @@ impl InviteScreen {
             .get(room_name_id.room_id())
         {
             self.info = Some(InviteDetails {
-                room_info: BasicRoomDetails {
+                room_info: BasicRoomDetails::NameAndAvatar {
                     room_name_id: room_name_id.clone(),
                     room_avatar: invite.room_avatar.clone(),
                 },

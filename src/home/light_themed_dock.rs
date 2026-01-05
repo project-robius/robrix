@@ -100,7 +100,6 @@ live_design! {
     }
 
     pub TabCloseButton = <TabCloseButtonBase> {
-            // TODO: NEEDS FOCUS STATE
         height: 10.0, width: 10.0,
         margin: { right: (THEME_SPACE_2), left: -1 },
         draw_button: {
