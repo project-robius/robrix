@@ -228,6 +228,11 @@ impl SmallStateGroupManager {
         }
     }
 
+    pub fn compute_group_state_2(items: Vec<UserEvent>) {
+
+    }
+
+
     /// Handles the rendering logic for small state events based on their group state.
     /// This function manages visibility, collapsible button states, and summary text display
     /// for timeline items that are part of collapsible groups.
