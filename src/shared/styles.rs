@@ -108,7 +108,6 @@ live_design! {
     pub COLOR_SELECT_TEXT = #A6CDFE
 
     pub COLOR_PRIMARY = #ffffff
-    pub COLOR_PRIMARY_50_TRANSPARENT = #ffffff80
     pub COLOR_PRIMARY_DARKER = #fefefe
     pub COLOR_SECONDARY = #E3E3E3
 
@@ -140,7 +139,9 @@ live_design! {
     pub COLOR_NAVIGATION_TAB_BG_HOVER  = (COLOR_SECONDARY * 0.85)
     pub COLOR_NAVIGATION_TAB_BG_ACTIVE = #9
 
-    
+    pub COLOR_IMAGE_VIEWER_BACKGROUND = #88888899 // 60% transparent
+    pub COLOR_IMAGE_VIEWER_META_BACKGROUND = #ffffff99 // 60% transparent
+
     // An icon that can be rotated at a custom angle.
     pub IconRotated = <Icon> {
         draw_icon: {

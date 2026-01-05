@@ -167,7 +167,7 @@ live_design! {
         flow: Overlay
         show_bg: true
         draw_bg: {
-            color: (COLOR_PRIMARY_50_TRANSPARENT)
+            color: (COLOR_IMAGE_VIEWER_BACKGROUND)
         }
 
         image_layer = <View> {
@@ -175,7 +175,7 @@ live_design! {
             align: {x: 0.5, y: 0.5}
             show_bg: true
             draw_bg: {
-                color: (COLOR_PRIMARY_50_TRANSPARENT)
+                color: (COLOR_IMAGE_VIEWER_BACKGROUND)
             }
             flow: Down
 
@@ -234,11 +234,80 @@ live_design! {
             }
         }
 
-        header = <View> {
+        metadata_view = <View> {
+            width: Fill, height: Fit
+            flow: RightWrap
+            margin: {top: 40}
+            show_bg: true
+            draw_bg: {
+                color: (COLOR_IMAGE_VIEWER_META_BACKGROUND)
+            }
+
+            // Left margin
+            <View> {
+                width: 20, height: 50
+            }
+
+            <View> {
+                // 200 (top_left_container width) + 324(button group) - 20 (left margin) + 20 (button group right margin) = 524 
+                width: 524, height: Fit
+                top_left_container = <View> {
+                    width: 200, height: Fit,
+                    flow: Right,
+                    spacing: 10,
+                    align: { y: 0.5 }
+                    
+                    avatar = <Avatar> {
+                        width: 40, height: 40,
+                    }
+
+                    content = <View> {
+                        width: Fit, height: Fit,
+                        flow: Down,
+                        spacing: 4,
+
+                        username = <Label> {
+                            width: Fit, height: Fit,
+                            draw_text: {
+                                text_style: <REGULAR_TEXT>{font_size: 10},
+                                color: (COLOR_TEXT)
+                            }
+                        }
+
+                        timestamp_view = <View> {
+                            width: Fit, height: Fit
+
+                            timestamp = <Timestamp> {
+                                width: Fit, height: Fit,
+                                margin: { left: 5 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            image_name_and_size_plus_button_group_view = <View> {
+                // Factor in button group's width. The width of each button is 44 plus 10 spacing.
+                // 350 + 324(button group) + 20 (right) = 694
+                width: 694, height: Fit,
+                image_name_and_size = <Label> {
+                    width: 350, height: Fit,
+                    align: { x: 0.5, }
+                    draw_text: {
+                        text_style: <REGULAR_TEXT>{font_size: 12},
+                        color: (COLOR_TEXT),
+                        wrap: Word
+                    }
+                }
+            }
+        }
+
+        button_group = <View> {
             width: Fill, height: 50
             flow: Right
-            margin: {right: 20, top: 40}
+            margin: {right: 20, top: 38}
             align: {x: 1.0, y: 0.5},
+            spacing: 10
 
             zoom_button_minus = <MagnifyingGlass> {
                 sign_label = <View> {
@@ -308,58 +377,6 @@ live_design! {
             }
         }
 
-        metadata_view = <View> {
-            width: Fill, height: Fill
-            flow: RightWrap
-
-            top_left_container = <View> {
-                width: Fit, height: Fit,
-                flow: Right,
-                spacing: 10,
-                margin: {left: 20, top: 40}
-                align: { y: 0.5 }
-
-                avatar = <Avatar> {
-                    width: 40, height: 40,
-                }
-
-                content = <View> {
-                    width: Fit, height: Fit,
-                    flow: Down,
-                    spacing: 4,
-
-                    username = <Label> {
-                        width: Fit, height: Fit,
-                        draw_text: {
-                            text_style: <REGULAR_TEXT>{font_size: 10},
-                            color: (COLOR_TEXT)
-                        }
-                    }
-
-                    timestamp_view = <View> {
-                        width: Fit, height: Fit
-
-                        timestamp = <Timestamp> {
-                            width: Fit, height: Fit,
-                            margin: { left: 5 }
-                        }
-                    }
-                }
-            }
-            image_name_and_size_view = <View> {
-                width: 200, height: Fit,
-                image_name_and_size = <Label> {
-                    width: Fill, height: Fit,
-                    margin: {top: 40}
-                    align: { x: 0.5, }
-                    draw_text: {
-                        text_style: <REGULAR_TEXT>{font_size: 12},
-                        color: (COLOR_TEXT),
-                        wrap: Word
-                    }
-                }
-            }
-        }
         animator: {
             mode = {
                 default: upright,
@@ -517,6 +534,10 @@ struct ImageViewer {
     /// The event to trigger displaying with the loaded image after peek_walk_turtle of the widget.
     #[rust]
     next_frame: NextFrame,
+    #[rust]
+    ui_visible_toggle: bool,
+    #[rust]
+    timer_to_hide_ui: Timer
 }
 
 impl LiveHook for ImageViewer {
@@ -556,6 +577,12 @@ impl Widget for ImageViewer {
                     );
                     rotated_image_container.redraw(cx);
                 }
+                if fe.tap_count == 1 {
+                    self.ui_visible_toggle = !self.view.view(ids!(button_group)).visible();
+                    self.view.view(ids!(button_group)).set_visible(cx, self.ui_visible_toggle);
+                    self.view.view(ids!(metadata_view)).set_visible(cx, self.ui_visible_toggle);
+                    cx.stop_timer(self.timer_to_hide_ui);
+                }
             }
             Hit::FingerHoverIn(_) => {
                 self.mouse_cursor_hover_over_image = true;
@@ -585,6 +612,13 @@ impl Widget for ImageViewer {
             Hit::FingerHoverOut(_) => {
                 self.mouse_cursor_hover_over_image = false;
                 cx.set_cursor(MouseCursor::Default);
+            }
+            Hit::FingerHoverOver(_) => {
+                if !self.ui_visible_toggle {
+                    self.view.view(ids!(button_group)).set_visible(cx, true);
+                    self.view.view(ids!(metadata_view)).set_visible(cx, true);
+                    self.timer_to_hide_ui = cx.start_interval(2.0);
+                }
             }
             _ => {}
         }
@@ -669,6 +703,10 @@ impl Widget for ImageViewer {
         if event.back_pressed() || matches!(event, Event::KeyDown(KeyEvent { key_code: KeyCode::Escape, .. })) {
             self.reset(cx);
             cx.action(ImageViewerAction::Hide);
+        }
+        if self.timer_to_hide_ui.is_event(event).is_some() {
+            self.view.view(ids!(button_group)).set_visible(cx, false);
+            self.view.view(ids!(metadata_view)).set_visible(cx, false);
         }
     }
 
@@ -774,6 +812,9 @@ impl ImageViewer {
         self.receiver = None;
         self.is_loaded = false;
         self.image_container_size = DVec2::new();
+        self.ui_visible_toggle = false;
+        cx.stop_timer(self.timer_to_hide_ui);
+        self.timer_to_hide_ui = Timer::empty();
         self.reset_drag_state(cx);
         self.animator_cut(cx, ids!(mode.upright));
         let rotated_image_ref = self
@@ -854,18 +895,22 @@ impl ImageViewer {
             .as_ref()
             .and_then(|texture| texture.get_format(cx).vec_width_height())
             .unwrap_or_default();
-        let aspect_ratio = texture_width as f64 / texture_height as f64;
-        let (width, height) = if aspect_ratio > 1.0 {
-            (self.image_container_size.x, self.image_container_size.x / aspect_ratio)
-        } else {
-            (self.image_container_size.y * aspect_ratio, self.image_container_size.y)
-        };
+        
+        // Calculate scaling factors for both dimensions
+        let scale_x = self.image_container_size.x / texture_width as f64;
+        let scale_y = self.image_container_size.y / texture_height as f64;
+        
+        // Use the smaller scale factor to ensure image fits within container
+        let scale = scale_x.min(scale_y);
+        
+        let capped_width = (texture_width as f64 * scale).floor();
+        let capped_height = (texture_height as f64 * scale).floor();
         rotated_image.set_texture(cx, texture);
         rotated_image.apply_over(
             cx,
             live! {
-                width: (width),
-                height: (height),
+                width: (capped_width),
+                height: (capped_height),
             },
         );
     }
@@ -960,6 +1005,7 @@ impl ImageViewer {
             .view(ids!(image_viewer_forbidden_view))
             .set_visible(cx, false);
         footer.set_visible(cx, true);
+        self.ui_visible_toggle = true;
     }
 
     /// Shows an error message in the footer.
