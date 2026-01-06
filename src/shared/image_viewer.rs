@@ -471,7 +471,7 @@ live_design! {
                     apply: { }
                 }
             }
-            meta_view_animator = {
+            ui_animator = {
                 default: hide,
                 show = {
                     redraw: false,
@@ -566,8 +566,12 @@ struct ImageViewer {
     /// The event to trigger displaying with the loaded image after peek_walk_turtle of the widget.
     #[rust]
     next_frame: NextFrame,
+    /// Whether to display the UI view
+    /// 
+    /// Includes the button group and metadata view
     #[rust]
     ui_visible_toggle: bool,
+    /// Timer used to hide the UI view
     #[rust]
     hide_ui_timer: Timer,
 }
@@ -611,9 +615,9 @@ impl Widget for ImageViewer {
                 }
                 self.ui_visible_toggle = !self.ui_visible_toggle;
                 if self.ui_visible_toggle {
-                    self.animator_cut(cx, ids!(meta_view_animator.show));
+                    self.animator_cut(cx, ids!(ui_animator.show));
                 } else {
-                    self.animator_cut(cx, ids!(meta_view_animator.hide));
+                    self.animator_cut(cx, ids!(ui_animator.hide));
                 }
                 cx.stop_timer(self.hide_ui_timer);
             }
@@ -647,9 +651,9 @@ impl Widget for ImageViewer {
                 cx.set_cursor(MouseCursor::Default);
             }
             Hit::FingerHoverOver(_) => {
-                if !self.ui_visible_toggle && !self.animator.animator_in_state(cx, ids!(meta_view_animator.show)) {
-                    self.animator_cut(cx, ids!(meta_view_animator.hide));
-                    self.animator_play(cx, ids!(meta_view_animator.show));
+                if !self.ui_visible_toggle && !self.animator.animator_in_state(cx, ids!(ui_animator.show)) {
+                    self.animator_cut(cx, ids!(ui_animator.hide));
+                    self.animator_play(cx, ids!(ui_animator.show));
                     cx.stop_timer(self.hide_ui_timer);
                     self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
                 }
@@ -739,7 +743,7 @@ impl Widget for ImageViewer {
             cx.action(ImageViewerAction::Hide);
         }
         if self.hide_ui_timer.is_event(event).is_some() {
-            self.animator_play(cx, ids!(meta_view_animator.hide));
+            self.animator_play(cx, ids!(ui_animator.hide));
         }
     }
 
@@ -847,7 +851,7 @@ impl ImageViewer {
         self.image_container_size = DVec2::new();
         self.ui_visible_toggle = false;
         cx.stop_timer(self.hide_ui_timer);
-        self.animator_cut(cx, ids!(meta_view_animator.show));
+        self.animator_cut(cx, ids!(ui_animator.show));
         self.hide_ui_timer = Timer::empty();
         self.reset_drag_state(cx);
         self.animator_cut(cx, ids!(mode.upright));
