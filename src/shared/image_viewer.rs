@@ -476,6 +476,7 @@ live_design! {
                 show = {
                     redraw: false,
                     from: { all: Forward { duration: (UI_ANIMATION_DURATION_SECS) } }
+                    ease: ExpDecay {d1: (UI_ANIMATION_DURATION_SECS), d2: 0.97}
                     apply: { 
                         button_group_view = {
                             margin: { top: 40 }
@@ -488,12 +489,13 @@ live_design! {
                 hide = {
                     redraw: false,
                     from: { all: Forward { duration: (UI_ANIMATION_DURATION_SECS) } }
+                    ease: ExpDecay {d1: (UI_ANIMATION_DURATION_SECS), d2: 0.97}
                     apply: { 
                         button_group_view = {
-                            margin: { top: -200 }
+                            margin: { top: -1000 }
                         }
                         metadata_view = {
-                            margin: { top: -200 }
+                            margin: { top: -1000 }
                         }
                     }
                 }
