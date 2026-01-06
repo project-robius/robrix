@@ -117,6 +117,13 @@ fn next_supported_uia_stage(uiaa_info: &UiaaInfo) -> Option<AuthType> {
     None
 }
 
+#[derive(Debug)]
+enum RegisterFlowError {
+    TokenRequired,
+    TokenInvalid,
+    UnsupportedUia,
+    Other(String),
+}
 
 /// Build a new client.
 async fn build_client(
@@ -252,7 +259,7 @@ async fn login(
 /// - `m.login.dummy`: Simple acknowledgment, handled automatically
 /// - `m.login.registration_token`: Requires pre-shared token from user (obtained out-of-band)
 /// - Others (captcha, email, etc.): Not supported
-async fn register_user(register_request: RegisterRequest) -> Result<(Client, ClientSessionPersisted)> {
+async fn register_user(register_request: RegisterRequest) -> std::result::Result<(Client, ClientSessionPersisted), RegisterFlowError> {
     // Create a Cli struct from the register request
     let cli = Cli {
         user_id: register_request.username.clone(),
@@ -261,7 +268,9 @@ async fn register_user(register_request: RegisterRequest) -> Result<(Client, Cli
         ..Default::default()
     };
 
-    let (client, client_session) = build_client(&cli, app_data_dir()).await?;
+    let (client, client_session) = build_client(&cli, app_data_dir())
+        .await
+        .map_err(|e| RegisterFlowError::Other(e.to_string()))?;
 
     use matrix_sdk::ruma::api::client::account::register::v3::Request as RegisterRequest;
 
@@ -291,14 +300,14 @@ async fn register_user(register_request: RegisterRequest) -> Result<(Client, Cli
             if let Some(mut uiaa_info) = e.as_uiaa_response().cloned() {
                 loop {
                     let Some(next_stage) = next_supported_uia_stage(&uiaa_info) else {
-                        bail!("This server requires verification steps that are not yet supported. Please use the web client to register.");
+                        return Err(RegisterFlowError::UnsupportedUia);
                     };
 
                     match next_stage {
                         AuthType::RegistrationToken => {
                             let Some(token) = sanitized_registration_token.as_ref() else {
                                 Cx::post_action(RegisterAction::RegistrationTokenRequired);
-                                bail!("This server requires a registration token. Please obtain one from the server administrator and try again.");
+                                return Err(RegisterFlowError::TokenRequired);
                             };
                             let mut auth_data = RegistrationToken::new(token.clone());
                             auth_data.session = uiaa_info.session.clone();
@@ -310,7 +319,7 @@ async fn register_user(register_request: RegisterRequest) -> Result<(Client, Cli
                             req.auth = Some(AuthData::Dummy(dummy));
                         }
                         _ => {
-                            bail!("This server requires verification steps that are not yet supported. Please use the web client to register.");
+                            return Err(RegisterFlowError::UnsupportedUia);
                         }
                     }
 
@@ -318,20 +327,20 @@ async fn register_user(register_request: RegisterRequest) -> Result<(Client, Cli
                         Ok(_) => break,
                         Err(err) => {
                             if err.to_string().contains("Invalid registration token") {
-                                bail!("Invalid registration token. Please check the token and try again.");
+                                return Err(RegisterFlowError::TokenInvalid);
                             }
                             if let Some(next_info) = err.as_uiaa_response().cloned() {
                                 uiaa_info = next_info;
                                 continue;
                             } else {
-                                return Err(err.into());
+                                return Err(RegisterFlowError::Other(err.to_string()));
                             }
                         }
                     }
                 }
             } else {
                 // Other registration errors
-                return Err(e.into());
+                return Err(RegisterFlowError::Other(e.to_string()));
             }
         }
     }
@@ -354,7 +363,7 @@ async fn register_user(register_request: RegisterRequest) -> Result<(Client, Cli
             kind: PopupKind::Error,
             auto_dismissal_duration: None
         });
-        bail!(err_msg);
+        Err(RegisterFlowError::Other(err_msg))
     }
 }
 
@@ -720,12 +729,28 @@ async fn matrix_worker_task(
                             submit_async_request(MatrixRequest::Login(login_req));
                         }
                         Err(e) => {
-                            error!("Registration failed: {e}");
-                            let error_msg = format!("Registration failed: {}", e);
-                            // Show error as popup notification
+                            let (error_msg, popup_kind) = match e {
+                                RegisterFlowError::TokenRequired => (
+                                    String::from("Registration token required. Please enter your token and try again."),
+                                    PopupKind::Warning,
+                                ),
+                                RegisterFlowError::TokenInvalid => (
+                                    String::from("Invalid registration token. Please check the token and try again."),
+                                    PopupKind::Error,
+                                ),
+                                RegisterFlowError::UnsupportedUia => (
+                                    String::from("This server requires verification steps that are not yet supported. Please use the web client to register."),
+                                    PopupKind::Error,
+                                ),
+                                RegisterFlowError::Other(msg) => (
+                                    format!("Registration failed: {msg}"),
+                                    PopupKind::Error,
+                                ),
+                            };
+                            error!("{error_msg}");
                             enqueue_popup_notification(PopupItem {
                                 message: error_msg.clone(),
-                                kind: PopupKind::Error,
+                                kind: popup_kind,
                                 auto_dismissal_duration: None,
                             });
                             Cx::post_action(RegisterAction::RegistrationFailure(error_msg));
@@ -3485,25 +3510,33 @@ async fn spawn_sso_server(
                 status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
             });
         }
+        let is_registration_for_sso = is_registration;
         match client
             .matrix_auth()
-            .login_sso(|sso_url: String| async move {
-                let url = Url::parse(&sso_url)?;
-                for (key, value) in url.query_pairs() {
-                    if key == "redirectUrl" {
-                        let redirect_url = Url::parse(&value)?;
-                        Cx::post_action(LoginAction::SsoSetRedirectUrl(redirect_url));
-                        break
+            .login_sso(move |sso_url: String| {
+                let is_registration = is_registration_for_sso;
+                async move {
+                    let url = Url::parse(&sso_url)?;
+                    for (key, value) in url.query_pairs() {
+                        if key == "redirectUrl" {
+                            let redirect_url = Url::parse(&value)?;
+                            if is_registration {
+                                Cx::post_action(RegisterAction::SsoSetRedirectUrl(redirect_url));
+                            } else {
+                                Cx::post_action(LoginAction::SsoSetRedirectUrl(redirect_url));
+                            }
+                            break
+                        }
                     }
+                    Uri::new(&sso_url).open().map_err(|err| {
+                        Error::UnknownError(
+                            Box::new(io::Error::other(
+                                format!("Unable to open SSO login url. Error: {:?}", err),
+                            ))
+                            .into(),
+                        )
+                    })
                 }
-                Uri::new(&sso_url).open().map_err(|err| {
-                    Error::UnknownError(
-                        Box::new(io::Error::other(
-                            format!("Unable to open SSO login url. Error: {:?}", err),
-                        ))
-                        .into(),
-                    )
-                })
             })
             .identity_provider_id(&identity_provider_id)
             .initial_device_display_name(&format!("robrix-sso-{brand}"))

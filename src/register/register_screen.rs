@@ -52,6 +52,7 @@
 //!   (captcha, email verification, etc.) are not yet implemented and will prompt users to register via web
 
 use makepad_widgets::*;
+use url::Url;
 use crate::sliding_sync::{submit_async_request, MatrixRequest, RegisterRequest};
 use crate::login::login_screen::LoginAction;
 use super::register_status_modal::RegisterStatusModalAction;
@@ -407,6 +408,7 @@ pub struct RegisterScreen {
     #[rust] is_homeserver_editing: bool,
     #[rust] selected_homeserver: String,
     #[rust] sso_pending: bool,
+    #[rust] sso_redirect_url: Option<String>,
     #[rust] registration_token_required: bool,
 }
 
@@ -474,6 +476,7 @@ impl RegisterScreen {
         self.is_homeserver_editing = false;
         self.selected_homeserver = "matrix.org".to_string();
         self.sso_pending = false;
+        self.sso_redirect_url = None;
         self.set_registration_token_required(cx, false);
 
         // Reset homeserver selection UI
@@ -701,7 +704,13 @@ impl MatchEvent for RegisterScreen {
                 }
                 if self.sso_pending {
                     // SSO flow canceled/dismissed - re-enable SSO button so user can retry
+                    if let Some(sso_redirect_url) = &self.sso_redirect_url {
+                        let request_id = id!(REGISTER_SSO_CANCEL_BUTTON);
+                        let request = HttpRequest::new(format!("{}/?login_token=", sso_redirect_url), HttpMethod::GET);
+                        cx.http_request(request_id, request);
+                    }
                     self.sso_pending = false;
+                    self.sso_redirect_url = None;
                     self.update_button_mask(&sso_button, cx, 0.0);
                 } else {
                     // Password registration - reset register button
@@ -730,6 +739,7 @@ impl MatchEvent for RegisterScreen {
                     if !*pending {
                         // SSO ended
                         self.sso_pending = false;
+                        self.sso_redirect_url = None;
                         self.update_button_mask(&sso_button, cx, 0.0);
                         self.view.modal(ids!(status_modal)).close(cx);
                     }
@@ -751,6 +761,9 @@ impl MatchEvent for RegisterScreen {
                         self.view.text_input(ids!(registration_token_input)).set_key_focus(cx);
                     }
                 }
+                Some(RegisterAction::SsoSetRedirectUrl(url)) => {
+                    self.sso_redirect_url = Some(url.to_string());
+                }
                 _ => {}
             }
 
@@ -761,6 +774,7 @@ impl MatchEvent for RegisterScreen {
                         self.view.modal(ids!(status_modal)).close(cx);
                         if self.sso_pending {
                             self.sso_pending = false;
+                            self.sso_redirect_url = None;
                             self.update_button_mask(&sso_button, cx, 0.0);
                         }
                         self.redraw(cx);
@@ -770,6 +784,7 @@ impl MatchEvent for RegisterScreen {
                         if self.sso_pending {
                             self.show_warning(error);
                             self.sso_pending = false;
+                            self.sso_redirect_url = None;
                             self.update_button_mask(&sso_button, cx, 0.0);
                         }
                         self.view.modal(ids!(status_modal)).close(cx);
@@ -803,6 +818,8 @@ pub enum RegisterAction {
     SsoRegistrationPending(bool),
     /// SSO registration progress update (e.g., "Opening browser...")
     SsoRegistrationStatus { status: String },
+    /// Set the SSO redirect URL for cancellation
+    SsoSetRedirectUrl(Url),
     /// Password registration flow needs a server-provided token
     RegistrationTokenRequired,
     None,
