@@ -80,6 +80,7 @@ live_design! {
     use crate::shared::restore_status_view::*;
     use crate::home::link_preview::LinkPreview;
     use crate::home::small_state_group_manager::SmallStateHeader;
+    use crate::home::small_state_group_manager::CollapsibleButton;
     use link::tsp_link::TspSignIndicator;
 
     COLOR_BG = #xfff8ee
@@ -470,6 +471,7 @@ live_design! {
             Empty = <Empty> {}
             DateDivider = <DateDivider> {}
             ReadMarker = <ReadMarker> {}
+            CollapsibleButton = <CollapsibleButton> {}
         }
 
         // A jump to bottom button (with an unread message badge) that is shown
@@ -961,15 +963,40 @@ impl Widget for RoomScreen {
             let room_id = &tl_state.room_id;
             let tl_items = &tl_state.items;
 
-            // Set the portal list's range based on the number of timeline items.
-            let last_item_id = tl_items.len();
+            // Set the portal list's range based on the number of timeline items,
+            // accounting for small state groups (collapsed groups take 1 slot each)
+            let base_item_count = tl_items.len();
+            let group_count = tl_state.group_manager.small_state_groups.len();
+            let last_item_id = base_item_count + group_count;
 
             let list = list_ref.deref_mut();
             list.set_item_range(cx, 0, last_item_id);
 
             while let Some(item_id) = list.next_visible_item(cx) {
                 let item = {
-                    let tl_idx = item_id;
+                    // Adjust timeline index by subtracting the number of small state groups
+                    // that come before this item_id
+                    let groups_before = tl_state.group_manager.small_state_groups
+                        .iter()
+                        .filter(|(range, _)| range.end <= item_id)
+                        .count();
+                    let tl_idx = item_id.saturating_sub(groups_before);
+                    
+                    // Check if this item_id should be the extra collapsible button for the first item in a small_state_group
+                    for (range, _group_id) in tl_state.group_manager.small_state_groups.iter() {
+                        if item_id == range.start {
+                            // This is the first item in a small state group, draw collapsible button instead of message
+                            if let Some(group) = tl_state.group_manager.groups_by_event_id.get(_group_id) {
+                                if !group.opened && range.len() >= 3 {  // Only show button for collapsible groups
+                                    let button = list.item(cx, item_id, id!(CollapsibleButton)).button(ids!(collapsible_button));
+                                    button.set_text(cx, "▼");  // Show collapsed state
+                                    button.set_visible(cx, true);
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
@@ -1180,6 +1207,16 @@ impl RoomScreen {
                     portal_list.set_tail_range(true);
                     jump_to_bottom.update_visibility(cx, true);
 
+                    // Compute small state groups for initial items
+                    let small_state_events = small_state_group_manager::extract_small_state_events(initial_items.iter().cloned());
+                    if tl.room_id.to_string() == "!UrPVVKTBTiyKLvSgIw:matrix.org" {
+                        println!("FirstUpdate: small_state_events: {:?}", small_state_events);
+                    }
+                    tl.group_manager.compute_group_state_2(small_state_events);
+                    if tl.room_id.to_string() == "!UrPVVKTBTiyKLvSgIw:matrix.org" {
+                        println!("FirstUpdate: computed group state {:?}", tl.group_manager);
+                    }
+
                     tl.items = initial_items;
                     done_loading = true;
                 }
@@ -1301,6 +1338,17 @@ impl RoomScreen {
                             &mut tl.group_manager,
                         );
                     }
+                    
+                    // Compute small state groups for new items
+                    let small_state_events = small_state_group_manager::extract_small_state_events(new_items.iter().cloned());
+                    if tl.room_id.to_string() == "!UrPVVKTBTiyKLvSgIw:matrix.org" {
+                        println!("NewItems: computed group state for {:?}", small_state_events);
+                    }
+                    tl.group_manager.compute_group_state_2(small_state_events);
+                    if tl.room_id.to_string() == "!UrPVVKTBTiyKLvSgIw:matrix.org" {
+                        println!("NewItems: computed group state for tl.group_manager {:?} done", tl.group_manager);
+                    }
+                    
                     tl.items = new_items;
                     done_loading = true;
                 }
