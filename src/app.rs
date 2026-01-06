@@ -2,12 +2,10 @@
 //!
 //! See `handle_startup()` for the first code that runs on app startup.
 
-// Ignore clippy warnings in `DeRon` macro derive bodies.
-#![allow(clippy::question_mark)]
-
 use std::collections::HashMap;
-use makepad_widgets::{makepad_micro_serde::*, *};
+use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
+use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache,
     register::register_screen::RegisterAction,
@@ -18,14 +16,16 @@ use crate::{
         rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate},
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::callout_tooltip::{
-        CalloutTooltipOptions,
+    },
+    login::login_screen::LoginAction,
+    logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt},
+    persistence,
+    profile::user_profile_cache::clear_user_profile_cache,
+    room::BasicRoomDetails,
+    shared::{callout_tooltip::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, sliding_sync::current_user_id, utils::{
-        room_name_or_id,
-        OwnedRoomIdRon,
-    }, verification::VerificationAction, verification_modal::{
+    }, image_viewer::{ImageViewerAction, LoadState}}, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -46,6 +46,7 @@ live_design! {
     use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
+    use crate::shared::image_viewer::ImageViewer;
     use link::tsp_link::TspVerificationModal;
 
 
@@ -104,6 +105,12 @@ live_design! {
                         register_screen_view = <View> {
                             visible: false
                             register_screen = <RegisterScreen> {}
+                        }
+                        image_viewer_modal = <Modal> {
+                            content: {
+                                width: Fill, height: Fill,
+                                image_viewer_modal_inner = <ImageViewer> {}
+                            }
                         }
                         <PopupList> {}
                         
@@ -331,7 +338,7 @@ impl MatchEvent for App {
 
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
-                let display_name = room_name_or_id(selected_room.room_name(), selected_room.room_id());
+                let display_name = selected_room.room_name().to_string();
                 self.app_state.selected_room = Some(selected_room);
                 // Set the Stack Navigation header to show the name of the newly-selected room.
                 self.ui
@@ -383,10 +390,11 @@ impl MatchEvent for App {
                 }
                 // If we successfully loaded a room that we were waiting to join,
                 // we can now navigate to it and optionally close a previous room.
-                Some(AppStateAction::RoomLoadedSuccessfully(room_id)) if
-                    self.waiting_to_navigate_to_joined_room.as_ref().is_some_and(|(dr, _)| &dr.room_id == room_id) =>
+                Some(AppStateAction::RoomLoadedSuccessfully(room_name_id)) if
+                    self.waiting_to_navigate_to_joined_room.as_ref()
+                        .is_some_and(|(dr, _)| dr.room_id() == room_name_id.room_id()) =>
                 {
-                    log!("Joined awaited room {}, navigating to it now...", room_id);
+                    log!("Joined awaited room {room_name_id:?}, navigating to it now...");
                     if let Some((dest_room, room_to_close)) = self.waiting_to_navigate_to_joined_room.take() {
                         self.navigate_to_room(cx, room_to_close.as_ref(), &dest_room);
                     }
@@ -397,12 +405,7 @@ impl MatchEvent for App {
 
             // Handle actions for showing or hiding the tooltip.
             match action.as_widget_action().cast() {
-                TooltipAction::HoverIn {
-                    widget_rect,
-                    text,
-                    text_color,
-                    bg_color,
-                } => {
+                TooltipAction::HoverIn { text, widget_rect, options } => {
                     // Don't show any tooltips if the message context menu is currently shown.
                     if self.ui.new_message_context_menu(ids!(new_message_context_menu)).is_currently_shown(cx) {
                         self.ui.callout_tooltip(ids!(app_tooltip)).hide(cx);
@@ -411,11 +414,8 @@ impl MatchEvent for App {
                         self.ui.callout_tooltip(ids!(app_tooltip)).show_with_options(
                             cx,
                             &text,
-                            CalloutTooltipOptions {
-                                widget_rect,
-                                text_color,
-                                bg_color,
-                            },
+                            widget_rect,
+                            options,
                         );
                     }
                     continue;
@@ -459,7 +459,17 @@ impl MatchEvent for App {
                 self.ui.modal(ids!(verification_modal)).close(cx);
                 continue;
             }
-
+            match action.downcast_ref() {
+                Some(ImageViewerAction::Show(LoadState::Loading(_, _))) => {
+                    self.ui.modal(ids!(image_viewer_modal)).open(cx);
+                    continue;
+                }
+                Some(ImageViewerAction::Hide) => {
+                    self.ui.modal(ids!(image_viewer_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
             // Handle actions to open/close the TSP verification modal.
             #[cfg(feature = "tsp")] {
                 use std::ops::Deref;
@@ -599,11 +609,8 @@ impl App {
         destination_room: &BasicRoomDetails,
     ) {
         // A closure that closes the given `room_to_close`, if it exists in an open tab.
-        let close_room_closure_opt = room_to_close.and_then(|to_close|
-            self.app_state.saved_dock_state.open_rooms
-                .iter()
-                .find_map(|(tab_id, r)| (r.room_id() == to_close).then_some(*tab_id))
-        ).map(|tab_id| {
+        let close_room_closure_opt = room_to_close.map(|to_close| {
+            let tab_id = LiveId::from_str(to_close.as_str());
             let widget_uid = self.ui.widget_uid();
             move |cx: &mut Cx| {
                 cx.widget_action(
@@ -611,13 +618,14 @@ impl App {
                     &HeapLiveIdPath::default(),
                     DockAction::TabCloseWasPressed(tab_id),
                 );
+                enqueue_rooms_list_update(RoomsListUpdate::HideRoom { room_id: to_close.clone() });
             }
         });
 
         // If the successor room is not loaded, show a join modal.
-        let rooms_list_ref = cx.get_global::<RoomsListRef>();
-        if !rooms_list_ref.is_room_loaded(&destination_room.room_id) {
-            log!("Destination room {} not loaded, showing join modal...", destination_room.room_id);
+        let destination_room_id = destination_room.room_id();
+        if !cx.get_global::<RoomsListRef>().is_room_loaded(destination_room_id) {
+            log!("Destination room {} not loaded, showing join modal...", destination_room_id);
             self.waiting_to_navigate_to_joined_room = Some((
                 destination_room.clone(),
                 room_to_close.cloned(),
@@ -629,14 +637,16 @@ impl App {
             return;
         }
 
-        log!("Navigating to destination room {} ({:?}), closing room {room_to_close:?}", destination_room.room_id, destination_room.room_name);
+        log!("Navigating to destination room {:?}, closing room {:?}",
+            destination_room.room_name_id(),
+            room_to_close,
+        );
 
         // Select and scroll to the destination room in the rooms list.
         let new_selected_room = SelectedRoom::JoinedRoom {
-            room_id: destination_room.room_id.clone().into(),
-            room_name: destination_room.room_name.clone(),
+            room_name_id: destination_room.room_name_id().clone(),
         };
-        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room.room_id.clone()));
+        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room_id.clone()));
         cx.widget_action(
             self.ui.widget_uid(),
             &HeapLiveIdPath::default(),
@@ -652,56 +662,59 @@ impl App {
 
 /// App-wide state that is stored persistently across multiple app runs
 /// and shared/updated across various parts of the app.
-#[derive(Clone, Default, Debug, DeRon, SerRon)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct AppState {
     /// The currently-selected room, which is highlighted (selected) in the RoomsList
     /// and considered "active" in the main rooms screen.
     pub selected_room: Option<SelectedRoom>,
-    /// A saved "snapshot" of the dock's UI state.
-    pub saved_dock_state: SavedDockState,
+    /// The saved "snapshot" of the dock's UI layout/state for the main "all rooms" home view.
+    pub saved_dock_state_home: SavedDockState,
+    /// The saved "snapshot" of the dock's UI layout/state for each space,
+    /// keyed by the space ID.
+    pub saved_dock_state_per_space: HashMap<OwnedRoomId, SavedDockState>,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
 }
 
 /// A snapshot of the main dock: all state needed to restore the dock tabs/layout.
-#[derive(Clone, Default, Debug, DeRon, SerRon)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct SavedDockState {
-    /// All items contained in the dock, keyed by their LiveId.
+    /// All items contained in the dock, keyed by their room or space ID.
     pub dock_items: HashMap<LiveId, DockItem>,
-    /// The rooms that are currently open, keyed by the LiveId of their tab.
+    /// The rooms that are currently open, keyed by their room or space ID.
     pub open_rooms: HashMap<LiveId, SelectedRoom>,
     /// The order in which the rooms were opened, in chronological order
     /// from first opened (at the beginning) to last opened (at the end).
     pub room_order: Vec<SelectedRoom>,
+    /// The selected room tab in this dock when the dock state was saved.
+    pub selected_room: Option<SelectedRoom>,
 }
+
 
 /// Represents a room currently or previously selected by the user.
 ///
 /// One `SelectedRoom` is considered equal to another if their `room_id`s are equal.
-#[derive(Clone, Debug, SerRon, DeRon)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SelectedRoom {
-    JoinedRoom {
-        room_id: OwnedRoomIdRon,
-        room_name: Option<String>,
-    },
-    InvitedRoom {
-        room_id: OwnedRoomIdRon,
-        room_name: Option<String>,
-    },
+    JoinedRoom { room_name_id: RoomNameId },
+    InvitedRoom { room_name_id: RoomNameId },
+    Space { space_name_id: RoomNameId },
 }
 
 impl SelectedRoom {
     pub fn room_id(&self) -> &OwnedRoomId {
         match self {
-            SelectedRoom::JoinedRoom { room_id, .. } => room_id,
-            SelectedRoom::InvitedRoom { room_id, .. } => room_id,
+            SelectedRoom::JoinedRoom { room_name_id } => room_name_id.room_id(),
+            SelectedRoom::InvitedRoom { room_name_id } => room_name_id.room_id(),
+            SelectedRoom::Space { space_name_id } => space_name_id.room_id(),
         }
     }
 
-    pub fn room_name(&self) -> Option<&String> {
+    pub fn room_name(&self) -> &RoomNameId {
         match self {
-            SelectedRoom::JoinedRoom { room_name, .. } => room_name.as_ref(),
-            SelectedRoom::InvitedRoom { room_name, .. } => room_name.as_ref(),
+            SelectedRoom::JoinedRoom { room_name_id } => room_name_id,
+            SelectedRoom::InvitedRoom { room_name_id } => room_name_id,
+            SelectedRoom::Space { space_name_id } => space_name_id,
         }
     }
 
@@ -713,11 +726,10 @@ impl SelectedRoom {
     /// otherwise, returns `false`.
     pub fn upgrade_invite_to_joined(&mut self, room_id: &RoomId) -> bool {
         match self {
-            SelectedRoom::InvitedRoom { room_id: id, room_name } if id.0 == room_id => {
-                let name = room_name.take();
+            SelectedRoom::InvitedRoom { room_name_id } if room_name_id.room_id() == room_id => {
+                let name = room_name_id.clone();
                 *self = SelectedRoom::JoinedRoom {
-                    room_id: id.clone(),
-                    room_name: name,
+                    room_name_id: name,
                 };
                 true
             }
@@ -744,13 +756,14 @@ pub enum AppStateAction {
     /// The given room has successfully been upgraded from being displayed
     /// as an InviteScreen to a RoomScreen.
     UpgradedInviteToJoinedRoom(OwnedRoomId),
-    /// The app state was restored from persistent storage.
+    /// The given app state was loaded from persistent storage
+    /// and is ready to be restored.
     RestoreAppStateFromPersistentState(AppState),
     /// The given room was successfully loaded from the homeserver
     /// and is now known to our client.
     ///
     /// The RoomScreen for this room can now fully display the room's timeline.
-    RoomLoadedSuccessfully(OwnedRoomId),
+    RoomLoadedSuccessfully(RoomNameId),
     /// A request to navigate to a different room, optionally closing a prior/current room.
     NavigateToRoom {
         room_to_close: Option<OwnedRoomId>,

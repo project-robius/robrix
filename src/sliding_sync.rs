@@ -54,7 +54,7 @@ use crate::{
         html_or_plaintext::MatrixLinkPillState,
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
-    }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
+    }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -2477,9 +2477,9 @@ async fn update_room(
         }
         if old_room.display_name != new_room.display_name {
             log!("Updating room {} name: {:?} --> {:?}", new_room_id, old_room.display_name, new_room.display_name);
+
             enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
-                room_id: new_room_id.clone(),
-                new_room_name: new_room.display_name.as_ref().map(|n| n.to_string()),
+                new_room_name: (new_room.display_name.clone(), new_room_id.clone()).into(),
             });
         }
 
@@ -2638,8 +2638,8 @@ async fn add_new_room(
             let latest = latest_event.as_ref().map(
                 |ev| get_latest_event_details(ev, &new_room.room_id)
             );
-            let room_name = new_room.display_name.as_ref().map(|n| n.to_string());
-            let room_avatar = room_avatar(&new_room.room, room_name.as_deref()).await;
+            let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
+            let room_avatar = room_avatar(&new_room.room, &room_name_id).await;
 
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
                 Some(InviterInfo {
@@ -2656,8 +2656,7 @@ async fn add_new_room(
                 None
             };
             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddInvitedRoom(InvitedRoomInfo {
-                room_id: new_room.room_id.clone(),
-                room_name,
+                room_name_id: room_name_id.clone(),
                 inviter_info,
                 room_avatar,
                 canonical_alias: new_room.room.canonical_alias(),
@@ -2667,7 +2666,7 @@ async fn add_new_room(
                 is_selected: false,
                 is_direct: new_room.is_direct,
             }));
-            Cx::post_action(AppStateAction::RoomLoadedSuccessfully(new_room.room_id.clone()));
+            Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_name_id));
             return Ok(());
         }
         RoomState::Joined => { } // Fall through to adding the joined room below.
@@ -2713,19 +2712,18 @@ async fn add_new_room(
             pinned_events_subscriber: None,
         },
     );
+    let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can
     // send the `AddJoinedRoom` update to the UI, because the UI might immediately
     // issue a `MatrixRequest` that relies on that room being in `ALL_JOINED_ROOMS`.
-    let room_name = new_room.display_name.as_ref().map(|n| n.to_string());
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
-        room_id: new_room.room_id.clone(),
         latest,
         tags: new_room.tags.clone().unwrap_or_default(),
         num_unread_messages: new_room.num_unread_messages,
         num_unread_mentions: new_room.num_unread_mentions,
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
-        avatar: avatar_from_room_name(room_name.as_deref()),
-        room_name,
+        avatar: avatar_from_room_name(room_name_id.name_for_avatar().as_deref()),
+        room_name_id: room_name_id.clone(),
         canonical_alias: new_room.room.canonical_alias(),
         alt_aliases: new_room.room.alt_aliases(),
         has_been_paginated: false,
@@ -2734,7 +2732,7 @@ async fn add_new_room(
         is_tombstoned: new_room.is_tombstoned,
     }));
 
-    Cx::post_action(AppStateAction::RoomLoadedSuccessfully(new_room.room_id.clone()));
+    Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_name_id));
     spawn_fetch_room_avatar(new_room);
 
     Ok(())
@@ -2794,15 +2792,15 @@ fn handle_ignore_user_list_subscriber(client: Client) {
 
 /// Asynchronously loads and restores the app state from persistent storage for the given user.
 ///
-/// If the loaded dock state contains open rooms and dock items, it logs a message and posts an action
-/// to restore the app state in the UI. If loading fails, it enqueues a notification
-/// with the error message.
+/// If the loaded dock state contains open rooms and dock items, this function emits an action
+/// to instruct the UI to restore the app state for the main home view (all rooms).
+/// If loading fails, it shows a popup notification with the error message.
 fn handle_load_app_state(user_id: OwnedUserId) {
     Handle::current().spawn(async move {
         match load_app_state(&user_id).await {
             Ok(app_state) => {
-                if !app_state.saved_dock_state.open_rooms.is_empty()
-                    && !app_state.saved_dock_state.dock_items.is_empty()
+                if !app_state.saved_dock_state_home.open_rooms.is_empty()
+                    && !app_state.saved_dock_state_home.dock_items.is_empty()
                 {
                     log!("Loaded room panel state from app data directory. Restoring now...");
                     Cx::post_action(AppStateAction::RestoreAppStateFromPersistentState(app_state));
@@ -2954,10 +2952,7 @@ async fn fetch_room_preview_with_avatar(
         // The successor room did not have an avatar URL
         avatar_from_room_name(room_preview.name.as_deref())
     };
-    Ok(FetchedRoomPreview {
-        room_preview,
-        room_avatar,
-    })
+    Ok(FetchedRoomPreview::from(room_preview, room_avatar))
 }
 
 
@@ -3352,10 +3347,10 @@ async fn update_latest_event(room: &Room) {
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
     let room_id = room.room_id.clone();
-    let room_name = room.display_name.as_ref().map(|n| n.to_string());
+    let room_name_id = RoomNameId::from((room.display_name.clone(), room.room_id.clone()));
     let inner_room = room.room.clone();
     Handle::current().spawn(async move {
-        let avatar = room_avatar(&inner_room, room_name.as_deref()).await;
+        let avatar = room_avatar(&inner_room, &room_name_id).await;
         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
             room_id,
             avatar,
@@ -3365,7 +3360,7 @@ fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
 
 /// Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
-async fn room_avatar(room: &Room, room_name: Option<&str>) -> FetchedRoomAvatar {
+async fn room_avatar(room: &Room, room_name_id: &RoomNameId) -> FetchedRoomAvatar {
     match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
         Ok(Some(avatar)) => FetchedRoomAvatar::Image(avatar.into()),
         _ => {
@@ -3378,7 +3373,7 @@ async fn room_avatar(room: &Room, room_name: Option<&str>) -> FetchedRoomAvatar 
                     }
                 }
             }
-            utils::avatar_from_room_name(room_name)
+            utils::avatar_from_room_name(room_name_id.name_for_avatar().as_deref())
         }
     }
 }
@@ -3727,25 +3722,19 @@ pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
     // Clear resources normally, allowing them to be properly dropped
     // This prevents memory leaks when users logout and login again without closing the app
     CLIENT.lock().unwrap().take();
-    log!("Client cleared during logout");
-    
     SYNC_SERVICE.lock().unwrap().take();
-    log!("Sync service cleared during logout");
-    
     REQUEST_SENDER.lock().unwrap().take();
-    log!("Request sender cleared during logout");
-    
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
-    
+
     let on_clear_appstate = Arc::new(Notify::new());
     Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });
     
     match tokio::time::timeout(config.app_state_cleanup_timeout, on_clear_appstate.notified()).await {
         Ok(_) => {
-            log!("Received signal that app state was cleaned successfully");
+            log!("Received signal that UI-side app state was cleaned successfully");
             Ok(())
         }
-        Err(_) => Err(anyhow!("Timed out waiting for app state cleanup")),
+        Err(_) => Err(anyhow!("Timed out waiting for UI-side app state cleanup")),
     }
 }

@@ -2,12 +2,11 @@ use std::{
     borrow::Cow, cmp::Ordering, collections::{BTreeMap, HashSet}, ops::Deref
 };
 use bitflags::bitflags;
-use matrix_sdk::ruma::{
-    events::tag::{TagName, Tags},
-    OwnedRoomAliasId, RoomAliasId, RoomId,
-};
+use matrix_sdk::{RoomDisplayName, ruma::{
+    OwnedRoomAliasId, RoomAliasId, RoomId, events::tag::{TagName, Tags}
+}};
 
-use crate::home::{rooms_list::{InvitedRoomInfo, JoinedRoomInfo}, spaces_bar::JoinedSpaceInfo};
+use crate::{home::rooms_list::{InvitedRoomInfo, JoinedRoomInfo}, home::spaces_bar::JoinedSpaceInfo};
 
 static EMPTY_TAGS: Tags = BTreeMap::new();
 
@@ -25,11 +24,11 @@ pub trait FilterableRoom {
 
 impl FilterableRoom for JoinedRoomInfo {
     fn room_id(&self) -> &RoomId {
-        &self.room_id
+        self.room_name_id.room_id()
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        self.room_name.as_deref().map(Into::into).unwrap_or_default()
+        Cow::Owned(self.room_name_id.to_string())
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -59,11 +58,11 @@ impl FilterableRoom for JoinedRoomInfo {
 
 impl FilterableRoom for InvitedRoomInfo {
     fn room_id(&self) -> &RoomId {
-        &self.room_id
+        self.room_name_id.room_id()
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        self.room_name.as_deref().map(Into::into).unwrap_or_default()
+        Cow::Owned(self.room_name_id.to_string())
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -93,11 +92,17 @@ impl FilterableRoom for InvitedRoomInfo {
 
 impl FilterableRoom for JoinedSpaceInfo {
     fn room_id(&self) -> &RoomId {
-        &self.space_id
+        self.space_name_id.room_id()
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        self.display_name.as_str().into()
+        match self.space_name_id.display_name() {
+            RoomDisplayName::Aliased(name)
+            | RoomDisplayName::Calculated(name)
+            | RoomDisplayName::EmptyWas(name)
+            | RoomDisplayName::Named(name) => name.into(),
+            RoomDisplayName::Empty => self.space_name_id.to_string().into(),
+        }
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -129,8 +134,11 @@ impl FilterableRoom for JoinedSpaceInfo {
 pub type RoomFilterFn = dyn Fn(&dyn FilterableRoom) -> bool;
 pub type SortFn = dyn Fn(&dyn FilterableRoom, &dyn FilterableRoom) -> Ordering;
 
+fn default_room_filter_fn(_: &dyn FilterableRoom) -> bool {
+    true
+}
 
-/// A filter function that is called for each room to determine whether it should be displayed.
+/// A filter function that determines whether a given room should be displayed.
 ///
 /// If the function returns `true`, the room is displayed; otherwise, it is not shown.
 /// The default value is a filter function that always returns `true`.
@@ -147,16 +155,16 @@ pub type SortFn = dyn Fn(&dyn FilterableRoom, &dyn FilterableRoom) -> Ordering;
 ///    .collect();
 /// // Then redraw the rooms_list widget.
 /// ```
-pub struct RoomDisplayFilter(Box<RoomFilterFn>);
-impl Default for RoomDisplayFilter {
-    fn default() -> Self {
-        RoomDisplayFilter(Box::new(|_| true))
-    }
-}
+#[derive(Default)]
+pub struct RoomDisplayFilter(Option<Box<RoomFilterFn>>);
 impl Deref for RoomDisplayFilter {
-    type Target = Box<RoomFilterFn>;
+    type Target = RoomFilterFn;
     fn deref(&self) -> &Self::Target {
-        &self.0
+        if let Some(rdf) = &self.0 {
+            rdf.deref()
+        } else {
+            &default_room_filter_fn
+        }
     }
 }
 
@@ -192,8 +200,8 @@ pub struct RoomDisplayFilterBuilder {
 ///     .by_room_id()
 ///     .by_room_name()
 ///     .sort_by(|a, b| {
-///         let name_a = a.room_name.as_ref().map_or("", |n| n.as_str());
-///         let name_b = b.room_name.as_ref().map_or("", |n| n.as_str());
+///         let name_a = a.room_name.as_ref().map_or("", |n| n.display_str());
+///         let name_b = b.room_name.as_ref().map_or("", |n| n.display_str());
 ///         name_a.cmp(name_b)
 ///     })
 ///     .build();
@@ -342,14 +350,16 @@ impl RoomDisplayFilterBuilder {
         let keywords = self.keywords;
         let filter_criteria = self.filter_criteria;
 
-        let filter = RoomDisplayFilter(Box::new(move |room| {
-            if keywords.is_empty() || filter_criteria.is_empty() {
-                return true;
-            }
-            let keywords = keywords.trim().to_lowercase();
-            Self::matches_filter(room, &keywords, self.filter_criteria)
-        }));
-
+        let filter = if keywords.is_empty() || filter_criteria.is_empty() {
+            RoomDisplayFilter::default()
+        } else {
+            RoomDisplayFilter(Some(Box::new(
+                move |room| {
+                    let keywords = keywords.trim().to_lowercase();
+                    Self::matches_filter(room, &keywords, self.filter_criteria)
+                }
+            )))
+        };
         (filter, self.sort_fn)
     }
 }

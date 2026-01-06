@@ -17,18 +17,21 @@ pub mod rooms_list_entry;
 pub mod rooms_list_header;
 pub mod rooms_sidebar;
 pub mod search_messages;
+pub mod space_lobby;
 pub mod spaces_bar;
 pub mod navigation_tab_bar;
 pub mod welcome_screen;
 pub mod event_reaction_list;
 pub mod new_message_context_menu;
 pub mod link_preview;
+pub mod room_image_viewer;
 
 pub fn live_design(cx: &mut Cx) {
     search_messages::live_design(cx);
     home_screen::live_design(cx);
     loading_pane::live_design(cx);
     location_preview::live_design(cx);
+    space_lobby::live_design(cx);
     rooms_list_entry::live_design(cx);
     rooms_list_header::live_design(cx);
     rooms_list::live_design(cx);

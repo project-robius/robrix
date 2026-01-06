@@ -5,7 +5,7 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, room_name_or_id}};
+use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
 
 live_design! {
     use link::theme::*;
@@ -157,7 +157,6 @@ pub enum JoinLeaveModalKind {
     /// The user wants to reject an invite to a room.
     RejectInvite(InviteDetails),
     /// The user wants to join a room that they have not joined yet.
-    #[allow(unused)]
     JoinRoom(BasicRoomDetails),
     /// The user wants to leave an already-joined room.
     #[allow(unused)]
@@ -166,25 +165,36 @@ pub enum JoinLeaveModalKind {
 impl JoinLeaveModalKind {
     pub fn room_id(&self) -> &OwnedRoomId {
         match self {
-            JoinLeaveModalKind::AcceptInvite(invite) => &invite.room_id,
-            JoinLeaveModalKind::RejectInvite(invite) => &invite.room_id,
-            JoinLeaveModalKind::JoinRoom(room) => &room.room_id,
-            JoinLeaveModalKind::LeaveRoom(room) => &room.room_id,
+            JoinLeaveModalKind::AcceptInvite(invite)
+            | JoinLeaveModalKind::RejectInvite(invite) => invite.room_id(),
+            JoinLeaveModalKind::JoinRoom(details)
+            |JoinLeaveModalKind::LeaveRoom(details) => details.room_id(),
         }
     }
 
-    pub fn room_name(&self) -> Option<&str> {
+    pub fn room_name(&self) -> &RoomNameId {
         match self {
-            JoinLeaveModalKind::AcceptInvite(invite) => invite.room_name.as_deref(),
-            JoinLeaveModalKind::RejectInvite(invite) => invite.room_name.as_deref(),
-            JoinLeaveModalKind::JoinRoom(room) => room.room_name.as_deref(),
-            JoinLeaveModalKind::LeaveRoom(room) => room.room_name.as_deref(),
+            JoinLeaveModalKind::AcceptInvite(invite)
+            | JoinLeaveModalKind::RejectInvite(invite) => invite.room_name_id(),
+            JoinLeaveModalKind::JoinRoom(details)
+            | JoinLeaveModalKind::LeaveRoom(details)   => details.room_name_id(),
+        }
+    }
+
+    #[allow(unused)] // remove when we use it in navigate_to_room
+    pub fn basic_room_details(&self) -> &BasicRoomDetails {
+        match self {
+            JoinLeaveModalKind::AcceptInvite(invite)
+            | JoinLeaveModalKind::RejectInvite(invite) => &invite.room_info,
+            JoinLeaveModalKind::JoinRoom(details)
+            | JoinLeaveModalKind::LeaveRoom(details) => details,
         }
     }
 }
 
 /// Actions handled by the parent widget of the [`JoinLeaveRoomModal`].
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum JoinLeaveRoomModalAction {
     /// The modal should be opened by its parent widget.
     Open {
@@ -249,11 +259,11 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         description = format!(
                             "Accepting an invitation to join \"{}\".\n\n\
                             Waiting for confirmation from the homeserver...",
-                            room_name_or_id(invite.room_name.as_ref(), &invite.room_id),
+                            invite.room_name_id(),
                         );
                         accept_button_text = "Joining...";
                         submit_async_request(MatrixRequest::JoinRoom {
-                            room_id: invite.room_id.clone(),
+                            room_id: invite.room_id().clone(),
                         });
                     }
                     JoinLeaveModalKind::RejectInvite(invite) => {
@@ -261,11 +271,11 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         description = format!(
                             "Rejecting an invitation to join \"{}\".\n\n\
                             Waiting for confirmation from the homeserver...",
-                            room_name_or_id(invite.room_name.as_ref(), &invite.room_id),
+                            invite.room_name_id(),
                         );
                         accept_button_text = "Rejecting...";
                         submit_async_request(MatrixRequest::LeaveRoom {
-                            room_id: invite.room_id.clone(),
+                            room_id: invite.room_id().clone(),
                         });
                     }
                     JoinLeaveModalKind::JoinRoom(room) => {
@@ -273,11 +283,11 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         description = format!(
                             "Joining \"{}\".\n\n\
                             Waiting for confirmation from the homeserver...",
-                            room_name_or_id(room.room_name.as_ref(), &room.room_id),
+                            room.room_name_id(),
                         );
                         accept_button_text = "Joining...";
                         submit_async_request(MatrixRequest::JoinRoom {
-                            room_id: room.room_id.clone(),
+                            room_id: room.room_id().clone(),
                         });
                     }
                     JoinLeaveModalKind::LeaveRoom(room) => {
@@ -285,11 +295,11 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         description = format!(
                             "Leaving \"{}\".\n\n\
                             Waiting for confirmation from the homeserver...",
-                            room_name_or_id(room.room_name.as_ref(), &room.room_id),
+                            room.room_name_id(),
                         );
                         accept_button_text = "Leaving...";
                         submit_async_request(MatrixRequest::LeaveRoom {
-                            room_id: room.room_id.clone(),
+                            room_id: room.room_id().clone(),
                         });
                     }
                 }
@@ -314,7 +324,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     self.view.label(ids!(title)).set_text(cx, "Joined room!");
                     self.view.label(ids!(description)).set_text(cx, &format!(
                         "Successfully joined \"{}\".",
-                        room_name_or_id(kind.room_name(), room_id),
+                        kind.room_name(),
                     ));
                     accept_button.set_enabled(cx, true);
                     accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
@@ -350,7 +360,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                             title = "Rejected invite!";
                             description = format!(
                                 "Successfully rejected invite to \"{}\".",
-                                room_name_or_id(kind.room_name(), room_id),
+                                kind.room_name(),
                             );
                             popup_msg = "Successfully rejected invite.".into();
                         }
@@ -358,7 +368,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                             title = "Left room!";
                             description = format!(
                                 "Successfully left \"{}\".",
-                                room_name_or_id(kind.room_name(), room_id),
+                                kind.room_name(),
                             );
                             popup_msg = "Successfully left room.".into();
                         }
@@ -414,6 +424,8 @@ impl JoinLeaveRoomModal {
         self.final_success = None;
     }
 
+    /// Populates this modal with the proper info based on 
+    /// the given `kind of join or leave action.
     fn set_kind(
         &mut self,
         cx: &mut Cx,
@@ -430,7 +442,7 @@ impl JoinLeaveRoomModal {
                 title = "Accept this invite?";
                 description = format!(
                     "Are you sure you want to accept this invite to join \"{}\"?",
-                    room_name_or_id(invite.room_name.as_ref(), &invite.room_id),
+                    invite.room_name_id(),
                 );
                 tip_button = "Join";
             }
@@ -440,7 +452,7 @@ impl JoinLeaveRoomModal {
                     "Are you sure you want to reject this invite to join \"{}\"?\n\n\
                     If this is a private room, you won't be able to join this room \
                     without being re-invited to it.",
-                    room_name_or_id(invite.room_name.as_ref(), &invite.room_id)
+                    invite.room_name_id()
                 );
                 tip_button = "Reject";
             }
@@ -448,7 +460,7 @@ impl JoinLeaveRoomModal {
                 title = "Join this room?";
                 description = format!(
                     "Are you sure you want to join \"{}\"?",
-                    room_name_or_id(room.room_name.as_ref(), &room.room_id)
+                    room.room_name_id()
                 );
                 tip_button = "Join";
             }
@@ -458,7 +470,7 @@ impl JoinLeaveRoomModal {
                     "Are you sure you want to leave \"{}\"?\n\n\
                     If this is a private room, you won't be able to join this room \
                     without being re-invited to it.",
-                    room_name_or_id(room.room_name.as_ref(), &room.room_id)
+                    room.room_name_id()
                 );
                 tip_button = "Leave";
             }
@@ -499,8 +511,7 @@ impl JoinLeaveRoomModalRef {
         kind: JoinLeaveModalKind,
         show_tip: bool,
     ) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.set_kind(cx, kind, show_tip);
-        }
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_kind(cx, kind, show_tip);
     }
 }

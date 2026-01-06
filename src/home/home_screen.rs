@@ -325,8 +325,8 @@ impl Widget for HomeScreen {
                             self.view.redraw(cx);
                         }
                     }
-                    Some(NavigationBarAction::GoToSpace { space_id }) => {
-                        let new_space_selection = SelectedTab::Space { space_id: space_id.clone() };
+                    Some(NavigationBarAction::GoToSpace { space_name_id }) => {
+                        let new_space_selection = SelectedTab::Space { space_name_id: space_name_id.clone() };
                         if self.selection != new_space_selection {
                             self.previous_selection = self.selection.clone();
                             self.selection = new_space_selection;
@@ -395,7 +395,7 @@ impl HomeScreen {
                     SelectedTab::Home     => id!(home_page),
                     SelectedTab::Settings => id!(settings_page),
                     SelectedTab::AddRoom  => id!(add_room_page),
-                    SelectedTab::Space { .. } => id!(home_page), // TODO: show the SpacesScreen
+                    SelectedTab::Space { .. } => id!(home_page),
                 },
             )
     }

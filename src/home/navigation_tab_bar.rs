@@ -1,37 +1,34 @@
-//! The NavigationTabBar shows a bar of radio-button icons
-//! on the left side bar or along the bottom.
-//! These buttons allow the user navigate/switch between
-//! the top-level views in Robrix.
+//! The NavigationTabBar shows a bar of icon buttons that allow the user to
+//! navigate or switch between various top-level views in Robrix.
+//!
+//! The bar is positioned either within the left side bar (in the wide "Desktop" view mode)
+//! or along the bottom of the app window (in the narrow "Mobile" view mode).
 //!
 //! Their order in Mobile view (horizontally from left to right) is:
-//! 1. Home [house icon]: the main view with the rooms list and the room content
-//!    * TODO: add a SpacesBar: a skinny scrollable PortalList showing all Spaces avatars.
-//!      * In the Mobile view, this will be shown horizontally on the bottom of the main view
-//!        (just above the current NavigationTabBar).
-//!      * In the Desktop view, this will be "embedded" within the NavigationTabBar itself.
-//!        We could optionally allow users to "pop it out", just to the right of the NavigationTabBar
-//!        such that it could occupy the full height of the app window.
-//! 2. Add/Join [plus sign icon]: a new view to handle adding (joining) existing rooms, exploring public rooms,
-//!    or creating new rooms/spaces.
+//! 1. Home (house icon): the main view that shows all rooms across all spaces.
+//! 2. Add Room (plus sign icon): a separate view that allows adding (joining) existing rooms,
+//!    exploring public rooms, or creating new rooms/spaces.
 //! 3. Spaces: a button that toggles the `SpacesBar` (shows/hides it).
-//!    This is NOT a regular radio button.
-//! 4. Activity [an inbox, alert bell, or notifications icon]:  like Cinny, this shows a new view
-//!    with a list of notifications, mentions, invitations, etc.
-//! 5. Profile/Settings [ProfileIcon]: the existing ProfileIcon with the verification badge.
-//!    Upon click, this shows the SettingsScreen as normal.
+//!    * This is NOT a regular radio button, it's a separate toggle. 
+//!    * This is only shown in Mobile view mode, because the `SpacesBar` is always shown
+//!      within the NavigationTabBar itself in Desktop view mode.
+//! 4. Activity (an inbox, alert bell, or notifications icon): a separate view that shows
+//!    a list of notifications, mentions, invitations, etc.
+//! 5. Profile/Settings (user profile avatar): the existing `ProfileIcon` with a
+//!    verification badge.
+//!    * Upon click, this shows the SettingsScreen as normal.
 //!
 //! The order in Desktop view (vertically from top to bottom) is:
-//! 1. Profile/Settings
-//! 2. Home
+//! 1. Home
+//! 2. Add/Join
 //! 3. ----- separator -----
-//!      (the Spaces Bar)
+//!      SpacesBar content
 //!    ----- separator -----
 //! 4. Activity/Inbox
-//! 5. Add/Join
+//! 5. Profile/Settings
 //!
 
 use makepad_widgets::*;
-use ruma::OwnedRoomId;
 
 use crate::{
     avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
@@ -39,10 +36,10 @@ use crate::{
         user_profile_cache::{self, UserProfileUpdate},
     }, shared::{
         avatar::AvatarWidgetExt,
-        callout_tooltip::TooltipAction,
+        callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition},
         styles::*,
         verification_badge::VerificationBadgeWidgetExt,
-    }, sliding_sync::current_user_id, utils
+    }, sliding_sync::current_user_id, utils::{self, RoomNameId}
 };
 
 live_design! {
@@ -56,9 +53,6 @@ live_design! {
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
     use crate::home::spaces_bar::*;
-
-    ICON_HOME = dep("crate://self/resources/icons/home.svg")
-    ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
 
     // A RadioButton styled to fit within our NavigationTabBar.
     pub NavigationTabButton = <RadioButton> {
@@ -335,9 +329,8 @@ impl Widget for ProfileIcon {
             }
         }
 
-        // TODO: handle login/logout actions, as well as actions related to
-        //       the currently-logged-in user's account (such as them changing
-        //       their avatar, display name, etc.)
+        // TODO: handle actions related to the currently-logged-in user account,
+        //       such as changing their avatar, display name, etc.
 
         if let Event::Actions(actions) = event {
             for action in actions {
@@ -367,15 +360,20 @@ impl Widget for ProfileIcon {
                     || format!("Not logged in.\n\n{}", verification_str),
                     |p| format!("Logged in as \"{}\".\n\n{}", p.displayable_name(), verification_str)
                 );
-                let rect = area.rect(cx);
+                let mut options = CalloutTooltipOptions {
+                    position: if cx.display_context.is_desktop() { TooltipPosition::Right} else { TooltipPosition::Top},
+                    ..Default::default()
+                };
+                if let Some(c) = bg_color {
+                    options.bg_color = c;
+                }
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
                     TooltipAction::HoverIn {
-                        widget_rect: rect,
                         text,
-                        bg_color,
-                        text_color: None,
+                        widget_rect: area.rect(cx),
+                        options,
                     },
                 );
             }
@@ -488,22 +486,40 @@ impl Widget for NavigationTabBar {
 
 
 /// Which tab is currently selected in the NavigationTabBar.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum SelectedTab {
     #[default]
     Home,
     AddRoom,
     Settings,
     // AlertsInbox,
-    Space {
-        space_id: OwnedRoomId,
-    }
+    Space { space_name_id: RoomNameId },
 }
 
 
 /// Actions for navigating through the top-level views of the app,
 /// e.g., when the user clicks/taps on a button in the NavigationTabBar.
-#[derive(Debug, PartialEq)]
+///
+/// The most important variant is `TabSelected`, which is most likely the action
+/// that you want to handle in other widgets, if you care about which
+/// top-level navigation tab is currently selected.
+/// This is because the `TabSelected` variant will always occur even if the
+/// other actions do not occur --- for example, if the user chooses to jump
+/// to a different view (or back to a previous view) without explicitly clicking
+/// a navigation tab button, e.g., via a keyboard shortcut, or programmatically.
+///
+/// There are 3 kinds of actions within this one enum:
+/// 1. "Leading-edge" ("request") actions emitted by the NavigationTabBar
+///    when the user selects a particular button/space.
+///    * Includes `GoToHome`, `GoToAddRoom`, `GoToSpace`, `OpenSettings`, `CloseSettings`.
+/// 2. "Trailing-edge" ("response") actions that are emitted by the `HomeScreen` widget
+///    in response to a leading-edge action.
+///    * This includes only the `TabSelected` variant.
+///    * This is what all other widgets should handle if they want/need to respond
+///      to changes in the top-level app-wide navigation selection.
+/// 3. Other actions that aren't requests/responses to navigate to a different view.
+///    * This only includes the `ToggleSpacesBar` variant.
+#[derive(Debug, PartialEq, Eq)]
 pub enum NavigationBarAction {
     /// Go to the main rooms content view.
     GoToHome,
@@ -511,18 +527,20 @@ pub enum NavigationBarAction {
     GoToAddRoom,
     /// Go to the Settings view (open the `SettingsScreen`).
     OpenSettings,
-    /// Close the Settings view (`SettingsScreen`), returning to the previous page.
+    /// Close the Settings view (`SettingsScreen`), returning to the previous view.
     CloseSettings,
-    /// The given tab was selected programmatically, e.g., after closing the settings screen.
-    /// This is needed just to ensure that the proper tab radio button is marked as selected.
+    /// Go the space screen for the given space.
+    GoToSpace { space_name_id: RoomNameId },
+
+    // TODO: add GoToAlertsInbox, once we add that button/screen
+
+    /// The given tab was selected as the active top-level view.
+    /// This is needed to ensure that the proper tab is marked as selected 
     TabSelected(SelectedTab),
     /// Toggle whether the SpacesBar is shown, i.e., show/hide it.
     /// This is only applicable in the Mobile view mode, because the SpacesBar
     /// is always shown in Desktop view mode.
     ToggleSpacesBar,
-    /// Go the space screen for the given space.
-    GoToSpace { space_id: OwnedRoomId },
-    // GoToAlertsInbox
 }
 
 
