@@ -16,12 +16,11 @@ use matrix_sdk::{
         }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
 };
-use matrix_sdk::ruma::api::client::uiaa::{AuthData, AuthType, Dummy, RegistrationToken, UiaaInfo};
 use matrix_sdk_ui::{
     RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, spaces::SpaceService, sync_service::{self, SyncService}, timeline::{EventTimelineItem, LatestEventValue, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem}
 };
 use robius_open::Uri;
-use ruma::{events::tag::Tags, OwnedRoomOrAliasId};
+use ruma::{OwnedRoomOrAliasId, api::client::uiaa::{AuthData, AuthType, Dummy, RegistrationToken, UiaaInfo}, events::tag::Tags};
 use tokio::{
     runtime::Handle,
     sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
@@ -30,27 +29,12 @@ use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
 use std::io;
 use crate::{
-    app::AppStateAction,
-    app_data_dir,
-    avatar_cache::AvatarUpdate,
-    event_preview::text_preview_of_timeline_item,
-    home::{
-        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction},
-        link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse},
-        room_screen::TimelineUpdate,
-        rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate},
-        rooms_list_header::RoomsListHeaderAction,
-        tombstone_footer::SuccessorRoomDetails,
-    },
-    login::login_screen::LoginAction,
-    register::register_screen::RegisterAction,
-    logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{logout_with_state_machine, LogoutConfig, is_logout_in_progress}},
-    media_cache::{MediaCacheEntry, MediaCacheEntryRef},
-    persistence::{self, load_app_state, ClientSessionPersisted},
-    profile::{
+    app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
+        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::TimelineUpdate, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
+    }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
-    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
+    }, register::register_screen::RegisterAction, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
         html_or_plaintext::MatrixLinkPillState,
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
@@ -326,6 +310,8 @@ async fn register_user(register_request: RegisterRequest) -> std::result::Result
                     match client.matrix_auth().register(req.clone()).await {
                         Ok(_) => break,
                         Err(err) => {
+                            // Best-effort: SDK doesn't expose a typed invalid-token error yet.
+                            // Update when a structured variant is available.
                             if err.to_string().contains("Invalid registration token") {
                                 return Err(RegisterFlowError::TokenInvalid);
                             }
@@ -353,8 +339,8 @@ async fn register_user(register_request: RegisterRequest) -> std::result::Result
         let status = format!("Registered as {}.\n → Loading rooms...", cli.user_id);
         enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
-        // Don't save the session here - it will be saved when we convert to LoginBySSOSuccess
-        // This avoids duplicate session persistence
+        // Session persistence is deferred: after registration we post LoginBySSOSuccess,
+        // which saves the session (avoids double-saving here).
         Ok((client, client_session))
     } else {
         let err_msg = "Registration completed but user is not logged in".to_string();
@@ -3500,7 +3486,6 @@ async fn spawn_sso_server(
 
         let mut is_logged_in = false;
         if is_registration {
-            use crate::register::register_screen::RegisterAction;
             Cx::post_action(RegisterAction::SsoRegistrationStatus {
                 status: "Please finish registration using your browser, and then come back to Robrix.".into(),
             });

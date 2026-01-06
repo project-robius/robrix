@@ -7,22 +7,11 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 use serde::{Deserialize, Serialize};
 use crate::{
-    avatar_cache::clear_avatar_cache,
-    register::register_screen::RegisterAction,
-    home::{
-        main_desktop_ui::MainDesktopUiAction,
-        new_message_context_menu::NewMessageContextMenuWidgetRefExt,
-        room_screen::{clear_timeline_states, MessageAction},
-        rooms_list::{clear_all_invited_rooms, enqueue_rooms_list_update, RoomsListAction, RoomsListRef, RoomsListUpdate},
+    avatar_cache::clear_avatar_cache, home::{
+        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    },
-    login::login_screen::LoginAction,
-    logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt},
-    persistence,
-    profile::user_profile_cache::clear_user_profile_cache,
-    room::BasicRoomDetails,
-    shared::{callout_tooltip::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, register::register_screen::RegisterAction, room::BasicRoomDetails, shared::{callout_tooltip::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
     }, image_viewer::{ImageViewerAction, LoadState}}, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
@@ -279,12 +268,16 @@ impl MatchEvent for App {
                     }
                     LoginAction::NavigateToRegister => {
                         log!("Navigating from login to register screen");
+                        // Start from a clean register screen state
+                        if let Some(mut register_screen_ref) = self
+                            .ui
+                            .widget(ids!(register_screen_view.register_screen))
+                            .borrow_mut::<crate::register::register_screen::RegisterScreen>()
+                        {
+                            register_screen_ref.reset_screen_state(cx);
+                        }
                         self.ui.view(ids!(login_screen_view)).set_visible(cx, false);
                         self.ui.view(ids!(register_screen_view)).set_visible(cx, true);
-                        // Reset register button state when showing register screen
-                        let register_button = self.ui.button(ids!(register_screen_view.register_screen.register_button));
-                        register_button.set_enabled(cx, true);
-                        register_button.reset_hover(cx);
                         self.ui.redraw(cx);
                     }
                     _ => {}
