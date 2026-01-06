@@ -16,6 +16,7 @@ use matrix_sdk_ui::timeline::EventTimelineItem;
 use thiserror::Error;
 use crate::shared::{avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt};
 
+const SHOW_UI_DURATION: f64 = 2.0;
 /// Loads the given image `data` into an `ImageBuffer` as either a PNG or JPEG, using the `imghdr` library to determine which format it is.
 ///
 /// Returns an error if either load fails or if the image format is unknown.
@@ -108,6 +109,9 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::timestamp::Timestamp;
 
+    UI_ANIMATION_DURATION_SECS = 0.2
+    ROTATION_ANIMATION_DURATION_SECS = 0.2
+
     pub MagnifyingGlass = <View> {
         width: Fit, height: Fit
         flow: Overlay
@@ -173,10 +177,6 @@ live_design! {
         image_layer = <View> {
             width: Fill, height: Fill,
             align: {x: 0.5, y: 0.5}
-            show_bg: true
-            draw_bg: {
-                color: (COLOR_IMAGE_VIEWER_BACKGROUND)
-            }
             flow: Down
 
             rotated_image_container = <View> {
@@ -243,15 +243,17 @@ live_design! {
                 color: (COLOR_IMAGE_VIEWER_META_BACKGROUND)
             }
 
-            // Left margin
+            // Left margin. Required such that the user_profile_view will flow below this view if the width is not enough.
             <View> {
+                // Height 50 is the height of the button group.
                 width: 20, height: 50
             }
 
+            // Display user profile view below the button group when the width is not enough.
             <View> {
-                // 200 (top_left_container width) + 324(button group) - 20 (left margin) + 20 (button group right margin) = 524 
+                // 200 (user_profile_view width) + 324(button group) - 20 (left margin) + 20 (button group right margin) = 524 
                 width: 524, height: Fit
-                top_left_container = <View> {
+                user_profile_view = <View> {
                     width: 200, height: Fit,
                     flow: Right,
                     spacing: 10,
@@ -286,9 +288,10 @@ live_design! {
                 }
             }
 
-            image_name_and_size_plus_button_group_view = <View> {
+            // Display image name and size below the user_profile_view if the width is not enough.
+            <View> {
                 // Factor in button group's width. The width of each button is 44 plus 10 spacing.
-                // 350 + 324(button group) + 20 (right) = 694
+                // 350 + 324(button group) + 20 (right) = 694                
                 width: 694, height: Fit,
                 image_name_and_size = <Label> {
                     width: 350, height: Fit,
@@ -302,7 +305,7 @@ live_design! {
             }
         }
 
-        button_group = <View> {
+        button_group_view = <View> {
             width: Fill, height: 50
             flow: Right
             margin: {right: 20, top: 38}
@@ -382,7 +385,7 @@ live_design! {
                 default: upright,
                 degree_neg90 = {
                     redraw: false,
-                    from: {all: Forward {duration: 0.2}}
+                    from: {all: Forward {duration: (ROTATION_ANIMATION_DURATION_SECS)}}
                     apply: {
                         image_layer = {
                             rotated_image_container = {
@@ -395,7 +398,7 @@ live_design! {
                 }
                 upright = {
                     redraw: false,
-                    from: {all: Forward {duration: 0.2}}
+                    from: {all: Forward {duration: (ROTATION_ANIMATION_DURATION_SECS)}}
                     apply: {
                         image_layer = {
                             rotated_image_container = {
@@ -408,7 +411,7 @@ live_design! {
                 }
                 degree_90 = {
                     redraw: false,
-                    from: {all: Forward {duration: 0.2}}
+                    from: {all: Forward {duration: (ROTATION_ANIMATION_DURATION_SECS)}}
                     apply: {
                         image_layer = {
                             rotated_image_container = {
@@ -421,7 +424,7 @@ live_design! {
                 }
                 degree_180 = {
                     redraw: false,
-                    from: {all: Forward {duration: 0.2}}
+                    from: {all: Forward {duration: (ROTATION_ANIMATION_DURATION_SECS)}}
                     apply: {
                         image_layer = {
                             rotated_image_container = {
@@ -434,7 +437,7 @@ live_design! {
                 }
                 degree_270 = {
                     redraw: false,
-                    from: {all: Forward {duration: 0.2}}
+                    from: {all: Forward {duration: (ROTATION_ANIMATION_DURATION_SECS)}}
                     apply: {
                         image_layer = {
                             rotated_image_container = {
@@ -466,6 +469,33 @@ live_design! {
                 }
                 on = {
                     apply: { }
+                }
+            }
+            meta_view_animator = {
+                default: hide,
+                show = {
+                    redraw: false,
+                    from: { all: Forward { duration: (UI_ANIMATION_DURATION_SECS) } }
+                    apply: { 
+                        button_group_view = {
+                            margin: { top: 40 }
+                        }
+                        metadata_view = {
+                            margin: { top: 40 }
+                        }
+                    }
+                }
+                hide = {
+                    redraw: false,
+                    from: { all: Forward { duration: (UI_ANIMATION_DURATION_SECS) } }
+                    apply: { 
+                        button_group_view = {
+                            margin: { top: -200 }
+                        }
+                        metadata_view = {
+                            margin: { top: -200 }
+                        }
+                    }
                 }
             }
         }
@@ -537,7 +567,7 @@ struct ImageViewer {
     #[rust]
     ui_visible_toggle: bool,
     #[rust]
-    timer_to_hide_ui: Timer
+    hide_ui_timer: Timer,
 }
 
 impl LiveHook for ImageViewer {
@@ -577,12 +607,13 @@ impl Widget for ImageViewer {
                     );
                     rotated_image_container.redraw(cx);
                 }
-                if fe.tap_count == 1 {
-                    self.ui_visible_toggle = !self.view.view(ids!(button_group)).visible();
-                    self.view.view(ids!(button_group)).set_visible(cx, self.ui_visible_toggle);
-                    self.view.view(ids!(metadata_view)).set_visible(cx, self.ui_visible_toggle);
-                    cx.stop_timer(self.timer_to_hide_ui);
+                self.ui_visible_toggle = !self.ui_visible_toggle;
+                if self.ui_visible_toggle {
+                    self.animator_cut(cx, ids!(meta_view_animator.show));
+                } else {
+                    self.animator_cut(cx, ids!(meta_view_animator.hide));
                 }
+                cx.stop_timer(self.hide_ui_timer);
             }
             Hit::FingerHoverIn(_) => {
                 self.mouse_cursor_hover_over_image = true;
@@ -614,10 +645,11 @@ impl Widget for ImageViewer {
                 cx.set_cursor(MouseCursor::Default);
             }
             Hit::FingerHoverOver(_) => {
-                if !self.ui_visible_toggle {
-                    self.view.view(ids!(button_group)).set_visible(cx, true);
-                    self.view.view(ids!(metadata_view)).set_visible(cx, true);
-                    self.timer_to_hide_ui = cx.start_interval(2.0);
+                if !self.ui_visible_toggle && !self.animator.animator_in_state(cx, ids!(meta_view_animator.show)) {
+                    self.animator_cut(cx, ids!(meta_view_animator.hide));
+                    self.animator_play(cx, ids!(meta_view_animator.show));
+                    cx.stop_timer(self.hide_ui_timer);
+                    self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
                 }
             }
             _ => {}
@@ -685,10 +717,10 @@ impl Widget for ImageViewer {
                 self.receiver = None;
             }
         }
+        let animator_action = self.animator_handle_event(cx, event);
         if self.next_frame.is_event(event).is_some() {
             self.display_using_texture(cx);
         } else if let Event::NextFrame(_) = event {
-            let animator_action = self.animator_handle_event(cx, event);
             let animation_id = match self.rotation_step {
                 0 => ids!(mode.upright),    // 0°
                 1 => ids!(mode.degree_90),  // 90°
@@ -704,9 +736,8 @@ impl Widget for ImageViewer {
             self.reset(cx);
             cx.action(ImageViewerAction::Hide);
         }
-        if self.timer_to_hide_ui.is_event(event).is_some() {
-            self.view.view(ids!(button_group)).set_visible(cx, false);
-            self.view.view(ids!(metadata_view)).set_visible(cx, false);
+        if self.hide_ui_timer.is_event(event).is_some() {
+            self.animator_play(cx, ids!(meta_view_animator.hide));
         }
     }
 
@@ -813,8 +844,9 @@ impl ImageViewer {
         self.is_loaded = false;
         self.image_container_size = DVec2::new();
         self.ui_visible_toggle = false;
-        cx.stop_timer(self.timer_to_hide_ui);
-        self.timer_to_hide_ui = Timer::empty();
+        cx.stop_timer(self.hide_ui_timer);
+        self.animator_cut(cx, ids!(meta_view_animator.show));
+        self.hide_ui_timer = Timer::empty();
         self.reset_drag_state(cx);
         self.animator_cut(cx, ids!(mode.upright));
         let rotated_image_ref = self
@@ -1055,15 +1087,15 @@ impl ImageViewer {
             .set_text(cx, &display_text);
         if let Some(timestamp) = metadata.timestamp {
             meta_view
-                .view(ids!(top_left_container.content.timestamp_view))
+                .view(ids!(user_profile_view.content.timestamp_view))
                 .set_visible(cx, true);
             meta_view
-                .timestamp(ids!(top_left_container.content.timestamp_view.timestamp))
+                .timestamp(ids!(user_profile_view.content.timestamp_view.timestamp))
                 .set_date_time(cx, timestamp);
         }
 
         if let Some((room_id, event_timeline_item)) = &metadata.avatar_parameter {            
-            let (sender, _) =self.view.avatar(ids!(top_left_container.avatar))
+            let (sender, _) =self.view.avatar(ids!(user_profile_view.avatar))
                 .set_avatar_and_get_username(
                     cx,
                     room_id,
@@ -1073,11 +1105,11 @@ impl ImageViewer {
                 );
             if sender.len() > MAX_USERNAME_LENGTH {
                 meta_view
-                    .label(ids!(top_left_container.content.username))
+                    .label(ids!(user_profile_view.content.username))
                     .set_text(cx, &format!("{}...", &sender[..MAX_USERNAME_LENGTH - 3]));
             } else {
                 meta_view
-                    .label(ids!(top_left_container.content.username))
+                    .label(ids!(user_profile_view.content.username))
                     .set_text(cx, &sender);
             };
         }
