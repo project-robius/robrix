@@ -12,6 +12,7 @@ live_design! {
     use crate::home::navigation_tab_bar::NavigationTabBar;
     use crate::home::search_messages::*;
     use crate::home::spaces_bar::*;
+    use crate::home::add_room::*;
     use crate::shared::styles::*;
     use crate::shared::room_filter_input_bar::RoomFilterInputBar;
     use crate::home::main_desktop_ui::MainDesktopUI;
@@ -19,29 +20,6 @@ live_design! {
 
     StackNavigationWrapper = {{StackNavigationWrapper}} {
         view_stack = <StackNavigation> {}
-    }
-
-    // A placeholder for the AddRoomScreen
-    AddRoomScreen = <View> {
-        width: Fill, height: Fill,
-        padding: {top: 100}
-        align: {x: 0.5}
-
-        show_bg: true
-        draw_bg: {
-            color: (COLOR_PRIMARY)
-        }
-
-        title = <Label> {
-            flow: RightWrap,
-            align: {x: 0.5}
-            draw_text: {
-                text_style: <TITLE_TEXT>{font_size: 13},
-                color: #000
-                wrap: Word
-            }
-            text: "Add Room page is not yet implemented"
-        }
     }
 
     // A wrapper view around the SpacesBar that lets us show/hide it via animation.
@@ -152,6 +130,10 @@ live_design! {
 
                     add_room_page = <View> {
                         width: Fill, height: Fill
+                        show_bg: true,
+                        draw_bg: {
+                            color: (COLOR_PRIMARY)
+                        }
 
                         <CachedWidget> {
                             add_room_screen = <AddRoomScreen> {}

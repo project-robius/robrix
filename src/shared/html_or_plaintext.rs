@@ -130,7 +130,7 @@ live_design! {
         span = <MatrixHtmlSpan> { }
         a = <RobrixHtmlLink> { }
 
-        body: "[<i> HTML message placeholder</i>]",
+        body: "[<i>HTML message placeholder</i>]",
     }
 
     // A view container that displays either plaintext (a simple `Label`)
