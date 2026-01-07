@@ -300,6 +300,7 @@ pub struct AddRoomScreen {
 }
 
 #[derive(Default)]
+#[allow(clippy::large_enum_variant)]
 enum AddRoomState {
     /// We're waiting for the user to input a room ID, alias, or matrix link.
     #[default]
@@ -358,7 +359,7 @@ impl Widget for AddRoomScreen {
                     (JoinButtonFunction::Knock, AddRoomState::FetchedRoomPreview { frp, room_or_alias_id, via }) => {
                         submit_async_request(MatrixRequest::Knock {
                             room_or_alias_id: frp.canonical_alias.clone().map_or_else(
-                                || room_or_alias_id.clone().into(),
+                                || room_or_alias_id.clone(),
                                 Into::into
                             ),
                             reason: None,
