@@ -978,15 +978,15 @@ impl Widget for RoomScreen {
                 let (is_header, groups_before) = tl_state.group_manager.check_group_header_status(item_id);
                 
                 if is_header {
-                    println!("is_header");
+                    println!("is_heade {:?} groups_before {:?}", item_id, groups_before);
                     // This is the first item in a small state group, populate SmallStateHeader
-                    let (item, _existed) = tl_state.group_manager.populate_small_state_header(cx, list, item_id, room_id);
+                    let (item, _existed) = tl_state.group_manager.populate_small_state_header(cx, list, item_id, groups_before, room_id);
                     item.draw_all(cx, scope);
                     continue;
                 }
                 
                 let item = {
-                    println!("groups_before: {} item_id: {}", groups_before, item_id);
+                    //println!("groups_before: {} item_id: {}", groups_before, item_id);
                     let tl_idx = item_id.saturating_sub(groups_before);
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
@@ -1186,11 +1186,11 @@ impl RoomScreen {
 
                     // Compute small state groups for initial items
                     let small_state_events = small_state_group_manager::extract_small_state_events(initial_items.iter().cloned());
-                    if tl.room_id.to_string() == "!UrPVVKTBTiyKLvSgIw:matrix.org" {
+                    if tl.room_id.to_string() == "!MhCFIYPPVRVgyyvRWK:matrix.org" {
                         println!("FirstUpdate: small_state_events: {:?}", small_state_events);
                     }
                     tl.group_manager.compute_group_state_2(small_state_events);
-                    if tl.room_id.to_string() == "!UrPVVKTBTiyKLvSgIw:matrix.org" {
+                    if tl.room_id.to_string() == "!MhCFIYPPVRVgyyvRWK:matrix.org" {
                         println!("FirstUpdate: computed group state {:?}", tl.group_manager);
                     }
 
@@ -1198,6 +1198,7 @@ impl RoomScreen {
                     done_loading = true;
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
+                    return;
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("process_timeline_updates(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);

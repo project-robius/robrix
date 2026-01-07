@@ -25,7 +25,6 @@ live_design! {
     pub SmallStateHeader = <View> {
         width: Fill,
         height: Fit
-        visible: false
         padding: { left: 7.0, top: 2.0, bottom: 2.0 }
         flow: Right,
         align: { y: 0.5 }
@@ -446,7 +445,7 @@ impl SmallStateGroupManager {
             
         let mut is_header = false;
         for (range, _group_id) in self.small_state_groups.iter() {
-            if item_id == range.start {
+            if item_id == range.start + groups_before {
                 // This is the first item in a small state group, draw collapsible button instead of message
                 is_header = true;
                 break;
@@ -474,12 +473,13 @@ impl SmallStateGroupManager {
         cx: &mut Cx,
         list: &mut makepad_widgets::PortalList,
         item_id: usize,
+        groups_before: usize,
         room_id: &matrix_sdk::ruma::RoomId,
     ) -> (WidgetRef, bool) {
         let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateHeader));
-        
+        println!("header: {}, existed: {}", item_id, existed);
         // Find the corresponding SmallStateGroup and populate summary text and avatars
-        if let Some((_range, group_event_id)) = self.small_state_groups.iter().find(|(range, _)| range.start == item_id) {
+        if let Some((_range, group_event_id)) = self.small_state_groups.iter().find(|(range, _)| range.start + groups_before == item_id) {
             if let Some(group) = self.groups_by_event_id.get(group_event_id) {
                 // Set the summary text
                 if let Some(summary_text) = &group.cached_summary {
@@ -1694,4 +1694,103 @@ mod tests {
         //println!("group_manager: {:?}", group_manager);
 
     }
+
+    #[test]
+    fn test_new_compute_group_state_in_room_shift() {
+        let mut group_manager = SmallStateGroupManager::default();
+        let small_state_events = vec![
+            UserEvent {
+                transition: SmallStateType::Joined,
+                index: 3,
+                sender: Some("@ruitoalpha:matrix.org".to_owned().try_into().unwrap()),
+                display_name: "@ruitoalpha:matrix.org".to_string(),
+                state_key: Some("@ruitoalpha:matrix.org".to_string()),
+                event_id: EventId::parse("$RiNNqcH4xjUvBpMy-9GN5QUXGBfUn0wNFzr6AXhoij8").ok(),
+            },
+            UserEvent {
+                transition: SmallStateType::ConfigureRoom,
+                index: 4,
+                sender: Some("@ruitoalpha:matrix.org".to_owned().try_into().unwrap()),
+                display_name: "@ruitoalpha:matrix.org".to_string(),
+                state_key: Some("".to_string()),
+                event_id: EventId::parse("$qKZko9pxnm0G8_kdudNaeALlkQc35asEdFC0KoQaqFA").ok(),
+            },
+            UserEvent {
+                transition: SmallStateType::ConfigureRoom,
+                index: 5,
+                sender: Some("@ruitoalpha:matrix.org".to_owned().try_into().unwrap()),
+                display_name: "@ruitoalpha:matrix.org".to_string(),
+                state_key: Some("".to_string()),
+                event_id: EventId::parse("$qKZko9pxnm0G8_kdudNaeALlkQc35asEdFC0KoQaqFA").ok(),
+            },
+            UserEvent {
+                transition: SmallStateType::UnableToDecrypt,
+                index: 10,
+                sender: Some("@ruitoalpha:matrix.org".to_owned().try_into().unwrap()),
+                display_name: "@ruitoalpha:matrix.org".to_string(),
+                state_key: None,
+                event_id: EventId::parse("$298PuV38_98MW4W-SQRrZ7h_klfRqQF6zGt5Yd6XzIY").ok(),
+            },
+            UserEvent {
+                transition: SmallStateType::UnableToDecrypt,
+                index: 11,
+                sender: Some("@ruitoalpha:matrix.org".to_owned().try_into().unwrap()),
+                display_name: "@ruitoalpha:matrix.org".to_string(),
+                state_key: None,
+                event_id: EventId::parse("$298PuV38_98MW4W-SQRrZ7h_klfRqQF6zGt5Yd6XzIY").ok(),
+            },
+            UserEvent {
+                transition: SmallStateType::UnableToDecrypt,
+                index: 12,
+                sender: Some("@ruitoalpha:matrix.org".to_owned().try_into().unwrap()),
+                display_name: "@ruitoalpha:matrix.org".to_string(),
+                state_key: None,
+                event_id: EventId::parse("$298PuV38_98MW4W-SQRrZ7h_klfRqQF6zGt5Yd6XzIY").ok(),
+            },
+        ];
+        
+        group_manager.compute_group_state_2(small_state_events);
+        println!("group_manager: {:?}", group_manager);
+
+        let small_state_events = vec![
+            UserEvent {
+                transition: SmallStateType::CreateRoom,
+                index: 1,
+                sender: Some("@ruitoalpha:matrix.org".to_owned().try_into().unwrap()),
+                display_name: "@ruitoalpha:matrix.org".to_string(),
+                state_key: Some("".to_string()),
+                event_id: EventId::parse("$5iVFVZRVAV_t2lQxpEA84-SHibJ_0RW6FiEHt3rF-6o").ok(),
+            },
+            UserEvent {
+                transition: SmallStateType::Joined,
+                index: 2,
+                sender: Some("@ruitoalpha:matrix.org".to_owned().try_into().unwrap()),
+                display_name: "@ruitoalpha:matrix.org".to_string(),
+                state_key: Some("@ruitoalpha:matrix.org".to_string()),
+                event_id: EventId::parse("$RiNNqcH4xjUvBpMy-9GN5QUXGBfUn0wNFzr6AXhoij8").ok(),
+            },
+            UserEvent {
+                transition: SmallStateType::ConfigureRoom,
+                index: 3,
+                sender: Some("@ruitoalpha:matrix.org".to_owned().try_into().unwrap()),
+                display_name: "@ruitoalpha:matrix.org".to_string(),
+                state_key: Some("".to_string()),
+                event_id: EventId::parse("$qKZko9pxnm0G8_kdudNaeALlkQc35asEdFC0KoQaqFA").ok(),
+            },
+            UserEvent {
+                transition: SmallStateType::UnableToDecrypt,
+                index: 9,
+                sender: Some("@ruitoalpha:matrix.org".to_owned().try_into().unwrap()),
+                display_name: "@ruitoalpha:matrix.org".to_string(),
+                state_key: None,
+                event_id: EventId::parse("$298PuV38_98MW4W-SQRrZ7h_klfRqQF6zGt5Yd6XzIY").ok(),
+            },
+        ];
+        handle_backward_pagination_index_shift(
+            1,
+            &mut group_manager,
+        );
+        group_manager.compute_group_state_2(small_state_events);
+    }
+
 }
