@@ -30,7 +30,7 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, it
 use std::io;
 use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::TimelineUpdate, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::TimelineUpdate, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -302,6 +302,13 @@ pub enum MatrixRequest {
     SyncRoomMemberList {
         room_id: OwnedRoomId,
     },
+    /// Request to knock on (request an invite to) the given room.
+    Knock {
+        room_or_alias_id: OwnedRoomOrAliasId,
+        reason: Option<String>,
+        #[doc(alias("via"))]
+        server_names: Vec<OwnedServerName>,
+    },
     /// Request to join the given room.
     JoinRoom {
         room_id: OwnedRoomId,
@@ -324,10 +331,6 @@ pub enum MatrixRequest {
     ///
     /// Emits a [`RoomPreviewAction::Fetched`] when the fetch operation has completed.
     GetRoomPreview {
-        // /// The room that made this request, i.e., where we should send the result.
-        // /// * If `Some`, the fetched room preview is sent to this room's timeline.
-        // /// * If `None`, we emit a [`RoomPreviewAction`] contained the fetched room preview.
-        // requesting_room_id: Option<OwnedRoomId>,
         room_or_alias_id: OwnedRoomOrAliasId,
         via: Vec<OwnedServerName>,
     },
@@ -667,6 +670,20 @@ async fn matrix_worker_task(
                     log!("Completed sync room members request for room {room_id}.");
                     sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
                     SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::Knock { room_or_alias_id, reason, server_names } => {
+                let Some(client) = get_client() else { continue };
+                let _knock_room_task = Handle::current().spawn(async move {
+                    log!("Sending request to knock on room {room_or_alias_id}...");
+                    match client.knock(room_or_alias_id, reason, server_names).await {
+                        Ok(room) => {
+                            let _ = room.display_name().await; // populate this room's display name cache
+                            Cx::post_action(KnockResultAction::Knocked(room));
+                        }
+                        Err(e) => Cx::post_action(KnockResultAction::Failed(e)),
+                    }
                 });
             }
 
