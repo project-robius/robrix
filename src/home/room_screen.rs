@@ -80,7 +80,6 @@ live_design! {
     use crate::shared::restore_status_view::*;
     use crate::home::link_preview::LinkPreview;
     use crate::home::small_state_group_manager::SmallStateHeader;
-    use crate::home::small_state_group_manager::CollapsibleButton;
     use link::tsp_link::TspSignIndicator;
 
     COLOR_BG = #xfff8ee
@@ -327,16 +326,17 @@ live_design! {
     SmallStateEvent = <View> {
         width: Fill,
         height: Fit,
-        flow: Down,
+        flow: Right,
+        margin: { top: 4.0, bottom: 4.0}
+        padding: { top: 1.0, bottom: 1.0, right: 10.0 }
         spacing: 0.0
         cursor: Default
-        small_state_header = <SmallStateHeader> { }
+
         body = <View> {
             width: Fill,
             height: Fit
             flow: Right,
-            margin: { top: 4.0, bottom: 4.0}
-            padding: { left: 7.0, top: 2.0, bottom: 2.0, right: 10.0 }
+            padding: { left: 7.0, top: 2.0, bottom: 2.0 }
             spacing: 5.0
 
             left_container = <View> {
@@ -471,7 +471,7 @@ live_design! {
             Empty = <Empty> {}
             DateDivider = <DateDivider> {}
             ReadMarker = <ReadMarker> {}
-            CollapsibleButton = <CollapsibleButton> {}
+            SmallStateHeader = <SmallStateHeader> {}
         }
 
         // A jump to bottom button (with an unread message badge) that is shown
@@ -967,36 +967,27 @@ impl Widget for RoomScreen {
             // accounting for small state groups (collapsed groups take 1 slot each)
             let base_item_count = tl_items.len();
             let group_count = tl_state.group_manager.small_state_groups.len();
+            println!("group_count: {}, base_item_count: {}", group_count, base_item_count);
             let last_item_id = base_item_count + group_count;
 
             let list = list_ref.deref_mut();
             list.set_item_range(cx, 0, last_item_id);
 
             while let Some(item_id) = list.next_visible_item(cx) {
+                // Check if this item is a group header and get the count of groups before it
+                let (is_header, groups_before) = tl_state.group_manager.check_group_header_status(item_id);
+                
+                if is_header {
+                    println!("is_header");
+                    // This is the first item in a small state group, populate SmallStateHeader
+                    let (item, _existed) = tl_state.group_manager.populate_small_state_header(cx, list, item_id, room_id);
+                    item.draw_all(cx, scope);
+                    continue;
+                }
+                
                 let item = {
-                    // Adjust timeline index by subtracting the number of small state groups
-                    // that come before this item_id
-                    let groups_before = tl_state.group_manager.small_state_groups
-                        .iter()
-                        .filter(|(range, _)| range.end <= item_id)
-                        .count();
+                    println!("groups_before: {} item_id: {}", groups_before, item_id);
                     let tl_idx = item_id.saturating_sub(groups_before);
-                    
-                    // Check if this item_id should be the extra collapsible button for the first item in a small_state_group
-                    for (range, _group_id) in tl_state.group_manager.small_state_groups.iter() {
-                        if item_id == range.start {
-                            // This is the first item in a small state group, draw collapsible button instead of message
-                            if let Some(group) = tl_state.group_manager.groups_by_event_id.get(_group_id) {
-                                if !group.opened && range.len() >= 3 {  // Only show button for collapsible groups
-                                    let button = list.item(cx, item_id, id!(CollapsibleButton)).button(ids!(collapsible_button));
-                                    button.set_text(cx, "▼");  // Show collapsed state
-                                    button.set_visible(cx, true);
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                    
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
@@ -1039,10 +1030,8 @@ impl Widget for RoomScreen {
                                     item_id,
                                     room_id,
                                     event_tl_item,
-                                    tl_items,
                                     poll_state,
                                     item_drawn_status,
-                                    &mut tl_state.group_manager,
                                 ),
                                 MsgLikeKind::Redacted => populate_small_state_event(
                                     cx,
@@ -1050,10 +1039,8 @@ impl Widget for RoomScreen {
                                     item_id,
                                     room_id,
                                     event_tl_item,
-                                    tl_items,
                                     &RedactedMessageEventMarker,
                                     item_drawn_status,
-                                    &mut tl_state.group_manager,
                                 ),
                                 MsgLikeKind::UnableToDecrypt(utd) => populate_small_state_event(
                                     cx,
@@ -1061,10 +1048,8 @@ impl Widget for RoomScreen {
                                     item_id,
                                     room_id,
                                     event_tl_item,
-                                    tl_items,
                                     utd,
                                     item_drawn_status,
-                                    &mut tl_state.group_manager,
                                 ),
                                 MsgLikeKind::Other(other) => populate_small_state_event(
                                     cx,
@@ -1072,10 +1057,8 @@ impl Widget for RoomScreen {
                                     item_id,
                                     room_id,
                                     event_tl_item,
-                                    tl_items,
                                     other,
                                     item_drawn_status,
-                                    &mut tl_state.group_manager,
                                 ),
                             },
                             TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
@@ -1084,10 +1067,8 @@ impl Widget for RoomScreen {
                                 item_id,
                                 room_id,
                                 event_tl_item,
-                                tl_items,
                                 membership_change,
                                 item_drawn_status,
-                                &mut tl_state.group_manager,
                             ),
                             TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
                                 cx,
@@ -1095,10 +1076,8 @@ impl Widget for RoomScreen {
                                 item_id,
                                 room_id,
                                 event_tl_item,
-                                tl_items,
                                 profile_change,
                                 item_drawn_status,
-                                &mut tl_state.group_manager,
                             ),
                             TimelineItemContent::OtherState(other) => populate_small_state_event(
                                 cx,
@@ -1106,10 +1085,8 @@ impl Widget for RoomScreen {
                                 item_id,
                                 room_id,
                                 event_tl_item,
-                                tl_items,
                                 other,
                                 item_drawn_status,
-                                &mut tl_state.group_manager,
                             ),
                             unhandled => {
                                 let item = list.item(cx, item_id, id!(SmallStateEvent));
@@ -4054,13 +4031,9 @@ fn populate_small_state_event(
     item_id: usize,
     room_id: &OwnedRoomId,
     event_tl_item: &EventTimelineItem,
-    tl_items: &Vector<Arc<TimelineItem>>,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
-    group_manager: &mut small_state_group_manager::SmallStateGroupManager,
 ) -> (WidgetRef, ItemDrawnStatus) {
-    let prev_event = item_id.checked_sub(1).and_then(|i| tl_items.get(i));
-    let next_event = item_id.checked_add(1).and_then(|i| tl_items.get(i));
     let mut new_drawn_status = item_drawn_status;
     let (item, existed) = list.item_with_existed(cx, item_id, id!(SmallStateEvent));
     // The content of a small state event view may depend on the profile info,
@@ -4096,27 +4069,9 @@ fn populate_small_state_event(
         new_drawn_status.profile_drawn = profile_drawn;
         username
     });
-    // Dynamically determine group membership and update groups
-    // Returns: (show, show_collapsible_button, expanded)
-    // - show: whether this individual item should be rendered (based on group state)
-    // - show_collapsible_button: true if this item is the first in a collapsible group
-    // - expanded: current expansion state of the group (for button text)
-    let user_event = small_state_group_manager::convert_event_tl_item_to_user_event(event_tl_item, item_id);
-    let is_previous_small_state = small_state_group_manager::is_small_state(prev_event);
-    let is_next_small_state = small_state_group_manager::is_small_state(next_event);
 
-    let result = group_manager.compute_group_state(
-        username.clone(),
-        &user_event,
-        is_previous_small_state,
-        is_next_small_state,
-    );
-
-    let (show, collapsible_button) = (result.show, result.collapsible_button);
-    // Only show the collapsible button on the first item of each group
-    item.button(ids!(collapsible_button))
-        .set_visible(cx, collapsible_button != small_state_group_manager::CollapsibleButton::None);
-    let (item, new_drawn_status) = event_content.populate_item_content(
+    // Proceed to draw the actual event content.
+    event_content.populate_item_content(
         cx,
         list,
         item_id,
@@ -4125,20 +4080,8 @@ fn populate_small_state_event(
         &username,
         item_drawn_status,
         new_drawn_status,
-    );
-    // Handle rendering logic for group state using centralized function
-    group_manager.render_collapsible_button_and_body(
-        cx,
-        &item,
-        item_id,
-        show,
-        collapsible_button,
-        room_id,
-    );
-
-    (item, new_drawn_status)
+    )
 }
-
 
 /// Returns the display name of the sender of the given `event_tl_item`, if available.
 fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String> {
