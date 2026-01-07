@@ -431,28 +431,44 @@ impl SmallStateGroupManager {
     /// Checks if an item is a group header and returns the count of groups before it.
     ///
     /// # Arguments
-    /// * `item_id` - The index of the timeline item to check
+    /// * `item_id` - The portal list index to check
     ///
     /// # Returns
     /// * `(bool, usize)` - A tuple containing:
     ///   - `bool`: Whether this item is a group header (first item in a group)
-    ///   - `usize`: The count of groups that start before or at this item_id
+    ///   - `usize`: The count of groups that start before this item_id
     pub fn check_group_header_status(&self, item_id: usize) -> (bool, usize) {
-        let groups_before = self.small_state_groups
-            .iter()
-            .filter(|(range, _)| range.start <= item_id)
-            .count();
+        let mut current_item_id = item_id;
+        let mut groups_before = 0;
+        
+        // Use a while loop to look for group_before of the item_id and add group_before to the item_id,
+        // until there is no change in group_before
+        loop {
+            let new_groups_before = self.small_state_groups
+                .iter()
+                .filter(|(range, _)| range.start <= current_item_id)
+                .count();
             
-        let mut is_header = false;
-        for (range, _group_id) in self.small_state_groups.iter() {
-            if item_id == range.start + groups_before {
-                // This is the first item in a small state group, draw collapsible button instead of message
-                is_header = true;
+            // If groups_before doesn't change, we've reached a stable state
+            if new_groups_before <= groups_before {
+                break;
+            }
+            
+            groups_before = new_groups_before;
+            current_item_id = current_item_id.saturating_sub(groups_before);
+        }
+        if groups_before == 0 {
+            return (false, groups_before);
+        }
+        for (num, (range, _)) in self.small_state_groups.iter().enumerate() {
+            if num == groups_before.saturating_sub(1) {
+                if range.start == item_id.saturating_sub(groups_before) + 1 {
+                    return (true, groups_before);
+                }
                 break;
             }
         }
-        
-        (is_header, groups_before)
+        (false, groups_before)
     }
 
     /// Populates a SmallStateHeader widget for a group header item.
@@ -478,8 +494,11 @@ impl SmallStateGroupManager {
     ) -> (WidgetRef, bool) {
         let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateHeader));
         println!("header: {}, existed: {}", item_id, existed);
+        // Convert item_id (portal list index) to timeline index by subtracting groups_before
+        let tl_idx = item_id.saturating_sub(groups_before);
+        
         // Find the corresponding SmallStateGroup and populate summary text and avatars
-        if let Some((_range, group_event_id)) = self.small_state_groups.iter().find(|(range, _)| range.start + groups_before == item_id) {
+        if let Some((_range, group_event_id)) = self.small_state_groups.iter().find(|(range, _)| range.start == tl_idx) {
             if let Some(group) = self.groups_by_event_id.get(group_event_id) {
                 // Set the summary text
                 if let Some(summary_text) = &group.cached_summary {
