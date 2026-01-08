@@ -324,7 +324,7 @@ enum AddRoomState {
     /// We failed to fetch the room preview, likely because it couldn't be found
     /// or because of connectivity issues or something else.
     FetchError(String),
-    /// We succesfully knocked on the room or space, and are waiting for
+    /// We successfully knocked on the room or space, and are waiting for
     /// a member of that room/space to acknowledge our knock.
     Knocked {
         frp: FetchedRoomPreview,
@@ -474,7 +474,7 @@ impl Widget for AddRoomScreen {
                                 _ => "room",
                             };
                             enqueue_popup_notification(PopupItem {
-                                message: format!("Succesfully knocked on {room_type} {}.", frp.room_name_id),
+                                message: format!("Successfully knocked on {room_type} {}.", frp.room_name_id),
                                 auto_dismissal_duration: Some(4.0),
                                 kind: PopupKind::Success,
                             });
@@ -499,7 +499,7 @@ impl Widget for AddRoomScreen {
                                 _ => "room",
                             };
                             enqueue_popup_notification(PopupItem {
-                                message: format!("Succesfully joined {room_type} {}.", frp.room_name_id),
+                                message: format!("Successfully joined {room_type} {}.", frp.room_name_id),
                                 auto_dismissal_duration: Some(4.0),
                                 kind: PopupKind::Success,
                             });
