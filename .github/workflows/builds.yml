@@ -172,8 +172,9 @@ jobs:
           rustup toolchain install nightly
 
       - name: Install cargo-makepad
+        # The git repo and branch MUST MATCH the `makepad-widgets` dependency defined in `Cargo.toml`.
         run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
+          cargo install --force --git https://github.com/kevinaboos/makepad.git --branch serde_optional cargo-makepad
 
       - name: Install iOS toolchain
         run: |
@@ -209,8 +210,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-makepad
+        # The git repo and branch MUST MATCH the `makepad-widgets` dependency defined in `Cargo.toml`.
         run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
+          cargo install --force --git https://github.com/kevinaboos/makepad.git --branch serde_optional cargo-makepad
 
       - name: Install Android toolchain
         run: |
@@ -238,8 +240,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-makepad
+        # The git repo and branch MUST MATCH the `makepad-widgets` dependency defined in `Cargo.toml`.
         run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
+          cargo install --force --git https://github.com/kevinaboos/makepad.git --branch serde_optional cargo-makepad
 
       - name: Install Android toolchain
         run: |
@@ -272,8 +275,9 @@ jobs:
           key: android-windows-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Install cargo-makepad
+        # The git repo and branch MUST MATCH the `makepad-widgets` dependency defined in `Cargo.toml`.
         run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
+          cargo install --force --git https://github.com/kevinaboos/makepad.git --branch serde_optional cargo-makepad
 
       - name: Install Android toolchain
         run: |
