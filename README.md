@@ -187,7 +187,8 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Room browser, search for public rooms
 - [x] Accept/reject room invites
 - [x] Join room by accepting invite
-- [ ] Knock on room (request to join)
+- [x] Join room by searching for room alias, room ID, or via a Matrix link
+- [x] Knock on room (request to join)
 - [ ] Administrative abilities: ban, kick, etc
 - [ ] Room creation/settings/info screen
 - [ ] Room members pane
