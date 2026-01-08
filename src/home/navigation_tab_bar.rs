@@ -29,7 +29,6 @@
 //!
 
 use makepad_widgets::*;
-
 use crate::{
     avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
         user_profile::{AvatarState, UserProfile},
@@ -471,7 +470,7 @@ impl Widget for NavigationTabBar {
 }
 
 
-/// Which tab is currently selected in the NavigationTabBar.
+/// Which top-level view is currently shown, and which navigation tab is selected.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum SelectedTab {
     #[default]
@@ -486,6 +485,7 @@ pub enum SelectedTab {
 /// Actions for navigating through the top-level views of the app,
 /// e.g., when the user clicks/taps on a button in the NavigationTabBar.
 ///
+/// ## Tip: you only want to handle `TabSelected`
 /// The most important variant is `TabSelected`, which is most likely the action
 /// that you want to handle in other widgets, if you care about which
 /// top-level navigation tab is currently selected.
@@ -494,6 +494,11 @@ pub enum SelectedTab {
 /// to a different view (or back to a previous view) without explicitly clicking
 /// a navigation tab button, e.g., via a keyboard shortcut, or programmatically.
 ///
+/// Only one widget, the `HomeScreen`, should emit the `TabSelected` action.
+/// All other widgets should handle only that action in order to ensure
+/// consistent behavior.
+///
+/// ## More details
 /// There are 3 kinds of actions within this one enum:
 /// 1. "Leading-edge" ("request") actions emitted by the NavigationTabBar
 ///    when the user selects a particular button/space.
@@ -521,7 +526,7 @@ pub enum NavigationBarAction {
     // TODO: add GoToAlertsInbox, once we add that button/screen
 
     /// The given tab was selected as the active top-level view.
-    /// This is needed to ensure that the proper tab is marked as selected 
+    /// This is needed to ensure that the proper tab is marked as selected. 
     TabSelected(SelectedTab),
     /// Toggle whether the SpacesBar is shown, i.e., show/hide it.
     /// This is only applicable in the Mobile view mode, because the SpacesBar

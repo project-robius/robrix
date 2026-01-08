@@ -312,7 +312,7 @@ impl RoomsListEntryContent {
         self.view
             .unread_badge(ids!(unread_badge))
             .update_counts(room_info.num_unread_mentions, room_info.num_unread_messages);
-        self.draw_common(cx, &room_info.avatar, room_info.is_selected);
+        self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
         // Show tombstone icon if the room is tombstoned
         self.view.view(ids!(tombstone_icon)).set_visible(cx, room_info.is_tombstoned);
     }
