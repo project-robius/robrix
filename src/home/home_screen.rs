@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::{home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, settings::settings_screen::SettingsScreenWidgetRefExt};
+use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, settings::settings_screen::SettingsScreenWidgetRefExt};
 
 live_design! {
     use link::theme::*;
@@ -279,7 +279,11 @@ impl SpacesBarWrapperRef {
 pub struct HomeScreen {
     #[deref] view: View,
 
-    #[rust] selection: SelectedTab,
+    /// The previously-selected navigation tab, used to determine which tab
+    /// and top-level view we return to after closing the settings screen.
+    ///
+    /// Note that the current selected tap is stored in `AppState` so that
+    /// other widgets can easily access it.
     #[rust] previous_selection: SelectedTab,
     #[rust] is_spaces_bar_shown: bool,
 }
@@ -287,43 +291,44 @@ pub struct HomeScreen {
 impl Widget for HomeScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
+            let app_state = scope.data.get_mut::<AppState>().unwrap();
             for action in actions {
                 match action.downcast_ref() {
                     Some(NavigationBarAction::GoToHome) => {
-                        if !matches!(self.selection, SelectedTab::Home) {
-                            self.previous_selection = self.selection.clone();
-                            self.selection = SelectedTab::Home;
-                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
-                            self.update_active_page_from_selection(cx);
+                        if !matches!(app_state.selected_tab, SelectedTab::Home) {
+                            self.previous_selection = app_state.selected_tab.clone();
+                            app_state.selected_tab = SelectedTab::Home;
+                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+                            self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
                         }
                     }
                     Some(NavigationBarAction::GoToAddRoom) => {
-                        if !matches!(self.selection, SelectedTab::AddRoom) {
-                            self.previous_selection = self.selection.clone();
-                            self.selection = SelectedTab::AddRoom;
-                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
-                            self.update_active_page_from_selection(cx);
+                        if !matches!(app_state.selected_tab, SelectedTab::AddRoom) {
+                            self.previous_selection = app_state.selected_tab.clone();
+                            app_state.selected_tab = SelectedTab::AddRoom;
+                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+                            self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
                         }
                     }
                     Some(NavigationBarAction::GoToSpace { space_name_id }) => {
                         let new_space_selection = SelectedTab::Space { space_name_id: space_name_id.clone() };
-                        if self.selection != new_space_selection {
-                            self.previous_selection = self.selection.clone();
-                            self.selection = new_space_selection;
-                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
-                            self.update_active_page_from_selection(cx);
+                        if app_state.selected_tab != new_space_selection {
+                            self.previous_selection = app_state.selected_tab.clone();
+                            app_state.selected_tab = new_space_selection;
+                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+                            self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
                         }
                     }
                     // Only open the settings screen if it is not currently open.
                     Some(NavigationBarAction::OpenSettings) => {
-                        if !matches!(self.selection, SelectedTab::Settings) {
-                            self.previous_selection = self.selection.clone();
-                            self.selection = SelectedTab::Settings;
-                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
-                            if let Some(settings_page) = self.update_active_page_from_selection(cx) {
+                        if !matches!(app_state.selected_tab, SelectedTab::Settings) {
+                            self.previous_selection = app_state.selected_tab.clone();
+                            app_state.selected_tab = SelectedTab::Settings;
+                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+                            if let Some(settings_page) = self.update_active_page_from_selection(cx, app_state) {
                                 settings_page
                                     .settings_screen(ids!(settings_screen))
                                     .populate(cx, None);
@@ -334,10 +339,10 @@ impl Widget for HomeScreen {
                         }
                     }
                     Some(NavigationBarAction::CloseSettings) => {
-                        if matches!(self.selection, SelectedTab::Settings) {
-                            self.selection = self.previous_selection.clone();
-                            cx.action(NavigationBarAction::TabSelected(self.selection.clone()));
-                            self.update_active_page_from_selection(cx);
+                        if matches!(app_state.selected_tab, SelectedTab::Settings) {
+                            app_state.selected_tab = self.previous_selection.clone();
+                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+                            self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
                         }
                     }
@@ -357,27 +362,32 @@ impl Widget for HomeScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_state = scope.data.get_mut::<AppState>().unwrap();
         // Note: We need to update the active page before drawing,
         // because if we switched between Desktop and Mobile views,
         // the PageFlip widget will have been reset to its default,
-        // so we must re-set it to the correct page based on `self.selection`.
-        self.update_active_page_from_selection(cx);
+        // so we must re-set it to the correct page based on `app_state.selected_tab`.
+        self.update_active_page_from_selection(cx, app_state);
 
         self.view.draw_walk(cx, scope, walk)
     }
 }
 
 impl HomeScreen {
-    fn update_active_page_from_selection(&mut self, cx: &mut Cx) -> Option<WidgetRef> {
+    fn update_active_page_from_selection(
+        &mut self,
+        cx: &mut Cx,
+        app_state: &mut AppState,
+    ) -> Option<WidgetRef> {
         self.view
             .page_flip(ids!(home_screen_page_flip))
             .set_active_page(
                 cx,
-                match self.selection {
-                    SelectedTab::Home     => id!(home_page),
+                match app_state.selected_tab {
+                    SelectedTab::Space { .. }
+                    | SelectedTab::Home => id!(home_page),
                     SelectedTab::Settings => id!(settings_page),
-                    SelectedTab::AddRoom  => id!(add_room_page),
-                    SelectedTab::Space { .. } => id!(home_page),
+                    SelectedTab::AddRoom => id!(add_room_page),
                 },
             )
     }

@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::RoomState;
 use ruma::{IdParseError, MatrixToUri, MatrixUri, OwnedRoomOrAliasId, OwnedServerName, matrix_uri::MatrixId, room::{JoinRuleSummary, RoomType}};
 
-use crate::{app::AppStateAction, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{avatar::AvatarWidgetRefExt, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils};
+use crate::{app::AppStateAction, home::invite_screen::JoinRoomResultAction, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{avatar::AvatarWidgetRefExt, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils};
 
 live_design! {
     use link::theme::*;
@@ -296,6 +296,7 @@ live_design! {
 pub struct AddRoomScreen {
     #[deref] view: View,
     #[rust] state: AddRoomState,
+    /// The function to perform when the user clicks the `join_room_button`.
     #[rust(JoinButtonFunction::None)] join_function: JoinButtonFunction,
 }
 
@@ -323,6 +324,35 @@ enum AddRoomState {
     /// We failed to fetch the room preview, likely because it couldn't be found
     /// or because of connectivity issues or something else.
     FetchError(String),
+    /// We successfully knocked on the room or space, and are waiting for
+    /// a member of that room/space to acknowledge our knock.
+    Knocked {
+        frp: FetchedRoomPreview,
+    },
+    /// We successfully joined the room or space, and are waiting for it
+    /// to be loaded from the homeserver.
+    Joined {
+        frp: FetchedRoomPreview,
+    },
+}
+impl AddRoomState {
+    fn transition_to_knocked(&mut self) {
+        let prev = std::mem::take(self);
+        if let Self::FetchedRoomPreview { frp, .. } = prev {
+            *self = Self::Knocked { frp };
+        } else {
+            *self = prev;
+        }
+    }
+
+    fn transition_to_joined(&mut self) {
+        let prev = std::mem::take(self);
+        if let Self::FetchedRoomPreview { frp, .. } = prev {
+            *self = Self::Joined { frp };
+        } else {
+            *self = prev;
+        }
+    }
 }
 
 impl Widget for AddRoomScreen {
@@ -431,40 +461,66 @@ impl Widget for AddRoomScreen {
             }
 
 
-            for action in actions {
-                match action.downcast_ref() {
-                    Some(KnockResultAction::Knocked(room)) => {
-                        let room_type = match room.room_type() {
-                            Some(RoomType::Space) => "space",
-                            _ => "room",
-                        };
-                        let message = room.cached_display_name()
-                            .or_else(|| match &self.state {
-                                AddRoomState::FetchedRoomPreview { frp, .. } if frp.room_name_id.room_id() == room.room_id() => {
-                                    Some(frp.room_name_id.display_name().clone())
-                                }
-                                _ => None,
-                            })
-                            .map_or_else(
-                                || format!("Knocked on {room_type} ID {}", room.room_id()),
-                                |dn| format!("Knocked on {room_type} \"{}\"", dn),
-                            );
-                        enqueue_popup_notification(PopupItem {
-                            message,
-                            auto_dismissal_duration: Some(4.0),
-                            kind: PopupKind::Success,
-                        });
+            // If we've fetched and displayed the room preview, handle any responses to
+            // the user clicking the join button (e.g., knocked on or joined the room/space).
+            let mut transition_to_knocked = false;
+            let mut transition_to_joined  = false;
+            if let AddRoomState::FetchedRoomPreview { frp, room_or_alias_id, .. } = &self.state {
+                for action in actions {
+                    match action.downcast_ref() {
+                        Some(KnockResultAction::Knocked { room, .. }) if room.room_id() == frp.room_name_id.room_id() => {
+                            let room_type = match room.room_type() {
+                                Some(RoomType::Space) => "space",
+                                _ => "room",
+                            };
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Successfully knocked on {room_type} {}.", frp.room_name_id),
+                                auto_dismissal_duration: Some(4.0),
+                                kind: PopupKind::Success,
+                            });
+                            transition_to_knocked = true;
+                            break;
+                        }
+                        Some(KnockResultAction::Failed { error, room_or_alias_id: roai }) if room_or_alias_id == roai => {
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Failed to knock on room.\n\nError: {error}."),
+                                auto_dismissal_duration: None,
+                                kind: PopupKind::Error,
+                            });
+                            break;
+                        }
+                        _ => { }
                     }
-                    Some(KnockResultAction::Failed(e)) => {
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Failed to knock on room.\n\nError: {e}."),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Error,
-                        });
+
+                    match action.downcast_ref() {
+                        Some(JoinRoomResultAction::Joined { room_id }) if room_id == frp.room_name_id.room_id() => {
+                            let room_type = match &frp.room_type {
+                                Some(RoomType::Space) => "space",
+                                _ => "room",
+                            };
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Successfully joined {room_type} {}.", frp.room_name_id),
+                                auto_dismissal_duration: Some(4.0),
+                                kind: PopupKind::Success,
+                            });
+                            transition_to_joined = true;
+                            break;
+                        }
+                        Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == frp.room_name_id.room_id() => {
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Failed to join room.\n\nError: {error}."),
+                                auto_dismissal_duration: None,
+                                kind: PopupKind::Error,
+                            });
+                            break;
+                        }
+                        _ => {}
                     }
-                    _ => { }
                 }
             }
+            if transition_to_knocked { self.state.transition_to_knocked(); }
+            if transition_to_joined { self.state.transition_to_joined(); }
+
         }
     }
 
@@ -495,7 +551,9 @@ impl Widget for AddRoomScreen {
                 fetched_room_summary.set_visible(cx, false); 
                 error_view.set_visible(cx, false);
             }
-            AddRoomState::FetchedRoomPreview { frp, .. } => {
+            ars @ AddRoomState::FetchedRoomPreview { frp, .. } 
+            | ars @ AddRoomState::Knocked { frp }
+            | ars @ AddRoomState::Joined { frp } => {
                 loading_room_view.set_visible(cx, false);
                 fetched_room_summary.set_visible(cx, true);
                 error_view.set_visible(cx, false);
@@ -641,10 +699,23 @@ impl Widget for AddRoomScreen {
                     }
                 };
 
-                join_room_button.set_enabled(cx, !matches!(join_function, JoinButtonFunction::None));
-                self.join_function = join_function;
-                join_room_button.reset_hover(cx);
-                fetched_room_summary.button(ids!(cancel_button)).reset_hover(cx);
+                match ars {
+                    AddRoomState::FetchedRoomPreview { .. } => {
+                        join_room_button.set_enabled(cx, !matches!(join_function, JoinButtonFunction::None));
+                        self.join_function = join_function;
+                        join_room_button.reset_hover(cx);
+                        fetched_room_summary.button(ids!(cancel_button)).reset_hover(cx);
+                    }
+                    AddRoomState::Knocked { .. } => {
+                        join_room_button.set_text(cx, "Successfully knocked!");
+                        join_room_button.set_enabled(cx, false);
+                    }
+                    AddRoomState::Joined { .. } => {
+                        join_room_button.set_text(cx, "Successfully joined!");
+                        join_room_button.set_enabled(cx, false);
+                    }
+                    _ => {}
+                }
             }
         }
 
@@ -667,9 +738,18 @@ enum JoinButtonFunction {
 #[derive(Debug)]
 pub enum KnockResultAction {
     /// The user successfully knocked on the room/space.
-    Knocked(matrix_sdk::Room),
+    Knocked {
+        /// The room alias/ID that was originally sent with the knock request.
+        room_or_alias_id: OwnedRoomOrAliasId,
+        /// The room that was knocked on.
+        room: matrix_sdk::Room,
+    },
     /// There was an error attempting to knock on the room.
-    Failed(matrix_sdk::Error),
+    Failed {
+        /// The room alias/ID that was originally sent with the knock request.
+        room_or_alias_id: OwnedRoomOrAliasId,
+        error: matrix_sdk::Error,
+    }
 }
 
 
