@@ -677,12 +677,18 @@ async fn matrix_worker_task(
                 let Some(client) = get_client() else { continue };
                 let _knock_room_task = Handle::current().spawn(async move {
                     log!("Sending request to knock on room {room_or_alias_id}...");
-                    match client.knock(room_or_alias_id, reason, server_names).await {
+                    match client.knock(room_or_alias_id.clone(), reason, server_names).await {
                         Ok(room) => {
                             let _ = room.display_name().await; // populate this room's display name cache
-                            Cx::post_action(KnockResultAction::Knocked(room));
+                            Cx::post_action(KnockResultAction::Knocked {
+                                room_or_alias_id,
+                                room,
+                            });
                         }
-                        Err(e) => Cx::post_action(KnockResultAction::Failed(e)),
+                        Err(error) => Cx::post_action(KnockResultAction::Failed {
+                            room_or_alias_id,
+                            error,
+                        }),
                     }
                 });
             }
