@@ -139,7 +139,9 @@ live_design! {
     pub COLOR_NAVIGATION_TAB_BG_HOVER  = (COLOR_SECONDARY * 0.85)
     pub COLOR_NAVIGATION_TAB_BG_ACTIVE = #9
 
-    
+    pub COLOR_IMAGE_VIEWER_BACKGROUND = #88888899 // 60% transparent
+    pub COLOR_IMAGE_VIEWER_META_BACKGROUND = #ffffff99 // 60% transparent
+
     // An icon that can be rotated at a custom angle.
     pub IconRotated = <Icon> {
         draw_icon: {
