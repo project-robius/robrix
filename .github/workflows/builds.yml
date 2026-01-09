@@ -171,10 +171,15 @@ jobs:
         run: |
           rustup toolchain install nightly
 
-      - name: Install cargo-makepad
-        # The git repo and branch MUST MATCH the `makepad-widgets` dependency defined in `Cargo.toml`.
+      - name: Resolve Makepad revision
+        id: makepad
+        shell: bash
         run: |
-          cargo install --force --git https://github.com/kevinaboos/makepad.git --branch serde_optional cargo-makepad
+          bash ./.github/scripts/resolve-makepad-rev.sh >> "$GITHUB_OUTPUT"
+
+      - name: Install cargo-makepad
+        run: |
+          cargo install --force --git "${{ steps.makepad.outputs.repo }}" --rev "${{ steps.makepad.outputs.rev }}" cargo-makepad
 
       - name: Install iOS toolchain
         run: |
@@ -209,10 +214,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-makepad
-        # The git repo and branch MUST MATCH the `makepad-widgets` dependency defined in `Cargo.toml`.
+      - name: Resolve Makepad revision
+        id: makepad
+        shell: bash
         run: |
-          cargo install --force --git https://github.com/kevinaboos/makepad.git --branch serde_optional cargo-makepad
+          bash ./.github/scripts/resolve-makepad-rev.sh >> "$GITHUB_OUTPUT"
+
+      - name: Install cargo-makepad
+        run: |
+          cargo install --force --git "${{ steps.makepad.outputs.repo }}" --rev "${{ steps.makepad.outputs.rev }}" cargo-makepad
 
       - name: Install Android toolchain
         run: |
@@ -239,10 +249,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-makepad
-        # The git repo and branch MUST MATCH the `makepad-widgets` dependency defined in `Cargo.toml`.
+      - name: Resolve Makepad revision
+        id: makepad
+        shell: bash
         run: |
-          cargo install --force --git https://github.com/kevinaboos/makepad.git --branch serde_optional cargo-makepad
+          bash ./.github/scripts/resolve-makepad-rev.sh >> "$GITHUB_OUTPUT"
+
+      - name: Install cargo-makepad
+        run: |
+          cargo install --force --git "${{ steps.makepad.outputs.repo }}" --rev "${{ steps.makepad.outputs.rev }}" cargo-makepad
 
       - name: Install Android toolchain
         run: |
@@ -274,10 +289,15 @@ jobs:
         with:
           key: android-windows-build-${{ hashFiles('Cargo.lock') }}
 
-      - name: Install cargo-makepad
-        # The git repo and branch MUST MATCH the `makepad-widgets` dependency defined in `Cargo.toml`.
+      - name: Resolve Makepad revision
+        id: makepad
+        shell: bash
         run: |
-          cargo install --force --git https://github.com/kevinaboos/makepad.git --branch serde_optional cargo-makepad
+          bash ./.github/scripts/resolve-makepad-rev.sh >> "$GITHUB_OUTPUT"
+
+      - name: Install cargo-makepad
+        run: |
+          cargo install --force --git "${{ steps.makepad.outputs.repo }}" --rev "${{ steps.makepad.outputs.rev }}" cargo-makepad
 
       - name: Install Android toolchain
         run: |
