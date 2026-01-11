@@ -171,10 +171,8 @@ jobs:
         run: |
           rustup toolchain install nightly
 
-      - name: Install cargo-makepad
-        # The git repo and branch MUST MATCH the `makepad-widgets` dependency defined in `Cargo.toml`.
-        run: |
-          cargo install --force --git https://github.com/kevinaboos/makepad.git --branch serde_optional cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install iOS toolchain
         run: |
@@ -209,10 +207,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-makepad
-        # The git repo and branch MUST MATCH the `makepad-widgets` dependency defined in `Cargo.toml`.
-        run: |
-          cargo install --force --git https://github.com/kevinaboos/makepad.git --branch serde_optional cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
@@ -239,10 +235,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-makepad
-        # The git repo and branch MUST MATCH the `makepad-widgets` dependency defined in `Cargo.toml`.
-        run: |
-          cargo install --force --git https://github.com/kevinaboos/makepad.git --branch serde_optional cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
@@ -274,10 +268,8 @@ jobs:
         with:
           key: android-windows-build-${{ hashFiles('Cargo.lock') }}
 
-      - name: Install cargo-makepad
-        # The git repo and branch MUST MATCH the `makepad-widgets` dependency defined in `Cargo.toml`.
-        run: |
-          cargo install --force --git https://github.com/kevinaboos/makepad.git --branch serde_optional cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
