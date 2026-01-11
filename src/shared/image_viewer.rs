@@ -607,7 +607,10 @@ impl Widget for ImageViewer {
                 }
             }
             Hit::FingerHoverOut(fe) => {
-                if !self.view.view(ids!(button_group_rounded_view)).area().rect(cx).contains(fe.abs) && !self.ui_visible_toggle {
+                // FingerHoverOut is triggered when the cursor enters into the button.
+                // Hence we need to check if the cursor is actually inside the button group.
+                if !self.view.view(ids!(button_group_rounded_view)).area().rect(cx).contains(fe.abs)
+                        && !self.ui_visible_toggle {
                     self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
                 }
             }
