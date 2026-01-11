@@ -171,15 +171,8 @@ jobs:
         run: |
           rustup toolchain install nightly
 
-      - name: Resolve Makepad revision
-        id: makepad
-        shell: bash
-        run: |
-          bash ./.github/scripts/resolve-makepad-rev.sh >> "$GITHUB_OUTPUT"
-
-      - name: Install cargo-makepad
-        run: |
-          cargo install --force --git "${{ steps.makepad.outputs.repo }}" --rev "${{ steps.makepad.outputs.rev }}" cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install iOS toolchain
         run: |
@@ -214,15 +207,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Resolve Makepad revision
-        id: makepad
-        shell: bash
-        run: |
-          bash ./.github/scripts/resolve-makepad-rev.sh >> "$GITHUB_OUTPUT"
-
-      - name: Install cargo-makepad
-        run: |
-          cargo install --force --git "${{ steps.makepad.outputs.repo }}" --rev "${{ steps.makepad.outputs.rev }}" cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
@@ -249,15 +235,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Resolve Makepad revision
-        id: makepad
-        shell: bash
-        run: |
-          bash ./.github/scripts/resolve-makepad-rev.sh >> "$GITHUB_OUTPUT"
-
-      - name: Install cargo-makepad
-        run: |
-          cargo install --force --git "${{ steps.makepad.outputs.repo }}" --rev "${{ steps.makepad.outputs.rev }}" cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
@@ -289,15 +268,8 @@ jobs:
         with:
           key: android-windows-build-${{ hashFiles('Cargo.lock') }}
 
-      - name: Resolve Makepad revision
-        id: makepad
-        shell: bash
-        run: |
-          bash ./.github/scripts/resolve-makepad-rev.sh >> "$GITHUB_OUTPUT"
-
-      - name: Install cargo-makepad
-        run: |
-          cargo install --force --git "${{ steps.makepad.outputs.repo }}" --rev "${{ steps.makepad.outputs.rev }}" cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
