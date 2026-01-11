@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use makepad_widgets::*;
+use makepad_widgets::{image_cache::ImageError, *};
 use matrix_sdk::{ruma::{EventId, OwnedRoomId, OwnedUserId, RoomId, UserId}};
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 
@@ -131,6 +131,9 @@ impl Widget for Avatar {
         self.label(ids!(text_view.text)).set_text(cx, &f);
         self.view(ids!(img_view)).set_visible(cx, false);
         self.view(ids!(text_view)).set_visible(cx, true);
+    }
+    fn text(&self) -> String {
+        self.label(ids!(text_view.text)).text()
     }
 }
 
@@ -350,6 +353,28 @@ impl Avatar {
             });
         (username, profile_drawn)
     }
+
+    /// Similar to [`Avatar::set_avatar_and_get_username()`] but does not show the user profile view.
+    pub fn set_avatar_and_get_username_without_show_user_profile(
+        &mut self,
+        cx: &mut Cx,
+        room_id: &RoomId,
+        avatar_user_id: &UserId,
+        avatar_profile_opt: Option<&TimelineDetails<Profile>>,
+        event_id: Option<&EventId>,
+    ) -> (String, bool) {
+        let (username, profile_drawn) = self.set_avatar_and_get_username(cx, room_id, avatar_user_id, avatar_profile_opt, event_id);
+        self.view.apply_over(cx, live!{
+            cursor: Default
+        });
+        if self.view(ids!(text_view)).visible() {
+            let username = self.text();
+            self.show_text(cx, None, None, username);
+        } else {
+            let _ = self.show_image(cx, None, |_ , _| Ok::<(), ImageError>(()));
+        }
+        (username, profile_drawn)
+    }
 }
 
 impl AvatarRef {
@@ -402,6 +427,22 @@ impl AvatarRef {
     ) -> (String, bool) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_avatar_and_get_username(cx, room_id, avatar_user_id, avatar_profile_opt, event_id)
+        } else {
+            (avatar_user_id.to_string(), false)
+        }
+    }
+
+    /// See [`Avatar::set_avatar_and_get_username_without_show_user_profile()`].
+    pub fn set_avatar_and_get_username_without_show_user_profile(
+        &self,
+        cx: &mut Cx,
+        room_id: &RoomId,
+        avatar_user_id: &UserId,
+        avatar_profile_opt: Option<&TimelineDetails<Profile>>,
+        event_id: Option<&EventId>,
+    ) -> (String, bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_avatar_and_get_username_without_show_user_profile(cx, room_id, avatar_user_id, avatar_profile_opt, event_id)
         } else {
             (avatar_user_id.to_string(), false)
         }

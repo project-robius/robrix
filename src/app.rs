@@ -461,9 +461,10 @@ fn clear_all_app_state(cx: &mut Cx) {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        // if let Event::WindowGeomChange(geom) = event {
-        //     log!("App::handle_event(): Window geometry changed: {:?}", geom);
-        // }
+        if let Event::WindowGeomChange(_) = event {
+            //log!("App::handle_event(): Window geometry changed: {:?}", geom);
+            cx.action(ImageViewerAction::Resize);
+        }
 
         if let Event::Shutdown = event {
             let window_ref = self.ui.window(ids!(main_window));
