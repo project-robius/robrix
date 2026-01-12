@@ -30,7 +30,7 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, it
 use std::io;
 use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::TimelineUpdate, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::TimelineUpdate, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -302,6 +302,13 @@ pub enum MatrixRequest {
     SyncRoomMemberList {
         room_id: OwnedRoomId,
     },
+    /// Request to knock on (request an invite to) the given room.
+    Knock {
+        room_or_alias_id: OwnedRoomOrAliasId,
+        reason: Option<String>,
+        #[doc(alias("via"))]
+        server_names: Vec<OwnedServerName>,
+    },
     /// Request to join the given room.
     JoinRoom {
         room_id: OwnedRoomId,
@@ -324,10 +331,6 @@ pub enum MatrixRequest {
     ///
     /// Emits a [`RoomPreviewAction::Fetched`] when the fetch operation has completed.
     GetRoomPreview {
-        // /// The room that made this request, i.e., where we should send the result.
-        // /// * If `Some`, the fetched room preview is sent to this room's timeline.
-        // /// * If `None`, we emit a [`RoomPreviewAction`] contained the fetched room preview.
-        // requesting_room_id: Option<OwnedRoomId>,
         room_or_alias_id: OwnedRoomOrAliasId,
         via: Vec<OwnedServerName>,
     },
@@ -667,6 +670,26 @@ async fn matrix_worker_task(
                     log!("Completed sync room members request for room {room_id}.");
                     sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
                     SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::Knock { room_or_alias_id, reason, server_names } => {
+                let Some(client) = get_client() else { continue };
+                let _knock_room_task = Handle::current().spawn(async move {
+                    log!("Sending request to knock on room {room_or_alias_id}...");
+                    match client.knock(room_or_alias_id.clone(), reason, server_names).await {
+                        Ok(room) => {
+                            let _ = room.display_name().await; // populate this room's display name cache
+                            Cx::post_action(KnockResultAction::Knocked {
+                                room_or_alias_id,
+                                room,
+                            });
+                        }
+                        Err(error) => Cx::post_action(KnockResultAction::Failed {
+                            room_or_alias_id,
+                            error,
+                        }),
+                    }
                 });
             }
 
@@ -1374,26 +1397,25 @@ async fn matrix_worker_task(
                 });
             }
             MatrixRequest::GetUrlPreview { url, on_fetched, destination, update_sender,} => {
-                const MAX_LOG_RESPONSE_BODY_LENGTH: usize = 1000;
-
-                log!("Starting URL preview fetch for: {}", url);
+                // const MAX_LOG_RESPONSE_BODY_LENGTH: usize = 1000;
+                // log!("Starting URL preview fetch for: {}", url);
                 let _fetch_url_preview_task = Handle::current().spawn(async move {
                     let result: Result<LinkPreviewData, UrlPreviewError> = async {
-                        log!("Getting Matrix client for URL preview: {}", url);
+                        // log!("Getting Matrix client for URL preview: {}", url);
                         let client = get_client().ok_or_else(|| {
-                            error!("Matrix client not available for URL preview: {}", url);
+                            // error!("Matrix client not available for URL preview: {}", url);
                             UrlPreviewError::ClientNotAvailable
                         })?;
                         
                         let token = client.access_token().ok_or_else(|| {
-                            error!("Access token not available for URL preview: {}", url);
+                            // error!("Access token not available for URL preview: {}", url);
                             UrlPreviewError::AccessTokenNotAvailable
                         })?;
                         // Official Doc: https://spec.matrix.org/v1.11/client-server-api/#get_matrixclientv1mediapreview_url
                         // Element desktop is using /_matrix/media/v3/preview_url
                         let endpoint_url = client.homeserver().join("/_matrix/client/v1/media/preview_url")
                             .map_err(UrlPreviewError::UrlParse)?;
-                        log!("Fetching URL preview from endpoint: {} for URL: {}", endpoint_url, url);
+                        // log!("Fetching URL preview from endpoint: {} for URL: {}", endpoint_url, url);
                         
                         let response = client
                             .http_client()
@@ -1404,34 +1426,34 @@ async fn matrix_worker_task(
                             .send()
                             .await
                             .map_err(|e| {
-                                error!("HTTP request failed for URL preview {}: {}", url, e);
+                                // error!("HTTP request failed for URL preview {}: {}", url, e);
                                 UrlPreviewError::Request(e)
                             })?;
                         
                         let status = response.status();
-                        log!("URL preview response status for {}: {}", url, status);
+                        // log!("URL preview response status for {}: {}", url, status);
                         
                         if !status.is_success() && status.as_u16() != 429 {
-                            error!("URL preview request failed with status {} for URL: {}", status, url);
+                            // error!("URL preview request failed with status {} for URL: {}", status, url);
                             return Err(UrlPreviewError::HttpStatus(status.as_u16()));
                         }
                         
                         let text = response.text().await.map_err(|e| {
-                            error!("Failed to read response text for URL preview {}: {}", url, e);
+                            // error!("Failed to read response text for URL preview {}: {}", url, e);
                             UrlPreviewError::Request(e)
                         })?;
                         
-                        log!("URL preview response body length for {}: {} bytes", url, text.len());
-                        if text.len() > MAX_LOG_RESPONSE_BODY_LENGTH {
-                            log!("URL preview response body preview for {}: {}...", url, &text[..MAX_LOG_RESPONSE_BODY_LENGTH]);
-                        } else {
-                            log!("URL preview response body for {}: {}", url, text);
-                        }
+                        // log!("URL preview response body length for {}: {} bytes", url, text.len());
+                        // if text.len() > MAX_LOG_RESPONSE_BODY_LENGTH {
+                        //     log!("URL preview response body preview for {}: {}...", url, &text[..MAX_LOG_RESPONSE_BODY_LENGTH]);
+                        // } else {
+                        //     log!("URL preview response body for {}: {}", url, text);
+                        // }
                         // This request is rate limited, retry after a duration we get from the server.
                         if status.as_u16() == 429 {
                             let link_preview_429_res = serde_json::from_str::<LinkPreviewRateLimitResponse>(&text)
                                 .map_err(|e| {
-                                    error!("Failed to parse as LinkPreviewRateLimitResponse for URL preview {}: {}", url, e);
+                                    // error!("Failed to parse as LinkPreviewRateLimitResponse for URL preview {}: {}", url, e);
                                     UrlPreviewError::Json(e)
                             });
                             match link_preview_429_res {
@@ -1447,34 +1469,34 @@ async fn matrix_worker_task(
                                         
                                     }
                                 }
-                                Err(e) => {
-                                    error!("Failed to parse as LinkPreviewRateLimitResponse for URL preview {}: {}", url, e);
+                                Err(_e) => {
+                                    // error!("Failed to parse as LinkPreviewRateLimitResponse for URL preview {}: {}", url, _e);
                                 }
                             }
                             return Err(UrlPreviewError::HttpStatus(429));
                         }
                         serde_json::from_str::<LinkPreviewData>(&text)
                             .or_else(|_first_error| {
-                                log!("Failed to parse as LinkPreviewData, trying LinkPreviewDataNonNumeric for URL: {}", url);
+                                // log!("Failed to parse as LinkPreviewData, trying LinkPreviewDataNonNumeric for URL: {}", url);
                                 serde_json::from_str::<LinkPreviewDataNonNumeric>(&text)
                                     .map(|non_numeric| non_numeric.into())
                             })
                             .map_err(|e| {
-                                error!("Failed to parse JSON response for URL preview {}: {}", url, e);
-                                error!("Response body that failed to parse: {}", text);
+                                // error!("Failed to parse JSON response for URL preview {}: {}", url, e);
+                                // error!("Response body that failed to parse: {}", text);
                                 UrlPreviewError::Json(e)
                             })
                     }.await;
 
-                    match &result {
-                        Ok(preview_data) => {
-                            log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}", 
-                                 url, preview_data.title, preview_data.site_name);
-                        }
-                        Err(e) => {
-                            error!("URL preview fetch failed for {}: {}", url, e);
-                        }
-                    }
+                    // match &result {
+                    //     Ok(preview_data) => {
+                    //         log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}", 
+                    //              url, preview_data.title, preview_data.site_name);
+                    //     }
+                    //     Err(e) => {
+                    //         error!("URL preview fetch failed for {}: {}", url, e);
+                    //     }
+                    // }
 
                     on_fetched(url, destination, result, update_sender);
                     SignalToUI::set_ui_signal();
@@ -2492,6 +2514,9 @@ async fn add_new_room(
         |ev| get_latest_event_details(ev, &new_room.room_id)
     );
 
+    // We need to add the room to the `ALL_JOINED_ROOMS` list before we can send
+    // an `AddJoinedRoom` update to the RoomsList widget, because that widget might
+    // immediately issue a `MatrixRequest` that relies on that room being in `ALL_JOINED_ROOMS`.
     log!("Adding new joined room {}, name: {:?}", new_room.room_id, new_room.display_name);
     ALL_JOINED_ROOMS.lock().unwrap().insert(
         new_room.room_id.clone(),
@@ -2505,17 +2530,16 @@ async fn add_new_room(
             pinned_events_subscriber: None,
         },
     );
+
     let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
-    // We need to add the room to the `ALL_JOINED_ROOMS` list before we can
-    // send the `AddJoinedRoom` update to the UI, because the UI might immediately
-    // issue a `MatrixRequest` that relies on that room being in `ALL_JOINED_ROOMS`.
+    // Start with a basic text avatar; the avatar image will be fetched asynchronously below.
+    let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar().as_deref());
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
         latest,
         tags: new_room.tags.clone().unwrap_or_default(),
         num_unread_messages: new_room.num_unread_messages,
         num_unread_mentions: new_room.num_unread_mentions,
-        // start with a basic text avatar; the avatar image will be fetched asynchronously below.
-        avatar: avatar_from_room_name(room_name_id.name_for_avatar().as_deref()),
+        room_avatar,
         room_name_id: room_name_id.clone(),
         canonical_alias: new_room.room.canonical_alias(),
         alt_aliases: new_room.room.alt_aliases(),
@@ -2527,7 +2551,6 @@ async fn add_new_room(
 
     Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_name_id));
     spawn_fetch_room_avatar(new_room);
-
     Ok(())
 }
 
@@ -3143,10 +3166,10 @@ fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
     let room_name_id = RoomNameId::from((room.display_name.clone(), room.room_id.clone()));
     let inner_room = room.room.clone();
     Handle::current().spawn(async move {
-        let avatar = room_avatar(&inner_room, &room_name_id).await;
+        let room_avatar = room_avatar(&inner_room, &room_name_id).await;
         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
             room_id,
-            avatar,
+            room_avatar,
         });
     });
 }

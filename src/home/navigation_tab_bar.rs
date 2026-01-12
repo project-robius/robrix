@@ -29,7 +29,6 @@
 //!
 
 use makepad_widgets::*;
-
 use crate::{
     avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
         user_profile::{AvatarState, UserProfile},
@@ -207,20 +206,8 @@ live_design! {
         draw_icon: { svg_file: (ICON_SETTINGS) }
     }
 
-    // This button is temporarily disabled until the AddRoomScreen is implemented.
     AddRoomButton = <NavigationTabButton> {
-        draw_bg: {
-            color: (COLOR_SECONDARY)
-            color_hover: (COLOR_SECONDARY)
-            color_active: (COLOR_SECONDARY)
-        }
-        draw_icon: {
-            svg_file: (ICON_ADD),
-            color: (COLOR_FG_DISABLED),
-            color_hover: (COLOR_FG_DISABLED)
-            color_active: (COLOR_FG_DISABLED)
-        }
-        animator: { disabled = { default: on } }
+        draw_icon: { svg_file: (ICON_ADD) }
     }
 
     Separator = <LineH> { margin: 8 }
@@ -440,13 +427,13 @@ impl Widget for NavigationTabBar {
             // Handle one of the radio buttons being clicked (selected).
             let radio_button_set = self.view.radio_button_set(ids_array!(
                 home_button,
-                // add_room_button,
+                add_room_button,
                 settings_button,
             ));
             match radio_button_set.selected(cx, actions) {
                 Some(0) => cx.action(NavigationBarAction::GoToHome),
-                // Some(1) => cx.action(NavigationBarAction::GoToAddRoom),
-                Some(1) => cx.action(NavigationBarAction::OpenSettings),
+                Some(1) => cx.action(NavigationBarAction::GoToAddRoom),
+                Some(2) => cx.action(NavigationBarAction::OpenSettings),
                 _ => { }
             }
 
@@ -461,9 +448,7 @@ impl Widget for NavigationTabBar {
                 if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
                     match tab {
                         SelectedTab::Home     => self.view.radio_button(ids!(home_button)).select(cx, scope),
-                        SelectedTab::AddRoom  => {
-                            // self.view.radio_button(ids!(add_room_button)).select(cx, scope),
-                        }
+                        SelectedTab::AddRoom  => self.view.radio_button(ids!(add_room_button)).select(cx, scope),
                         SelectedTab::Settings => self.view.radio_button(ids!(settings_button)).select(cx, scope),
                         SelectedTab::Space { .. } => {
                             for rb in radio_button_set.iter() {
@@ -485,7 +470,7 @@ impl Widget for NavigationTabBar {
 }
 
 
-/// Which tab is currently selected in the NavigationTabBar.
+/// Which top-level view is currently shown, and which navigation tab is selected.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum SelectedTab {
     #[default]
@@ -500,6 +485,7 @@ pub enum SelectedTab {
 /// Actions for navigating through the top-level views of the app,
 /// e.g., when the user clicks/taps on a button in the NavigationTabBar.
 ///
+/// ## Tip: you only want to handle `TabSelected`
 /// The most important variant is `TabSelected`, which is most likely the action
 /// that you want to handle in other widgets, if you care about which
 /// top-level navigation tab is currently selected.
@@ -508,6 +494,11 @@ pub enum SelectedTab {
 /// to a different view (or back to a previous view) without explicitly clicking
 /// a navigation tab button, e.g., via a keyboard shortcut, or programmatically.
 ///
+/// Only one widget, the `HomeScreen`, should emit the `TabSelected` action.
+/// All other widgets should handle only that action in order to ensure
+/// consistent behavior.
+///
+/// ## More details
 /// There are 3 kinds of actions within this one enum:
 /// 1. "Leading-edge" ("request") actions emitted by the NavigationTabBar
 ///    when the user selects a particular button/space.
@@ -535,7 +526,7 @@ pub enum NavigationBarAction {
     // TODO: add GoToAlertsInbox, once we add that button/screen
 
     /// The given tab was selected as the active top-level view.
-    /// This is needed to ensure that the proper tab is marked as selected 
+    /// This is needed to ensure that the proper tab is marked as selected. 
     TabSelected(SelectedTab),
     /// Toggle whether the SpacesBar is shown, i.e., show/hide it.
     /// This is only applicable in the Mobile view mode, because the SpacesBar

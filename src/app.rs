@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache,
     home::{
-        main_desktop_ui::MainDesktopUiAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     },
     join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
@@ -585,6 +585,12 @@ impl App {
             return;
         }
 
+        // Before we navigate to the room, if the AddRoom tab is currently shown,
+        // then we programmatically navigate to the Home tab to show the actual room.
+        if matches!(self.app_state.selected_tab, SelectedTab::AddRoom) {
+            cx.action(NavigationBarAction::GoToHome);
+        }
+
         log!("Navigating to destination room {:?}, closing room {:?}",
             destination_room.room_name_id(),
             room_to_close,
@@ -615,6 +621,15 @@ pub struct AppState {
     /// The currently-selected room, which is highlighted (selected) in the RoomsList
     /// and considered "active" in the main rooms screen.
     pub selected_room: Option<SelectedRoom>,
+    /// The currently-selected navigation tab: defines which top-level view is shown.
+    ///
+    /// This field is only updated by the `HomeScreen` widget, which has the
+    /// necessary context to be able to determine how it should be modified.
+    ///
+    /// This is not saved to or restored from persistent storage,
+    /// so the `Home` screen and tab are always selected upon app startup.
+    #[serde(skip)]
+    pub selected_tab: SelectedTab,
     /// The saved "snapshot" of the dock's UI layout/state for the main "all rooms" home view.
     pub saved_dock_state_home: SavedDockState,
     /// The saved "snapshot" of the dock's UI layout/state for each space,

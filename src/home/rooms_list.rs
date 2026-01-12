@@ -185,7 +185,7 @@ pub enum RoomsListUpdate {
     /// Update the avatar (image) for the given room.
     UpdateRoomAvatar {
         room_id: OwnedRoomId,
-        avatar: FetchedRoomAvatar,
+        room_avatar: FetchedRoomAvatar,
     },
     /// Update whether the given room is a direct room.
     UpdateIsDirect {
@@ -274,7 +274,7 @@ pub struct JoinedRoomInfo {
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
-    pub avatar: FetchedRoomAvatar,
+    pub room_avatar: FetchedRoomAvatar,
     /// Whether this room has been paginated at least once.
     /// We pre-paginate visible rooms at least once in order to
     /// be able to display the latest message in the RoomsListEntry
@@ -554,9 +554,9 @@ impl RoomsList {
                     // Signal the UI to update the RoomScreen
                     SignalToUI::set_ui_signal();
                 }
-                RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
+                RoomsListUpdate::UpdateRoomAvatar { room_id, room_avatar } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
-                        room.avatar = avatar;
+                        room.room_avatar = room_avatar;
                     } else {
                         error!("Error: couldn't find room {room_id} to update avatar");
                     }
