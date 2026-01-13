@@ -16,7 +16,9 @@ use matrix_sdk_ui::timeline::EventTimelineItem;
 use thiserror::Error;
 use crate::shared::{avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt};
 
-const SHOW_UI_DURATION: f64 = 2.0;
+/// The timeout for hiding the UI overlays after no user mouse/tap activity.
+const SHOW_UI_DURATION: f64 = 3.0;
+
 /// Loads the given image `data` into an `ImageBuffer` as either a PNG or JPEG, using the `imghdr` library to determine which format it is.
 ///
 /// Returns an error if either load fails or if the image format is unknown.
@@ -37,10 +39,10 @@ pub fn get_png_or_jpg_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageEr
     }
 }
 
-/// Configuration for zoom and pan settings in the image viewer
+/// Configuration for zoom and pan settings in the image viewer.
 #[derive(Clone, Debug)]
 pub struct ImageViewerZoomConfig {
-    /// Minimum zoom level (default: 0.5)
+    /// Minimum zoom level (default: 0.1)
     pub min_zoom: f64,
     /// Zoom scale factor for zoom in/out operations (default: 1.2)
     pub zoom_scale_factor: f64,
@@ -51,7 +53,7 @@ pub struct ImageViewerZoomConfig {
 impl Default for ImageViewerZoomConfig {
     fn default() -> Self {
         Self {
-            min_zoom: 0.5,
+            min_zoom: 0.1,
             zoom_scale_factor: 1.2,
             pan_sensitivity: 2.0,
         }
@@ -109,63 +111,26 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::timestamp::Timestamp;
 
-    UI_ANIMATION_DURATION_SECS = 1.0
+    UI_ANIMATION_DURATION_SECS = 0.5
     ROTATION_ANIMATION_DURATION_SECS = 0.2
 
-    pub MagnifyingGlass = <View> {
-        width: Fit, height: Fit
-        flow: Overlay
-        visible: true
-
-        magnifying_glass_button = <RobrixIconButton> {
-            width: Fit, height: Fit,
-            align: {x: 1.0, y: 0.0},
-            spacing: 0,
-            margin: {top: 4.5} // vertically align with the title
-            padding: 7, // Ensure the height is the same as the Close button. Height of Close button is 15 * 2 + 14 = 44.
-            draw_bg: {
-                color: (COLOR_SECONDARY)
-            }
-            draw_icon: {
-                svg_file: (ICON_ZOOM),
-                fn get_color(self) -> vec4 {
-                    return #x0;
-                }
-            }
-            icon_walk: {width: 30, height: 30}
-        }
-    
-        sign_label = <View> {
-            width: Fill, height: Fill,
-            align: { x: 0.4, y: 0.35 }
-
-            magnifying_glass_sign = <Label> {
-                text: "+",
-                draw_text: {
-                    text_style: <THEME_FONT_BOLD>{font_size: 15},
-                    color: #000000
-                }
-            }
-        }
-    }
-    pub RotationButton = <RobrixIconButton> {
-        width: Fit,
-        height: Fit,
-        align: {x: 1.0, y: 0.0},
-        spacing: 0,
-        margin: {top: 4.5} // vertically align with the title
-        padding: 7,
+    ImageViewerButton = <RobrixIconButton> {
+        width: 44, height: 44
+        align: {x: 0.5, y: 0.5},
+        spacing: 0, 
+        padding: 0,
         draw_bg: {
-            color: (COLOR_SECONDARY)
+            color: (COLOR_SECONDARY * 0.9)
         }
         draw_icon: {
-            svg_file: (ICON_ROTATE_CW),
+            svg_file: (ICON_ZOOM_OUT),
             fn get_color(self) -> vec4 {
                 return #x0;
             }
         }
-        icon_walk: {width: 30, height: 30, }
+        icon_walk: {width: 27, height: 27}
     }
+
     pub ImageViewer = {{ImageViewer}} {
         width: Fill, height: Fill,
         flow: Overlay
@@ -236,50 +201,68 @@ live_design! {
 
         metadata_view = <View> {
             width: Fill, height: Fill,
-            margin: {bottom: 0}
+            margin: 20,
             align: {x: 0.0, y: 1.0},
             metadata_rounded_view = <RoundedView> {
                 width: Fill, height: Fit
-                flow: Down
-                spacing: 0
+                flow: Right
+                align: {y: 0.5, x: 0.0}
+                padding: 13
+                spacing: 8,
+
                 show_bg: true
                 draw_bg: {
+                    border_radius: 4.0
                     color: (COLOR_IMAGE_VIEWER_META_BACKGROUND)
                 }
 
                 // Display user profile view below the button group when the width is not enough.
-                <View> {
-                    width: Fit, height: Fit
-                    align: {x: 0.1, y: 0.0}
-                    user_profile_view = <View> {
-                        width: 200, height: Fit,
-                        flow: Right,
-                        spacing: 10,
+                user_profile_view = <View> {
+                    width: Fit { max: 200 }
+                    height: Fit,
+                    flow: Right,
+                    spacing: 13,
+                    align: { y: 0.5 }
+                    
+                    avatar = <Avatar> {
+                        width: 45, height: 45,
+                        text_view = { text = { draw_text: {
+                            text_style: <TITLE_TEXT>{ font_size: 15.0 }
+                        }}}
+                    }
+
+                    content = <View> {
+                        width: Fit
+                        height: Fit,
                         align: { y: 0.5 }
-                        
-                        avatar = <Avatar> {
-                            width: 40, height: 40,
+                        spacing: 3
+                        flow: Down,
+
+                        username = <Label> {
+                            width: Fit
+                            height: Fit,
+                            padding: 0
+                            margin: 0
+                            flow: Right
+                            draw_text: {
+                                text_style: <REGULAR_TEXT>{font_size: 12},
+                                color: (COLOR_TEXT)
+                                wrap: Ellipsis
+                            }
                         }
 
-                        content = <View> {
-                            width: Fit, height: Fit,
-                            flow: Down,
-                            spacing: 4,
+                        timestamp_view = <View> {
+                            width: Fit
+                            height: Fit
 
-                            username = <Label> {
-                                width: Fit, height: Fit,
-                                draw_text: {
-                                    text_style: <REGULAR_TEXT>{font_size: 10},
-                                    color: (COLOR_TEXT)
-                                }
-                            }
-
-                            timestamp_view = <View> {
-                                width: Fit, height: Fit
-
-                                timestamp = <Timestamp> {
-                                    width: Fit, height: Fit,
-                                    margin: { left: 5 }
+                            timestamp = <Timestamp> {
+                                width: Fit,
+                                height: Fit,
+                                ts_label = {
+                                    draw_text: {
+                                        text_style: {font_size: 9.5},
+                                        color: (COLOR_TEXT)
+                                    }
                                 }
                             }
                         }
@@ -288,13 +271,16 @@ live_design! {
 
                 // Display image name and size below the user_profile_view if the width is not enough.
                 image_name_and_size_view = <View> {
-                    width: Fill, height: Fit,
-                    align: {x: 0.5, y: 0.0}
+                    width: Fill
+                    height: Fit,
+                    align: {x: 0.5, y: 0.5}
                     flow: Right
                     image_name_and_size = <Label> {
-                        width: 350, height: Fit,
+                        width: Fill,
+                        height: Fit,
+                        align: {x: 0.5, y: 0.5}
                         draw_text: {
-                            text_style: <REGULAR_TEXT>{font_size: 12},
+                            text_style: <REGULAR_TEXT>{font_size: 13},
                             color: (COLOR_TEXT),
                             wrap: Word
                         }
@@ -306,7 +292,7 @@ live_design! {
         button_group_view = <View> {
             width: Fill, height: Fit
             flow: Right
-            margin: {top: 38}
+            margin: {top: 20, right: 20}
             align: {x: 1.0, y: 0.5},
 
             button_group_rounded_view = <RoundedView> {
@@ -317,70 +303,34 @@ live_design! {
                     color: (COLOR_IMAGE_VIEWER_META_BACKGROUND),
                     border_radius: 4.0
                 }
-                padding: { left: 5, top: 2, bottom: 2, right: 5}
-                zoom_button_minus = <MagnifyingGlass> {
-                    sign_label = <View> {
-                        width: Fill, height: Fill,
-                        align: { x: 0.4, y: 0.35 }
+                padding: { left: 7, top: 4, bottom: 4, right: 7}
 
-                        magnifying_glass_sign = <Label> {
-                            text: "-",
-                            draw_text: {
-                                text_style: <THEME_FONT_BOLD>{font_size: 15},
-                                color: #000000
-                            }
-                        }
-                    }
+                zoom_out_button = <ImageViewerButton> {
+                    draw_icon: { svg_file: (ICON_ZOOM_OUT) }
+                    icon_walk: {width: 27, height: 27, margin: {left: 2}}
                 }
 
-                zoom_button_plus = <MagnifyingGlass> { }
-
-                rotation_button_anti_clockwise = <RotationButton> {
-                    draw_icon: {
-                        svg_file: (ICON_ROTATE_CCW),
-                        fn get_color(self) -> vec4 {
-                            return #x0;
-                        }
-                    }
+                zoom_in_button = <ImageViewerButton> {
+                    draw_icon: { svg_file: (ICON_ZOOM_IN) }
+                    icon_walk: {width: 27, height: 27, margin: {left: 2}}
                 }
 
-                rotation_button_clockwise = <RotationButton> { }
-
-                reset_button = <RobrixIconButton> {
-                    width: Fit, height: Fit,
-                    align: {x: 1.0, y: 0.0},
-                    spacing: 0,
-                    margin: {top: 4.5} // vertically align with the title
-                    padding: 10,
-                    draw_bg: {
-                        color: (COLOR_SECONDARY)
-                    }
-                    draw_icon: {
-                        svg_file: (ICON_JUMP),
-                        fn get_color(self) -> vec4 {
-                            return #x0;
-                        }
-                    }
-                    icon_walk: {width: 25, height: 25}
+                rotation_button_anti_clockwise = <ImageViewerButton> {
+                    draw_icon: { svg_file: (ICON_ROTATE_CCW) }
                 }
 
-                // The "X" close button on the top right
-                close_button = <RobrixIconButton> {
-                    width: Fit, height: Fit,
-                    align: {x: 1.0, y: 0.0},
-                    spacing: 0,
-                    margin: {top: 4.5} // vertically align with the title
-                    padding: 15,
-                    draw_bg: {
-                        color: (COLOR_SECONDARY)
-                    }
-                    draw_icon: {
-                        svg_file: (ICON_CLOSE),
-                        fn get_color(self) -> vec4 {
-                            return #x0;
-                        }
-                    }
-                    icon_walk: {width: 14, height: 14}
+                rotation_button_clockwise = <ImageViewerButton> {
+                    draw_icon: { svg_file: (ICON_ROTATE_CW) }
+                }
+
+                reset_button = <ImageViewerButton> {
+                    draw_icon: { svg_file: (ICON_JUMP) }
+                    icon_walk: {width: 25, height: 25, margin: {bottom: 2}}
+                }
+
+                close_button = <ImageViewerButton> {
+                    draw_icon: { svg_file: (ICON_CLOSE) }
+                    icon_walk: {width: 21, height: 21 }
                 }
             }
         }
@@ -483,10 +433,10 @@ live_design! {
                     from: { all: Forward { duration: (UI_ANIMATION_DURATION_SECS) } }
                     apply: {
                         button_group_view = {
-                            margin: { top: 40 }
+                            margin: { top: 20 }
                         }
                         metadata_view = {
-                            margin: { bottom: 0 }
+                            margin: { bottom: 20 }
                         }
                     }
                 }
@@ -498,7 +448,7 @@ live_design! {
                             margin: { top: -200 }
                         }
                         metadata_view = {
-                            margin: { bottom: -200 }
+                            margin: { bottom: -300 }
                         }
                     }
                 }
@@ -521,112 +471,118 @@ pub enum ImageViewerAction {
     Resize,
 }
 
-#[derive(Live, Widget)]
+#[derive(Live, LiveHook, Widget)]
 struct ImageViewer {
-    #[deref]
-    view: View,
-    #[rust]
-    drag_state: DragState,
+    #[deref] view: View,
+    #[rust] drag_state: DragState,
     /// The current rotation angle of the image. Max of 4, each step represents 90 degrees
-    #[rust]
-    rotation_step: i32,
+    #[rust] rotation_step: i8,
     /// A lock to prevent multiple rotation animations from running at the same time
-    #[rust]
-    is_animating_rotation: bool,
-    #[animator]
-    animator: Animator,
+    #[rust] is_animating_rotation: bool,
+    #[animator] animator: Animator,
     /// Zoom constraints for the image viewer
-    #[rust]
-    min_zoom: f64,
-    /// Zoom scale factor for zoom in/out operations
-    #[rust]
-    zoom_scale_factor: f64,
-    /// Pan sensitivity multiplier for drag operations
-    #[rust]
-    pan_sensitivity: f64,
+    #[rust] config: ImageViewerZoomConfig,
     /// Indicates if the mouse cursor is currently hovering over the image.
     /// If true, allows wheel scroll to zoom the image.
-    #[rust]
-    mouse_cursor_hover_over_image: bool,
+    #[rust] mouse_cursor_hover_over_image: bool,
     /// Distance between two touch points for pinch-to-zoom functionality
-    #[rust]
-    previous_pinch_distance: Option<f64>,
+    #[rust] previous_pinch_distance: Option<f64>,
     /// The ID of the background task that is currently running
-    #[rust]
-    background_task_id: u32,
+    #[rust] background_task_id: u32,
     /// The mpsc::Receiver used to receive the result of the background task
-    #[rust]
-    receiver: Option<(u32, Receiver<Result<ImageBuffer, ImageError>>)>,
+    #[rust] receiver: Option<(u32, Receiver<Result<ImageBuffer, ImageError>>)>,
     /// Whether the full image file has been loaded
-    #[rust]
-    is_loaded: bool,
+    #[rust] is_loaded: bool,
     /// The size of the image container.
-    /// 
+    ///
     /// Used to compute the necessary width and height for the full screen image.
-    #[rust]
-    image_container_size: DVec2,
+    #[rust] image_container_size: DVec2,
     /// The texture containing the loaded image
-    #[rust]
-    texture: Option<Texture>,
+    #[rust] texture: Option<Texture>,
     /// The event to trigger displaying with the loaded image after peek_walk_turtle of the widget.
-    #[rust]
-    next_frame: NextFrame,
-    /// Whether to display the UI view
-    /// 
-    /// Includes the button group and metadata view
-    #[rust]
-    ui_visible_toggle: bool,
-    /// Timer used to hide the UI view
-    #[rust]
-    hide_ui_timer: Timer,
-    #[rust]
-    capped_dimension: DVec2,
-}
-
-impl LiveHook for ImageViewer {
-    fn after_new_from_doc(&mut self, _cx: &mut Cx) {
-        self.min_zoom = 0.5;
-        self.zoom_scale_factor = 1.2;
-        self.pan_sensitivity = 2.0;
-    }
+    #[rust] next_frame: NextFrame,
+    /// Whether to display the UI overlay, including buttons and metadata.
+    #[rust] ui_visible_toggle: bool,
+    /// Timer used to animate-out (hide) the UI view after the latest user input.
+    #[rust] hide_ui_timer: Timer,
+    #[rust] capped_dimension: DVec2,
 }
 
 impl Widget for ImageViewer {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         self.match_event(cx, event);
-        
+
+        // Handle the app window being resized.
+        if matches!(event, Event::WindowGeomChange(_)) {
+            let image_container_rect = self.view.area().rect(cx);
+            self.image_container_size = image_container_rect.size;
+
+            // Save current drag state to retain zoom and pan
+            let saved_zoom_level = self.drag_state.zoom_level;
+            let saved_pan_offset = self.drag_state.pan_offset;
+
+            // Recalculate base dimensions for new container size
+            self.display_using_texture(cx);
+
+            // Restore drag state
+            self.drag_state.zoom_level = saved_zoom_level;
+            self.drag_state.pan_offset = saved_pan_offset;
+
+            // Reapply zoom and pan if they differ from defaults
+            if saved_zoom_level != 1.0 || saved_pan_offset.is_some() {
+                let rotated_image = self.view.rotated_image(ids!(rotated_image));
+                let width = self.capped_dimension.x * saved_zoom_level;
+                let height = self.capped_dimension.y * saved_zoom_level;
+
+                if let Some(offset) = saved_pan_offset {
+                    rotated_image.apply_over(
+                        cx,
+                        live! {
+                            margin: { top: (offset.y), left: (offset.x) },
+                            width: (width),
+                            height: (height),
+                        },
+                    );
+                } else {
+                    rotated_image.apply_over(
+                        cx,
+                        live! {
+                            width: (width),
+                            height: (height),
+                        },
+                    );
+                }
+            }
+        }
+
         // Handle hover events for UI elements without consuming the main image events
         // We'll track hover state in the FingerMove event within the image handling
         let rotated_image = self.view.rotated_image(ids!(rotated_image));
-        match event.hits(cx, self.view.view(ids!(button_group_rounded_view)).area()) {
-            Hit::FingerHoverIn(_) => {
-                if !self.ui_visible_toggle {
-                    cx.stop_timer(self.hide_ui_timer);
-                    self.animator_cut(cx, ids!(ui_animator.show));
-                }
+        let button_group_rounded_view = self.view.view(ids!(button_group_rounded_view));
+        match event.hits(cx, button_group_rounded_view.area()) {
+            Hit::FingerHoverIn(_) if !self.ui_visible_toggle => {
+                cx.stop_timer(self.hide_ui_timer);
+                self.animator_cut(cx, ids!(ui_animator.show));
             }
             Hit::FingerHoverOut(fe) => {
                 // FingerHoverOut is triggered when the cursor enters into the button.
                 // Hence we need to check if the cursor is actually inside the button group.
-                if !self.view.view(ids!(button_group_rounded_view)).area().rect(cx).contains(fe.abs)
-                        && !self.ui_visible_toggle {
+                if !self.ui_visible_toggle
+                    && !button_group_rounded_view.area().rect(cx).contains(fe.abs)
+                {
                     self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
                 }
             }
             _ => {}
         }
         match event.hits(cx, self.view.view(ids!(metadata_rounded_view)).area()) {
-            Hit::FingerHoverIn(_) => {
-                if !self.ui_visible_toggle {
-                    cx.stop_timer(self.hide_ui_timer);
-                    self.animator_cut(cx, ids!(ui_animator.show));
-                }
+            Hit::FingerHoverIn(_) if !self.ui_visible_toggle => {
+                cx.stop_timer(self.hide_ui_timer);
+                self.animator_cut(cx, ids!(ui_animator.show));
             }
-            Hit::FingerHoverOut(_) => {
-                if !self.ui_visible_toggle {
-                    self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
-                }
+            Hit::FingerHoverOut(_) if !self.ui_visible_toggle => {
+                self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
             }
             _ => {}
         }
@@ -669,7 +625,7 @@ impl Widget for ImageViewer {
             Hit::FingerMove(fe) => {
                 if let Some(current_offset) = self.drag_state.pan_offset {
                     let drag_delta = fe.abs - self.drag_state.drag_start;
-                    let new_offset = current_offset + drag_delta * self.pan_sensitivity;
+                    let new_offset = current_offset + drag_delta * self.config.pan_sensitivity;
                     let rotated_image_container = self.view.rotated_image(ids!(rotated_image));
                     let size = rotated_image_container.area().rect(cx).size;
                     rotated_image_container.apply_over(
@@ -691,7 +647,9 @@ impl Widget for ImageViewer {
                 cx.set_cursor(MouseCursor::Default);
             }
             Hit::FingerHoverOver(_) => {
-                if !self.ui_visible_toggle && !self.animator.animator_in_state(cx, ids!(ui_animator.show)) {
+                if !self.ui_visible_toggle
+                    && !self.animator.animator_in_state(cx, ids!(ui_animator.show))
+                {
                     self.animator_cut(cx, ids!(ui_animator.hide));
                     self.animator_play(cx, ids!(ui_animator.show));
                     cx.stop_timer(self.hide_ui_timer);
@@ -703,13 +661,12 @@ impl Widget for ImageViewer {
         if let Event::Scroll(scroll_event) = event {
             if self.mouse_cursor_hover_over_image {
                 let scroll_delta = scroll_event.scroll.y;
-
                 if scroll_delta > 0.0 {
                     // Scroll up = Zoom in
-                    self.adjust_zoom(cx, self.zoom_scale_factor);
+                    self.adjust_zoom(cx, self.config.zoom_scale_factor);
                 } else if scroll_delta < 0.0 {
                     // Scroll down = Zoom out
-                    self.adjust_zoom(cx, 1.0 / self.zoom_scale_factor);
+                    self.adjust_zoom(cx, 1.0 / self.config.zoom_scale_factor);
                 }
             }
         }
@@ -717,11 +674,11 @@ impl Widget for ImageViewer {
             match &e.key_code {
                 KeyCode::Minus | KeyCode::NumpadSubtract => {
                     // Zoom out (make image smaller)
-                    self.adjust_zoom(cx, 1.0 / self.zoom_scale_factor);
+                    self.adjust_zoom(cx, 1.0 / self.config.zoom_scale_factor);
                 }
                 KeyCode::Equals | KeyCode::NumpadAdd => {
                     // Zoom in (make image larger)
-                    self.adjust_zoom(cx, self.zoom_scale_factor);
+                    self.adjust_zoom(cx, self.config.zoom_scale_factor);
                 }
                 KeyCode::Key0 | KeyCode::Numpad0 => {
                     self.reset_drag_state(cx);
@@ -763,10 +720,12 @@ impl Widget for ImageViewer {
                 self.receiver = None;
             }
         }
+
         let animator_action = self.animator_handle_event(cx, event);
         if self.next_frame.is_event(event).is_some() {
             self.display_using_texture(cx);
-        } else if let Event::NextFrame(_) = event {
+        }
+        else if let Event::NextFrame(_) = event {
             let animation_id = match self.rotation_step {
                 0 => ids!(mode.upright),    // 0°
                 1 => ids!(mode.degree_90),  // 90°
@@ -778,10 +737,14 @@ impl Widget for ImageViewer {
                 self.is_animating_rotation = animator_action.is_animating();
             }
         }
-        if event.back_pressed() || matches!(event, Event::KeyDown(KeyEvent { key_code: KeyCode::Escape, .. })) {
+
+        if event.back_pressed()
+            || matches!(event, Event::KeyDown(KeyEvent { key_code: KeyCode::Escape, .. }))
+        {
             self.reset(cx);
             cx.action(ImageViewerAction::Hide);
         }
+
         if self.hide_ui_timer.is_event(event).is_some() {
             self.animator_play(cx, ids!(ui_animator.hide));
         }
@@ -808,18 +771,18 @@ impl MatchEvent for ImageViewer {
         }
         if self
             .view
-            .button(ids!(zoom_button_minus.magnifying_glass_button))
+            .button(ids!(zoom_out_button))
             .clicked(actions)
         {
-            self.adjust_zoom(cx, 1.0 / self.zoom_scale_factor);
+            self.adjust_zoom(cx, 1.0 / self.config.zoom_scale_factor);
         }
 
         if self
             .view
-            .button(ids!(zoom_button_plus.magnifying_glass_button))
+            .button(ids!(zoom_in_button))
             .clicked(actions)
         {
-            self.adjust_zoom(cx, self.zoom_scale_factor);
+            self.adjust_zoom(cx, self.config.zoom_scale_factor);
         }
 
         if self
@@ -869,57 +832,14 @@ impl MatchEvent for ImageViewer {
                         }
                         LoadState::FinishedBackgroundDecoding => {
                             self.is_loaded = true;
-                            self.hide_loading(cx);
+                            self.hide_footer(cx);
                         },
                         LoadState::Error(error) => {
                             self.show_error(cx, error);
                         }
                     }
                 }
-                Some(ImageViewerAction::Resize) => {
-                    let image_container_rect = self.view.area().rect(cx);
-                    self.image_container_size = image_container_rect.size;
-
-                    // Save current drag state to retain zoom and pan
-                    let saved_zoom_level = self.drag_state.zoom_level;
-                    let saved_pan_offset = self.drag_state.pan_offset;
-
-                    // Recalculate base dimensions for new container size
-                    self.display_using_texture(cx);
-
-                    // Restore drag state
-                    self.drag_state.zoom_level = saved_zoom_level;
-                    self.drag_state.pan_offset = saved_pan_offset;
-
-                    // Reapply zoom and pan if they differ from defaults
-                    if saved_zoom_level != 1.0 || saved_pan_offset.is_some() {
-                        let rotated_image = self.view.rotated_image(ids!(rotated_image));
-                        let width = self.capped_dimension.x * saved_zoom_level;
-                        let height = self.capped_dimension.y * saved_zoom_level;
-
-                        if let Some(offset) = saved_pan_offset {
-                            rotated_image.apply_over(
-                                cx,
-                                live! {
-                                    margin: { top: (offset.y), left: (offset.x) },
-                                    width: (width),
-                                    height: (height),
-                                },
-                            );
-                        } else {
-                            rotated_image.apply_over(
-                                cx,
-                                live! {
-                                    width: (width),
-                                    height: (height),
-                                },
-                            );
-                        }
-                    }
-                }
-                _ => {
-
-                }
+                _ => {}
             }
         }
     }
@@ -944,12 +864,9 @@ impl ImageViewer {
         let rotated_image_ref = self
             .view
             .rotated_image(ids!(rotated_image_container.rotated_image));
-        rotated_image_ref.apply_over(
-            cx,
-            live! {
-                draw_bg: { scale: 1.0 }
-            },
-        );
+        rotated_image_ref.apply_over(cx, live! {
+            draw_bg: { scale: 1.0 }
+        });
         rotated_image_ref.set_texture(cx, None);
     }
 
@@ -1004,6 +921,8 @@ impl ImageViewer {
             let _ = sender.send(get_png_or_jpg_image_buffer(image_bytes_clone));
             SignalToUI::set_ui_signal();
         });
+        cx.stop_timer(self.hide_ui_timer);
+        self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
     }
 
     /// Displays an image in the image viewer widget using the provided texture.
@@ -1046,12 +965,12 @@ impl ImageViewer {
 
     /// Adjust the zoom level of the image viewer based on the provided zoom factor.
     fn adjust_zoom(&mut self, cx: &mut Cx, zoom_factor: f64) {
-        let rotated_image_container = self.view.rotated_image(ids!(rotated_image));
-        let size = rotated_image_container.area().rect(cx).size;
+        let rotated_image = self.view.rotated_image(ids!(rotated_image));
+        let size = rotated_image.area().rect(cx).size;
         let capped_dimension = self.capped_dimension;
         let target_zoom = self.drag_state.zoom_level * zoom_factor;
-        let (width, height) = if target_zoom < self.min_zoom {
-            (capped_dimension.x * self.min_zoom, capped_dimension.y * self.min_zoom)
+        let (width, height) = if target_zoom < self.config.min_zoom {
+            (capped_dimension.x * self.config.min_zoom, capped_dimension.y * self.config.min_zoom)
         } else {
             let actual_zoom_factor = target_zoom / self.drag_state.zoom_level;
             self.drag_state.zoom_level = target_zoom;
@@ -1061,13 +980,10 @@ impl ImageViewer {
             (width, height)
         };
 
-        self.view.rotated_image(ids!(rotated_image)).apply_over(
-            cx,
-            live! {
-                width: (width),
-                height: (height),
-            },
-        );
+        rotated_image.apply_over(cx, live! {
+            width: (width),
+            height: (height),
+        });
     }
 
     /// Handle touch update events, specifically the pinch gesture to zoom in/out.
@@ -1118,6 +1034,8 @@ impl ImageViewer {
             .set_visible(cx, false);
         footer.set_visible(cx, true);
         self.ui_visible_toggle = true;
+        cx.stop_timer(self.hide_ui_timer);
+        self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
     }
 
     /// Shows an error message in the footer.
@@ -1142,11 +1060,7 @@ impl ImageViewer {
     }
 
     /// Hides the footer of the image viewer.
-    ///
-    /// This method is used to hide the footer of the image viewer, which contains the status label and the loading spinner.
-    ///
-    /// The footer is hidden by setting its height to 0.
-    pub fn hide_loading(&mut self, cx: &mut Cx) {
+    pub fn hide_footer(&mut self, cx: &mut Cx) {
         let footer = self.view.view(ids!(image_layer.footer));
         footer.set_visible(cx, false);
     }
@@ -1175,14 +1089,14 @@ impl ImageViewer {
         }
 
         if let Some((room_id, event_timeline_item)) = &metadata.avatar_parameter {            
-            let (sender, _) = self.view.avatar(ids!(user_profile_view.avatar))
-                .set_avatar_and_get_username_without_show_user_profile(
-                    cx,
-                    room_id,
-                    event_timeline_item.sender(),
-                    Some(event_timeline_item.sender_profile()),
-                    event_timeline_item.event_id(),
-                );
+            let (sender, _) = self.view.avatar(ids!(user_profile_view.avatar)).set_avatar_and_get_username(
+                cx,
+                room_id,
+                event_timeline_item.sender(),
+                Some(event_timeline_item.sender_profile()),
+                event_timeline_item.event_id(),
+                false,
+            );
             if sender.len() > MAX_USERNAME_LENGTH {
                 meta_view
                     .label(ids!(user_profile_view.content.username))
@@ -1199,19 +1113,13 @@ impl ImageViewer {
 impl ImageViewerRef {
     /// Configure zoom and pan settings for the image viewer
     pub fn configure_zoom(&mut self, config: ImageViewerZoomConfig) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
-        inner.min_zoom = config.min_zoom;
-        inner.zoom_scale_factor = config.zoom_scale_factor;
-        inner.pan_sensitivity = config.pan_sensitivity;
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.config = config;
     }
 
     /// See [`ImageViewer::show_loaded()`].
     pub fn show_loaded(&mut self, cx: &mut Cx, image_bytes: &[u8]) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
+        let Some(mut inner) = self.borrow_mut() else { return };
         inner.show_loaded(cx, image_bytes)
     }
 
@@ -1222,9 +1130,7 @@ impl ImageViewerRef {
         texture: Option<Texture>,
         metadata: &Option<ImageViewerMetaData>,
     ) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
+        let Some(mut inner) = self.borrow_mut() else { return };
         inner.texture = texture.clone();
         inner.next_frame = cx.new_next_frame();
         if let Some(metadata) = metadata {
@@ -1235,25 +1141,19 @@ impl ImageViewerRef {
 
     /// See [`ImageViewer::show_error()`].
     pub fn show_error(&mut self, cx: &mut Cx, error: &ImageViewerError) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
+        let Some(mut inner) = self.borrow_mut() else { return };
         inner.show_error(cx, error);
     }
 
-    /// See [`ImageViewer::hide_loading()`].
-    pub fn hide_loading(&mut self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
-        inner.hide_loading(cx);
+    /// See [`ImageViewer::hide_footer()`].
+    pub fn hide_footer(&mut self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.hide_footer(cx);
     }
 
     /// See [`ImageViewer::reset()`].
     pub fn reset(&mut self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
+        let Some(mut inner) = self.borrow_mut() else { return };
         inner.reset(cx);
     }
 }

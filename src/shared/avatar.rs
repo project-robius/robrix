@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use makepad_widgets::{image_cache::ImageError, *};
+use makepad_widgets::*;
 use matrix_sdk::{ruma::{EventId, OwnedRoomId, OwnedUserId, RoomId, UserId}};
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 
@@ -37,7 +37,6 @@ live_design! {
         align: { x: 0.5, y: 0.5 }
         // the text_view and img_view are overlaid on top of each other.
         flow: Overlay,
-        cursor: Hand,
 
         text_view = <View> {
             visible: true,
@@ -94,6 +93,8 @@ live_design! {
 pub struct Avatar {
     #[deref] view: View,
 
+    /// Information about the user profile being shown in this Avatar.
+    /// If `Some`, this Avatar will respond to clicks/taps.
     #[rust] info: Option<UserProfileAndRoomId>,
 }
 
@@ -101,9 +102,7 @@ impl Widget for Avatar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
-        let Some(info) = self.info.clone() else {
-            return;
-        };
+        let Some(info) = self.info.clone() else { return };
         let area = self.view.area();
         let widget_uid = self.widget_uid();
         match event.hits(cx, area) {
@@ -132,9 +131,6 @@ impl Widget for Avatar {
         self.view(ids!(img_view)).set_visible(cx, false);
         self.view(ids!(text_view)).set_visible(cx, true);
     }
-    fn text(&self) -> String {
-        self.label(ids!(text_view.text)).text()
-    }
 }
 
 impl Avatar {
@@ -155,16 +151,19 @@ impl Avatar {
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
-        self.info = info.map(|AvatarTextInfo { user_id, username, room_id }|
-            UserProfileAndRoomId {
+        if let Some(AvatarTextInfo { user_id, username, room_id }) = info {
+            self.info = Some(UserProfileAndRoomId {
                 user_profile: UserProfile {
                     user_id,
                     username,
                     avatar_state: AvatarState::Unknown,
                 },
                 room_id,
-            }
-        );
+            });
+            self.view.apply_over(cx, live!{ cursor: Hand });
+        } else {
+            self.view.apply_over(cx, live!{ cursor: Default });
+        }
         self.set_text(cx, username.as_ref());
 
         // Apply background color if provided
@@ -203,16 +202,19 @@ impl Avatar {
             self.view(ids!(img_view)).set_visible(cx, true);
             self.view(ids!(text_view)).set_visible(cx, false);
 
-            self.info = info.map(|AvatarImageInfo { user_id, username, room_id, img_data }|
-                UserProfileAndRoomId {
+            if let Some(AvatarImageInfo { user_id, username, room_id, img_data }) = info {
+                self.info = Some(UserProfileAndRoomId {
                     user_profile: UserProfile {
                         user_id,
                         username,
                         avatar_state: AvatarState::Loaded(img_data),
                     },
                     room_id,
-                }
-            );
+                });
+                self.view.apply_over(cx, live!{ cursor: Hand });
+            } else {
+                self.view.apply_over(cx, live!{ cursor: Default });
+            }
         }
         res
     }
@@ -247,6 +249,8 @@ impl Avatar {
     ///   our user profile cache , then the `username` and `avatar`  will be the user ID
     ///   and the first character of that user ID, respectively.
     ///
+    /// If `is_clickable` is `true`, this Avatar will respond to clicks.
+    ///
     /// ## Return
     /// Returns a tuple of:
     /// 1. The displayable username that should be used to populate the username field.
@@ -259,6 +263,7 @@ impl Avatar {
         avatar_user_id: &UserId,
         avatar_profile_opt: Option<&TimelineDetails<Profile>>,
         event_id: Option<&EventId>,
+        is_clickable: bool,
     ) -> (String, bool) {
         // Get the display name and avatar URL from the user's profile, if available,
         // or if the profile isn't ready, fall back to querying our user profile cache.
@@ -333,12 +338,12 @@ impl Avatar {
             .and_then(|data| {
                 self.show_image(
                     cx,
-                    Some((
+                    is_clickable.then(|| AvatarImageInfo::from((
                         avatar_user_id.to_owned(),
                         username_opt.clone(),
                         room_id.to_owned(),
-                        data.clone()).into(),
-                    ),
+                        data.clone()
+                    ))),
                     |cx, img| utils::load_png_or_jpg(&img, cx, &data),
                 )
                 .ok()
@@ -347,32 +352,14 @@ impl Avatar {
                 self.show_text(
                     cx,
                     None,
-                    Some((avatar_user_id.to_owned(), username_opt, room_id.to_owned()).into()),
+                    is_clickable.then(|| AvatarTextInfo::from((
+                        avatar_user_id.to_owned(),
+                        username_opt,
+                        room_id.to_owned(),
+                    ))),
                     &username,
                 )
             });
-        (username, profile_drawn)
-    }
-
-    /// Similar to [`Avatar::set_avatar_and_get_username()`] but does not show the user profile view.
-    pub fn set_avatar_and_get_username_without_show_user_profile(
-        &mut self,
-        cx: &mut Cx,
-        room_id: &RoomId,
-        avatar_user_id: &UserId,
-        avatar_profile_opt: Option<&TimelineDetails<Profile>>,
-        event_id: Option<&EventId>,
-    ) -> (String, bool) {
-        let (username, profile_drawn) = self.set_avatar_and_get_username(cx, room_id, avatar_user_id, avatar_profile_opt, event_id);
-        self.view.apply_over(cx, live!{
-            cursor: Default
-        });
-        if self.view(ids!(text_view)).visible() {
-            let username = self.text();
-            self.show_text(cx, None, None, username);
-        } else {
-            let _ = self.show_image(cx, None, |_ , _| Ok::<(), ImageError>(()));
-        }
         (username, profile_drawn)
     }
 }
@@ -424,25 +411,17 @@ impl AvatarRef {
         avatar_user_id: &UserId,
         avatar_profile_opt: Option<&TimelineDetails<Profile>>,
         event_id: Option<&EventId>,
+        is_clickable: bool,
     ) -> (String, bool) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_avatar_and_get_username(cx, room_id, avatar_user_id, avatar_profile_opt, event_id)
-        } else {
-            (avatar_user_id.to_string(), false)
-        }
-    }
-
-    /// See [`Avatar::set_avatar_and_get_username_without_show_user_profile()`].
-    pub fn set_avatar_and_get_username_without_show_user_profile(
-        &self,
-        cx: &mut Cx,
-        room_id: &RoomId,
-        avatar_user_id: &UserId,
-        avatar_profile_opt: Option<&TimelineDetails<Profile>>,
-        event_id: Option<&EventId>,
-    ) -> (String, bool) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.set_avatar_and_get_username_without_show_user_profile(cx, room_id, avatar_user_id, avatar_profile_opt, event_id)
+            inner.set_avatar_and_get_username(
+                cx,
+                room_id,
+                avatar_user_id,
+                avatar_profile_opt,
+                event_id,
+                is_clickable,
+            )
         } else {
             (avatar_user_id.to_string(), false)
         }
