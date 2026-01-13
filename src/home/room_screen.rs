@@ -36,6 +36,7 @@ use crate::{
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
+use crate::home::small_state_group_manager;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::shared::mentionable_text_input::MentionableTextInputAction;
 
@@ -78,6 +79,7 @@ live_design! {
     use crate::rooms_list::*;
     use crate::shared::restore_status_view::*;
     use crate::home::link_preview::LinkPreview;
+    use crate::home::small_state_group_manager::SmallStateHeader;
     use link::tsp_link::TspSignIndicator;
 
     COLOR_BG = #xfff8ee
@@ -368,6 +370,7 @@ live_design! {
                 }
                 text: ""
             }
+
             // Center the Avatar vertically with respect to the SmallStateEvent content.
             avatar_row = <AvatarRow> { margin: {top: -1.0} }
         }
@@ -468,6 +471,7 @@ live_design! {
             Empty = <Empty> {}
             DateDivider = <DateDivider> {}
             ReadMarker = <ReadMarker> {}
+            SmallStateHeader = <SmallStateHeader> {}
         }
 
         // A jump to bottom button (with an unread message badge) that is shown
@@ -672,6 +676,21 @@ impl Widget for RoomScreen {
                         index,
                     );
                     continue;
+                }
+                // Handle collapsible button click in SmallStateEvent
+                if wr.button(ids!(collapsible_button)).clicked(actions) {
+                    if let Some(tl_state) = &mut self.tl_state {
+                        small_state_group_manager::handle_collapsible_button_click(
+                            cx,
+                            &wr,
+                            index,
+                            &portal_list,
+                            &mut tl_state.group_manager,
+                            &mut tl_state.content_drawn_since_last_update,
+                            &mut tl_state.profile_drawn_since_last_update,
+                            tl_state.items.len(),
+                        );
+                    }
                 }
             }
 
@@ -944,15 +963,31 @@ impl Widget for RoomScreen {
             let room_id = &tl_state.room_id;
             let tl_items = &tl_state.items;
 
-            // Set the portal list's range based on the number of timeline items.
-            let last_item_id = tl_items.len();
+            // Set the portal list's range based on the number of timeline items,
+            // accounting for small state groups (collapsed groups take 1 slot each)
+            let base_item_count = tl_items.len();
+            let group_count = tl_state.group_manager.small_state_groups.len();
+            println!("group_count: {}, base_item_count: {}", group_count, base_item_count);
+            let last_item_id = base_item_count + group_count;
 
             let list = list_ref.deref_mut();
             list.set_item_range(cx, 0, last_item_id);
 
             while let Some(item_id) = list.next_visible_item(cx) {
+                // Check if this item is a group header and get the count of groups before it
+                let (is_header, groups_before) = tl_state.group_manager.check_group_header_status(item_id);
+                
+                if is_header {
+                    println!("is_heade {:?} groups_before {:?}", item_id, groups_before);
+                    // This is the first item in a small state group, populate SmallStateHeader
+                    let (item, _existed) = tl_state.group_manager.populate_small_state_header(cx, list, item_id, groups_before, room_id);
+                    item.draw_all(cx, scope);
+                    continue;
+                }
+                
                 let item = {
-                    let tl_idx = item_id;
+                    //println!("groups_before: {} item_id: {}", groups_before, item_id);
+                    let tl_idx = item_id.saturating_sub(groups_before);
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
@@ -1149,10 +1184,21 @@ impl RoomScreen {
                     portal_list.set_tail_range(true);
                     jump_to_bottom.update_visibility(cx, true);
 
+                    // Compute small state groups for initial items
+                    let small_state_events = small_state_group_manager::extract_small_state_events(initial_items.iter().cloned());
+                    if tl.room_id.to_string() == "!MhCFIYPPVRVgyyvRWK:matrix.org" {
+                        println!("FirstUpdate: small_state_events: {:?}", small_state_events);
+                    }
+                    tl.group_manager.compute_group_state_2(small_state_events);
+                    if tl.room_id.to_string() == "!MhCFIYPPVRVgyyvRWK:matrix.org" {
+                        println!("FirstUpdate: computed group state {:?}", tl.group_manager);
+                    }
+
                     tl.items = initial_items;
                     done_loading = true;
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
+                    return;
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("process_timeline_updates(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
@@ -1259,8 +1305,28 @@ impl RoomScreen {
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
-                        // log!("process_timeline_updates(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
+                    // Handles item_id changes whenever there is a backward pagination.  
+                    if !is_append {
+                        let old_len = tl.items.len();
+                        let new_len = new_items.len();
+                        let shift = new_len.saturating_sub(old_len) as i32;
+                        small_state_group_manager::handle_backward_pagination_index_shift(
+                            shift,
+                            &mut tl.group_manager,
+                        );
+                    }
+                    
+                    // Compute small state groups for new items
+                    let small_state_events = small_state_group_manager::extract_small_state_events(new_items.iter().cloned());
+                    if tl.room_id.to_string() == "!UrPVVKTBTiyKLvSgIw:matrix.org" {
+                        println!("NewItems: computed group state for {:?}", small_state_events);
+                    }
+                    tl.group_manager.compute_group_state_2(small_state_events);
+                    if tl.room_id.to_string() == "!UrPVVKTBTiyKLvSgIw:matrix.org" {
+                        println!("NewItems: computed group state for tl.group_manager {:?} done", tl.group_manager);
+                    }
+                    
                     tl.items = new_items;
                     done_loading = true;
                 }
@@ -2070,6 +2136,7 @@ impl RoomScreen {
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
                 tombstone_info,
+                group_manager: small_state_group_manager::SmallStateGroupManager::default(),
             };
             (tl_state, true)
         };
@@ -2626,6 +2693,9 @@ struct TimelineUiState {
     /// If `Some`, this room has been tombstoned and the details of its successor room
     /// are contained within. If `None`, the room has not been tombstoned.
     tombstone_info: Option<SuccessorRoomDetails>,
+    
+    /// Manager for small state groups, room creation info, and creation collapsible list.
+    group_manager: small_state_group_manager::SmallStateGroupManager,
 }
 
 #[derive(Default, Debug)]
@@ -4021,7 +4091,6 @@ fn populate_small_state_event(
         new_drawn_status,
     )
 }
-
 
 /// Returns the display name of the sender of the given `event_tl_item`, if available.
 fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String> {
