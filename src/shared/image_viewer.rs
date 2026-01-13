@@ -467,8 +467,6 @@ pub enum ImageViewerAction {
     Show(LoadState),
     /// Hide the ImageViewer widget.
     Hide,
-    /// Resize the Image based on window geometry change.
-    Resize,
 }
 
 #[derive(Live, LiveHook, Widget)]
@@ -815,31 +813,29 @@ impl MatchEvent for ImageViewer {
                 self.update_rotation_animation(cx);
             }
         }
+
         for action in actions.iter() {
-            match action.downcast_ref() {
-                Some(ImageViewerAction::Show(state)) => {
-                    match state {
-                        LoadState::Loading(texture, metadata) => {
-                            self.texture = texture.clone();
-                            self.next_frame = cx.new_next_frame();
-                            if let Some(metadata) = metadata {
-                                self.set_metadata(cx, metadata);
-                            }
-                            self.show_loading(cx);
+            if let Some(ImageViewerAction::Show(state)) = action.downcast_ref() {
+                match state {
+                    LoadState::Loading(texture, metadata) => {
+                        self.texture = texture.clone();
+                        self.next_frame = cx.new_next_frame();
+                        if let Some(metadata) = metadata {
+                            self.set_metadata(cx, metadata);
                         }
-                        LoadState::Loaded(image_bytes) => {
-                            self.show_loaded(cx, image_bytes);
-                        }
-                        LoadState::FinishedBackgroundDecoding => {
-                            self.is_loaded = true;
-                            self.hide_footer(cx);
-                        },
-                        LoadState::Error(error) => {
-                            self.show_error(cx, error);
-                        }
+                        self.show_loading(cx);
+                    }
+                    LoadState::Loaded(image_bytes) => {
+                        self.show_loaded(cx, image_bytes);
+                    }
+                    LoadState::FinishedBackgroundDecoding => {
+                        self.is_loaded = true;
+                        self.hide_footer(cx);
+                    },
+                    LoadState::Error(error) => {
+                        self.show_error(cx, error);
                     }
                 }
-                _ => {}
             }
         }
     }
