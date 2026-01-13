@@ -2907,6 +2907,7 @@ fn populate_message_view(
                             event_tl_item.sender(),
                             Some(event_tl_item.sender_profile()),
                             event_tl_item.event_id(),
+                            true,
                         );
 
                         // Prepend a "* <username> " to the emote body, as suggested by the Matrix spec.
@@ -3195,6 +3196,7 @@ fn populate_message_view(
                     event_tl_item.sender(),
                     Some(event_tl_item.sender_profile()),
                     event_tl_item.event_id(),
+                    true,
                 )
             );
             if is_notice {
@@ -3664,6 +3666,7 @@ fn draw_replied_to_message(
                             &replied_to_event.sender,
                             Some(&replied_to_event.sender_profile),
                             Some(in_reply_to_details.event_id.as_ref()),
+                            true,
                         );
 
                 fully_drawn = is_avatar_fully_drawn;
@@ -3996,6 +3999,7 @@ fn populate_small_state_event(
             event_tl_item.sender(),
             Some(event_tl_item.sender_profile()),
             event_tl_item.event_id(),
+            true,
         );
         // Draw the timestamp as part of the profile.
         if let Some(dt) = unix_time_millis_to_datetime(event_tl_item.timestamp()) {

@@ -371,6 +371,7 @@ impl RoomInputBar {
                 replying_to.0.sender(),
                 Some(replying_to.0.sender_profile()),
                 replying_to.0.event_id(),
+                true,
             );
 
         replying_preview
