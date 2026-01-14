@@ -94,7 +94,7 @@ live_design! {
             }
         }
 
-        invite_message = <Label> {
+        r = <Label> {
             margin: {top: 15, bottom: 15},
             width: Fill, height: Fit,
             align: {x: 0.5, y: 0},
@@ -139,6 +139,28 @@ live_design! {
                 }
             }
         }
+
+        reason_view = <View> {
+            width: Fill, height: Fit
+            align: {x: 0.5, y: 0}
+            flow: Down,
+
+            reason_label = <Label> {
+                width: Fill, height: Fit,
+                align: {x: 0.5, y: 0},
+                text: ""
+                // margin: {top: 3}
+                flow: RightWrap,
+                draw_text: {
+                    text_style: <TITLE_TEXT>{
+                        font_size: 18,
+                    },
+                    color: #000
+                    wrap: Word,
+                }
+            }
+        }
+
 
         buttons = <View> {
             width: Fill, height: Fit
@@ -297,9 +319,9 @@ impl Widget for InviteScreen {
             // First, we quickly loop over the actions up front to handle the case
             // where this room was restored and has now been successfully loaded from the homeserver.
             for action in actions {
-                if let Some(AppStateAction::RoomLoadedSuccessfully(loaded)) = action.downcast_ref() {
-                    if self.room_name_id.as_ref().is_some_and(|current| current.room_id() == loaded.room_id()) {
-                        self.set_displayed_invite(cx, loaded);
+                if let Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, .. }) = action.downcast_ref() {
+                    if self.room_name_id.as_ref().is_some_and(|current| current.room_id() == room_name_id.room_id()) {
+                        self.set_displayed_invite(cx, room_name_id);
                         break;
                     }
                 }
@@ -445,7 +467,7 @@ impl Widget for InviteScreen {
             (false, "You have been invited to join:")
         };
         inviter_view.set_visible(cx, is_visible);
-        self.view.label(ids!(invite_message)).set_text(cx, invite_text);
+        self.view.label(ids!(r)).set_text(cx, invite_text);
 
         // Second, populate the room info, if we have it.
         let room_view = self.view.view(ids!(room_view));
@@ -534,6 +556,7 @@ impl InviteScreen {
             self.redraw(cx);
         }
 
+        log!("#### {room_name_id:?} is_loaded? {}", self.is_loaded);
         let restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
         if !self.is_loaded {
             restore_status_view.set_content(

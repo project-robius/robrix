@@ -70,7 +70,7 @@ live_design! {
                     spacing: 20
 
                     cancel_button = <RobrixIconButton> {
-                        width: 100,
+                        width: 120,
                         align: {x: 0.5, y: 0.5}
                         padding: 15,
                         draw_icon: {
@@ -90,7 +90,7 @@ live_design! {
                     }
 
                     accept_button = <RobrixIconButton> {
-                        width: 100,
+                        width: 120,
                         align: {x: 0.5, y: 0.5}
                         padding: 15,
                         draw_icon: {

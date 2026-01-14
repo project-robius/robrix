@@ -325,7 +325,7 @@ enum AddRoomState {
     /// or because of connectivity issues or something else.
     FetchError(String),
     /// We successfully knocked on the room or space, and are waiting for
-    /// a member of that room/space to acknowledge our knock.
+    /// a member of that room/space to acknowledge our knock by inviting us.
     Knocked {
         frp: FetchedRoomPreview,
     },
@@ -334,8 +334,24 @@ enum AddRoomState {
     Joined {
         frp: FetchedRoomPreview,
     },
+    /// The fetched room or space has been loaded from the homeserver,
+    /// so we can allow the user to jump to it via the `join_room_button`.
+    Loaded {
+        frp: FetchedRoomPreview,
+        is_invite: bool,
+    }
 }
 impl AddRoomState {
+    fn fetched_room_preview(&self) -> Option<&FetchedRoomPreview> {
+        match self {
+            Self::FetchedRoomPreview { frp, .. }
+            | Self::Knocked { frp }
+            | Self::Joined { frp }
+            | Self::Loaded { frp, .. } => Some(frp),
+            _ => None,
+        }
+    }
+
     fn transition_to_knocked(&mut self) {
         let prev = std::mem::take(self);
         if let Self::FetchedRoomPreview { frp, .. } = prev {
@@ -351,6 +367,20 @@ impl AddRoomState {
             *self = Self::Joined { frp };
         } else {
             *self = prev;
+        }
+    }
+
+    fn transition_to_loaded(&mut self, is_invite: bool) {
+        let prev = std::mem::take(self);
+        match prev {
+            Self::FetchedRoomPreview { frp, .. }
+            | Self::Joined { frp }
+            | Self::Knocked { frp } => {
+                *self = Self::Loaded { frp, is_invite };
+            }
+            _ => {
+                *self = prev;
+            }
         }
     }
 }
@@ -380,13 +410,19 @@ impl Widget for AddRoomScreen {
             // If the join button was clicked, perform the appropriate action.
             if join_room_button.clicked(actions) {
                 match (&self.join_function, &self.state) {
-                    (JoinButtonFunction::NavigateOrJoin, AddRoomState::FetchedRoomPreview { frp, .. }) => {
+                    (
+                        JoinButtonFunction::NavigateOrJoin,
+                        AddRoomState::FetchedRoomPreview { frp, .. } | AddRoomState::Loaded { frp, .. }
+                    ) => {
                         cx.action(AppStateAction::NavigateToRoom {
                             room_to_close: None,
                             destination_room: frp.clone().into(),
                         });
                     }
-                    (JoinButtonFunction::Knock, AddRoomState::FetchedRoomPreview { frp, room_or_alias_id, via }) => {
+                    (
+                        JoinButtonFunction::Knock,
+                        AddRoomState::FetchedRoomPreview { frp, room_or_alias_id, via }
+                    ) => {
                         submit_async_request(MatrixRequest::Knock {
                             room_or_alias_id: frp.canonical_alias.clone().map_or_else(
                                 || room_or_alias_id.clone(),
@@ -396,9 +432,7 @@ impl Widget for AddRoomScreen {
                             server_names: via.clone(),
                         });
                     }
-                    _ => {
-                        error!("BUG: shouldn't be able to press join button with no action set.");
-                    }
+                    _ => { }
                 }
             }
 
@@ -518,9 +552,26 @@ impl Widget for AddRoomScreen {
                     }
                 }
             }
-            if transition_to_knocked { self.state.transition_to_knocked(); }
-            if transition_to_joined { self.state.transition_to_joined(); }
+            if transition_to_knocked {
+                self.state.transition_to_knocked();
+                self.redraw(cx);
+            }
+            if transition_to_joined {
+                self.state.transition_to_joined();
+                self.redraw(cx);
+            }
 
+            for action in actions {
+                // If the room/space the user is searching for has been loaded from the homeserver
+                // (e.g., by getting invited to it, or joining it in another client),
+                // then update the state of 
+                if let Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, is_invite }) = action.downcast_ref() {
+                    if self.state.fetched_room_preview().is_some_and(|frp| frp.room_name_id.room_id() == room_name_id.room_id()) {
+                        self.state.transition_to_loaded(*is_invite);
+                        self.redraw(cx);
+                    }
+                }
+            }
         }
     }
 
@@ -553,7 +604,8 @@ impl Widget for AddRoomScreen {
             }
             ars @ AddRoomState::FetchedRoomPreview { frp, .. } 
             | ars @ AddRoomState::Knocked { frp }
-            | ars @ AddRoomState::Joined { frp } => {
+            | ars @ AddRoomState::Joined { frp } 
+            | ars @ AddRoomState::Loaded { frp, .. } => {
                 loading_room_view.set_visible(cx, false);
                 fetched_room_summary.set_visible(cx, true);
                 error_view.set_visible(cx, false);
@@ -667,8 +719,12 @@ impl Widget for AddRoomScreen {
                     (None, join_rule) => {
                         let direct = if frp.is_direct == Some(true) { "direct" } else { "regular" }; 
                         room_summary.set_text(cx, &format!(
-                            "This is a {direct} {room_or_space_lc} with {} members.",
+                            "This is a {direct} {room_or_space_lc} with {} {}.",
                             frp.num_joined_members,
+                            match frp.num_joined_members {
+                                1 => "member",
+                                _ => "members",
+                            },
                         ));
 
                         let (join_room_text, join_function) = match join_rule {
@@ -707,12 +763,22 @@ impl Widget for AddRoomScreen {
                         fetched_room_summary.button(ids!(cancel_button)).reset_hover(cx);
                     }
                     AddRoomState::Knocked { .. } => {
+                        room_summary.set_text(cx, &format!("You have knocked on this {room_or_space_lc} and must now wait for someone to invite you in."));
                         join_room_button.set_text(cx, "Successfully knocked!");
                         join_room_button.set_enabled(cx, false);
                     }
                     AddRoomState::Joined { .. } => {
+                        room_summary.set_text(cx, &format!("You have joined this {room_or_space_lc}. It is now being loaded from the homeserver; please wait..."));
                         join_room_button.set_text(cx, "Successfully joined!");
                         join_room_button.set_enabled(cx, false);
+                    }
+                    AddRoomState::Loaded { is_invite, .. } => {
+                        let verb = if *is_invite { "been invited to" } else { "fully joined" };
+                        room_summary.set_text(cx, &format!("You have {verb} this {room_or_space_lc}."));
+                        let adj = if *is_invite { "invited" } else { "joined" };
+                        join_room_button.set_text(cx, &format!("Go to {adj} {room_or_space_lc}"));
+                        join_room_button.set_enabled(cx, true);
+                        self.join_function = JoinButtonFunction::NavigateOrJoin;
                     }
                     _ => {}
                 }
