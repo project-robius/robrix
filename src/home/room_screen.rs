@@ -54,7 +54,7 @@ const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 /// The max size (width or height) of a blurhash image to decode.
 const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
 
-static UNNAMED_ROOM: &'static str = "Unnamed Room";
+static UNNAMED_ROOM: &str = "Unnamed Room";
 
 live_design! {
     use link::theme::*;
@@ -1482,7 +1482,7 @@ impl RoomScreen {
                 TimelineUpdate::InviteSent { result, .. } => {
                     match result {
                         Ok(_) => enqueue_popup_notification(PopupItem {
-                            message: format!("Sent invite successfully."),
+                            message: "Sent invite successfully.".to_string(),
                             auto_dismissal_duration: Some(4.0),
                             kind: PopupKind::Success,
                         }),
