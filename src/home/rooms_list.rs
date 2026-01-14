@@ -485,10 +485,15 @@ impl RoomsList {
         // self.all_rooms_loaded
     }
 
-    /// Returns `true` if the given `room_id` is in the `all_joined_rooms` or `invited_rooms` list.
-    pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
-        self.all_joined_rooms.contains_key(room_id)
-            || self.invited_rooms.borrow().contains_key(room_id)
+    /// Returns the state of the room if it is loaded and known to our client.
+    pub fn get_room_state(&self, room_id: &OwnedRoomId) -> Option<RoomState> {
+        if self.all_joined_rooms.contains_key(room_id) {
+            return Some(RoomState::Joined);
+        }
+        if self.invited_rooms.borrow().contains_key(room_id) {
+            return Some(RoomState::Invited);
+        }
+        None
     }
 
     /// Handle all pending updates to the list of all rooms.
@@ -501,32 +506,23 @@ impl RoomsList {
                     let room_id = invited_room.room_name_id.room_id().clone();
                     let should_display = should_display_room!(self, &room_id, &invited_room);
                     let _replaced = self.invited_rooms.borrow_mut().insert(room_id.clone(), invited_room);
-                    if let Some(_old_room) = _replaced {
-                        error!("BUG: Added invited room {room_id} that already existed");
-                    } else {
-                        if should_display {
-                            self.displayed_invited_rooms.push(room_id);
-                        }
+                    if should_display {
+                        self.displayed_invited_rooms.push(room_id);
                     }
                     self.update_status();
-                    // Signal the UI to update the RoomScreen
-                    SignalToUI::set_ui_signal();
+                    SignalToUI::set_ui_signal(); // signal the InviteScreen to update itself
                 }
                 RoomsListUpdate::AddJoinedRoom(joined_room) => {
                     let room_id = joined_room.room_name_id.room_id().clone();
                     let is_direct = joined_room.is_direct;
                     let should_display = should_display_room!(self, &room_id, &joined_room);
-                    let replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
-                    if replaced.is_none() {
-                        if should_display {
-                            if is_direct {
-                                self.displayed_direct_rooms.push(room_id.clone());
-                            } else {
-                                self.displayed_regular_rooms.push(room_id.clone());
-                            }
+                    let _replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
+                    if should_display {
+                        if is_direct {
+                            self.displayed_direct_rooms.push(room_id.clone());
+                        } else {
+                            self.displayed_regular_rooms.push(room_id.clone());
                         }
-                    } else {
-                        error!("BUG: Added joined room {room_id} that already existed");
                     }
 
                     // If this room was added as a result of accepting an invite, we must:
@@ -551,8 +547,7 @@ impl RoomsList {
                         }
                     }
                     self.update_status();
-                    // Signal the UI to update the RoomScreen
-                    SignalToUI::set_ui_signal();
+                    SignalToUI::set_ui_signal(); // signal the RoomScreen to update itself
                 }
                 RoomsListUpdate::UpdateRoomAvatar { room_id, room_avatar } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
@@ -1368,10 +1363,14 @@ impl RoomsListRef {
         inner.all_rooms_loaded()
     }
 
-    /// See [`RoomsList::is_room_loaded()`].
+    /// Returns `true` if this room is loaded and known to our client.
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
-        let Some(inner) = self.borrow() else { return false; };
-        inner.is_room_loaded(room_id)
+        self.get_room_state(room_id).is_some()
+    }
+
+    /// See [`RoomsList::get_room_state()`].
+    pub fn get_room_state(&self, room_id: &OwnedRoomId) -> Option<RoomState> {
+        self.borrow()?.get_room_state(room_id)
     }
 
     /// Returns the name of the given room, if it is known and loaded.

@@ -211,7 +211,7 @@ live_design! {
 
         <LineH> { padding: 15 }
 
-        actions = <View> {
+        action_buttons = <View> {
             width: Fill, height: Fit
             flow: Down,
             spacing: 10,

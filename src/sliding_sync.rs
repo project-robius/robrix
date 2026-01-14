@@ -309,6 +309,11 @@ pub enum MatrixRequest {
         #[doc(alias("via"))]
         server_names: Vec<OwnedServerName>,
     },
+    /// Request to invite the given user to the given room.
+    InviteUser {
+        room_id: OwnedRoomId,
+        user_id: OwnedUserId,
+    },
     /// Request to join the given room.
     JoinRoom {
         room_id: OwnedRoomId,
@@ -693,6 +698,26 @@ async fn matrix_worker_task(
                 });
             }
 
+            MatrixRequest::InviteUser { room_id, user_id } => {
+                let (timeline, sender) = {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                        error!("BUG: room info not found for invite user request {room_id}, {user_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                let _invite_task = Handle::current().spawn(async move {
+                    log!("Sending request to invite user {user_id} to room {room_id}...");
+                    let result = timeline.room().invite_user_by_id(&user_id).await;
+                    match sender.send(TimelineUpdate::InviteSent { user_id, result }) {
+                        Ok(_) => SignalToUI::set_ui_signal(),
+                        Err(e) => error!("Failed to send timeline update: {e:?} for InviteUser request, room {room_id}."),
+                    }
+                });
+            }
+
             MatrixRequest::JoinRoom { room_id } => {
                 let Some(client) = get_client() else { continue };
                 let _join_room_task = Handle::current().spawn(async move {
@@ -789,7 +814,6 @@ async fn matrix_worker_task(
             MatrixRequest::GetRoomPreview { room_or_alias_id, via } => {
                 let Some(client) = get_client() else { continue };
                 let _fetch_task = Handle::current().spawn(async move {
-                    log!("Sending get room preview request for {room_or_alias_id}...");
                     let res = fetch_room_preview_with_avatar(&client, &room_or_alias_id, via).await;
                     Cx::post_action(RoomPreviewAction::Fetched(res));
                 });
@@ -2420,6 +2444,7 @@ async fn add_new_room(
 ) -> Result<()> {
     match new_room.state {
         RoomState::Knocked => {
+            log!("Got new Knocked room: {:?} ({})", new_room.display_name, new_room.room_id);
             // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
             return Ok(());
         }
@@ -2481,7 +2506,10 @@ async fn add_new_room(
                 is_selected: false,
                 is_direct: new_room.is_direct,
             }));
-            Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_name_id));
+            Cx::post_action(AppStateAction::RoomLoadedSuccessfully {
+                room_name_id,
+                is_invite: true,
+            });
             return Ok(());
         }
         RoomState::Joined => { } // Fall through to adding the joined room below.
@@ -2549,7 +2577,10 @@ async fn add_new_room(
         is_tombstoned: new_room.is_tombstoned,
     }));
 
-    Cx::post_action(AppStateAction::RoomLoadedSuccessfully(room_name_id));
+    Cx::post_action(AppStateAction::RoomLoadedSuccessfully {
+        room_name_id,
+        is_invite: false,
+    });
     spawn_fetch_room_avatar(new_room);
     Ok(())
 }

@@ -24,6 +24,7 @@ live_design! {
     pub ICON_HOME            = dep("crate://self/resources/icons/home.svg")
     pub ICON_HTML_FILE       = dep("crate://self/resources/icons/html_file.svg")
     pub ICON_INFO            = dep("crate://self/resources/icons/info.svg")
+    pub ICON_INVITE          = dep("crate://self/resources/icons/invite.svg")
     pub ICON_JOIN_ROOM       = dep("crate://self/resources/icons/join_room.svg")
     pub ICON_JUMP            = dep("crate://self/resources/icons/go_back.svg")
     pub ICON_LOGOUT          = dep("crate://self/resources/icons/logout.svg")

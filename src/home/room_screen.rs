@@ -20,8 +20,9 @@ use matrix_sdk::{
     }
 };
 use matrix_sdk_ui::timeline::{
-    self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MembershipChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
+use ruma::OwnedUserId;
 
 use crate::{
     app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
@@ -30,7 +31,7 @@ use crate::{
     },
     room::{BasicRoomDetails, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -53,6 +54,7 @@ const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 /// The max size (width or height) of a blurhash image to decode.
 const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
 
+static UNNAMED_ROOM: &str = "Unnamed Room";
 
 live_design! {
     use link::theme::*;
@@ -343,23 +345,47 @@ live_design! {
                 height: Fit
 
                 timestamp = <Timestamp> {
-                    margin: {top: 0.5}
+                    margin: {top: 3}
                 }
             }
 
             avatar = <Avatar> {
                 width: 19.,
                 height: 19.,
-                margin: { top: -2} // center the avatar vertically with the text
+                margin: 0
 
                 text_view = { text = { draw_text: {
                     text_style: <TITLE_TEXT>{ font_size: 7.0 }
                 }}}
             }
 
+            // Show an invite button only for a `Knocked` room membership change.
+            // All other small state events will not show this button.
+            invite_user_button = <RobrixIconButton> {
+                visible: false
+                margin: { top: -1.5, left: 2, right: 2}
+                padding: {top: 4, bottom: 4, left: 9, right: 9}
+                draw_bg: {
+                    color: (COLOR_BG_ACCEPT_GREEN)
+                    border_size: 0.75
+                    border_color: (COLOR_FG_ACCEPT_GREEN)
+                }
+                draw_icon: {
+                    svg_file: (ICON_ADD_USER)
+                    color: (COLOR_FG_ACCEPT_GREEN)
+                }
+                draw_text: {
+                    color: (COLOR_FG_ACCEPT_GREEN)
+                    text_style: <SMALL_STATE_TEXT_STYLE> {},
+                }
+                icon_walk: {width: 15, height: Fit, margin: {right: -4}}
+                text: "Invite to Room"
+            }
+
             content = <Label> {
                 width: Fill,
                 height: Fit
+                margin: {top: 2.5}
                 padding: { top: 0.0, bottom: 0.0, left: 0.0, right: 0.0 }
                 draw_text: {
                     wrap: Word,
@@ -368,8 +394,8 @@ live_design! {
                 }
                 text: ""
             }
-            // Center the Avatar vertically with respect to the SmallStateEvent content.
-            avatar_row = <AvatarRow> { margin: {top: -1.0} }
+
+            avatar_row = <AvatarRow> {}
         }
     }
 
@@ -599,6 +625,7 @@ impl Widget for RoomScreen {
         // the set of timeline indices (which would invalidate the index values in any actions).
         if let Event::Actions(actions) = event {
             for (index, wr) in portal_list.items_with_actions(actions) {
+                // Handle a hover-in action on the reaction list: show a reaction summary.
                 let reaction_list = wr.reaction_list(ids!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
                     widget_rect,
@@ -626,7 +653,11 @@ impl Widget for RoomScreen {
                     );
                 }
 
-                if reaction_list.hovered_out(actions) {
+                // Handle a hover-out action on the reaction list or avatar row.
+                let avatar_row_ref = wr.avatar_row(ids!(avatar_row));
+                if reaction_list.hovered_out(actions)
+                    || avatar_row_ref.hover_out(actions)
+                {
                     cx.widget_action(
                         room_screen_widget_uid,
                         &scope.path,
@@ -634,12 +665,12 @@ impl Widget for RoomScreen {
                     );
                 }
 
-                let avatar_row_ref = wr.avatar_row(ids!(avatar_row));
+                // Handle a hover-in action on the avatar row: show a read receipts summary.
                 if let RoomScreenTooltipActions::HoverInReadReceipt {
                     widget_rect,
                     read_receipts
                 } = avatar_row_ref.hover_in(actions) {
-                    let Some(room_id) = self.current_room_id() else { return; };
+                    let Some(room_id) = self.room_id() else { return; };
                     let tooltip_text= room_read_receipt::populate_tooltip(cx, read_receipts, room_id);
                     cx.widget_action(
                         room_screen_widget_uid,
@@ -655,13 +686,7 @@ impl Widget for RoomScreen {
                     );
                 }
 
-                if avatar_row_ref.hover_out(actions) {
-                    cx.widget_action(
-                        room_screen_widget_uid,
-                        &scope.path,
-                        TooltipAction::HoverOut
-                    );
-                }
+                // Handle an image within the message being clicked.
                 let content_message = wr.text_or_image(ids!(content.message));
                 if let TextOrImageAction::Clicked(mxc_uri) = actions.find_widget_action(content_message.widget_uid()).cast() {
                     let texture = content_message.get_texture(cx);
@@ -673,21 +698,47 @@ impl Widget for RoomScreen {
                     );
                     continue;
                 }
+
+                // Handle the invite_user_button (in a SmallStateEvent) being clicked.
+                if wr.button(ids!(invite_user_button)).clicked(actions) {
+                    let Some(tl) = self.tl_state.as_ref() else { continue };
+                    if let Some(event_tl_item) = tl.items.get(index).and_then(|item| item.as_event()) {
+                        log!("invite_user_button clicked: index {index}, details: {:?}", event_tl_item);
+                        let user_id = event_tl_item.sender().to_owned();
+                        let username = if let TimelineDetails::Ready(profile) = event_tl_item.sender_profile() {
+                            profile.display_name.as_deref().unwrap_or(user_id.as_str())
+                        } else {
+                            user_id.as_str()
+                        };
+                        let room_id = tl.room_id.clone();
+                        let content = ConfirmationModalContent {
+                            title_text: "Send Invitation".into(),
+                            body_text: format!("Are you sure you want to invite {username} to this room?").into(),
+                            accept_button_text: Some("Invite".into()),
+                            on_accept_clicked: Some(Box::new(move |_cx| {
+                                submit_async_request(MatrixRequest::InviteUser { room_id, user_id });
+                            })),
+                            ..Default::default()
+                        };
+                        cx.action(InviteAction::ShowConfirmationModal(RefCell::new(Some(content))));
+                    }
+                }
             }
 
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
             for action in actions {
                 // Handle actions related to restoring the previously-saved state of rooms.
-                if let Some(AppStateAction::RoomLoadedSuccessfully(loaded)) = action.downcast_ref() {
-                    if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == loaded.room_id()) {
+                if let Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, ..}) = action.downcast_ref() {
+                    if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_name_id.room_id()) {
                         // `set_displayed_room()` does nothing if the room_name_id is unchanged, so we clear it first.
                         self.room_name_id = None;
-                        self.set_displayed_room(cx, loaded);
+                        self.set_displayed_room(cx, room_name_id);
                         return;
                     }
                 }
-                // Handle the highlight animation.
+
+                // Handle the highlight animation for a message.
                 let Some(tl) = self.tl_state.as_mut() else { continue };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {
@@ -703,6 +754,9 @@ impl Widget for RoomScreen {
                 }
 
                 // Handle the action that requests to show the user profile sliding pane.
+                // TODO: move this into the `actions_generated_within_this_room_screen.retain(...)` code block,
+                //       where we won't need to bother checking if the room ID is the same as this RoomScreen,
+                //       because that block guarantees that it came from this RoomScreen.
                 if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
                     // Only show the user profile in room that this avatar belongs to
                     if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == &profile_and_room_id.room_id) {
@@ -711,7 +765,10 @@ impl Widget for RoomScreen {
                             &user_profile_sliding_pane,
                             UserProfilePaneInfo {
                                 profile_and_room_id,
-                                room_name: self.current_room_label(),
+                                room_name: self.room_name_id.as_ref().map_or_else(
+                                    || UNNAMED_ROOM.to_string(),
+                                    |r| r.to_string(),
+                                ),
                                 room_member: None,
                             },
                         );
@@ -928,9 +985,6 @@ impl Widget for RoomScreen {
 
 
         let room_screen_widget_uid = self.widget_uid();
-        // Cache the room label for logging before we borrow tl_state mutably.
-        let room_label = self.current_room_label();
-
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // Here, we only need to handle drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
@@ -1093,9 +1147,7 @@ impl Widget for RoomScreen {
             // If the list is not filling the viewport, we need to back paginate the timeline
             // until we have enough events items to fill the viewport.
             if !tl_state.fully_paginated && !list.is_filling_viewport() {
-                log!("Automatically paginating timeline to fill viewport for room \"{}\" ({})",
-                    room_label, room_id,
-                );
+                log!("Automatically paginating timeline to fill viewport for room {:?}", self.room_name_id);
                 submit_async_request(MatrixRequest::PaginateRoomTimeline {
                     room_id: room_id.clone(),
                     num_events: 50,
@@ -1108,18 +1160,8 @@ impl Widget for RoomScreen {
 }
 
 impl RoomScreen {
-    fn current_room_name(&self) -> Option<&RoomNameId> {
-        self.room_name_id.as_ref()
-    }
-
-    fn current_room_id(&self) -> Option<&OwnedRoomId> {
-        self.current_room_name().map(RoomNameId::room_id)
-    }
-
-    fn current_room_label(&self) -> String {
-        self.current_room_name()
-            .map(|name| name.to_string())
-            .unwrap_or_else(|| "Unknown Room".to_string())
+    fn room_id(&self) -> Option<&OwnedRoomId> {
+        self.room_name_id.as_ref().map(|r| r.room_id())
     }
 
     /// Processes all pending background updates to the currently-shown timeline.
@@ -1130,7 +1172,6 @@ impl RoomScreen {
         let jump_to_bottom = self.jump_to_bottom_button(ids!(jump_to_bottom));
         let curr_first_id = portal_list.first_id();
         let ui = self.widget_uid();
-        let room_display_label = self.current_room_label();
         let Some(tl) = self.tl_state.as_mut() else { return };
 
         let mut done_loading = false;
@@ -1328,9 +1369,10 @@ impl RoomScreen {
                     }
                 }
                 TimelineUpdate::PaginationError { error, direction } => {
-                    error!("Pagination error ({direction}) in room \"{}\", {}: {error:?}", room_display_label, tl.room_id);
+                    error!("Pagination error ({direction}) in {:?}: {error:?}", self.room_name_id);
+                    let room_name = self.room_name_id.as_ref().map(|r| r.to_string());
                     enqueue_popup_notification(PopupItem {
-                        message: utils::stringify_pagination_error(&error, &room_display_label),
+                        message: utils::stringify_pagination_error(&error, room_name.as_deref().unwrap_or(UNNAMED_ROOM)),
                         auto_dismissal_duration: None,
                         kind: PopupKind::Error,
                     });
@@ -1437,6 +1479,20 @@ impl RoomScreen {
                     tl.tombstone_info = Some(successor_room_details);
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
+                TimelineUpdate::InviteSent { result, .. } => {
+                    match result {
+                        Ok(_) => enqueue_popup_notification(PopupItem {
+                            message: "Sent invite successfully.".to_string(),
+                            auto_dismissal_duration: Some(4.0),
+                            kind: PopupKind::Success,
+                        }),
+                        Err(e) => enqueue_popup_notification(PopupItem {
+                            message: format!("Failed to send invite.\n\nError: {e}"),
+                            auto_dismissal_duration: None,
+                            kind: PopupKind::Error,
+                        }),
+                    }
+                }
             }
         }
 
@@ -1676,7 +1732,7 @@ impl RoomScreen {
                         error!("MessageAction::Reply: couldn't find event [{}] {:?} to reply to in room {:?}",
                             details.item_id,
                             details.event_id.as_deref(),
-                            self.current_room_id(),
+                            self.room_id(),
                         );
                     }
                 }
@@ -1694,7 +1750,7 @@ impl RoomScreen {
                         error!("MessageAction::Edit: couldn't find event [{}] {:?} to edit in room {:?}",
                             details.item_id,
                             details.event_id.as_deref(),
-                            self.current_room_id(),
+                            self.room_id(),
                         );
                     }
                 }
@@ -2012,7 +2068,7 @@ impl RoomScreen {
     /// e.g., when the user navigates to this timeline.
     fn show_timeline(&mut self, cx: &mut Cx) {
         let room_id = self
-            .current_room_id()
+            .room_id()
             .expect("BUG: Timeline::show_timeline(): no room_name was set.")
             .clone();
 
@@ -2088,9 +2144,9 @@ impl RoomScreen {
             let rooms_list_ref = cx.get_global::<RoomsListRef>();
             let is_loaded_now = rooms_list_ref.is_room_loaded(&room_id);
             if is_loaded_now && !self.is_loaded {
-                log!("Detected that room \"{}\" ({}) is now loaded for the first time",
-                    self.current_room_label(), room_id,
-                );
+                // log!("Detected that room {:?} is now loaded for the first time",
+                //     self.room_name_id
+                // );
                 is_first_time_being_loaded = true;
             }
             self.is_loaded = is_loaded_now;
@@ -2103,9 +2159,7 @@ impl RoomScreen {
         // when they first open the room, and there might not be any messages yet.
         if is_first_time_being_loaded {
             if !tl_state.fully_paginated {
-                log!("Sending a first-time backwards pagination request for room \"{}\" {}",
-                    self.current_room_label(), room_id,
-                );
+                log!("Sending a first-time backwards pagination request for room {:?}", self.room_name_id);
                 submit_async_request(MatrixRequest::PaginateRoomTimeline {
                     room_id: room_id.clone(),
                     num_events: 50,
@@ -2169,7 +2223,7 @@ impl RoomScreen {
 
     /// Invoke this when this RoomScreen/timeline is being hidden or no longer being shown.
     fn hide_timeline(&mut self) {
-        let Some(room_id) = self.current_room_id().cloned() else { return };
+        let Some(room_id) = self.room_id().cloned() else { return };
 
         self.save_state();
 
@@ -2198,7 +2252,7 @@ impl RoomScreen {
     /// Note: after calling this function, the widget's `tl_state` will be `None`.
     fn save_state(&mut self) {
         let Some(mut tl) = self.tl_state.take() else {
-            error!("Timeline::save_state(): skipping due to missing state, room {:?}", self.current_room_id());
+            error!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_name_id);
             return;
         };
 
@@ -2511,6 +2565,11 @@ pub enum TimelineUpdate {
     Tombstoned(SuccessorRoomDetails),
     /// A notice that link preview data for a URL has been fetched and is now available.
     LinkPreviewFetched,
+    /// A notice that inviting the given user to this room succeeded or failed.
+    InviteSent {
+        user_id: OwnedUserId,
+        result: matrix_sdk::Result<()>,
+    },
 }
 
 thread_local! {
@@ -3953,6 +4012,13 @@ impl SmallStateEventContent for RoomMembershipChange {
 
         item.label(ids!(content))
             .set_text(cx, &preview.format_with(username, false));
+
+        // The invite_user_button is only used for "Knocked" membership change events.
+        item.button(ids!(invite_user_button)).set_visible(
+            cx,
+            matches!(self.change(), Some(MembershipChange::Knocked)),
+        );
+
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
     }
@@ -4030,6 +4096,20 @@ fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String>
     } else {
         None
     }
+}
+
+
+/// Actions related to invites within a room.
+///
+/// These are NOT widget actions, just regular actions.
+#[derive(Debug)]
+pub enum InviteAction {
+    /// Show a confirmation modal for sending an invite.
+    ///
+    /// The content is wrapped in a `RefCell` to ensure that only one entity handles it
+    /// and that that one entity can take ownership of the content object,
+    /// which avoids having to clone it.
+    ShowConfirmationModal(RefCell<Option<ConfirmationModalContent>>),
 }
 
 

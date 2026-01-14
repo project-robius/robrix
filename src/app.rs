@@ -4,12 +4,12 @@
 
 use std::collections::HashMap;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{OwnedRoomId, RoomId};
+use matrix_sdk::{RoomState, ruma::{OwnedRoomId, RoomId}};
 use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache,
     home::{
-        main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     },
     join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
@@ -22,7 +22,7 @@ use crate::{
     shared::{callout_tooltip::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, image_viewer::{ImageViewerAction, LoadState}}, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, confirmation_modal::ConfirmationModalWidgetRefExt, image_viewer::{ImageViewerAction, LoadState}}, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -39,6 +39,7 @@ live_design! {
     use crate::join_leave_room_modal::JoinLeaveRoomModal;
     use crate::login::login_screen::LoginScreen;
     use crate::logout::logout_confirm_modal::LogoutConfirmModal;
+    use crate::shared::confirmation_modal::*;
     use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
@@ -111,6 +112,20 @@ live_design! {
                         // but behind verification modals.
                         new_message_context_menu = <NewMessageContextMenu> { }
 
+                        // A modal to confirm sending out an invite to a room.
+                        invite_confirmation_modal = <Modal> {
+                            content: {
+                                invite_confirmation_modal_inner = <PositiveConfirmationModal> {
+                                    wrapper = { buttons_view = { accept_button = {
+                                        draw_icon: {
+                                            svg_file: (ICON_INVITE),
+                                        }
+                                        icon_walk: {width: 28, height: Fit, margin: {left: -10} }
+                                    } } }
+                                }
+                            }
+                        }
+
                         // Show the logout confirmation modal.
                         logout_confirm_modal = <Modal> {
                             content: {
@@ -147,9 +162,10 @@ pub struct App {
     #[live] ui: WidgetRef,
     /// The top-level app state, shared across various parts of the app.
     #[rust] app_state: AppState,
-    /// The details of a room we're waiting on to be joined so that we can navigate to it.
-    /// Also includes an optional room ID to be closed once the awaited room is joined.
-    #[rust] waiting_to_navigate_to_joined_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
+    /// The details of a room we're waiting on to be loaded so that we can navigate to it.
+    /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
+    /// Also includes an optional room ID to be closed once the awaited room has been loaded.
+    #[rust] waiting_to_navigate_to_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
 }
 
 impl LiveRegister for App {
@@ -225,6 +241,11 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        let invite_confirmation_modal_inner = self.ui.confirmation_modal(ids!(invite_confirmation_modal_inner));
+        if let Some(_accepted) = invite_confirmation_modal_inner.closed(actions) {
+            self.ui.modal(ids!(invite_confirmation_modal)).close(cx);
+        }
+
         for action in actions {
             if let Some(logout_modal_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
                 match logout_modal_action {
@@ -336,14 +357,14 @@ impl MatchEvent for App {
                     self.navigate_to_room(cx, room_to_close.as_ref(), destination_room);
                     continue;
                 }
-                // If we successfully loaded a room that we were waiting to join,
+                // If we successfully loaded a room that we were waiting on,
                 // we can now navigate to it and optionally close a previous room.
-                Some(AppStateAction::RoomLoadedSuccessfully(room_name_id)) if
-                    self.waiting_to_navigate_to_joined_room.as_ref()
+                Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, .. }) if
+                    self.waiting_to_navigate_to_room.as_ref()
                         .is_some_and(|(dr, _)| dr.room_id() == room_name_id.room_id()) =>
                 {
-                    log!("Joined awaited room {room_name_id:?}, navigating to it now...");
-                    if let Some((dest_room, room_to_close)) = self.waiting_to_navigate_to_joined_room.take() {
+                    log!("Loaded awaited room {room_name_id:?}, navigating to it now...");
+                    if let Some((dest_room, room_to_close)) = self.waiting_to_navigate_to_room.take() {
                         self.navigate_to_room(cx, room_to_close.as_ref(), &dest_room);
                     }
                     continue;
@@ -433,6 +454,15 @@ impl MatchEvent for App {
                     self.ui.modal(ids!(tsp_verification_modal)).close(cx);
                     continue;
                 }
+            }
+
+            // Handle a request to show the invite confirmation modal.
+            if let Some(InviteAction::ShowConfirmationModal(content_opt)) = action.downcast_ref() {
+                if let Some(content) = content_opt.borrow_mut().take() {
+                    invite_confirmation_modal_inner.show(cx, content);
+                    self.ui.modal(ids!(invite_confirmation_modal)).open(cx);
+                }
+                continue;
             }
 
             // // message source modal handling.
@@ -565,42 +595,47 @@ impl App {
             }
         });
 
-        // If the successor room is not loaded, show a join modal.
         let destination_room_id = destination_room.room_id();
-        if !cx.get_global::<RoomsListRef>().is_room_loaded(destination_room_id) {
-            log!("Destination room {} not loaded, showing join modal...", destination_room_id);
-            self.waiting_to_navigate_to_joined_room = Some((
-                destination_room.clone(),
-                room_to_close.cloned(),
-            ));
-            cx.action(JoinLeaveRoomModalAction::Open {
-                kind: JoinLeaveModalKind::JoinRoom(destination_room.clone()), 
-                show_tip: false,
-            });
-            return;
-        }
+        let new_selected_room = match cx.get_global::<RoomsListRef>().get_room_state(destination_room_id) {
+            Some(RoomState::Joined) => SelectedRoom::JoinedRoom {
+                room_name_id: destination_room.room_name_id().clone(),
+            },
+            Some(RoomState::Invited) => SelectedRoom::InvitedRoom {
+                room_name_id: destination_room.room_name_id().clone(),
+            },
+            // If the destination room is not yet loaded, show a join modal.
+            _ => {
+                log!("Destination room {:?} not loaded, showing join modal...", destination_room.room_name_id());
+                self.waiting_to_navigate_to_room = Some((
+                    destination_room.clone(),
+                    room_to_close.cloned(),
+                ));
+                cx.action(JoinLeaveRoomModalAction::Open {
+                    kind: JoinLeaveModalKind::JoinRoom(destination_room.clone()), 
+                    show_tip: false,
+                });
+                return;
+            }
+        };
 
-        // Before we navigate to the room, if the AddRoom tab is currently shown,
-        // then we programmatically navigate to the Home tab to show the actual room.
-        if matches!(self.app_state.selected_tab, SelectedTab::AddRoom) {
-            cx.action(NavigationBarAction::GoToHome);
-        }
 
         log!("Navigating to destination room {:?}, closing room {:?}",
             destination_room.room_name_id(),
             room_to_close,
         );
 
-        // Select and scroll to the destination room in the rooms list.
-        let new_selected_room = SelectedRoom::JoinedRoom {
-            room_name_id: destination_room.room_name_id().clone(),
-        };
-        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room_id.clone()));
+        // Before we navigate to the room, if the AddRoom tab is currently shown,
+        // then we programmatically navigate to the Home tab to show the actual room.
+        if matches!(self.app_state.selected_tab, SelectedTab::AddRoom) {
+            cx.action(NavigationBarAction::GoToHome);
+        }
         cx.widget_action(
             self.ui.widget_uid(),
             &HeapLiveIdPath::default(),
             RoomsListAction::Selected(new_selected_room),
         );
+        // Select and scroll to the destination room in the rooms list.
+        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room_id.clone()));
 
         // Close a previously/currently-open room if specified.
         if let Some(closure) = close_room_closure_opt {
@@ -721,7 +756,11 @@ pub enum AppStateAction {
     /// and is now known to our client.
     ///
     /// The RoomScreen for this room can now fully display the room's timeline.
-    RoomLoadedSuccessfully(RoomNameId),
+    RoomLoadedSuccessfully {
+        room_name_id: RoomNameId,
+        /// `true` if this room is an invitation, `false` otherwise.
+        is_invite: bool,
+    },
     /// A request to navigate to a different room, optionally closing a prior/current room.
     NavigateToRoom {
         room_to_close: Option<OwnedRoomId>,

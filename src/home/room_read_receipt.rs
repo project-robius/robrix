@@ -26,7 +26,6 @@ live_design! {
     pub AvatarRow = {{AvatarRow}} {
         align: {y: 0.5},
         avatar_template: <Avatar> {
-            // margin: {top: 2}
             width: 15.0,
             height: 15.0,
             text_view = {
