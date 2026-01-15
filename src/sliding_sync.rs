@@ -17,7 +17,7 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
 };
 use matrix_sdk_ui::{
-    RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, spaces::SpaceService, sync_service::{self, SyncService}, timeline::{EventTimelineItem, LatestEventValue, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem}
+    RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
 };
 use robius_open::Uri;
 use ruma::{events::tag::Tags, OwnedRoomOrAliasId};
@@ -1967,7 +1967,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     }
 
     let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
-    let mut space_service_task = rt.spawn(space_service_loop(SpaceService::new(client.clone()), client));
+    let mut space_service_task = rt.spawn(space_service_loop(client));
 
     // Now, this task becomes an infinite loop that monitors the state of the
     // three core matrix-related background tasks that we just spawned above.
@@ -2330,12 +2330,14 @@ async fn update_room(
             // to the latest event in a given room, such as redactions.
             // Thus, we have to re-obtain the latest event on *every* update, regardless of timestamp.
             //
-            // let should_update_latest = match (old_room.latest_event_timestamp, new_room.new_latest_event_timestamp()) {
+            // let should_update_latest = match (old_room.latest_event_timestamp, new_room.latest_event_timestamp()) {
             //     (Some(old_ts), Some(new_ts)) if new_ts > old_ts => true,
             //     (None, Some(_)) => true,
             //     _ => false,
             // };
             // if should_update_latest { ... }
+            
+            // TODO: fix this above using the new latest_event API.
             update_latest_event(&new_room.room).await;
 
             if old_room.tags != new_room.tags {
@@ -2445,42 +2447,26 @@ async fn add_new_room(
     match new_room.state {
         RoomState::Knocked => {
             log!("Got new Knocked room: {:?} ({})", new_room.display_name, new_room.room_id);
-            // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
+            // Note: here we could optionally display Knocked rooms as a separate type of room
+            //       in the rooms list, but it's not really necessary at this point.
             return Ok(());
         }
         RoomState::Banned => {
             log!("Got new Banned room: {:?} ({})", new_room.display_name, new_room.room_id);
-            // TODO: handle rooms that this user has been banned from.
+            // Note: here we could optionally display Banned rooms as a separate type of room
+            //       in the rooms list, but it's not really necessary at this point.
             return Ok(());
         }
         RoomState::Left => {
             log!("Got new Left room: {:?} ({:?})", new_room.display_name, new_room.room_id);
-            // TODO: add this to the list of left rooms,
-            //       which is collapsed by default.
-            //       Upon clicking a left room, we can show a splash page
-            //       that prompts the user to rejoin the room or forget it.
-
-            // TODO: this may also be called when a user rejects an invite, not sure.
-            //       So we might also need to make a new RoomsListUpdate::RoomLeft variant.
+            // Note: here we could optionally display Left rooms as a separate type of room
+            //       in the rooms list, but it's not really necessary at this point.
             return Ok(());
         }
         RoomState::Invited => {
             let invite_details = new_room.room.invite_details().await.ok();
-            let latest_event = if let Some(latest_event) = new_room.room.latest_event() {
-                EventTimelineItem::from_latest_event(
-                    room_list_service.client().clone(),
-                    &new_room.room_id,
-                    latest_event,
-                ).await
-            } else {
-                None
-            };
-            let latest = latest_event.as_ref().map(
-                |ev| get_latest_event_details(ev, &new_room.room_id)
-            );
             let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
             let room_avatar = room_avatar(&new_room.room, &room_name_id).await;
-
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
                 Some(InviterInfo {
                     user_id: inviter.user_id().to_owned(),
@@ -2501,7 +2487,8 @@ async fn add_new_room(
                 room_avatar,
                 canonical_alias: new_room.room.canonical_alias(),
                 alt_aliases: new_room.room.alt_aliases(),
-                latest,
+                // we don't actually display the latest event for Invited rooms, so don't bother.
+                latest: None,
                 invite_state: Default::default(),
                 is_selected: false,
                 is_direct: new_room.is_direct,
@@ -2522,12 +2509,11 @@ async fn add_new_room(
 
     let timeline = Arc::new(
         new_room.room.timeline_builder()
-            .track_read_marker_and_receipts()
+            .track_read_marker_and_receipts(TimelineReadReceiptTracking::AllEvents)
             .build()
             .await
             .map_err(|e| anyhow::anyhow!("BUG: Failed to build timeline for room {}: {e}", new_room.room_id))?,
     );
-    let latest_event = timeline.latest_event().await;
     let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
 
     let (request_sender, request_receiver) = watch::channel(Vec::new());
@@ -2537,10 +2523,6 @@ async fn add_new_room(
         timeline_update_sender.clone(),
         request_receiver,
     ));
-
-    let latest = latest_event.as_ref().map(
-        |ev| get_latest_event_details(ev, &new_room.room_id)
-    );
 
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can send
     // an `AddJoinedRoom` update to the RoomsList widget, because that widget might
@@ -2559,6 +2541,10 @@ async fn add_new_room(
         },
     );
 
+    let latest = get_latest_event_details(
+        &new_room.room.latest_event().await,
+        room_list_service.client(),
+    ).await;
     let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
     // Start with a basic text avatar; the avatar image will be fetched asynchronously below.
     let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar().as_deref());
@@ -2803,26 +2789,70 @@ async fn fetch_room_preview_with_avatar(
 }
 
 
-/// Returns the timestamp and text preview of the given `latest_event` timeline item.
+/// Returns the timestamp and an HTML-formatted text preview of the given `latest_event`.
 ///
 /// If the sender profile of the event is not yet available, this function will
-/// generate a preview using the sender's user ID instead of their display name,
-/// and will submit a background async request to fetch the details for this event.
-fn get_latest_event_details(
-    latest_event: &EventTimelineItem,
-    room_id: &OwnedRoomId,
-) -> (MilliSecondsSinceUnixEpoch, String) {
-    let sender_username = &utils::get_or_fetch_event_sender(latest_event, Some(room_id));
-    (
-        latest_event.timestamp(),
-        text_preview_of_timeline_item(
-            latest_event.content(),
-            latest_event.sender(),
-            sender_username,
-        ).format_with(sender_username, true),
-    )
+/// generate a preview using the sender's user ID instead of their display name.
+async fn get_latest_event_details(
+    latest_event_value: &LatestEventValue,
+    client: &Client,
+) -> Option<(MilliSecondsSinceUnixEpoch, String)> {
+    macro_rules! get_sender_username {
+        ($profile:expr, $sender:expr, $is_own:expr) => {{
+            let sender_username_opt = if let TimelineDetails::Ready(profile) = $profile {
+                profile.display_name.clone()
+            } else if $is_own {
+                client.account().get_display_name().await.ok().flatten()
+            } else {
+                None
+            };
+            sender_username_opt.unwrap_or_else(|| $sender.to_string())
+        }};
+    }
+
+    match latest_event_value {
+        LatestEventValue::None => return None,
+        LatestEventValue::Remote { timestamp, sender, is_own, profile, content } => {
+            let sender_username = get_sender_username!(profile, sender, *is_own);
+            let latest_message_text = text_preview_of_timeline_item(
+                &content,
+                &sender,
+                &sender_username,
+            ).format_with(&sender_username, true);
+            Some((*timestamp, latest_message_text))
+        }
+        LatestEventValue::Local { timestamp, sender, profile, content, state: _ } => {
+            // TODO: use the `state` enum to augment the preview text with more details.
+            //       Example: "<span color="blue">Sending... {msg}</span>" or
+            //                "<span color="red">Failed to send {msg}</span>"
+            let is_own = current_user_id().is_some_and(|id| &id == sender);
+            let sender_username = get_sender_username!(profile, sender, is_own);
+            let latest_message_text = text_preview_of_timeline_item(
+                &content,
+                &sender,
+                &sender_username,
+            ).format_with(&sender_username, true);
+            Some((*timestamp, latest_message_text))
+        }
+    }    
 }
 
+/// Handles the given updated latest event for the given room.
+///
+/// This function sends a `RoomsListUpdate::UpdateLatestEvent`
+/// to update the latest event in the RoomsListEntry for the given room.
+async fn update_latest_event(room: &Room) {
+    if let Some((timestamp, latest_message_text)) = get_latest_event_details(
+        &room.latest_event().await,
+        &room.client(),
+    ).await {
+        enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
+            room_id: room.room_id().to_owned(),
+            timestamp,
+            latest_message_text,
+        });
+    }
+}
 
 /// A request to search backwards for a specific event in a room's timeline.
 pub struct BackwardsPaginateUntilEventRequest {
@@ -3139,56 +3169,6 @@ async fn timeline_subscriber_handler(
     } }
 
     error!("Error: unexpectedly ended timeline subscriber for room {room_id}.");
-}
-
-/// Handles the given updated latest event for the given room.
-///
-/// This function sends a `RoomsListUpdate::UpdateLatestEvent`
-/// to update the latest event in the RoomsListEntry for the given room.
-async fn update_latest_event(room: &Room) {
-    let Some(client) = get_client() else { return };
-    let (sender_username, sender_id, timestamp, content) = match room.new_latest_event().await {
-        LatestEventValue::Remote { timestamp, sender, is_own, profile, content } => {
-            let sender_username = if let TimelineDetails::Ready(profile) = profile {
-                profile.display_name
-            } else if is_own {
-                client.account().get_display_name().await.ok().flatten()
-            } else {
-                None
-            };
-            (
-                sender_username.unwrap_or_else(|| sender.to_string()),
-                sender,
-                timestamp,
-                content
-            )
-        }
-        LatestEventValue::Local { timestamp, content, is_sending: _ } => {
-            // TODO: use the `is_sending` flag to augment the preview text
-            //       (e.g., "Sending... <msg>" or "Failed to send <msg>").
-            let our_name = client.account().get_display_name().await.ok().flatten();
-            let Some(our_user_id) = current_user_id() else { return };
-            (
-                our_name.unwrap_or_else(|| String::from("You")),
-                our_user_id,
-                timestamp,
-                content,
-            )
-        }
-        LatestEventValue::None => return,
-    };
-
-    let latest_message_text = text_preview_of_timeline_item(
-        &content,
-        &sender_id,
-        &sender_username,
-    ).format_with(&sender_username, true);
-
-    enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
-        room_id: room.room_id().to_owned(),
-        timestamp,
-        latest_message_text,
-    });
 }
 
 /// Spawn a new async task to fetch the room's new avatar.
