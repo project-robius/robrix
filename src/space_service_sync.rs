@@ -60,14 +60,14 @@ enum SpaceRoomListRequest {
 
 
 /// The main async loop task that listens for changes to all top-level joined spaces.
-pub async fn space_service_loop(
-    space_service: SpaceService,
-    client: Client,
-) -> anyhow::Result<()> {
+pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
     // Create a channel for sending space-related requests to this background worker.
     let (space_request_sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<SpaceRequest>();
     // Give the request sender channel endpoint to the RoomsList widget.
     enqueue_rooms_list_update(RoomsListUpdate::SpaceRequestSender(space_request_sender.clone()));
+
+    // Create the actual space service.
+    let space_service = SpaceService::new(client.clone()).await;
 
     // The set of async tasks that are handling room list requests for each top-level joined space,
     // along with a sender to send `SpaceRoomListRequest`s to those tasks.
@@ -99,7 +99,7 @@ pub async fn space_service_loop(
     };
 
     // Get the set of top-level (root) spaces that the user has joined.
-    let (initial_spaces, mut spaces_diff_stream) = space_service.subscribe_to_joined_spaces().await;
+    let (initial_spaces, mut spaces_diff_stream) = space_service.subscribe_to_top_level_joined_spaces().await;
     for space in &initial_spaces {
         add_new_space(space, &client).await;
     }

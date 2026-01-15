@@ -101,7 +101,7 @@ live_design! {
                 draw_text: {
                     text_style: { font_size: 9.5 },
                 }
-                text: "[Loading latest message]"
+                text: "[No recent messages]"
             } }
         }
     }
