@@ -1770,7 +1770,7 @@ struct RoomListServiceRoomInfo {
     is_tombstoned: bool,
     tags: Option<Tags>,
     user_power_levels: Option<UserPowerLevels>,
-    // latest_event_timestamp: Option<MilliSecondsSinceUnixEpoch>,
+    latest_event_timestamp: Option<MilliSecondsSinceUnixEpoch>,
     num_unread_messages: u64,
     num_unread_mentions: u64,
     display_name: Option<RoomDisplayName>,
@@ -1790,7 +1790,7 @@ impl RoomListServiceRoomInfo {
             } else {
                 None
             },
-            // latest_event_timestamp: room.new_latest_event_timestamp(),
+            latest_event_timestamp: room.latest_event_timestamp(),
             num_unread_messages: room.num_unread_messages(),
             num_unread_mentions: room.num_unread_mentions(),
             display_name: room.display_name().await.ok(),
@@ -2330,15 +2330,15 @@ async fn update_room(
             // to the latest event in a given room, such as redactions.
             // Thus, we have to re-obtain the latest event on *every* update, regardless of timestamp.
             //
-            // let should_update_latest = match (old_room.latest_event_timestamp, new_room.latest_event_timestamp()) {
-            //     (Some(old_ts), Some(new_ts)) if new_ts > old_ts => true,
-            //     (None, Some(_)) => true,
-            //     _ => false,
-            // };
-            // if should_update_latest { ... }
-            
-            // TODO: fix this above using the new latest_event API.
-            update_latest_event(&new_room.room).await;
+            let update_latest = match (old_room.latest_event_timestamp, new_room.room.latest_event_timestamp()) {
+                (Some(old_ts), Some(new_ts)) => new_ts >= old_ts,
+                (None, Some(_)) => true,
+                _ => false,
+            };
+            if update_latest {
+                update_latest_event(&new_room.room).await;
+            }
+
 
             if old_room.tags != new_room.tags {
                 log!("Updating room {} tags from {:?} to {:?}", new_room_id, old_room.tags, new_room.tags);
