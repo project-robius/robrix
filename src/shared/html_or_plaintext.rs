@@ -159,7 +159,6 @@ live_design! {
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: <MESSAGE_TEXT_STYLE> { font_size: (MESSAGE_FONT_SIZE) },
                 }
-                text: "[plaintext message placeholder]",
             }
         }
 

@@ -170,15 +170,16 @@ live_design! {
                     width: 45, height: 45,
                     cursor: Default,
                     text_view = { text = { draw_text: {
-                        text_style: <TITLE_TEXT>{ font_size: 15.0 }
+                        text_style: <TITLE_TEXT>{ font_size: 16.0 }
                     }}}
                 }
 
                 room_name = <Label> {
                     width: Fill, height: Fit,
+                    margin: {top: 3} // align it with the above room_avatar
                     flow: RightWrap,
                     draw_text: {
-                        text_style: <TITLE_TEXT>{ font_size: 15 }
+                        text_style: <TITLE_TEXT>{ font_size: 16 }
                         color: (COLOR_TEXT)
                         wrap: Word,
                     }
