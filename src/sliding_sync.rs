@@ -2811,12 +2811,12 @@ async fn get_latest_event_details(
     }
 
     match latest_event_value {
-        LatestEventValue::None => return None,
+        LatestEventValue::None => None,
         LatestEventValue::Remote { timestamp, sender, is_own, profile, content } => {
             let sender_username = get_sender_username!(profile, sender, *is_own);
             let latest_message_text = text_preview_of_timeline_item(
-                &content,
-                &sender,
+                content,
+                sender,
                 &sender_username,
             ).format_with(&sender_username, true);
             Some((*timestamp, latest_message_text))
@@ -2828,8 +2828,8 @@ async fn get_latest_event_details(
             let is_own = current_user_id().is_some_and(|id| &id == sender);
             let sender_username = get_sender_username!(profile, sender, is_own);
             let latest_message_text = text_preview_of_timeline_item(
-                &content,
-                &sender,
+                content,
+                sender,
                 &sender_username,
             ).format_with(&sender_username, true);
             Some((*timestamp, latest_message_text))
