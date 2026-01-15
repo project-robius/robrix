@@ -14,8 +14,8 @@ live_design! {
     pub ICON_CLOSE           = dep("crate://self/resources/icons/close.svg")
     pub ICON_CLOUD_CHECKMARK = dep("crate://self/resources/icons/cloud_checkmark.svg")
     pub ICON_CLOUD_OFFLINE   = dep("crate://self/resources/icons/cloud_offline.svg")
-    pub ICON_ROTATE_CW       = dep("crate://self/resources/icons/rotate-clockwise.svg")
-    pub ICON_ROTATE_CCW      = dep("crate://self/resources/icons/rotate-anti-clockwise.svg")
+    pub ICON_ROTATE_CW       = dep("crate://self/resources/icons/rotate_right_fa.svg")
+    pub ICON_ROTATE_CCW      = dep("crate://self/resources/icons/rotate_left_fa.svg")
     pub ICON_COPY            = dep("crate://self/resources/icons/copy.svg")
     pub ICON_EDIT            = dep("crate://self/resources/icons/edit.svg")
     pub ICON_EXTERNAL_LINK   = dep("crate://self/resources/icons/external_link.svg")
@@ -142,7 +142,7 @@ live_design! {
     pub COLOR_NAVIGATION_TAB_BG_ACTIVE = #9
 
     pub COLOR_IMAGE_VIEWER_BACKGROUND = #333333CC // 80% Opacity
-    pub COLOR_IMAGE_VIEWER_META_BACKGROUND = #E0E0E0
+    pub COLOR_IMAGE_VIEWER_META_BACKGROUND = #E8E8E8
 
     // An icon that can be rotated at a custom angle.
     pub IconRotated = <Icon> {

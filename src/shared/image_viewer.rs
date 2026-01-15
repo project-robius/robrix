@@ -120,7 +120,7 @@ live_design! {
         spacing: 0, 
         padding: 0,
         draw_bg: {
-            color: (COLOR_SECONDARY * 0.9)
+            color: (COLOR_SECONDARY * 0.925)
         }
         draw_icon: {
             svg_file: (ICON_ZOOM_OUT),
@@ -315,11 +315,11 @@ live_design! {
                     icon_walk: {width: 27, height: 27, margin: {left: 2}}
                 }
 
-                rotation_button_anti_clockwise = <ImageViewerButton> {
+                rotate_ccw_button = <ImageViewerButton> {
                     draw_icon: { svg_file: (ICON_ROTATE_CCW) }
                 }
 
-                rotation_button_clockwise = <ImageViewerButton> {
+                rotate_cw_button = <ImageViewerButton> {
                     draw_icon: { svg_file: (ICON_ROTATE_CW) }
                 }
 
@@ -785,7 +785,7 @@ impl MatchEvent for ImageViewer {
 
         if self
             .view
-            .button(ids!(rotation_button_clockwise))
+            .button(ids!(rotate_cw_button))
             .clicked(actions)
         {
             if !self.is_animating_rotation {
@@ -800,7 +800,7 @@ impl MatchEvent for ImageViewer {
 
         if self
             .view
-            .button(ids!(rotation_button_anti_clockwise))
+            .button(ids!(rotate_ccw_button))
             .clicked(actions)
         {
             if !self.is_animating_rotation {
