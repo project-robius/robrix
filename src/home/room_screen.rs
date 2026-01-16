@@ -22,10 +22,10 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MembershipChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
-use ruma::OwnedUserId;
+use ruma::{OwnedUserId, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}};
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -201,6 +201,7 @@ live_design! {
                 edited_indicator = <EditedIndicator> { }
                 tsp_sign_indicator = <TspSignIndicator> { }
             }
+
             content = <View> {
                 width: Fill,
                 height: Fit
@@ -236,7 +237,6 @@ live_design! {
                     reaction_list = <ReactionList> { }
                     avatar_row = <AvatarRow> {}
                 }
-
             }
         }
     }
@@ -632,11 +632,20 @@ impl Widget for RoomScreen {
                     reaction_data,
                 } = reaction_list.hovered_in(actions) {
                     let Some(_tl_state) = self.tl_state.as_ref() else { continue };
-                    let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
-                        user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
-                            .map(|user_profile| user_profile.displayable_name().to_string())
+                    let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders
+                        .iter()
+                        .map(|(sender, _react_info)| {
+                            user_profile_cache::get_user_display_name_for_room(
+                                cx,
+                                sender.clone(),
+                                Some(&reaction_data.room_id),
+                                true,
+                            )
+                            .into_option()
                             .unwrap_or_else(|| sender.to_string())
-                    }).collect();
+                        })
+                        .collect();
+
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.reaction));
                     cx.widget_action(
@@ -1024,7 +1033,9 @@ impl Widget for RoomScreen {
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
                             TimelineItemContent::MsgLike(msg_like_content) => match &msg_like_content.kind {
-                                MsgLikeKind::Message(_) | MsgLikeKind::Sticker(_) => {
+                                MsgLikeKind::Message(_)
+                                | MsgLikeKind::Sticker(_)
+                                | MsgLikeKind::Redacted => {
                                     let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
                                     populate_message_view(
                                         cx,
@@ -1050,15 +1061,6 @@ impl Widget for RoomScreen {
                                     room_id,
                                     event_tl_item,
                                     poll_state,
-                                    item_drawn_status,
-                                ),
-                                MsgLikeKind::Redacted => populate_small_state_event(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    room_id,
-                                    event_tl_item,
-                                    &RedactedMessageEventMarker,
                                     item_drawn_status,
                                 ),
                                 MsgLikeKind::UnableToDecrypt(utd) => populate_small_state_event(
@@ -2841,7 +2843,7 @@ fn populate_message_view(
         MsgLikeKind::Message(msg) => {
             match msg.msgtype() {
                 MessageType::Text(TextMessageEventContent { body, formatted, .. }) => {
-                     has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+                    has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
                         id!(CondensedMessage)
                     } else {
@@ -3177,6 +3179,35 @@ fn populate_message_view(
                     (item, true)
                 }
             }
+        } 
+        // Handle messages that have been redacted (deleted).
+        MsgLikeKind::Redacted => {
+            has_html_body = false;
+            let template = if use_compact_view {
+                id!(CondensedMessage)
+            } else {
+                id!(Message)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                let html_or_plaintext_ref = item.html_or_plaintext(ids!(content.message));
+                html_or_plaintext_ref.apply_over(cx, live!{
+                    html_view = { html = {
+                        font_size: (REDACTED_MESSAGE_FONT_SIZE),
+                        draw_normal: { text_style: { font_size: (REDACTED_MESSAGE_FONT_SIZE)} }
+                        draw_italic: { text_style: { font_size: (REDACTED_MESSAGE_FONT_SIZE)} }
+                    } }
+                });
+                new_drawn_status.content_drawn = populate_redacted_message_content(
+                    cx,
+                    &html_or_plaintext_ref,
+                    event_tl_item,
+                    room_id,
+                );
+                (item, false)
+            }
         }
         other => {
             has_html_body = false;
@@ -3408,7 +3439,7 @@ fn populate_image_message_content(
         if ImageFormat::from_mimetype(mime).is_none() {
             text_or_image_ref.show_text(
                 cx,
-                format!("{body}\n\nImages/Stickers of type {mime:?} are not yet supported."),
+                format!("{body}\n\nUnsupported type {mime:?}"),
             );
             return true; // consider this as fully drawn
         }
@@ -3688,6 +3719,66 @@ fn populate_location_message_content(
 }
 
 
+/// Draws the given redacted message's content into the `message_content_widget`.
+///
+/// Returns whether the redacted message content was fully drawn.
+fn populate_redacted_message_content(
+    cx: &mut Cx,
+    message_content_widget: &HtmlOrPlaintextRef,
+    event_tl_item: &EventTimelineItem,
+    room_id: &OwnedRoomId,
+) -> bool {
+    let fully_drawn: bool;
+    let mut redactor_id_and_reason = None;
+    if let Some(redacted_msg) = event_tl_item.latest_json() {
+        if let Ok(AnySyncTimelineEvent::MessageLike(
+            AnySyncMessageLikeEvent::RoomMessage(
+                SyncMessageLikeEvent::Redacted(redaction)
+            )
+        )) = redacted_msg.deserialize() {
+            if let Ok(redacted_because) = redaction.unsigned.redacted_because.deserialize() {
+                redactor_id_and_reason = Some((
+                    redacted_because.sender,
+                    redacted_because.content.reason,
+                ));
+            }
+        }
+    }
+
+    let html = if let Some((redactor, reason)) = redactor_id_and_reason {
+        if redactor == event_tl_item.sender() {
+            fully_drawn = true;
+            match reason {
+                Some(r) => format!("⛔ <i>Deleted their own message. Reason: \"{}\".</i>", htmlize::escape_text(r)),
+                None => String::from("⛔ <i>Deleted their own message.</i>"),
+            }
+        } else {
+            // Try to get the displayable name of the user who redacted this message.
+            let redactor_name = user_profile_cache::get_user_display_name_for_room(
+                cx,
+                redactor.clone(),
+                Some(room_id),
+                true,
+            );
+            fully_drawn = redactor_name.was_found();
+            let redactor_name_esc = htmlize::escape_text(redactor_name.as_deref().unwrap_or(redactor.as_str()));
+            match reason {
+                Some(r) => format!("⛔ <i>{} deleted this message. Reason: \"{}\".</i>",
+                    redactor_name_esc,
+                    htmlize::escape_text(r),
+                ),
+                None => format!("⛔ <i>{} deleted this message.</i>", redactor_name_esc),
+            }
+        }
+    } else {
+        fully_drawn = true;
+        String::from("⛔ <i>Message deleted.</i>")
+    };
+    message_content_widget.show_html(cx, html);
+    fully_drawn
+}
+
+
 /// Draws a ReplyPreview above a message if it was in-reply to another message.
 ///
 /// ## Arguments
@@ -3845,34 +3936,6 @@ trait SmallStateEventContent {
         item_drawn_status: ItemDrawnStatus,
         new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus);
-}
-
-/// An empty marker struct used for populating redacted messages.
-struct RedactedMessageEventMarker;
-
-impl SmallStateEventContent for RedactedMessageEventMarker {
-    fn populate_item_content(
-        &self,
-        cx: &mut Cx,
-        _list: &mut PortalList,
-        _item_id: usize,
-        item: WidgetRef,
-        event_tl_item: &EventTimelineItem,
-        original_sender: &str,
-        _item_drawn_status: ItemDrawnStatus,
-        mut new_drawn_status: ItemDrawnStatus,
-    ) -> (WidgetRef, ItemDrawnStatus) {
-        item.label(ids!(content)).set_text(
-            cx,
-            &text_preview_of_redacted_message(
-                event_tl_item.latest_json(),
-                event_tl_item.sender(),
-                original_sender,
-            ).format_with(original_sender, false),
-        );
-        new_drawn_status.content_drawn = true;
-        (item, new_drawn_status)
-    }
 }
 
 // For unable to decrypt messages.

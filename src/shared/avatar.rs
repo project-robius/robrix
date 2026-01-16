@@ -265,57 +265,47 @@ impl Avatar {
         event_id: Option<&EventId>,
         is_clickable: bool,
     ) -> (String, bool) {
+        // A closure to get the user's displayable name and avatar from the cache.
+        // This is only used if those timeline details are not `Ready`.
+        let try_get_cached_username_avatar = || {
+            user_profile_cache::with_user_profile(
+                cx,
+                avatar_user_id.to_owned(),
+                Some(&room_id.to_owned()),
+                true,
+                |profile, rooms| {
+                    rooms.get(room_id).map(|rm| {
+                        (
+                            rm.display_name().map(|n| n.to_owned()),
+                            AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
+                        )
+                    })
+                    .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
+                }
+            )
+        };
+
         // Get the display name and avatar URL from the user's profile, if available,
         // or if the profile isn't ready, fall back to querying our user profile cache.
-        let (username_opt, avatar_state) = match avatar_profile_opt {
-            Some(TimelineDetails::Ready(profile)) => (
+        let timeline_details = match avatar_profile_opt {
+            Some(TimelineDetails::Ready(profile)) => Some((
                 profile.display_name.clone(),
                 AvatarState::Known(profile.avatar_url.clone()),
-            ),
-            Some(not_ready) => {
-                if matches!(not_ready, TimelineDetails::Unavailable) {
-                    if let Some(event_id) = event_id {
-                        submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                            room_id: room_id.to_owned(),
-                            event_id: event_id.to_owned(),
-                        });
-                    }
+            )),
+            Some(TimelineDetails::Unavailable) => {
+                if let Some(event_id) = event_id {
+                    submit_async_request(MatrixRequest::FetchDetailsForEvent {
+                        room_id: room_id.to_owned(),
+                        event_id: event_id.to_owned(),
+                    });
                 }
-                // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-                user_profile_cache::with_user_profile(cx, avatar_user_id.to_owned(), true, |profile, room_members| {
-                    room_members
-                        .get(room_id)
-                        .map(|rm| {
-                            (
-                                rm.display_name().map(|n| n.to_owned()),
-                                AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                            )
-                        })
-                        .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
-                })
-                .unwrap_or((None, AvatarState::Unknown))
+                None
             }
-            None => {
-                match user_profile_cache::with_user_profile(cx, avatar_user_id.to_owned(), true, |profile, room_members| {
-                    room_members
-                        .get(room_id)
-                        .map(|rm| {
-                            (
-                                rm.display_name().map(|n| n.to_owned()),
-                                AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                            )
-                        })
-                        .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
-                }) {
-                    Some((profile_name, avatar_state)) => {
-                        (profile_name, avatar_state)
-                    }
-                    None => {
-                        (None, AvatarState::Unknown)
-                    }
-                }
-            }
+            _ => None,
         };
+        let (username_opt, avatar_state) = timeline_details
+            .or_else(try_get_cached_username_avatar)
+            .unwrap_or((None, AvatarState::Unknown));
 
         let (avatar_img_data_opt, profile_drawn) = match avatar_state.clone() {
             AvatarState::Loaded(data) => (Some(data), true),

@@ -159,7 +159,6 @@ live_design! {
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: <MESSAGE_TEXT_STYLE> { font_size: (MESSAGE_FONT_SIZE) },
                 }
-                text: "[plaintext message placeholder]",
             }
         }
 
@@ -357,6 +356,7 @@ impl MatrixLinkPill {
             match user_profile_cache::with_user_profile(
                 cx,
                 user_id.clone(),
+                None,
                 true,
                 |profile, _| { (profile.displayable_name().to_owned(), profile.avatar_state.clone()) }
             ) {

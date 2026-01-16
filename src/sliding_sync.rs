@@ -641,12 +641,12 @@ async fn matrix_worker_task(
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending request to fetch details for event {event_id} in room {room_id}...");
                     let result = timeline.fetch_details_for_event(&event_id).await;
-                    match result {
+                    match &result {
                         Ok(_) => {
                             // log!("Successfully fetched details for event {event_id} in room {room_id}.");
                         }
-                        Err(ref _e) => {
-                            // error!("Error fetching details for event {event_id} in room {room_id}: {e:?}");
+                        Err(_e) => {
+                            // error!("Error fetching details for event {event_id} in room {room_id}: {_e:?}");
                         }
                     }
                     sender.send(TimelineUpdate::EventDetailsFetched {
