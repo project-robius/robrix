@@ -111,7 +111,7 @@ live_design! {
     // A confirmation modal for a positive action.
     // The accept button is green with a checkmark icon.
     pub PositiveConfirmationModal = <ConfirmationModal> {
-        wrapper = { 
+        wrapper = {
             buttons_view = {
                 cancel_button = {
                     draw_icon: {

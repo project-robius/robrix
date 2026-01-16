@@ -54,7 +54,6 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
-  RUSTFLAGS: "-D warnings"
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════════════════
@@ -94,6 +93,8 @@ jobs:
           key: ubuntu-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build
+        env:
+          RUSTFLAGS: "-D warnings"
         run: |
           cargo build
 
@@ -123,6 +124,8 @@ jobs:
           key: macos-${{ matrix.arch }}-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build
+        env:
+          RUSTFLAGS: "-D warnings"
         run: |
           cargo build
 
@@ -142,6 +145,8 @@ jobs:
           key: windows-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build
+        env:
+          RUSTFLAGS: "-D warnings"
         run: |
           cargo build
 
@@ -166,9 +171,8 @@ jobs:
         run: |
           rustup toolchain install nightly
 
-      - name: Install cargo-makepad
-        run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install iOS toolchain
         run: |
@@ -180,6 +184,8 @@ jobs:
           key: ios-macos-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build for iOS targets
+        env:
+          RUSTFLAGS: "-D warnings"
         run: |
           # Install iOS targets
           rustup target add aarch64-apple-ios
@@ -201,9 +207,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-makepad
-        run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
@@ -215,6 +220,8 @@ jobs:
           key: android-macos-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build Android APK
+        env:
+          RUSTFLAGS: "-D warnings"
         run: |
           cargo makepad android build -p robrix
 
@@ -228,9 +235,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-makepad
-        run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
@@ -242,6 +248,8 @@ jobs:
           key: android-linux-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build Android APK
+        env:
+          RUSTFLAGS: "-D warnings"
         run: |
           cargo makepad android build -p robrix
 
@@ -260,15 +268,16 @@ jobs:
         with:
           key: android-windows-build-${{ hashFiles('Cargo.lock') }}
 
-      - name: Install cargo-makepad
-        run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
           cargo makepad android install-toolchain
 
       - name: Build Android APK
+        env:
+          RUSTFLAGS: "-D warnings"
         run: |
           cargo makepad android build -p robrix
 

@@ -14,8 +14,8 @@ live_design! {
     pub ICON_CLOSE           = dep("crate://self/resources/icons/close.svg")
     pub ICON_CLOUD_CHECKMARK = dep("crate://self/resources/icons/cloud_checkmark.svg")
     pub ICON_CLOUD_OFFLINE   = dep("crate://self/resources/icons/cloud_offline.svg")
-    pub ICON_ROTATE_CW       = dep("crate://self/resources/icons/rotate-clockwise.svg")
-    pub ICON_ROTATE_CCW      = dep("crate://self/resources/icons/rotate-anti-clockwise.svg")
+    pub ICON_ROTATE_CW       = dep("crate://self/resources/icons/rotate_right_fa.svg")
+    pub ICON_ROTATE_CCW      = dep("crate://self/resources/icons/rotate_left_fa.svg")
     pub ICON_COPY            = dep("crate://self/resources/icons/copy.svg")
     pub ICON_EDIT            = dep("crate://self/resources/icons/edit.svg")
     pub ICON_EXTERNAL_LINK   = dep("crate://self/resources/icons/external_link.svg")
@@ -24,11 +24,11 @@ live_design! {
     pub ICON_HOME            = dep("crate://self/resources/icons/home.svg")
     pub ICON_HTML_FILE       = dep("crate://self/resources/icons/html_file.svg")
     pub ICON_INFO            = dep("crate://self/resources/icons/info.svg")
+    pub ICON_INVITE          = dep("crate://self/resources/icons/invite.svg")
     pub ICON_JOIN_ROOM       = dep("crate://self/resources/icons/join_room.svg")
     pub ICON_JUMP            = dep("crate://self/resources/icons/go_back.svg")
     pub ICON_LOGOUT          = dep("crate://self/resources/icons/logout.svg")
     pub ICON_LINK            = dep("crate://self/resources/icons/link.svg")
-    pub ICON_ZOOM            = dep("crate://self/resources/icons/search.svg")
     pub ICON_PIN             = dep("crate://self/resources/icons/pin.svg")
     pub ICON_REPLY           = dep("crate://self/resources/icons/reply.svg")
     pub ICON_SEARCH          = dep("crate://self/resources/icons/search.svg")
@@ -40,6 +40,8 @@ live_design! {
     pub ICON_UPLOAD          = dep("crate://self/resources/icons/upload.svg")
     pub ICON_VIEW_SOURCE     = dep("crate://self/resources/icons/view_source.svg")
     pub ICON_WARNING         = dep("crate://self/resources/icons/warning.svg")
+    pub ICON_ZOOM_IN         = dep("crate://self/resources/icons/zoom_in.svg")
+    pub ICON_ZOOM_OUT        = dep("crate://self/resources/icons/zoom_out.svg")
 
     pub TITLE_TEXT = <THEME_FONT_REGULAR>{
         font_size: (13),
@@ -139,7 +141,9 @@ live_design! {
     pub COLOR_NAVIGATION_TAB_BG_HOVER  = (COLOR_SECONDARY * 0.85)
     pub COLOR_NAVIGATION_TAB_BG_ACTIVE = #9
 
-    
+    pub COLOR_IMAGE_VIEWER_BACKGROUND = #333333CC // 80% Opacity
+    pub COLOR_IMAGE_VIEWER_META_BACKGROUND = #E8E8E8
+
     // An icon that can be rotated at a custom angle.
     pub IconRotated = <Icon> {
         draw_icon: {

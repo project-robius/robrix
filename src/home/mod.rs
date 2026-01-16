@@ -1,5 +1,6 @@
 use makepad_widgets::Cx;
 
+pub mod add_room;
 pub mod edited_indicator;
 pub mod editing_pane;
 pub mod home_screen;
@@ -31,6 +32,7 @@ pub fn live_design(cx: &mut Cx) {
     home_screen::live_design(cx);
     loading_pane::live_design(cx);
     location_preview::live_design(cx);
+    add_room::live_design(cx);
     space_lobby::live_design(cx);
     rooms_list_entry::live_design(cx);
     rooms_list_header::live_design(cx);

@@ -26,7 +26,6 @@ live_design! {
     pub AvatarRow = {{AvatarRow}} {
         align: {y: 0.5},
         avatar_template: <Avatar> {
-            // margin: {top: 2}
             width: 15.0,
             height: 15.0,
             text_view = {
@@ -181,8 +180,14 @@ impl AvatarRow {
             self.buttons.iter_mut().zip(receipts_map.iter().rev())
         {
             if !*drawn {
-                let (_, drawn_status) =
-                    avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id);
+                let (_, drawn_status) = avatar_ref.set_avatar_and_get_username(
+                    cx,
+                    room_id,
+                    user_id,
+                    None,
+                    event_id,
+                    true,
+                );
                 *drawn = drawn_status;
             }
         }

@@ -297,9 +297,9 @@ impl Widget for InviteScreen {
             // First, we quickly loop over the actions up front to handle the case
             // where this room was restored and has now been successfully loaded from the homeserver.
             for action in actions {
-                if let Some(AppStateAction::RoomLoadedSuccessfully(loaded)) = action.downcast_ref() {
-                    if self.room_name_id.as_ref().is_some_and(|current| current.room_id() == loaded.room_id()) {
-                        self.set_displayed_invite(cx, loaded);
+                if let Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, .. }) = action.downcast_ref() {
+                    if self.room_name_id.as_ref().is_some_and(|current| current.room_id() == room_name_id.room_id()) {
+                        self.set_displayed_invite(cx, room_name_id);
                         break;
                     }
                 }
