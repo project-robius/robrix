@@ -1034,6 +1034,8 @@ impl RoomsList {
                     kind: PopupKind::Error,
                 });
             }
+            // DetailedChildren is handled by SpaceLobbyScreen, not RoomsList.
+            SpaceRoomListAction::DetailedChildren { .. } => { }
         }
     }
 
@@ -1394,6 +1396,23 @@ impl RoomsListRef {
     /// Same as [`Self::get_selected_space()`], but only returns the space ID.
     pub fn get_selected_space_id(&self) -> Option<OwnedRoomId> {
         self.borrow()?.selected_space.as_ref().map(|ss| ss.room_id().clone())
+    }
+
+    /// Returns a clone of the space request sender channel, if available.
+    ///
+    /// This allows other widgets to submit space-related requests directly
+    /// to the background space service.
+    pub fn get_space_request_sender(&self) -> Option<UnboundedSender<SpaceRequest>> {
+        self.borrow()?.space_request_sender.clone()
+    }
+
+    /// Returns the set of direct child rooms and subspaces for the given space.
+    ///
+    /// Returns a tuple of `(direct_child_rooms, direct_subspaces)`.
+    pub fn get_space_children(&self, space_id: &OwnedRoomId) -> Option<(Arc<HashSet<OwnedRoomId>>, Arc<HashSet<OwnedRoomId>>)> {
+        let inner = self.borrow()?;
+        let smv = inner.space_map.get(space_id)?;
+        Some((Arc::clone(&smv.direct_child_rooms), Arc::clone(&smv.direct_subspaces)))
     }
 }
 

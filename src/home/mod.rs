@@ -1,4 +1,4 @@
-use makepad_widgets::Cx;
+use makepad_widgets::{Cx, LiveRegister};
 
 pub mod add_room;
 pub mod edited_indicator;
@@ -34,6 +34,7 @@ pub fn live_design(cx: &mut Cx) {
     location_preview::live_design(cx);
     add_room::live_design(cx);
     space_lobby::live_design(cx);
+    space_lobby::DrawTreeLine::live_register(cx);
     rooms_list_entry::live_design(cx);
     rooms_list_header::live_design(cx);
     rooms_list::live_design(cx);
