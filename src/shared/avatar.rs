@@ -265,6 +265,26 @@ impl Avatar {
         event_id: Option<&EventId>,
         is_clickable: bool,
     ) -> (String, bool) {
+        // A closure to get the user's displayable name and avatar from the cache.
+        // This is only used if those timeline details are not `Ready`.
+        let mut try_get_cached_username_avatar = || {
+            user_profile_cache::with_user_profile(
+                cx,
+                avatar_user_id.to_owned(),
+                Some(&room_id.to_owned()),
+                true,
+                |profile, rooms| {
+                    rooms.get(room_id).map(|rm|
+                        (
+                            rm.display_name().map(|n| n.to_owned()),
+                            AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
+                        )
+                    )
+                    .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
+                }
+            )
+        };
+
         // Get the display name and avatar URL from the user's profile, if available,
         // or if the profile isn't ready, fall back to querying our user profile cache.
         let (username_opt, avatar_state) = match avatar_profile_opt {
@@ -281,39 +301,14 @@ impl Avatar {
                         });
                     }
                 }
-                // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-                user_profile_cache::with_user_profile(cx, avatar_user_id.to_owned(), true, |profile, room_members| {
-                    room_members
-                        .get(room_id)
-                        .map(|rm| {
-                            (
-                                rm.display_name().map(|n| n.to_owned()),
-                                AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                            )
-                        })
-                        .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
-                })
-                .unwrap_or((None, AvatarState::Unknown))
+                // TODO: try removing this. We probably don't need to do our own cache querying
+                //       and instead just wait for the TimelineDetails to become `Ready`.
+                // TODO: we could just wrap this in an `else` conditional, i.e., only use the cache
+                //       if the TimelineDetails are not `Ready` nor `Unavailable`
+                try_get_cached_username_avatar().unwrap_or((None, AvatarState::Unknown))
             }
             None => {
-                match user_profile_cache::with_user_profile(cx, avatar_user_id.to_owned(), true, |profile, room_members| {
-                    room_members
-                        .get(room_id)
-                        .map(|rm| {
-                            (
-                                rm.display_name().map(|n| n.to_owned()),
-                                AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                            )
-                        })
-                        .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
-                }) {
-                    Some((profile_name, avatar_state)) => {
-                        (profile_name, avatar_state)
-                    }
-                    None => {
-                        (None, AvatarState::Unknown)
-                    }
-                }
+                try_get_cached_username_avatar().unwrap_or((None, AvatarState::Unknown))
             }
         };
 

@@ -356,6 +356,7 @@ impl MatrixLinkPill {
             match user_profile_cache::with_user_profile(
                 cx,
                 user_id.clone(),
+                None,
                 true,
                 |profile, _| { (profile.displayable_name().to_owned(), profile.avatar_state.clone()) }
             ) {

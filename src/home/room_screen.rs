@@ -632,11 +632,20 @@ impl Widget for RoomScreen {
                     reaction_data,
                 } = reaction_list.hovered_in(actions) {
                     let Some(_tl_state) = self.tl_state.as_ref() else { continue };
-                    let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
-                        user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
-                            .map(|user_profile| user_profile.displayable_name().to_string())
+                    let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders
+                        .iter()
+                        .map(|(sender, _react_info)| {
+                            user_profile_cache::get_user_display_name_for_room(
+                                cx,
+                                sender.clone(),
+                                Some(&reaction_data.room_id),
+                                true,
+                            )
+                            .into_option()
                             .unwrap_or_else(|| sender.to_string())
-                    }).collect();
+                        })
+                        .collect();
+
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.reaction));
                     cx.widget_action(
@@ -3195,6 +3204,7 @@ fn populate_message_view(
                     cx,
                     &html_or_plaintext_ref,
                     event_tl_item,
+                    room_id,
                 );
                 (item, false)
             }
@@ -3429,7 +3439,7 @@ fn populate_image_message_content(
         if ImageFormat::from_mimetype(mime).is_none() {
             text_or_image_ref.show_text(
                 cx,
-                format!("{body}\n\nImages/Stickers of type {mime:?} are not yet supported."),
+                format!("{body}\n\nUnsupported type {mime:?}"),
             );
             return true; // consider this as fully drawn
         }
@@ -3716,8 +3726,10 @@ fn populate_redacted_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     event_tl_item: &EventTimelineItem,
+    room_id: &OwnedRoomId,
 ) -> bool {
-    let mut redactor_and_reason = None;
+    let fully_drawn: bool;
+    let mut redactor_id_and_reason = None;
     if let Some(redacted_msg) = event_tl_item.latest_json() {
         if let Ok(AnySyncTimelineEvent::MessageLike(
             AnySyncMessageLikeEvent::RoomMessage(
@@ -3725,36 +3737,45 @@ fn populate_redacted_message_content(
             )
         )) = redacted_msg.deserialize() {
             if let Ok(redacted_because) = redaction.unsigned.redacted_because.deserialize() {
-                redactor_and_reason = Some((
+                redactor_id_and_reason = Some((
                     redacted_because.sender,
                     redacted_because.content.reason,
                 ));
             }
         }
     }
-    let html = match redactor_and_reason {
-        Some((redactor, Some(reason))) => {
-            if redactor == event_tl_item.sender() {
-                format!("⛔ <i>Deleted their own message. Reason: \"{}\".</i>", htmlize::escape_text(reason))
-            } else {
-                // TODO: get the redactor's display name if possible
-                format!("⛔ <i>{} deleted this message. Reason: \"{}\".</i>", htmlize::escape_text(redactor.as_str()), htmlize::escape_text(reason))
+
+    let html = if let Some((redactor, reason)) = redactor_id_and_reason {
+        if redactor == event_tl_item.sender() {
+            fully_drawn = true;
+            match reason {
+                Some(r) => format!("⛔ <i>Deleted their own message. Reason: \"{}\".</i>", htmlize::escape_text(r)),
+                None => String::from("⛔ <i>Deleted their own message.</i>"),
+            }
+        } else {
+            // Try to get the displayable name of the user who redacted this message.
+            let redactor_name = user_profile_cache::get_user_display_name_for_room(
+                cx,
+                redactor.clone(),
+                Some(&room_id),
+                true,
+            );
+            fully_drawn = redactor_name.was_found();
+            let redactor_name_esc = htmlize::escape_text(redactor_name.as_deref().unwrap_or(redactor.as_str()));
+            match reason {
+                Some(r) => format!("⛔ <i>{} deleted this message. Reason: \"{}\".</i>",
+                    redactor_name_esc,
+                    htmlize::escape_text(r),
+                ),
+                None => format!("⛔ <i>{} deleted this message.</i>", redactor_name_esc),
             }
         }
-        Some((redactor, None)) => {
-            if redactor == event_tl_item.sender() {
-                String::from("⛔ <i>Deleted their own message.</i>")
-            } else {
-                // TODO: get the redactor's display name if possible
-                format!("⛔ <i>{} deleted this message.</i>", redactor)
-            }
-        }
-        None => {
-            String::from("⛔ <i>Message deleted.</i>")
-        }
+    } else {
+        fully_drawn = true;
+        String::from("⛔ <i>Message deleted.</i>")
     };
     message_content_widget.show_html(cx, html);
-    true
+    fully_drawn
 }
 
 

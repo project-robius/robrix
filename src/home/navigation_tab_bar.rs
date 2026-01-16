@@ -542,6 +542,7 @@ pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
         let avatar_uri_to_fetch = user_profile_cache::with_user_profile(
             cx,
             own_user_id,
+            None,
             true,
             |new_profile, _rooms| {
                 let avatar_uri_to_fetch = new_profile.avatar_state.uri().cloned();

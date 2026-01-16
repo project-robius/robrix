@@ -334,7 +334,6 @@ pub fn text_preview_of_redacted_message(
             if redactor == sender_user_id {
                 format!("{} deleted their own message: \"{}\".", original_sender_username, reason)
             } else {
-                // TODO: get the redactor's display name if possible
                 format!("{} deleted {}'s message: \"{}\".", redactor, original_sender_username, reason)
             }
         }
@@ -351,6 +350,7 @@ pub fn text_preview_of_redacted_message(
     };
     TextPreview::from((text, BeforeText::Nothing))
 }
+
 
 /// Returns a plaintext preview of the given encrypted message that could not be decrypted.
 ///

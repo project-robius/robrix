@@ -1,5 +1,5 @@
 use crate::home::room_screen::RoomScreenTooltipActions;
-use crate::profile::user_profile_cache::get_user_profile_and_room_member;
+use crate::profile::user_profile_cache;
 use crate::sliding_sync::{current_user_id, submit_async_request, MatrixRequest};
 use indexmap::IndexMap;
 use makepad_widgets::*;
@@ -279,8 +279,8 @@ impl ReactionListRef {
                 if sender == &client_user_id {
                     includes_user = true;
                 }
-                // Cache the reaction sender's user profile so that tooltip will show displayable name
-                let _ = get_user_profile_and_room_member(cx, sender.clone(), &room_id, true);
+                // Prefill each reactor's user profile into the cache so the tooltip will show their display name.
+                let _ = user_profile_cache::with_user_profile(cx, sender.clone(), Some(&room_id), true, |_, _| { });
             }
 
             let reaction_data = ReactionData {
