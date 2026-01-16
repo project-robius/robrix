@@ -3757,7 +3757,7 @@ fn populate_redacted_message_content(
             let redactor_name = user_profile_cache::get_user_display_name_for_room(
                 cx,
                 redactor.clone(),
-                Some(&room_id),
+                Some(room_id),
                 true,
             );
             fully_drawn = redactor_name.was_found();
