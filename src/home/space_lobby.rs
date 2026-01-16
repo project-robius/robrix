@@ -242,7 +242,7 @@ live_design! {
         height: 44,
         flow: Right,
         align: {y: 0.5}
-        padding: {left: 8, right: 12, top: 4, bottom: 4}
+        padding: {left: 8, right: 12}
         cursor: Hand
 
         show_bg: true
@@ -300,7 +300,7 @@ live_design! {
         height: 44,
         flow: Right,
         align: {y: 0.5}
-        padding: {left: 8, right: 12, top: 4, bottom: 4}
+        padding: {left: 8, right: 12}
         cursor: Hand
 
         show_bg: true
@@ -373,7 +373,7 @@ live_design! {
         width: Fill, height: 36,
         flow: Right,
         align: { y: 0.5 }
-        padding: {left: 8, right: 12, top: 4, bottom: 4}
+        padding: {left: 8, right: 12}
 
         // Tree lines replace the spacer
         tree_lines = <TreeLines> {}
