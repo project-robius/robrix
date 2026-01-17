@@ -9,14 +9,12 @@
 use std::collections::{HashMap, HashSet};
 use imbl::Vector;
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedRoomId;
+use matrix_sdk::{RoomState, ruma::OwnedRoomId};
 use matrix_sdk_ui::spaces::SpaceRoom;
+use ruma::room::JoinRuleSummary;
 use tokio::sync::mpsc::UnboundedSender;
 use crate::{
-    home::rooms_list::RoomsListRef,
-    shared::avatar::{AvatarWidgetExt, AvatarWidgetRefExt},
-    space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction},
-    utils::{self, RoomNameId},
+    home::rooms_list::RoomsListRef, shared::avatar::{AvatarState, AvatarWidgetExt, AvatarWidgetRefExt}, space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction}, utils::{self, RoomNameId}
 };
 
 
@@ -618,15 +616,63 @@ impl Widget for RoomEntry {
     }
 }
 
+/// The subset of info in [`SpaceRoom`] that we display for each room/space.
+struct SpaceRoomInfo {
+    id: OwnedRoomId,
+    name: String,
+    #[allow(unused)]
+    topic: Option<String>,
+    #[allow(unused)]
+    room_avatar: AvatarState,
+    num_joined_members: u64,
+    #[allow(unused)]
+    state: Option<RoomState>,
+    #[allow(unused)]
+    join_rule: Option<JoinRuleSummary>,
+    /// If `Some`, this is a space. If `None`, it's a room.
+    children_count: Option<u64>,
+}
+impl SpaceRoomInfo {
+    fn is_space(&self) -> bool {
+        self.children_count.is_some()
+    }
+}
+impl From<&SpaceRoom> for SpaceRoomInfo {
+    fn from(space_room: &SpaceRoom) -> Self {
+        SpaceRoomInfo {
+            id: space_room.room_id.clone(),
+            name: space_room.display_name.clone(),
+            topic: space_room.topic.clone(),
+            room_avatar: AvatarState::Known(space_room.avatar_url.clone()),
+            num_joined_members: space_room.num_joined_members,
+            state: space_room.state.clone(),
+            join_rule: space_room.join_rule.clone(),
+            children_count: space_room.is_space().then_some(space_room.children_count),
+        }
+    }
+}
+impl From<SpaceRoom> for SpaceRoomInfo {
+    fn from(space_room: SpaceRoom) -> Self {
+        SpaceRoomInfo {
+            children_count: space_room.is_space().then_some(space_room.children_count),
+            id: space_room.room_id,
+            name: space_room.display_name,
+            topic: space_room.topic,
+            room_avatar: AvatarState::Known(space_room.avatar_url),
+            num_joined_members: space_room.num_joined_members,
+            state: space_room.state,
+            join_rule: space_room.join_rule,
+        }
+    }
+}
 
 /// An entry in the tree to be displayed.
-#[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 enum TreeEntry {
     /// A regular space or room entry.
     Item {
-        /// The detailed info about this space or room.
-        info: SpaceRoom,
+        /// The info needed to display this space or room.
+        info: SpaceRoomInfo,
         /// The nesting level (0 = direct child of the displayed space).
         level: usize,
         /// Whether this entry is the last child of its parent.
@@ -685,7 +731,7 @@ impl Widget for SpaceLobbyScreen {
                 if let SubspaceEntryAction::Clicked { space_id: room_id } = action.as_widget_action().cast() {
                     self.toggle_space_expansion(cx, &room_id);
                 }
-                
+
                 // Handle RoomEntry clicks
                 if let RoomEntryAction::Clicked { room_id: _ } = action.as_widget_action().cast() {
                     // TODO: Navigate to the room
@@ -728,7 +774,7 @@ impl Widget for SpaceLobbyScreen {
                             if info.is_space() {
                                 let item = list.item(cx, item_id, id!(subspace_entry));
                                 if let Some(mut inner) = item.borrow_mut::<SubspaceEntry>() {
-                                    inner.space_id = Some(info.room_id.clone());
+                                    inner.space_id = Some(info.id.clone());
                                 }
                                 
                                 // Configure tree lines
@@ -740,7 +786,7 @@ impl Widget for SpaceLobbyScreen {
                                 }
                                 
                                 // Expand icon
-                                let is_expanded = self.expanded_spaces.contains(&info.room_id);
+                                let is_expanded = self.expanded_spaces.contains(&info.id);
                                 let angle = if is_expanded { 180.0 } else { 90.0 };
                                 item.icon(ids!(expand_icon)).apply_over(cx, live! {
                                     draw_icon: { rotation_angle: (angle) }
@@ -748,13 +794,13 @@ impl Widget for SpaceLobbyScreen {
                                 
                                 // Avatar
                                 let avatar_ref = item.avatar(ids!(avatar));
-                                let first_char = utils::user_name_first_letter(&info.display_name);
+                                let first_char = utils::user_name_first_letter(&info.name);
                                 avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
                                 
                                 // Text
-                                item.label(ids!(content.name_label)).set_text(cx, &info.display_name);
-                                let info_text = if info.children_count > 0 {
-                                    format!("{} members · {} rooms", info.num_joined_members, info.children_count)
+                                item.label(ids!(content.name_label)).set_text(cx, &info.name);
+                                let info_text = if let Some(c) = info.children_count && c > 0 {
+                                    format!("{} members · {} rooms", info.num_joined_members, c)
                                 } else {
                                     format!("{} members", info.num_joined_members)
                                 };
@@ -764,7 +810,7 @@ impl Widget for SpaceLobbyScreen {
                             } else {
                                 let item = list.item(cx, item_id, id!(room_entry));
                                 if let Some(mut inner) = item.borrow_mut::<RoomEntry>() {
-                                    inner.room_id = Some(info.room_id.clone());
+                                    inner.room_id = Some(info.id.clone());
                                 }
                                 
                                 // Configure tree lines
@@ -777,11 +823,11 @@ impl Widget for SpaceLobbyScreen {
                                 
                                 // Avatar
                                 let avatar_ref = item.avatar(ids!(avatar));
-                                let first_char = utils::user_name_first_letter(&info.display_name);
+                                let first_char = utils::user_name_first_letter(&info.name);
                                 avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
                                 
                                 // Text
-                                item.label(ids!(content.name_label)).set_text(cx, &info.display_name);
+                                item.label(ids!(content.name_label)).set_text(cx, &info.name);
                                 let info_text = format!("{} members", info.num_joined_members);
                                 item.label(ids!(content.info_label)).set_text(cx, &info_text);
                                 
@@ -882,8 +928,8 @@ impl SpaceLobbyScreen {
     /// can be displayed in the SpaceLobbyScreen's PortalList.
     //
     // Note: this is intentionally *not* a method (it doesn't take &mut self),
-    // in order to make it possible to recursively call it while borrowing only select
-    // fields of `Self`.
+    // in order to make it possible to recursively call it while immutably borrowing
+    // only select fields of `Self`.
     fn build_tree_for_space(
         children_cache: &HashMap<OwnedRoomId, Vector<SpaceRoom>>,
         expanded_spaces: &HashSet<OwnedRoomId>,
@@ -907,11 +953,11 @@ impl SpaceLobbyScreen {
 
         
         let count = sorted_children.len();
-        for (i, child) in sorted_children.iter().enumerate() {
+        for (i, child) in sorted_children.into_iter().enumerate() {
             let is_last = i == count - 1;
             
             tree_entries.push(TreeEntry::Item {
-                info: (*child).clone(),
+                info: SpaceRoomInfo::from(child),
                 level,
                 is_last,
                 parent_mask,

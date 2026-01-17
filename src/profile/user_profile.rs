@@ -1,53 +1,13 @@
-use std::{borrow::Cow, ops::{Deref, DerefMut}, sync::Arc};
+//! Widgets and types related to displaying info about a user profile.
+
+use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
-use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedMxcUri, OwnedRoomId, OwnedUserId}};
+use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}}, sliding_sync::{current_user_id, is_user_ignored, submit_async_request, MatrixRequest}, utils
+    avatar_cache::{self, AvatarCacheEntry}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_ignored, submit_async_request}, utils
 };
 use super::user_profile_cache;
 
-/// The currently-known state of a user's avatar.
-#[derive(Clone)]
-pub enum AvatarState {
-    /// It isn't yet known if this user has an avatar.
-    Unknown,
-    /// It is known that this user does or does not have an avatar.
-    Known(Option<OwnedMxcUri>),
-    /// This user does have an avatar, and it has been fetched successfully.
-    Loaded(Arc<[u8]>),
-    /// This user does have an avatar, but we failed to fetch it.
-    Failed,
-}
-impl std::fmt::Debug for AvatarState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AvatarState::Unknown        => write!(f, "Unknown"),
-            AvatarState::Known(Some(_)) => write!(f, "Known(Some)"),
-            AvatarState::Known(None)    => write!(f, "Known(None)"),
-            AvatarState::Loaded(data)   => write!(f, "Loaded({} bytes)", data.len()),
-            AvatarState::Failed         => write!(f, "Failed"),
-        }
-    }
-}
-impl AvatarState {
-    /// Returns the avatar data, if in the `Loaded` state.
-    pub fn data(&self) -> Option<&Arc<[u8]>> {
-        if let AvatarState::Loaded(data) = self {
-            Some(data)
-        } else {
-            None
-        }
-    }
-
-    /// Returns the avatar URI, if in the `Known` state and it exists.
-    pub fn uri(&self) -> Option<&OwnedMxcUri> {
-        if let AvatarState::Known(Some(uri)) = self {
-            Some(uri)
-        } else {
-            None
-        }
-    }
-}
 
 /// Information retrieved about a user: their displayable name, ID, and known avatar state.
 #[derive(Clone, Debug)]

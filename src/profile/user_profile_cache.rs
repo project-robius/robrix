@@ -7,7 +7,7 @@ use makepad_widgets::{warning, Cx, SignalToUI};
 use matrix_sdk::{room::RoomMember, ruma::{OwnedRoomId, OwnedUserId, UserId}};
 use std::{cell::RefCell, collections::{btree_map::Entry, BTreeMap}};
 
-use crate::{profile::user_profile::AvatarState, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::{shared::avatar::AvatarState, sliding_sync::{submit_async_request, MatrixRequest}};
 
 use super::user_profile::UserProfile;
 
