@@ -6,14 +6,16 @@
 //!    that allows the user to click on it to show the `SpaceLobby`.
 //!
 
-use std::{collections::{HashMap, HashSet}, sync::Arc};
+use std::collections::{HashMap, HashSet};
+use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
+use matrix_sdk_ui::spaces::SpaceRoom;
 use tokio::sync::mpsc::UnboundedSender;
 use crate::{
     home::rooms_list::RoomsListRef,
     shared::avatar::{AvatarWidgetExt, AvatarWidgetRefExt},
-    space_service_sync::{ParentChain, SpaceRequest, SpaceRoomInfo, SpaceRoomListAction},
+    space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction},
     utils::{self, RoomNameId},
 };
 
@@ -433,6 +435,7 @@ live_design! {
         // The hierarchical tree list
         tree_list = <PortalList> {
             keep_invisible: false,
+            max_pull_down: 0.0,
             auto_tail: false,
             width: Fill, height: Fill
             flow: Down,
@@ -518,11 +521,7 @@ pub struct TreeLines {
 }
 
 impl Widget for TreeLines {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
-        // No interaction needed
-        let _ = event;
-        let _ = cx;
-    }
+    fn handle_event(&mut self, _cx: &mut Cx, _event: &Event, _scope: &mut Scope) { }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
         let indent_pixel = (self.draw_bg.level + 1.0) * self.draw_bg.indent_width;
@@ -539,7 +538,7 @@ impl Widget for TreeLines {
 pub struct SubspaceEntry {
     #[deref] view: View,
     #[animator] animator: Animator,
-    #[rust] room_id: Option<OwnedRoomId>,
+    #[rust] space_id: Option<OwnedRoomId>,
 }
 
 /// A clickable entry for a child room.
@@ -553,7 +552,7 @@ pub struct RoomEntry {
 /// Action emitted when a subspace entry is clicked.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum SubspaceEntryAction {
-    Clicked { room_id: OwnedRoomId },
+    Clicked { space_id: OwnedRoomId },
     None,
 }
 
@@ -575,9 +574,12 @@ impl Widget for SubspaceEntry {
             Hit::FingerHoverOut(_) => { self.animator_play(cx, ids!(hover.off)); }
             Hit::FingerDown(_) => { cx.set_key_focus(self.view.area()); }
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                if let Some(room_id) = &self.room_id {
-                    cx.widget_action(self.widget_uid(), &scope.path, 
-                        SubspaceEntryAction::Clicked { room_id: room_id.clone() });
+                if let Some(space_id) = self.space_id.clone() {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path, 
+                        SubspaceEntryAction::Clicked { space_id },
+                    );
                 }
             }
             _ => {}
@@ -601,9 +603,9 @@ impl Widget for RoomEntry {
             Hit::FingerHoverOut(_) => { self.animator_play(cx, ids!(hover.off)); }
             Hit::FingerDown(_) => { cx.set_key_focus(self.view.area()); }
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                if let Some(room_id) = &self.room_id {
+                if let Some(room_id) = self.room_id.clone() {
                     cx.widget_action(self.widget_uid(), &scope.path,
-                        RoomEntryAction::Clicked { room_id: room_id.clone() });
+                        RoomEntryAction::Clicked { room_id });
                 }
             }
             _ => {}
@@ -617,13 +619,14 @@ impl Widget for RoomEntry {
 }
 
 
-/// An entry in the flattened tree to be displayed.
+/// An entry in the tree to be displayed.
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 enum TreeEntry {
     /// A regular space or room entry.
     Item {
         /// The detailed info about this space or room.
-        info: SpaceRoomInfo,
+        info: SpaceRoom,
         /// The nesting level (0 = direct child of the displayed space).
         level: usize,
         /// Whether this entry is the last child of its parent.
@@ -653,12 +656,12 @@ pub struct SpaceLobbyScreen {
 
     /// Cache of detailed children for each space we've fetched.
     /// Key is the space_id, value is the list of its direct children.
-    #[rust] children_cache: HashMap<OwnedRoomId, Arc<Vec<SpaceRoomInfo>>>,
+    #[rust] children_cache: HashMap<OwnedRoomId, Vector<SpaceRoom>>,
 
     /// The set of space IDs that are currently expanded (showing their children).
     #[rust] expanded_spaces: HashSet<OwnedRoomId>,
 
-    /// The flattened list of tree entries to display.
+    /// The ordered list of children to display in the space tree.
     #[rust] tree_entries: Vec<TreeEntry>,
 
     /// The set of space IDs that are currently loading their children.
@@ -672,16 +675,14 @@ impl Widget for SpaceLobbyScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
-        // Listen for actions from the space service.
         if let Event::Actions(actions) = event {
             for action in actions {
-                // Handle detailed children response
                 if let Some(SpaceRoomListAction::DetailedChildren { space_id, children, .. }) = action.downcast_ref() {
-                    self.handle_detailed_children(cx, space_id, children);
+                    self.update_children_in_space(cx, space_id, children);
                 }
 
                 // Handle SubspaceEntry clicks
-                if let SubspaceEntryAction::Clicked { room_id } = action.as_widget_action().cast() {
+                if let SubspaceEntryAction::Clicked { space_id: room_id } = action.as_widget_action().cast() {
                     self.toggle_space_expansion(cx, &room_id);
                 }
                 
@@ -724,12 +725,10 @@ impl Widget for SpaceLobbyScreen {
                 } else if let Some(entry) = self.tree_entries.get(item_id) {
                     match entry {
                         TreeEntry::Item { info, level, is_last, parent_mask } => {
-
-                            
-                            if info.is_space {
+                            if info.is_space() {
                                 let item = list.item(cx, item_id, id!(subspace_entry));
                                 if let Some(mut inner) = item.borrow_mut::<SubspaceEntry>() {
-                                    inner.room_id = Some(info.room_id.clone());
+                                    inner.space_id = Some(info.room_id.clone());
                                 }
                                 
                                 // Configure tree lines
@@ -750,7 +749,7 @@ impl Widget for SpaceLobbyScreen {
                                 // Avatar
                                 let avatar_ref = item.avatar(ids!(avatar));
                                 let first_char = utils::user_name_first_letter(&info.display_name);
-                                avatar_ref.show_text(cx, None, None, first_char.as_deref().unwrap_or("#"));
+                                avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
                                 
                                 // Text
                                 item.label(ids!(content.name_label)).set_text(cx, &info.display_name);
@@ -779,7 +778,7 @@ impl Widget for SpaceLobbyScreen {
                                 // Avatar
                                 let avatar_ref = item.avatar(ids!(avatar));
                                 let first_char = utils::user_name_first_letter(&info.display_name);
-                                avatar_ref.show_text(cx, None, None, first_char.as_deref().unwrap_or("#"));
+                                avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
                                 
                                 // Text
                                 item.label(ids!(content.name_label)).set_text(cx, &info.display_name);
@@ -819,9 +818,8 @@ impl Widget for SpaceLobbyScreen {
 impl SpaceLobbyScreen {
 
     /// Handle receiving detailed children for a space.
-    fn handle_detailed_children(&mut self, cx: &mut Cx, space_id: &OwnedRoomId, children: &Arc<Vec<SpaceRoomInfo>>) {
-        // Store in cache and remove from loading set
-        self.children_cache.insert(space_id.clone(), Arc::clone(children));
+    fn update_children_in_space(&mut self, cx: &mut Cx, space_id: &OwnedRoomId, children: &Vector<SpaceRoom>) {
+        self.children_cache.insert(space_id.clone(), children.clone());
         self.loading_subspaces.remove(space_id);
 
         // If this is for our displayed space, mark as loaded and rebuild tree
@@ -847,9 +845,12 @@ impl SpaceLobbyScreen {
             if !self.children_cache.contains_key(space_id) {
                 self.loading_subspaces.insert(space_id.clone());
                 if let Some(sender) = &self.space_request_sender {
+                    let parent_chain = cx.get_global::<RoomsListRef>()
+                        .get_space_parent_chain(space_id)
+                        .unwrap_or_default();
                     let _ = sender.send(SpaceRequest::GetDetailedChildren {
                         space_id: space_id.clone(),
-                        parent_chain: ParentChain::new(),
+                        parent_chain,
                     });
                 }
             }
@@ -861,26 +862,43 @@ impl SpaceLobbyScreen {
 
     /// Rebuild the flattened tree entries based on the current expansion state.
     fn rebuild_tree_entries(&mut self) {
-        self.tree_entries.clear();
-
         let Some(space_name_id) = &self.space_name_id else { return };
         let root_space_id = space_name_id.room_id().clone();
-
         // Build tree starting from root
-        self.build_tree_for_space(&root_space_id, 0, 0);
+        let mut new_tree_entries = Vec::new();
+        Self::build_tree_for_space(
+            &self.children_cache,
+            &self.expanded_spaces,
+            &self.loading_subspaces,
+            &mut new_tree_entries,
+            &root_space_id,
+            0,
+            0,
+        );
+        self.tree_entries = new_tree_entries;
     }
 
-    /// Build tree entries for a space and its expanded children.
-    fn build_tree_for_space(&mut self, space_id: &OwnedRoomId, level: usize, parent_mask: u32) {
-        let children = match self.children_cache.get(space_id) {
-            Some(c) => Arc::clone(c),
-            None => return,
-        };
+    /// Recursively build the tree of spaces and their expanded children such that they
+    /// can be displayed in the SpaceLobbyScreen's PortalList.
+    //
+    // Note: this is intentionally *not* a method (it doesn't take &mut self),
+    // in order to make it possible to recursively call it while borrowing only select
+    // fields of `Self`.
+    fn build_tree_for_space(
+        children_cache: &HashMap<OwnedRoomId, Vector<SpaceRoom>>,
+        expanded_spaces: &HashSet<OwnedRoomId>,
+        loading_subspaces: &HashSet<OwnedRoomId>,
+        tree_entries: &mut Vec<TreeEntry>,
+        space_id: &OwnedRoomId,
+        level: usize,
+        parent_mask: u32,
+    ) {
+        let Some(children) = children_cache.get(space_id) else { return };
 
         // Sort: spaces first, then rooms, both alphabetically
         let mut sorted_children: Vec<_> = children.iter().collect();
         sorted_children.sort_by(|a, b| {
-            match (a.is_space, b.is_space) {
+            match (a.is_space(), b.is_space()) {
                 (true, false) => std::cmp::Ordering::Less,
                 (false, true) => std::cmp::Ordering::Greater,
                 _ => a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()),
@@ -892,7 +910,7 @@ impl SpaceLobbyScreen {
         for (i, child) in sorted_children.iter().enumerate() {
             let is_last = i == count - 1;
             
-            self.tree_entries.push(TreeEntry::Item {
+            tree_entries.push(TreeEntry::Item {
                 info: (*child).clone(),
                 level,
                 is_last,
@@ -900,7 +918,7 @@ impl SpaceLobbyScreen {
             });
 
             // If this is an expanded space, recursively add its children or a loading indicator
-            if child.is_space && self.expanded_spaces.contains(&child.room_id) {
+            if child.is_space() && expanded_spaces.contains(&child.room_id) {
                 // Calculate mask for children:
                 // If we are NOT the last child, our level needs a continuation line for our children.
                 // If we ARE the last child, our level does NOT need a line.
@@ -911,11 +929,19 @@ impl SpaceLobbyScreen {
                     parent_mask | (1 << level)
                 };
 
-                if self.children_cache.contains_key(&child.room_id) {
-                    self.build_tree_for_space(&child.room_id, level + 1, child_mask);
-                } else if self.loading_subspaces.contains(&child.room_id) {
+                if children_cache.contains_key(&child.room_id) {
+                    Self::build_tree_for_space(
+                        children_cache,
+                        expanded_spaces,
+                        loading_subspaces,
+                        tree_entries,
+                        &child.room_id,
+                        level + 1,
+                        child_mask,
+                    );
+                } else if loading_subspaces.contains(&child.room_id) {
                     // Show loading indicator
-                    self.tree_entries.push(TreeEntry::Loading { 
+                    tree_entries.push(TreeEntry::Loading { 
                         level: level + 1,
                         parent_mask: child_mask,
                     });
@@ -925,56 +951,43 @@ impl SpaceLobbyScreen {
     }
 
     pub fn set_displayed_space(&mut self, cx: &mut Cx, space_name_id: &RoomNameId) {
-        // If this space is already being displayed, then do nothing.
+        let space_name = space_name_id.to_string();
+        let parent_name = self.view.label(ids!(header.parent_space_row.parent_name));
+        parent_name.set_text(cx, &space_name);
+
+        // If this space is already being displayed, then the only thing we may need to do
+        // is update its name in the top-level header (already done above).
         if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == space_name_id.room_id()) {
             return;
         }
 
-        // Clear previous state
+        self.space_name_id = Some(space_name_id.clone());
+        let rooms_list_ref = cx.get_global::<RoomsListRef>();
+        if let Some(sender) = rooms_list_ref.get_space_request_sender() {
+            // Request detailed children for this space so we can start populating it.
+            let parent_chain_opt = rooms_list_ref.get_space_parent_chain(space_name_id.room_id());
+            let _ = sender.send(SpaceRequest::GetDetailedChildren {
+                space_id: space_name_id.room_id().clone(),
+                parent_chain: parent_chain_opt.unwrap_or_default(),
+            });
+            self.space_request_sender = Some(sender);
+        }
+
         self.tree_entries.clear();
         self.expanded_spaces.clear();
         self.is_loading = true;
 
-        // Set the new space
-        self.space_name_id = Some(space_name_id.clone());
-
-        // Update parent space header
-        let space_name = space_name_id.to_string();
-        self.view.label(ids!(header.parent_space_row.parent_name)).set_text(cx, &space_name);
-        
         // Set parent avatar
         let avatar_ref = self.view.avatar(ids!(header.parent_space_row.parent_avatar));
         let first_char = utils::user_name_first_letter(&space_name);
-        avatar_ref.show_text(cx, None, None, first_char.as_deref().unwrap_or("#"));
-
-        // Request detailed children for this space
-        if let Some(sender) = &self.space_request_sender {
-            let _ = sender.send(SpaceRequest::GetDetailedChildren {
-                space_id: space_name_id.room_id().clone(),
-                parent_chain: ParentChain::new(),
-            });
-        }
-
+        avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
         self.redraw(cx);
-    }
-
-    /// Set the space request sender channel.
-    pub fn set_space_request_sender(&mut self, sender: UnboundedSender<SpaceRequest>) {
-        self.space_request_sender = Some(sender);
     }
 }
 
 impl SpaceLobbyScreenRef {
     pub fn set_displayed_space(&self, cx: &mut Cx, space_name_id: &RoomNameId) {
         let Some(mut inner) = self.borrow_mut() else { return };
-
-        // Get the space request sender from RoomsList via Cx global if needed
-        if inner.space_request_sender.is_none() {
-            if let Some(sender) = cx.get_global::<RoomsListRef>().get_space_request_sender() {
-                inner.space_request_sender = Some(sender);
-            }
-        }
-
         inner.set_displayed_space(cx, space_name_id);
     }
 }

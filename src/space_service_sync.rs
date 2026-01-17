@@ -8,7 +8,7 @@ use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{Client, RoomState, media::MediaRequestParameters};
 use matrix_sdk_ui::spaces::{SpaceRoom, SpaceRoomList, SpaceService, room_list::SpaceRoomListPaginationState};
-use ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, events::room::MediaSource, room::RoomType};
+use ruma::{OwnedMxcUri, OwnedRoomId, events::room::MediaSource, room::RoomType};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}, task::JoinHandle};
 use crate::{home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, room::FetchedRoomAvatar, utils::{self, RoomNameId}};
 
@@ -20,46 +20,6 @@ const LOG_SPACE_SERVICE_DIFFS: bool = cfg!(feature = "log_space_service_diffs");
 /// The first element is the top-level space ancestor,
 /// while the last element is the direct parent.
 pub type ParentChain = SmallVec<[OwnedRoomId; 2]>;
-
-
-/// Detailed information about a space or room that is a child of a space.
-///
-/// This is a simplified version of `SpaceRoom` that contains only the fields
-/// needed for display in the SpaceLobbyScreen.
-#[derive(Clone, Debug)]
-pub struct SpaceRoomInfo {
-    /// The room ID of this child.
-    pub room_id: OwnedRoomId,
-    /// The display name of this child.
-    pub display_name: String,
-    /// The canonical alias of this child, if any.
-    pub canonical_alias: Option<OwnedRoomAliasId>,
-    /// The avatar URL of this child, if any.
-    pub avatar_url: Option<OwnedMxcUri>,
-    /// The topic of this child, if any.
-    pub topic: Option<String>,
-    /// The number of members joined to this child.
-    pub num_joined_members: u64,
-    /// Whether this child is a space (true) or a regular room (false).
-    pub is_space: bool,
-    /// The number of children this space has (only relevant if `is_space` is true).
-    pub children_count: u64,
-}
-
-impl From<&SpaceRoom> for SpaceRoomInfo {
-    fn from(sr: &SpaceRoom) -> Self {
-        SpaceRoomInfo {
-            room_id: sr.room_id.clone(),
-            display_name: sr.display_name.clone(),
-            canonical_alias: sr.canonical_alias.clone(),
-            avatar_url: sr.avatar_url.clone(),
-            topic: sr.topic.clone(),
-            num_joined_members: sr.num_joined_members,
-            is_space: sr.children_count > 0 || matches!(sr.room_type, Some(RoomType::Space)),
-            children_count: sr.children_count,
-        }
-    }
-}
 
 
 /// Requests related to obtaining info about Spaces, via the background space service.
@@ -78,19 +38,25 @@ pub enum SpaceRequest {
         space_id: OwnedRoomId,
     },
     /// Paginate the given space's room list, i.e., fetch the next batch of rooms in the list.
+    ///
+    /// This will result in a [`SpaceRoomListAction::PaginationState`] action being emitted,
+    /// or a [`SpaceRoomListAction::PaginationError`] action being emitted if it failed.
     PaginateSpaceRoomList {
         space_id: OwnedRoomId,
         parent_chain: ParentChain,
     },
-    /// Get a copy of the currently-known children (rooms and spaces) in the given space.
+    /// Get a minimal copy of the currently-known children (rooms and subspaces) in the given space.
+    ///
+    /// This is intended for cases when you only need an overview of the basic hierarchy of spaces.
+    /// This will result in a [`SpaceRoomListAction::UpdatedChildren`] action being emitted.
     GetChildren {
         space_id: OwnedRoomId,
         parent_chain: ParentChain,
     },
-    /// Get detailed information about all children in the given space.
+    /// Get fully-detailed info about all children (rooms and subspaces) in this space.
     ///
-    /// This returns a vector of `SpaceRoomInfo` for each direct child,
-    /// which includes display name, avatar URL, member count, etc.
+    /// This is intended for cases when you need all info about subspaces and child rooms.
+    /// This will result in a [`SpaceRoomListAction::DetailedChildren`] action being emitted.
     GetDetailedChildren {
         space_id: OwnedRoomId,
         parent_chain: ParentChain,
@@ -100,8 +66,10 @@ pub enum SpaceRequest {
 /// Internal requests sent from the [`space_service_loop`] to a specific space's [`space_room_list_loop`].
 enum SpaceRoomListRequest {
     /// Get a copy of the currently-known children (rooms & spaces) in this space.
+    /// This is intended for cases when you only need an overview of the basic hierarchy of spaces.
     GetChildren,
-    /// Get detailed information about all children in this space.
+    /// Get fully-detailed info about all children in this space.
+    /// This is intended for cases when you need all info about subspaces and child rooms.
     GetDetailedChildren,
     /// Paginate this space to get info about more of its children.
     Paginate,
@@ -567,13 +535,20 @@ async fn fetch_space_avatar(url: OwnedMxcUri, client: &Client) -> matrix_sdk::Re
 }
 
 
-/// Returns true if the given `SpaceRoom` is a space itself;
-/// otherwise, returns false, indicating it is a regular room.
-#[inline]
-fn is_space(sr: &SpaceRoom) -> bool {
-    sr.children_count > 0
-    || matches!(sr.room_type, Some(RoomType::Space))
+
+/// Extension trait for `SpaceRoom` to provide utility methods.
+pub trait SpaceRoomExt {
+    /// Returns true if this `SpaceRoom` is a space itself;
+    /// otherwise, returns false, indicating it is a regular room.
+    fn is_space(&self) -> bool;
 }
+impl SpaceRoomExt for SpaceRoom {
+    #[inline]
+    fn is_space(&self) -> bool {
+        self.children_count > 0 || matches!(self.room_type, Some(RoomType::Space))
+    }
+}
+
 
 
 /// A loop that listens for changes to the set of rooms in a given space.
@@ -624,14 +599,12 @@ async fn space_room_list_loop(
                     });
                 }
                 SpaceRoomListRequest::GetDetailedChildren => {
-                    let children: Vec<SpaceRoomInfo> = all_rooms_in_space
-                        .iter()
-                        .map(SpaceRoomInfo::from)
-                        .collect();
                     Cx::post_action(SpaceRoomListAction::DetailedChildren {
                         space_id: space_id.clone(),
                         parent_chain: parent_chain.clone(),
-                        children: Arc::new(children),
+                        // The `imbl::Vector` type is very cheap to clone here
+                        // because we're not modifying it, so we just send that value directly.
+                        children: all_rooms_in_space.clone(),
                     });
                 }
                 SpaceRoomListRequest::Paginate => {
@@ -691,7 +664,7 @@ fn handle_subspaces<'a>(
     changed_space_rooms: impl Iterator<Item = &'a SpaceRoom>,
     request_sender: &UnboundedSender<SpaceRequest>,
 ) {
-    for sr in changed_space_rooms.filter(|&sr| is_space(sr)) {        
+    for sr in changed_space_rooms.filter(|&sr| sr.is_space()) {        
         if known_subspaces.contains(&sr.room_id) {
             continue;
         }
@@ -721,7 +694,7 @@ fn space_children_to_hash_sets(
     let mut direct_child_rooms = HashSet::new();
     let mut direct_subspaces = HashSet::new();
     for sr in all_rooms_in_space.iter() {
-        if is_space(sr) {
+        if sr.is_space() {
             direct_subspaces.insert(sr.room_id.clone());
         } else {
             direct_child_rooms.insert(sr.room_id.clone());
@@ -763,8 +736,7 @@ pub enum SpaceRoomListAction {
     DetailedChildren {
         space_id: OwnedRoomId,
         parent_chain: ParentChain,
-        /// All direct children (rooms and subspaces) with detailed info.
-        children: Arc<Vec<SpaceRoomInfo>>,
+        children: Vector<SpaceRoom>,
     },
 }
 impl std::fmt::Debug for SpaceRoomListAction {

@@ -358,7 +358,7 @@ pub enum InviteState {
 
 /// The value in the RoomsList's `space_map` that contains info about a space.
 #[derive(Default)]
-struct SpaceMapValue { 
+struct SpaceMapValue {
     /// Whether this space is fully paginated, meaning that our client has obtained
     /// the full list of direct children within this space.
     ///
@@ -1406,13 +1406,12 @@ impl RoomsListRef {
         self.borrow()?.space_request_sender.clone()
     }
 
-    /// Returns the set of direct child rooms and subspaces for the given space.
-    ///
-    /// Returns a tuple of `(direct_child_rooms, direct_subspaces)`.
-    pub fn get_space_children(&self, space_id: &OwnedRoomId) -> Option<(Arc<HashSet<OwnedRoomId>>, Arc<HashSet<OwnedRoomId>>)> {
-        let inner = self.borrow()?;
-        let smv = inner.space_map.get(space_id)?;
-        Some((Arc::clone(&smv.direct_child_rooms), Arc::clone(&smv.direct_subspaces)))
+    /// Returns the parent chain of the given space, if known.
+    pub fn get_space_parent_chain(&self, space_id: &OwnedRoomId) -> Option<ParentChain> {
+        self.borrow()?
+            .space_map
+            .get(space_id)
+            .map(|smv| smv.parent_chain.clone())
     }
 }
 
