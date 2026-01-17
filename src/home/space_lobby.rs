@@ -755,89 +755,84 @@ impl Widget for SpaceLobbyScreen {
             list.set_item_range(cx, 0, total_count);
 
             while let Some(item_id) = list.next_visible_item(cx) {
-                let mut item_scope = Scope::empty();
-
-                if self.is_loading && item_id == 0 {
-                    // Draw loading indicator
+                // Draw loading indicator
+                let item = if self.is_loading && item_id == 0 {
                     let item = list.item(cx, item_id, id!(status_label));
                     item.label(ids!(label)).set_text(cx, "Loading rooms and spaces...");
-                    item.draw_all(cx, &mut item_scope);
-                } else if entry_count == 0 && item_id == 0 {
-                    // No entries found
+                    item
+                }
+                // No entries found
+                else if entry_count == 0 && item_id == 0 {
                     let item = list.item(cx, item_id, id!(status_label));
                     item.label(ids!(label)).set_text(cx, "No rooms or spaces found.");
                     item.view(ids!(loading_spinner)).apply_over(cx, live! { visible: false });
-                    item.draw_all(cx, &mut item_scope);
-                } else if let Some(entry) = self.tree_entries.get(item_id) {
+                    item
+                }
+                // Draw a regular entrty
+                else if let Some(entry) = self.tree_entries.get(item_id) {
                     match entry {
                         TreeEntry::Item { info, level, is_last, parent_mask } => {
-                            if info.is_space() {
+                            let item = if info.is_space() {
                                 let item = list.item(cx, item_id, id!(subspace_entry));
                                 if let Some(mut inner) = item.borrow_mut::<SubspaceEntry>() {
                                     inner.space_id = Some(info.id.clone());
                                 }
-                                
-                                // Configure tree lines
-                                if let Some(mut lines) = item.widget(ids!(tree_lines)).borrow_mut::<TreeLines>() {
-                                    lines.draw_bg.level = *level as f32;
-                                    lines.draw_bg.is_last = if *is_last { 1.0 } else { 0.0 };
-                                    lines.draw_bg.parent_mask = *parent_mask as f32;
-                                    lines.draw_bg.indent_width = 44.0; // Hardcoded to match
-                                }
-                                
                                 // Expand icon
                                 let is_expanded = self.expanded_spaces.contains(&info.id);
                                 let angle = if is_expanded { 180.0 } else { 90.0 };
                                 item.icon(ids!(expand_icon)).apply_over(cx, live! {
                                     draw_icon: { rotation_angle: (angle) }
                                 });
-                                
-                                // Avatar
-                                let avatar_ref = item.avatar(ids!(avatar));
-                                let first_char = utils::user_name_first_letter(&info.name);
-                                avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
-                                
-                                // Text
-                                item.label(ids!(content.name_label)).set_text(cx, &info.name);
-                                let info_text = if let Some(c) = info.children_count && c > 0 {
-                                    format!("{} members · {} rooms", info.num_joined_members, c)
-                                } else {
-                                    format!("{} members", info.num_joined_members)
-                                };
-                                item.label(ids!(content.info_label)).set_text(cx, &info_text);
-                                
-                                item.draw_all(cx, &mut item_scope);
+                                item
                             } else {
                                 let item = list.item(cx, item_id, id!(room_entry));
                                 if let Some(mut inner) = item.borrow_mut::<RoomEntry>() {
                                     inner.room_id = Some(info.id.clone());
                                 }
-                                
-                                // Configure tree lines
-                                if let Some(mut lines) = item.widget(ids!(tree_lines)).borrow_mut::<TreeLines>() {
-                                    lines.draw_bg.level = *level as f32;
-                                    lines.draw_bg.is_last = if *is_last { 1.0 } else { 0.0 };
-                                    lines.draw_bg.parent_mask = *parent_mask as f32;
-                                    lines.draw_bg.indent_width = 44.0;
-                                }
-                                
-                                // Avatar
-                                let avatar_ref = item.avatar(ids!(avatar));
-                                let first_char = utils::user_name_first_letter(&info.name);
-                                avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
-                                
-                                // Text
-                                item.label(ids!(content.name_label)).set_text(cx, &info.name);
-                                let info_text = format!("{} members", info.num_joined_members);
-                                item.label(ids!(content.info_label)).set_text(cx, &info_text);
-                                
-                                item.draw_all(cx, &mut item_scope);
+                                item
+                            };
+
+                            // Below, draw things that are common to child rooms and subspaces.
+                            item.label(ids!(content.name_label)).set_text(cx, &info.name);
+                            // TODO: query (and update) room/space avatar from the avatar_cache
+                            let avatar_ref = item.avatar(ids!(avatar));
+                            let first_char = utils::user_name_first_letter(&info.name);
+                            avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
+
+                            if let Some(mut lines) = item.widget(ids!(tree_lines)).borrow_mut::<TreeLines>() {
+                                lines.draw_bg.level = *level as f32;
+                                lines.draw_bg.is_last = if *is_last { 1.0 } else { 0.0 };
+                                lines.draw_bg.parent_mask = *parent_mask as f32;
+                                lines.draw_bg.indent_width = 44.0; // Hardcoded to match
                             }
+
+                            let info_label = item.label(ids!(content.info_label));
+                            if let Some(c) = info.children_count && c > 0 {
+                                info_label.set_text(cx, &format!(
+                                    "{} {} | ~{} {}",
+                                    info.num_joined_members,
+                                    match info.num_joined_members {
+                                        1 => "member",
+                                        _ => "members",
+                                    },
+                                    c,
+                                    match c {
+                                        1 => "room",
+                                        _ => "rooms",
+                                    }
+                                ));
+                            } else {
+                                match info.num_joined_members {
+                                    1 => info_label.set_text(cx, "1 member"),
+                                    n => info_label.set_text(cx, &format!("{n} members")),
+                                }
+                            };
+
+                            item
                         }
                         TreeEntry::Loading { level, parent_mask } => {
                             // Draw loading indicator for subspace
                             let item = list.item(cx, item_id, id!(subspace_loading));
-
                             // Configure tree lines
                             if let Some(mut lines) = item.widget(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
@@ -845,15 +840,13 @@ impl Widget for SpaceLobbyScreen {
                                 lines.draw_bg.parent_mask = *parent_mask as f32;
                                 lines.draw_bg.indent_width = 44.0;
                             }
-
-                            item.draw_all(cx, &mut item_scope);
+                            item
                         }
                     }
                 } else {
-                    // Bottom filler
-                    let item = list.item(cx, item_id, id!(bottom_filler));
-                    item.draw_all(cx, &mut item_scope);
-                }
+                    list.item(cx, item_id, id!(bottom_filler))
+                };
+                item.draw_all(cx, scope);
             }
         }
 
