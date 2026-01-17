@@ -197,13 +197,15 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let pos = self.pos * self.rect_size;
                 let indent = self.indent_width;
-                let half_indent = indent * 0.5;
+                // Yes, this should be 0.5, but 0.6 makes it line up nicely
+                // with the middle of the parent-level avatar, which is better.
+                let half_indent = indent * 0.6;
                 let line_width = 1.0;
                 let half_line = 0.5;
 
                 let c = vec4(0.0);
 
-                // Iterate for parent levels and current level
+                // Dumb approach, but it works.
                 for i in 0..20 {
                     if float(i) > self.level { break; }
                     
@@ -255,14 +257,14 @@ live_design! {
             }
         }
 
-        // Tree lines replace the spacer
+        // The connecting hierarchical lines on the left.
         tree_lines = <TreeLines> {}
 
         // Expand/collapse icon
         expand_icon = <IconRotated> {
             width: 16,
             height: 16,
-            margin: { right: 4 }
+            margin: { top: 7, left: -8, right: 2 }
             draw_icon: {
                 svg_file: (ICON_COLLAPSE)
                 rotation_angle: 90.0
@@ -271,15 +273,19 @@ live_design! {
             icon_walk: { width: 10, height: 10 }
         }
 
-        avatar = <Avatar> { width: 32, height: 32, margin: {right: 12} }
+        avatar = <Avatar> { width: 32, height: 32, margin: {right: 8} }
 
         content = <View> {
-            width: Fill, height: Fit, flow: Down, spacing: 0,
+            width: Fill, height: Fit, flow: Down, spacing: 5,
             name_label = <Label> {
+                margin: 0
+                padding: 0
                 width: Fill, height: Fit,
                 draw_text: { text_style: <REGULAR_TEXT>{font_size: 10.5}, color: #1a1a1a, wrap: Ellipsis }
             }
             info_label = <Label> {
+                margin: 0
+                padding: 0
                 width: Fill, height: Fit,
                 draw_text: { text_style: <REGULAR_TEXT>{font_size: 8.5}, color: #737373, wrap: Ellipsis }
             }
@@ -295,47 +301,12 @@ live_design! {
     }
 
     // Entry for a child room (leaf node, no expand icon)
-    pub RoomEntry = {{RoomEntry}} {
-        width: Fill,
-        height: 44,
-        flow: Right,
-        align: {y: 0.5}
-        padding: {left: 8, right: 12}
-        cursor: Hand
+    pub RoomEntry = {{RoomEntry}}<SubspaceEntry> {
+        cursor: Default
 
-        show_bg: true
-        draw_bg: {
-            instance hover: 0.0
-            color: #fff
-            uniform color_hover: #f5f5f5
-            fn pixel(self) -> vec4 {
-                return mix(self.color, self.color_hover, self.hover);
-            }
-        }
-
-        // Tree lines replace the spacer
-        tree_lines = <TreeLines> {}
-
-        avatar = <Avatar> { width: 32, height: 32, margin: {right: 12} }
-
-        content = <View> {
-            width: Fill, height: Fit, flow: Down, spacing: 0,
-            name_label = <Label> {
-                width: Fill, height: Fit,
-                draw_text: { text_style: <REGULAR_TEXT>{font_size: 10.5}, color: #1a1a1a, wrap: Ellipsis }
-            }
-            info_label = <Label> {
-                width: Fill, height: Fit,
-                draw_text: { text_style: <REGULAR_TEXT>{font_size: 8.5}, color: #737373, wrap: Ellipsis }
-            }
-        }
-
-        animator: {
-            hover = {
-                default: off
-                off = { from: {all: Forward {duration: 0.1}}, apply: { draw_bg: {hover: 0.0} } }
-                on = { from: {all: Snap}, apply: { draw_bg: {hover: 1.0} } }
-            }
+        expand_icon = <View> {
+            width: 10
+            height: 16
         }
     }
 
@@ -383,7 +354,7 @@ live_design! {
             height: 14,
             margin: {left: 8, right: 10}
             draw_bg: {
-                color: #999
+                color: (COLOR_ACTIVE_PRIMARY)
                 border_size: 2.0,
             }
         }
