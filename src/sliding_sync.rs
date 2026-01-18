@@ -987,6 +987,9 @@ async fn matrix_worker_task(
                     continue;
                 };
                 let _typing_task = Handle::current().spawn(async move {
+                    if room.state() != RoomState::Joined {
+                        return;
+                    }
                     if let Err(e) = room.typing_notice(typing).await {
                         error!("Failed to send typing notice to room {room_id}: {e:?}");
                     }
@@ -2275,18 +2278,12 @@ async fn update_room(
         if old_room.state != new_room.state {
             match new_room.state {
                 RoomState::Banned => {
-                    // TODO: handle rooms that this user has been banned from.
-                    log!("Removing Banned room: {:?} ({new_room_id})", new_room.display_name);
+                    log!("Marking Banned room for history: {:?} ({new_room_id})", new_room.display_name);
                     remove_room(new_room);
                     return Ok(());
                 }
                 RoomState::Left => {
-                    log!("Removing Left room: {:?} ({new_room_id})", new_room.display_name);
-                    // TODO: instead of removing this, we could optionally add it to
-                    //       a separate list of left rooms, which would be collapsed by default.
-                    //       Upon clicking a left room, we could show a splash page
-                    //       that prompts the user to rejoin the room or forget it permanently.
-                    //       Currently, we just remove it and do not show left rooms at all.
+                    log!("Marking Left room for history: {:?} ({new_room_id})", new_room.display_name);
                     remove_room(new_room);
                     return Ok(());
                 }
@@ -2427,11 +2424,14 @@ async fn update_room(
 
 /// Invoked when the room list service has received an update to remove an existing room.
 fn remove_room(room: &RoomListServiceRoomInfo) {
-    ALL_JOINED_ROOMS.lock().unwrap().remove(&room.room_id);
+    let effective_state = room.room.state();
+    if !matches!(effective_state, RoomState::Left | RoomState::Banned) {
+        ALL_JOINED_ROOMS.lock().unwrap().remove(&room.room_id);
+    }
     enqueue_rooms_list_update(
         RoomsListUpdate::RemoveRoom {
             room_id: room.room_id.clone(),
-            new_state: room.state,
+            new_state: effective_state,
         }
     );
 }
@@ -2553,6 +2553,7 @@ async fn add_new_room(
         num_unread_mentions: new_room.num_unread_mentions,
         room_avatar,
         room_name_id: room_name_id.clone(),
+        removed_state: None,
         canonical_alias: new_room.room.canonical_alias(),
         alt_aliases: new_room.room.alt_aliases(),
         has_been_paginated: false,

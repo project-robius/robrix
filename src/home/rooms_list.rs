@@ -192,11 +192,16 @@ pub enum RoomsListUpdate {
         room_id: OwnedRoomId,
         is_direct: bool,
     },
-    /// Remove the given room from the rooms list
+    /// Remove the given room from the rooms list, or mark it as removed for history.
     RemoveRoom {
         room_id: OwnedRoomId,
         /// The new state of the room (which caused its removal).
         new_state: RoomState,
+    },
+    /// Update the removed state of a room without removing it.
+    SetRemovedRoomState {
+        room_id: OwnedRoomId,
+        removed_state: Option<RoomState>,
     },
     /// Update the tags for the given room.
     Tags {
@@ -258,6 +263,8 @@ pub enum RoomsListAction {
 pub struct JoinedRoomInfo {
     /// The displayable name of this room (includes room ID for fallback).
     pub room_name_id: RoomNameId,
+    /// If set, the user is no longer a member of this room but we keep it for history.
+    pub removed_state: Option<RoomState>,
     /// The number of unread messages in this room.
     pub num_unread_messages: u64,
     /// The number of unread mentions in this room.
@@ -496,6 +503,13 @@ impl RoomsList {
         None
     }
 
+    /// Returns the removal state of the room, if it was removed (e.g., left or banned).
+    pub fn get_removed_room_state(&self, room_id: &OwnedRoomId) -> Option<RoomState> {
+        self.all_joined_rooms
+            .get(room_id)
+            .and_then(|jr| jr.removed_state.clone())
+    }
+
     /// Handle all pending updates to the list of all rooms.
     fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, scope: &mut Scope) {
         let mut num_updates: usize = 0;
@@ -506,7 +520,17 @@ impl RoomsList {
                     let room_id = invited_room.room_name_id.room_id().clone();
                     let should_display = should_display_room!(self, &room_id, &invited_room);
                     let _replaced = self.invited_rooms.borrow_mut().insert(room_id.clone(), invited_room);
-                    if should_display {
+                    if let Some(removed) = self.all_joined_rooms.remove(&room_id) {
+                        let list_to_remove_from = if removed.is_direct {
+                            &mut self.displayed_direct_rooms
+                        } else {
+                            &mut self.displayed_regular_rooms
+                        };
+                        list_to_remove_from.iter()
+                            .position(|r| r == &room_id)
+                            .map(|index| list_to_remove_from.remove(index));
+                    }
+                    if should_display && !self.displayed_invited_rooms.contains(&room_id) {
                         self.displayed_invited_rooms.push(room_id);
                     }
                     self.update_status();
@@ -519,9 +543,19 @@ impl RoomsList {
                     let _replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
                     if should_display {
                         if is_direct {
-                            self.displayed_direct_rooms.push(room_id.clone());
+                            if !self.displayed_direct_rooms.contains(&room_id) {
+                                self.displayed_direct_rooms.push(room_id.clone());
+                            }
+                            if let Some(index) = self.displayed_regular_rooms.iter().position(|r| r == &room_id) {
+                                self.displayed_regular_rooms.remove(index);
+                            }
                         } else {
-                            self.displayed_regular_rooms.push(room_id.clone());
+                            if !self.displayed_regular_rooms.contains(&room_id) {
+                                self.displayed_regular_rooms.push(room_id.clone());
+                            }
+                            if let Some(index) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
+                                self.displayed_direct_rooms.remove(index);
+                            }
                         }
                     }
 
@@ -663,26 +697,51 @@ impl RoomsList {
                         error!("Error: couldn't find room {room_id} to update is_direct");
                     }
                 }
-                RoomsListUpdate::RemoveRoom { room_id, new_state: _ } => {
-                    if let Some(removed) = self.all_joined_rooms.remove(&room_id) {
-                        log!("Removed room {room_id} from the list of all joined rooms");
-                        let list_to_remove_from = if removed.is_direct {
-                            &mut self.displayed_direct_rooms
-                        } else {
-                            &mut self.displayed_regular_rooms
-                        };
-                        list_to_remove_from.iter()
-                            .position(|r| r == &room_id)
-                            .map(|index| list_to_remove_from.remove(index));
-                    }
-                    else if let Some(_removed) = self.invited_rooms.borrow_mut().remove(&room_id) {
-                        log!("Removed room {room_id} from the list of all invited rooms");
-                        self.displayed_invited_rooms.iter()
-                            .position(|r| r == &room_id)
-                            .map(|index| self.displayed_invited_rooms.remove(index));
-                    }
+                RoomsListUpdate::RemoveRoom { room_id, new_state } => {
+                    if matches!(new_state, RoomState::Left | RoomState::Banned) {
+                        if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
+                            room.removed_state = Some(new_state);
+                            room.num_unread_mentions = 0;
+                            room.num_unread_messages = 0;
+                        } else if let Some(_removed) = self.invited_rooms.borrow_mut().remove(&room_id) {
+                            log!("Removed room {room_id} from the list of all invited rooms");
+                            self.displayed_invited_rooms.iter()
+                                .position(|r| r == &room_id)
+                                .map(|index| self.displayed_invited_rooms.remove(index));
+                        }
+                    } else {
+                        if let Some(removed) = self.all_joined_rooms.remove(&room_id) {
+                            log!("Removed room {room_id} from the list of all joined rooms");
+                            let list_to_remove_from = if removed.is_direct {
+                                &mut self.displayed_direct_rooms
+                            } else {
+                                &mut self.displayed_regular_rooms
+                            };
+                            list_to_remove_from.iter()
+                                .position(|r| r == &room_id)
+                                .map(|index| list_to_remove_from.remove(index));
+                        }
+                        else if let Some(_removed) = self.invited_rooms.borrow_mut().remove(&room_id) {
+                            log!("Removed room {room_id} from the list of all invited rooms");
+                            self.displayed_invited_rooms.iter()
+                                .position(|r| r == &room_id)
+                                .map(|index| self.displayed_invited_rooms.remove(index));
+                        }
 
-                    self.hidden_rooms.remove(&room_id);
+                        self.hidden_rooms.remove(&room_id);
+                    }
+                    self.update_status();
+                }
+                RoomsListUpdate::SetRemovedRoomState { room_id, removed_state } => {
+                    if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
+                        if room.removed_state != removed_state {
+                            room.removed_state = removed_state;
+                            if room.removed_state.is_some() {
+                                room.num_unread_mentions = 0;
+                                room.num_unread_messages = 0;
+                            }
+                        }
+                    }
                     self.update_status();
                 }
                 RoomsListUpdate::ClearRooms => {
@@ -1287,7 +1346,10 @@ impl Widget for RoomsList {
                             self.current_active_room.as_ref() == Some(direct_room_id);
 
                         // Paginate the room if it hasn't been paginated yet.
-                        if PREPAGINATE_VISIBLE_ROOMS && !direct_room.has_been_paginated {
+                        if PREPAGINATE_VISIBLE_ROOMS
+                            && !direct_room.has_been_paginated
+                            && direct_room.removed_state.is_none()
+                        {
                             direct_room.has_been_paginated = true;
                             submit_async_request(MatrixRequest::PaginateRoomTimeline {
                                 room_id: direct_room.room_name_id.room_id().clone(),
@@ -1322,7 +1384,10 @@ impl Widget for RoomsList {
                             self.current_active_room.as_ref() == Some(regular_room_id);
 
                         // Paginate the room if it hasn't been paginated yet.
-                        if PREPAGINATE_VISIBLE_ROOMS && !regular_room.has_been_paginated {
+                        if PREPAGINATE_VISIBLE_ROOMS
+                            && !regular_room.has_been_paginated
+                            && regular_room.removed_state.is_none()
+                        {
                             regular_room.has_been_paginated = true;
                             submit_async_request(MatrixRequest::PaginateRoomTimeline {
                                 room_id: regular_room.room_name_id.room_id().clone(),
@@ -1373,6 +1438,23 @@ impl RoomsListRef {
     /// See [`RoomsList::get_room_state()`].
     pub fn get_room_state(&self, room_id: &OwnedRoomId) -> Option<RoomState> {
         self.borrow()?.get_room_state(room_id)
+    }
+
+    /// See [`RoomsList::get_removed_room_state()`].
+    pub fn get_removed_room_state(&self, room_id: &OwnedRoomId) -> Option<RoomState> {
+        self.borrow()?.get_removed_room_state(room_id)
+    }
+
+    /// Updates the removed state of a room via the RoomsList update queue.
+    pub fn set_removed_room_state(
+        &self,
+        room_id: OwnedRoomId,
+        removed_state: Option<RoomState>,
+    ) {
+        enqueue_rooms_list_update(RoomsListUpdate::SetRemovedRoomState {
+            room_id,
+            removed_state,
+        });
     }
 
     /// Returns the name of the given room, if it is known and loaded.

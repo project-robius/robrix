@@ -396,7 +396,7 @@ impl Widget for InviteScreen {
         if !self.is_loaded {
             let mut restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
             if let Some(room_name) = &self.room_name_id {
-                restore_status_view.set_content(cx, self.all_rooms_loaded, room_name);
+                restore_status_view.set_content(cx, self.all_rooms_loaded, room_name, None);
             }
             return restore_status_view.draw(cx, scope);
         }
@@ -536,11 +536,7 @@ impl InviteScreen {
 
         let restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
         if !self.is_loaded {
-            restore_status_view.set_content(
-                cx,
-                self.all_rooms_loaded,
-                room_name_id,
-            );
+            restore_status_view.set_content(cx, self.all_rooms_loaded, room_name_id, None);
             restore_status_view.set_visible(cx, true);
         } else {
             restore_status_view.set_visible(cx, false);
