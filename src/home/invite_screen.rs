@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
+use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar, loading_screen::RoomLoadingScreenWidgetExt}, shared::{avatar::AvatarWidgetRefExt, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::{self, RoomNameId}};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -22,7 +22,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
-    use crate::shared::restore_status_view::*;
+    use crate::room::loading_screen::RoomLoadingScreen;
 
     pub InviteScreen = {{InviteScreen}}<ScrollXYView> {
         width: Fill,
@@ -36,7 +36,7 @@ live_design! {
         draw_bg: {
             color: (COLOR_PRIMARY_DARKER),
         }
-        restore_status_view = <RestoreStatusView> {}
+        loading_screen = <RoomLoadingScreen> { visible: false }
 
         // This view is only shown if `inviter` is Some.
         inviter_view = <View> {
@@ -394,11 +394,14 @@ impl Widget for InviteScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if !self.is_loaded {
-            let mut restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
-            if let Some(room_name) = &self.room_name_id {
-                restore_status_view.set_content(cx, self.all_rooms_loaded, room_name);
-            }
-            return restore_status_view.draw(cx, scope);
+            let mut loading_screen = self.view.room_loading_screen(ids!(loading_screen));
+            let (title, details) = if let Some(room_name) = &self.room_name_id {
+                self.loading_screen_content(room_name)
+            } else {
+                ("Loading...".to_string(), None)
+            };
+            loading_screen.show(cx, Some(&title), details.as_deref());
+            return loading_screen.draw(cx, scope);
         }
         let Some(info) = self.info.as_ref() else {
             // If we don't have any info, just return.
@@ -534,16 +537,28 @@ impl InviteScreen {
             self.redraw(cx);
         }
 
-        let restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
+        let loading_screen = self.view.room_loading_screen(ids!(loading_screen));
         if !self.is_loaded {
-            restore_status_view.set_content(
-                cx,
-                self.all_rooms_loaded,
-                room_name_id,
-            );
-            restore_status_view.set_visible(cx, true);
+            let (title, details) = self.loading_screen_content(room_name_id);
+            loading_screen.show(cx, Some(&title), details.as_deref());
         } else {
-            restore_status_view.set_visible(cx, false);
+            loading_screen.hide(cx);
+        }
+    }
+
+    fn loading_screen_content(&self, room_name: &RoomNameId) -> (String, Option<String>) {
+        if self.all_rooms_loaded {
+            (
+                format!(
+                    "Room {room_name} was not found in the homeserver's list of all rooms."
+                ),
+                Some("You may close this screen.".to_owned()),
+            )
+        } else {
+            (
+                "Waiting for this room to be loaded from the homeserver".to_owned(),
+                None,
+            )
         }
     }
 }

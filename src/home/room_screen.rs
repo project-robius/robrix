@@ -29,9 +29,9 @@ use crate::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
-    room::{BasicRoomDetails, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
+    room::{BasicRoomDetails, loading_screen::RoomLoadingScreenWidgetExt, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::{AvatarState, AvatarWidgetRefExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::{AvatarState, AvatarWidgetRefExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -78,7 +78,7 @@ live_design! {
     use crate::room::typing_notice::*;
     use crate::home::room_read_receipt::*;
     use crate::rooms_list::*;
-    use crate::shared::restore_status_view::*;
+    use crate::room::loading_screen::RoomLoadingScreen;
     use crate::home::link_preview::LinkPreview;
     use link::tsp_link::TspSignIndicator;
 
@@ -516,7 +516,7 @@ live_design! {
                 color: (COLOR_PRIMARY_DARKER)
             }
 
-            restore_status_view = <RestoreStatusView> {}
+            loading_screen = <RoomLoadingScreen> { visible: false }
 
             // Widgets within this view will get shifted upwards when the on-screen keyboard is shown.
             keyboard_view = <KeyboardView> {
@@ -976,15 +976,16 @@ impl Widget for RoomScreen {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // If the room isn't loaded yet, we show the restore status label only.
+        // If the room isn't loaded yet, we show the loading screen only.
         if !self.is_loaded {
             let Some(room_name) = &self.room_name_id else {
                 // No room selected yet, nothing to show.
                 return DrawStep::done();
             };
-            let mut restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
-            restore_status_view.set_content(cx, self.all_rooms_loaded, room_name);
-            return restore_status_view.draw(cx, scope);
+            let mut loading_screen = self.view.room_loading_screen(ids!(loading_screen));
+            let (title, details) = self.loading_screen_content(room_name);
+            loading_screen.show(cx, Some(&title), details.as_deref());
+            return loading_screen.draw(cx, scope);
         }
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
@@ -1164,6 +1165,36 @@ impl Widget for RoomScreen {
 impl RoomScreen {
     fn room_id(&self) -> Option<&OwnedRoomId> {
         self.room_name_id.as_ref().map(|r| r.room_id())
+    }
+
+    fn loading_screen_content(&self, room_name: &RoomNameId) -> (String, Option<String>) {
+        if self.all_rooms_loaded {
+            (
+                format!(
+                    "Room {room_name} was not found in the homeserver's list of all rooms."
+                ),
+                Some("You may close this screen.".to_owned()),
+            )
+        } else {
+            (
+                "Waiting for this room to be loaded from the homeserver".to_owned(),
+                None,
+            )
+        }
+    }
+
+    fn update_loading_screen(&mut self, cx: &mut Cx) {
+        let loading_screen = self.view.room_loading_screen(ids!(loading_screen));
+        if self.is_loaded {
+            loading_screen.hide(cx);
+            return;
+        }
+        let Some(room_name) = &self.room_name_id else {
+            loading_screen.hide(cx);
+            return;
+        };
+        let (title, details) = self.loading_screen_content(room_name);
+        loading_screen.show(cx, Some(&title), details.as_deref());
     }
 
     /// Processes all pending background updates to the currently-shown timeline.
@@ -2154,7 +2185,7 @@ impl RoomScreen {
             self.is_loaded = is_loaded_now;
         }
 
-        self.view.restore_status_view(ids!(restore_status_view)).set_visible(cx, !self.is_loaded);
+        self.update_loading_screen(cx);
 
         // Kick off a back pagination request if it's the first time loading this room,
         // because we want to show the user some messages as soon as possible
