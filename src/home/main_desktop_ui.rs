@@ -3,7 +3,7 @@ use ruma::OwnedRoomId;
 use tokio::sync::Notify;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, utils::RoomNameId};
+use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, room::loading_screen::{RoomLoadingScreenAction, RoomLoadingScreenWidgetRefExt, get_room_loading_screen_actions, loading_tab_live_id}, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 live_design! {
@@ -18,6 +18,7 @@ live_design! {
     use crate::home::room_screen::RoomScreen;
     use crate::home::invite_screen::InviteScreen;
     use crate::home::space_lobby::SpaceLobbyScreen;
+    use crate::room::loading_screen::RoomLoadingScreen;
 
     pub MainDesktopUI = {{MainDesktopUI}} {
         dock = <Dock> {
@@ -59,6 +60,7 @@ live_design! {
             room_screen = <RoomScreen> {}
             invite_screen = <InviteScreen> {}
             space_lobby_screen = <SpaceLobbyScreen> {}
+            loading_screen = <RoomLoadingScreen> { visible: true }
         }
     }
 }
@@ -76,6 +78,9 @@ pub struct MainDesktopUI {
     /// The rooms that are currently open, keyed by the LiveId of their tab.
     #[rust]
     open_rooms: HashMap<LiveId, SelectedRoom>,
+
+    #[rust]
+    loading_tabs: HashMap<LiveId, (Option<String>, Option<String>)>,
 
     /// The tab that should be closed in the next draw event
     #[rust]
@@ -114,6 +119,19 @@ impl LiveHook for MainDesktopUI {
 
 impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if let Event::Signal = event {
+            for action in get_room_loading_screen_actions() {
+                match action {
+                    RoomLoadingScreenAction::ShowTab { tab_id, tab_name, title, details } => {
+                        self.show_loading_tab(cx, tab_id, &tab_name, title.as_deref(), details.as_deref());
+                    }
+                    RoomLoadingScreenAction::HideTab { tab_id } => {
+                        self.close_loading_tab(cx, tab_id);
+                    }
+                }
+            }
+        }
+
         self.widget_match_event(cx, event, scope); // invokes `WidgetMatchEvent` impl
         self.view.handle_event(cx, event, scope);
     }
@@ -142,6 +160,11 @@ impl MainDesktopUI {
         }
 
         let dock = self.view.dock(ids!(dock));
+
+        let loading_id = loading_tab_live_id(room.room_id().as_str());
+        if self.loading_tabs.remove(&loading_id).is_some() {
+            dock.close_tab(cx, loading_id);
+        }
 
         // If the room is already open, select (jump to) its existing tab
         let room_id_as_live_id = LiveId::from_str(room.room_id().as_str());
@@ -388,6 +411,52 @@ impl MainDesktopUI {
         }
         app_state.selected_room = selected_room;
         self.redraw(cx);
+    }
+
+    fn show_loading_tab(&mut self, cx: &mut Cx, tab_id: LiveId, tab_name: &str, title: Option<&str>, details: Option<&str>) {
+        let dock_ref = self.view.dock(ids!(dock));
+
+        // If the tab already exists and is a loading tab, just update it and select it.
+        let mut should_select_existing = false;
+        if let Some(mut dock) = dock_ref.borrow_mut() {
+            if let Some((_, widget)) = dock.items().get(&tab_id) {
+                widget.as_room_loading_screen().show(cx, title, details);
+                self.loading_tabs.insert(tab_id, (title.map(str::to_owned), details.map(str::to_owned)));
+                should_select_existing = true;
+            }
+        }
+
+        if should_select_existing {
+            dock_ref.select_tab(cx, tab_id);
+            return;
+        }
+
+        // Otherwise, create a new loading tab at the end.
+        let (tab_bar, _pos) = dock_ref.find_tab_bar_of_tab(id!(home_tab)).unwrap();
+        let new_tab_widget = dock_ref.create_and_select_tab(
+            cx,
+            tab_bar,
+            tab_id,
+            id!(loading_screen),
+            tab_name.to_string(),
+            id!(CloseableTab),
+            None,
+        );
+
+        if let Some(widget) = new_tab_widget {
+            widget.as_room_loading_screen().show(cx, title, details);
+            self.loading_tabs.insert(tab_id, (title.map(str::to_owned), details.map(str::to_owned)));
+            dock_ref.select_tab(cx, tab_id);
+        } else {
+            error!("BUG: failed to create loading tab for {tab_name}");
+        }
+
+    }
+
+    fn close_loading_tab(&mut self, cx: &mut Cx, tab_id: LiveId) {
+        if self.loading_tabs.remove(&tab_id).is_some() {
+            self.view.dock(ids!(dock)).close_tab(cx, tab_id);
+        }
     }
 }
 

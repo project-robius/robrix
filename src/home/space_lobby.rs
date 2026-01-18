@@ -14,7 +14,7 @@ use matrix_sdk_ui::spaces::SpaceRoom;
 use ruma::room::JoinRuleSummary;
 use tokio::sync::mpsc::UnboundedSender;
 use crate::{
-    home::rooms_list::RoomsListRef, shared::avatar::{AvatarState, AvatarWidgetExt, AvatarWidgetRefExt}, space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction}, utils::{self, RoomNameId}
+    home::rooms_list::RoomsListRef, room::loading_screen::RoomLoadingScreenWidgetExt, shared::avatar::{AvatarState, AvatarWidgetExt, AvatarWidgetRefExt}, space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction}, utils::{self, RoomNameId}
 };
 
 
@@ -26,6 +26,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::avatar::*;
+    use crate::room::loading_screen::RoomLoadingScreen;
 
     ICON_COLLAPSE = dep("crate://self/resources/icons/triangle_fill.svg")
 
@@ -377,6 +378,8 @@ live_design! {
         draw_bg: {
             color: #fff
         }
+
+        loading_screen = <RoomLoadingScreen> { visible: false }
 
         // Header with parent space info
         header = <View> {
@@ -739,6 +742,13 @@ impl Widget for SpaceLobbyScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if self.is_loading {
+            let mut loading_screen = self.view.room_loading_screen(ids!(loading_screen));
+            loading_screen.show(cx, Some("Loading rooms and spaces..."), None);
+            return loading_screen.draw(cx, scope);
+        }
+        self.view.room_loading_screen(ids!(loading_screen)).hide(cx);
+
         while let Some(widget_to_draw) = self.view.draw_walk(cx, scope, walk).step() {
             let portal_list_ref = widget_to_draw.as_portal_list();
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
