@@ -6,6 +6,7 @@
 //! the current room no longer exists.
 
 use makepad_widgets::*;
+use matrix_sdk::RoomState;
 use crate::utils::RoomNameId;
 
 live_design! {
@@ -83,12 +84,15 @@ impl RestoreStatusViewRef {
 
     /// Sets the text displayed in the restore status view based on the given parameters.
     ///
-    /// If `all_rooms_loaded` is true, the text will be a message indicating that the room
-    /// was not found in the homeserver's list of all rooms, and that the user can close
-    /// the parent room view.
+    /// If `removed_state` is `Some`, the text will indicate that the current user is no longer
+    /// a room member, and the spinner will be hidden.
     ///
-    /// If `all_rooms_loaded` is false, the text will be a message indicating that the room
-    /// is still being loaded from the homeserver.
+    /// If `removed_state` is `None` and `all_rooms_loaded` is true, the text will indicate
+    /// that the room was not found in the homeserver's list of all rooms, and that the user
+    /// can close the parent room view.
+    ///
+    /// If `removed_state` is `None` and `all_rooms_loaded` is false, the text will indicate
+    /// that the room is still being loaded from the homeserver.
     ///
     /// The `room_name` parameter is used to fill in the room name in the error message.
     /// Its `Display` implementation automatically handles Empty names by falling back to the room ID.
@@ -97,11 +101,24 @@ impl RestoreStatusViewRef {
         cx: &mut Cx,
         all_rooms_loaded: bool,
         room_name: &RoomNameId,
+        removed_state: Option<RoomState>,
     ) {
         let Some(inner) = self.borrow() else { return };
         let restore_status_spinner = inner.view.view(ids!(restore_status_spinner));
         let restore_status_label = inner.view.label(ids!(restore_status_label));
-        if all_rooms_loaded {
+        if let Some(state) = removed_state {
+            restore_status_spinner.set_visible(cx, false);
+            let message = match state {
+                RoomState::Banned => {
+                    format!("You have been banned from {room_name}.\n\nYou may close this screen.")
+                }
+                RoomState::Left => {
+                    format!("You are no longer a member of {room_name}.\n\nYou may close this screen.")
+                }
+                _ => format!("You are no longer a member of {room_name}."),
+            };
+            restore_status_label.set_text(cx, &message);
+        } else if all_rooms_loaded {
             restore_status_spinner.set_visible(cx, false);
             restore_status_label.set_text(
                 cx,

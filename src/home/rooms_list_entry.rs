@@ -1,5 +1,5 @@
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedRoomId;
+use matrix_sdk::{RoomState, ruma::OwnedRoomId};
 
 use crate::{
     room::FetchedRoomAvatar, shared::{
@@ -297,7 +297,20 @@ impl RoomsListEntryContent {
         room_info: &JoinedRoomInfo,
     ) {
         self.view.label(ids!(room_name)).set_text(cx, &room_info.room_name_id.to_string());
-        if let Some((ts, msg)) = room_info.latest.as_ref() {
+        if let Some(removed_state) = room_info.removed_state.clone() {
+            let status_text = match removed_state {
+                RoomState::Banned => "<i>You have been banned from this room.</i>",
+                RoomState::Left => "<i>You are no longer a member of this room.</i>",
+                _ => "<i>You are no longer a member of this room.</i>",
+            };
+            self.view.label(ids!(timestamp)).set_text(cx, "");
+            self.view
+                .html_or_plaintext(ids!(latest_message))
+                .show_html(cx, status_text);
+            self.view
+                .unread_badge(ids!(unread_badge))
+                .update_counts(0, 0);
+        } else if let Some((ts, msg)) = room_info.latest.as_ref() {
             if let Some(human_readable_date) = relative_format(*ts) {
                 self.view
                     .label(ids!(timestamp))
@@ -308,9 +321,11 @@ impl RoomsListEntryContent {
                 .show_html(cx, msg);
         }
 
-        self.view
-            .unread_badge(ids!(unread_badge))
-            .update_counts(room_info.num_unread_mentions, room_info.num_unread_messages);
+        if room_info.removed_state.is_none() {
+            self.view
+                .unread_badge(ids!(unread_badge))
+                .update_counts(room_info.num_unread_mentions, room_info.num_unread_messages);
+        }
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
         // Show tombstone icon if the room is tombstoned
         self.view.view(ids!(tombstone_icon)).set_visible(cx, room_info.is_tombstoned);

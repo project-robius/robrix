@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    OwnedServerName, RoomDisplayName, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
+    OwnedServerName, RoomDisplayName, RoomState, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
         EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId, events::{
             receipt::Receipt,
             room::{
@@ -16,7 +16,7 @@ use matrix_sdk::{
                 }
             },
             sticker::{StickerEventContent, StickerMediaSource},
-        }, matrix_uri::MatrixId, uint
+        }, matrix_uri::MatrixId, room::JoinRuleSummary, uint
     }
 };
 use matrix_sdk_ui::timeline::{
@@ -29,7 +29,7 @@ use crate::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
-    room::{BasicRoomDetails, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
+    room::{BasicRoomDetails, RoomPreviewAction, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
         avatar::{AvatarState, AvatarWidgetRefExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
@@ -588,6 +588,14 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
+    /// Tracks whether the current user is no longer a member of this room.
+    #[rust] removed_state: Option<RoomState>,
+    /// Cached join rule for the removed room, used to determine re-join options.
+    #[rust] removed_join_rule: Option<JoinRuleSummary>,
+    /// Whether a room preview request is in flight for removed-room status.
+    #[rust] removed_preview_requested: bool,
+    /// Whether a room preview request has already been attempted for this removal.
+    #[rust] removed_preview_attempted: bool,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -747,6 +755,27 @@ impl Widget for RoomScreen {
                     }
                 }
 
+                if let Some(RoomPreviewAction::Fetched(result)) = action.downcast_ref() {
+                    if self.removed_state.is_none() || !self.removed_preview_requested {
+                        continue;
+                    }
+                    match result {
+                        Ok(frp) => {
+                            if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == frp.room_name_id.room_id()) {
+                                self.removed_join_rule = frp.join_rule.clone();
+                                self.removed_preview_requested = false;
+                                self.removed_preview_attempted = true;
+                                self.update_membership_footer(cx);
+                            }
+                        }
+                        Err(_) => {
+                            self.removed_preview_requested = false;
+                            self.removed_preview_attempted = true;
+                            self.update_membership_footer(cx);
+                        }
+                    }
+                }
+
                 // Handle the highlight animation for a message.
                 let Some(tl) = self.tl_state.as_mut() else { continue };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
@@ -819,12 +848,36 @@ impl Widget for RoomScreen {
                     self.room_name_id = None;
                     self.set_displayed_room(cx, &room_name_clone);
                 } else {
+                    let mut removed_state = rooms_list_ref.get_removed_room_state(room_name_id.room_id());
+                    if let Some(client) = get_client()
+                        && let Some(room) = client.get_room(room_name_id.room_id())
+                    {
+                        let actual_state = room.state();
+                        let desired_removed_state = match actual_state {
+                            RoomState::Left | RoomState::Banned => Some(actual_state),
+                            _ => None,
+                        };
+                        if desired_removed_state != removed_state {
+                            rooms_list_ref.set_removed_room_state(
+                                room_name_id.room_id().clone(),
+                                desired_removed_state,
+                            );
+                            removed_state = desired_removed_state;
+                        }
+                    }
+                    if self.removed_state != removed_state {
+                        self.removed_state = removed_state;
+                        self.removed_join_rule = None;
+                        self.removed_preview_requested = false;
+                        self.removed_preview_attempted = false;
+                    }
                     self.all_rooms_loaded = rooms_list_ref.all_rooms_loaded();
                     return;
                 }
             }
 
             self.process_timeline_updates(cx, &portal_list);
+            self.update_membership_footer(cx);
 
             // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
             // but it doesn't hurt to do it here.
@@ -983,7 +1036,12 @@ impl Widget for RoomScreen {
                 return DrawStep::done();
             };
             let mut restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
-            restore_status_view.set_content(cx, self.all_rooms_loaded, room_name);
+            restore_status_view.set_content(
+                cx,
+                self.all_rooms_loaded,
+                room_name,
+                self.removed_state,
+            );
             return restore_status_view.draw(cx, scope);
         }
         if self.tl_state.is_none() {
@@ -1164,6 +1222,85 @@ impl Widget for RoomScreen {
 impl RoomScreen {
     fn room_id(&self) -> Option<&OwnedRoomId> {
         self.room_name_id.as_ref().map(|r| r.room_id())
+    }
+
+    fn update_membership_footer(&mut self, cx: &mut Cx) {
+        let Some(room_name_id) = &self.room_name_id else { return; };
+        if !cx.has_global::<RoomsListRef>() {
+            return;
+        }
+        let room_input_bar = self.view.room_input_bar(ids!(room_input_bar));
+        let mut removed_state = {
+            let rooms_list_ref = cx.get_global::<RoomsListRef>();
+            rooms_list_ref.get_removed_room_state(room_name_id.room_id())
+        };
+
+        if let Some(client) = get_client()
+            && let Some(room) = client.get_room(room_name_id.room_id())
+        {
+            let actual_state = room.state();
+            let desired_removed_state = match actual_state {
+                RoomState::Left | RoomState::Banned => Some(actual_state),
+                _ => None,
+            };
+            if desired_removed_state != removed_state {
+                let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                rooms_list_ref.set_removed_room_state(
+                    room_name_id.room_id().clone(),
+                    desired_removed_state,
+                );
+                removed_state = desired_removed_state;
+            }
+        }
+
+        match removed_state {
+            Some(state) if matches!(state, RoomState::Left | RoomState::Banned) => {
+                if self.removed_state != Some(state) {
+                    self.removed_state = Some(state);
+                    self.removed_join_rule = None;
+                    self.removed_preview_requested = false;
+                    self.removed_preview_attempted = false;
+                }
+
+                if state == RoomState::Left
+                    && self.removed_join_rule.is_none()
+                    && !self.removed_preview_attempted
+                {
+                    submit_async_request(MatrixRequest::GetRoomPreview {
+                        room_or_alias_id: room_name_id.room_id().clone().into(),
+                        via: Vec::new(),
+                    });
+                    self.removed_preview_requested = true;
+                    self.removed_preview_attempted = true;
+                }
+
+                let preview_pending = self.removed_preview_requested;
+                room_input_bar.update_membership_footer(
+                    cx,
+                    room_name_id,
+                    state,
+                    self.removed_join_rule.clone(),
+                    preview_pending,
+                );
+            }
+            _ => {
+                if self.removed_state.is_some() {
+                    self.removed_state = None;
+                    self.removed_join_rule = None;
+                    self.removed_preview_requested = false;
+                    self.removed_preview_attempted = false;
+                    room_input_bar.hide_membership_footer(cx);
+                    if let Some(tl_state) = self.tl_state.as_ref() {
+                        room_input_bar.update_tombstone_footer(
+                            cx,
+                            &tl_state.room_id,
+                            tl_state.tombstone_info.as_ref(),
+                        );
+                        room_input_bar.update_user_power_levels(cx, tl_state.user_power);
+                    }
+                }
+            }
+        }
     }
 
     /// Processes all pending background updates to the currently-shown timeline.
@@ -2311,6 +2448,11 @@ impl RoomScreen {
         if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_name_id.room_id()) { return; }
 
         self.hide_timeline();
+        self.removed_state = None;
+        self.removed_join_rule = None;
+        self.removed_preview_requested = false;
+        self.removed_preview_attempted = false;
+        self.view.room_input_bar(ids!(room_input_bar)).hide_membership_footer(cx);
         // Reset the the state of the inner loading pane.
         self.loading_pane(ids!(loading_pane)).take_state();
 
@@ -2326,6 +2468,7 @@ impl RoomScreen {
         });
 
         self.show_timeline(cx);
+        self.update_membership_footer(cx);
     }
 
     /// Sends read receipts based on the current scroll position of the timeline.

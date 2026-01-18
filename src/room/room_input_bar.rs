@@ -13,13 +13,14 @@
 //! * The editing pane, which is shown when the user is editing a previous message.
 //! * A tombstone footer, which is shown if the room has been tombstoned (replaced).
 //! * A "cannot-send-message" notice, which is shown if the user cannot send messages to the room.
+//! * A membership footer, which is shown if the user is no longer a room member.
 //!
 
 use makepad_widgets::*;
-use matrix_sdk::room::reply::{EnforceThread, Reply};
+use matrix_sdk::{RoomState, room::reply::{EnforceThread, Reply}};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
-use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
+use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, room::JoinRuleSummary, OwnedRoomId};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils::{self, RoomNameId}};
 
 live_design! {
     use link::theme::*;
@@ -159,11 +160,59 @@ live_design! {
                 }
             }
 
+            membership_footer = <View> {
+                visible: false
+                show_bg: true
+                draw_bg: {
+                    color: (COLOR_SECONDARY)
+                }
+                padding: {left: 50, right: 50, top: 20, bottom: 20}
+                align: {y: 0.5}
+                width: Fill, height: Fit
+                flow: Down,
+                spacing: 8
+
+                status_text = <Label> {
+                    width: Fill,
+                    draw_text: {
+                        color: (TYPING_NOTICE_TEXT_COLOR)
+                        text_style: <REGULAR_TEXT>{font_size: 11}
+                        wrap: Word,
+                    }
+                    text: ""
+                }
+
+                action_button = <RobrixIconButton> {
+                    padding: 15,
+                    draw_icon: {
+                        svg_file: (ICON_JOIN_ROOM),
+                        color: (COLOR_FG_ACCEPT_GREEN),
+                    }
+                    icon_walk: {width: 17, height: 17, margin: {left: -2, right: -1} }
+
+                    draw_bg: {
+                        border_color: (COLOR_FG_ACCEPT_GREEN),
+                        color: (COLOR_BG_ACCEPT_GREEN)
+                    }
+                    draw_text: {
+                        color: (COLOR_FG_ACCEPT_GREEN),
+                    }
+                }
+            }
+
             tombstone_footer = <TombstoneFooter> { }
 
             editing_pane = <EditingPane> { }
         }
     }
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+enum MembershipFooterAction {
+    #[default]
+    None,
+    Join,
+    Knock,
 }
 
 /// Main component for message input with @mention support
@@ -176,6 +225,12 @@ pub struct RoomInputBar {
     #[rust] was_replying_preview_visible: bool,
     /// Info about the message event that the user is currently replying to, if any.
     #[rust] replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+    /// Tracks whether the membership footer is visible and which action it should take.
+    #[rust] membership_footer_action: MembershipFooterAction,
+    #[rust] membership_footer_room_id: Option<OwnedRoomId>,
+    #[rust] membership_footer_visible: bool,
+    /// Tracks whether the tombstone footer is currently visible.
+    #[rust] tombstone_footer_visible: bool,
 }
 
 impl Widget for RoomInputBar {
@@ -236,6 +291,28 @@ impl RoomInputBar {
         {
             self.clear_replying_to(cx);
             self.redraw(cx);
+        }
+
+        if self.button(ids!(membership_footer.action_button)).clicked(actions) {
+            if let Some(room_id) = self.membership_footer_room_id.clone() {
+                match self.membership_footer_action {
+                    MembershipFooterAction::Join => {
+                        submit_async_request(MatrixRequest::JoinRoom { room_id });
+                    }
+                    MembershipFooterAction::Knock => {
+                        submit_async_request(MatrixRequest::Knock {
+                            room_or_alias_id: room_id.clone().into(),
+                            reason: None,
+                            server_names: Vec::new(),
+                        });
+                    }
+                    MembershipFooterAction::None => {}
+                }
+            }
+        }
+
+        if self.membership_footer_visible || self.tombstone_footer_visible {
+            return;
         }
 
         // Handle the add location button being clicked.
@@ -446,7 +523,9 @@ impl RoomInputBar {
         // In `show_editing_pane()` above, we hid the input_bar while the editing pane
         // was being shown, so here we need to make it visible again.
         // Same goes for the replying_preview, if it was previously shown.
-        self.view.view(ids!(input_bar)).set_visible(cx, true);
+        if !self.membership_footer_visible && !self.tombstone_footer_visible {
+            self.view.view(ids!(input_bar)).set_visible(cx, true);
+        }
         if self.was_replying_preview_visible && self.replying_to.is_some() {
             self.view.view(ids!(replying_preview)).set_visible(cx, true);
         }
@@ -463,18 +542,115 @@ impl RoomInputBar {
         tombstoned_room_id: &OwnedRoomId,
         successor_room_details: Option<&SuccessorRoomDetails>,
     ) {
+        if self.membership_footer_visible {
+            self.tombstone_footer_visible = successor_room_details.is_some();
+            self.tombstone_footer(ids!(tombstone_footer)).hide(cx);
+            return;
+        }
+
         let tombstone_footer = self.tombstone_footer(ids!(tombstone_footer));
         let input_bar = self.view(ids!(input_bar));
 
         if let Some(srd) = successor_room_details {
             tombstone_footer.show(cx, tombstoned_room_id, srd);
             input_bar.set_visible(cx, false);
+            self.tombstone_footer_visible = true;
         } else {
             tombstone_footer.hide(cx);
             if !self.editing_pane(ids!(editing_pane)).is_currently_shown(cx) {
                 input_bar.set_visible(cx, true);
             }
+            self.tombstone_footer_visible = false;
         }
+    }
+
+    fn update_membership_footer(
+        &mut self,
+        cx: &mut Cx,
+        room_name_id: &RoomNameId,
+        state: RoomState,
+        join_rule: Option<JoinRuleSummary>,
+        preview_pending: bool,
+    ) {
+        let membership_footer = self.view.view(ids!(membership_footer));
+        let status_text = membership_footer.label(ids!(status_text));
+        let action_button = membership_footer.button(ids!(action_button));
+
+        self.membership_footer_visible = true;
+        self.membership_footer_room_id = Some(room_name_id.room_id().clone());
+        membership_footer.set_visible(cx, true);
+        self.view.view(ids!(input_bar)).set_visible(cx, false);
+        self.view.view(ids!(can_not_send_message_notice)).set_visible(cx, false);
+        self.tombstone_footer(ids!(tombstone_footer)).hide(cx);
+        self.tombstone_footer_visible = false;
+        if self.editing_pane(ids!(editing_pane)).is_currently_shown(cx) {
+            self.editing_pane(ids!(editing_pane)).force_reset_hide(cx);
+            self.on_editing_pane_hidden(cx);
+        }
+        self.clear_replying_to(cx);
+        self.location_preview(ids!(location_preview)).clear();
+
+        let room_label = room_name_id.to_string();
+        let status_message = match state {
+            RoomState::Banned => format!("You have been banned from {room_label}."),
+            RoomState::Left => format!("You are no longer a member of {room_label}."),
+            _ => format!("You are no longer a member of {room_label}."),
+        };
+        status_text.set_text(cx, &status_message);
+
+        let (mut button_text, mut action) = match state {
+            RoomState::Banned => ("Cannot rejoin until un-banned".to_owned(), MembershipFooterAction::None),
+            RoomState::Left => match join_rule {
+                Some(JoinRuleSummary::Public) => ("Re-join this room".to_owned(), MembershipFooterAction::Join),
+                Some(JoinRuleSummary::Invite) => ("Re-joining requires an invite".to_owned(), MembershipFooterAction::None),
+                Some(JoinRuleSummary::Knock | JoinRuleSummary::KnockRestricted(_)) => {
+                    ("Knock to re-join".to_owned(), MembershipFooterAction::Knock)
+                }
+                Some(JoinRuleSummary::Restricted(_)) => {
+                    ("Re-joining requires an invite or other room membership".to_owned(), MembershipFooterAction::None)
+                }
+                None => ("Re-join options unavailable".to_owned(), MembershipFooterAction::None),
+                _ => ("Not allowed to re-join this room".to_owned(), MembershipFooterAction::None),
+            },
+            _ => ("Not allowed to re-join this room".to_owned(), MembershipFooterAction::None),
+        };
+
+        if preview_pending {
+            button_text = "Checking re-join options...".to_owned();
+            action = MembershipFooterAction::None;
+        }
+
+        self.membership_footer_action = action;
+        action_button.set_text(cx, &button_text);
+        let enabled = matches!(action, MembershipFooterAction::Join | MembershipFooterAction::Knock);
+        let (fg_color, bg_color, border_color) = if enabled {
+            (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN, COLOR_FG_ACCEPT_GREEN)
+        } else {
+            (COLOR_FG_DISABLED, COLOR_BG_DISABLED, COLOR_FG_DISABLED)
+        };
+        action_button.apply_over(cx, live! {
+            enabled: (enabled),
+            draw_icon: {
+                color: (fg_color),
+            }
+            draw_text: {
+                color: (fg_color),
+            }
+            draw_bg: {
+                color: (bg_color),
+                border_color: (border_color),
+            }
+        });
+    }
+
+    fn hide_membership_footer(&mut self, cx: &mut Cx) {
+        self.membership_footer_visible = false;
+        self.membership_footer_action = MembershipFooterAction::None;
+        self.membership_footer_room_id = None;
+        let membership_footer = self.view.view(ids!(membership_footer));
+        membership_footer.set_visible(cx, false);
+        membership_footer.label(ids!(status_text)).set_text(cx, "");
+        membership_footer.button(ids!(action_button)).set_text(cx, "");
     }
 
     /// Sets the send_message_button to be enabled and green, or disabled and gray.
@@ -507,6 +683,12 @@ impl RoomInputBar {
         cx: &mut Cx,
         user_power_levels: UserPowerLevels,
     ) {
+        if self.membership_footer_visible || self.tombstone_footer_visible {
+            self.view.view(ids!(input_bar)).set_visible(cx, false);
+            self.view.view(ids!(can_not_send_message_notice)).set_visible(cx, false);
+            return;
+        }
+
         let can_send = user_power_levels.can_send_message();
         self.view.view(ids!(input_bar)).set_visible(cx, can_send);
         self.view.view(ids!(can_not_send_message_notice)).set_visible(cx, !can_send);
@@ -572,6 +754,25 @@ impl RoomInputBarRef {
         inner.update_tombstone_footer(cx, tombstoned_room_id, successor_room_details);
     }
 
+    /// Shows or updates the membership footer based on the given room state.
+    pub fn update_membership_footer(
+        &self,
+        cx: &mut Cx,
+        room_name_id: &RoomNameId,
+        state: RoomState,
+        join_rule: Option<JoinRuleSummary>,
+        preview_pending: bool,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.update_membership_footer(cx, room_name_id, state, join_rule, preview_pending);
+    }
+
+    /// Hides the membership footer and clears its state.
+    pub fn hide_membership_footer(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.hide_membership_footer(cx);
+    }
+
     /// Forwards the result of an edit request to the `EditingPane` widget
     /// within this `RoomInputBar`.
     pub fn handle_edit_result(
@@ -615,6 +816,8 @@ impl RoomInputBarRef {
             replying_to,
             editing_pane_state,
         } = saved_state;
+
+        inner.hide_membership_footer(cx);
 
         // Note: we do *not* restore the location preview state here; see `save_state()`.
 
