@@ -645,7 +645,7 @@ impl From<&SpaceRoom> for SpaceRoomInfo {
             topic: space_room.topic.clone(),
             room_avatar: AvatarState::Known(space_room.avatar_url.clone()),
             num_joined_members: space_room.num_joined_members,
-            state: space_room.state.clone(),
+            state: space_room.state,
             join_rule: space_room.join_rule.clone(),
             children_count: space_room.is_space().then_some(space_room.children_count),
         }
