@@ -182,9 +182,7 @@ live_design! {
     }
 
     // A view that draws the hierarchical tree structure lines.
-    DrawTreeLine = {{DrawTreeLine}} {
-        
-    }
+    DrawTreeLine = {{DrawTreeLine}} { }
 
     TreeLines = {{TreeLines}} {
         width: 0, height: Fill
@@ -300,7 +298,7 @@ live_design! {
         }
     }
 
-    // Entry for a child room (leaf node, no expand icon)
+    // Entry for a child room within a space, which cannot be expanded.
     pub RoomEntry = {{RoomEntry}}<SubspaceEntry> {
         cursor: Default
 
