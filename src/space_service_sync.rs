@@ -38,21 +38,39 @@ pub enum SpaceRequest {
         space_id: OwnedRoomId,
     },
     /// Paginate the given space's room list, i.e., fetch the next batch of rooms in the list.
+    ///
+    /// This will result in a [`SpaceRoomListAction::PaginationState`] action being emitted,
+    /// or a [`SpaceRoomListAction::PaginationError`] action being emitted if it failed.
     PaginateSpaceRoomList {
         space_id: OwnedRoomId,
         parent_chain: ParentChain,
     },
-    /// Get a copy of the currently-known children (rooms and spaces) in the given space.
+    /// Get a minimal copy of the currently-known children (rooms and subspaces) in the given space.
+    ///
+    /// This is intended for cases when you only need an overview of the basic hierarchy of spaces.
+    /// This will result in a [`SpaceRoomListAction::UpdatedChildren`] action being emitted.
     GetChildren {
         space_id: OwnedRoomId,
         parent_chain: ParentChain,
-    }
+    },
+    /// Get fully-detailed info about all children (rooms and subspaces) in this space.
+    ///
+    /// This is intended for cases when you need all info about subspaces and child rooms.
+    /// This will result in a [`SpaceRoomListAction::DetailedChildren`] action being emitted.
+    GetDetailedChildren {
+        space_id: OwnedRoomId,
+        parent_chain: ParentChain,
+    },
 }
 
 /// Internal requests sent from the [`space_service_loop`] to a specific space's [`space_room_list_loop`].
 enum SpaceRoomListRequest {
-    /// Get a copy of the currently-known chil.ren (rooms & spaces) in this space.
+    /// Get a copy of the currently-known children (rooms & spaces) in this space.
+    /// This is intended for cases when you only need an overview of the basic hierarchy of spaces.
     GetChildren,
+    /// Get fully-detailed info about all children in this space.
+    /// This is intended for cases when you need all info about subspaces and child rooms.
+    GetDetailedChildren,
     /// Paginate this space to get info about more of its children.
     Paginate,
     Shutdown,
@@ -131,6 +149,12 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                     if let Some((sender, join_handle)) = space_room_list_tasks.remove(&space_id) {
                         let _ = sender.send(SpaceRoomListRequest::Shutdown);
                         let _ = join_handle.await;
+                    }
+                }
+                SpaceRequest::GetDetailedChildren { space_id, parent_chain } => {
+                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id, &parent_chain).await;
+                    if sender.send(SpaceRoomListRequest::GetDetailedChildren).is_err() {
+                        error!("BUG: failed to send GetDetailedChildren request to space room list loop for space {space_id}");
                     }
                 }
             }
@@ -511,13 +535,20 @@ async fn fetch_space_avatar(url: OwnedMxcUri, client: &Client) -> matrix_sdk::Re
 }
 
 
-/// Returns true if the given `SpaceRoom` is a space itself;
-/// otherwise, returns false, indicating it is a regular room.
-#[inline]
-fn is_space(sr: &SpaceRoom) -> bool {
-    sr.children_count > 0
-    || matches!(sr.room_type, Some(RoomType::Space))
+
+/// Extension trait for `SpaceRoom` to provide utility methods.
+pub trait SpaceRoomExt {
+    /// Returns true if this `SpaceRoom` is a space itself;
+    /// otherwise, returns false, indicating it is a regular room.
+    fn is_space(&self) -> bool;
 }
+impl SpaceRoomExt for SpaceRoom {
+    #[inline]
+    fn is_space(&self) -> bool {
+        self.children_count > 0 || matches!(self.room_type, Some(RoomType::Space))
+    }
+}
+
 
 
 /// A loop that listens for changes to the set of rooms in a given space.
@@ -565,6 +596,15 @@ async fn space_room_list_loop(
                         parent_chain: parent_chain.clone(),
                         direct_child_rooms: Arc::clone(&cached_hash_sets.0),
                         direct_subspaces: Arc::clone(&cached_hash_sets.1),
+                    });
+                }
+                SpaceRoomListRequest::GetDetailedChildren => {
+                    Cx::post_action(SpaceRoomListAction::DetailedChildren {
+                        space_id: space_id.clone(),
+                        parent_chain: parent_chain.clone(),
+                        // The `imbl::Vector` type is very cheap to clone here
+                        // because we're not modifying it, so we just send that value directly.
+                        children: all_rooms_in_space.clone(),
                     });
                 }
                 SpaceRoomListRequest::Paginate => {
@@ -624,7 +664,7 @@ fn handle_subspaces<'a>(
     changed_space_rooms: impl Iterator<Item = &'a SpaceRoom>,
     request_sender: &UnboundedSender<SpaceRequest>,
 ) {
-    for sr in changed_space_rooms.filter(|&sr| is_space(sr)) {        
+    for sr in changed_space_rooms.filter(|&sr| sr.is_space()) {        
         if known_subspaces.contains(&sr.room_id) {
             continue;
         }
@@ -654,7 +694,7 @@ fn space_children_to_hash_sets(
     let mut direct_child_rooms = HashSet::new();
     let mut direct_subspaces = HashSet::new();
     for sr in all_rooms_in_space.iter() {
-        if is_space(sr) {
+        if sr.is_space() {
             direct_subspaces.insert(sr.room_id.clone());
         } else {
             direct_child_rooms.insert(sr.room_id.clone());
@@ -690,6 +730,14 @@ pub enum SpaceRoomListAction {
         space_id: OwnedRoomId,
         error: matrix_sdk::Error,
     },
+    /// Detailed information about all direct children in the given space.
+    ///
+    /// This is sent in response to a `SpaceRequest::GetDetailedChildren` request.
+    DetailedChildren {
+        space_id: OwnedRoomId,
+        parent_chain: ParentChain,
+        children: Vector<SpaceRoom>,
+    },
 }
 impl std::fmt::Debug for SpaceRoomListAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -713,6 +761,13 @@ impl std::fmt::Debug for SpaceRoomListAction {
                 f.debug_struct("SpaceRoomListAction::PaginationError")
                     .field("space_id", space_id)
                     .field("error", error)
+                    .finish()
+            }
+            SpaceRoomListAction::DetailedChildren { space_id, parent_chain, children } => {
+                f.debug_struct("SpaceRoomListAction::DetailedChildren")
+                    .field("space_id", space_id)
+                    .field("parent_chain", &parent_chain)
+                    .field("num_children", &children.len())
                     .finish()
             }
         }

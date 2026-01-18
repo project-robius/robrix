@@ -31,10 +31,10 @@
 use makepad_widgets::*;
 use crate::{
     avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
-        user_profile::{AvatarState, UserProfile},
+        user_profile::UserProfile,
         user_profile_cache::{self, UserProfileUpdate},
     }, shared::{
-        avatar::AvatarWidgetExt,
+        avatar::{AvatarState, AvatarWidgetExt},
         callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition},
         styles::*,
         verification_badge::VerificationBadgeWidgetExt,
