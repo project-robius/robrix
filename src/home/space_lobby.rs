@@ -6,7 +6,8 @@
 //!    that allows the user to click on it to show the `SpaceLobby`.
 //!
 
-use std::collections::{HashMap, HashSet};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{RoomState, ruma::OwnedRoomId};
@@ -14,7 +15,11 @@ use matrix_sdk_ui::spaces::SpaceRoom;
 use ruma::room::JoinRuleSummary;
 use tokio::sync::mpsc::UnboundedSender;
 use crate::{
-    home::rooms_list::RoomsListRef, shared::avatar::{AvatarState, AvatarWidgetExt, AvatarWidgetRefExt}, space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction}, utils::{self, RoomNameId}
+    avatar_cache::{self, AvatarCacheEntry},
+    home::rooms_list::RoomsListRef,
+    shared::avatar::{AvatarState, AvatarWidgetExt, AvatarWidgetRefExt},
+    space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction},
+    utils::{self, RoomNameId},
 };
 
 
@@ -450,6 +455,22 @@ live_design! {
 }
 
 
+thread_local! {
+    /// A cache of UI states for each SpaceLobbyScreen, keyed by the space's room ID.
+    /// This allows preserving the expanded/collapsed state of subspaces across screen changes.
+    static SPACE_LOBBY_STATES: RefCell<BTreeMap<OwnedRoomId, SpaceLobbyUiState>> = const {
+        RefCell::new(BTreeMap::new())
+    };
+}
+
+/// The UI-side state of a SpaceLobbyScreen that should persist across hide/show cycles.
+#[derive(Default)]
+struct SpaceLobbyUiState {
+    /// The set of space IDs that are currently expanded (showing their children).
+    expanded_spaces: HashSet<OwnedRoomId>,
+}
+
+
 /// A clickable entry shown in the RoomsList that will show the space lobby when clicked.
 #[derive(Live, LiveHook, Widget)]
 pub struct SpaceLobbyEntry {
@@ -618,14 +639,10 @@ impl Widget for RoomEntry {
 struct SpaceRoomInfo {
     id: OwnedRoomId,
     name: String,
-    #[allow(unused)]
     topic: Option<String>,
-    #[allow(unused)]
     room_avatar: AvatarState,
     num_joined_members: u64,
-    #[allow(unused)]
     state: Option<RoomState>,
-    #[allow(unused)]
     join_rule: Option<JoinRuleSummary>,
     /// If `Some`, this is a space. If `None`, it's a room.
     children_count: Option<u64>,
@@ -792,10 +809,23 @@ impl Widget for SpaceLobbyScreen {
 
                             // Below, draw things that are common to child rooms and subspaces.
                             item.label(ids!(content.name_label)).set_text(cx, &info.name);
-                            // TODO: query (and update) room/space avatar from the avatar_cache
+
+                            // Display avatar from cache, or show initials as fallback
                             let avatar_ref = item.avatar(ids!(avatar));
                             let first_char = utils::user_name_first_letter(&info.name);
-                            avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
+                            let mut drew_avatar = false;
+                            if let AvatarState::Known(Some(ref uri)) = info.room_avatar {
+                                if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri.clone()) {
+                                    drew_avatar = avatar_ref.show_image(
+                                        cx,
+                                        None,
+                                        |cx, img| utils::load_png_or_jpg(&img, cx, &data),
+                                    ).is_ok();
+                                }
+                            }
+                            if !drew_avatar {
+                                avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
+                            }
 
                             if let Some(mut lines) = item.widget(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
@@ -804,27 +834,67 @@ impl Widget for SpaceLobbyScreen {
                                 lines.draw_bg.indent_width = 44.0; // Hardcoded to match
                             }
 
+                            // Build the info label with join status, visibility, member count, and topic
                             let info_label = item.label(ids!(content.info_label));
-                            if let Some(c) = info.children_count && c > 0 {
-                                info_label.set_text(cx, &format!(
-                                    "{} {} | ~{} {}",
-                                    info.num_joined_members,
-                                    match info.num_joined_members {
-                                        1 => "member",
-                                        _ => "members",
-                                    },
-                                    c,
-                                    match c {
-                                        1 => "room",
-                                        _ => "rooms",
-                                    }
-                                ));
-                            } else {
-                                match info.num_joined_members {
-                                    1 => info_label.set_text(cx, "1 member"),
-                                    n => info_label.set_text(cx, &format!("{n} members")),
+                            let mut info_parts = Vec::new();
+
+                            // Add join status for rooms we haven't joined
+                            if let Some(state) = &info.state {
+                                match state {
+                                    RoomState::Joined => { /* Don't show "Joined" - it's implied */ }
+                                    RoomState::Left => info_parts.push("Left".to_string()),
+                                    RoomState::Invited => info_parts.push("Invited".to_string()),
+                                    RoomState::Knocked => info_parts.push("Knocked".to_string()),
+                                    RoomState::Banned => info_parts.push("Banned".to_string()),
                                 }
-                            };
+                            }
+
+                            // Add public/private indicator
+                            if let Some(rule) = &info.join_rule {
+                                match rule {
+                                    JoinRuleSummary::Public => info_parts.push("Public".to_string()),
+                                    JoinRuleSummary::Knock | JoinRuleSummary::KnockRestricted(_) => {
+                                        info_parts.push("Knock to join".to_string())
+                                    }
+                                    JoinRuleSummary::Private | JoinRuleSummary::Invite => {
+                                        info_parts.push("Private".to_string())
+                                    }
+                                    JoinRuleSummary::Restricted(_) | JoinRuleSummary::_Custom(_) | _ => { }
+                                }
+                            }
+
+                            // Add member count
+                            info_parts.push(format!(
+                                "{} {}",
+                                info.num_joined_members,
+                                if info.num_joined_members == 1 { "member" } else { "members" }
+                            ));
+
+                            // Add children count for spaces
+                            if let Some(c) = info.children_count {
+                                if c > 0 {
+                                    info_parts.push(format!(
+                                        "~{} {}",
+                                        c,
+                                        if c == 1 { "room" } else { "rooms" }
+                                    ));
+                                }
+                            }
+
+                            // Add truncated topic if available
+                            if let Some(topic) = &info.topic {
+                                let topic = topic.trim();
+                                if !topic.is_empty() {
+                                    let truncated = if topic.len() > 50 {
+                                        format!("{}...", &topic[..47])
+                                    } else {
+                                        topic.to_string()
+                                    };
+                                    info_parts.push(truncated);
+                                }
+                            }
+
+                            info_label.set_text(cx, &info_parts.join(" | "));
 
                             item
                         }
@@ -998,6 +1068,18 @@ impl SpaceLobbyScreen {
             return;
         }
 
+        // Save the current UI state before switching to a new space
+        if let Some(current_space) = &self.space_name_id {
+            SPACE_LOBBY_STATES.with_borrow_mut(|states| {
+                states.insert(
+                    current_space.room_id().clone(),
+                    SpaceLobbyUiState {
+                        expanded_spaces: self.expanded_spaces.clone(),
+                    },
+                );
+            });
+        }
+
         self.space_name_id = Some(space_name_id.clone());
         let rooms_list_ref = cx.get_global::<RoomsListRef>();
         if let Some(sender) = rooms_list_ref.get_space_request_sender() {
@@ -1011,8 +1093,15 @@ impl SpaceLobbyScreen {
         }
 
         self.tree_entries.clear();
-        self.expanded_spaces.clear();
         self.is_loading = true;
+
+        // Restore UI state if we've viewed this space before, otherwise start fresh
+        self.expanded_spaces = SPACE_LOBBY_STATES.with_borrow(|states| {
+            states
+                .get(space_name_id.room_id())
+                .map(|state| state.expanded_spaces.clone())
+                .unwrap_or_default()
+        });
 
         // Set parent avatar
         let avatar_ref = self.view.avatar(ids!(header.parent_space_row.parent_avatar));
