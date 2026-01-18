@@ -132,7 +132,7 @@ impl RoomLoadingScreen {
         self.visible = true;
         self.view.set_visible(cx, true);
         let title_label_ref = self.view.label(ids!(title));
-        let details_lable_ref = self.view.label(ids!(details));
+        let details_label_ref = self.view.label(ids!(details));
 
         // Set text for title label
         let title_text = title.unwrap_or("Loading...");
@@ -140,11 +140,11 @@ impl RoomLoadingScreen {
 
         // Set text for details label
         if let Some(details_text) = details {
-            details_lable_ref.set_visible(cx, true);
-            details_lable_ref.set_text(cx, details_text);
+            details_label_ref.set_visible(cx, true);
+            details_label_ref.set_text(cx, details_text);
         } else {
-            details_lable_ref.set_visible(cx, false);
-            details_lable_ref.set_text(cx, "");
+            details_label_ref.set_visible(cx, false);
+            details_label_ref.set_text(cx, "");
         };
     }
 }
