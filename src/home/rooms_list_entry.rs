@@ -297,7 +297,7 @@ impl RoomsListEntryContent {
         room_info: &JoinedRoomInfo,
     ) {
         self.view.label(ids!(room_name)).set_text(cx, &room_info.room_name_id.to_string());
-        if let Some(removed_state) = room_info.removed_state.clone() {
+        if let Some(removed_state) = room_info.removed_state {
             let status_text = match removed_state {
                 RoomState::Banned => "<i>You have been banned from this room.</i>",
                 RoomState::Left => "<i>You are no longer a member of this room.</i>",

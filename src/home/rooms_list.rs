@@ -520,7 +520,7 @@ impl RoomsList {
     pub fn get_removed_room_state(&self, room_id: &OwnedRoomId) -> Option<RoomState> {
         self.all_joined_rooms
             .get(room_id)
-            .and_then(|jr| jr.removed_state.clone())
+            .and_then(|jr| jr.removed_state)
     }
 
     /// Handle all pending updates to the list of all rooms.
