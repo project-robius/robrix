@@ -12,7 +12,10 @@ use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{RoomState, ruma::OwnedRoomId};
 use matrix_sdk_ui::spaces::SpaceRoom;
+use ruma::room::JoinRuleSummary;
 use tokio::sync::mpsc::UnboundedSender;
+use crate::shared::avatar::AvatarState;
+use crate::utils::replace_linebreaks_separators;
 use crate::{
     avatar_cache::{self, AvatarCacheEntry},
     home::rooms_list::RoomsListRef,
@@ -288,7 +291,8 @@ live_design! {
             info_label = <Label> {
                 margin: 0
                 padding: 0
-                width: Fill, height: Fit,
+                width: Fit, height: Fit,
+                flow: Right
                 draw_text: { text_style: <REGULAR_TEXT>{font_size: 8.5}, color: #737373, wrap: Ellipsis }
             }
         }
@@ -639,12 +643,11 @@ struct SpaceRoomInfo {
     id: OwnedRoomId,
     name: String,
     topic: Option<String>,
-    /// The avatar URI, used to fetch from cache.
-    avatar_uri: Option<ruma::OwnedMxcUri>,
-    /// Cached avatar image data, stored after fetching from avatar cache.
-    avatar_data: Option<std::sync::Arc<[u8]>>,
+    avatar: AvatarState,
     num_joined_members: u64,
     state: Option<RoomState>,
+    #[allow(unused)]
+    join_rule: Option<JoinRuleSummary>,
     /// If `Some`, this is a space. If `None`, it's a room.
     children_count: Option<u64>,
 }
@@ -658,11 +661,11 @@ impl From<&SpaceRoom> for SpaceRoomInfo {
         SpaceRoomInfo {
             id: space_room.room_id.clone(),
             name: space_room.display_name.clone(),
-            topic: space_room.topic.clone(),
-            avatar_uri: space_room.avatar_url.clone(),
-            avatar_data: None,
+            topic: space_room.topic.as_ref().map(|t| replace_linebreaks_separators(t.trim())),
+            avatar: AvatarState::Known(space_room.avatar_url.clone()),
             num_joined_members: space_room.num_joined_members,
             state: space_room.state,
+            join_rule: space_room.join_rule.clone(),
             children_count: space_room.is_space().then_some(space_room.children_count),
         }
     }
@@ -673,11 +676,11 @@ impl From<SpaceRoom> for SpaceRoomInfo {
             children_count: space_room.is_space().then_some(space_room.children_count),
             id: space_room.room_id,
             name: space_room.display_name,
-            topic: space_room.topic,
-            avatar_uri: space_room.avatar_url,
-            avatar_data: None,
+            topic: space_room.topic.map(|t| replace_linebreaks_separators(t.trim())),
+            avatar: AvatarState::Known(space_room.avatar_url),
             num_joined_members: space_room.num_joined_members,
             state: space_room.state,
+            join_rule: space_room.join_rule,
         }
     }
 }
@@ -741,8 +744,6 @@ impl Widget for SpaceLobbyScreen {
         if let Event::Signal = event {
             // Process any pending avatar updates
             avatar_cache::process_avatar_updates(cx);
-            // Try to fetch and store avatars that we don't have yet, then redraw
-            self.fetch_pending_avatars(cx);
             self.redraw(cx);
         }
 
@@ -794,7 +795,7 @@ impl Widget for SpaceLobbyScreen {
                     item
                 }
                 // Draw a regular entrty
-                else if let Some(entry) = self.tree_entries.get(item_id) {
+                else if let Some(entry) = self.tree_entries.get_mut(item_id) {
                     match entry {
                         TreeEntry::Item { info, level, is_last, parent_mask } => {
                             let item = if info.is_space() {
@@ -825,27 +826,33 @@ impl Widget for SpaceLobbyScreen {
                             let first_char = utils::user_name_first_letter(&info.name);
                             let mut drew_avatar = false;
 
-                            // First try using stored avatar data
-                            if let Some(ref data) = info.avatar_data {
-                                drew_avatar = avatar_ref.show_image(
-                                    cx,
-                                    None,
-                                    |cx, img| utils::load_png_or_jpg(&img, cx, data),
-                                ).is_ok();
-                            }
-                            // If no stored data, try fetching from cache
-                            if !drew_avatar {
-                                if let Some(ref uri) = info.avatar_uri {
-                                    if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri.clone()) {
-                                        drew_avatar = avatar_ref.show_image(
-                                            cx,
-                                            None,
-                                            |cx, img| utils::load_png_or_jpg(&img, cx, &data),
-                                        ).is_ok();
+                            match &info.avatar {
+                                AvatarState::Loaded(data) => {
+                                    drew_avatar = avatar_ref.show_image(
+                                        cx,
+                                        None,
+                                        |cx, img| utils::load_png_or_jpg(&img, cx, data),
+                                    ).is_ok();
+                                }
+                                AvatarState::Known(Some(uri)) => {
+                                    match avatar_cache::get_or_fetch_avatar(cx, uri.to_owned()) {
+                                        AvatarCacheEntry::Loaded(data) => {
+                                            drew_avatar = avatar_ref.show_image(
+                                                cx,
+                                                None,
+                                                |cx, img| utils::load_png_or_jpg(&img, cx, &data),
+                                            ).is_ok();
+                                            info.avatar = AvatarState::Loaded(data);
+                                        }
+                                        AvatarCacheEntry::Failed => {
+                                            info.avatar = AvatarState::Failed;
+                                        }
+                                        AvatarCacheEntry::Requested => { }
                                     }
                                 }
-                            }
-                            // Fallback to initials
+                                _ => { }
+                            };
+                            // Fallback to text initials.
                             if !drew_avatar {
                                 avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
                             }
@@ -865,7 +872,7 @@ impl Widget for SpaceLobbyScreen {
                             // Add join status for rooms we haven't joined
                             if let Some(state) = &info.state {
                                 match state {
-                                    RoomState::Joined => { /* Don't show "Joined" - it's implied */ }
+                                    RoomState::Joined => info_parts.push("✅ Joined".to_string()),
                                     RoomState::Left => info_parts.push("Left".to_string()),
                                     RoomState::Invited => info_parts.push("Invited".to_string()),
                                     RoomState::Knocked => info_parts.push("Knocked".to_string()),
@@ -893,13 +900,10 @@ impl Widget for SpaceLobbyScreen {
 
                             // Add topic if available (Label handles truncation via wrap: Ellipsis)
                             if let Some(topic) = &info.topic {
-                                let topic = topic.trim();
-                                if !topic.is_empty() {
-                                    info_parts.push(topic.to_string());
-                                }
+                                info_parts.push(topic.to_string());
                             }
 
-                            info_label.set_text(cx, &info_parts.join(" | "));
+                            info_label.set_text(cx, &info_parts.join("  |  "));
 
                             item
                         }
@@ -1062,22 +1066,6 @@ impl SpaceLobbyScreen {
         }
     }
 
-    /// Fetches avatars from the cache for any tree entries that don't have avatar data yet.
-    fn fetch_pending_avatars(&mut self, cx: &mut Cx) {
-        for entry in &mut self.tree_entries {
-            if let TreeEntry::Item { info, .. } = entry {
-                // Only fetch if we have a URI but no data yet
-                if info.avatar_data.is_none() {
-                    if let Some(ref uri) = info.avatar_uri {
-                        if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri.clone()) {
-                            info.avatar_data = Some(data);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     /// Saves the current UI state to the cache. Call this when the screen is being hidden.
     pub fn save_current_state(&mut self) {
         if let Some(current_space) = &self.space_name_id {
@@ -1129,6 +1117,7 @@ impl SpaceLobbyScreen {
                 .unwrap_or_default()
         });
 
+        // TODO: move avatar setting to `draw_walk()`
         // Set parent avatar
         let avatar_ref = self.view.avatar(ids!(header.parent_space_row.parent_avatar));
         let first_char = utils::user_name_first_letter(&space_name);

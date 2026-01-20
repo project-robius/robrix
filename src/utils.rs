@@ -140,6 +140,14 @@ pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Optio
     Local.timestamp_millis_opt(millis).single()
 }
 
+/// Replaces all line breaks, tabs, paragraphs and other separators with a single space `' '`.
+pub fn replace_linebreaks_separators(s: &str) -> String {
+    s.replace(
+        &['\n', '\r', '\t', '\x0B', '\x0C', '\x0D'],
+        " ",
+    )
+}
+
 /// Returns a string error message, handling special cases related to joining/leaving rooms.
 pub fn stringify_join_leave_error(
     error: &matrix_sdk::Error,
