@@ -387,6 +387,10 @@ impl Widget for InviteScreen {
         }
 
         if self.invite_state != orig_state {
+            if let (Some(room_name_id), true) = (self.room_name_id.as_ref(), cx.has_global::<RoomsListRef>()) {
+                let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                rooms_list_ref.set_invite_state(room_name_id.room_id().clone(), self.invite_state);
+            }
             self.redraw(cx);
         }
     }

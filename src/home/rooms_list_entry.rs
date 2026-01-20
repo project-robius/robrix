@@ -8,7 +8,7 @@ use crate::{
     }, utils::{self, relative_format}
 };
 
-use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListScopeProps};
+use super::rooms_list::{InviteState, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListScopeProps};
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -340,11 +340,22 @@ impl RoomsListEntryContent {
         self.view.label(ids!(room_name)).set_text(cx, &room_info.room_name_id.to_string());
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(ids!(timestamp)).set_text(cx, "");
-        let inviter_string = match &room_info.inviter_info {
+        let mut inviter_string = match &room_info.inviter_info {
             Some(InviterInfo { user_id, display_name: Some(dn), .. }) => format!("Invited by <b>{dn}</b> ({user_id})"),
             Some(InviterInfo { user_id, .. }) => format!("Invited by {user_id}"),
             None => String::from("You were invited"),
         };
+        let status_suffix = match room_info.invite_state {
+            InviteState::WaitingOnUserInput => "",
+            InviteState::WaitingForJoinResult => "Joining...",
+            InviteState::WaitingForLeaveResult => "Rejecting...",
+            InviteState::WaitingForJoinedRoom => "Waiting for room...",
+            InviteState::RoomLeft => "Invite rejected",
+        };
+        if !status_suffix.is_empty() {
+            inviter_string.push_str(" - ");
+            inviter_string.push_str(status_suffix);
+        }
         self.view.html_or_plaintext(ids!(latest_message)).show_html(cx, &inviter_string);
 
         match room_info.room_avatar {

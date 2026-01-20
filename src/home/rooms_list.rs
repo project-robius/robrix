@@ -203,6 +203,11 @@ pub enum RoomsListUpdate {
         room_id: OwnedRoomId,
         removed_state: Option<RoomState>,
     },
+    /// Update the invite state for the given invited room.
+    SetInviteState {
+        room_id: OwnedRoomId,
+        invite_state: InviteState,
+    },
     /// Update the tags for the given room.
     Tags {
         room_id: OwnedRoomId,
@@ -494,13 +499,21 @@ impl RoomsList {
 
     /// Returns the state of the room if it is loaded and known to our client.
     pub fn get_room_state(&self, room_id: &OwnedRoomId) -> Option<RoomState> {
-        if self.all_joined_rooms.contains_key(room_id) {
-            return Some(RoomState::Joined);
-        }
         if self.invited_rooms.borrow().contains_key(room_id) {
             return Some(RoomState::Invited);
         }
+        if self.all_joined_rooms.contains_key(room_id) {
+            return Some(RoomState::Joined);
+        }
         None
+    }
+
+    /// Returns the invite state of the room, if it is currently an invite.
+    pub fn get_invite_state(&self, room_id: &OwnedRoomId) -> Option<InviteState> {
+        self.invited_rooms
+            .borrow()
+            .get(room_id)
+            .map(|info| info.invite_state)
     }
 
     /// Returns the removal state of the room, if it was removed (e.g., left or banned).
@@ -520,8 +533,10 @@ impl RoomsList {
                     let room_id = invited_room.room_name_id.room_id().clone();
                     let should_display = should_display_room!(self, &room_id, &invited_room);
                     let _replaced = self.invited_rooms.borrow_mut().insert(room_id.clone(), invited_room);
-                    if let Some(removed) = self.all_joined_rooms.remove(&room_id) {
-                        let list_to_remove_from = if removed.is_direct {
+                    let mut keep_joined_room = false;
+                    if let Some(joined_room) = self.all_joined_rooms.get(&room_id) {
+                        keep_joined_room = joined_room.removed_state.is_some();
+                        let list_to_remove_from = if joined_room.is_direct {
                             &mut self.displayed_direct_rooms
                         } else {
                             &mut self.displayed_regular_rooms
@@ -529,6 +544,9 @@ impl RoomsList {
                         list_to_remove_from.iter()
                             .position(|r| r == &room_id)
                             .map(|index| list_to_remove_from.remove(index));
+                    }
+                    if !keep_joined_room {
+                        self.all_joined_rooms.remove(&room_id);
                     }
                     if should_display && !self.displayed_invited_rooms.contains(&room_id) {
                         self.displayed_invited_rooms.push(room_id);
@@ -744,6 +762,37 @@ impl RoomsList {
                     }
                     self.update_status();
                 }
+                RoomsListUpdate::SetInviteState { room_id, invite_state } => {
+                    if invite_state == InviteState::RoomLeft {
+                        if self.invited_rooms.borrow_mut().remove(&room_id).is_some() {
+                            self.displayed_invited_rooms.iter()
+                                .position(|r| r == &room_id)
+                                .map(|index| self.displayed_invited_rooms.remove(index));
+                            if let Some(joined_room) = self.all_joined_rooms.get(&room_id) {
+                                let should_display = should_display_room!(self, &room_id, joined_room);
+                                if should_display {
+                                    let list_to_update = if joined_room.is_direct {
+                                        &mut self.displayed_direct_rooms
+                                    } else {
+                                        &mut self.displayed_regular_rooms
+                                    };
+                                    if !list_to_update.contains(&room_id) {
+                                        list_to_update.push(room_id.clone());
+                                    }
+                                }
+                            }
+                            self.update_status();
+                        } else {
+                            warning!("Warning: couldn't find invited room {} to remove after reject", room_id);
+                            num_updates -= 1;
+                        }
+                    } else if let Some(invite) = self.invited_rooms.borrow_mut().get_mut(&room_id) {
+                        invite.invite_state = invite_state;
+                    } else {
+                        warning!("Warning: couldn't find invited room {} to update invite state", room_id);
+                        num_updates -= 1;
+                    }
+                }
                 RoomsListUpdate::ClearRooms => {
                     self.all_joined_rooms.clear();
                     self.displayed_direct_rooms.clear();
@@ -835,6 +884,8 @@ impl RoomsList {
         }
         if num_updates > 0 {
             self.redraw(cx);
+            // Signal other widgets (e.g., RoomScreen) to re-evaluate room state after updates.
+            SignalToUI::set_ui_signal();
         }
     }
 
@@ -1440,6 +1491,11 @@ impl RoomsListRef {
         self.borrow()?.get_room_state(room_id)
     }
 
+    /// See [`RoomsList::get_invite_state()`].
+    pub fn get_invite_state(&self, room_id: &OwnedRoomId) -> Option<InviteState> {
+        self.borrow()?.get_invite_state(room_id)
+    }
+
     /// See [`RoomsList::get_removed_room_state()`].
     pub fn get_removed_room_state(&self, room_id: &OwnedRoomId) -> Option<RoomState> {
         self.borrow()?.get_removed_room_state(room_id)
@@ -1454,6 +1510,18 @@ impl RoomsListRef {
         enqueue_rooms_list_update(RoomsListUpdate::SetRemovedRoomState {
             room_id,
             removed_state,
+        });
+    }
+
+    /// Updates the invite state of an invited room via the RoomsList update queue.
+    pub fn set_invite_state(
+        &self,
+        room_id: OwnedRoomId,
+        invite_state: InviteState,
+    ) {
+        enqueue_rooms_list_update(RoomsListUpdate::SetInviteState {
+            room_id,
+            invite_state,
         });
     }
 
