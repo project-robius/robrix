@@ -25,7 +25,7 @@ use matrix_sdk_ui::timeline::{
 use ruma::{OwnedUserId, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}};
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, event_group::extract_small_state_events, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -77,8 +77,10 @@ live_design! {
     use crate::room::reply_preview::RepliedToMessage;
     use crate::room::typing_notice::*;
     use crate::home::room_read_receipt::*;
+    use crate::home::event_group::SmallStateGroupHeader;
     use crate::rooms_list::*;
     use crate::shared::restore_status_view::*;
+    use crate::shared::view_list::ViewList;
     use crate::home::link_preview::LinkPreview;
     use link::tsp_link::TspSignIndicator;
 
@@ -491,6 +493,23 @@ live_design! {
             ImageMessage = <ImageMessage> {}
             CondensedImageMessage = <CondensedImageMessage> {}
             SmallStateEvent = <SmallStateEvent> {}
+            SmallStateGroupHeader = <SmallStateGroupHeader> {
+                body: <View> {
+                    width: Fill,
+                    height: Fit
+                    flow: Down
+                    // As populate_small_state uses PortalList as parameter, create a portal list but do not draw it.
+                    dummy_portal_list = <PortalList> {
+                        height: 0, width: Fill
+                        SmallStateEvent = <SmallStateEvent> {}
+                        CondensedMessage = <CondensedMessage> {}
+                        Message = <Message> {}
+                    }
+                    view_list = <ViewList> {
+                        width: Fill
+                    }
+                }
+            }
             Empty = <Empty> {}
             DateDivider = <DateDivider> {}
             ReadMarker = <ReadMarker> {}
@@ -1016,13 +1035,44 @@ impl Widget for RoomScreen {
             while let Some(item_id) = list.next_visible_item(cx) {
                 let item = {
                     let tl_idx = item_id;
+                    if let Some(group_range) = tl_state.small_state_group_manager.check_group_range(item_id) {
+                        if group_range.start == item_id {
+                            // This is the first item of a group - render FoldHeader
+                            if let Some(group) = tl_state.small_state_group_manager.get_group_at_item_id(item_id) {
+                                let item = populate_small_state_group_header(
+                                    cx,
+                                    list,
+                                    item_id,
+                                    room_id,
+                                    &group_range,
+                                    group,
+                                    tl_items,
+                                    &mut tl_state.content_drawn_since_last_update,
+                                    &mut tl_state.profile_drawn_since_last_update,
+                                    &mut tl_state.media_cache,
+                                    &mut tl_state.link_preview_cache,
+                                    &tl_state.user_power,
+                                    &self.pinned_events,
+                                    room_screen_widget_uid,
+                                );
+                                item.draw_all(cx, scope);
+                            } else {
+                                let item = list.item(cx, item_id, id!(Empty));
+                                item.draw_all(cx, scope);
+                            }
+                            continue;
+                        } else if group_range.contains(&item_id) {
+                            let item = list.item(cx, item_id, id!(Empty));
+                            item.draw_all(cx, scope);
+                            continue;
+                        }
+                    }
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
                         list.item(cx, item_id, id!(Empty));
                         continue;
                     };
-
                     // Determine whether this item's content and profile have been drawn since the last update.
                     // Pass this state to each of the `populate_*` functions so they can attempt to re-use
                     // an item in the timeline's portallist that was previously populated, if one exists.
@@ -1194,6 +1244,8 @@ impl RoomScreen {
 
                     tl.items = initial_items;
                     done_loading = true;
+                    let small_state_events = extract_small_state_events(tl.items.iter().cloned());
+                    tl.small_state_group_manager.compute_group_state(small_state_events);
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
                     if new_items.is_empty() {
@@ -1305,6 +1357,8 @@ impl RoomScreen {
                         // log!("process_timeline_updates(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
                     tl.items = new_items;
+                    let small_state_events = extract_small_state_events(tl.items.iter().cloned());
+                    tl.small_state_group_manager.compute_group_state(small_state_events);
                     done_loading = true;
                 }
                 TimelineUpdate::NewUnreadMessagesCount(unread_messages_count) => {
@@ -2128,6 +2182,7 @@ impl RoomScreen {
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
                 tombstone_info,
+                small_state_group_manager: crate::home::event_group::SmallStateGroupManager::default(),
             };
             (tl_state, true)
         };
@@ -2687,6 +2742,9 @@ struct TimelineUiState {
     /// If `Some`, this room has been tombstoned and the details of its successor room
     /// are contained within. If `None`, the room has not been tombstoned.
     tombstone_info: Option<SuccessorRoomDetails>,
+
+    /// Manager for small state event groups that can be collapsed/expanded.
+    small_state_group_manager: crate::home::event_group::SmallStateGroupManager,
 }
 
 #[derive(Default, Debug)]
@@ -4081,7 +4139,6 @@ impl SmallStateEventContent for RoomMembershipChange {
             cx,
             matches!(self.change(), Some(MembershipChange::Knocked)),
         );
-
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
     }
@@ -4149,6 +4206,99 @@ fn populate_small_state_event(
         item_drawn_status,
         new_drawn_status,
     )
+}
+
+/// Creates and populates a SmallStateGroupHeader (FoldHeader) for a group of small state events.
+///
+/// This follows the portal_list_auto_grouping pattern:
+/// - The header shows a summary and fold button
+/// - The body contains a ViewList with all grouped items (excluding the first one)
+///
+/// # Arguments
+/// * `group_range` - The range of timeline indices covered by this group
+/// * `group` - The SmallStateGroup metadata containing cached summary and user IDs
+/// * `tl_items` - The full list of timeline items
+fn populate_small_state_group_header(
+    cx: &mut Cx2d,
+    list: &mut PortalList,
+    item_id: usize,
+    room_id: &OwnedRoomId,
+    group_range: &std::ops::Range<usize>,
+    group: &crate::home::event_group::SmallStateGroup,
+    tl_items: &imbl::Vector<Arc<TimelineItem>>,
+    content_drawn_since_last_update: &mut RangeSet<usize>,
+    profile_drawn_since_last_update: &mut RangeSet<usize>,
+    media_cache: &mut MediaCache,
+    link_preview_cache: &mut LinkPreviewCache,
+    user_power_levels: &UserPowerLevels,
+    pinned_events: &[OwnedEventId],
+    room_screen_widget_uid: WidgetUid,
+) -> WidgetRef {
+    use crate::shared::view_list::ViewListWidgetRefExt;
+
+    // Get the FoldHeader item from portal list
+    let (fold_item, _existed) = list.item_with_existed(cx, item_id, id!(SmallStateGroupHeader));
+    // Set the header summary text
+    if let Some(summary) = &group.cached_summary {
+        fold_item.label(ids!(summary_text)).set_text(cx, summary);
+    }
+
+    // Set the avatars in the header
+    if let Some(user_ids) = &group.cached_avatar_user_ids {
+        crate::home::event_group::populate_avatar_row_from_user_ids(
+            cx,
+            &fold_item,
+            room_id,
+            user_ids,
+        );
+    }
+
+    // Create SmallStateEvent views for each item in the group range (skip first, which is the header)
+    let mut widgetref_list = vec![];
+    let dummy_portal_list = fold_item.portal_list(ids!(dummy_portal_list));
+    if let Some(mut list_ref) = dummy_portal_list.borrow_mut() {
+        let list = list_ref.deref_mut();
+        for tl_idx in (group_range.start)..group_range.end {
+            if let Some(timeline_item) = tl_items.get(tl_idx) {
+                let item_drawn_status = ItemDrawnStatus {
+                    content_drawn: content_drawn_since_last_update.contains(&tl_idx),
+                    profile_drawn: profile_drawn_since_last_update.contains(&tl_idx),
+                };
+                if let TimelineItemKind::Event(event_tl_item) = timeline_item.kind() {
+                    // Create a new SmallStateEvent view from the template
+                    let (item, item_drawn_status) = match event_tl_item.content() {
+                        TimelineItemContent::MsgLike(msg_like_content) => match &msg_like_content.kind {
+                            MsgLikeKind::Redacted => {
+                                let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
+                                populate_message_view(cx, list, tl_idx, room_id, event_tl_item, msg_like_content, prev_event, media_cache, link_preview_cache, user_power_levels, pinned_events, item_drawn_status, room_screen_widget_uid)
+                            }
+                            MsgLikeKind::Poll(poll_state) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, poll_state, item_drawn_status),
+                            MsgLikeKind::UnableToDecrypt(utd) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, utd, item_drawn_status),
+                            MsgLikeKind::Other(other) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, other, item_drawn_status),
+                            _ => (list.item_with_existed(cx, tl_idx, id!(Empty)).0, item_drawn_status)
+                        },
+                        TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, membership_change, item_drawn_status),
+                        TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, profile_change, item_drawn_status),
+                        TimelineItemContent::OtherState(other_state) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, other_state, item_drawn_status),
+                        _=> (list.item_with_existed(cx, tl_idx, id!(Empty)).0, item_drawn_status)
+                    };
+                    if item_drawn_status.content_drawn {
+                        content_drawn_since_last_update.insert(tl_idx..tl_idx + 1);
+                    }
+                    if item_drawn_status.profile_drawn {
+                        profile_drawn_since_last_update.insert(tl_idx..tl_idx + 1);
+                    }
+                    widgetref_list.push(item);
+                }
+            }
+        }
+    }
+    // Get the ViewList reference from the fold header body
+    let mut view_widget = fold_item.view_list(ids!(view_list));
+    // Set the views into the ViewList
+    view_widget.set_widgetref_list(widgetref_list);
+
+    fold_item
 }
 
 
