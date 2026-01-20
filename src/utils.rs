@@ -143,7 +143,7 @@ pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Optio
 /// Replaces all line breaks, tabs, paragraphs and other separators with a single space `' '`.
 pub fn replace_linebreaks_separators(s: &str) -> String {
     s.replace(
-        &['\n', '\r', '\t', '\x0B', '\x0C', '\x0D'],
+        ['\n', '\r', '\t', '\x0B', '\x0C', '\x0D'],
         " ",
     )
 }
