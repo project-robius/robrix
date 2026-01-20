@@ -6,15 +6,22 @@
 //!    that allows the user to click on it to show the `SpaceLobby`.
 //!
 
-use std::collections::{HashMap, HashSet};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{RoomState, ruma::OwnedRoomId};
 use matrix_sdk_ui::spaces::SpaceRoom;
 use ruma::room::JoinRuleSummary;
 use tokio::sync::mpsc::UnboundedSender;
+use crate::shared::avatar::AvatarState;
+use crate::utils::replace_linebreaks_separators;
 use crate::{
-    home::rooms_list::RoomsListRef, shared::avatar::{AvatarState, AvatarWidgetExt, AvatarWidgetRefExt}, space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction}, utils::{self, RoomNameId}
+    avatar_cache::{self, AvatarCacheEntry},
+    home::rooms_list::RoomsListRef,
+    shared::avatar::{AvatarWidgetExt, AvatarWidgetRefExt},
+    space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction},
+    utils::{self, RoomNameId},
 };
 
 
@@ -284,7 +291,8 @@ live_design! {
             info_label = <Label> {
                 margin: 0
                 padding: 0
-                width: Fill, height: Fit,
+                width: Fit, height: Fit,
+                flow: Right
                 draw_text: { text_style: <REGULAR_TEXT>{font_size: 8.5}, color: #737373, wrap: Ellipsis }
             }
         }
@@ -447,6 +455,22 @@ live_design! {
             }
         }
     }
+}
+
+
+thread_local! {
+    /// A cache of UI states for each SpaceLobbyScreen, keyed by the space's room ID.
+    /// This allows preserving the expanded/collapsed state of subspaces across screen changes.
+    static SPACE_LOBBY_STATES: RefCell<BTreeMap<OwnedRoomId, SpaceLobbyUiState>> = const {
+        RefCell::new(BTreeMap::new())
+    };
+}
+
+/// The UI-side state of a SpaceLobbyScreen that should persist across hide/show cycles.
+#[derive(Default)]
+struct SpaceLobbyUiState {
+    /// The set of space IDs that are currently expanded (showing their children).
+    expanded_spaces: HashSet<OwnedRoomId>,
 }
 
 
@@ -618,12 +642,9 @@ impl Widget for RoomEntry {
 struct SpaceRoomInfo {
     id: OwnedRoomId,
     name: String,
-    #[allow(unused)]
     topic: Option<String>,
-    #[allow(unused)]
-    room_avatar: AvatarState,
+    avatar: AvatarState,
     num_joined_members: u64,
-    #[allow(unused)]
     state: Option<RoomState>,
     #[allow(unused)]
     join_rule: Option<JoinRuleSummary>,
@@ -640,8 +661,8 @@ impl From<&SpaceRoom> for SpaceRoomInfo {
         SpaceRoomInfo {
             id: space_room.room_id.clone(),
             name: space_room.display_name.clone(),
-            topic: space_room.topic.clone(),
-            room_avatar: AvatarState::Known(space_room.avatar_url.clone()),
+            topic: space_room.topic.as_ref().map(|t| replace_linebreaks_separators(t.trim())),
+            avatar: AvatarState::Known(space_room.avatar_url.clone()),
             num_joined_members: space_room.num_joined_members,
             state: space_room.state,
             join_rule: space_room.join_rule.clone(),
@@ -655,8 +676,8 @@ impl From<SpaceRoom> for SpaceRoomInfo {
             children_count: space_room.is_space().then_some(space_room.children_count),
             id: space_room.room_id,
             name: space_room.display_name,
-            topic: space_room.topic,
-            room_avatar: AvatarState::Known(space_room.avatar_url),
+            topic: space_room.topic.map(|t| replace_linebreaks_separators(t.trim())),
+            avatar: AvatarState::Known(space_room.avatar_url),
             num_joined_members: space_room.num_joined_members,
             state: space_room.state,
             join_rule: space_room.join_rule,
@@ -719,6 +740,13 @@ impl Widget for SpaceLobbyScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
+        // Handle Signal events for avatar cache updates
+        if let Event::Signal = event {
+            // Process any pending avatar updates
+            avatar_cache::process_avatar_updates(cx);
+            self.redraw(cx);
+        }
+
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let Some(SpaceRoomListAction::DetailedChildren { space_id, children, .. }) = action.downcast_ref() {
@@ -767,7 +795,7 @@ impl Widget for SpaceLobbyScreen {
                     item
                 }
                 // Draw a regular entrty
-                else if let Some(entry) = self.tree_entries.get(item_id) {
+                else if let Some(entry) = self.tree_entries.get_mut(item_id) {
                     match entry {
                         TreeEntry::Item { info, level, is_last, parent_mask } => {
                             let item = if info.is_space() {
@@ -792,10 +820,42 @@ impl Widget for SpaceLobbyScreen {
 
                             // Below, draw things that are common to child rooms and subspaces.
                             item.label(ids!(content.name_label)).set_text(cx, &info.name);
-                            // TODO: query (and update) room/space avatar from the avatar_cache
+
+                            // Display avatar from stored data, or fetch from cache, or show initials
                             let avatar_ref = item.avatar(ids!(avatar));
                             let first_char = utils::user_name_first_letter(&info.name);
-                            avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
+                            let mut drew_avatar = false;
+
+                            match &info.avatar {
+                                AvatarState::Loaded(data) => {
+                                    drew_avatar = avatar_ref.show_image(
+                                        cx,
+                                        None,
+                                        |cx, img| utils::load_png_or_jpg(&img, cx, data),
+                                    ).is_ok();
+                                }
+                                AvatarState::Known(Some(uri)) => {
+                                    match avatar_cache::get_or_fetch_avatar(cx, uri.to_owned()) {
+                                        AvatarCacheEntry::Loaded(data) => {
+                                            drew_avatar = avatar_ref.show_image(
+                                                cx,
+                                                None,
+                                                |cx, img| utils::load_png_or_jpg(&img, cx, &data),
+                                            ).is_ok();
+                                            info.avatar = AvatarState::Loaded(data);
+                                        }
+                                        AvatarCacheEntry::Failed => {
+                                            info.avatar = AvatarState::Failed;
+                                        }
+                                        AvatarCacheEntry::Requested => { }
+                                    }
+                                }
+                                _ => { }
+                            };
+                            // Fallback to text initials.
+                            if !drew_avatar {
+                                avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
+                            }
 
                             if let Some(mut lines) = item.widget(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
@@ -804,27 +864,46 @@ impl Widget for SpaceLobbyScreen {
                                 lines.draw_bg.indent_width = 44.0; // Hardcoded to match
                             }
 
+                            // Build the info label with join status, member count, and topic
+                            // Note: Public/Private is intentionally not shown per-item to reduce clutter
                             let info_label = item.label(ids!(content.info_label));
-                            if let Some(c) = info.children_count && c > 0 {
-                                info_label.set_text(cx, &format!(
-                                    "{} {} | ~{} {}",
-                                    info.num_joined_members,
-                                    match info.num_joined_members {
-                                        1 => "member",
-                                        _ => "members",
-                                    },
-                                    c,
-                                    match c {
-                                        1 => "room",
-                                        _ => "rooms",
-                                    }
-                                ));
-                            } else {
-                                match info.num_joined_members {
-                                    1 => info_label.set_text(cx, "1 member"),
-                                    n => info_label.set_text(cx, &format!("{n} members")),
+                            let mut info_parts = Vec::new();
+
+                            // Add join status for rooms we haven't joined
+                            if let Some(state) = &info.state {
+                                match state {
+                                    RoomState::Joined => info_parts.push("✅ Joined".to_string()),
+                                    RoomState::Left => info_parts.push("Left".to_string()),
+                                    RoomState::Invited => info_parts.push("Invited".to_string()),
+                                    RoomState::Knocked => info_parts.push("Knocked".to_string()),
+                                    RoomState::Banned => info_parts.push("Banned".to_string()),
                                 }
-                            };
+                            }
+
+                            // Add member count
+                            info_parts.push(format!(
+                                "{} {}",
+                                info.num_joined_members,
+                                if info.num_joined_members == 1 { "member" } else { "members" }
+                            ));
+
+                            // Add children count for spaces
+                            if let Some(c) = info.children_count {
+                                if c > 0 {
+                                    info_parts.push(format!(
+                                        "~{} {}",
+                                        c,
+                                        if c == 1 { "room" } else { "rooms" }
+                                    ));
+                                }
+                            }
+
+                            // Add topic if available (Label handles truncation via wrap: Ellipsis)
+                            if let Some(topic) = &info.topic {
+                                info_parts.push(topic.to_string());
+                            }
+
+                            info_label.set_text(cx, &info_parts.join("  |  "));
 
                             item
                         }
@@ -987,6 +1066,20 @@ impl SpaceLobbyScreen {
         }
     }
 
+    /// Saves the current UI state to the cache. Call this when the screen is being hidden.
+    pub fn save_current_state(&mut self) {
+        if let Some(current_space) = &self.space_name_id {
+            SPACE_LOBBY_STATES.with_borrow_mut(|states| {
+                states.insert(
+                    current_space.room_id().clone(),
+                    SpaceLobbyUiState {
+                        expanded_spaces: self.expanded_spaces.clone(),
+                    },
+                );
+            });
+        }
+    }
+
     pub fn set_displayed_space(&mut self, cx: &mut Cx, space_name_id: &RoomNameId) {
         let space_name = space_name_id.to_string();
         let parent_name = self.view.label(ids!(header.parent_space_row.parent_name));
@@ -997,6 +1090,9 @@ impl SpaceLobbyScreen {
         if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == space_name_id.room_id()) {
             return;
         }
+
+        // Save the current UI state before switching to a new space
+        self.save_current_state();
 
         self.space_name_id = Some(space_name_id.clone());
         let rooms_list_ref = cx.get_global::<RoomsListRef>();
@@ -1011,9 +1107,17 @@ impl SpaceLobbyScreen {
         }
 
         self.tree_entries.clear();
-        self.expanded_spaces.clear();
         self.is_loading = true;
 
+        // Restore UI state if we've viewed this space before, otherwise start fresh
+        self.expanded_spaces = SPACE_LOBBY_STATES.with_borrow(|states| {
+            states
+                .get(space_name_id.room_id())
+                .map(|state| state.expanded_spaces.clone())
+                .unwrap_or_default()
+        });
+
+        // TODO: move avatar setting to `draw_walk()`
         // Set parent avatar
         let avatar_ref = self.view.avatar(ids!(header.parent_space_row.parent_avatar));
         let first_char = utils::user_name_first_letter(&space_name);
@@ -1026,5 +1130,11 @@ impl SpaceLobbyScreenRef {
     pub fn set_displayed_space(&self, cx: &mut Cx, space_name_id: &RoomNameId) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_space(cx, space_name_id);
+    }
+
+    /// Saves the current UI state. Call this when the screen is being hidden or destroyed.
+    pub fn save_current_state(&self) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.save_current_state();
     }
 }
