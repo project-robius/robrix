@@ -335,7 +335,6 @@ impl Widget for ProfileIcon {
         let area = self.view.area();
         match event.hits(cx, area) {
             Hit::FingerLongPress(_)
-            | Hit::FingerHoverOver(_) // TODO: remove once CalloutTooltip bug is fixed
             | Hit::FingerHoverIn(_) => {
                 let (verification_str, bg_color) = self.view
                     .verification_badge(ids!(verification_badge))
