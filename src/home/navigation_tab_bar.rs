@@ -34,10 +34,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{self, UserProfileUpdate},
     }, shared::{
-        avatar::{AvatarState, AvatarWidgetExt},
-        callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition},
-        styles::*,
-        verification_badge::VerificationBadgeWidgetExt,
+        avatar::{AvatarState, AvatarWidgetExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, styles::*, verification_badge::VerificationBadgeWidgetExt
     }, sliding_sync::current_user_id, utils::{self, RoomNameId}
 };
 
