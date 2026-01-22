@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    OwnedServerName, RoomDisplayName, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
+    OwnedServerName, RoomDisplayName, RoomState, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
         EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId, events::{
             receipt::Receipt,
             room::{
@@ -16,7 +16,7 @@ use matrix_sdk::{
                 }
             },
             sticker::{StickerEventContent, StickerMediaSource},
-        }, matrix_uri::MatrixId, uint
+        }, matrix_uri::MatrixId, room::JoinRuleSummary, uint
     }
 };
 use matrix_sdk_ui::timeline::{
@@ -25,11 +25,11 @@ use matrix_sdk_ui::timeline::{
 use ruma::{OwnedUserId, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}};
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{enqueue_rooms_list_update, InviteState, InvitedRoomInfo, RoomsListRef, RoomsListUpdate}, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
-    room::{BasicRoomDetails, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
+    room::{BasicRoomDetails, RoomPreviewAction, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
         avatar::{AvatarState, AvatarWidgetRefExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
@@ -588,6 +588,16 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
+    /// Tracks whether the current user is no longer a member of this room.
+    #[rust] removed_state: Option<RoomState>,
+    /// Tracks whether the membership footer was shown for an invite state.
+    #[rust] was_invited: bool,
+    /// Cached join rule for the removed room, used to determine re-join options.
+    #[rust] removed_join_rule: Option<JoinRuleSummary>,
+    /// Whether a room preview request is in flight for removed-room status.
+    #[rust] removed_preview_requested: bool,
+    /// Whether a room preview request has already been attempted for this removal.
+    #[rust] removed_preview_attempted: bool,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -747,6 +757,110 @@ impl Widget for RoomScreen {
                     }
                 }
 
+                if let Some(RoomPreviewAction::Fetched(result)) = action.downcast_ref() {
+                    if self.removed_state.is_none() || !self.removed_preview_requested {
+                        continue;
+                    }
+                    match result {
+                        Ok(frp) => {
+                            if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == frp.room_name_id.room_id()) {
+                                self.removed_join_rule = frp.join_rule.clone();
+                                self.removed_preview_requested = false;
+                                self.removed_preview_attempted = true;
+                                self.update_membership_footer(cx);
+                            }
+                        }
+                        Err(_) => {
+                            self.removed_preview_requested = false;
+                            self.removed_preview_attempted = true;
+                            self.update_membership_footer(cx);
+                        }
+                    }
+                }
+
+                if let Some(room_name_id) = self.room_name_id.as_ref() {
+                    let room_id = room_name_id.room_id();
+                    let rooms_list_ref = cx.has_global::<RoomsListRef>().then(|| cx.get_global::<RoomsListRef>());
+                    let is_invited = rooms_list_ref
+                        .as_ref()
+                        .and_then(|rooms_list_ref| rooms_list_ref.get_invite_state(room_id))
+                        .is_some();
+                    let should_notify = self.removed_state.is_some() || is_invited;
+
+                    if let Some(JoinRoomResultAction::Joined { room_id: action_room_id }) = action.downcast_ref() {
+                        if action_room_id == room_id {
+                            if is_invited {
+                                if let Some(rooms_list_ref) = rooms_list_ref.as_ref() {
+                                    rooms_list_ref.set_invite_state(room_id.clone(), InviteState::WaitingForJoinedRoom);
+                                }
+                            }
+                            if should_notify {
+                                enqueue_popup_notification(PopupItem {
+                                    message: "Successfully joined room.".into(),
+                                    kind: PopupKind::Success,
+                                    auto_dismissal_duration: Some(5.0),
+                                });
+                            }
+                            self.update_membership_footer(cx);
+                            continue;
+                        }
+                    }
+
+                    if let Some(JoinRoomResultAction::Failed { room_id: action_room_id, error }) = action.downcast_ref() {
+                        if action_room_id == room_id {
+                            if is_invited {
+                                if let Some(rooms_list_ref) = rooms_list_ref.as_ref() {
+                                    rooms_list_ref.set_invite_state(room_id.clone(), InviteState::WaitingOnUserInput);
+                                }
+                            }
+                            if should_notify {
+                                let msg = utils::stringify_join_leave_error(error, room_name_id, true, is_invited);
+                                enqueue_popup_notification(PopupItem {
+                                    message: msg,
+                                    kind: PopupKind::Error,
+                                    auto_dismissal_duration: None,
+                                });
+                            }
+                            self.update_membership_footer(cx);
+                            continue;
+                        }
+                    }
+
+                    if let Some(LeaveRoomResultAction::Left { room_id: action_room_id }) = action.downcast_ref() {
+                        if action_room_id == room_id && is_invited {
+                            if let Some(rooms_list_ref) = rooms_list_ref.as_ref() {
+                                rooms_list_ref.set_invite_state(room_id.clone(), InviteState::RoomLeft);
+                            }
+                            if should_notify {
+                                enqueue_popup_notification(PopupItem {
+                                    message: "Successfully rejected invite.".into(),
+                                    kind: PopupKind::Success,
+                                    auto_dismissal_duration: Some(5.0),
+                                });
+                            }
+                            self.update_membership_footer(cx);
+                            continue;
+                        }
+                    }
+
+                    if let Some(LeaveRoomResultAction::Failed { room_id: action_room_id, error }) = action.downcast_ref() {
+                        if action_room_id == room_id && is_invited {
+                            if let Some(rooms_list_ref) = rooms_list_ref.as_ref() {
+                                rooms_list_ref.set_invite_state(room_id.clone(), InviteState::WaitingOnUserInput);
+                            }
+                            if should_notify {
+                                enqueue_popup_notification(PopupItem {
+                                    message: format!("Failed to reject invite: {error}"),
+                                    kind: PopupKind::Error,
+                                    auto_dismissal_duration: None,
+                                });
+                            }
+                            self.update_membership_footer(cx);
+                            continue;
+                        }
+                    }
+                }
+
                 // Handle the highlight animation for a message.
                 let Some(tl) = self.tl_state.as_mut() else { continue };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
@@ -819,12 +933,36 @@ impl Widget for RoomScreen {
                     self.room_name_id = None;
                     self.set_displayed_room(cx, &room_name_clone);
                 } else {
+                    let mut removed_state = rooms_list_ref.get_removed_room_state(room_name_id.room_id());
+                    if let Some(client) = get_client()
+                        && let Some(room) = client.get_room(room_name_id.room_id())
+                    {
+                        let actual_state = room.state();
+                        let desired_removed_state = match actual_state {
+                            RoomState::Left | RoomState::Banned => Some(actual_state),
+                            _ => None,
+                        };
+                        if desired_removed_state != removed_state {
+                            rooms_list_ref.set_removed_room_state(
+                                room_name_id.room_id().clone(),
+                                desired_removed_state,
+                            );
+                            removed_state = desired_removed_state;
+                        }
+                    }
+                    if self.removed_state != removed_state {
+                        self.removed_state = removed_state;
+                        self.removed_join_rule = None;
+                        self.removed_preview_requested = false;
+                        self.removed_preview_attempted = false;
+                    }
                     self.all_rooms_loaded = rooms_list_ref.all_rooms_loaded();
                     return;
                 }
             }
 
             self.process_timeline_updates(cx, &portal_list);
+            self.update_membership_footer(cx);
 
             // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
             // but it doesn't hurt to do it here.
@@ -983,7 +1121,12 @@ impl Widget for RoomScreen {
                 return DrawStep::done();
             };
             let mut restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
-            restore_status_view.set_content(cx, self.all_rooms_loaded, room_name);
+            restore_status_view.set_content(
+                cx,
+                self.all_rooms_loaded,
+                room_name,
+                self.removed_state,
+            );
             return restore_status_view.draw(cx, scope);
         }
         if self.tl_state.is_none() {
@@ -1164,6 +1307,138 @@ impl Widget for RoomScreen {
 impl RoomScreen {
     fn room_id(&self) -> Option<&OwnedRoomId> {
         self.room_name_id.as_ref().map(|r| r.room_id())
+    }
+
+    fn update_membership_footer(&mut self, cx: &mut Cx) {
+        let Some(room_name_id) = &self.room_name_id else { return; };
+        if !cx.has_global::<RoomsListRef>() {
+            return;
+        }
+        let rooms_list_ref = cx.get_global::<RoomsListRef>();
+        let room_input_bar = self.view.room_input_bar(ids!(room_input_bar));
+        let mut actual_state = None;
+        let mut actual_room = None;
+        if let Some(client) = get_client()
+            && let Some(room) = client.get_room(room_name_id.room_id())
+        {
+            actual_state = Some(room.state());
+            actual_room = Some(room);
+        }
+
+        let invite_state = rooms_list_ref.get_invite_state(room_name_id.room_id());
+        let mut is_invited = invite_state.is_some()
+            || rooms_list_ref.get_room_state(room_name_id.room_id()) == Some(RoomState::Invited);
+        if !is_invited && matches!(actual_state, Some(RoomState::Invited)) {
+            is_invited = true;
+            if rooms_list_ref.get_room_state(room_name_id.room_id()) != Some(RoomState::Invited) {
+                if let Some(room) = actual_room.as_ref() {
+                    let room_avatar = utils::avatar_from_room_name(room_name_id.name_for_avatar().as_deref());
+                    enqueue_rooms_list_update(RoomsListUpdate::AddInvitedRoom(InvitedRoomInfo {
+                        room_name_id: room_name_id.clone(),
+                        canonical_alias: room.canonical_alias(),
+                        alt_aliases: room.alt_aliases(),
+                        room_avatar,
+                        inviter_info: None,
+                        latest: None,
+                        invite_state: invite_state.unwrap_or(InviteState::WaitingOnUserInput),
+                        is_selected: false,
+                        is_direct: false,
+                    }));
+                }
+            }
+        }
+        if is_invited {
+            self.was_invited = true;
+            if self.removed_state.is_some()
+                || self.removed_join_rule.is_some()
+                || self.removed_preview_requested
+                || self.removed_preview_attempted
+            {
+                self.removed_state = None;
+                self.removed_join_rule = None;
+                self.removed_preview_requested = false;
+                self.removed_preview_attempted = false;
+            }
+            room_input_bar.update_membership_footer(
+                cx,
+                room_name_id,
+                RoomState::Invited,
+                None,
+                false,
+                invite_state,
+            );
+            return;
+        }
+        let mut removed_state = {
+            rooms_list_ref.get_removed_room_state(room_name_id.room_id())
+        };
+
+        if let Some(actual_state) = actual_state {
+            let desired_removed_state = match actual_state {
+                RoomState::Left | RoomState::Banned => Some(actual_state),
+                _ => None,
+            };
+            if desired_removed_state != removed_state {
+                let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                rooms_list_ref.set_removed_room_state(
+                    room_name_id.room_id().clone(),
+                    desired_removed_state,
+                );
+                removed_state = desired_removed_state;
+            }
+        }
+
+        match removed_state {
+            Some(state) if matches!(state, RoomState::Left | RoomState::Banned) => {
+                self.was_invited = false;
+                if self.removed_state != Some(state) {
+                    self.removed_state = Some(state);
+                    self.removed_join_rule = None;
+                    self.removed_preview_requested = false;
+                    self.removed_preview_attempted = false;
+                }
+
+                if state == RoomState::Left
+                    && self.removed_join_rule.is_none()
+                    && !self.removed_preview_attempted
+                {
+                    submit_async_request(MatrixRequest::GetRoomPreview {
+                        room_or_alias_id: room_name_id.room_id().clone().into(),
+                        via: Vec::new(),
+                    });
+                    self.removed_preview_requested = true;
+                    self.removed_preview_attempted = true;
+                }
+
+                let preview_pending = self.removed_preview_requested;
+                room_input_bar.update_membership_footer(
+                    cx,
+                    room_name_id,
+                    state,
+                    self.removed_join_rule.clone(),
+                    preview_pending,
+                    None,
+                );
+            }
+            _ => {
+                if self.removed_state.is_some() || self.was_invited {
+                    self.removed_state = None;
+                    self.was_invited = false;
+                    self.removed_join_rule = None;
+                    self.removed_preview_requested = false;
+                    self.removed_preview_attempted = false;
+                    room_input_bar.hide_membership_footer(cx);
+                    if let Some(tl_state) = self.tl_state.as_ref() {
+                        room_input_bar.update_tombstone_footer(
+                            cx,
+                            &tl_state.room_id,
+                            tl_state.tombstone_info.as_ref(),
+                        );
+                        room_input_bar.update_user_power_levels(cx, tl_state.user_power);
+                    }
+                }
+            }
+        }
     }
 
     /// Processes all pending background updates to the currently-shown timeline.
@@ -2311,6 +2586,12 @@ impl RoomScreen {
         if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_name_id.room_id()) { return; }
 
         self.hide_timeline();
+        self.removed_state = None;
+        self.was_invited = false;
+        self.removed_join_rule = None;
+        self.removed_preview_requested = false;
+        self.removed_preview_attempted = false;
+        self.view.room_input_bar(ids!(room_input_bar)).hide_membership_footer(cx);
         // Reset the the state of the inner loading pane.
         self.loading_pane(ids!(loading_pane)).take_state();
 
@@ -2326,6 +2607,7 @@ impl RoomScreen {
         });
 
         self.show_timeline(cx);
+        self.update_membership_footer(cx);
     }
 
     /// Sends read receipts based on the current scroll position of the timeline.

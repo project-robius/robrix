@@ -387,6 +387,10 @@ impl Widget for InviteScreen {
         }
 
         if self.invite_state != orig_state {
+            if let (Some(room_name_id), true) = (self.room_name_id.as_ref(), cx.has_global::<RoomsListRef>()) {
+                let rooms_list_ref = cx.get_global::<RoomsListRef>();
+                rooms_list_ref.set_invite_state(room_name_id.room_id().clone(), self.invite_state);
+            }
             self.redraw(cx);
         }
     }
@@ -396,7 +400,7 @@ impl Widget for InviteScreen {
         if !self.is_loaded {
             let mut restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
             if let Some(room_name) = &self.room_name_id {
-                restore_status_view.set_content(cx, self.all_rooms_loaded, room_name);
+                restore_status_view.set_content(cx, self.all_rooms_loaded, room_name, None);
             }
             return restore_status_view.draw(cx, scope);
         }
@@ -536,11 +540,7 @@ impl InviteScreen {
 
         let restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
         if !self.is_loaded {
-            restore_status_view.set_content(
-                cx,
-                self.all_rooms_loaded,
-                room_name_id,
-            );
+            restore_status_view.set_content(cx, self.all_rooms_loaded, room_name_id, None);
             restore_status_view.set_visible(cx, true);
         } else {
             restore_status_view.set_visible(cx, false);
