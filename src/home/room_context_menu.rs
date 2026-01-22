@@ -87,6 +87,17 @@ live_design! {
                 text: "Settings"
             }
 
+            notifications_button = <ContextMenuButton> {
+                // TODO: use a proper bell icon
+                 draw_icon: { svg_file: (ICON_INFO) }
+                text: "Notifications"
+            }
+
+            invite_button = <ContextMenuButton> {
+                 draw_icon: { svg_file: (ICON_ADD_USER) }
+                text: "Invite"
+            }
+
             divider2 = <LineH> {
                 margin: {top: 3, bottom: 3}
                 width: Fill,
@@ -124,6 +135,8 @@ pub enum RoomMenuAction {
     MarkUnread(OwnedRoomId),
     SetFavorite(OwnedRoomId, bool),
     SetLowPriority(OwnedRoomId, bool),
+    Notifications(OwnedRoomId),
+    Invite(OwnedRoomId),
     CopyLink(OwnedRoomId),
     LeaveRoom(OwnedRoomId),
     OpenSettings(OwnedRoomId),
@@ -202,6 +215,14 @@ impl WidgetMatchEvent for RoomContextMenu {
              action_to_dispatch = RoomMenuAction::OpenSettings(details.room_id.clone());
              close_menu = true;
         }
+        else if self.button(ids!(notifications_button)).clicked(actions) {
+             action_to_dispatch = RoomMenuAction::Notifications(details.room_id.clone());
+             close_menu = true;
+        }
+        else if self.button(ids!(invite_button)).clicked(actions) {
+             action_to_dispatch = RoomMenuAction::Invite(details.room_id.clone());
+             close_menu = true;
+        }
         else if self.button(ids!(leave_button)).clicked(actions) {
              action_to_dispatch = RoomMenuAction::LeaveRoom(details.room_id.clone());
              close_menu = true;
@@ -259,14 +280,17 @@ impl RoomContextMenu {
         fav_btn.reset_hover(cx);
         priority_btn.reset_hover(cx);
         self.button(ids!(share_button)).reset_hover(cx);
+        self.button(ids!(share_button)).reset_hover(cx);
         self.button(ids!(settings_button)).reset_hover(cx);
+        self.button(ids!(notifications_button)).reset_hover(cx);
+        self.button(ids!(invite_button)).reset_hover(cx);
         self.button(ids!(leave_button)).reset_hover(cx);
         
         self.redraw(cx);
         
         // Calculate height (rudimentary) - sum of visible buttons + padding
-        // 6 buttons * 35.0 + 2 dividers * ~10.0 + padding
-        (6.0 * BUTTON_HEIGHT) + 20.0 + 10.0 // approx
+        // 8 buttons * 35.0 + 2 dividers * ~10.0 + padding
+        (8.0 * BUTTON_HEIGHT) + 20.0 + 10.0 // approx
     }
 
     fn close(&mut self, cx: &mut Cx) {
