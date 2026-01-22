@@ -42,6 +42,7 @@ use crate::{
     space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction}, utils::RoomNameId,
 };
 use super::rooms_list_entry::RoomsListEntryAction;
+use super::room_context_menu::RoomMenuDetails;
 
 /// Whether to pre-paginate visible rooms at least once in order to
 /// be able to display the latest message in a room's RoomsListEntry,
@@ -246,6 +247,10 @@ pub enum RoomsListAction {
     /// to a `RoomScreen` to display now-joined room.
     InviteAccepted {
         room_name_id: RoomNameId,
+    },
+    RightClicked {
+        details: RoomMenuDetails,
+        pos: DVec2,
     },
     None,
 }
@@ -1096,6 +1101,28 @@ impl Widget for RoomsList {
                     RoomsListAction::Selected(new_selected_room),
                 );
                 self.redraw(cx);
+            }
+            else if let RoomsListEntryAction::RightClicked(clicked_room_id, pos) = action.as_widget_action().cast() {
+                // Determine details for the context menu
+                let details = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
+                    Some(RoomMenuDetails {
+                        room_id: clicked_room_id.clone(),
+                        is_favorite: jr.tags.contains_key(&matrix_sdk::ruma::events::tag::TagName::Favorite),
+                        is_low_priority: jr.tags.contains_key(&matrix_sdk::ruma::events::tag::TagName::LowPriority),
+                        has_unread: jr.num_unread_messages > 0 || jr.num_unread_mentions > 0,
+                    })
+                } else {
+                    // TODO: Handle invited rooms or other states?
+                    None
+                };
+
+                if let Some(details) = details {
+                     cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        RoomsListAction::RightClicked { details, pos },
+                    );
+                }
             }
             // Handle the space lobby being clicked.
             else if let Some(SpaceLobbyAction::SpaceLobbyEntryClicked) = action.downcast_ref() {

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache,
     home::{
-        main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, room_context_menu::RoomContextMenuWidgetRefExt
     },
     join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
@@ -42,6 +42,7 @@ live_design! {
     use crate::shared::confirmation_modal::*;
     use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
+    use crate::home::room_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
     use crate::shared::image_viewer::ImageViewer;
     use link::tsp_link::TspVerificationModal;
@@ -111,6 +112,7 @@ live_design! {
                         // Context menus should be shown in front of other UI elements,
                         // but behind verification modals.
                         new_message_context_menu = <NewMessageContextMenu> { }
+                        room_context_menu = <RoomContextMenu> { }
 
                         // A modal to confirm sending out an invite to a room.
                         invite_confirmation_modal = <Modal> {
@@ -312,6 +314,21 @@ impl MatchEvent for App {
                 let pos_x = min(abs_pos.x, rect.size.x - expected_dimensions.x);
                 let pos_y = min(abs_pos.y, rect.size.y - expected_dimensions.y);
                 new_message_context_menu.apply_over(cx, live! {
+                    main_content = { margin: { left: (pos_x), top: (pos_y) } }
+                });
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            if let RoomsListAction::RightClicked { details, pos } = action.as_widget_action().cast() {
+                self.ui.callout_tooltip(ids!(app_tooltip)).hide(cx);
+                let room_context_menu = self.ui.room_context_menu(ids!(room_context_menu));
+                let expected_dimensions = room_context_menu.show(cx, details);
+                // Ensure the context menu does not spill over the window's bounds.
+                let rect = self.ui.window(ids!(main_window)).area().rect(cx);
+                let pos_x = min(pos.x, rect.size.x - expected_dimensions.x);
+                let pos_y = min(pos.y, rect.size.y - expected_dimensions.y);
+                room_context_menu.apply_over(cx, live! {
                     main_content = { margin: { left: (pos_x), top: (pos_y) } }
                 });
                 self.ui.redraw(cx);

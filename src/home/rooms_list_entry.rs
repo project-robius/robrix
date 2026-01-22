@@ -217,6 +217,7 @@ pub struct RoomsListEntry {
 #[derive(Clone, DefaultNone, Debug)]
 pub enum RoomsListEntryAction {
     Clicked(OwnedRoomId),
+    RightClicked(OwnedRoomId, DVec2),
     None,
 }
 
@@ -242,11 +243,17 @@ impl Widget for RoomsListEntry {
         // will just select the room, rather than resulting in a click on any child view
         // within the RoomsListEntry content itself, such as links or avatars.
         match event.hits(cx, self.view.area()) {
-            Hit::FingerDown(..) => {
+            Hit::FingerDown(fe) => {
                 cx.set_key_focus(self.view.area());
+                let is_right_click = fe.modifiers.control || fe.device.mouse_button().is_some_and(|b| b.is_secondary());
+                if is_right_click {
+                    cx.widget_action(uid, &scope.path, RoomsListEntryAction::RightClicked(self.room_id.clone().unwrap(), fe.abs));
+                }
             }
             Hit::FingerUp(fe) => {
-                if !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() {
+                // Ensure we don't trigger the regular click action if it was a right-click.
+                let is_right_click = fe.modifiers.control || fe.device.mouse_button().is_some_and(|b| b.is_secondary());
+                if !is_right_click && !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                     cx.widget_action(uid, &scope.path, RoomsListEntryAction::Clicked(self.room_id.clone().unwrap()));
                 }
             }
