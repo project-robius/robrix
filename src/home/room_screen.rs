@@ -80,7 +80,6 @@ live_design! {
     use crate::home::event_group::SmallStateGroupHeader;
     use crate::rooms_list::*;
     use crate::shared::restore_status_view::*;
-    use crate::shared::view_list::ViewList;
     use crate::home::link_preview::LinkPreview;
     use link::tsp_link::TspSignIndicator;
 
@@ -498,15 +497,11 @@ live_design! {
                     width: Fill,
                     height: Fit
                     flow: Down
-                    // As populate_small_state uses PortalList as parameter, create a portal list but do not draw it.
-                    dummy_portal_list = <PortalList> {
-                        height: 0, width: Fill
+                    <PortalList> {
+                        height: Fit, width: Fill
                         SmallStateEvent = <SmallStateEvent> {}
                         CondensedMessage = <CondensedMessage> {}
                         Message = <Message> {}
-                    }
-                    view_list = <ViewList> {
-                        width: Fill
                     }
                 }
             }
@@ -1039,8 +1034,10 @@ impl Widget for RoomScreen {
                         if group_range.start == item_id {
                             // This is the first item of a group - render FoldHeader
                             if let Some(group) = tl_state.small_state_group_manager.get_group_at_item_id(item_id) {
-                                let item = populate_small_state_group_header(
+                                populate_small_state_group_header(
                                     cx,
+                                    scope,
+                                    walk,
                                     list,
                                     item_id,
                                     room_id,
@@ -1055,7 +1052,6 @@ impl Widget for RoomScreen {
                                     &self.pinned_events,
                                     room_screen_widget_uid,
                                 );
-                                item.draw_all(cx, scope);
                             } else {
                                 let item = list.item(cx, item_id, id!(Empty));
                                 item.draw_all(cx, scope);
@@ -4220,6 +4216,8 @@ fn populate_small_state_event(
 /// * `tl_items` - The full list of timeline items
 fn populate_small_state_group_header(
     cx: &mut Cx2d,
+    scope: &mut Scope,
+    walk: Walk,
     list: &mut PortalList,
     item_id: usize,
     room_id: &OwnedRoomId,
@@ -4233,10 +4231,7 @@ fn populate_small_state_group_header(
     user_power_levels: &UserPowerLevels,
     pinned_events: &[OwnedEventId],
     room_screen_widget_uid: WidgetUid,
-) -> WidgetRef {
-    use crate::shared::view_list::ViewListWidgetRefExt;
-
-    // Get the FoldHeader item from portal list
+) {
     let (fold_item, _existed) = list.item_with_existed(cx, item_id, id!(SmallStateGroupHeader));
     // Set the header summary text
     if let Some(summary) = &group.cached_summary {
@@ -4252,56 +4247,48 @@ fn populate_small_state_group_header(
             user_ids,
         );
     }
-
-    // Create SmallStateEvent views for each item in the group range (skip first, which is the header)
-    let mut widgetref_list = vec![];
-    let dummy_portal_list = fold_item.portal_list(ids!(dummy_portal_list));
-    if let Some(mut list_ref) = dummy_portal_list.borrow_mut() {
-        let list = list_ref.deref_mut();
-        for tl_idx in (group_range.start)..group_range.end {
-            if let Some(timeline_item) = tl_items.get(tl_idx) {
-                let item_drawn_status = ItemDrawnStatus {
-                    content_drawn: content_drawn_since_last_update.contains(&tl_idx),
-                    profile_drawn: profile_drawn_since_last_update.contains(&tl_idx),
-                };
-                if let TimelineItemKind::Event(event_tl_item) = timeline_item.kind() {
-                    // Create a new SmallStateEvent view from the template
-                    let (item, item_drawn_status) = match event_tl_item.content() {
-                        TimelineItemContent::MsgLike(msg_like_content) => match &msg_like_content.kind {
-                            MsgLikeKind::Redacted => {
-                                let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
-                                populate_message_view(cx, list, tl_idx, room_id, event_tl_item, msg_like_content, prev_event, media_cache, link_preview_cache, user_power_levels, pinned_events, item_drawn_status, room_screen_widget_uid)
-                            }
-                            MsgLikeKind::Poll(poll_state) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, poll_state, item_drawn_status),
-                            MsgLikeKind::UnableToDecrypt(utd) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, utd, item_drawn_status),
-                            MsgLikeKind::Other(other) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, other, item_drawn_status),
-                            _ => (list.item_with_existed(cx, tl_idx, id!(Empty)).0, item_drawn_status)
-                        },
-                        TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, membership_change, item_drawn_status),
-                        TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, profile_change, item_drawn_status),
-                        TimelineItemContent::OtherState(other_state) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, other_state, item_drawn_status),
-                        _=> (list.item_with_existed(cx, tl_idx, id!(Empty)).0, item_drawn_status)
+    let mut walk = walk;
+    walk.height = Size::fit();
+    while let Some(item) = fold_item.draw_walk(cx, scope, walk).step() {
+        if let Some(mut list_ref) = item.as_portal_list().borrow_mut() {
+            let list = list_ref.deref_mut();
+            for tl_idx in (group_range.start)..group_range.end {
+                if let Some(timeline_item) = tl_items.get(tl_idx) {
+                    let item_drawn_status = ItemDrawnStatus {
+                        content_drawn: content_drawn_since_last_update.contains(&tl_idx),
+                        profile_drawn: profile_drawn_since_last_update.contains(&tl_idx),
                     };
-                    if item_drawn_status.content_drawn {
-                        content_drawn_since_last_update.insert(tl_idx..tl_idx + 1);
+                    if let TimelineItemKind::Event(event_tl_item) = timeline_item.kind() {
+                        // Create a new SmallStateEvent view from the template
+                        let (item, item_drawn_status) = match event_tl_item.content() {
+                            TimelineItemContent::MsgLike(msg_like_content) => match &msg_like_content.kind {
+                                MsgLikeKind::Redacted => {
+                                    let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
+                                    populate_message_view(cx, list, tl_idx, room_id, event_tl_item, msg_like_content, prev_event, media_cache, link_preview_cache, user_power_levels, pinned_events, item_drawn_status, room_screen_widget_uid)
+                                }
+                                MsgLikeKind::Poll(poll_state) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, poll_state, item_drawn_status),
+                                MsgLikeKind::UnableToDecrypt(utd) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, utd, item_drawn_status),
+                                MsgLikeKind::Other(other) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, other, item_drawn_status),
+                                _ => (list.item_with_existed(cx, tl_idx, id!(Empty)).0, item_drawn_status)
+                            },
+                            TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, membership_change, item_drawn_status),
+                            TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, profile_change, item_drawn_status),
+                            TimelineItemContent::OtherState(other_state) => populate_small_state_event(cx, list, tl_idx, room_id, event_tl_item, other_state, item_drawn_status),
+                            _=> (list.item_with_existed(cx, tl_idx, id!(Empty)).0, item_drawn_status)
+                        };
+                        if item_drawn_status.content_drawn {
+                            content_drawn_since_last_update.insert(tl_idx..tl_idx + 1);
+                        }
+                        if item_drawn_status.profile_drawn {
+                            profile_drawn_since_last_update.insert(tl_idx..tl_idx + 1);
+                        }
+                        item.draw_all(cx, scope);
                     }
-                    if item_drawn_status.profile_drawn {
-                        profile_drawn_since_last_update.insert(tl_idx..tl_idx + 1);
-                    }
-                    widgetref_list.push(item);
                 }
             }
         }
     }
-    // Get the ViewList reference from the fold header body
-    let mut view_widget = fold_item.view_list(ids!(view_list));
-    // Set the views into the ViewList
-    view_widget.set_widgetref_list(widgetref_list);
-
-    fold_item
 }
-
-
 /// Returns the display name of the sender of the given `event_tl_item`, if available.
 fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String> {
     if let TimelineDetails::Ready(profile) = event_tl_item.sender_profile() {

@@ -80,7 +80,7 @@ live_design! {
 ///
 /// The group is identified by a range of timeline item indices, and contains a mapping
 /// of user events within that range for generating summaries.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct SmallStateGroup {
     pub room_creator: Option<OwnedUserId>,
     /// Mapping of user IDs to their events within this group.
@@ -100,17 +100,6 @@ pub struct SmallStateGroup {
     /// Cached list of user IDs for avatar display, pre-sorted and limited.
     /// This avoids expensive sorting and extraction during rendering.
     pub cached_avatar_user_ids: Option<Vec<OwnedUserId>>,
-}
-
-impl Default for SmallStateGroup {
-    fn default() -> Self {
-        Self {
-            room_creator: None,
-            user_events_map: HashMap::new(),
-            cached_summary: None,
-            cached_avatar_user_ids: None,
-        }
-    }
 }
 
 /// Combined state for managing small state groups

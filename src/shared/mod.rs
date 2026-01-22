@@ -19,7 +19,6 @@ pub mod unread_badge;
 pub mod verification_badge;
 pub mod restore_status_view;
 pub mod image_viewer;
-pub mod view_list;
 pub mod fold_button_with_text;
 
 
@@ -44,6 +43,5 @@ pub fn live_design(cx: &mut Cx) {
     restore_status_view::live_design(cx);
     confirmation_modal::live_design(cx);
     image_viewer::live_design(cx);
-    view_list::live_design(cx);
     fold_button_with_text::live_design(cx);
 }
