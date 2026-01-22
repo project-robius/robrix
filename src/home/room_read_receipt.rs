@@ -98,7 +98,6 @@ impl Widget for AvatarRow {
 
         let should_hover_in = match event.hits(cx, self.area) {
             Hit::FingerLongPress(_)
-            | Hit::FingerHoverOver(..) // TODO: remove once CalloutTooltip bug is fixed
             | Hit::FingerHoverIn(..) => true,
             Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => true,
             Hit::FingerHoverOut(_) => {

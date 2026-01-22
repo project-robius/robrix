@@ -132,6 +132,7 @@ live_design! {
             auto_tail: false,
             width: Fill, height: Fill
             flow: Down,
+            padding: {top: 5}
             spacing: 0.0
 
             collapsible_header = <CollapsibleHeader> {}
