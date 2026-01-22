@@ -508,6 +508,11 @@ live_design! {
             Empty = <Empty> {}
             DateDivider = <DateDivider> {}
             ReadMarker = <ReadMarker> {}
+            // BottomSpace adds height at the end of the timeline to prevent infinite drawing of 0 height items.
+            BottomSpace = <View> {
+                height: 100.0
+                width: Fill
+            }
         }
 
         // A jump to bottom button (with an unread message badge) that is shown
@@ -1062,6 +1067,11 @@ impl Widget for RoomScreen {
                             item.draw_all(cx, scope);
                             continue;
                         }
+                    }
+                    if item_id > tl_items.len() {
+                        let item = list.item(cx, item_id, id!(BottomSpace));
+                        item.draw_all(cx, scope);
+                        continue;
                     }
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
