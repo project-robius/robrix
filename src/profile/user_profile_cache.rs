@@ -4,10 +4,10 @@
 
 use crossbeam_queue::SegQueue;
 use makepad_widgets::{warning, Cx, SignalToUI};
-use matrix_sdk::{room::RoomMember, ruma::{OwnedRoomId, OwnedUserId, RoomId, UserId}};
+use matrix_sdk::{room::RoomMember, ruma::{OwnedRoomId, OwnedUserId, UserId}};
 use std::{cell::RefCell, collections::{btree_map::Entry, BTreeMap}};
 
-use crate::{profile::user_profile::AvatarState, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::{shared::avatar::AvatarState, sliding_sync::{submit_async_request, MatrixRequest}};
 
 use super::user_profile::UserProfile;
 
@@ -178,7 +178,7 @@ pub fn process_user_profile_updates(_cx: &mut Cx) {
 }
 
 /// Invokes the given closure with cached user profile info for the given user ID
-/// if it exists in the cache, otherwise does nothing.
+/// (optionally in the given room) if it exists in the cache, otherwise does nothing.
 ///
 /// This function requires passing in a reference to `Cx`,
 /// which isn't used, but acts as a guarantee that this function
@@ -186,6 +186,7 @@ pub fn process_user_profile_updates(_cx: &mut Cx) {
 pub fn with_user_profile<F, R>(
     _cx: &mut Cx,
     user_id: OwnedUserId,
+    room_id: Option<&OwnedRoomId>,
     fetch_if_missing: bool,
     f: F,
 ) -> Option<R>
@@ -196,6 +197,13 @@ where
         match cache.entry(user_id) {
             Entry::Occupied(entry) => match entry.get() {
                 UserProfileCacheEntry::Loaded { user_profile, rooms } => {
+                    if room_id.is_some_and(|id| !rooms.contains_key(id)) {
+                        submit_async_request(MatrixRequest::GetUserProfile {
+                            user_id: entry.key().clone(),
+                            room_id: room_id.cloned(),
+                            local_only: false,
+                        });
+                    }
                     Some(f(user_profile, rooms))
                 }
                 UserProfileCacheEntry::Requested => {
@@ -209,7 +217,7 @@ where
                     // TODO: use the extra `via` parameters from `matrix_to_uri.via()`.
                     submit_async_request(MatrixRequest::GetUserProfile {
                         user_id: entry.key().clone(),
-                        room_id: None,
+                        room_id: room_id.cloned(),
                         local_only: false,
                     });
                     entry.insert(UserProfileCacheEntry::Requested);
@@ -221,9 +229,8 @@ where
 }
 
 
-/// Returns a clone of the cached user profile for the given user ID
-/// and a clone of that user's room member info for the given room ID,
-/// only if both are found in the cache.
+/// Returns the given user's displayable name (optionally in the given room),
+/// using the user's account-wide displayable name as a fallback.
 ///
 /// If either the `user_id` or `room_id` wasn't found in the cache,
 /// and if `fetch_if_missing` is true, then this function will submit a request
@@ -232,38 +239,57 @@ where
 /// This function requires passing in a reference to `Cx`,
 /// which isn't used, but acts as a guarantee that this function
 /// must only be called by the main UI thread.
-pub fn get_user_profile_and_room_member(
+pub fn get_user_display_name_for_room(
     _cx: &mut Cx,
     user_id: OwnedUserId,
-    room_id: &RoomId,
+    room_id: Option<&OwnedRoomId>,
     fetch_if_missing: bool,
-) -> (Option<UserProfile>, Option<RoomMember>) {
-    USER_PROFILE_CACHE.with_borrow_mut(|cache|
-        match cache.entry(user_id) {
-            Entry::Occupied(entry) => match entry.get() {
-                UserProfileCacheEntry::Loaded { user_profile, rooms } => {
-                    (Some(user_profile.clone()), rooms.get(room_id).cloned())
-                }
-                UserProfileCacheEntry::Requested => {
-                    // log!("User {} Room ID {room_id} room member info request is already in flight....", entry.key());
-                    (None, None)
-                }
-            }
-            Entry::Vacant(entry) => {
-                if fetch_if_missing {
-                    // log!("Did not find User {} Room ID {room_id} room member info in cache, fetching from server.", entry.key());
-                    // TODO: use the extra `via` parameters from `matrix_to_uri.via()`.
-                    submit_async_request(MatrixRequest::GetUserProfile {
-                        user_id: entry.key().clone(),
-                        room_id: Some(room_id.to_owned()),
-                        local_only: false,
-                    });
-                    entry.insert(UserProfileCacheEntry::Requested);
-                }
-                (None, None)
-            }
+) -> CachedName {
+    let opt = with_user_profile(_cx, user_id, room_id, fetch_if_missing, |profile, rooms| {
+        room_id.and_then(|id| rooms.get(id)).map_or_else(
+            || CachedName::FoundInProfile(profile.username.clone()),
+            |rm| CachedName::FoundInRoom(rm.display_name().map(|n| n.to_owned())),
+        )
+    });
+    opt.unwrap_or(CachedName::NotFound)
+}
+
+/// A user's display name in our cache.
+pub enum CachedName {
+    /// The user's display name was found for the specified room (most accurate).
+    /// If `None`, they did not set a display name for that room.
+    FoundInRoom(Option<String>),
+    /// The user's display name was found in their general account profile.
+    /// If `None`, they have not set a display name at all.
+    FoundInProfile(Option<String>),
+    /// No info about the user was found in the cache.
+    NotFound,
+}
+impl CachedName {
+    pub fn was_found(&self) -> bool {
+        matches!(self, Self::FoundInRoom(_) | Self::FoundInProfile(_))
+    }
+
+    pub fn into_option(self) -> Option<String> {
+        self.into()
+    }
+
+    pub fn as_deref(&self) -> Option<&str> {
+        match self {
+            CachedName::FoundInRoom(name)
+            | CachedName::FoundInProfile(name) => name.as_deref(),
+            CachedName::NotFound => None,
         }
-    )
+    }
+}
+impl From<CachedName> for Option<String> {
+    fn from(cached_name: CachedName) -> Self {
+        match cached_name {
+            CachedName::FoundInRoom(name) => name,
+            CachedName::FoundInProfile(name) => name,
+            CachedName::NotFound => None,
+        }
+    }
 }
 
 /// Clears cached user profile.

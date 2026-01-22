@@ -31,13 +31,10 @@
 use makepad_widgets::*;
 use crate::{
     avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
-        user_profile::{AvatarState, UserProfile},
+        user_profile::UserProfile,
         user_profile_cache::{self, UserProfileUpdate},
     }, shared::{
-        avatar::AvatarWidgetExt,
-        callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition},
-        styles::*,
-        verification_badge::VerificationBadgeWidgetExt,
+        avatar::{AvatarState, AvatarWidgetExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, styles::*, verification_badge::VerificationBadgeWidgetExt
     }, sliding_sync::current_user_id, utils::{self, RoomNameId}
 };
 
@@ -338,7 +335,6 @@ impl Widget for ProfileIcon {
         let area = self.view.area();
         match event.hits(cx, area) {
             Hit::FingerLongPress(_)
-            | Hit::FingerHoverOver(_) // TODO: remove once CalloutTooltip bug is fixed
             | Hit::FingerHoverIn(_) => {
                 let (verification_str, bg_color) = self.view
                     .verification_badge(ids!(verification_badge))
@@ -542,6 +538,7 @@ pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
         let avatar_uri_to_fetch = user_profile_cache::with_user_profile(
             cx,
             own_user_id,
+            None,
             true,
             |new_profile, _rooms| {
                 let avatar_uri_to_fetch = new_profile.avatar_state.uri().cloned();

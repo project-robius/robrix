@@ -3,6 +3,7 @@
 //! By default, the tooltip has a black background color.
 
 use makepad_widgets::*;
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -162,6 +163,12 @@ pub enum TooltipPosition {
 #[derive(Live, LiveHook, Widget)]
 pub struct CalloutTooltip {
     #[deref] view: View,
+
+    // The below items are a hack to re-populate this tooltip automatically
+    // after a certain time interval, because its repositioning code is
+    // currently broken and needs to be rewritten entirely.
+    #[rust] timer_redraw: Timer,
+    #[rust] latest_options: Option<(String, Rect, CalloutTooltipOptions)>,
 }
 
 
@@ -175,6 +182,14 @@ struct PositionCalculation {
 
 impl Widget for CalloutTooltip {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.timer_redraw.is_event(event).is_some() {
+            if let Some((text, widget_rect, options)) = self.latest_options.take() {
+                self.show_with_options(cx, &text, widget_rect, options, true);
+            }
+            cx.stop_timer(self.timer_redraw);
+            self.timer_redraw = Timer::empty();
+        }
+
         self.view.handle_event(cx, event, scope);
     }
 
@@ -374,7 +389,16 @@ impl CalloutTooltip {
         text: &str,
         widget_rect: Rect,
         options: CalloutTooltipOptions,
+        is_internal_redraw: bool,
     ) {
+        if !is_internal_redraw {
+            self.latest_options = Some((
+                text.to_owned(),
+                widget_rect,
+                options.clone(),
+            ));
+        }
+
         let mut tooltip = self.view.tooltip(ids!(tooltip));
         tooltip.set_text(cx, &pad_last_line(text));
 
@@ -413,16 +437,19 @@ impl CalloutTooltip {
             text_color,
             options.bg_color,
         );
-        tooltip.show(cx);
-    }
 
-    /// Shows the tooltip.
-    pub fn show(&mut self, cx: &mut Cx) {
+        if !is_internal_redraw {
+            cx.stop_timer(self.timer_redraw);
+            self.timer_redraw = cx.start_timeout(0.05); // 50ms
+        }
         self.view.tooltip(ids!(tooltip)).show(cx);
     }
 
     /// Hide the tooltip.
     pub fn hide(&mut self, cx: &mut Cx) {
+        self.latest_options = None;
+        cx.stop_timer(self.timer_redraw);
+        self.timer_redraw = Timer::empty();
         self.view.tooltip(ids!(tooltip)).hide(cx);
     }
 }
@@ -437,15 +464,10 @@ impl CalloutTooltipRef {
         options: CalloutTooltipOptions,
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_with_options(cx, text, widget_rect, options);
+            inner.show_with_options(cx, text, widget_rect, options, false);
         }
     }
-    /// See [`CalloutTooltip::show()`].
-    pub fn show(&self, cx: &mut Cx) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.show(cx);
-        }
-    }
+
     /// See [`CalloutTooltip::hide()`].
     pub fn hide(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {

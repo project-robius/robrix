@@ -1,14 +1,13 @@
 use crate::home::room_screen::RoomScreenTooltipActions;
-use crate::profile::user_profile_cache::get_user_profile_and_room_member;
+use crate::profile::user_profile_cache::get_user_display_name_for_room;
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
 use crate::utils::human_readable_list;
 use indexmap::IndexMap;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
+use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, OwnedRoomId, RoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
 
 use std::cmp;
-
 
 
 /// The maximum number of items to display in the read receipts AvatarRow
@@ -255,20 +254,16 @@ pub fn populate_read_receipts(
 pub fn populate_tooltip(
     cx: &mut Cx,
     read_receipts: IndexMap<OwnedUserId, Receipt>,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
 ) -> String {
     let mut display_names: Vec<String> = read_receipts
         .iter()
         .rev()
         .take(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT)
         .map(|(user_id, _)| {
-            if let (Some(profile), _) =
-                get_user_profile_and_room_member(cx, user_id.clone(), room_id, true)
-            {
-                profile.displayable_name().to_owned()
-            } else {
-                user_id.to_string()
-            }
+            get_user_display_name_for_room(cx, user_id.clone(), Some(room_id), true)
+                .into_option()
+                .unwrap_or_else(|| user_id.to_string())
         })
         .collect();
     for _ in display_names.len()..read_receipts.len() {

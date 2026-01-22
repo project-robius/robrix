@@ -32,12 +32,10 @@ use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::TimelineUpdate, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
-        user_profile::{AvatarState, UserProfile},
+        user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, register::register_screen::RegisterAction, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
-        html_or_plaintext::MatrixLinkPillState,
-        jump_to_bottom_button::UnreadMessageCount,
-        popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
+        avatar::AvatarState, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -859,12 +857,12 @@ async fn matrix_worker_task(
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending request to fetch details for event {event_id} in room {room_id}...");
                     let result = timeline.fetch_details_for_event(&event_id).await;
-                    match result {
+                    match &result {
                         Ok(_) => {
                             // log!("Successfully fetched details for event {event_id} in room {room_id}.");
                         }
-                        Err(ref _e) => {
-                            // error!("Error fetching details for event {event_id} in room {room_id}: {e:?}");
+                        Err(_e) => {
+                            // error!("Error fetching details for event {event_id} in room {room_id}: {_e:?}");
                         }
                     }
                     sender.send(TimelineUpdate::EventDetailsFetched {
