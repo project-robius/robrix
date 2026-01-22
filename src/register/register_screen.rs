@@ -603,9 +603,14 @@ impl MatchEvent for RegisterScreen {
         if let Some(text_event) = self.view.text_input(ids!(custom_homeserver_input)).changed(actions) {
             let trimmed = text_event.trim();
             if !trimmed.is_empty() {
-                // Basic URL validation - ensure it starts with http:// or https://
-                let is_valid_url = trimmed.starts_with("http://") || trimmed.starts_with("https://") 
-                    || (!trimmed.contains("://") && !trimmed.is_empty()); // Allow domain-only input
+                // Validate URL: accept full URLs or domain-only input
+                let is_valid_url = if trimmed.contains("://") {
+                    // Full URL provided - validate it properly
+                    url::Url::parse(trimmed).is_ok()
+                } else {
+                    // Domain-only input - try to parse with https:// prefix
+                    url::Url::parse(&format!("https://{}", trimmed)).is_ok()
+                };
 
                 if is_valid_url {
                     self.selected_homeserver = trimmed.to_string();

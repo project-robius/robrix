@@ -308,16 +308,23 @@ async fn register_user(register_request: RegisterRequest) -> std::result::Result
                     match client.matrix_auth().register(req.clone()).await {
                         Ok(_) => break,
                         Err(err) => {
-                            // Best-effort: SDK doesn't expose a typed invalid-token error yet.
-                            // Update when a structured variant is available.
-                            if err.to_string().contains("Invalid registration token") {
+                            // Check for invalid registration token error.
+                            // Note: The Matrix SDK doesn't expose a typed error variant for this yet,
+                            // so we check both the error message and the error kind as a best-effort approach.
+                            // This should be updated to use a structured error type when available in the SDK.
+                            let err_string = err.to_string();
+                            let is_token_error = err_string.contains("Invalid registration token")
+                                || err_string.contains("M_INVALID_PARAM");
+
+                            if is_token_error {
                                 return Err(RegisterFlowError::TokenInvalid);
                             }
+
                             if let Some(next_info) = err.as_uiaa_response().cloned() {
                                 uiaa_info = next_info;
                                 continue;
                             } else {
-                                return Err(RegisterFlowError::Other(err.to_string()));
+                                return Err(RegisterFlowError::Other(err_string));
                             }
                         }
                     }
