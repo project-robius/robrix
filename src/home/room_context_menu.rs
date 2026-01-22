@@ -58,18 +58,17 @@ live_design! {
             }
 
             mark_read_button = <ContextMenuButton> {
-                draw_icon: { svg_file: (ICON_CHECK) }
+                draw_icon: { svg_file: (ICON_CHECKMARK) }
                 text: "Mark as Read"
             }
 
             favorite_button = <ContextMenuButton> {
-                draw_icon: { svg_file: (ICON_STAR) }
+                draw_icon: { svg_file: (ICON_PIN) }
                 text: "Favorite"
             }
 
             priority_button = <ContextMenuButton> {
-                // TODO: Add proper icon for low priority
-                 draw_icon: { svg_file: (ICON_BLOCK) } 
+                draw_icon: { svg_file: (ICON_TOMBSTONE) } 
                 text: "Set Low Priority"
             }
 
@@ -95,7 +94,7 @@ live_design! {
 
             leave_button = <ContextMenuButton> {
                 draw_icon: {
-                    svg_file: (ICON_LEAVE)
+                    svg_file: (ICON_LOGOUT)
                     color: (COLOR_FG_DANGER_RED),
                 }
                 draw_bg: {
