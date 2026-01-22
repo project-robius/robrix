@@ -728,12 +728,8 @@ impl MatchEvent for RegisterScreen {
             // SSO success ultimately goes through the login flow, so we listen for LoginSuccess
             if self.sso_pending {
                 if let Some(LoginAction::LoginSuccess) = action.downcast_ref::<LoginAction>() {
-                    // SSO registration successful
-                    self.view.modal(ids!(status_modal)).close(cx);
-                    self.sso_pending = false;
-                    self.update_button_mask(&sso_button, cx, 0.0);
+                    // SSO registration successful - post action and let the handler below do cleanup
                     cx.action(RegisterAction::RegistrationSuccess);
-                    self.redraw(cx);
                 }
             }
             
