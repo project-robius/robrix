@@ -42,7 +42,7 @@ use crate::{
     space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction}, utils::RoomNameId,
 };
 use super::rooms_list_entry::RoomsListEntryAction;
-use super::room_context_menu::RoomMenuDetails;
+use super::room_context_menu::RoomContextMenuDetails;
 
 /// Whether to pre-paginate visible rooms at least once in order to
 /// be able to display the latest message in a room's RoomsListEntry,
@@ -177,6 +177,7 @@ pub enum RoomsListUpdate {
     /// Update the number of unread messages and mentions for the given room.
     UpdateNumUnreadMessages {
         room_id: OwnedRoomId,
+        is_marked_unread: bool,
         unread_messages: UnreadMessageCount,
         unread_mentions: u64,
     },
@@ -249,7 +250,7 @@ pub enum RoomsListAction {
         room_name_id: RoomNameId,
     },
     RightClicked {
-        details: RoomMenuDetails,
+        details: RoomContextMenuDetails,
         pos: DVec2,
     },
     None,
@@ -268,6 +269,8 @@ pub struct JoinedRoomInfo {
     pub num_unread_messages: u64,
     /// The number of unread mentions in this room.
     pub num_unread_mentions: u64,
+    /// Whether the room is manually marked as unread.
+    pub is_marked_unread: bool,
     /// The canonical alias for this room, if any.
     pub canonical_alias: Option<OwnedRoomAliasId>,
     /// The alternative aliases for this room, if any.
@@ -569,12 +572,13 @@ impl RoomsList {
                         error!("Error: couldn't find room {room_id} to update latest event");
                     }
                 }
-                RoomsListUpdate::UpdateNumUnreadMessages { room_id, unread_messages, unread_mentions } => {
+                RoomsListUpdate::UpdateNumUnreadMessages { room_id, is_marked_unread, unread_messages, unread_mentions } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         (room.num_unread_messages, room.num_unread_mentions) = match unread_messages {
                             UnreadMessageCount::Unknown => (0, 0),
                             UnreadMessageCount::Known(count) => (count, unread_mentions),
                         };
+                        room.is_marked_unread = is_marked_unread;
                     } else {
                         warning!("Warning: couldn't find room {} to update unread messages count", room_id);
                     }
@@ -1110,12 +1114,12 @@ impl Widget for RoomsList {
             else if let RoomsListEntryAction::SecondaryClicked(clicked_room_id, pos) = action.as_widget_action().cast() {
                 // Determine details for the context menu
                 let details = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
-                    Some(RoomMenuDetails {
+                    Some(RoomContextMenuDetails {
                         room_id: clicked_room_id.clone(),
                         room_name_id: jr.room_name_id.clone(),
                         is_favorite: jr.tags.contains_key(&matrix_sdk::ruma::events::tag::TagName::Favorite),
                         is_low_priority: jr.tags.contains_key(&matrix_sdk::ruma::events::tag::TagName::LowPriority),
-                        has_unread: jr.num_unread_messages > 0 || jr.num_unread_mentions > 0,
+                        is_unread: jr.num_unread_messages > 0 || jr.num_unread_mentions > 0,
                     })
                 } else {
                     // TODO: Handle invited rooms or other states?

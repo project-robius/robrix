@@ -57,7 +57,7 @@ live_design! {
                 border_color: #888
             }
 
-            mark_read_button = <ContextMenuButton> {
+            mark_unread_button = <ContextMenuButton> {
                 draw_icon: { svg_file: (ICON_CHECKMARK) }
                 text: "Mark as Read"
             }
@@ -121,21 +121,19 @@ live_design! {
     }
 }
 
-use crate::utils::RoomNameId;
+use crate::{sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
 
 #[derive(Clone, Debug)]
-pub struct RoomMenuDetails {
+pub struct RoomContextMenuDetails {
     pub room_id: OwnedRoomId,
     pub room_name_id: RoomNameId,
     pub is_favorite: bool,
     pub is_low_priority: bool,
-    pub has_unread: bool,
+    pub is_unread: bool,
 }
 
 #[derive(Clone, DefaultNone, Debug)]
-pub enum RoomMenuAction {
-    MarkRead(OwnedRoomId),
-    MarkUnread(OwnedRoomId),
+pub enum RoomContextMenuAction {
     SetFavorite(OwnedRoomId, bool),
     SetLowPriority(OwnedRoomId, bool),
     Notifications(OwnedRoomId),
@@ -149,7 +147,7 @@ pub enum RoomMenuAction {
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomContextMenu {
     #[deref] view: View,
-    #[rust] details: Option<RoomMenuDetails>,
+    #[rust] details: Option<RoomContextMenuDetails>,
 }
 
 impl Widget for RoomContextMenu {
@@ -190,40 +188,39 @@ impl Widget for RoomContextMenu {
 impl WidgetMatchEvent for RoomContextMenu {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         let Some(details) = self.details.as_ref() else { return };
-        let mut action_to_dispatch = RoomMenuAction::None;
+        let mut action_to_dispatch = RoomContextMenuAction::None;
         let mut close_menu = false;
         
-        // TODO: Implement button clicks using `details`
-        if self.button(ids!(mark_read_button)).clicked(actions) {
-            if details.has_unread {
-                action_to_dispatch = RoomMenuAction::MarkRead(details.room_id.clone());
-            } else {
-                action_to_dispatch = RoomMenuAction::MarkUnread(details.room_id.clone());
-            }
+        if self.button(ids!(mark_unread_button)).clicked(actions) {
+            // Toggle unread status
+            submit_async_request(MatrixRequest::SetUnreadFlag {
+                room_id: details.room_id.clone(),
+                is_unread: !details.is_unread,
+            });
             close_menu = true;
         } 
         else if self.button(ids!(favorite_button)).clicked(actions) {
-            action_to_dispatch = RoomMenuAction::SetFavorite(details.room_id.clone(), !details.is_favorite);
+            action_to_dispatch = RoomContextMenuAction::SetFavorite(details.room_id.clone(), !details.is_favorite);
             close_menu = true;
         }
         else if self.button(ids!(priority_button)).clicked(actions) {
-            action_to_dispatch = RoomMenuAction::SetLowPriority(details.room_id.clone(), !details.is_low_priority);
+            action_to_dispatch = RoomContextMenuAction::SetLowPriority(details.room_id.clone(), !details.is_low_priority);
             close_menu = true;
         }
         else if self.button(ids!(share_button)).clicked(actions) {
-            action_to_dispatch = RoomMenuAction::CopyLink(details.room_id.clone());
+            action_to_dispatch = RoomContextMenuAction::CopyLink(details.room_id.clone());
             close_menu = true;
         }
          else if self.button(ids!(settings_button)).clicked(actions) {
-            action_to_dispatch = RoomMenuAction::OpenSettings(details.room_id.clone());
+            action_to_dispatch = RoomContextMenuAction::OpenSettings(details.room_id.clone());
             close_menu = true;
         }
         else if self.button(ids!(notifications_button)).clicked(actions) {
-            action_to_dispatch = RoomMenuAction::Notifications(details.room_id.clone());
+            action_to_dispatch = RoomContextMenuAction::Notifications(details.room_id.clone());
             close_menu = true;
         }
         else if self.button(ids!(invite_button)).clicked(actions) {
-            action_to_dispatch = RoomMenuAction::Invite(details.room_id.clone());
+            action_to_dispatch = RoomContextMenuAction::Invite(details.room_id.clone());
             close_menu = true;
         }
         else if self.button(ids!(leave_button)).clicked(actions) {
@@ -237,7 +234,7 @@ impl WidgetMatchEvent for RoomContextMenu {
             close_menu = true;
         }
 
-        if let RoomMenuAction::None = action_to_dispatch { } else {
+        if !matches!(action_to_dispatch, RoomContextMenuAction::None) {
             cx.widget_action(self.widget_uid(), &scope.path, action_to_dispatch);
         }
 
@@ -252,7 +249,7 @@ impl RoomContextMenu {
         self.visible
     }
 
-    pub fn show(&mut self, cx: &mut Cx, details: RoomMenuDetails) -> DVec2 {
+    pub fn show(&mut self, cx: &mut Cx, details: RoomContextMenuDetails) -> DVec2 {
         self.details = Some(details.clone());
         self.visible = true;
         cx.set_key_focus(self.view.area());
@@ -261,9 +258,9 @@ impl RoomContextMenu {
         dvec2(MENU_WIDTH, height)
     }
     
-    fn update_buttons(&mut self, cx: &mut Cx, details: &RoomMenuDetails) -> f64 {
-        let mark_read_btn = self.button(ids!(mark_read_button));
-        if details.has_unread {
+    fn update_buttons(&mut self, cx: &mut Cx, details: &RoomContextMenuDetails) -> f64 {
+        let mark_read_btn = self.button(ids!(mark_unread_button));
+        if details.is_unread {
             mark_read_btn.set_text(cx, "Mark as Read");
             // mark_read_btn.draw_icon.svg_file = ...; // Optional: change icon
         } else {
@@ -316,7 +313,7 @@ impl RoomContextMenuRef {
         inner.is_currently_shown(cx)
     }
 
-    pub fn show(&self, cx: &mut Cx, details: RoomMenuDetails) -> DVec2 {
+    pub fn show(&self, cx: &mut Cx, details: RoomContextMenuDetails) -> DVec2 {
         let Some(mut inner) = self.borrow_mut() else { return DVec2::default()};
         inner.show(cx, details)
     }

@@ -92,8 +92,6 @@ live_design! {
     }
 
     pub ROOM_NAME_TEXT_COLOR = #x0
-
-    pub COLOR_ROBRIX_PURPLE = #572DCC; // the purple color from the Robrix logo
     pub COLOR_META = #xccc
 
     pub COLOR_DIVIDER = #00000018
@@ -108,6 +106,13 @@ live_design! {
     pub COLOR_WARNING_NOT_FOUND = #953800
 
     pub COLOR_SELECT_TEXT = #A6CDFE
+
+    pub COLOR_ROBRIX_PURPLE = #572DCC; // the purple color from the Robrix logo
+    pub COLOR_ROBRIX_CYAN = #05CDC7; // the cyan color from the Robrix logo
+    pub COLOR_UNREAD_MENTION = #FF0000;
+    pub COLOR_UNREAD_MARKED = (COLOR_ROBRIX_CYAN);
+    pub COLOR_UNREAD_DEFAULT = #AAAAAA;
+
 
     pub COLOR_PRIMARY = #ffffff
     pub COLOR_PRIMARY_DARKER = #fefefe
@@ -315,6 +320,14 @@ pub const COLOR_FG_DANGER_RED:         Vec4 = vec4(0.863, 0.0, 0.02, 1.0);
 pub const COLOR_BG_DANGER_RED:         Vec4 = vec4(1.0, 0.941, 0.941, 1.0);
 /// #572DCC
 pub const COLOR_ROBRIX_PURPLE:         Vec4 = vec4(0.341, 0.176, 0.8, 1.0);
+/// #05CDC7
+pub const COLOR_ROBRIX_CYAN:           Vec4 = vec4(0.031, 0.804, 0.78, 1.0);
+/// #FF0000
+pub const COLOR_UNREAD_MENTION:        Vec4 = vec4(1.0, 0.0, 0.0, 1.0);
+/// #572DCC
+pub const COLOR_UNREAD_MARKED:         Vec4 = COLOR_ROBRIX_CYAN;
+/// #AAAAAA
+pub const COLOR_UNREAD_DEFAULT:        Vec4 = vec4(0.667, 0.667, 0.667, 1.0);
 /// #FF6e00
 pub const COLOR_UNKNOWN_ROOM_AVATAR:   Vec4 = vec4(1.0, 0.431, 0.0, 1.0);
 /// #fcdb03
@@ -326,4 +339,4 @@ pub const COLOR_WHITE:                 Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
 /// #888888
 pub const COLOR_MESSAGE_NOTICE_TEXT:   Vec4 = vec4(0.5, 0.5, 0.5, 1.0);
 /// #953800
-pub const COLOR_WARNING_NOT_FOUND:    Vec4 = vec4(0.584, 0.219, 0.0, 1.0);
+pub const COLOR_WARNING_NOT_FOUND:     Vec4 = vec4(0.584, 0.219, 0.0, 1.0);

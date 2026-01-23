@@ -357,6 +357,11 @@ pub enum MatrixRequest {
     GetNumberUnreadMessages {
         room_id: OwnedRoomId,
     },
+    /// Request to set the unread flag for the given room.
+    SetUnreadFlag {
+        room_id: OwnedRoomId,
+        is_unread: bool,
+    },
     /// Request to ignore/block or unignore/unblock a user.
     IgnoreUser {
         /// Whether to ignore (`true`) or unignore (`false`) the user.
@@ -923,9 +928,27 @@ async fn matrix_worker_task(
                     }
                     enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                         room_id: room_id.clone(),
+                        is_marked_unread: timeline.room().is_marked_unread(),
                         unread_messages: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
                         unread_mentions: timeline.room().num_unread_mentions(),
                     });
+                });
+            }
+            MatrixRequest::SetUnreadFlag { room_id, is_unread } => {
+                let timeline = {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                        log!("Skipping set unread flag request for not-yet-known room {room_id}");
+                        continue;
+                    };
+                    room_info.timeline.clone()
+                };
+                let _set_unread_task = Handle::current().spawn(async move {
+                    let result = timeline.room().set_unread_flag(is_unread).await;
+                    match result {
+                        Ok(_) => log!("Set unread flag to {} for room {}", is_unread, room_id),
+                        Err(e) => error!("Failed to set unread flag to {} for room {}: {:?}", is_unread, room_id, e),
+                    }
                 });
             }
             MatrixRequest::IgnoreUser { ignore, room_member, room_id } => {
@@ -1087,6 +1110,7 @@ async fn matrix_worker_task(
                                 // Update the rooms list with new unread counts
                                 enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                                     room_id: room_id_clone.clone(),
+                                    is_marked_unread: timeline.room().is_marked_unread(),
                                     unread_messages: UnreadMessageCount::Known(unread_count),
                                     unread_mentions,
                                 });
@@ -1267,6 +1291,7 @@ async fn matrix_worker_task(
                     // Also update the number of unread messages in the room.
                     enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                         room_id: room_id.clone(),
+                        is_marked_unread: timeline.room().is_marked_unread(),
                         unread_messages: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
                         unread_mentions: timeline.room().num_unread_mentions()
                     });
@@ -1292,6 +1317,7 @@ async fn matrix_worker_task(
                     // Also update the number of unread messages in the room.
                     enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                         room_id: room_id.clone(),
+                        is_marked_unread: timeline.room().is_marked_unread(),
                         unread_messages: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
                         unread_mentions: timeline.room().num_unread_mentions()
                     });
@@ -1765,6 +1791,7 @@ struct RoomListServiceRoomInfo {
     room_id: OwnedRoomId,
     state: RoomState,
     is_direct: bool,
+    is_marked_unread: bool,
     is_tombstoned: bool,
     tags: Option<Tags>,
     user_power_levels: Option<UserPowerLevels>,
@@ -1781,6 +1808,7 @@ impl RoomListServiceRoomInfo {
             room_id: room.room_id().to_owned(),
             state: room.state(),
             is_direct: room.is_direct().await.unwrap_or(false),
+            is_marked_unread: room.is_marked_unread(),
             is_tombstoned: room.is_tombstoned(),
             tags: room.tags().await.ok().flatten(),
             user_power_levels: if let Some(user_id) = current_user_id() {
@@ -2346,16 +2374,19 @@ async fn update_room(
                 });
             }
 
-            if old_room.num_unread_messages != new_room.num_unread_messages
+            if old_room.is_marked_unread != new_room.is_marked_unread
+                || old_room.num_unread_messages != new_room.num_unread_messages
                 || old_room.num_unread_mentions != new_room.num_unread_mentions
             {
-                log!("Updating room {}, unread messages {} --> {}, unread mentions {} --> {}",
+                log!("Updating room {}, marked unread {} --> {}, unread messages {} --> {}, unread mentions {} --> {}",
                     new_room_id,
+                    old_room.is_marked_unread, new_room.is_marked_unread,
                     old_room.num_unread_messages, new_room.num_unread_messages,
                     old_room.num_unread_mentions, new_room.num_unread_mentions,
                 );
                 enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                     room_id: new_room_id.clone(),
+                    is_marked_unread: new_room.is_marked_unread,
                     unread_messages: UnreadMessageCount::Known(new_room.num_unread_messages),
                     unread_mentions: new_room.num_unread_mentions,
                 });
@@ -2551,6 +2582,7 @@ async fn add_new_room(
         tags: new_room.tags.clone().unwrap_or_default(),
         num_unread_messages: new_room.num_unread_messages,
         num_unread_mentions: new_room.num_unread_mentions,
+        is_marked_unread: new_room.is_marked_unread,
         room_avatar,
         room_name_id: room_name_id.clone(),
         canonical_alias: new_room.room.canonical_alias(),

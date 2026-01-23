@@ -218,7 +218,7 @@ pub struct RoomsListEntry {
 /// Widget actions that are emitted by a RoomsListEntry.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum RoomsListEntryAction {
-    /// This RoomsListEntry was primary clicked or tapped.
+    /// This RoomsListEntry was primary-clicked or tapped.
     PrimaryClicked(OwnedRoomId),
     /// This RoomsListEntry was right-clicked or long-pressed.
     SecondaryClicked(OwnedRoomId, DVec2),
@@ -246,22 +246,31 @@ impl Widget for RoomsListEntry {
         // We handle hits on this widget first to ensure that any clicks on it
         // will just select the room, rather than resulting in a click on any child view
         // within the RoomsListEntry content itself, such as links or avatars.
-        match event.hits(cx, self.view.area()) {
-            Hit::FingerDown(fe) => {
-                cx.set_key_focus(self.view.area());
-                let is_right_click = fe.modifiers.control || fe.device.mouse_button().is_some_and(|b| b.is_secondary());
-                if is_right_click {
-                    cx.widget_action(uid, &scope.path, RoomsListEntryAction::SecondaryClicked(self.room_id.clone().unwrap(), fe.abs));
+        if let Some(room_id) = &self.room_id {
+            let area = self.view.area();
+            match event.hits(cx, area) {
+                Hit::FingerDown(fe) => {
+                    cx.set_key_focus(area);
+                    if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
+                        cx.widget_action(
+                            uid,
+                            &scope.path,
+                            RoomsListEntryAction::SecondaryClicked(room_id.clone(), fe.abs),
+                        );
+                    }
                 }
-            }
-            Hit::FingerUp(fe) => {
-                // Ensure we don't trigger the regular click action if it was a right-click.
-                let is_right_click = fe.modifiers.control || fe.device.mouse_button().is_some_and(|b| b.is_secondary());
-                if !is_right_click && !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() {
-                    cx.widget_action(uid, &scope.path, RoomsListEntryAction::PrimaryClicked(self.room_id.clone().unwrap()));
+                Hit::FingerLongPress(fe) => {
+                    cx.widget_action(
+                        uid,
+                        &scope.path,
+                        RoomsListEntryAction::SecondaryClicked(room_id.clone(), fe.abs),
+                    );
                 }
+                Hit::FingerUp(fe) if !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                    cx.widget_action(uid, &scope.path, RoomsListEntryAction::PrimaryClicked(room_id.clone()));
+                }
+                _ => { }
             }
-            _ => { }
         }
 
         self.view.handle_event(cx, event, scope);
@@ -319,9 +328,11 @@ impl RoomsListEntryContent {
                 .show_html(cx, msg);
         }
 
-        self.view
-            .unread_badge(ids!(unread_badge))
-            .update_counts(room_info.num_unread_mentions, room_info.num_unread_messages);
+        self.view.unread_badge(ids!(unread_badge)).update_counts(
+            room_info.is_marked_unread,
+            room_info.num_unread_mentions,
+            room_info.num_unread_messages,
+        );
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
         // Show tombstone icon if the room is tombstoned
         self.view.view(ids!(tombstone_icon)).set_visible(cx, room_info.is_tombstoned);
@@ -358,7 +369,7 @@ impl RoomsListEntryContent {
 
         self.view
             .unread_badge(ids!(unread_badge))
-            .update_counts(1, 0);
+            .update_counts(false, 1, 0);
 
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
     }
