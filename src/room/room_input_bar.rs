@@ -38,6 +38,7 @@ live_design! {
     use link::tsp_link::TspSignAnycastCheckbox;
 
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
+    ICO_ADD_IMAGE = dep("crate://self/resources/icons/add_image.svg")
 
 
     pub RoomInputBar = {{RoomInputBar}}<RoundedView> {
@@ -97,6 +98,20 @@ live_design! {
                     },
                     draw_bg: {
                         color: (COLOR_LOCATION_PREVIEW_BG),
+                    }
+                    icon_walk: {width: Fit, height: 23, margin: {bottom: -1}}
+                    text: "",
+                }
+
+                image_upload_button = <RobrixIconButton> {
+                    margin: {left: 4}
+                    spacing: 0,
+                    draw_icon: {
+                        svg_file: (ICO_ADD_IMAGE)
+                        color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                    },
+                    draw_bg: {
+                        color: (COLOR_PRIMARY),
                     }
                     icon_walk: {width: Fit, height: 23, margin: {bottom: -1}}
                     text: "",
@@ -206,7 +221,27 @@ impl Widget for RoomInputBar {
             }
             _ => {}
         }
+        if let Event::FileDialogResult { path } = event {
+            if let Some(path) = path {
+                log!("File selected for upload: {}", path.display());
+                submit_async_request(MatrixRequest::Upload {
+                    room_id: room_screen_props.room_name_id.room_id().clone(),
+                    file_path: path.clone(),
+                    replied_to: self.replying_to.take().and_then(|(event_tl_item, _emb)|
+                        event_tl_item.event_id().map(|event_id|
+                            Reply {
+                                event_id: event_id.to_owned(),
+                                enforce_thread: EnforceThread::MaybeThreaded,
+                            }
+                        )
+                    ),
+                    #[cfg(feature = "tsp")]
+                    sign_with_tsp: self.is_tsp_signing_enabled(cx),
+                });
 
+                self.clear_replying_to(cx);
+            }
+        }
         if let Event::Actions(actions) = event {
             self.handle_actions(cx, actions, room_screen_props);
         }
@@ -251,6 +286,12 @@ impl RoomInputBar {
             }
             self.view.location_preview(ids!(location_preview)).show();
             self.redraw(cx);
+        }
+
+        // Handle the image upload button being clicked.
+        if self.button(ids!(image_upload_button)).clicked(actions) {
+            log!("Image upload button clicked; opening file dialog...");
+            cx.open_system_openfile_dialog();
         }
 
         // Handle the send location button being clicked.

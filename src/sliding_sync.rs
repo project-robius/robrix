@@ -394,6 +394,14 @@ pub enum MatrixRequest {
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
     },
+    /// Request to upload a file to the given room.
+    Upload {
+        room_id: OwnedRoomId,
+        file_path: std::path::PathBuf,
+        replied_to: Option<Reply>,
+        #[cfg(feature = "tsp")]
+        sign_with_tsp: bool,
+    },
     /// Sends a notice to the given room that the current user is or is not typing.
     ///
     /// This request does not return a response or notify the UI thread, and
@@ -1244,6 +1252,119 @@ async fn matrix_worker_task(
                                 error!("Failed to send message to room {room_id}: {_e:?}");
                                 enqueue_popup_notification(PopupItem { message: format!("Failed to send message: {_e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
                             }
+                        }
+                    }
+                    SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::Upload {
+                room_id,
+                file_path,
+                replied_to,
+                #[cfg(feature = "tsp")]
+                sign_with_tsp: _,
+            } => {
+                let Some(client) = get_client() else { continue };
+
+                // Spawn a new async task that will upload the file.
+                let _upload_task = Handle::current().spawn(async move {
+                    log!("Uploading file to room {room_id}: {file_path:?}...");
+
+                    // Get the room
+                    let Some(room) = client.get_room(&room_id) else {
+                        error!("Room not found: {room_id}");
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Room not found"),
+                            kind: PopupKind::Error,
+                            auto_dismissal_duration: None
+                        });
+                        return;
+                    };
+
+                    // Read the file
+                    let file_data = match tokio::fs::read(&file_path).await {
+                        Ok(data) => data,
+                        Err(e) => {
+                            error!("Failed to read file {file_path:?}: {e:?}");
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Failed to read file: {e}"),
+                                kind: PopupKind::Error,
+                                auto_dismissal_duration: None
+                            });
+                            return;
+                        }
+                    };
+
+                    // Get the filename
+                    let filename = file_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+
+                    // Detect the mime type
+                    let mime_str = mime_guess::from_path(&file_path)
+                        .first_or_octet_stream()
+                        .to_string();
+
+                    use mime_guess::mime;
+                    let mime_type: mime::Mime = mime_str.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
+
+                    log!("File: {filename}, size: {} bytes, mime: {mime_type}", file_data.len());
+
+                    // Upload the file to the media repository and send the message
+                    use ruma::UInt;
+
+                    let attachment_config = matrix_sdk::attachment::AttachmentConfig::new()
+                        .info(if mime_type.type_() == mime::IMAGE {
+                            matrix_sdk::attachment::AttachmentInfo::Image(
+                                matrix_sdk::attachment::BaseImageInfo {
+                                    height: None,
+                                    width: None,
+                                    size: Some(UInt::new(file_data.len() as u64).unwrap()),
+                                    blurhash: None,
+                                    is_animated: None,
+                                }
+                            )
+                        } else {
+                            matrix_sdk::attachment::AttachmentInfo::File(
+                                matrix_sdk::attachment::BaseFileInfo {
+                                    size: Some(UInt::new(file_data.len() as u64).unwrap()),
+                                }
+                            )
+                        });
+
+                    let result = if let Some(_replied_to_info) = replied_to {
+                        // Note: Matrix SDK doesn't have a direct send_attachment_reply method
+                        // For now, just send the attachment normally
+                        // TODO: Implement proper reply handling for attachments
+                        room.send_attachment(
+                            &filename,
+                            &mime_type,
+                            file_data,
+                            attachment_config,
+                        ).await
+                    } else {
+                        room.send_attachment(
+                            &filename,
+                            &mime_type,
+                            file_data,
+                            attachment_config,
+                        ).await
+                    };
+
+                    match result {
+                        Ok(_) => {
+                            log!("Successfully uploaded and sent file to room {room_id}");
+                        }
+                        Err(e) => {
+                            error!("Failed to upload file to room {room_id}: {e:?}");
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Failed to upload file: {e}"),
+                                kind: PopupKind::Error,
+                                auto_dismissal_duration: None
+                            });
                         }
                     }
                     SignalToUI::set_ui_signal();

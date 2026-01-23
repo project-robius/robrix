@@ -6,6 +6,7 @@ live_design! {
     use link::widgets::*;
 
     pub ICON_ADD             = dep("crate://self/resources/icons/add.svg")
+    pub ICON_ADD_IMAGE       = dep("crate://self/resources/icons/add_image.svg")
     pub ICON_ADD_REACTION    = dep("crate://self/resources/icons/add_reaction.svg")
     pub ICON_ADD_USER        = dep("crate://self/resources/icons/add_user.svg") // TODO: FIX
     pub ICON_ADD_WALLET      = dep("crate://self/resources/icons/add_wallet.svg")
