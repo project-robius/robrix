@@ -208,16 +208,20 @@ live_design! {
     }
 }
 
+/// An entry in the rooms list.
 #[derive(Live, Widget)]
 pub struct RoomsListEntry {
     #[deref] view: View,
     #[rust] room_id: Option<OwnedRoomId>,
 }
 
+/// Widget actions that are emitted by a RoomsListEntry.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum RoomsListEntryAction {
-    Clicked(OwnedRoomId),
-    RightClicked(OwnedRoomId, DVec2),
+    /// This RoomsListEntry was primary clicked or tapped.
+    PrimaryClicked(OwnedRoomId),
+    /// This RoomsListEntry was right-clicked or long-pressed.
+    SecondaryClicked(OwnedRoomId, DVec2),
     None,
 }
 
@@ -247,14 +251,14 @@ impl Widget for RoomsListEntry {
                 cx.set_key_focus(self.view.area());
                 let is_right_click = fe.modifiers.control || fe.device.mouse_button().is_some_and(|b| b.is_secondary());
                 if is_right_click {
-                    cx.widget_action(uid, &scope.path, RoomsListEntryAction::RightClicked(self.room_id.clone().unwrap(), fe.abs));
+                    cx.widget_action(uid, &scope.path, RoomsListEntryAction::SecondaryClicked(self.room_id.clone().unwrap(), fe.abs));
                 }
             }
             Hit::FingerUp(fe) => {
                 // Ensure we don't trigger the regular click action if it was a right-click.
                 let is_right_click = fe.modifiers.control || fe.device.mouse_button().is_some_and(|b| b.is_secondary());
                 if !is_right_click && !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() {
-                    cx.widget_action(uid, &scope.path, RoomsListEntryAction::Clicked(self.room_id.clone().unwrap()));
+                    cx.widget_action(uid, &scope.path, RoomsListEntryAction::PrimaryClicked(self.room_id.clone().unwrap()));
                 }
             }
             _ => { }

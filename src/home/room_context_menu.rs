@@ -73,7 +73,7 @@ live_design! {
             }
 
             share_button = <ContextMenuButton> {
-                 draw_icon: { svg_file: (ICON_LINK) }
+                draw_icon: { svg_file: (ICON_LINK) }
                 text: "Copy Link to Room"
             }
             
@@ -83,18 +83,18 @@ live_design! {
             }
 
             settings_button = <ContextMenuButton> {
-                 draw_icon: { svg_file: (ICON_SETTINGS) }
+                draw_icon: { svg_file: (ICON_SETTINGS) }
                 text: "Settings"
             }
 
             notifications_button = <ContextMenuButton> {
                 // TODO: use a proper bell icon
-                 draw_icon: { svg_file: (ICON_INFO) }
+                draw_icon: { svg_file: (ICON_INFO) }
                 text: "Notifications"
             }
 
             invite_button = <ContextMenuButton> {
-                 draw_icon: { svg_file: (ICON_ADD_USER) }
+                draw_icon: { svg_file: (ICON_ADD_USER) }
                 text: "Invite"
             }
 
@@ -121,9 +121,12 @@ live_design! {
     }
 }
 
+use crate::utils::RoomNameId;
+
 #[derive(Clone, Debug)]
 pub struct RoomMenuDetails {
     pub room_id: OwnedRoomId,
+    pub room_name_id: RoomNameId,
     pub is_favorite: bool,
     pub is_low_priority: bool,
     pub has_unread: bool,
@@ -138,7 +141,7 @@ pub enum RoomMenuAction {
     Notifications(OwnedRoomId),
     Invite(OwnedRoomId),
     CopyLink(OwnedRoomId),
-    LeaveRoom(OwnedRoomId),
+    // LeaveRoom is handled directly by emitting JoinLeaveRoomModalAction
     OpenSettings(OwnedRoomId),
     None,
 }
@@ -200,32 +203,38 @@ impl WidgetMatchEvent for RoomContextMenu {
             close_menu = true;
         } 
         else if self.button(ids!(favorite_button)).clicked(actions) {
-             action_to_dispatch = RoomMenuAction::SetFavorite(details.room_id.clone(), !details.is_favorite);
-             close_menu = true;
+            action_to_dispatch = RoomMenuAction::SetFavorite(details.room_id.clone(), !details.is_favorite);
+            close_menu = true;
         }
         else if self.button(ids!(priority_button)).clicked(actions) {
-             action_to_dispatch = RoomMenuAction::SetLowPriority(details.room_id.clone(), !details.is_low_priority);
-             close_menu = true;
+            action_to_dispatch = RoomMenuAction::SetLowPriority(details.room_id.clone(), !details.is_low_priority);
+            close_menu = true;
         }
         else if self.button(ids!(share_button)).clicked(actions) {
-             action_to_dispatch = RoomMenuAction::CopyLink(details.room_id.clone());
-             close_menu = true;
+            action_to_dispatch = RoomMenuAction::CopyLink(details.room_id.clone());
+            close_menu = true;
         }
          else if self.button(ids!(settings_button)).clicked(actions) {
-             action_to_dispatch = RoomMenuAction::OpenSettings(details.room_id.clone());
-             close_menu = true;
+            action_to_dispatch = RoomMenuAction::OpenSettings(details.room_id.clone());
+            close_menu = true;
         }
         else if self.button(ids!(notifications_button)).clicked(actions) {
-             action_to_dispatch = RoomMenuAction::Notifications(details.room_id.clone());
-             close_menu = true;
+            action_to_dispatch = RoomMenuAction::Notifications(details.room_id.clone());
+            close_menu = true;
         }
         else if self.button(ids!(invite_button)).clicked(actions) {
-             action_to_dispatch = RoomMenuAction::Invite(details.room_id.clone());
-             close_menu = true;
+            action_to_dispatch = RoomMenuAction::Invite(details.room_id.clone());
+            close_menu = true;
         }
         else if self.button(ids!(leave_button)).clicked(actions) {
-             action_to_dispatch = RoomMenuAction::LeaveRoom(details.room_id.clone());
-             close_menu = true;
+            use crate::join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveModalKind};
+            use crate::room::BasicRoomDetails;
+            let room_details = BasicRoomDetails::Name(details.room_name_id.clone());
+            cx.action(JoinLeaveRoomModalAction::Open {
+                kind: JoinLeaveModalKind::LeaveRoom(room_details),
+                show_tip: false,
+            });
+            close_menu = true;
         }
 
         if let RoomMenuAction::None = action_to_dispatch { } else {

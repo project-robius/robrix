@@ -669,9 +669,14 @@ impl RoomsList {
                         error!("Error: couldn't find room {room_id} to update is_direct");
                     }
                 }
-                RoomsListUpdate::RemoveRoom { room_id, new_state: _ } => {
+                RoomsListUpdate::RemoveRoom { room_id, new_state } => {
+                    // TODO: once we have a dedicated LoadingScreen widget, we should emit an action
+                    // to replace this room (if it's currently open) with the LoadingScreen widget,
+                    // which should show whether it has been left, kicked, or banned,
+                    // and then options/buttons for the user to re-join it if desired.
+
                     if let Some(removed) = self.all_joined_rooms.remove(&room_id) {
-                        log!("Removed room {room_id} from the list of all joined rooms");
+                        log!("Removed room {room_id} from the list of all joined rooms, now has state {new_state:?}");
                         let list_to_remove_from = if removed.is_direct {
                             &mut self.displayed_direct_rooms
                         } else {
@@ -1080,7 +1085,7 @@ impl Widget for RoomsList {
         );
         for action in rooms_list_actions {
             // Handle a regular room (joined or invited) being clicked.
-            if let RoomsListEntryAction::Clicked(clicked_room_id) = action.as_widget_action().cast() {
+            if let RoomsListEntryAction::PrimaryClicked(clicked_room_id) = action.as_widget_action().cast() {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
                     SelectedRoom::JoinedRoom {
                         room_name_id: jr.room_name_id.clone(),
@@ -1102,11 +1107,12 @@ impl Widget for RoomsList {
                 );
                 self.redraw(cx);
             }
-            else if let RoomsListEntryAction::RightClicked(clicked_room_id, pos) = action.as_widget_action().cast() {
+            else if let RoomsListEntryAction::SecondaryClicked(clicked_room_id, pos) = action.as_widget_action().cast() {
                 // Determine details for the context menu
                 let details = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
                     Some(RoomMenuDetails {
                         room_id: clicked_room_id.clone(),
+                        room_name_id: jr.room_name_id.clone(),
                         is_favorite: jr.tags.contains_key(&matrix_sdk::ruma::events::tag::TagName::Favorite),
                         is_low_priority: jr.tags.contains_key(&matrix_sdk::ruma::events::tag::TagName::LowPriority),
                         has_unread: jr.num_unread_messages > 0 || jr.num_unread_mentions > 0,
