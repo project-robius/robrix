@@ -21,7 +21,7 @@ live_design! {
             height: Fill,
             show_bg: true,
             draw_bg: {
-                instance badge_color: (COLOR_UNREAD_DEFAULT),
+                instance badge_color: (COLOR_UNREAD_BADGE_MESSAGES),
                 instance border_radius: 4.0
                 // Adjust this border_size to larger value to make oval smaller 
                 instance border_size: 2.0
@@ -93,7 +93,7 @@ impl Widget for UnreadBadge {
             self.view(ids!(rounded_view)).apply_over(cx, live!{
                 draw_bg: {
                     border_size: (border_size),
-                    badge_color: (COLOR_UNREAD_MENTION)
+                    badge_color: (COLOR_UNREAD_BADGE_MENTIONS)
                 }
             });
             self.visible = true;
@@ -104,7 +104,7 @@ impl Widget for UnreadBadge {
             self.view(ids!(rounded_view)).apply_over(cx, live!{
                 draw_bg: {
                     border_size: 6.0, // larger value = smaller dot
-                    badge_color: (COLOR_UNREAD_MARKED)
+                    badge_color: (COLOR_UNREAD_BADGE_MARKED)
                 }
             });
             self.visible = true;
@@ -117,7 +117,7 @@ impl Widget for UnreadBadge {
             self.view(ids!(rounded_view)).apply_over(cx, live!{
                 draw_bg: {
                     border_size: (border_size),
-                    badge_color: (COLOR_UNREAD_DEFAULT)
+                    badge_color: (COLOR_UNREAD_BADGE_MESSAGES)
                 }
             });
             self.visible = true;

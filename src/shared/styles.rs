@@ -61,6 +61,8 @@ live_design! {
         font_size: (USERNAME_FONT_SIZE),
     }
 
+    pub COLOR_ROBRIX_PURPLE = #572DCC; // the purple color from the Robrix logo
+    pub COLOR_ROBRIX_CYAN = #05CDC7; // the cyan color from the Robrix logo
 
     pub TYPING_NOTICE_TEXT_COLOR = #121570
 
@@ -107,13 +109,6 @@ live_design! {
 
     pub COLOR_SELECT_TEXT = #A6CDFE
 
-    pub COLOR_ROBRIX_PURPLE = #572DCC; // the purple color from the Robrix logo
-    pub COLOR_ROBRIX_CYAN = #05CDC7; // the cyan color from the Robrix logo
-    pub COLOR_UNREAD_MENTION = #FF0000;
-    pub COLOR_UNREAD_MARKED = (COLOR_ROBRIX_CYAN);
-    pub COLOR_UNREAD_DEFAULT = #AAAAAA;
-
-
     pub COLOR_PRIMARY = #ffffff
     pub COLOR_PRIMARY_DARKER = #fefefe
     pub COLOR_SECONDARY = #E3E3E3
@@ -126,7 +121,11 @@ live_design! {
     pub COLOR_AVATAR_BG = #52b2ac
     pub COLOR_AVATAR_BG_IDLE = #d8d8d8
 
-    pub COLOR_UNREAD_MESSAGE_BADGE = (COLOR_AVATAR_BG)
+
+    pub COLOR_UNREAD_BADGE_MENTIONS = #FF0000;
+    pub COLOR_UNREAD_BADGE_MARKED   = (COLOR_ROBRIX_CYAN);
+    pub COLOR_UNREAD_BADGE_MESSAGES = #AAAAAA
+
 
     pub COLOR_TEXT_IDLE = #d8d8d8
     pub COLOR_TEXT = #1C274C
@@ -323,11 +322,11 @@ pub const COLOR_ROBRIX_PURPLE:         Vec4 = vec4(0.341, 0.176, 0.8, 1.0);
 /// #05CDC7
 pub const COLOR_ROBRIX_CYAN:           Vec4 = vec4(0.031, 0.804, 0.78, 1.0);
 /// #FF0000
-pub const COLOR_UNREAD_MENTION:        Vec4 = vec4(1.0, 0.0, 0.0, 1.0);
+pub const COLOR_UNREAD_BADGE_MENTIONS: Vec4 = vec4(1.0, 0.0, 0.0, 1.0);
 /// #572DCC
-pub const COLOR_UNREAD_MARKED:         Vec4 = COLOR_ROBRIX_CYAN;
+pub const COLOR_UNREAD_BADGE_MARKED:   Vec4 = COLOR_ROBRIX_CYAN;
 /// #AAAAAA
-pub const COLOR_UNREAD_DEFAULT:        Vec4 = vec4(0.667, 0.667, 0.667, 1.0);
+pub const COLOR_UNREAD_BADGE_MESSAGES: Vec4 = vec4(0.667, 0.667, 0.667, 1.0);
 /// #FF6e00
 pub const COLOR_UNKNOWN_ROOM_AVATAR:   Vec4 = vec4(1.0, 0.431, 0.0, 1.0);
 /// #fcdb03
