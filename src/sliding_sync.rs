@@ -360,7 +360,19 @@ pub enum MatrixRequest {
     /// Request to set the unread flag for the given room.
     SetUnreadFlag {
         room_id: OwnedRoomId,
-        is_unread: bool,
+        /// If `true`, marks the room as unread.
+        /// If `false`, marks the room as read.
+        mark_as_unread: bool,
+    },
+    /// Request to set the favorite flag for the given room.
+    SetIsFavorite {
+        room_id: OwnedRoomId,
+        is_favorite: bool,
+    },
+    /// Request to set the low priority flag for the given room.
+    SetIsLowPriority {
+        room_id: OwnedRoomId,
+        is_low_priority: bool,
     },
     /// Request to ignore/block or unignore/unblock a user.
     IgnoreUser {
@@ -934,7 +946,7 @@ async fn matrix_worker_task(
                     });
                 });
             }
-            MatrixRequest::SetUnreadFlag { room_id, is_unread } => {
+            MatrixRequest::SetUnreadFlag { room_id, mark_as_unread } => {
                 let timeline = {
                     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
@@ -944,10 +956,44 @@ async fn matrix_worker_task(
                     room_info.timeline.clone()
                 };
                 let _set_unread_task = Handle::current().spawn(async move {
-                    let result = timeline.room().set_unread_flag(is_unread).await;
+                    let result = timeline.room().set_unread_flag(mark_as_unread).await;
                     match result {
-                        Ok(_) => log!("Set unread flag to {} for room {}", is_unread, room_id),
-                        Err(e) => error!("Failed to set unread flag to {} for room {}: {:?}", is_unread, room_id, e),
+                        Ok(_) => log!("Set unread flag to {} for room {}", mark_as_unread, room_id),
+                        Err(e) => error!("Failed to set unread flag to {} for room {}: {:?}", mark_as_unread, room_id, e),
+                    }
+                });
+            }
+            MatrixRequest::SetIsFavorite { room_id, is_favorite } => {
+                let timeline = {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                        log!("Skipping set favorite request for not-yet-known room {room_id}");
+                        continue;
+                    };
+                    room_info.timeline.clone()
+                };
+                let _set_favorite_task = Handle::current().spawn(async move {
+                    let result = timeline.room().set_is_favourite(is_favorite, None).await;
+                    match result {
+                        Ok(_) => log!("Set favorite to {} for room {}", is_favorite, room_id),
+                        Err(e) => error!("Failed to set favorite to {} for room {}: {:?}", is_favorite, room_id, e),
+                    }
+                });
+            }
+            MatrixRequest::SetIsLowPriority { room_id, is_low_priority } => {
+                let timeline = {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                        log!("Skipping set low priority request for not-yet-known room {room_id}");
+                        continue;
+                    };
+                    room_info.timeline.clone()
+                };
+                let _set_lp_task = Handle::current().spawn(async move {
+                    let result = timeline.room().set_is_low_priority(is_low_priority, None).await;
+                    match result {
+                        Ok(_) => log!("Set low priority to {} for room {}", is_low_priority, room_id),
+                        Err(e) => error!("Failed to set low priority to {} for room {}: {:?}", is_low_priority, room_id, e),
                     }
                 });
             }

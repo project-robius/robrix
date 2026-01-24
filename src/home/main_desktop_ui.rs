@@ -485,7 +485,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                 RoomsListAction::InviteAccepted { room_name_id } => {
                     self.replace_invite_with_joined_room(cx, scope, room_name_id);
                 }
-                RoomsListAction::RightClicked { .. } => {}
+                RoomsListAction::OpenRoomContextMenu { .. } => {}
                 RoomsListAction::None => { }
             }
 

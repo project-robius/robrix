@@ -20,12 +20,15 @@ use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map::Entry}, rc::R
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk_ui::spaces::room_list::SpaceRoomListPaginationState;
+use ruma::events::tag::TagName;
 use tokio::sync::mpsc::UnboundedSender;
 use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}};
 use crate::{
     app::{AppState, SelectedRoom},
     home::{
         navigation_tab_bar::{NavigationBarAction, SelectedTab},
+        rooms_list_entry::RoomsListEntryAction,
+        room_context_menu::RoomContextMenuDetails,
         space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt},
     },
     room::{
@@ -41,8 +44,6 @@ use crate::{
     sliding_sync::{MatrixRequest, PaginationDirection, submit_async_request},
     space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction}, utils::RoomNameId,
 };
-use super::rooms_list_entry::RoomsListEntryAction;
-use super::room_context_menu::RoomContextMenuDetails;
 
 /// Whether to pre-paginate visible rooms at least once in order to
 /// be able to display the latest message in a room's RoomsListEntry,
@@ -249,7 +250,8 @@ pub enum RoomsListAction {
     InviteAccepted {
         room_name_id: RoomNameId,
     },
-    RightClicked {
+    /// Open the room context menu for the given room.
+    OpenRoomContextMenu {
         details: RoomContextMenuDetails,
         pos: DVec2,
     },
@@ -1079,7 +1081,8 @@ impl Widget for RoomsList {
             self.handle_rooms_list_updates(cx, event, scope);
         }
 
-        // Now, handle any actions on this widget, e.g., a user selecting a room.
+        // First, we handle any actions that came from widgets within the room list,
+        // e.g., the user clicking on a RoomsListEntry to select a room.
         // We use Scope `props` to pass down the current scrolling state of the PortalList.
         let props = RoomsListScopeProps {
             was_scrolling: self.view.portal_list(ids!(list)).was_scrolling(),
@@ -1089,21 +1092,21 @@ impl Widget for RoomsList {
         );
         for action in rooms_list_actions {
             // Handle a regular room (joined or invited) being clicked.
-            if let RoomsListEntryAction::PrimaryClicked(clicked_room_id) = action.as_widget_action().cast() {
-                let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
+            if let RoomsListEntryAction::PrimaryClicked(room_id) = action.as_widget_action().cast() {
+                let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&room_id) {
                     SelectedRoom::JoinedRoom {
                         room_name_id: jr.room_name_id.clone(),
                     }
-                } else if let Some(ir) = self.invited_rooms.borrow().get(&clicked_room_id) {
+                } else if let Some(ir) = self.invited_rooms.borrow().get(&room_id) {
                     SelectedRoom::InvitedRoom {
                         room_name_id: ir.room_name_id.clone(),
                     }
                 } else {
-                    error!("BUG: couldn't find clicked room details for room {clicked_room_id}");
+                    error!("BUG: couldn't find clicked room details for room {room_id}");
                     continue;
                 };
 
-                self.current_active_room = Some(clicked_room_id.clone());
+                self.current_active_room = Some(room_id.clone());
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
@@ -1111,28 +1114,24 @@ impl Widget for RoomsList {
                 );
                 self.redraw(cx);
             }
-            else if let RoomsListEntryAction::SecondaryClicked(clicked_room_id, pos) = action.as_widget_action().cast() {
+            // Handle a room being right-clicked or long-pressed by opening the room context menu.
+            else if let RoomsListEntryAction::SecondaryClicked(room_id, pos) = action.as_widget_action().cast() {
                 // Determine details for the context menu
-                let details = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
-                    Some(RoomContextMenuDetails {
-                        room_id: clicked_room_id.clone(),
-                        room_name_id: jr.room_name_id.clone(),
-                        is_favorite: jr.tags.contains_key(&matrix_sdk::ruma::events::tag::TagName::Favorite),
-                        is_low_priority: jr.tags.contains_key(&matrix_sdk::ruma::events::tag::TagName::LowPriority),
-                        is_unread: jr.num_unread_messages > 0 || jr.num_unread_mentions > 0,
-                    })
-                } else {
-                    // TODO: Handle invited rooms or other states?
-                    None
+                let Some(jr) = self.all_joined_rooms.get(&room_id) else {
+                    error!("BUG: couldn't find right-clicked room details for room {room_id}");
+                    continue;
                 };
-
-                if let Some(details) = details {
-                     cx.widget_action(
-                        self.widget_uid(),
-                        &scope.path,
-                        RoomsListAction::RightClicked { details, pos },
-                    );
-                }
+                let details = RoomContextMenuDetails {
+                    room_name_id: jr.room_name_id.clone(),
+                    is_favorite: jr.tags.contains_key(&TagName::Favorite),
+                    is_low_priority: jr.tags.contains_key(&TagName::LowPriority),
+                    is_marked_unread: jr.is_marked_unread,
+                };
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    RoomsListAction::OpenRoomContextMenu { details, pos },
+                );
             }
             // Handle the space lobby being clicked.
             else if let Some(SpaceLobbyAction::SpaceLobbyEntryClicked) = action.downcast_ref() {
@@ -1165,6 +1164,7 @@ impl Widget for RoomsList {
             }
         }
 
+        // Second, handle any other actions that came from other widgets/components.
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast() {

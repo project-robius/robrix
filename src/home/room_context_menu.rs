@@ -3,6 +3,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
+use crate::{sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
 
 const BUTTON_HEIGHT: f64 = 35.0;
 const MENU_WIDTH: f64 = 215.0;
@@ -59,7 +60,7 @@ live_design! {
 
             mark_unread_button = <ContextMenuButton> {
                 draw_icon: { svg_file: (ICON_CHECKMARK) }
-                text: "Mark as Read"
+                text: "Mark as Unread"
             }
 
             favorite_button = <ContextMenuButton> {
@@ -82,7 +83,7 @@ live_design! {
                 width: Fill,
             }
 
-            settings_button = <ContextMenuButton> {
+            room_settings_button = <ContextMenuButton> {
                 draw_icon: { svg_file: (ICON_SETTINGS) }
                 text: "Settings"
             }
@@ -121,15 +122,13 @@ live_design! {
     }
 }
 
-use crate::{sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
-
+/// Details needed to populate the room context menu.
 #[derive(Clone, Debug)]
 pub struct RoomContextMenuDetails {
-    pub room_id: OwnedRoomId,
     pub room_name_id: RoomNameId,
     pub is_favorite: bool,
     pub is_low_priority: bool,
-    pub is_unread: bool,
+    pub is_marked_unread: bool,
 }
 
 #[derive(Clone, DefaultNone, Debug)]
@@ -140,7 +139,7 @@ pub enum RoomContextMenuAction {
     Invite(OwnedRoomId),
     CopyLink(OwnedRoomId),
     // LeaveRoom is handled directly by emitting JoinLeaveRoomModalAction
-    OpenSettings(OwnedRoomId),
+    OpenRoomSettings(OwnedRoomId),
     None,
 }
 
@@ -192,35 +191,44 @@ impl WidgetMatchEvent for RoomContextMenu {
         let mut close_menu = false;
         
         if self.button(ids!(mark_unread_button)).clicked(actions) {
-            // Toggle unread status
             submit_async_request(MatrixRequest::SetUnreadFlag {
-                room_id: details.room_id.clone(),
-                is_unread: !details.is_unread,
+                room_id: details.room_name_id.room_id().clone(),
+                mark_as_unread: !details.is_marked_unread,
             });
             close_menu = true;
         } 
         else if self.button(ids!(favorite_button)).clicked(actions) {
-            action_to_dispatch = RoomContextMenuAction::SetFavorite(details.room_id.clone(), !details.is_favorite);
+            submit_async_request(MatrixRequest::SetIsFavorite {
+                room_id: details.room_name_id.room_id().clone(),
+                is_favorite: !details.is_favorite,
+            });
             close_menu = true;
         }
         else if self.button(ids!(priority_button)).clicked(actions) {
-            action_to_dispatch = RoomContextMenuAction::SetLowPriority(details.room_id.clone(), !details.is_low_priority);
+            submit_async_request(MatrixRequest::SetIsLowPriority {
+                room_id: details.room_name_id.room_id().clone(),
+                is_low_priority: !details.is_low_priority,
+            });
             close_menu = true;
         }
         else if self.button(ids!(share_button)).clicked(actions) {
-            action_to_dispatch = RoomContextMenuAction::CopyLink(details.room_id.clone());
+            // TODO: handle/implement this
+            action_to_dispatch = RoomContextMenuAction::CopyLink(details.room_name_id.room_id().clone());
             close_menu = true;
         }
-         else if self.button(ids!(settings_button)).clicked(actions) {
-            action_to_dispatch = RoomContextMenuAction::OpenSettings(details.room_id.clone());
+         else if self.button(ids!(room_settings_button)).clicked(actions) {
+            // TODO: handle/implement this
+            action_to_dispatch = RoomContextMenuAction::OpenRoomSettings(details.room_name_id.room_id().clone());
             close_menu = true;
         }
         else if self.button(ids!(notifications_button)).clicked(actions) {
-            action_to_dispatch = RoomContextMenuAction::Notifications(details.room_id.clone());
+            // TODO: handle/implement this
+            action_to_dispatch = RoomContextMenuAction::Notifications(details.room_name_id.room_id().clone());
             close_menu = true;
         }
         else if self.button(ids!(invite_button)).clicked(actions) {
-            action_to_dispatch = RoomContextMenuAction::Invite(details.room_id.clone());
+            // TODO: handle/implement this
+            action_to_dispatch = RoomContextMenuAction::Invite(details.room_name_id.room_id().clone());
             close_menu = true;
         }
         else if self.button(ids!(leave_button)).clicked(actions) {
@@ -250,44 +258,41 @@ impl RoomContextMenu {
     }
 
     pub fn show(&mut self, cx: &mut Cx, details: RoomContextMenuDetails) -> DVec2 {
-        self.details = Some(details.clone());
+        let height = self.update_buttons(cx, &details);
+        self.details = Some(details);
         self.visible = true;
         cx.set_key_focus(self.view.area());
-        
-        let height = self.update_buttons(cx, &details);
         dvec2(MENU_WIDTH, height)
     }
     
     fn update_buttons(&mut self, cx: &mut Cx, details: &RoomContextMenuDetails) -> f64 {
-        let mark_read_btn = self.button(ids!(mark_unread_button));
-        if details.is_unread {
-            mark_read_btn.set_text(cx, "Mark as Read");
-            // mark_read_btn.draw_icon.svg_file = ...; // Optional: change icon
+        let mark_unread_button = self.button(ids!(mark_unread_button));
+        if details.is_marked_unread {
+            mark_unread_button.set_text(cx, "Mark as Read");
         } else {
-             mark_read_btn.set_text(cx, "Mark as Unread");
+            mark_unread_button.set_text(cx, "Mark as Unread");
         }
         
-        let fav_btn = self.button(ids!(favorite_button));
+        let favorite_button = self.button(ids!(favorite_button));
         if details.is_favorite {
-            fav_btn.set_text(cx, "Unfavorite");
+            favorite_button.set_text(cx, "Un-favorite");
         } else {
-             fav_btn.set_text(cx, "Favorite");
+             favorite_button.set_text(cx, "Favorite");
         }
 
-        let priority_btn = self.button(ids!(priority_button));
+        let priority_button = self.button(ids!(priority_button));
         if details.is_low_priority {
-            priority_btn.set_text(cx, "Set Standard Priority");
+            priority_button.set_text(cx, "Un-set Low Priority");
         } else {
-            priority_btn.set_text(cx, "Set Low Priority");
+            priority_button.set_text(cx, "Set Low Priority");
         }
         
         // Reset hover states
-        mark_read_btn.reset_hover(cx);
-        fav_btn.reset_hover(cx);
-        priority_btn.reset_hover(cx);
+        mark_unread_button.reset_hover(cx);
+        favorite_button.reset_hover(cx);
+        priority_button.reset_hover(cx);
         self.button(ids!(share_button)).reset_hover(cx);
-        self.button(ids!(share_button)).reset_hover(cx);
-        self.button(ids!(settings_button)).reset_hover(cx);
+        self.button(ids!(room_settings_button)).reset_hover(cx);
         self.button(ids!(notifications_button)).reset_hover(cx);
         self.button(ids!(invite_button)).reset_hover(cx);
         self.button(ids!(leave_button)).reset_hover(cx);

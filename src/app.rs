@@ -320,7 +320,8 @@ impl MatchEvent for App {
                 continue;
             }
 
-            if let RoomsListAction::RightClicked { details, pos } = action.as_widget_action().cast() {
+            // Handle an action requesting to open the room context menu.
+            if let RoomsListAction::OpenRoomContextMenu { details, pos } = action.as_widget_action().cast() {
                 self.ui.callout_tooltip(ids!(app_tooltip)).hide(cx);
                 let room_context_menu = self.ui.room_context_menu(ids!(room_context_menu));
                 let expected_dimensions = room_context_menu.show(cx, details);
