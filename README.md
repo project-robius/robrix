@@ -189,9 +189,10 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Join room by accepting invite
 - [x] Join room by searching for room alias, room ID, or via a Matrix link
 - [x] Knock on room (request to join)
-- [ ] Administrative abilities: ban, kick, etc
-- [ ] Room creation/settings/info screen
+- [x] Leave joined and invited rooms
+- [ ] Room settings/info screen
 - [ ] Room members pane
+- [ ] Administrative abilities: ban, kick, etc
 - [x] Offline mode with persistent event cache: https://github.com/project-robius/robrix/pull/445
 
 

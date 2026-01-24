@@ -3,7 +3,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use crate::{sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
+use crate::{shared::popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
 
 const BUTTON_HEIGHT: f64 = 35.0;
 const MENU_WIDTH: f64 = 215.0;
@@ -185,9 +185,8 @@ impl Widget for RoomContextMenu {
 }
 
 impl WidgetMatchEvent for RoomContextMenu {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let Some(details) = self.details.as_ref() else { return };
-        let mut action_to_dispatch = RoomContextMenuAction::None;
         let mut close_menu = false;
         
         if self.button(ids!(mark_unread_button)).clicked(actions) {
@@ -213,22 +212,38 @@ impl WidgetMatchEvent for RoomContextMenu {
         }
         else if self.button(ids!(share_button)).clicked(actions) {
             // TODO: handle/implement this
-            action_to_dispatch = RoomContextMenuAction::CopyLink(details.room_name_id.room_id().clone());
+            enqueue_popup_notification(PopupItem {
+                message: String::from("Creating a room link is not yet implemented."),
+                auto_dismissal_duration: Some(5.0),
+                kind: PopupKind::Warning,
+            });
             close_menu = true;
         }
          else if self.button(ids!(room_settings_button)).clicked(actions) {
             // TODO: handle/implement this
-            action_to_dispatch = RoomContextMenuAction::OpenRoomSettings(details.room_name_id.room_id().clone());
+            enqueue_popup_notification(PopupItem {
+                message: String::from("The room settings page is not yet implemented."),
+                auto_dismissal_duration: Some(5.0),
+                kind: PopupKind::Warning,
+            });
             close_menu = true;
         }
         else if self.button(ids!(notifications_button)).clicked(actions) {
             // TODO: handle/implement this
-            action_to_dispatch = RoomContextMenuAction::Notifications(details.room_name_id.room_id().clone());
+            enqueue_popup_notification(PopupItem {
+                message: String::from("The room notifications page is not yet implemented."),
+                auto_dismissal_duration: Some(5.0),
+                kind: PopupKind::Warning,
+            });
             close_menu = true;
         }
         else if self.button(ids!(invite_button)).clicked(actions) {
             // TODO: handle/implement this
-            action_to_dispatch = RoomContextMenuAction::Invite(details.room_name_id.room_id().clone());
+            enqueue_popup_notification(PopupItem {
+                message: String::from("Sending a room invite is not yet implemented."),
+                auto_dismissal_duration: Some(5.0),
+                kind: PopupKind::Warning,
+            });
             close_menu = true;
         }
         else if self.button(ids!(leave_button)).clicked(actions) {
@@ -240,10 +255,6 @@ impl WidgetMatchEvent for RoomContextMenu {
                 show_tip: false,
             });
             close_menu = true;
-        }
-
-        if !matches!(action_to_dispatch, RoomContextMenuAction::None) {
-            cx.widget_action(self.widget_uid(), &scope.path, action_to_dispatch);
         }
 
         if close_menu {
