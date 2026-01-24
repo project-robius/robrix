@@ -10,6 +10,7 @@ pub mod icon_button;
 pub mod jump_to_bottom_button;
 pub mod mentionable_text_input;
 pub mod popup_list;
+pub mod progress;
 pub mod room_filter_input_bar;
 pub mod styles;
 pub mod text_or_image;
@@ -19,7 +20,6 @@ pub mod unread_badge;
 pub mod verification_badge;
 pub mod restore_status_view;
 pub mod image_viewer;
-
 
 pub fn live_design(cx: &mut Cx) {
     // Order matters here, as some widget definitions depend on others.
@@ -36,6 +36,7 @@ pub fn live_design(cx: &mut Cx) {
     bouncing_dots::live_design(cx);
     jump_to_bottom_button::live_design(cx);
     popup_list::live_design(cx);
+    progress::live_design(cx);
     verification_badge::live_design(cx);
     callout_tooltip::live_design(cx);
     mentionable_text_input::live_design(cx);

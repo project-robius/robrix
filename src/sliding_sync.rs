@@ -8,13 +8,13 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
-        api::client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
-            room::{
-                message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
-            }, MessageLikeEventType, StateEventType
-        }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
+    Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom, TransmissionProgress, config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{RoomMember, edit::EditedContent, reply::Reply}, ruma::{
+        MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, api::client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
+            MessageLikeEventType, StateEventType, room::{
+                MediaSource, message::RoomMessageEventContent, power_levels::RoomPowerLevels
+            }
+        }, matrix_uri::MatrixId
+    }, sliding_sync::VersionBuilder
 };
 use matrix_sdk_ui::{
     RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
@@ -401,6 +401,8 @@ pub enum MatrixRequest {
         replied_to: Option<Reply>,
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
+        /// Optional progress observable for upload progress tracking
+        progress_sender: Option<eyeball::SharedObservable<TransmissionProgress>>,
     },
     /// Sends a notice to the given room that the current user is or is not typing.
     ///
@@ -1264,6 +1266,7 @@ async fn matrix_worker_task(
                 replied_to,
                 #[cfg(feature = "tsp")]
                 sign_with_tsp: _,
+                progress_sender,
             } => {
                 let Some(client) = get_client() else { continue };
 
@@ -1335,6 +1338,14 @@ async fn matrix_worker_task(
                             )
                         });
 
+                    // Note: Matrix SDK doesn't currently support progress tracking via observable
+                    // The progress_sender is kept for future compatibility
+                    let Some(progress_sender) = progress_sender else {
+                        error!("Progress sender not provided for file upload to room {room_id}");
+                        return;
+                    };
+                    let data_len = file_data.len();
+                    progress_sender.set(TransmissionProgress { total: file_data.len(), current: 0 });
                     let result = if let Some(_replied_to_info) = replied_to {
                         // Note: Matrix SDK doesn't have a direct send_attachment_reply method
                         // For now, just send the attachment normally
@@ -1344,19 +1355,20 @@ async fn matrix_worker_task(
                             &mime_type,
                             file_data,
                             attachment_config,
-                        ).await
+                        ).with_send_progress_observable(progress_sender.clone()).await
                     } else {
                         room.send_attachment(
                             &filename,
                             &mime_type,
                             file_data,
                             attachment_config,
-                        ).await
+                        ).with_send_progress_observable(progress_sender.clone()).await
                     };
 
                     match result {
                         Ok(_) => {
                             log!("Successfully uploaded and sent file to room {room_id}");
+                            progress_sender.set(TransmissionProgress { total: data_len, current: data_len });
                         }
                         Err(e) => {
                             error!("Failed to upload file to room {room_id}: {e:?}");

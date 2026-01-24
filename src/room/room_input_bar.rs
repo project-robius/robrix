@@ -16,10 +16,10 @@
 //!
 
 use makepad_widgets::*;
-use matrix_sdk::room::reply::{EnforceThread, Reply};
+use matrix_sdk::{TransmissionProgress, room::reply::{EnforceThread, Reply}};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, progress::MyProgressWidgetExt, styles::*}, sliding_sync::{MatrixRequest, UserPowerLevels, submit_async_request}, utils};
 
 live_design! {
     use link::theme::*;
@@ -30,6 +30,7 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::mentionable_text_input::MentionableTextInput;
+    use crate::shared::progress::MyProgress;
     use crate::room::reply_preview::*;
     use crate::home::location_preview::*;
     use crate::home::tombstone_footer::TombstoneFooter;
@@ -68,6 +69,30 @@ live_design! {
 
         // Below that, display a preview of the current location that a user is about to send.
         location_preview = <LocationPreview> { }
+
+        // Upload progress bar
+        upload_progress_view = <View> {
+            visible: false,
+            width: Fill,
+            height: Fit,
+            padding: {top: 8, bottom: 8, left: 10, right: 10}
+            flow: Down,
+            spacing: 5,
+
+            progress_label = <Label> {
+                width: Fill,
+                height: Fit,
+                draw_text: {
+                    text_style: <REGULAR_TEXT>{font_size: 10},
+                    color: #666
+                }
+                text: "Uploading..."
+            }
+
+            progress= <MyProgress> {
+
+            }
+        }
 
         // Below that, display one of multiple possible views:
         // * the message input bar (buttons and message TextInput).
@@ -191,6 +216,8 @@ pub struct RoomInputBar {
     #[rust] was_replying_preview_visible: bool,
     /// Info about the message event that the user is currently replying to, if any.
     #[rust] replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+    /// Subscriber for upload progress updates
+    #[rust] upload_progress_subscriber: Option<eyeball::Subscriber<matrix_sdk::TransmissionProgress>>
 }
 
 impl Widget for RoomInputBar {
@@ -221,9 +248,19 @@ impl Widget for RoomInputBar {
             }
             _ => {}
         }
-        if let Event::FileDialogResult { path } = event {
+        if let Event::FileDialogResult { live_id, path } = event {
             if let Some(path) = path {
                 log!("File selected for upload: {}", path.display());
+
+                // Create a shared observable for progress updates
+                let progress_shared =
+                    eyeball::SharedObservable::new(TransmissionProgress { total: 100, current: 0 });
+                self.upload_progress_subscriber = Some(progress_shared.subscribe());
+
+                // Show the progress bar
+                self.view.view(ids!(upload_progress_view)).set_visible(cx, true);
+                self.redraw(cx);
+
                 submit_async_request(MatrixRequest::Upload {
                     room_id: room_screen_props.room_name_id.room_id().clone(),
                     file_path: path.clone(),
@@ -237,10 +274,35 @@ impl Widget for RoomInputBar {
                     ),
                     #[cfg(feature = "tsp")]
                     sign_with_tsp: self.is_tsp_signing_enabled(cx),
+                    progress_sender: Some(progress_shared),
                 });
 
                 self.clear_replying_to(cx);
             }
+        }
+
+        // Handle upload progress updates
+        if let Some(subscriber) = &self.upload_progress_subscriber {
+            // Get the current progress value
+            let progress = subscriber.get();
+            println!("Upload progress: {}/{}", progress.current, progress.total);
+            if progress.current >= progress.total {
+                // Upload complete, hide progress bar
+                self.view.view(ids!(upload_progress_view)).set_visible(cx, false);
+                self.upload_progress_subscriber = None;
+            } else {
+                // Update progress bar width as a percentage
+                let progress_val = if progress.total > 0 {
+                    (progress.current as f64 / progress.total as f64) * 100.0
+                } else {
+                    0.0
+                };
+                self.view.my_progress(ids!(progress)).set_value(cx, progress_val);
+
+                let progress_label = self.view.label(ids!(upload_progress_view.progress_label));
+                progress_label.set_text(cx, &format!("Uploading... {:.0}%", progress_val));
+            }
+            self.redraw(cx);
         }
         if let Event::Actions(actions) = event {
             self.handle_actions(cx, actions, room_screen_props);
