@@ -15,8 +15,8 @@
 //! * A "cannot-send-message" notice, which is shown if the user cannot send messages to the room.
 //!
 
-use makepad_widgets::*;
-use matrix_sdk::{TransmissionProgress, room::reply::{EnforceThread, Reply}};
+use makepad_widgets::{file_dialogs::FileDialog, *};
+use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, progress::MyProgressWidgetExt, styles::*}, sliding_sync::{MatrixRequest, UserPowerLevels, submit_async_request}, utils};
@@ -248,36 +248,20 @@ impl Widget for RoomInputBar {
             }
             _ => {}
         }
-        if let Event::FileDialogResult { live_id, path } = event {
+        if let Event::FileDialogResult { live_id: _, path } = event {
             if let Some(path) = path {
                 log!("File selected for upload: {}", path.display());
 
-                // Create a shared observable for progress updates
-                let progress_shared =
-                    eyeball::SharedObservable::new(TransmissionProgress { total: 100, current: 0 });
-                self.upload_progress_subscriber = Some(progress_shared.subscribe());
+                // Prepare the reply context if replying to a message
+                let replied_to_event_id = self.replying_to.as_ref()
+                    .and_then(|(event_tl_item, _emb)| event_tl_item.event_id().map(ToOwned::to_owned));
 
-                // Show the progress bar
-                self.view.view(ids!(upload_progress_view)).set_visible(cx, true);
-                self.redraw(cx);
-
-                submit_async_request(MatrixRequest::Upload {
-                    room_id: room_screen_props.room_name_id.room_id().clone(),
+                // Post action to show the file previewer modal
+                cx.action(crate::shared::file_previewer::FilePreviewerAction::Show {
                     file_path: path.clone(),
-                    replied_to: self.replying_to.take().and_then(|(event_tl_item, _emb)|
-                        event_tl_item.event_id().map(|event_id|
-                            Reply {
-                                event_id: event_id.to_owned(),
-                                enforce_thread: EnforceThread::MaybeThreaded,
-                            }
-                        )
-                    ),
-                    #[cfg(feature = "tsp")]
-                    sign_with_tsp: self.is_tsp_signing_enabled(cx),
-                    progress_sender: Some(progress_shared),
+                    room_id: room_screen_props.room_name_id.room_id().clone(),
+                    replied_to_event_id,
                 });
-
-                self.clear_replying_to(cx);
             }
         }
 
@@ -291,6 +275,7 @@ impl Widget for RoomInputBar {
                 self.view.view(ids!(upload_progress_view)).set_visible(cx, false);
                 self.upload_progress_subscriber = None;
             } else {
+                self.view.view(ids!(upload_progress_view)).set_visible(cx, true);
                 // Update progress bar width as a percentage
                 let progress_val = if progress.total > 0 {
                     (progress.current as f64 / progress.total as f64) * 100.0
@@ -353,7 +338,7 @@ impl RoomInputBar {
         // Handle the image upload button being clicked.
         if self.button(ids!(image_upload_button)).clicked(actions) {
             log!("Image upload button clicked; opening file dialog...");
-            cx.open_system_openfile_dialog();
+            cx.open_system_openfile_dialog(live_id!(upload), FileDialog::new());
         }
 
         // Handle the send location button being clicked.
@@ -449,6 +434,39 @@ impl RoomInputBar {
         if self.view.editing_pane(ids!(editing_pane)).was_hidden(actions) {
             self.on_editing_pane_hidden(cx);
         }
+
+        // Handle file upload action
+        for action in actions {
+            match action.downcast_ref() {
+                Some(crate::shared::file_previewer::FilePreviewerAction::Upload { room_id, file_path, replied_to_event_id }) => {
+                    // Reconstruct the Reply from the event_id
+                    let replied_to = replied_to_event_id.as_ref().map(|event_id| Reply {
+                        event_id: event_id.clone(),
+                        enforce_thread: EnforceThread::MaybeThreaded,
+                    });
+
+                    // Create a SharedObservable for tracking upload progress
+                    use matrix_sdk::TransmissionProgress;
+                    let progress_observable = eyeball::SharedObservable::new(TransmissionProgress::default());
+                    let progress_subscriber = progress_observable.subscribe();
+
+                    // Store the subscriber so we can track progress updates
+                    self.upload_progress_subscriber = Some(progress_subscriber);
+                    progress_observable.set(TransmissionProgress { current: 0, total: 100 });
+                    println!("FilePreviewerAction::Upload");
+                    submit_async_request(MatrixRequest::Upload {
+                        room_id: room_id.clone(),
+                        file_path: file_path.clone(),
+                        replied_to,
+                        #[cfg(feature = "tsp")]
+                        sign_with_tsp: false,
+                        progress_sender: Some(progress_observable),
+                    });
+                }
+                _ => {}
+            }
+        }
+
     }
 
     /// Shows a preview of the given event that the user is currently replying to

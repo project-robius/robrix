@@ -1495,6 +1495,10 @@ impl RoomScreen {
                         }),
                     }
                 }
+                TimelineUpdate::ScrollToBottom => {
+                    // Scroll the portal list to the bottom of the timeline
+                    portal_list.set_first_id_and_scroll(tl.items.len().saturating_sub(1), 0.0);
+                }
             }
         }
 
@@ -2572,6 +2576,9 @@ pub enum TimelineUpdate {
         user_id: OwnedUserId,
         result: matrix_sdk::Result<()>,
     },
+    /// A request to scroll the timeline to the bottom.
+    ScrollToBottom,
+
 }
 
 thread_local! {

@@ -4,6 +4,7 @@ pub mod avatar;
 pub mod callout_tooltip;
 pub mod collapsible_header;
 pub mod confirmation_modal;
+pub mod file_previewer;
 pub mod helpers;
 pub mod html_or_plaintext;
 pub mod icon_button;
@@ -43,4 +44,5 @@ pub fn live_design(cx: &mut Cx) {
     restore_status_view::live_design(cx);
     confirmation_modal::live_design(cx);
     image_viewer::live_design(cx);
+    file_previewer::live_design(cx);
 }

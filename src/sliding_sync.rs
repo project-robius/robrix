@@ -1369,6 +1369,15 @@ async fn matrix_worker_task(
                         Ok(_) => {
                             log!("Successfully uploaded and sent file to room {room_id}");
                             progress_sender.set(TransmissionProgress { total: data_len, current: data_len });
+                            let sender = {
+                                let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                                let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                                    log!("BUG: room info not found when sending upload file to  room {room_id}");
+                                    return;
+                                };
+                                room_info.timeline_update_sender.clone()
+                            };
+                            let _ = sender.send(TimelineUpdate::ScrollToBottom);
                         }
                         Err(e) => {
                             error!("Failed to upload file to room {room_id}: {e:?}");
