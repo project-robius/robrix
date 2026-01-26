@@ -1269,7 +1269,7 @@ impl RoomScreen {
                     if is_append && !portal_list.is_at_end() {
                         // Immediately show the unread badge with no count while we fetch the actual count in the background.
                         jump_to_bottom.show_unread_message_badge(cx, UnreadMessageCount::Unknown);
-                        submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: tl.room_id.clone() });
+                        submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: tl.room_id.clone() }); 
                     }
 
                     if prior_items_changed {
@@ -1494,10 +1494,6 @@ impl RoomScreen {
                             kind: PopupKind::Error,
                         }),
                     }
-                }
-                TimelineUpdate::ScrollToBottom => {
-                    // Scroll the portal list to the bottom of the timeline
-                    portal_list.set_first_id_and_scroll(tl.items.len().saturating_sub(1), 0.0);
                 }
             }
         }
@@ -2576,9 +2572,6 @@ pub enum TimelineUpdate {
         user_id: OwnedUserId,
         result: matrix_sdk::Result<()>,
     },
-    /// A request to scroll the timeline to the bottom.
-    ScrollToBottom,
-
 }
 
 thread_local! {

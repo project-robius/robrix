@@ -20,6 +20,7 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, progress::MyProgressWidgetExt, styles::*}, sliding_sync::{MatrixRequest, UserPowerLevels, submit_async_request}, utils};
+use crate::shared::file_previewer::FilePreviewerAction;
 
 live_design! {
     use link::theme::*;
@@ -39,7 +40,7 @@ live_design! {
     use link::tsp_link::TspSignAnycastCheckbox;
 
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
-    ICO_ADD_IMAGE = dep("crate://self/resources/icons/add_image.svg")
+    ICON_ADD_ATTACHMENT = dep("crate://self/resources/icons/add_attachment.svg")
 
 
     pub RoomInputBar = {{RoomInputBar}}<RoundedView> {
@@ -128,11 +129,11 @@ live_design! {
                     text: "",
                 }
 
-                image_upload_button = <RobrixIconButton> {
+                attachment_upload_button = <RobrixIconButton> {
                     margin: {left: 4}
                     spacing: 0,
                     draw_icon: {
-                        svg_file: (ICO_ADD_IMAGE)
+                        svg_file: (ICON_ADD_ATTACHMENT)
                         color: (COLOR_ACTIVE_PRIMARY_DARKER)
                     },
                     draw_bg: {
@@ -248,20 +249,15 @@ impl Widget for RoomInputBar {
             }
             _ => {}
         }
-        if let Event::FileDialogResult { live_id: _, path } = event {
-            if let Some(path) = path {
-                log!("File selected for upload: {}", path.display());
-
-                // Prepare the reply context if replying to a message
-                let replied_to_event_id = self.replying_to.as_ref()
-                    .and_then(|(event_tl_item, _emb)| event_tl_item.event_id().map(ToOwned::to_owned));
-
-                // Post action to show the file previewer modal
-                cx.action(crate::shared::file_previewer::FilePreviewerAction::Show {
-                    file_path: path.clone(),
-                    room_id: room_screen_props.room_name_id.room_id().clone(),
-                    replied_to_event_id,
-                });
+        if let Event::FileDialogResult { live_id, path } = event {
+            if *live_id == live_id!(attachment_upload) {
+                if let Some(path) = path {
+                    log!("File selected for upload: {}", path.display());
+                    // Post action to show the file previewer modal
+                    cx.action(FilePreviewerAction::Show {
+                        file_path: path.clone(),
+                    });
+                }
             }
         }
 
@@ -269,7 +265,6 @@ impl Widget for RoomInputBar {
         if let Some(subscriber) = &self.upload_progress_subscriber {
             // Get the current progress value
             let progress = subscriber.get();
-            println!("Upload progress: {}/{}", progress.current, progress.total);
             if progress.current >= progress.total {
                 // Upload complete, hide progress bar
                 self.view.view(ids!(upload_progress_view)).set_visible(cx, false);
@@ -336,9 +331,8 @@ impl RoomInputBar {
         }
 
         // Handle the image upload button being clicked.
-        if self.button(ids!(image_upload_button)).clicked(actions) {
-            log!("Image upload button clicked; opening file dialog...");
-            cx.open_system_openfile_dialog(live_id!(upload), FileDialog::new());
+        if self.button(ids!(attachment_upload_button)).clicked(actions) {
+            cx.open_system_openfile_dialog(live_id!(attachment_upload), FileDialog::new());
         }
 
         // Handle the send location button being clicked.
@@ -438,12 +432,16 @@ impl RoomInputBar {
         // Handle file upload action
         for action in actions {
             match action.downcast_ref() {
-                Some(crate::shared::file_previewer::FilePreviewerAction::Upload { room_id, file_path, replied_to_event_id }) => {
+                Some(FilePreviewerAction::Upload { file_path }) => {
                     // Reconstruct the Reply from the event_id
-                    let replied_to = replied_to_event_id.as_ref().map(|event_id| Reply {
-                        event_id: event_id.clone(),
-                        enforce_thread: EnforceThread::MaybeThreaded,
-                    });
+                    let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
+                        event_tl_item.event_id().map(|event_id|
+                            Reply {
+                                event_id: event_id.to_owned(),
+                                enforce_thread: EnforceThread::MaybeThreaded,
+                            }
+                        )
+                    );
 
                     // Create a SharedObservable for tracking upload progress
                     use matrix_sdk::TransmissionProgress;
@@ -453,15 +451,15 @@ impl RoomInputBar {
                     // Store the subscriber so we can track progress updates
                     self.upload_progress_subscriber = Some(progress_subscriber);
                     progress_observable.set(TransmissionProgress { current: 0, total: 100 });
-                    println!("FilePreviewerAction::Upload");
                     submit_async_request(MatrixRequest::Upload {
-                        room_id: room_id.clone(),
+                        room_id: room_screen_props.room_name_id.room_id().clone(),
                         file_path: file_path.clone(),
                         replied_to,
                         #[cfg(feature = "tsp")]
                         sign_with_tsp: false,
                         progress_sender: Some(progress_observable),
                     });
+                    self.clear_replying_to(cx);
                 }
                 _ => {}
             }

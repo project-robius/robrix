@@ -70,7 +70,9 @@ live_design! {
     }
 
     pub FilePreviewer = {{FilePreviewer}} {
+        width: Fit, height: Fit
         wrapper = <RoundedView> {
+            width: Fit, height: Fit
             align: {x: 0.5}
             flow: Down
             padding: {top: 30, right: 40, bottom: 20, left: 40}
@@ -82,7 +84,7 @@ live_design! {
             }
 
             header_view = <View> {
-                width: Fill
+                width: 400
                 height: Fit
                 flow: Right
                 align: {x: 1.0, y: 0.0}
@@ -92,33 +94,40 @@ live_design! {
                     draw_icon: { svg_file: (ICON_CLOSE) }
                     icon_walk: {width: 21, height: 21 }
                 }
-                
             }
-
-            // File metadata section (always visible)
-            metadata_view = <View> {
-                width: Fill
-                height: Fit
-                flow: Down
-                spacing: 5
-                padding: {bottom: 15}
-
-                filename_label = <Label> {
-                    width: Fill
-                    height: Fit
-                    draw_text: {
-                        text_style: <REGULAR_TEXT>{font_size: 14},
-                        color: #000,
-                        wrap: Word
+            <View> {
+                width: Fit, height: Fit
+                flow: Right
+                // Document view (visible only for non-image files)
+                document_view = <View> {
+                    visible: false,
+                    width: Fit
+                    height: 40
+                    flow: Down
+                    align: {x: 0.5, y: 0.5}
+                    file_icon = <Icon> {
+                        draw_icon: {
+                            svg_file: (ICON_FILE),
+                            color: #999,
+                        }
+                        icon_walk: { width: 20, height: 20 }
                     }
                 }
-
-                filesize_label = <Label> {
-                    width: Fill
+                // File metadata section (always visible)
+                metadata_view = <View> {
+                    width: 400
                     height: Fit
-                    draw_text: {
-                        text_style: <REGULAR_TEXT>{font_size: 12},
-                        color: #666,
+                    flow: Down
+                    spacing: 5
+
+                    filename_text = <Label> {
+                        width: Fill
+                        height: Fit
+                        draw_text: {
+                            text_style: <REGULAR_TEXT>{font_size: 14},
+                            color: #000,
+                            wrap: Word
+                        }
                     }
                 }
             }
@@ -126,8 +135,8 @@ live_design! {
             // Image preview (visible only for image files)
             image_view = <View> {
                 visible: true,
-                width: 400
-                height: 400
+                width: 300
+                height: 300
                 flow: Down
                 align: {x: 0.5, y: 0.5}
 
@@ -137,28 +146,9 @@ live_design! {
                 }
             }
 
-            // Document view (visible only for non-image files)
-            document_view = <View> {
-                visible: false,
-                width: Fill
-                height: Fit
-                flow: Down
-                align: {x: 0.5, y: 0.5}
-                padding: 20,
-
-                file_icon = <Icon> {
-                    draw_icon: {
-                        svg_file: (ICON_HTML_FILE),
-                        color: #999,
-                    }
-                    icon_walk: { width: 48, height: 48 }
-                }
-            }
-
             buttons_view = <View> {
-                width: Fill, height: Fit
+                width: 300, height: Fit
                 flow: Right,
-                padding: {top: 20, bottom: 20}
                 margin: {right: -15}
                 align: {x: 1.0, y: 0.5}
                 spacing: 20
@@ -209,14 +199,10 @@ pub enum FilePreviewerAction {
     /// Display the FilePreviewer widget with the given file path and room context.
     Show {
         file_path: PathBuf,
-        room_id: ruma::OwnedRoomId,
-        replied_to_event_id: Option<ruma::OwnedEventId>,
     },
     /// Upload the file with the given path.
     Upload {
-        room_id: ruma::OwnedRoomId,
         file_path: PathBuf,
-        replied_to_event_id: Option<ruma::OwnedEventId>,
     },
     /// Hide the FilePreviewer widget.
     Hide,
@@ -230,8 +216,6 @@ pub struct FilePreviewer {
     #[rust] background_task_id: u32,
     #[rust] receiver: Option<(u32, std::sync::mpsc::Receiver<(FilePreviewerMetaData, Vec<u8>)>)>,
     #[rust] file_path: Option<PathBuf>,
-    #[rust] room_id: Option<ruma::OwnedRoomId>,
-    #[rust] replied_to_event_id: Option<ruma::OwnedEventId>,
 }
 
 impl Widget for FilePreviewer {
@@ -260,7 +244,6 @@ impl Widget for FilePreviewer {
                             self.view(ids!(wrapper.document_view)).set_visible(cx, false);
                             self.file_type = FileType::Image;
 
-                            
                         } else {
                             println!("Failed to load image from bytes");
                             // Failed to load image, show as document
@@ -278,7 +261,6 @@ impl Widget for FilePreviewer {
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     remove_receiver = true;
                 }
-                
             }
             if remove_receiver {
                 self.receiver = None;
@@ -291,6 +273,7 @@ impl Widget for FilePreviewer {
         self.view.draw_walk(cx, scope, walk)
     }
 }
+
 impl MatchEvent for FilePreviewer {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         // Handle close button click
@@ -311,11 +294,9 @@ impl MatchEvent for FilePreviewer {
         }
         // Handle upload button click
         if self.view.button(ids!(wrapper.buttons_view.upload_button)).clicked(actions) {
-            if let (Some(file_path), Some(room_id)) = (&self.file_path, &self.room_id) {
+            if let Some(file_path) = &self.file_path {
                 cx.action(FilePreviewerAction::Upload {
-                    room_id: room_id.clone(),
                     file_path: file_path.clone(),
-                    replied_to_event_id: self.replied_to_event_id.clone(),
                 });
                 cx.action(FilePreviewerAction::Hide);
                 self.view.button(ids!(wrapper.buttons_view.upload_button)).set_enabled(cx, false);
@@ -324,7 +305,7 @@ impl MatchEvent for FilePreviewer {
         }
         for action in actions {
             match action.downcast_ref() {
-                Some(FilePreviewerAction::Show { file_path, room_id, replied_to_event_id }) => {
+                Some(FilePreviewerAction::Show { file_path }) => {
                     self.view.button(ids!(close_button)).reset_hover(cx);
                     self.view.button(ids!(close_button)).set_enabled(cx, true);
                     // Reset button states
@@ -334,8 +315,6 @@ impl MatchEvent for FilePreviewer {
                     self.view.button(ids!(wrapper.buttons_view.upload_button)).set_enabled(cx, true);
                     // Store the context for later use when upload button is clicked
                     self.file_path = Some(file_path.clone());
-                    self.room_id = Some(room_id.clone());
-                    self.replied_to_event_id = replied_to_event_id.clone();
                     let (sender, receiver) = std::sync::mpsc::channel();
                     if let Some(new_value) = self.background_task_id.checked_add(1) {
                         self.background_task_id = new_value;
@@ -371,6 +350,7 @@ impl MatchEvent for FilePreviewer {
         }
     }
 }
+
 impl FilePreviewer {
     /// Sets the file metadata (filename and size).
     ///
@@ -378,9 +358,8 @@ impl FilePreviewer {
     /// * `filename`: the name of the file
     /// * `filesize`: the size of the file in bytes
     pub fn set_metadata(&mut self, cx: &mut Cx, filename: &str, filesize: u64) {
-        self.view.label(ids!(wrapper.metadata_view.filename_label)).set_text(cx, filename);
         let size_str = format_file_size(filesize);
-        self.view.label(ids!(wrapper.metadata_view.filesize_label)).set_text(cx, &size_str);
+        self.view.label(ids!(filename_text)).set_text(cx, &format!("{} - ({})", filename, size_str));
     }
 
     /// Displays an image preview.

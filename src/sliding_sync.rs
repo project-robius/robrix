@@ -20,7 +20,7 @@ use matrix_sdk_ui::{
     RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
 };
 use robius_open::Uri;
-use ruma::{events::tag::Tags, OwnedRoomOrAliasId};
+use matrix_sdk::ruma::{OwnedRoomOrAliasId, events::{room::message::{MessageType, FileMessageEventContent}, tag::Tags}};
 use tokio::{
     runtime::Handle,
     sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
@@ -1346,41 +1346,45 @@ async fn matrix_worker_task(
                     };
                     let data_len = file_data.len();
                     progress_sender.set(TransmissionProgress { total: file_data.len(), current: 0 });
-                    let result = if let Some(_replied_to_info) = replied_to {
-                        // Note: Matrix SDK doesn't have a direct send_attachment_reply method
-                        // For now, just send the attachment normally
-                        // TODO: Implement proper reply handling for attachments
-                        room.send_attachment(
-                            &filename,
-                            &mime_type,
-                            file_data,
-                            attachment_config,
-                        ).with_send_progress_observable(progress_sender.clone()).await
-                    } else {
-                        room.send_attachment(
-                            &filename,
-                            &mime_type,
-                            file_data,
-                            attachment_config,
-                        ).with_send_progress_observable(progress_sender.clone()).await
-                    };
+                    
 
+                    let result = room.send_attachment(
+                        &filename,
+                        &mime_type,
+                        file_data,
+                        attachment_config,
+                    ).with_send_progress_observable(progress_sender.clone()).store_in_cache().await;
                     match result {
-                        Ok(_) => {
+                        Ok(result) => {
                             log!("Successfully uploaded and sent file to room {room_id}");
                             progress_sender.set(TransmissionProgress { total: data_len, current: data_len });
-                            let sender = {
-                                let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                                let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                                    log!("BUG: room info not found when sending upload file to  room {room_id}");
-                                    return;
-                                };
-                                room_info.timeline_update_sender.clone()
-                            };
-                            let _ = sender.send(TimelineUpdate::ScrollToBottom);
+                            if let Some(in_reply_to) = replied_to {
+                                if let Ok(event) = room.event(&result.event_id, None).await {
+                                    if let Ok(json_value) = event.into_raw().deserialize_as::<serde_json::Value>() {
+                                        let url: Option<String> = json_value.get("content").and_then(|content| { 
+                                            content.get("url").and_then(|url| {
+                                                url.as_str().map(|url| url.to_string())
+                                            })
+                                        });
+                                        if let Some(url) = url {
+                                            let timeline = {
+                                                let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                                                let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                                                    log!("BUG: room info not found for send message request {room_id}");
+                                                    return;
+                                                };
+                                                room_info.timeline.clone()
+                                            };
+                                            let source = MediaSource::Plain(OwnedMxcUri::from(url));
+                                            let _ =timeline.send_reply(RoomMessageEventContent::new(MessageType::File(FileMessageEventContent::new(filename, source))).into(), in_reply_to.event_id).await;
+                                        }
+                                    }
+                                }
+                            }
                         }
                         Err(e) => {
                             error!("Failed to upload file to room {room_id}: {e:?}");
+                            progress_sender.set(TransmissionProgress { total: 0, current: 0 });
                             enqueue_popup_notification(PopupItem {
                                 message: format!("Failed to upload file: {e}"),
                                 kind: PopupKind::Error,
