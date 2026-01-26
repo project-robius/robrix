@@ -431,37 +431,34 @@ impl RoomInputBar {
 
         // Handle file upload action
         for action in actions {
-            match action.downcast_ref() {
-                Some(FilePreviewerAction::Upload { file_path }) => {
-                    // Reconstruct the Reply from the event_id
-                    let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
-                        event_tl_item.event_id().map(|event_id|
-                            Reply {
-                                event_id: event_id.to_owned(),
-                                enforce_thread: EnforceThread::MaybeThreaded,
-                            }
-                        )
-                    );
+            if let Some(FilePreviewerAction::Upload { file_path }) = action.downcast_ref() {
+                // Reconstruct the Reply from the event_id
+                let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
+                    event_tl_item.event_id().map(|event_id|
+                        Reply {
+                            event_id: event_id.to_owned(),
+                            enforce_thread: EnforceThread::MaybeThreaded,
+                        }
+                    )
+                );
 
-                    // Create a SharedObservable for tracking upload progress
-                    use matrix_sdk::TransmissionProgress;
-                    let progress_observable = eyeball::SharedObservable::new(TransmissionProgress::default());
-                    let progress_subscriber = progress_observable.subscribe();
+                // Create a SharedObservable for tracking upload progress
+                use matrix_sdk::TransmissionProgress;
+                let progress_observable = eyeball::SharedObservable::new(TransmissionProgress::default());
+                let progress_subscriber = progress_observable.subscribe();
 
-                    // Store the subscriber so we can track progress updates
-                    self.upload_progress_subscriber = Some(progress_subscriber);
-                    progress_observable.set(TransmissionProgress { current: 0, total: 100 });
-                    submit_async_request(MatrixRequest::Upload {
-                        room_id: room_screen_props.room_name_id.room_id().clone(),
-                        file_path: file_path.clone(),
-                        replied_to,
-                        #[cfg(feature = "tsp")]
-                        sign_with_tsp: false,
-                        progress_sender: Some(progress_observable),
-                    });
-                    self.clear_replying_to(cx);
-                }
-                _ => {}
+                // Store the subscriber so we can track progress updates
+                self.upload_progress_subscriber = Some(progress_subscriber);
+                progress_observable.set(TransmissionProgress { current: 0, total: 100 });
+                submit_async_request(MatrixRequest::Upload {
+                    room_id: room_screen_props.room_name_id.room_id().clone(),
+                    file_path: file_path.clone(),
+                    replied_to,
+                    #[cfg(feature = "tsp")]
+                    sign_with_tsp: false,
+                    progress_sender: Some(progress_observable),
+                });
+                self.clear_replying_to(cx);
             }
         }
 

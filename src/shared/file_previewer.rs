@@ -208,13 +208,19 @@ pub enum FilePreviewerAction {
     Hide,
 }
 
+/// Type alias for file data message sent through the channel.
+type FileLoadMessage = (FilePreviewerMetaData, Vec<u8>);
+
+/// Type alias for the receiver that gets file data.
+type FileLoadReceiver = std::sync::mpsc::Receiver<FileLoadMessage>;
+
 /// A widget that previews files by displaying metadata and content based on file type.
 #[derive(Live, Widget, LiveHook)]
 pub struct FilePreviewer {
     #[redraw] #[deref] view: View,
     #[rust] file_type: FileType,
     #[rust] background_task_id: u32,
-    #[rust] receiver: Option<(u32, std::sync::mpsc::Receiver<(FilePreviewerMetaData, Vec<u8>)>)>,
+    #[rust] receiver: Option<(u32, FileLoadReceiver)>,
     #[rust] file_path: Option<PathBuf>,
 }
 
@@ -304,50 +310,47 @@ impl MatchEvent for FilePreviewer {
             return;
         }
         for action in actions {
-            match action.downcast_ref() {
-                Some(FilePreviewerAction::Show { file_path }) => {
-                    self.view.button(ids!(close_button)).reset_hover(cx);
-                    self.view.button(ids!(close_button)).set_enabled(cx, true);
-                    // Reset button states
-                    self.view.button(ids!(wrapper.buttons_view.cancel_button)).reset_hover(cx);
-                    self.view.button(ids!(wrapper.buttons_view.cancel_button)).set_enabled(cx, true);
-                    self.view.button(ids!(wrapper.buttons_view.upload_button)).reset_hover(cx);
-                    self.view.button(ids!(wrapper.buttons_view.upload_button)).set_enabled(cx, true);
-                    // Store the context for later use when upload button is clicked
-                    self.file_path = Some(file_path.clone());
-                    let (sender, receiver) = std::sync::mpsc::channel();
-                    if let Some(new_value) = self.background_task_id.checked_add(1) {
-                        self.background_task_id = new_value;
-                    }
-                    self.receiver = Some((self.background_task_id, receiver));
-                    let file_path_clone = file_path.clone();
-                    let filename = file_path_clone
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("unknown")
-                        .to_string();
-
-                    // Detect the mime type
-                    let mime_str = mime_guess::from_path(&file_path_clone)
-                        .first_or_octet_stream()
-                        .to_string();
-                    use mime_guess::mime;
-                    let mime: mime::Mime = mime_str.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
-
-                    cx.spawn_thread(move || {
-                        if let Ok(file) = std::fs::read(file_path_clone) {
-                            let metadata = FilePreviewerMetaData {
-                                filename,
-                                mime,
-                                file_size: file.len(),
-                            };
-                            let _ = sender.send((metadata, file));
-                            SignalToUI::set_ui_signal();
-                        }
-                    });
-                    continue;
+            if let Some(FilePreviewerAction::Show { file_path }) = action.downcast_ref() {
+                self.view.button(ids!(close_button)).reset_hover(cx);
+                self.view.button(ids!(close_button)).set_enabled(cx, true);
+                // Reset button states
+                self.view.button(ids!(wrapper.buttons_view.cancel_button)).reset_hover(cx);
+                self.view.button(ids!(wrapper.buttons_view.cancel_button)).set_enabled(cx, true);
+                self.view.button(ids!(wrapper.buttons_view.upload_button)).reset_hover(cx);
+                self.view.button(ids!(wrapper.buttons_view.upload_button)).set_enabled(cx, true);
+                // Store the context for later use when upload button is clicked
+                self.file_path = Some(file_path.clone());
+                let (sender, receiver) = std::sync::mpsc::channel();
+                if let Some(new_value) = self.background_task_id.checked_add(1) {
+                    self.background_task_id = new_value;
                 }
-                _ => {}
+                self.receiver = Some((self.background_task_id, receiver));
+                let file_path_clone = file_path.clone();
+                let filename = file_path_clone
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                // Detect the mime type
+                let mime_str = mime_guess::from_path(&file_path_clone)
+                    .first_or_octet_stream()
+                    .to_string();
+                use mime_guess::mime;
+                let mime: mime::Mime = mime_str.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
+
+                cx.spawn_thread(move || {
+                    if let Ok(file) = std::fs::read(file_path_clone) {
+                        let metadata = FilePreviewerMetaData {
+                            filename,
+                            mime,
+                            file_size: file.len(),
+                        };
+                        let _ = sender.send((metadata, file));
+                        SignalToUI::set_ui_signal();
+                    }
+                });
+                continue;
             }
         }
     }

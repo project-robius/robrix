@@ -1278,7 +1278,7 @@ async fn matrix_worker_task(
                     let Some(room) = client.get_room(&room_id) else {
                         error!("Room not found: {room_id}");
                         enqueue_popup_notification(PopupItem {
-                            message: format!("Room not found"),
+                            message: "Room not found".to_string(),
                             kind: PopupKind::Error,
                             auto_dismissal_duration: None
                         });
