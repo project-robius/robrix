@@ -1346,7 +1346,6 @@ async fn matrix_worker_task(
                     };
                     let data_len = file_data.len();
                     progress_sender.set(TransmissionProgress { total: file_data.len(), current: 0 });
-                    
 
                     let result = room.send_attachment(
                         &filename,
@@ -1358,27 +1357,26 @@ async fn matrix_worker_task(
                         Ok(result) => {
                             log!("Successfully uploaded and sent file to room {room_id}");
                             progress_sender.set(TransmissionProgress { total: data_len, current: data_len });
+
+                            // Handle reply if needed
                             if let Some(in_reply_to) = replied_to {
-                                if let Ok(event) = room.event(&result.event_id, None).await {
-                                    if let Ok(json_value) = event.into_raw().deserialize_as::<serde_json::Value>() {
-                                        let url: Option<String> = json_value.get("content").and_then(|content| { 
-                                            content.get("url").and_then(|url| {
-                                                url.as_str().map(|url| url.to_string())
-                                            })
-                                        });
-                                        if let Some(url) = url {
-                                            let timeline = {
-                                                let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                                                let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                                                    log!("BUG: room info not found for send message request {room_id}");
-                                                    return;
-                                                };
-                                                room_info.timeline.clone()
-                                            };
-                                            let source = MediaSource::Plain(OwnedMxcUri::from(url));
-                                            let _ =timeline.send_reply(RoomMessageEventContent::new(MessageType::File(FileMessageEventContent::new(filename, source))).into(), in_reply_to.event_id).await;
-                                        }
-                                    }
+                                // Extract URL from the uploaded event
+                                let url = room.event(&result.event_id, None).await.ok()
+                                    .and_then(|event| event.into_raw().deserialize_as::<serde_json::Value>().ok())
+                                    .and_then(|json_value| json_value.get("content")?.get("url")?.as_str().map(String::from));
+
+                                if let Some(url) = url {
+                                    let timeline = {
+                                        let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                                        let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                                            log!("BUG: room info not found for send message request {room_id}");
+                                            return;
+                                        };
+                                        room_info.timeline.clone()
+                                    };
+                                    let source = MediaSource::Plain(OwnedMxcUri::from(url));
+                                    let message = RoomMessageEventContent::new(MessageType::File(FileMessageEventContent::new(filename, source)));
+                                    let _ = timeline.send_reply(message.into(), in_reply_to.event_id).await;
                                 }
                             }
                         }

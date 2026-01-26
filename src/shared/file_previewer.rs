@@ -55,7 +55,7 @@ live_design! {
     FilePreviewerButton = <RobrixIconButton> {
         width: 44, height: 44
         align: {x: 0.5, y: 0.5},
-        spacing: 0, 
+        spacing: 0,
         padding: 0,
         draw_bg: {
             color: (COLOR_SECONDARY * 0.925)
@@ -336,10 +336,12 @@ impl MatchEvent for FilePreviewer {
 
                     cx.spawn_thread(move || {
                         if let Ok(file) = std::fs::read(file_path_clone) {
-                            let _ = sender.send((FilePreviewerMetaData{
-                                filename, mime, file_size:file.len()
-                            },
-                            file));
+                            let metadata = FilePreviewerMetaData {
+                                filename,
+                                mime,
+                                file_size: file.len(),
+                            };
+                            let _ = sender.send((metadata, file));
                             SignalToUI::set_ui_signal();
                         }
                     });

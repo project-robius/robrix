@@ -90,7 +90,7 @@ live_design! {
                 text: "Uploading..."
             }
 
-            progress= <MyProgress> {
+            progress = <MyProgress> {
 
             }
         }
