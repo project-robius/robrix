@@ -26,10 +26,7 @@ use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch
 use crate::{
     app::{AppState, SelectedRoom},
     home::{
-        navigation_tab_bar::{NavigationBarAction, SelectedTab},
-        rooms_list_entry::RoomsListEntryAction,
-        room_context_menu::RoomContextMenuDetails,
-        space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt},
+        navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}
     },
     room::{
         FetchedRoomAvatar,
@@ -41,7 +38,7 @@ use crate::{
         popup_list::{PopupItem, PopupKind, enqueue_popup_notification},
         room_filter_input_bar::RoomFilterAction,
     },
-    sliding_sync::{MatrixRequest, PaginationDirection, submit_async_request},
+    sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, submit_async_request},
     space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction}, utils::RoomNameId,
 };
 
@@ -67,7 +64,7 @@ pub fn get_invited_rooms(_cx: &mut Cx) -> Rc<RefCell<HashMap<OwnedRoomId, Invite
     ALL_INVITED_ROOMS.with(Rc::clone)
 }
 
-/// Clears all invited rooms
+/// Clears all invited rooms known to the global rooms list.
 ///
 /// This function requires passing in a reference to `Cx`,
 /// which isn't used, but acts as a guarantee that this function
@@ -1223,6 +1220,35 @@ impl Widget for RoomsList {
 
                     self.update_displayed_rooms(cx);
                     continue;
+                }
+
+                // Handle a matrix link being generated.
+                fn on_link_generated(cx: &mut Cx, link: &str) {
+                    cx.copy_to_clipboard(link);
+                    enqueue_popup_notification(PopupItem {
+                        message: "Link copied to clipboard.".to_string(),
+                        auto_dismissal_duration: Some(3.0),
+                        kind: PopupKind::Success,
+                    });
+                }
+                match action.downcast_ref() {
+                    Some(MatrixLinkAction::MatrixToUri(link)) => {
+                        on_link_generated(cx, &link.to_string());
+                        continue;
+                    }
+                    Some(MatrixLinkAction::MatrixUri(link)) => {
+                        on_link_generated(cx, &link.to_string());
+                        continue;
+                    }
+                    Some(MatrixLinkAction::Error(err)) => {
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Failed to generate link: {}", err),
+                            auto_dismissal_duration: Some(5.0),
+                            kind: PopupKind::Error,
+                        });
+                        continue;
+                    }
+                    _ => {}
                 }
 
                 if let Some(space_room_list_action) = action.downcast_ref() {
