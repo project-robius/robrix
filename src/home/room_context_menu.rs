@@ -73,7 +73,7 @@ live_design! {
                 text: "Set Low Priority"
             }
 
-            share_button = <ContextMenuButton> {
+            copy_link_button = <ContextMenuButton> {
                 draw_icon: { svg_file: (ICON_LINK) }
                 text: "Copy Link to Room"
             }
@@ -131,14 +131,12 @@ pub struct RoomContextMenuDetails {
     pub is_marked_unread: bool,
 }
 
+/// Actions emitted from the RoomContextMenu widget, as they must be handled
+/// by other widgets with more information (e.g., the RoomsList).
 #[derive(Clone, DefaultNone, Debug)]
 pub enum RoomContextMenuAction {
-    SetFavorite(OwnedRoomId, bool),
-    SetLowPriority(OwnedRoomId, bool),
     Notifications(OwnedRoomId),
     Invite(OwnedRoomId),
-    CopyLink(OwnedRoomId),
-    // LeaveRoom is handled directly by emitting JoinLeaveRoomModalAction
     OpenRoomSettings(OwnedRoomId),
     None,
 }
@@ -210,12 +208,12 @@ impl WidgetMatchEvent for RoomContextMenu {
             });
             close_menu = true;
         }
-        else if self.button(ids!(share_button)).clicked(actions) {
-            // TODO: handle/implement this
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Creating a room link is not yet implemented."),
-                auto_dismissal_duration: Some(5.0),
-                kind: PopupKind::Warning,
+        else if self.button(ids!(copy_link_button)).clicked(actions) {
+            submit_async_request(MatrixRequest::GenerateMatrixLink {
+                room_id: details.room_name_id.room_id().clone(),
+                event_id: None,
+                use_matrix_scheme: false,
+                join_on_click: false,
             });
             close_menu = true;
         }
@@ -302,7 +300,7 @@ impl RoomContextMenu {
         mark_unread_button.reset_hover(cx);
         favorite_button.reset_hover(cx);
         priority_button.reset_hover(cx);
-        self.button(ids!(share_button)).reset_hover(cx);
+        self.button(ids!(copy_link_button)).reset_hover(cx);
         self.button(ids!(room_settings_button)).reset_hover(cx);
         self.button(ids!(notifications_button)).reset_hover(cx);
         self.button(ids!(invite_button)).reset_hover(cx);

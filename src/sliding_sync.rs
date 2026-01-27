@@ -13,7 +13,7 @@ use matrix_sdk::{
             room::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             }, MessageLikeEventType, StateEventType
-        }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
+        }, matrix_uri::MatrixId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
 };
 use matrix_sdk_ui::{
@@ -268,6 +268,16 @@ pub type OnLinkPreviewFetchedFn = fn(
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
 
+
+
+#[derive(Clone, Debug)]
+pub enum MatrixLinkAction {
+    MatrixToUri(MatrixToUri),
+    MatrixUri(MatrixUri),
+    Error(String),
+    None,
+}
+
 /// The set of requests for async work that can be made to the worker thread.
 #[allow(clippy::large_enum_variant)]
 pub enum MatrixRequest {
@@ -373,6 +383,19 @@ pub enum MatrixRequest {
     SetIsLowPriority {
         room_id: OwnedRoomId,
         is_low_priority: bool,
+    },
+    /// Request to generate a Matrix link (permalink) for a room or event.
+    GenerateMatrixLink {
+        /// The ID of the room to generate a link for.
+        room_id: OwnedRoomId,
+        /// * If `Some`, the link will point to this specific event within the room.
+        /// * If `None`, the link will point to the room itself.
+        event_id: Option<OwnedEventId>,
+        /// * If `true`, the `matrix:` URI scheme will be used to create a [`MatrixUri`].
+        /// * If `false` (default), the `https://matrix.to` scheme will be used to create a [`MatrixToUri`].
+        use_matrix_scheme: bool,
+        /// * If `true` (default is false), the link will include an action hint to join the room.
+        join_on_click: bool,
     },
     /// Request to ignore/block or unignore/unblock a user.
     IgnoreUser {
@@ -994,6 +1017,37 @@ async fn matrix_worker_task(
                     match result {
                         Ok(_) => log!("Set low priority to {} for room {}", is_low_priority, room_id),
                         Err(e) => error!("Failed to set low priority to {} for room {}: {:?}", is_low_priority, room_id, e),
+                    }
+                });
+            }
+            MatrixRequest::GenerateMatrixLink { room_id, event_id, use_matrix_scheme, join_on_click } => {
+                let Some(client) = get_client() else { continue };
+                let _gen_link_task = Handle::current().spawn(async move {
+                    if let Some(room) = client.get_room(&room_id) {
+                        let result = if use_matrix_scheme {
+                            if let Some(event_id) = event_id {
+                                room.matrix_event_permalink(event_id).await
+                                    .map(MatrixLinkAction::MatrixUri)
+                            } else {
+                                room.matrix_permalink(join_on_click).await
+                                    .map(MatrixLinkAction::MatrixUri)
+                            }
+                        } else {
+                            if let Some(event_id) = event_id {
+                                room.matrix_to_event_permalink(event_id).await
+                                    .map(MatrixLinkAction::MatrixToUri)
+                            } else {
+                                room.matrix_to_permalink().await
+                                    .map(MatrixLinkAction::MatrixToUri)
+                            }
+                        };
+    
+                        match result {
+                            Ok(action) => Cx::post_action(action),
+                            Err(e) => Cx::post_action(MatrixLinkAction::Error(e.to_string())),
+                        }
+                    } else {
+                         Cx::post_action(MatrixLinkAction::Error(format!("Room {room_id} not found")));
                     }
                 });
             }
