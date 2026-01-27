@@ -1224,7 +1224,7 @@ impl Widget for RoomsList {
 
                 // Handle a matrix link being generated.
                 fn on_link_generated(cx: &mut Cx, link: &str) {
-                    cx.copy_to_clipboard(&link);
+                    cx.copy_to_clipboard(link);
                     enqueue_popup_notification(PopupItem {
                         message: "Link copied to clipboard.".to_string(),
                         auto_dismissal_duration: Some(3.0),
