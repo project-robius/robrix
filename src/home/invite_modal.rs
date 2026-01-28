@@ -322,12 +322,11 @@ impl WidgetMatchEvent for InviteModal {
 
 impl InviteModal {
     pub fn show(&mut self, cx: &mut Cx, room_name_id: RoomNameId) {
+        self.view.label(ids!(title)).set_text(
+            cx,
+            &format!("Invite to {room_name_id}"),
+        );
         self.state = InviteModalState::WaitingForUserInput;
-
-        // Set the title
-        let title = format!("Invite to {room_name_id}");
-        self.view.label(ids!(title)).set_text(cx, &title);
-
         self.room_name_id = Some(room_name_id);
 
         // Reset the UI state
@@ -336,7 +335,6 @@ impl InviteModal {
         let okay_button = self.view.button(ids!(okay_button));
         let user_id_input = self.view.text_input(ids!(user_id_input));
         let status_label = self.view.label(ids!(status_label));
-
         confirm_button.set_visible(cx, true);
         confirm_button.set_enabled(cx, true);
         confirm_button.reset_hover(cx);
@@ -348,7 +346,6 @@ impl InviteModal {
         user_id_input.set_is_read_only(cx, false);
         user_id_input.set_text(cx, "");
         status_label.set_text(cx, "");
-
         self.view.redraw(cx);
     }
 }
