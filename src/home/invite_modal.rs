@@ -1,6 +1,7 @@
 //! A modal dialog for inviting a user to a room.
 
 use makepad_widgets::*;
+use ruma::OwnedUserId;
 
 use crate::home::room_screen::InviteResultAction;
 use crate::shared::styles::*;
@@ -30,7 +31,7 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: (COLOR_PRIMARY)
-                border_radius: 4
+                border_radius: 4.0
             }
 
             title_view = <View> {
@@ -50,49 +51,21 @@ live_design! {
                 }
             }
 
-            input_row = <View> {
+            user_id_input = <RobrixTextInput> {
                 width: Fill,
                 height: Fit,
-                flow: Right,
-                spacing: 10,
-                align: {y: 0.5}
-
-                user_id_input = <RobrixTextInput> {
-                    width: Fill,
-                    height: Fit,
-                    padding: 12,
-                    draw_bg: {
-                        color: (COLOR_SECONDARY)
-                        border_radius: 4.0
-                        border_size: 1.0
-                        border_color: (COLOR_SECONDARY)
-                    }
-                    draw_text: {
-                        text_style: <REGULAR_TEXT>{font_size: 11},
-                        color: #000
-                    }
-                    empty_text: "@user:example.org",
+                padding: 12,
+                draw_bg: {
+                    color: (COLOR_SECONDARY)
+                    border_radius: 4.0
+                    border_size: 1.0
+                    border_color: (COLOR_SECONDARY)
                 }
-
-                invite_button = <RobrixIconButton> {
-                    width: 100
-                    align: {x: 0.5, y: 0.5}
-                    padding: 12,
-                    draw_icon: {
-                        svg_file: (ICON_ADD_USER)
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
-                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
-
-                    draw_bg: {
-                        border_color: (COLOR_FG_ACCEPT_GREEN),
-                        color: (COLOR_BG_ACCEPT_GREEN)
-                    }
-                    text: "Invite"
-                    draw_text:{
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
+                draw_text: {
+                    text_style: <REGULAR_TEXT>{font_size: 11},
+                    color: #000
                 }
+                empty_text: "@user:example.org",
             }
 
             <View> {
@@ -103,7 +76,7 @@ live_design! {
                 spacing: 20
 
                 cancel_button = <RobrixIconButton> {
-                    width: 100,
+                    width: 120,
                     align: {x: 0.5, y: 0.5}
                     padding: 12,
                     draw_icon: {
@@ -123,9 +96,29 @@ live_design! {
                     }
                 }
 
+                confirm_button = <RobrixIconButton> {
+                    width: 120
+                    align: {x: 0.5, y: 0.5}
+                    padding: 12,
+                    draw_icon: {
+                        svg_file: (ICON_ADD_USER)
+                        color: (COLOR_FG_ACCEPT_GREEN),
+                    }
+                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+
+                    draw_bg: {
+                        border_color: (COLOR_FG_ACCEPT_GREEN),
+                        color: (COLOR_BG_ACCEPT_GREEN)
+                    }
+                    text: "Invite"
+                    draw_text:{
+                        color: (COLOR_FG_ACCEPT_GREEN),
+                    }
+                }
+
                 okay_button = <RobrixIconButton> {
                     visible: false
-                    width: 100
+                    width: 120
                     align: {x: 0.5, y: 0.5}
                     padding: 12,
                     draw_icon: {
@@ -169,13 +162,13 @@ pub enum InviteModalAction {
     Close,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 enum InviteModalState {
     /// Waiting for the user to enter a user ID.
     #[default]
     WaitingForUserInput,
     /// Waiting for the invite to be sent.
-    WaitingForInvite,
+    WaitingForInvite(OwnedUserId),
     /// The invite was sent successfully.
     InviteSuccess,
     /// An error occurred while sending the invite.
@@ -203,11 +196,7 @@ impl Widget for InviteModal {
 
 impl WidgetMatchEvent for InviteModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let invite_button = self.view.button(ids!(invite_button));
         let cancel_button = self.view.button(ids!(cancel_button));
-        let okay_button = self.view.button(ids!(okay_button));
-        let user_id_input = self.view.text_input(ids!(user_id_input));
-        let status_label = self.view.label(ids!(status_label));
 
         // Handle canceling/closing the modal.
         let cancel_clicked = cancel_button.clicked(actions);
@@ -224,19 +213,21 @@ impl WidgetMatchEvent for InviteModal {
         }
 
         // Handle the okay button (shown after invite success).
+        let okay_button = self.view.button(ids!(okay_button));
         if okay_button.clicked(actions) {
-            self.state = InviteModalState::WaitingForUserInput;
             cx.action(InviteModalAction::Close);
             return;
         }
 
+        let confirm_button = self.view.button(ids!(confirm_button));
+        let user_id_input = self.view.text_input(ids!(user_id_input));
+        let status_label = self.view.label(ids!(status_label));
+
         // Handle return key or invite button click.
-        let return_pressed = user_id_input.returned(actions).is_some();
-        if (return_pressed || invite_button.clicked(actions))
-            && self.state == InviteModalState::WaitingForUserInput
+        if let Some(user_id_str) = confirm_button.clicked(actions)
+            .then(|| user_id_input.text())
+            .or_else(|| user_id_input.returned(actions).map(|(t, _)| t))
         {
-            let user_id_str = user_id_input.text();
-            
             // Validate the user ID
             if user_id_str.is_empty() {
                 status_label.apply_over(cx, live!{
@@ -257,14 +248,14 @@ impl WidgetMatchEvent for InviteModal {
                             room_id: room_name_id.room_id().clone(),
                             user_id: user_id.to_owned(),
                         });
-                        self.state = InviteModalState::WaitingForInvite;
+                        self.state = InviteModalState::WaitingForInvite(user_id.to_owned());
                         status_label.apply_over(cx, live!(
                             text: "Sending invite...",
                             draw_text: {
                                 color: (COLOR_ACTIVE_PRIMARY_DARKER),
                             },
                         ));
-                        invite_button.set_enabled(cx, false);
+                        confirm_button.set_enabled(cx, false);
                         user_id_input.set_is_read_only(cx, true);
                     }
                 }
@@ -275,46 +266,55 @@ impl WidgetMatchEvent for InviteModal {
                             color: (COLOR_FG_DANGER_RED),
                         },
                     ));
+                    user_id_input.set_key_focus(cx);
                 }
             }
             self.view.redraw(cx);
         }
 
-        // Handle the InviteResultAction::Sent action.
-        for action in actions {
-            match action.downcast_ref() {
-                Some(InviteResultAction::Sent { room_id, user_id })
-                    if self.room_name_id.as_ref().is_some_and(|rni| rni.room_id() == room_id) =>
-                {
-                    self.state = InviteModalState::InviteSuccess;
-                    let status = format!("Successfully invited {user_id}!");
-                    status_label.apply_over(cx, live!{
-                        text: (status),
-                        draw_text: {
-                            color: (COLOR_FG_ACCEPT_GREEN)
-                        }
-                    });
-                    invite_button.set_visible(cx, false);
-                    cancel_button.set_visible(cx, false);
-                    okay_button.set_visible(cx, true);
+        // Handle the result of a previously-sent invite.
+        if let InviteModalState::WaitingForInvite(invited_user_id) = &self.state {
+            for action in actions {
+                let new_state = match action.downcast_ref() {
+                    Some(InviteResultAction::Sent { room_id, user_id })
+                        if self.room_name_id.as_ref().is_some_and(|rni| rni.room_id() == room_id)
+                            && invited_user_id == user_id
+                    => {
+                        let status = format!("Successfully invited {user_id}!");
+                        status_label.apply_over(cx, live!{
+                            text: (status),
+                            draw_text: {
+                                color: (COLOR_FG_ACCEPT_GREEN)
+                            }
+                        });
+                        confirm_button.set_visible(cx, false);
+                        cancel_button.set_visible(cx, false);
+                        okay_button.set_visible(cx, true);
+                        Some(InviteModalState::InviteSuccess)
+                    }
+                    Some(InviteResultAction::Failed { room_id, user_id, error })
+                        if self.room_name_id.as_ref().is_some_and(|rni| rni.room_id() == room_id)
+                            && invited_user_id == user_id
+                    => {
+                        let status = format!("Failed to send invite: {error}");
+                        status_label.apply_over(cx, live!{
+                            text: (status),
+                            draw_text: {
+                                color: (COLOR_FG_DANGER_RED),
+                            }
+                        });
+                        confirm_button.set_enabled(cx, true);
+                        user_id_input.set_is_read_only(cx, false);
+                        user_id_input.set_key_focus(cx);
+                        Some(InviteModalState::InviteError)
+                    }
+                    _ => None,
+                };
+                if let Some(new_state) = new_state {
+                    self.state = new_state;
                     self.view.redraw(cx);
+                    break;
                 }
-                Some(InviteResultAction::Failed { room_id, error, .. })
-                    if self.room_name_id.as_ref().is_some_and(|rni| rni.room_id() == room_id) =>
-                {
-                    self.state = InviteModalState::InviteError;
-                    let status = format!("Failed to send invite: {error}");
-                    status_label.apply_over(cx, live!{
-                        text: (status),
-                        draw_text: {
-                            color: (COLOR_FG_DANGER_RED),
-                        }
-                    });
-                    invite_button.set_enabled(cx, true);
-                    user_id_input.set_is_read_only(cx, false);
-                    self.view.redraw(cx);
-                }
-                _ => {}
             }
         }
     }
@@ -331,19 +331,20 @@ impl InviteModal {
         self.room_name_id = Some(room_name_id);
 
         // Reset the UI state
-        let invite_button = self.view.button(ids!(invite_button));
+        let confirm_button = self.view.button(ids!(confirm_button));
         let cancel_button = self.view.button(ids!(cancel_button));
         let okay_button = self.view.button(ids!(okay_button));
         let user_id_input = self.view.text_input(ids!(user_id_input));
         let status_label = self.view.label(ids!(status_label));
 
-        invite_button.set_visible(cx, true);
-        invite_button.set_enabled(cx, true);
-        invite_button.reset_hover(cx);
+        confirm_button.set_visible(cx, true);
+        confirm_button.set_enabled(cx, true);
+        confirm_button.reset_hover(cx);
         cancel_button.set_visible(cx, true);
         cancel_button.set_enabled(cx, true);
         cancel_button.reset_hover(cx);
         okay_button.set_visible(cx, false);
+        okay_button.reset_hover(cx);
         user_id_input.set_is_read_only(cx, false);
         user_id_input.set_text(cx, "");
         status_label.set_text(cx, "");
