@@ -4,6 +4,7 @@ pub mod add_room;
 pub mod edited_indicator;
 pub mod editing_pane;
 pub mod home_screen;
+pub mod invite_modal;
 pub mod invite_screen;
 pub mod light_themed_dock;
 pub mod tombstone_footer;
@@ -42,6 +43,7 @@ pub fn live_design(cx: &mut Cx) {
     editing_pane::live_design(cx);
     new_message_context_menu::live_design(cx);
     room_context_menu::live_design(cx);
+    invite_modal::live_design(cx);
     invite_screen::live_design(cx);
     tombstone_footer::live_design(cx);
     room_screen::live_design(cx);
