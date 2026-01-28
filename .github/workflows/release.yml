@@ -9,21 +9,55 @@ on:
       - 'v*.*.*-*'  # Pre-release Version Tags
   workflow_dispatch:
     inputs:
-      target_platforms:
-        description: 'Target platforms for the release'
-        required: true
-        type: choice
-        options:
-          - 'All'                         # Build for all platforms
-          - 'linux-ubuntu-24.04'          # Build for Ubuntu 24.04 both x86_64 and aarch64
-          - 'linux-ubuntu-24.04-x86_64'   # Build for Ubuntu 24.04 x86_64
-          - 'linux-ubuntu-24.04-aarch64'  # Build for Ubuntu 24.04 aarch64
-          - 'linux-ubuntu-22.04'          # Build for Ubuntu 22.04 both x86_64 and aarch64
-          - 'linux-ubuntu-22.04-x86_64'   # Build for Ubuntu 22.04 x86_64
-          - 'linux-ubuntu-22.04-aarch64'  # Build for Ubuntu 22.04 aarch64
-          - 'macos-14-aarch64'            # Build for MacOS 14 (Apple Silicon)
-          - 'macos-15-x86_64'             # Build for MacOS 15 (Intel)
-          - 'windows-2022-x86_64'         # Build for Windows 2022 x86_64
+      build_ubuntu_24_x86_64:
+        description: 'Build Ubuntu 24.04 x86_64'
+        required: false
+        type: boolean
+        default: false
+      build_ubuntu_24_aarch64:
+        description: 'Build Ubuntu 24.04 aarch64'
+        required: false
+        type: boolean
+        default: false
+      build_ubuntu_22_x86_64:
+        description: 'Build Ubuntu 22.04 x86_64'
+        required: false
+        type: boolean
+        default: false
+      build_ubuntu_22_aarch64:
+        description: 'Build Ubuntu 22.04 aarch64'
+        required: false
+        type: boolean
+        default: false
+      build_macos_14_aarch64:
+        description: 'Build macOS 14 (Apple Silicon)'
+        required: false
+        type: boolean
+        default: false
+      build_macos_15_x86_64:
+        description: 'Build macOS 15 (Intel)'
+        required: false
+        type: boolean
+        default: false
+      build_windows_2022_x86_64:
+        description: 'Build Windows 2022 x86_64'
+        required: false
+        type: boolean
+        default: false
+      build_android:
+        description: 'Build Android APK'
+        required: false
+        type: boolean
+        default: false
+      build_ios:
+        description: 'Build iOS app'
+        required: false
+        type: boolean
+        default: false
+      upload_testflight:
+        description: "Upload to TestFlight (true/false)"
+        type: boolean
+        default: false
       release_tag:
         description: 'Release tag (required if creating release)'
         required: false
@@ -40,7 +74,8 @@ on:
         type: boolean
         default: false
 
-permissions: write-all
+permissions:
+  contents: write
 env:
   CARGO_INCREMENTAL: 0
   RUST_BACKTRACE: short
@@ -73,61 +108,188 @@ jobs:
             echo "Tag and Cargo.toml version are consistent."
           fi
 
-  determine_matrix:
-    name: Determine Build Matrix
+  determine_matrices:
+    name: Determine Build Matrices
     runs-on: ubuntu-latest
-    if: always() && (needs.check_tag_version.result == 'success' || github.event_name == 'workflow_dispatch')
-    needs: check_tag_version
     outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      linux_matrix: ${{ steps.set.outputs.linux_matrix }}
+      macos_matrix: ${{ steps.set.outputs.macos_matrix }}
+      windows_matrix: ${{ steps.set.outputs.windows_matrix }}
+      run_linux: ${{ steps.set.outputs.run_linux }}
+      run_macos: ${{ steps.set.outputs.run_macos }}
+      run_windows: ${{ steps.set.outputs.run_windows }}
     steps:
-      - name: Set build matrix
-        id: set-matrix
+      - name: Build matrix from inputs
+        id: set
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            case "${{ github.event.inputs.target_platforms }}" in
-              "All")
-                matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"},{"os":"ubuntu-24.04-arm","arch":"aarch64"},{"os":"ubuntu-22.04","arch":"x86_64"},{"os":"ubuntu-22.04-arm","arch":"aarch64"},{"os":"macos-14","arch":"aarch64"},{"os":"macos-15-intel","arch":"x86_64"},{"os":"windows-2022","arch":"x86_64"}]}'
-                ;;
-              "linux-ubuntu-24.04")
-                matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"},{"os":"ubuntu-24.04-arm","arch":"aarch64"}]}'
-                ;;
-              "linux-ubuntu-22.04")
-                matrix='{"include":[{"os":"ubuntu-22.04","arch":"x86_64"},{"os":"ubuntu-22.04-arm","arch":"aarch64"}]}'
-                ;;
-              "linux-ubuntu-24.04")
-                matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"}]}'
-                ;;
-              "linux-ubuntu-24.04-aarch64")
-                matrix='{"include":[{"os":"ubuntu-24.04-arm","arch":"aarch64"}]}'
-                ;;
-              "linux-ubuntu-22.04")
-                matrix='{"include":[{"os":"ubuntu-22.04","arch":"x86_64"}]}'
-                ;;
-              "linux-ubuntu-22.04-aarch64")
-                matrix='{"include":[{"os":"ubuntu-22.04-arm","arch":"aarch64"}]}'
-                ;;
-              "macos-14-aarch64")
-                matrix='{"include":[{"os":"macos-14","arch":"aarch64"}]}'
-                ;;
-              "macos-15-x86_64")
-                matrix='{"include":[{"os":"macos-15-intel","arch":"x86_64"}]}'
-                ;;
-              "windows-2022-x86_64")
-                matrix='{"include":[{"os":"windows-2022","arch":"x86_64"}]}'
-                ;;
-            esac
-          else
-            matrix='{"include":[{"os":"ubuntu-24.04","arch":"x86_64"},{"os":"ubuntu-24.04-arm","arch":"aarch64"},{"os":"ubuntu-22.04","arch":"x86_64"},{"os":"ubuntu-22.04-arm","arch":"aarch64"},{"os":"macos-14","arch":"aarch64"},{"os":"macos-15-intel","arch":"x86_64"},{"os":"windows-2022","arch":"x86_64"}]}'
-          fi
-          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
 
-  release_robrix_for_desktop:
-    name: Release Robrix for Desktop (${{ matrix.os }}, ${{ matrix.arch }})
-    needs: determine_matrix
+          def truthy(value: str) -> bool:
+              if value is None:
+                  return False
+              return str(value).strip().lower() == "true"
+
+          event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+          inputs = {}
+          event_path = os.environ.get("GITHUB_EVENT_PATH")
+          if event_path and Path(event_path).exists():
+              with open(event_path, "r", encoding="utf-8") as handle:
+                  payload = json.load(handle)
+              inputs = payload.get("inputs") or {}
+
+          linux = []
+          macos = []
+          windows = []
+
+          def add_linux(os_name: str, arch: str) -> None:
+              linux.append({
+                  "os": os_name,
+                  "arch": arch,
+                  "packager_formats": "deb,appimage",
+              })
+
+          def add_macos(os_name: str, arch: str) -> None:
+              macos.append({
+                  "os": os_name,
+                  "arch": arch,
+                  "packager_formats": "dmg",
+              })
+
+          def add_windows() -> None:
+              windows.append({
+                  "os": "windows-2022",
+                  "arch": "x86_64",
+                  "packager_formats": "nsis",
+              })
+
+          if event_name == "push":
+              add_linux("ubuntu-24.04", "x86_64")
+              add_linux("ubuntu-24.04-arm", "aarch64")
+              add_linux("ubuntu-22.04", "x86_64")
+              add_linux("ubuntu-22.04-arm", "aarch64")
+              add_macos("macos-14", "aarch64")
+              add_macos("macos-15-intel", "x86_64")
+              add_windows()
+          else:
+              if truthy(inputs.get("build_ubuntu_24_x86_64")):
+                  add_linux("ubuntu-24.04", "x86_64")
+              if truthy(inputs.get("build_ubuntu_24_aarch64")):
+                  add_linux("ubuntu-24.04-arm", "aarch64")
+              if truthy(inputs.get("build_ubuntu_22_x86_64")):
+                  add_linux("ubuntu-22.04", "x86_64")
+              if truthy(inputs.get("build_ubuntu_22_aarch64")):
+                  add_linux("ubuntu-22.04-arm", "aarch64")
+              if truthy(inputs.get("build_macos_14_aarch64")):
+                  add_macos("macos-14", "aarch64")
+              if truthy(inputs.get("build_macos_15_x86_64")):
+                  add_macos("macos-15-intel", "x86_64")
+              if truthy(inputs.get("build_windows_2022_x86_64")):
+                  add_windows()
+
+          outputs = {
+              "linux_matrix": json.dumps({"include": linux}),
+              "macos_matrix": json.dumps({"include": macos}),
+              "windows_matrix": json.dumps({"include": windows}),
+              "run_linux": "true" if linux else "false",
+              "run_macos": "true" if macos else "false",
+              "run_windows": "true" if windows else "false",
+          }
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              for key, value in outputs.items():
+                  handle.write(f"{key}={value}\n")
+          PY
+
+  create_release:
+    name: Create Release
+    needs: [check_tag_version, determine_matrices]
+    if: >-
+      ${{ always() && (
+        (github.event_name == 'push' && needs.check_tag_version.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' &&
+          github.event.inputs.create_release == 'true' &&
+          (
+            needs.determine_matrices.outputs.run_linux == 'true' ||
+            needs.determine_matrices.outputs.run_macos == 'true' ||
+            needs.determine_matrices.outputs.run_windows == 'true' ||
+            github.event.inputs.build_android == 'true' ||
+            github.event.inputs.build_ios == 'true'
+          )
+        )
+      ) }}
+    runs-on: ubuntu-22.04
+    outputs:
+      release_id: ${{ steps.create_release.outputs.id }}
+      release_tag: ${{ steps.resolve.outputs.tag }}
+      release_name: ${{ steps.resolve.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release metadata
+        id: resolve
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          def read_version(path: str) -> str:
+              in_package = False
+              for raw_line in Path(path).read_text(encoding="utf-8").splitlines():
+                  line = raw_line.strip()
+                  if line.startswith("[") and line.endswith("]"):
+                      in_package = line == "[package]"
+                      continue
+                  if not in_package or not line.startswith("version"):
+                      continue
+                  _, value = line.split("=", 1)
+                  value = value.strip().strip('"').strip("'")
+                  if value:
+                      return value
+              return ""
+
+          event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+          ref_name = os.environ.get("GITHUB_REF_NAME", "").strip()
+          release_tag_input = os.environ.get("RELEASE_TAG", "").strip()
+          version = read_version("Cargo.toml")
+
+          if event_name == "push" and ref_name:
+              tag = ref_name
+              name = f"Robrix {ref_name}"
+          else:
+              if not version:
+                  raise SystemExit("Unable to resolve Cargo.toml package version.")
+              tag = release_tag_input or f"v{version}"
+              tag = tag.replace("__VERSION__", version)
+              name = f"Robrix v{version}"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"tag={tag}\n")
+              handle.write(f"name={name}\n")
+          PY
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve.outputs.tag }}
+          name: ${{ steps.resolve.outputs.name }}
+          draft: ${{ github.event_name == 'workflow_dispatch' }}
+          prerelease: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.pre_release == 'true') || (github.event_name == 'push' && contains(github.ref, '-')) }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  for_linux:
+    name: Release Robrix for Linux (${{ matrix.os }}, ${{ matrix.arch }})
+    needs: [check_tag_version, determine_matrices, create_release]
+    if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && needs.determine_matrices.outputs.run_linux == 'true')) }}
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.determine_matrix.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.determine_matrices.outputs.linux_matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -153,100 +315,105 @@ jobs:
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-packager
-        run: |
-          cargo +stable install --force --locked cargo-packager
-
-      - name: Install robius-packaging-commands
-        run: |
-          cargo install --version 0.2.0 --locked --git https://github.com/project-robius/robius-packaging-commands.git robius-packaging-commands
-
-      - name: Build
-        shell: bash
-        run: |
-          cargo packager --release
-          ls ./dist
-
-      - name: Set Version
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.release_tag }}" ]]; then
-            VERSION="${{ github.event.inputs.release_tag }}"
-            VERSION="${VERSION#v}"  # Remove 'v' prefix if present
-          else
-            VERSION=$(cargo metadata --no-deps --format-version 1 --frozen | jq -r '.packages[0].version')
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-        shell: bash
-
-      - name: Set Artifact and Upload Paths
-        shell: bash
-        run: |
-          VERSION=${{ env.VERSION }}
-          OS=${{ matrix.os }}
-          ARCH=${{ matrix.arch }}
-
-
-          if [[ "$OS" == "ubuntu-22.04" || "$OS" == "ubuntu-24.04" ]]; then
-            {
-              echo "DEB=robrix_${VERSION}_amd64.deb"
-              echo "APPIMAGE=robrix_${VERSION}_x86_64.AppImage"
-              echo "TAR=robrix_${VERSION}_x86_64.tar.gz"
-              echo "UPLOAD_FILES<<EOF"
-              echo "./dist/robrix_${VERSION}_amd64.deb"
-              echo "./dist/robrix_${VERSION}_x86_64.AppImage"
-              echo "./dist/robrix_${VERSION}_x86_64.tar.gz"
-              echo "EOF"
-            } >> $GITHUB_ENV
-
-          elif [[ "$OS" == "ubuntu-22.04-arm" || "$OS" == "ubuntu-24.04-arm" ]]; then
-            {
-              echo "DEB=robrix_${VERSION}_arm64.deb"
-              echo "APPIMAGE=robrix_${VERSION}_aarch64.AppImage"
-              echo "TAR=robrix_${VERSION}_aarch64.tar.gz"
-              echo "UPLOAD_FILES<<EOF"
-              echo "./dist/robrix_${VERSION}_arm64.deb"
-              echo "./dist/robrix_${VERSION}_aarch64.AppImage"
-              echo "./dist/robrix_${VERSION}_aarch64.tar.gz"
-              echo "EOF"
-            } >> $GITHUB_ENV
-
-          elif [[ "$OS" == "macos-14" ]]; then
-            FILE="robrix-${VERSION}-macOS-${ARCH}.dmg"
-            mv ./dist/Robrix_${VERSION}_aarch64.dmg ./dist/$FILE
-            echo "RELEASE_FILE=$FILE" >> $GITHUB_ENV
-            echo "UPLOAD_FILES=./dist/$FILE" >> $GITHUB_ENV
-
-          elif [[ "$OS" == "macos-15-intel" ]]; then
-            FILE="robrix-${VERSION}-macOS-${ARCH}.dmg"
-            mv ./dist/Robrix_${VERSION}_x64.dmg ./dist/$FILE
-            echo "RELEASE_FILE=$FILE" >> $GITHUB_ENV
-            echo "UPLOAD_FILES=./dist/$FILE" >> $GITHUB_ENV
-
-          elif [[ "$OS" == "windows-2022" ]]; then
-            FILE="robrix-${VERSION}-windows-${ARCH}-setup.exe"
-            mv ./dist/robrix_${VERSION}_x64-setup.exe ./dist/$FILE
-            echo "RELEASE_FILE=$FILE" >> $GITHUB_ENV
-            echo "UPLOAD_FILES=./dist/$FILE" >> $GITHUB_ENV
-          fi
-
-      - name: Upload Release Artifacts
-        if: |
-          (github.event_name == 'push') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
-        uses: softprops/action-gh-release@v2
+      - name: Package (desktop)
+        uses: Project-Robius-China/makepad-packaging-action@main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || format('v{0}', env.VERSION) }}
-          name: ${{ github.event_name == 'workflow_dispatch' && format('Robrix {0}', github.event.inputs.release_tag) || format('Robrix v{0}', env.VERSION) }}
-          token: ${{ secrets.ROBRIX_RELEASE }}
-          files: ${{ env.UPLOAD_FILES }}
-          prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.pre_release == 'true' || contains(github.ref, '-') }}
-          draft: ${{ github.event_name == 'workflow_dispatch' }}
+          packager_formats: ${{ matrix.packager_formats }}
+          releaseId: ${{ needs.create_release.outputs.release_id }}
 
-      - name: Upload Artifacts (No Release)
-        if: |
-          github.event_name == 'workflow_dispatch' && github.event.inputs.create_release != 'true'
-        uses: actions/upload-artifact@v4
+  for_macos:
+    name: Release Robrix for macOS (${{ matrix.os }}, ${{ matrix.arch }})
+    needs: [check_tag_version, determine_matrices, create_release]
+    if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && needs.determine_matrices.outputs.run_macos == 'true')) }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.determine_matrices.outputs.macos_matrix) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Package (macos)
+        uses: Project-Robius-China/makepad-packaging-action@main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
-          name: robrix-${{ env.VERSION }}-${{ matrix.os }}-${{ matrix.arch }}
-          path: ${{ env.UPLOAD_FILES }}
-          retention-days: 30
+          packager_formats: ${{ matrix.packager_formats }}
+          releaseId: ${{ needs.create_release.outputs.release_id }}
+
+  for_windows:
+    name: Release Robrix for Windows (${{ matrix.os }}, ${{ matrix.arch }})
+    needs: [check_tag_version, determine_matrices, create_release]
+    if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && needs.determine_matrices.outputs.run_windows == 'true')) }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.determine_matrices.outputs.windows_matrix) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Package (windows)
+        uses: Project-Robius-China/makepad-packaging-action@main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          packager_formats: ${{ matrix.packager_formats }}
+          releaseId: ${{ needs.create_release.outputs.release_id }}
+
+  for_android:
+    name: Release Robrix for Android
+    needs: [check_tag_version, create_release]
+    if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_android == 'true')) }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Package (android)
+        uses: Project-Robius-China/makepad-packaging-action@main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          args: --target aarch64-linux-android
+          releaseId: ${{ needs.create_release.outputs.release_id }}
+
+  for_ios:
+    name: Release Robrix for iOS
+    needs: [check_tag_version, create_release]
+    if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_ios == 'true')) }}
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Package (iOS)
+        uses: Project-Robius-China/makepad-packaging-action@main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MAKEPAD_IOS_ORG: org.robius.robrix
+          MAKEPAD_IOS_APP: Robrix
+          MAKEPAD_IOS_CREATE_IPA: 'true'
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: Apple Development
+          # IOS upload testflight disabled for now
+          MAKEPAD_IOS_UPLOAD_TESTFLIGHT: ${{ inputs.upload_testflight }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        with:
+          args: --target aarch64-apple-ios
+          releaseId: ${{ needs.create_release.outputs.release_id }}
