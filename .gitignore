@@ -7,3 +7,6 @@
 .DS_Store
 CLAUDE.md
 proxychains.conf
+
+# Agent fork-join session files (auto-added)
+.fork-join/
