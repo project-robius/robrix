@@ -174,7 +174,9 @@ impl CollapsibleHeaderRef {
             inner.is_expanded = is_expanded;
             inner.category = category;
             inner.label(ids!(label)).set_text(cx, category.as_str());
-            inner.unread_badge(ids!(unread_badge)).update_counts(num_unread_mentions, 0);
+            inner
+                .unread_badge(ids!(unread_badge))
+                .update_counts(false, num_unread_mentions, 0);
         }
     }
 }

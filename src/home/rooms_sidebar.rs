@@ -26,7 +26,7 @@ live_design! {
     pub RoomsSideBar = {{RoomsSideBar}}<AdaptiveView> {
         Desktop = <View> {
             padding: {top: 20, left: 10, right: 10}
-            flow: Down, spacing: 10
+            flow: Down, spacing: 5
             width: Fill, height: Fill
 
             show_bg: true,
@@ -54,31 +54,52 @@ live_design! {
         },
 
         Mobile = <View> {
-            padding: {top: 17, left: 17, right: 17}
-            flow: Down, spacing: 7
             width: Fill, height: Fill
+            flow: Down,
+            
+            <RoundedShadowView> {
+                width: Fill, height: Fit
+                padding: {top: 15, left: 15, right: 15, bottom: 10}
+                flow: Down,
 
-            <CachedWidget> {
-                rooms_list_header = <RoomsListHeader> {}
+                show_bg: true
+                draw_bg: {
+                    color: (COLOR_PRIMARY_DARKER),
+                    border_radius: 4.0,
+                    border_size: 0.0
+                    shadow_color: #0005
+                    shadow_radius: 15.0
+                    shadow_offset: vec2(1.0, 0.0),
+                }
+
+                <View> { height: 20 }
+
+                <CachedWidget> {
+                    rooms_list_header = <RoomsListHeader> {}
+                }
+
+                <View> {
+                    width: Fill,
+                    height: 39,
+                    flow: Right
+                    padding: {top: 2, bottom: 2}
+                    spacing: 5 
+                    align: {y: 0.5}
+
+                    <CachedWidget> {
+                        room_filter_input_bar = <RoomFilterInputBar> {}
+                    }
+
+                    search_messages_button = <SearchMessagesButton> { }
+                }
             }
 
             <View> {
-                width: Fill,
-                height: 39,
-                flow: Right
-                padding: {top: 2, bottom: 2}
-                spacing: 5 
-                align: {y: 0.5}
+                padding: {left: 15, right: 15}
 
                 <CachedWidget> {
-                    room_filter_input_bar = <RoomFilterInputBar> {}
+                    rooms_list = <RoomsList> {}
                 }
-
-                search_messages_button = <SearchMessagesButton> { }
-            }
-
-            <CachedWidget> {
-                rooms_list = <RoomsList> {}
             }
         }
     }
