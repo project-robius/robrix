@@ -56,7 +56,7 @@ live_design! {
                     height: Fill,
                     show_bg: true,
                     draw_bg: {
-                        color: (COLOR_UNREAD_MESSAGE_BADGE)
+                        color: (COLOR_UNREAD_BADGE_MESSAGES)
                         instance border_radius: 4.0
                         // Adjust this border_size to larger value to make oval smaller 
                         instance border_size: 2.0
