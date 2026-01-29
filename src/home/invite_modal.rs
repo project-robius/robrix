@@ -51,16 +51,7 @@ live_design! {
                 }
             }
 
-            user_id_input = <RobrixTextInput> {
-                width: Fill,
-                height: Fit,
-                padding: 12,
-                draw_bg: {
-                    color: (COLOR_SECONDARY)
-                    border_radius: 4.0
-                    border_size: 1.0
-                    border_color: (COLOR_SECONDARY)
-                }
+            user_id_input = <SimpleTextInput> {
                 draw_text: {
                     text_style: <REGULAR_TEXT>{font_size: 11},
                     color: #000
