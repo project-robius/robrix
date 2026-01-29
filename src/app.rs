@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache,
     home::{
+        invite_modal::{InviteModalAction, InviteModalWidgetRefExt},
         main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, room_context_menu::RoomContextMenuWidgetRefExt
     },
     join_leave_room_modal::{
@@ -43,6 +44,7 @@ live_design! {
     use crate::shared::popup_list::*;
     use crate::home::new_message_context_menu::*;
     use crate::home::room_context_menu::*;
+    use crate::home::invite_modal::InviteModal;
     use crate::shared::callout_tooltip::CalloutTooltip;
     use crate::shared::image_viewer::ImageViewer;
     use link::tsp_link::TspVerificationModal;
@@ -125,6 +127,13 @@ live_design! {
                                         icon_walk: {width: 28, height: Fit, margin: {left: -10} }
                                     } } }
                                 }
+                            }
+                        }
+
+                        // A modal to invite a user to a room.
+                        invite_modal = <Modal> {
+                            content: {
+                                invite_modal_inner = <InviteModal> {}
                             }
                         }
 
@@ -488,12 +497,26 @@ impl MatchEvent for App {
             }
 
             // Handle a request to show the invite confirmation modal.
-            if let Some(InviteAction::ShowConfirmationModal(content_opt)) = action.downcast_ref() {
+            if let Some(InviteAction::ShowInviteConfirmationModal(content_opt)) = action.downcast_ref() {
                 if let Some(content) = content_opt.borrow_mut().take() {
                     invite_confirmation_modal_inner.show(cx, content);
                     self.ui.modal(ids!(invite_confirmation_modal)).open(cx);
                 }
                 continue;
+            }
+
+            // Handle InviteModalAction to open/close the invite modal.
+            match action.downcast_ref() {
+                Some(InviteModalAction::Open(room_name_id)) => {
+                    self.ui.invite_modal(ids!(invite_modal_inner)).show(cx, room_name_id.clone());
+                    self.ui.modal(ids!(invite_modal)).open(cx);
+                    continue;
+                }
+                Some(InviteModalAction::Close) => {
+                    self.ui.modal(ids!(invite_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
             }
 
             // // message source modal handling.
