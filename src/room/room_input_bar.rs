@@ -15,11 +15,12 @@
 //! * A "cannot-send-message" notice, which is shown if the user cannot send messages to the room.
 //!
 
-use makepad_widgets::{file_dialogs::FileDialog, *};
+use makepad_widgets::*;
+
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, progress::MyProgressWidgetExt, styles::*}, sliding_sync::{MatrixRequest, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, file_previewer::{FileLoadReceiver, FilePreviewerMetaData}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, progress::MyProgressWidgetExt, styles::*}, sliding_sync::{MatrixRequest, UserPowerLevels, submit_async_request}, utils};
 use crate::shared::file_previewer::FilePreviewerAction;
 
 live_design! {
@@ -139,7 +140,7 @@ live_design! {
                     draw_bg: {
                         color: (COLOR_PRIMARY),
                     }
-                    icon_walk: {width: Fit, height: 23, margin: {bottom: -1}}
+                    icon_walk: {width: 20, height: 23, margin: {bottom: -1, left: 5}}
                     text: "",
                 }
 
@@ -218,7 +219,9 @@ pub struct RoomInputBar {
     /// Info about the message event that the user is currently replying to, if any.
     #[rust] replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
     /// Subscriber for upload progress updates
-    #[rust] upload_progress_subscriber: Option<eyeball::Subscriber<matrix_sdk::TransmissionProgress>>
+    #[rust] upload_progress_subscriber: Option<eyeball::Subscriber<matrix_sdk::TransmissionProgress>>,
+    #[rust] background_task_id: u32,
+    #[rust] receiver: Option<(u32, FileLoadReceiver)>,
 }
 
 impl Widget for RoomInputBar {
@@ -249,45 +252,49 @@ impl Widget for RoomInputBar {
             }
             _ => {}
         }
-        if let Event::FileDialogResult { live_id, path } = event {
-            if *live_id == live_id!(attachment_upload) {
-                if let Some(path) = path {
-                    log!("File selected for upload: {}", path.display());
-                    // Post action to show the file previewer modal
-                    cx.action(FilePreviewerAction::Show {
-                        file_path: path.clone(),
-                    });
-                }
-            }
-        }
 
-        // Handle upload progress updates
+        // Update upload progress display
         if let Some(subscriber) = &self.upload_progress_subscriber {
-            // Get the current progress value
             let progress = subscriber.get();
             if progress.current >= progress.total {
-                // Upload complete, hide progress bar
+                // Upload complete, hide the progress bar
                 self.view.view(ids!(upload_progress_view)).set_visible(cx, false);
                 self.upload_progress_subscriber = None;
             } else {
                 self.view.view(ids!(upload_progress_view)).set_visible(cx, true);
-                // Update progress bar width as a percentage
-                let progress_val = if progress.total > 0 {
+
+                // Calculate progress percentage, avoiding division by zero
+                let progress_percentage = if progress.total > 0 {
                     (progress.current as f64 / progress.total as f64) * 100.0
                 } else {
                     0.0
                 };
-                self.view.my_progress(ids!(progress)).set_value(cx, progress_val);
 
+                self.view.my_progress(ids!(progress)).set_value(cx, progress_percentage);
                 let progress_label = self.view.label(ids!(upload_progress_view.progress_label));
-                progress_label.set_text(cx, &format!("Uploading... {:.0}%", progress_val));
+                progress_label.set_text(cx, &format!("Uploading... {:.0}%", progress_percentage));
             }
             self.redraw(cx);
         }
         if let Event::Actions(actions) = event {
             self.handle_actions(cx, actions, room_screen_props);
         }
-
+        if let (Event::Signal, Some((_background_task_id, receiver))) = (event, &mut self.receiver) {
+            let mut remove_receiver = false;
+            match receiver.try_recv() {
+                Ok(file) => {
+                    cx.action(FilePreviewerAction::Show(file));
+                    remove_receiver = true;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    remove_receiver = true;
+                }
+            }
+            if remove_receiver {
+                self.receiver = None;
+            }
+        }
         self.view.handle_event(cx, event, scope);
     }
 
@@ -330,9 +337,51 @@ impl RoomInputBar {
             self.redraw(cx);
         }
 
-        // Handle the image upload button being clicked.
+        // Handle the file attachment upload button being clicked.
         if self.button(ids!(attachment_upload_button)).clicked(actions) {
-            cx.open_system_openfile_dialog(live_id!(attachment_upload), FileDialog::new());
+            if let Some(selected_file_path) = rfd::FileDialog::new().pick_file() {
+                let filename = selected_file_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                // Detect the MIME type from the file extension
+                let mime_str = mime_guess::from_path(&selected_file_path)
+                    .first_or_octet_stream()
+                    .to_string();
+                use mime_guess::mime;
+                let mime: mime::Mime = mime_str.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
+
+                let (sender, receiver) = std::sync::mpsc::channel();
+                self.background_task_id = self.background_task_id.wrapping_add(1);
+                self.receiver = Some((self.background_task_id, receiver));
+
+                // Read file in background thread to avoid blocking the UI
+                cx.spawn_thread(move || {
+                    match std::fs::read(&selected_file_path) {
+                        Ok(file_data) => {
+                            let metadata = FilePreviewerMetaData {
+                                filename,
+                                mime,
+                                file_size: file_data.len(),
+                            };
+                            if sender.send((metadata, file_data)).is_err() {
+                                error!("Failed to send file data to UI: receiver dropped");
+                            }
+                        }
+                        Err(read_error) => {
+                            error!("Failed to read file {:?}: {}", selected_file_path, read_error);
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Unable to read the file: {}", read_error),
+                                auto_dismissal_duration: None,
+                                kind: PopupKind::Error
+                            });
+                        }
+                    }
+                    SignalToUI::set_ui_signal();
+                });
+            }
         }
 
         // Handle the send location button being clicked.
@@ -429,11 +478,11 @@ impl RoomInputBar {
             self.on_editing_pane_hidden(cx);
         }
 
-        // Handle file upload action
+        // Handle file upload confirmation from the file previewer
         for action in actions {
-            if let Some(FilePreviewerAction::Upload { file_path }) = action.downcast_ref() {
-                // Reconstruct the Reply from the event_id
-                let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
+            if let Some(FilePreviewerAction::Upload(file_load_data)) = action.downcast_ref() {
+                // If replying to a message, construct the reply metadata
+                let replied_to = self.replying_to.take().and_then(|(event_tl_item, _embedded_event)|
                     event_tl_item.event_id().map(|event_id|
                         Reply {
                             event_id: event_id.to_owned(),
@@ -442,17 +491,17 @@ impl RoomInputBar {
                     )
                 );
 
-                // Create a SharedObservable for tracking upload progress
+                // Set up progress tracking for the upload
                 use matrix_sdk::TransmissionProgress;
                 let progress_observable = eyeball::SharedObservable::new(TransmissionProgress::default());
                 let progress_subscriber = progress_observable.subscribe();
 
-                // Store the subscriber so we can track progress updates
                 self.upload_progress_subscriber = Some(progress_subscriber);
                 progress_observable.set(TransmissionProgress { current: 0, total: 100 });
+
                 submit_async_request(MatrixRequest::Upload {
                     room_id: room_screen_props.room_name_id.room_id().clone(),
-                    file_path: file_path.clone(),
+                    file_data: file_load_data.clone(),
                     replied_to,
                     #[cfg(feature = "tsp")]
                     sign_with_tsp: false,

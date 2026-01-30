@@ -57,6 +57,8 @@ bytesize = "2.0"
 bitflags = "2.6.0"
 indexmap = "2.6.0"
 blurhash = { version = "0.2.3", default-features = false }
+mime_guess = "2.0.5"
+rfd = { version = "0.15.3", features = ["ashpd", "urlencoding", "xdg-portal"] }
 
 ## Dependencies for TSP support.
 ## Commit "f0bc4625dcd729e07e4a36257df2f1d94c81cef4" is the most recent one without the invalid change to pin serde to 1.0.219.

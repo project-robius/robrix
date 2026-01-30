@@ -19,8 +19,9 @@ use matrix_sdk::{
 use matrix_sdk_ui::{
     RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
 };
+use mime_guess::mime;
 use robius_open::Uri;
-use matrix_sdk::ruma::{OwnedRoomOrAliasId, events::{room::message::{MessageType, FileMessageEventContent}, tag::Tags}};
+use matrix_sdk::ruma::{OwnedRoomOrAliasId, events::{room::message::{MessageType, FileMessageEventContent}, tag::Tags}, UInt};
 use tokio::{
     runtime::Handle,
     sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
@@ -35,7 +36,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
-        avatar::AvatarState, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
+        avatar::AvatarState, file_previewer::FileData, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -397,7 +398,7 @@ pub enum MatrixRequest {
     /// Request to upload a file to the given room.
     Upload {
         room_id: OwnedRoomId,
-        file_path: std::path::PathBuf,
+        file_data: FileData,
         replied_to: Option<Reply>,
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
@@ -1262,18 +1263,17 @@ async fn matrix_worker_task(
 
             MatrixRequest::Upload {
                 room_id,
-                file_path,
+                file_data,
                 replied_to,
                 #[cfg(feature = "tsp")]
                 sign_with_tsp: _,
                 progress_sender,
             } => {
                 let Some(client) = get_client() else { continue };
-
+                let (file_meta, file_data) = file_data;
                 // Spawn a new async task that will upload the file.
                 let _upload_task = Handle::current().spawn(async move {
-                    log!("Uploading file to room {room_id}: {file_path:?}...");
-
+                    log!("Uploading file to room {room_id}: {file_meta:?}...");
                     // Get the room
                     let Some(room) = client.get_room(&room_id) else {
                         error!("Room not found: {room_id}");
@@ -1285,47 +1285,17 @@ async fn matrix_worker_task(
                         return;
                     };
 
-                    // Read the file
-                    let file_data = match tokio::fs::read(&file_path).await {
-                        Ok(data) => data,
-                        Err(e) => {
-                            error!("Failed to read file {file_path:?}: {e:?}");
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("Failed to read file: {e}"),
-                                kind: PopupKind::Error,
-                                auto_dismissal_duration: None
-                            });
-                            return;
-                        }
-                    };
-
-                    // Get the filename
-                    let filename = file_path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("unknown")
-                        .to_string();
-
-                    // Detect the mime type
-                    let mime_str = mime_guess::from_path(&file_path)
-                        .first_or_octet_stream()
-                        .to_string();
-
-                    use mime_guess::mime;
-                    let mime_type: mime::Mime = mime_str.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
-
-                    log!("File: {filename}, size: {} bytes, mime: {mime_type}", file_data.len());
+                    let mime_type  = file_meta.mime.clone();
 
                     // Upload the file to the media repository and send the message
-                    use ruma::UInt;
-
+                    let data_len = file_data.len();
                     let attachment_config = matrix_sdk::attachment::AttachmentConfig::new()
                         .info(if mime_type.type_() == mime::IMAGE {
                             matrix_sdk::attachment::AttachmentInfo::Image(
                                 matrix_sdk::attachment::BaseImageInfo {
                                     height: None,
                                     width: None,
-                                    size: Some(UInt::new(file_data.len() as u64).unwrap()),
+                                    size: Some(UInt::new(data_len as u64).unwrap()),
                                     blurhash: None,
                                     is_animated: None,
                                 }
@@ -1333,7 +1303,7 @@ async fn matrix_worker_task(
                         } else {
                             matrix_sdk::attachment::AttachmentInfo::File(
                                 matrix_sdk::attachment::BaseFileInfo {
-                                    size: Some(UInt::new(file_data.len() as u64).unwrap()),
+                                    size: Some(UInt::new(data_len as u64).unwrap()),
                                 }
                             )
                         });
@@ -1344,11 +1314,11 @@ async fn matrix_worker_task(
                         error!("Progress sender not provided for file upload to room {room_id}");
                         return;
                     };
-                    let data_len = file_data.len();
-                    progress_sender.set(TransmissionProgress { total: file_data.len(), current: 0 });
+                    
+                    progress_sender.set(TransmissionProgress { total: data_len, current: 0 });
 
                     let result = room.send_attachment(
-                        &filename,
+                        &file_meta.filename,
                         &mime_type,
                         file_data,
                         attachment_config,
@@ -1375,8 +1345,10 @@ async fn matrix_worker_task(
                                         room_info.timeline.clone()
                                     };
                                     let source = MediaSource::Plain(OwnedMxcUri::from(url));
+                                    let filename = file_meta.filename.clone();
                                     let message = RoomMessageEventContent::new(MessageType::File(FileMessageEventContent::new(filename, source)));
                                     let _ = timeline.send_reply(message.into(), in_reply_to.event_id).await;
+                                    SignalToUI::set_ui_signal();
                                 }
                             }
                         }
@@ -1390,7 +1362,6 @@ async fn matrix_worker_task(
                             });
                         }
                     }
-                    SignalToUI::set_ui_signal();
                 });
             }
 
