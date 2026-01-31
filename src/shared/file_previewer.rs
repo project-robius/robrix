@@ -207,7 +207,7 @@ impl FilePreviewer {
             let Some(file_data) = file_data else {
                 return;
             };
-            if let Ok(image_buffer) = load_image_from_bytes(&file_data) {
+            if let Ok(image_buffer) = load_image_from_bytes(file_data) {
                 // Get image dimensions to calculate aspect-ratio preserving size
                 let (image_width, image_height) = (image_buffer.width, image_buffer.height);
                 // Calculate scaling to fit within preview area while preserving aspect ratio
