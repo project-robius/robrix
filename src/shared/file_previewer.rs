@@ -1,16 +1,10 @@
-//! A file previewer widget that displays file metadata and previews.
+//! A file previewer modal widget that displays file metadata and previews.
 //!
-//! This widget shows:
-//! - File metadata: filename and file size (always displayed)
-//! - For images: displays the image preview
-//! - For documents: displays only the filename
-//!
-//! ## Usage Example
-//!
-//! ```rust,ignore
-//! // Set the file metadata and file data
-//! file_previewer.set_content(cx, FileData(file_metadata, file_data)); // 500 KB file
+//! This widget handles FilePreviewerAction to show and hide the previewer modal.
+//! It also emits FilePreviewerAction::Upload action to upload the selected file.
 //! ```
+
+use std::sync::Arc;
 
 use makepad_widgets::*;
 use makepad_widgets::image_cache::{ImageBuffer, ImageError};
@@ -41,23 +35,6 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::icon_button::RobrixIconButton;
 
-    FilePreviewerButton = <RobrixIconButton> {
-        width: 44, height: 44
-        align: {x: 0.5, y: 0.5},
-        spacing: 0,
-        padding: 0,
-        draw_bg: {
-            color: (COLOR_SECONDARY * 0.925)
-        }
-        draw_icon: {
-            svg_file: (ICON_ZOOM_OUT),
-            fn get_color(self) -> vec4 {
-                return #x0;
-            }
-        }
-        icon_walk: {width: 27, height: 27}
-    }
-
     pub FilePreviewer = {{FilePreviewer}} {
         width: Fit, height: Fit
         wrapper = <RoundedView> {
@@ -65,57 +42,67 @@ live_design! {
             align: {x: 0.5}
             flow: Down
             padding: {top: 20, right: 20, bottom: 10, left: 20}
-
             show_bg: true
             draw_bg: {
                 color: (COLOR_PRIMARY)
                 border_radius: 4
             }
 
-            header_view = <View> {
-                width: 250
-                height: Fit
-                flow: Right
-                align: {x: 1.0, y: 0.0}
-                margin: {top: -15, right: -25, bottom: 10}
-
-                close_button = <FilePreviewerButton> {
-                    draw_icon: { svg_file: (ICON_CLOSE) }
-                    icon_walk: {width: 21, height: 21 }
-                }
-            }
             <View> {
                 width: Fit, height: Fit
-                flow: Right
-                // Document view (visible only for non-image files)
-                document_view = <View> {
-                    visible: false,
-                    width: Fit
-                    height: 40
-                    flow: Down
-                    align: {x: 0.5, y: 0.5}
-                    file_icon = <Icon> {
-                        draw_icon: {
-                            svg_file: (ICON_FILE),
-                            color: #999,
+                flow: Down
+
+                <View> {
+                    width: Fit, height: Fit
+
+                    header_label = <Label> {
+                        width: 200
+                        height: 50
+                        padding: 0
+                        //margin: {bottom: 15}
+                        draw_text: {
+                            text_style: <REGULAR_TEXT>{font_size: 15},
+                            color: (COLOR_TEXT),
+                            wrap: Word
                         }
-                        icon_walk: { width: 20, height: 20 }
+                        text: "Upload Files"
                     }
                 }
-                // File metadata section (always visible)
-                metadata_view = <View> {
-                    width: 250
-                    height: Fit
-                    flow: Down
-                    spacing: 5
+                <View> {
+                    width: Fit, height: Fit
+                    flow: Right
 
-                    filename_text = <Label> {
-                        width: Fill
+                    // Document view (visible only for non-image files)
+                    document_view = <View> {
+                        visible: false,
+                        width: Fit
+                        height: 40
+                        flow: Down
+                        align: {x: 0.5, y: 0.5}
+                        file_icon = <Icon> {
+                            draw_icon: {
+                                svg_file: (ICON_FILE),
+                                color: #999,
+                            }
+                            icon_walk: { width: 20, height: 20 }
+                        }
+                    }
+
+                    // File metadata section (always visible)
+                    metadata_view = <View> {
+                        width: 250
                         height: Fit
-                        draw_text: {
-                            text_style: <REGULAR_TEXT>{font_size: 14},
-                            color: #000,
-                            wrap: Word
+                        flow: Down
+                        spacing: 5
+
+                        filename_text = <Label> {
+                            width: Fill
+                            height: Fit
+                            draw_text: {
+                                text_style: <REGULAR_TEXT>{font_size: 14},
+                                color: #000,
+                                wrap: Word
+                            }
                         }
                     }
                 }
@@ -186,7 +173,7 @@ pub enum FilePreviewerAction {
     /// Display the FilePreviewer widget with the given file data.
     Show(FileData),
     /// Upload the file with the given data.
-    Upload(FileData),
+    Upload(FilePreviewerMetaData),
     /// Hide the FilePreviewer widget.
     Hide,
     /// No action.
@@ -194,31 +181,32 @@ pub enum FilePreviewerAction {
 }
 
 /// Type alias for file data message sent through the channel.
-pub type FileData = (FilePreviewerMetaData, Vec<u8>);
+pub type FileData = Arc<(FilePreviewerMetaData, Option<Vec<u8>>)>;
 
 /// Type alias for the receiver that gets file data.
-pub type FileLoadReceiver = std::sync::mpsc::Receiver<FileData>;
+pub type FileLoadReceiver = std::sync::mpsc::Receiver<Option<FileData>>;
 
 /// A widget that previews files by displaying metadata and content based on file type.
 #[derive(Live, Widget, LiveHook)]
 pub struct FilePreviewer {
     #[redraw] #[deref] view: View,
     #[rust] file_type: FileType,
-    #[rust] file_data: Option<FileData>,
+    #[rust] file_meta: Option<FilePreviewerMetaData>,
 }
+
 impl FilePreviewer {
     /// Sets the file content to preview, including metadata and image/document display.
     /// For images, attempts to decode and display the preview. Falls back to document view on error.
     fn set_content(&mut self, cx: &mut Cx, file_load_message: FileData) {
-        let (file_metadata, file_data) = file_load_message;
-        self.set_metadata(cx, &file_metadata.filename, file_metadata.file_size as u64);
-
-        let close_button = self.view.button(ids!(wrapper.header_view.close_button));
-        close_button.reset_hover(cx);
-        close_button.set_enabled(cx, true);
-
+        let (file_metadata, file_data) = file_load_message.as_ref();
+        self.file_meta = Some(file_metadata.clone());
+        self.set_metadata(cx, &file_metadata.filename, file_metadata.file_size);
+        
         if file_metadata.mime.type_() == mime::IMAGE {
             // Attempt to decode the image data for preview
+            let Some(file_data) = file_data else {
+                return;
+            };
             if let Ok(image_buffer) = load_image_from_bytes(&file_data) {
                 // Get image dimensions to calculate aspect-ratio preserving size
                 let (image_width, image_height) = (image_buffer.width, image_buffer.height);
@@ -271,50 +259,24 @@ impl Widget for FilePreviewer {
 
 impl MatchEvent for FilePreviewer {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        if self.view.button(ids!(wrapper.header_view.close_button)).clicked(actions) {
-            cx.action(FilePreviewerAction::Hide);
-            return;
-        }
-
-        if self.view.button(ids!(close_modal_button)).clicked(actions) {
-            cx.action(FilePreviewerAction::Hide);
-            return;
-        }
 
         if self.view.button(ids!(wrapper.buttons_view.cancel_button)).clicked(actions) {
             cx.action(FilePreviewerAction::Hide);
-            self.view.button(ids!(wrapper.buttons_view.cancel_button)).set_enabled(cx, false);
+            self.file_meta = None;
             return;
         }
 
         if self.view.button(ids!(wrapper.buttons_view.upload_button)).clicked(actions) {
-            if let Some(file_data) = self.file_data.take() {
-                cx.action(FilePreviewerAction::Upload(file_data));
-                cx.action(FilePreviewerAction::Hide);
-                self.view.button(ids!(wrapper.buttons_view.upload_button)).set_enabled(cx, false);
+            if let Some(file_meta) = self.file_meta.take() {
+                cx.action(FilePreviewerAction::Upload(file_meta));
             }
             return;
         }
 
         for action in actions {
             if let Some(FilePreviewerAction::Show(file_data)) = action.downcast_ref() {
-                // Reset all button states when showing the previewer
-                let close_button = self.view.button(ids!(wrapper.header_view.close_button));
-                close_button.reset_hover(cx);
-                close_button.set_enabled(cx, true);
-
-                let cancel_button = self.view.button(ids!(wrapper.buttons_view.cancel_button));
-                cancel_button.reset_hover(cx);
-                cancel_button.set_enabled(cx, true);
-
-                let upload_button = self.view.button(ids!(wrapper.buttons_view.upload_button));
-                upload_button.reset_hover(cx);
-                upload_button.set_enabled(cx, true);
-
-                // Store the file data for later upload, clone only once
-                let cloned_file_data = file_data.clone();
-                self.set_content(cx, cloned_file_data.clone());
-                self.file_data = Some(cloned_file_data);
+                self.set_content(cx, file_data.clone());
+                self.file_meta = Some(file_data.0.clone());
                 continue;
             }
         }
@@ -413,7 +375,7 @@ pub enum FileType {
 ///
 /// Uses binary units (1024 bytes = 1 KB) for conversion.
 /// For sizes less than 1 KB, displays the exact byte count without decimal places.
-fn format_file_size(bytes: u64) -> String {
+pub fn format_file_size(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
 
     if bytes == 0 {
@@ -442,5 +404,7 @@ pub struct FilePreviewerMetaData {
     pub filename: String,
     pub mime: Mime,
     /// File size in bytes
-    pub file_size: usize,
+    pub file_size: u64,
+    /// Path to the original file
+    pub file_path: std::path::PathBuf,
 }

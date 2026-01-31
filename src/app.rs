@@ -490,7 +490,7 @@ impl MatchEvent for App {
                     self.ui.modal(ids!(file_upload_modal)).open(cx);
                     continue;
                 }
-                Some(FilePreviewerAction::Hide) => {
+                Some(FilePreviewerAction::Hide) | Some(FilePreviewerAction::Upload(_))=> {
                     self.ui.modal(ids!(file_upload_modal)).close(cx);
                     continue;
                 }

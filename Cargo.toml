@@ -37,6 +37,7 @@ imbl = { version = "6.1.0", features = ["serde"] }          # same as matrix-sdk
 futures-util = "0.3"
 htmlize = "1.0.5"
 imghdr = "0.7.0"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 linkify = "0.10.0"
 matrix-sdk-base = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main" }
 matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }

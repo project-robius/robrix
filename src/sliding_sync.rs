@@ -36,7 +36,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
-        avatar::AvatarState, file_previewer::FileData, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
+        avatar::AvatarState, file_previewer::FilePreviewerMetaData, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -438,12 +438,14 @@ pub enum MatrixRequest {
     /// Request to upload a file to the given room.
     Upload {
         room_id: OwnedRoomId,
-        file_data: FileData,
+        file_meta: FilePreviewerMetaData,
         replied_to: Option<Reply>,
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
         /// Optional progress observable for upload progress tracking
         progress_sender: Option<eyeball::SharedObservable<TransmissionProgress>>,
+        /// Optional sender to receive the task's AbortHandle for cancellation support
+        abort_handle_sender: Option<crossbeam_channel::Sender<tokio::task::AbortHandle>>,
     },
     /// Sends a notice to the given room that the current user is or is not typing.
     ///
@@ -1393,22 +1395,38 @@ async fn matrix_worker_task(
 
             MatrixRequest::Upload {
                 room_id,
-                file_data,
+                file_meta,
                 replied_to,
                 #[cfg(feature = "tsp")]
                 sign_with_tsp: _,
                 progress_sender,
+                abort_handle_sender,
             } => {
                 let Some(client) = get_client() else { continue };
-                let (file_meta, file_data) = file_data;
                 // Spawn a new async task that will upload the file.
-                let _upload_task = Handle::current().spawn(async move {
+                let upload_task = Handle::current().spawn(async move {
                     log!("Uploading file to room {room_id}: {file_meta:?}...");
+
+                    // Read the file asynchronously
+                    let file_data = match tokio::fs::read(&file_meta.file_path).await {
+                        Ok(data) => data,
+                        Err(read_error) => {
+                            error!("Failed to read file {:?}: {}", file_meta.file_path, read_error);
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Unable to read the file: {}", read_error),
+                                kind: PopupKind::Error,
+                                auto_dismissal_duration: None
+                            });
+                            SignalToUI::set_ui_signal();
+                            return;
+                        }
+                    };
+
                     // Get the room
                     let Some(room) = client.get_room(&room_id) else {
-                        error!("Room not found: {room_id}");
+                        error!("Room not found when uploading file: {room_id}");
                         enqueue_popup_notification(PopupItem {
-                            message: "Room not found".to_string(),
+                            message: "Room not found when uploading file".to_string(),
                             kind: PopupKind::Error,
                             auto_dismissal_duration: None
                         });
@@ -1418,14 +1436,14 @@ async fn matrix_worker_task(
                     let mime_type  = file_meta.mime.clone();
 
                     // Upload the file to the media repository and send the message
-                    let data_len = file_data.len();
+                    let file_size_uint = UInt::try_from(file_meta.file_size).ok();
                     let attachment_config = matrix_sdk::attachment::AttachmentConfig::new()
                         .info(if mime_type.type_() == mime::IMAGE {
                             matrix_sdk::attachment::AttachmentInfo::Image(
                                 matrix_sdk::attachment::BaseImageInfo {
                                     height: None,
                                     width: None,
-                                    size: Some(UInt::new(data_len as u64).unwrap()),
+                                    size: file_size_uint,
                                     blurhash: None,
                                     is_animated: None,
                                 }
@@ -1433,7 +1451,7 @@ async fn matrix_worker_task(
                         } else {
                             matrix_sdk::attachment::AttachmentInfo::File(
                                 matrix_sdk::attachment::BaseFileInfo {
-                                    size: Some(UInt::new(data_len as u64).unwrap()),
+                                    size: file_size_uint,
                                 }
                             )
                         });
@@ -1445,7 +1463,7 @@ async fn matrix_worker_task(
                         return;
                     };
                     
-                    progress_sender.set(TransmissionProgress { total: data_len, current: 0 });
+                    progress_sender.set(TransmissionProgress { total: file_meta.file_size as usize, current: 0 });
 
                     let result = room.send_attachment(
                         &file_meta.filename,
@@ -1456,7 +1474,7 @@ async fn matrix_worker_task(
                     match result {
                         Ok(result) => {
                             log!("Successfully uploaded and sent file to room {room_id}");
-                            progress_sender.set(TransmissionProgress { total: data_len, current: data_len });
+                            progress_sender.set(TransmissionProgress { total: file_meta.file_size as usize, current: file_meta.file_size as usize });
 
                             // Handle reply if needed
                             if let Some(in_reply_to) = replied_to {
@@ -1469,7 +1487,7 @@ async fn matrix_worker_task(
                                     let timeline = {
                                         let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                                         let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                                            log!("BUG: room info not found for send message request {room_id}");
+                                            log!("BUG: room info not found for uploading file to room {room_id}");
                                             return;
                                         };
                                         room_info.timeline.clone()
@@ -1484,15 +1502,22 @@ async fn matrix_worker_task(
                         }
                         Err(e) => {
                             error!("Failed to upload file to room {room_id}: {e:?}");
+                            // Set progress to completion state (0/0) to hide the progress bar
                             progress_sender.set(TransmissionProgress { total: 0, current: 0 });
                             enqueue_popup_notification(PopupItem {
                                 message: format!("Failed to upload file: {e}"),
                                 kind: PopupKind::Error,
                                 auto_dismissal_duration: None
                             });
+                            // Signal UI to update and hide the progress bar
+                            SignalToUI::set_ui_signal();
                         }
                     }
                 });
+                // Send the AbortHandle back to the UI for cancellation support
+                if let Some(sender) = abort_handle_sender {
+                    let _ = sender.send(upload_task.abort_handle());
+                }
             }
 
             MatrixRequest::ReadReceipt { room_id, event_id } => {

@@ -11,7 +11,7 @@ live_design! {
 
     // A horizontal progress bar with rounded ends (capsule shape).
     // Displays progress from 0% to 100% with a colored fill.
-    pub MyProgress = {{MyProgress}} {
+    pub Progress = {{Progress}} {
         width: Fill,
         height: 8,
 
@@ -55,7 +55,7 @@ live_design! {
 
 /// A horizontal progress bar widget that displays a percentage value (0-100).
 #[derive(Live, LiveHook, Widget)]
-pub struct MyProgress {
+pub struct Progress {
     #[redraw]
     #[live]
     draw_bg: DrawQuad,
@@ -67,7 +67,7 @@ pub struct MyProgress {
     value: f64,
 }
 
-impl Widget for MyProgress {
+impl Widget for Progress {
     fn handle_event(&mut self, _cx: &mut Cx, _event: &Event, _scope: &mut Scope) {}
 
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -85,7 +85,7 @@ impl Widget for MyProgress {
     }
 }
 
-impl MyProgress {
+impl Progress {
     /// Returns the current progress value as a percentage (0.0-100.0).
     pub fn value(&self) -> f64 {
         self.value
@@ -99,7 +99,7 @@ impl MyProgress {
     }
 }
 
-impl MyProgressRef {
+impl ProgressRef {
     /// Returns the current progress value as a percentage (0.0-100.0).
     /// Returns 0.0 if the widget reference is invalid.
     pub fn value(&self) -> f64 {
