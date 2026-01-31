@@ -8,19 +8,20 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
-        api::client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
-            room::{
-                message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
-            }, MessageLikeEventType, StateEventType
-        }, matrix_uri::MatrixId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
+    Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom, TransmissionProgress, config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{RoomMember, edit::EditedContent, reply::Reply}, ruma::{
+        MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, api::client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
+            MessageLikeEventType, StateEventType, room::{
+                MediaSource, message::RoomMessageEventContent, power_levels::RoomPowerLevels
+            }
+        }, matrix_uri::MatrixId
+    }, sliding_sync::VersionBuilder
 };
 use matrix_sdk_ui::{
     RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
 };
+use mime_guess::mime;
 use robius_open::Uri;
-use ruma::{events::tag::Tags, OwnedRoomOrAliasId};
+use matrix_sdk::ruma::{OwnedRoomOrAliasId, events::{room::message::{MessageType, FileMessageEventContent}, tag::Tags}, UInt};
 use tokio::{
     runtime::Handle,
     sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
@@ -35,7 +36,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
-        avatar::AvatarState, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
+        avatar::AvatarState, file_previewer::FilePreviewerMetaData, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -433,6 +434,18 @@ pub enum MatrixRequest {
         replied_to: Option<Reply>,
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
+    },
+    /// Request to upload a file to the given room.
+    Upload {
+        room_id: OwnedRoomId,
+        file_meta: FilePreviewerMetaData,
+        replied_to: Option<Reply>,
+        #[cfg(feature = "tsp")]
+        sign_with_tsp: bool,
+        /// Optional progress observable for upload progress tracking
+        progress_sender: Option<eyeball::SharedObservable<TransmissionProgress>>,
+        /// Optional sender to receive the task's AbortHandle for cancellation support
+        abort_handle_sender: Option<crossbeam_channel::Sender<tokio::task::AbortHandle>>,
     },
     /// Sends a notice to the given room that the current user is or is not typing.
     ///
@@ -1378,6 +1391,133 @@ async fn matrix_worker_task(
                     }
                     SignalToUI::set_ui_signal();
                 });
+            }
+
+            MatrixRequest::Upload {
+                room_id,
+                file_meta,
+                replied_to,
+                #[cfg(feature = "tsp")]
+                sign_with_tsp: _,
+                progress_sender,
+                abort_handle_sender,
+            } => {
+                let Some(client) = get_client() else { continue };
+                // Spawn a new async task that will upload the file.
+                let upload_task = Handle::current().spawn(async move {
+                    log!("Uploading file to room {room_id}: {file_meta:?}...");
+
+                    // Read the file asynchronously
+                    let file_data = match tokio::fs::read(&file_meta.file_path).await {
+                        Ok(data) => data,
+                        Err(read_error) => {
+                            error!("Failed to read file {:?}: {}", file_meta.file_path, read_error);
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Unable to read the file: {}", read_error),
+                                kind: PopupKind::Error,
+                                auto_dismissal_duration: None
+                            });
+                            SignalToUI::set_ui_signal();
+                            return;
+                        }
+                    };
+
+                    // Get the room
+                    let Some(room) = client.get_room(&room_id) else {
+                        error!("Room not found when uploading file: {room_id}");
+                        enqueue_popup_notification(PopupItem {
+                            message: "Room not found when uploading file".to_string(),
+                            kind: PopupKind::Error,
+                            auto_dismissal_duration: None
+                        });
+                        return;
+                    };
+
+                    let mime_type  = file_meta.mime.clone();
+
+                    // Upload the file to the media repository and send the message
+                    let file_size_uint = UInt::try_from(file_meta.file_size).ok();
+                    let attachment_config = matrix_sdk::attachment::AttachmentConfig::new()
+                        .info(if mime_type.type_() == mime::IMAGE {
+                            matrix_sdk::attachment::AttachmentInfo::Image(
+                                matrix_sdk::attachment::BaseImageInfo {
+                                    height: None,
+                                    width: None,
+                                    size: file_size_uint,
+                                    blurhash: None,
+                                    is_animated: None,
+                                }
+                            )
+                        } else {
+                            matrix_sdk::attachment::AttachmentInfo::File(
+                                matrix_sdk::attachment::BaseFileInfo {
+                                    size: file_size_uint,
+                                }
+                            )
+                        });
+
+                    // Note: Matrix SDK doesn't currently support progress tracking via observable
+                    // The progress_sender is kept for future compatibility
+                    let Some(progress_sender) = progress_sender else {
+                        error!("Progress sender not provided for file upload to room {room_id}");
+                        return;
+                    };
+                    
+                    progress_sender.set(TransmissionProgress { total: file_meta.file_size as usize, current: 0 });
+
+                    let result = room.send_attachment(
+                        &file_meta.filename,
+                        &mime_type,
+                        file_data,
+                        attachment_config,
+                    ).with_send_progress_observable(progress_sender.clone()).store_in_cache().await;
+                    match result {
+                        Ok(result) => {
+                            log!("Successfully uploaded and sent file to room {room_id}");
+                            progress_sender.set(TransmissionProgress { total: file_meta.file_size as usize, current: file_meta.file_size as usize });
+
+                            // Handle reply if needed
+                            if let Some(in_reply_to) = replied_to {
+                                // Extract URL from the uploaded event
+                                let url = room.event(&result.event_id, None).await.ok()
+                                    .and_then(|event| event.into_raw().deserialize_as::<serde_json::Value>().ok())
+                                    .and_then(|json_value| json_value.get("content")?.get("url")?.as_str().map(String::from));
+
+                                if let Some(url) = url {
+                                    let timeline = {
+                                        let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                                        let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                                            log!("BUG: room info not found for uploading file to room {room_id}");
+                                            return;
+                                        };
+                                        room_info.timeline.clone()
+                                    };
+                                    let source = MediaSource::Plain(OwnedMxcUri::from(url));
+                                    let filename = file_meta.filename.clone();
+                                    let message = RoomMessageEventContent::new(MessageType::File(FileMessageEventContent::new(filename, source)));
+                                    let _ = timeline.send_reply(message.into(), in_reply_to.event_id).await;
+                                    SignalToUI::set_ui_signal();
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to upload file to room {room_id}: {e:?}");
+                            // Set progress to completion state (0/0) to hide the progress bar
+                            progress_sender.set(TransmissionProgress { total: 0, current: 0 });
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Failed to upload file: {e}"),
+                                kind: PopupKind::Error,
+                                auto_dismissal_duration: None
+                            });
+                            // Signal UI to update and hide the progress bar
+                            SignalToUI::set_ui_signal();
+                        }
+                    }
+                });
+                // Send the AbortHandle back to the UI for cancellation support
+                if let Some(sender) = abort_handle_sender {
+                    let _ = sender.send(upload_task.abort_handle());
+                }
             }
 
             MatrixRequest::ReadReceipt { room_id, event_id } => {

@@ -23,7 +23,7 @@ use crate::{
     shared::{callout_tooltip::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, confirmation_modal::ConfirmationModalWidgetRefExt, image_viewer::{ImageViewerAction, LoadState}}, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, confirmation_modal::ConfirmationModalWidgetRefExt, file_previewer::FilePreviewerAction, image_viewer::{ImageViewerAction, LoadState}}, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -47,6 +47,7 @@ live_design! {
     use crate::home::invite_modal::InviteModal;
     use crate::shared::callout_tooltip::CalloutTooltip;
     use crate::shared::image_viewer::ImageViewer;
+    use crate::shared::file_previewer::FilePreviewer;
     use link::tsp_link::TspVerificationModal;
 
 
@@ -107,6 +108,11 @@ live_design! {
                             content: {
                                 width: Fill, height: Fill,
                                 image_viewer_modal_inner = <ImageViewer> {}
+                            }
+                        }
+                        file_upload_modal = <Modal> {
+                            content: {
+                                file_upload_modal_inner = <FilePreviewer> {}
                             }
                         }
                         <PopupList> {}
@@ -475,6 +481,17 @@ impl MatchEvent for App {
                 }
                 Some(ImageViewerAction::Hide) => {
                     self.ui.modal(ids!(image_viewer_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
+            match action.downcast_ref() {
+                Some(FilePreviewerAction::Show { .. }) => {
+                    self.ui.modal(ids!(file_upload_modal)).open(cx);
+                    continue;
+                }
+                Some(FilePreviewerAction::Hide) | Some(FilePreviewerAction::Upload(_))=> {
+                    self.ui.modal(ids!(file_upload_modal)).close(cx);
                     continue;
                 }
                 _ => {}
