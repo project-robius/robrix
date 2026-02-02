@@ -1951,7 +1951,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     // from the UI, and forward them to this task (via the login_sender --> login_receiver).
     let mut matrix_worker_task_handle = rt.spawn(matrix_worker_task(receiver, login_sender));
 
-    let most_recent_user_id = persistence::most_recent_user_id();
+    let most_recent_user_id = persistence::most_recent_user_id().await;
     log!("Most recent user ID: {most_recent_user_id:?}");
     let cli_parse_result = Cli::try_parse();
     let cli_has_valid_username_password = cli_parse_result.as_ref()
