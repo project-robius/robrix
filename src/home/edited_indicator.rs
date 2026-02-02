@@ -10,6 +10,7 @@
 use chrono::{DateTime, Local};
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::EventTimelineItem;
+use pure_rust_locales::Locale;
 
 use crate::{shared::callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, utils::unix_time_millis_to_datetime};
 
@@ -73,10 +74,12 @@ impl Widget for EditedIndicator {
             _ => false,
         };
         if should_hover_in {
-            // TODO: use pure_rust_locales crate to format the time based on the chosen Locale.
-            let locale_extended_fmt_en_us= "%a %b %-d, %Y, %r";
+            // TODO: use the user's actual chosen Locale once we have a way to select it.
+            // For now we hardcode en_US, but we use `format_localized` so it's ready.
+            let locale = Locale::en_US;
             let text = if let Some(ts) = self.latest_edit_ts {
-                format!("Last edited {}", ts.format(locale_extended_fmt_en_us))
+                // %c is the locale's preferred date and time representation
+                format!("Last edited {}", ts.format_localized("%c", locale))
             } else {
                 "Last edit time unknown".to_string()
             };

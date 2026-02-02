@@ -27,7 +27,7 @@ robius-location = { git = "https://github.com/project-robius/robius" }
 
 
 anyhow = "1.0"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["unstable-locales"] }
 clap = { version = "4.0.16", features = ["derive"] }
 crossbeam-channel = "0.5.10"
 crossbeam-queue = "0.3.8"
@@ -79,6 +79,7 @@ reqwest = { version = "0.12", default-features = false, features = [
     "macos-system-configuration",
 ] }
 thiserror = "2.0.16"
+pure-rust-locales = "0.8.2"
 
 
 [features]
