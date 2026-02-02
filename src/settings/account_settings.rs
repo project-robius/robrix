@@ -1,6 +1,6 @@
 use makepad_widgets::{text::selection::Cursor, *};
 
-use crate::{logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, utils};
+use crate::{logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::{ProfileAction, UserProfile}, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, utils};
 
 live_design! {
     use link::theme::*;
@@ -243,6 +243,18 @@ pub struct AccountSettings {
 
 impl Widget for AccountSettings {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if let Event::Signal = event {
+            crate::profile::user_profile_cache::process_user_profile_updates(cx);
+            if let Some(new_profile) = crate::home::navigation_tab_bar::get_own_profile(cx) {
+                // Only update the text input if the username has changed.
+                let username_changed = self.own_profile.as_ref()
+                    .and_then(|p| p.username.as_ref()) != new_profile.username.as_ref();
+
+                self.own_profile = Some(new_profile);
+                self.populate_from_profile(cx, username_changed);
+                self.view.redraw(cx);
+            }
+        }
         self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
@@ -269,7 +281,7 @@ impl MatchEvent for AccountSettings {
             }
         }
         
-        let Some(own_profile) = &self.own_profile else { return };
+        let Some(own_profile) = self.own_profile.clone() else { return };
 
         if self.view.button(ids!(upload_avatar_button)).clicked(actions) {
             // TODO: support uploading a new avatar picture.
@@ -289,68 +301,33 @@ impl MatchEvent for AccountSettings {
             });
         }
 
-        let accept_display_name_button = self.view.button(ids!(accept_display_name_button));
-        let cancel_display_name_button = self.view.button(ids!(cancel_display_name_button));
         let display_name_input = self.view.text_input(ids!(display_name_input));
-        let enable_buttons = |cx: &mut Cx, enable: bool| {
-            accept_display_name_button.set_enabled(cx, enable);
-            cancel_display_name_button.set_enabled(cx, enable);
-            let (accept_button_fg_color, accept_button_bg_color) = if enable {
-                (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
-            } else {
-                (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
-            };
-            let (cancel_button_fg_color, cancel_button_bg_color) = if enable {
-                (COLOR_FG_DANGER_RED, COLOR_BG_DANGER_RED)
-            } else {
-                (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
-            };
-            accept_display_name_button.apply_over(cx, live!(
-                draw_bg: {
-                    color: (accept_button_bg_color),
-                    border_color: (accept_button_fg_color),
-                },
-                draw_text: {
-                    color: (accept_button_fg_color),
-                },
-                draw_icon: {
-                    color: (accept_button_fg_color),
-                }
-            ));
-            cancel_display_name_button.apply_over(cx, live!(
-                draw_bg: {
-                    color: (cancel_button_bg_color),
-                    border_color: (cancel_button_fg_color),
-                },
-                draw_text: {
-                    color: (cancel_button_fg_color),
-                },
-                draw_icon: {
-                    color: (cancel_button_fg_color),
-                }
-            ));
-        };
 
         if let Some(new_name) = display_name_input.changed(actions) {
             let should_enable = new_name.as_str() != own_profile.username.as_deref().unwrap_or("");
-            enable_buttons(cx, should_enable);
+            self.set_buttons_enabled(cx, should_enable);
         }
 
-        if cancel_display_name_button.clicked(actions) {
+        if self.view.button(ids!(cancel_display_name_button)).clicked(actions) {
             // Reset the display name input and disable the name change buttons.
             let new_text = own_profile.username.as_deref().unwrap_or("");
             display_name_input.set_text(cx, new_text);
             display_name_input.set_cursor(cx, Cursor { index: new_text.len(), prefer_next_row: false }, false);
-            enable_buttons(cx, false);
+            self.set_buttons_enabled(cx, false);
         }
 
-        if accept_display_name_button.clicked(actions) {
-            // TODO: support changing the display name.
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Display name change is not yet implemented."),
-                auto_dismissal_duration: Some(4.0),
-                kind: PopupKind::Warning
+        if self.view.button(ids!(accept_display_name_button)).clicked(actions) {
+            let new_name = display_name_input.text();
+            crate::sliding_sync::submit_async_request(crate::sliding_sync::MatrixRequest::SetDisplayName {
+                new_display_name: Some(new_name),
             });
+            self.set_buttons_enabled(cx, false);
+        }
+
+        for action in actions {
+            if let Some(ProfileAction::DisplayNameSetFailed(_)) = action.downcast_ref() {
+                self.set_buttons_enabled(cx, true);
+            }
         }
 
         if self.view.button(ids!(copy_user_id_button)).clicked(actions) {
@@ -379,10 +356,52 @@ impl MatchEvent for AccountSettings {
 }
 
 impl AccountSettings {
+    fn set_buttons_enabled(&mut self, cx: &mut Cx, enable: bool) {
+        let accept_display_name_button = self.view.button(ids!(accept_display_name_button));
+        let cancel_display_name_button = self.view.button(ids!(cancel_display_name_button));
+
+        accept_display_name_button.set_enabled(cx, enable);
+        cancel_display_name_button.set_enabled(cx, enable);
+        let (accept_button_fg_color, accept_button_bg_color) = if enable {
+            (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
+        } else {
+            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+        };
+        let (cancel_button_fg_color, cancel_button_bg_color) = if enable {
+            (COLOR_FG_DANGER_RED, COLOR_BG_DANGER_RED)
+        } else {
+            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+        };
+        accept_display_name_button.apply_over(cx, live!(
+            draw_bg: {
+                color: (accept_button_bg_color),
+                border_color: (accept_button_fg_color),
+            },
+            draw_text: {
+                color: (accept_button_fg_color),
+            },
+            draw_icon: {
+                color: (accept_button_fg_color),
+            }
+        ));
+        cancel_display_name_button.apply_over(cx, live!(
+            draw_bg: {
+                color: (cancel_button_bg_color),
+                border_color: (cancel_button_fg_color),
+            },
+            draw_text: {
+                color: (cancel_button_fg_color),
+            },
+            draw_icon: {
+                color: (cancel_button_fg_color),
+            }
+        ));
+    }
+
     /// Populate the account settings view with the user's profile data.
     ///
     /// This does nothing if `self.own_profile` is `None`.
-    fn populate_from_profile(&mut self, cx: &mut Cx) {
+    fn populate_from_profile(&mut self, cx: &mut Cx, update_username: bool) {
         let Some(own_profile) = &self.own_profile else {
             error!("BUG: AccountSettings::populate_from_profile() called with no profile data.");
             return;
@@ -406,9 +425,11 @@ impl AccountSettings {
             );
         }
 
-        self.view
-            .text_input(ids!(display_name_input))
-            .set_text(cx, own_profile.username.as_deref().unwrap_or_default());
+        if update_username {
+            self.view
+                .text_input(ids!(display_name_input))
+                .set_text(cx, own_profile.username.as_deref().unwrap_or_default());
+        }
         self.view
             .label(ids!(user_id))
             .set_text(cx, own_profile.user_id.as_str());
@@ -417,7 +438,7 @@ impl AccountSettings {
     /// Show and initializes the account settings within the SettingsScreen.
     pub fn populate(&mut self, cx: &mut Cx, own_profile: UserProfile) {
         self.own_profile = Some(own_profile);
-        self.populate_from_profile(cx);
+        self.populate_from_profile(cx, true);
 
         self.view.button(ids!(upload_avatar_button)).reset_hover(cx);
         self.view.button(ids!(delete_avatar_button)).reset_hover(cx);

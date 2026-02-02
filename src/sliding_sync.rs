@@ -28,6 +28,7 @@ use tokio::{
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
 use std::io;
+use crate::profile::user_profile::ProfileAction;
 use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
@@ -523,6 +524,10 @@ pub enum MatrixRequest {
         on_fetched: OnLinkPreviewFetchedFn,
         destination: Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    },
+    /// Request to set the user's display name.
+    SetDisplayName {
+        new_display_name: Option<String>,
     },
 }
 
@@ -1654,6 +1659,40 @@ async fn matrix_worker_task(
 
                     on_fetched(url, destination, result, update_sender);
                     SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::SetDisplayName { new_display_name } => {
+                let Some(client) = get_client() else { continue };
+                let _set_display_name_task = Handle::current().spawn(async move {
+                    log!("Setting display name to '{:?}'...", new_display_name);
+                    match client.account().set_display_name(new_display_name.as_deref()).await {
+                        Ok(_) => {
+                             log!("Successfully set display name.");
+                             if let Some(user_id) = current_user_id() {
+                                 // Re-fetch the user profile to ensure our local cache is up-to-date.
+                                 submit_async_request(MatrixRequest::GetUserProfile {
+                                    user_id,
+                                    room_id: None,
+                                    local_only: false,
+                                 });
+                             }
+                             enqueue_popup_notification(PopupItem {
+                                message: String::from("Display name updated successfully."),
+                                kind: PopupKind::Success,
+                                auto_dismissal_duration: Some(3.0),
+                             });
+                        },
+                        Err(e) => {
+                            error!("Failed to set display name: {e:?}");
+                             enqueue_popup_notification(PopupItem {
+                                message: format!("Failed to update display name: {e}"),
+                                kind: PopupKind::Error,
+                                auto_dismissal_duration: None,
+                             });
+                             Cx::post_action(ProfileAction::DisplayNameSetFailed(e.to_string()));
+                        }
+                    }
                 });
             }
         }

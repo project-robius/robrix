@@ -345,6 +345,11 @@ pub enum ShowUserProfileAction {
     None,
 }
 
+#[derive(Clone, Debug)]
+pub enum ProfileAction {
+    DisplayNameSetFailed(String),
+}
+
 /// Information needed to populate/display the user profile sliding pane.
 #[derive(Clone, Debug)]
 pub struct UserProfilePaneInfo {
