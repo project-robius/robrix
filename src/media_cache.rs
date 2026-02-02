@@ -33,6 +33,8 @@ pub type MediaCacheEntryRef = Arc<Mutex<MediaCacheEntry>>;
 /// such as a thumbnail and a full-size image.
 pub struct MediaCache {
     /// The actual cached data.
+    /// We use `hashbrown::HashMap` to enable the `raw_entry` API, which allows
+    /// looking up entries by reference (`&OwnedMxcUri`) without cloning the key.
     cache: HashMap<OwnedMxcUri, MediaCacheValue>,
     /// A channel to send updates to a particular timeline when a media request has completed.
     timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
