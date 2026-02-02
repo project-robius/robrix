@@ -57,7 +57,7 @@ impl MediaCache {
     ///
     /// It will also optionally send updates to the given timeline update sender
     /// when a media request has completed.
-    pub const fn new(
+    pub fn new(
         timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     ) -> Self {
         Self {
