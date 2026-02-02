@@ -1,4 +1,4 @@
-use std::{collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
+use std::{collections::BTreeMap, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}, Error, HttpError};
 use reqwest::StatusCode;
@@ -81,8 +81,7 @@ impl MediaCache {
         requested_format: MediaFormat,
     ) -> (MediaCacheEntry, MediaFormat) {
         let mut post_request_retval = (MediaCacheEntry::Requested, requested_format.clone());
-        let mut needs_fetch = false;
-        let mut entry_ref_to_fetch: Option<MediaCacheEntryRef> = None;
+        let entry_ref_to_fetch: MediaCacheEntryRef;
 
         if let Some(value) = self.cache.get_mut(mxc_uri) {
             match requested_format {
@@ -105,8 +104,7 @@ impl MediaCache {
                                 );
                             }
                         }
-                        needs_fetch = true;
-                        entry_ref_to_fetch = Some(entry_ref);
+                        entry_ref_to_fetch = entry_ref;
                     }
                 }
                 MediaFormat::File => {
@@ -128,8 +126,7 @@ impl MediaCache {
                                 );
                             }
                         }
-                        needs_fetch = true;
-                        entry_ref_to_fetch = Some(entry_ref);
+                        entry_ref_to_fetch = entry_ref;
                     }
                 }
             }
@@ -150,21 +147,18 @@ impl MediaCache {
             };
             self.cache.insert(mxc_uri_clone, new_value);
 
-            needs_fetch = true;
-            entry_ref_to_fetch = Some(entry_ref);
+            entry_ref_to_fetch = entry_ref;
         }
 
-        if needs_fetch {
-            sliding_sync::submit_async_request(MatrixRequest::FetchMedia {
-                media_request: MediaRequestParameters {
-                    source: MediaSource::Plain(mxc_uri.clone()),
-                    format: requested_format,
-                },
-                on_fetched: insert_into_cache,
-                destination: entry_ref_to_fetch.unwrap(),
-                update_sender: self.timeline_update_sender.clone(),
-            });
-        }
+        sliding_sync::submit_async_request(MatrixRequest::FetchMedia {
+            media_request: MediaRequestParameters {
+                source: MediaSource::Plain(mxc_uri.clone()),
+                format: requested_format,
+            },
+            on_fetched: insert_into_cache,
+            destination: entry_ref_to_fetch,
+            update_sender: self.timeline_update_sender.clone(),
+        });
         post_request_retval
     }
 
