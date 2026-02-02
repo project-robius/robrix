@@ -6,6 +6,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
+use crate::shared::styles::{COLOR_ACTIVE_PRIMARY, COLOR_PRIMARY, COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN};
 
 live_design! {
     use link::theme::*;
@@ -327,7 +328,19 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         kind.room_name(),
                     ));
                     accept_button.set_enabled(cx, true);
-                    accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
+                    accept_button.set_text(cx, "Okay");
+                    accept_button.apply_over(cx, live!{
+                        draw_bg: {
+                            color: (COLOR_ACTIVE_PRIMARY),
+                            border_color: (COLOR_ACTIVE_PRIMARY)
+                        }
+                        draw_text: {
+                            color: (COLOR_PRIMARY)
+                        }
+                        draw_icon: {
+                            color: (COLOR_PRIMARY)
+                        }
+                    });
                     cancel_button.set_visible(cx, false);
                     self.final_success = Some(true);
                     needs_redraw = true;
@@ -343,7 +356,19 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         auto_dismissal_duration: None
                     });
                     accept_button.set_enabled(cx, true);
-                    accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
+                    accept_button.set_text(cx, "Okay");
+                    accept_button.apply_over(cx, live!{
+                        draw_bg: {
+                            color: (COLOR_ACTIVE_PRIMARY),
+                            border_color: (COLOR_ACTIVE_PRIMARY)
+                        }
+                        draw_text: {
+                            color: (COLOR_PRIMARY)
+                        }
+                        draw_icon: {
+                            color: (COLOR_PRIMARY)
+                        }
+                    });
                     cancel_button.set_visible(cx, false);
                     self.final_success = Some(false);
                     needs_redraw = true;
@@ -377,7 +402,19 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     self.view.label(ids!(description)).set_text(cx, &description);
                     enqueue_popup_notification(PopupItem { message: popup_msg, kind: PopupKind::Success, auto_dismissal_duration: Some(5.0) });
                     accept_button.set_enabled(cx, true);
-                    accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
+                    accept_button.set_text(cx, "Okay");
+                    accept_button.apply_over(cx, live!{
+                        draw_bg: {
+                            color: (COLOR_ACTIVE_PRIMARY),
+                            border_color: (COLOR_ACTIVE_PRIMARY)
+                        }
+                        draw_text: {
+                            color: (COLOR_PRIMARY)
+                        }
+                        draw_icon: {
+                            color: (COLOR_PRIMARY)
+                        }
+                    });
                     cancel_button.set_visible(cx, false);
                     self.final_success = Some(true);
                     needs_redraw = true;
@@ -403,7 +440,19 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     self.view.label(ids!(description)).set_text(cx, &description);
                     enqueue_popup_notification(PopupItem { message: popup_msg, kind: PopupKind::Error, auto_dismissal_duration: None });
                     accept_button.set_enabled(cx, true);
-                    accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
+                    accept_button.set_text(cx, "Okay");
+                    accept_button.apply_over(cx, live!{
+                        draw_bg: {
+                            color: (COLOR_ACTIVE_PRIMARY),
+                            border_color: (COLOR_ACTIVE_PRIMARY)
+                        }
+                        draw_text: {
+                            color: (COLOR_PRIMARY)
+                        }
+                        draw_icon: {
+                            color: (COLOR_PRIMARY)
+                        }
+                    });
                     cancel_button.set_visible(cx, false);
                     self.final_success = Some(false);
                     needs_redraw = true;
@@ -490,6 +539,18 @@ impl JoinLeaveRoomModal {
         let accept_button = self.button(ids!(accept_button));
         let cancel_button = self.button(ids!(cancel_button));
         accept_button.set_text(cx, "Yes");
+        accept_button.apply_over(cx, live!{
+            draw_bg: {
+                border_color: (COLOR_FG_ACCEPT_GREEN),
+                color: (COLOR_BG_ACCEPT_GREEN)
+            }
+            draw_text: {
+                color: (COLOR_FG_ACCEPT_GREEN)
+            }
+            draw_icon: {
+                color: (COLOR_FG_ACCEPT_GREEN)
+            }
+        });
         accept_button.set_enabled(cx, true);
         accept_button.set_visible(cx, true);
         accept_button.reset_hover(cx);
