@@ -57,7 +57,7 @@ live_design! {
         }
 
         <ScrollXYView> {
-            width: Fit, height: Fill,
+            width: Fill, height: Fill,
             // Note: *do NOT* vertically center this, it will break scrolling.
             align: {x: 0.5}
             show_bg: true,
