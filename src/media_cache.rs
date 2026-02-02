@@ -77,44 +77,27 @@ impl MediaCache {
     /// Returns a tuple of the media cache entry and the media format of that cached entry.
     pub fn try_get_media_or_fetch(
         &mut self,
-        mxc_uri: OwnedMxcUri,
+        mxc_uri: &OwnedMxcUri,
         requested_format: MediaFormat,
     ) -> (MediaCacheEntry, MediaFormat) {
         let mut post_request_retval = (MediaCacheEntry::Requested, requested_format.clone());
+        let mut needs_fetch = false;
+        let mut entry_ref_to_fetch: Option<MediaCacheEntryRef> = None;
 
-        let entry_ref = match self.entry(mxc_uri.clone()) {
-            Entry::Vacant(vacant) => match &requested_format {
-                MediaFormat::Thumbnail(requested_mts) => {
-                    let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
-                    vacant.insert(MediaCacheValue {
-                        full_file: None,
-                        thumbnail: Some((Arc::clone(&entry_ref), requested_mts.clone())),
-                    });
-                    entry_ref
-                },
-                MediaFormat::File => {
-                    let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
-                    vacant.insert(MediaCacheValue {
-                        full_file: Some(Arc::clone(&entry_ref)),
-                        thumbnail: None,
-                    });
-                    entry_ref
-                },
-            }
-            Entry::Occupied(mut occupied) => match requested_format {
+        if let Some(value) = self.cache.get_mut(mxc_uri) {
+            match requested_format {
                 MediaFormat::Thumbnail(ref requested_mts) => {
-                    if let Some((entry_ref, existing_mts)) = occupied.get().thumbnail.as_ref() {
+                    if let Some((entry_ref, existing_mts)) = value.thumbnail.as_ref() {
                         return (
                             entry_ref.lock().unwrap().deref().clone(),
                             MediaFormat::Thumbnail(existing_mts.clone()),
                         );
-                    }
-                    else {
+                    } else {
                         // Here, a thumbnail was requested but not found, so fetch it.
                         let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
-                        occupied.get_mut().thumbnail = Some((Arc::clone(&entry_ref), requested_mts.clone()));
+                        value.thumbnail = Some((Arc::clone(&entry_ref), requested_mts.clone()));
                         // If a full-size image is already loaded, return it.
-                        if let Some(existing_file) = occupied.get().full_file.as_ref() {
+                        if let Some(existing_file) = value.full_file.as_ref() {
                             if let MediaCacheEntry::Loaded(d) = existing_file.lock().unwrap().deref() {
                                 post_request_retval = (
                                     MediaCacheEntry::Loaded(Arc::clone(d)),
@@ -122,22 +105,22 @@ impl MediaCache {
                                 );
                             }
                         }
-                        entry_ref
+                        needs_fetch = true;
+                        entry_ref_to_fetch = Some(entry_ref);
                     }
                 }
                 MediaFormat::File => {
-                    if let Some(entry_ref) = occupied.get().full_file.as_ref() {
+                    if let Some(entry_ref) = value.full_file.as_ref() {
                         return (
                             entry_ref.lock().unwrap().deref().clone(),
                             MediaFormat::File,
                         );
-                    }
-                    else {
+                    } else {
                         // Here, a full-size image was requested but not found, so fetch it.
                         let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
-                        occupied.get_mut().full_file = Some(entry_ref.clone());
+                        value.full_file = Some(entry_ref.clone());
                         // If a thumbnail is already loaded, return it.
-                        if let Some((existing_thumbnail, existing_mts)) = occupied.get().thumbnail.as_ref() {
+                        if let Some((existing_thumbnail, existing_mts)) = value.thumbnail.as_ref() {
                             if let MediaCacheEntry::Loaded(d) = existing_thumbnail.lock().unwrap().deref() {
                                 post_request_retval = (
                                     MediaCacheEntry::Loaded(Arc::clone(d)),
@@ -145,23 +128,43 @@ impl MediaCache {
                                 );
                             }
                         }
-                        entry_ref
+                        needs_fetch = true;
+                        entry_ref_to_fetch = Some(entry_ref);
                     }
                 }
             }
-        };
+        } else {
+            // Entry does not exist, so we need to insert it.
+            let mxc_uri_clone = mxc_uri.clone();
+            let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
 
-        sliding_sync::submit_async_request(
-            MatrixRequest::FetchMedia {
+            let new_value = match &requested_format {
+                MediaFormat::Thumbnail(requested_mts) => MediaCacheValue {
+                    full_file: None,
+                    thumbnail: Some((Arc::clone(&entry_ref), requested_mts.clone())),
+                },
+                MediaFormat::File => MediaCacheValue {
+                    full_file: Some(Arc::clone(&entry_ref)),
+                    thumbnail: None,
+                },
+            };
+            self.cache.insert(mxc_uri_clone, new_value);
+
+            needs_fetch = true;
+            entry_ref_to_fetch = Some(entry_ref);
+        }
+
+        if needs_fetch {
+            sliding_sync::submit_async_request(MatrixRequest::FetchMedia {
                 media_request: MediaRequestParameters {
-                    source: MediaSource::Plain(mxc_uri),
+                    source: MediaSource::Plain(mxc_uri.clone()),
                     format: requested_format,
                 },
                 on_fetched: insert_into_cache,
-                destination: entry_ref,
+                destination: entry_ref_to_fetch.unwrap(),
                 update_sender: self.timeline_update_sender.clone(),
-            }
-        );
+            });
+        }
         post_request_retval
     }
 
