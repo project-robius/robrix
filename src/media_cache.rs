@@ -1,4 +1,5 @@
-use std::{collections::BTreeMap, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
+use std::{ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
+use hashbrown::{hash_map::RawEntryMut, HashMap};
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}, Error, HttpError};
 use reqwest::StatusCode;
@@ -32,12 +33,12 @@ pub type MediaCacheEntryRef = Arc<Mutex<MediaCacheEntry>>;
 /// such as a thumbnail and a full-size image.
 pub struct MediaCache {
     /// The actual cached data.
-    cache: BTreeMap<OwnedMxcUri, MediaCacheValue>,
+    cache: HashMap<OwnedMxcUri, MediaCacheValue>,
     /// A channel to send updates to a particular timeline when a media request has completed.
     timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
 impl Deref for MediaCache {
-    type Target = BTreeMap<OwnedMxcUri, MediaCacheValue>;
+    type Target = HashMap<OwnedMxcUri, MediaCacheValue>;
     fn deref(&self) -> &Self::Target {
         &self.cache
     }
@@ -58,7 +59,7 @@ impl MediaCache {
         timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     ) -> Self {
         Self {
-            cache: BTreeMap::new(),
+            cache: HashMap::new(),
             timeline_update_sender,
         }
     }
@@ -83,71 +84,73 @@ impl MediaCache {
         let mut post_request_retval = (MediaCacheEntry::Requested, requested_format.clone());
         let entry_ref_to_fetch: MediaCacheEntryRef;
 
-        if let Some(value) = self.cache.get_mut(mxc_uri) {
-            match requested_format {
-                MediaFormat::Thumbnail(ref requested_mts) => {
-                    if let Some((entry_ref, existing_mts)) = value.thumbnail.as_ref() {
-                        return (
-                            entry_ref.lock().unwrap().deref().clone(),
-                            MediaFormat::Thumbnail(existing_mts.clone()),
-                        );
-                    } else {
-                        // Here, a thumbnail was requested but not found, so fetch it.
-                        let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
-                        value.thumbnail = Some((Arc::clone(&entry_ref), requested_mts.clone()));
-                        // If a full-size image is already loaded, return it.
-                        if let Some(existing_file) = value.full_file.as_ref() {
-                            if let MediaCacheEntry::Loaded(d) = existing_file.lock().unwrap().deref() {
-                                post_request_retval = (
-                                    MediaCacheEntry::Loaded(Arc::clone(d)),
-                                    MediaFormat::File,
-                                );
+        let entry = self.cache.raw_entry_mut().from_key(mxc_uri);
+
+        match entry {
+            RawEntryMut::Occupied(mut occupied) => {
+                let value = occupied.get_mut();
+                match requested_format {
+                    MediaFormat::Thumbnail(ref requested_mts) => {
+                        if let Some((entry_ref, existing_mts)) = value.thumbnail.as_ref() {
+                            return (
+                                entry_ref.lock().unwrap().deref().clone(),
+                                MediaFormat::Thumbnail(existing_mts.clone()),
+                            );
+                        } else {
+                            // Here, a thumbnail was requested but not found, so fetch it.
+                            let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
+                            value.thumbnail = Some((Arc::clone(&entry_ref), requested_mts.clone()));
+                            // If a full-size image is already loaded, return it.
+                            if let Some(existing_file) = value.full_file.as_ref() {
+                                if let MediaCacheEntry::Loaded(d) = existing_file.lock().unwrap().deref() {
+                                    post_request_retval = (
+                                        MediaCacheEntry::Loaded(Arc::clone(d)),
+                                        MediaFormat::File,
+                                    );
+                                }
                             }
+                            entry_ref_to_fetch = entry_ref;
                         }
-                        entry_ref_to_fetch = entry_ref;
                     }
-                }
-                MediaFormat::File => {
-                    if let Some(entry_ref) = value.full_file.as_ref() {
-                        return (
-                            entry_ref.lock().unwrap().deref().clone(),
-                            MediaFormat::File,
-                        );
-                    } else {
-                        // Here, a full-size image was requested but not found, so fetch it.
-                        let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
-                        value.full_file = Some(entry_ref.clone());
-                        // If a thumbnail is already loaded, return it.
-                        if let Some((existing_thumbnail, existing_mts)) = value.thumbnail.as_ref() {
-                            if let MediaCacheEntry::Loaded(d) = existing_thumbnail.lock().unwrap().deref() {
-                                post_request_retval = (
-                                    MediaCacheEntry::Loaded(Arc::clone(d)),
-                                    MediaFormat::Thumbnail(existing_mts.clone()),
-                                );
+                    MediaFormat::File => {
+                        if let Some(entry_ref) = value.full_file.as_ref() {
+                            return (
+                                entry_ref.lock().unwrap().deref().clone(),
+                                MediaFormat::File,
+                            );
+                        } else {
+                            // Here, a full-size image was requested but not found, so fetch it.
+                            let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
+                            value.full_file = Some(entry_ref.clone());
+                            // If a thumbnail is already loaded, return it.
+                            if let Some((existing_thumbnail, existing_mts)) = value.thumbnail.as_ref() {
+                                if let MediaCacheEntry::Loaded(d) = existing_thumbnail.lock().unwrap().deref() {
+                                    post_request_retval = (
+                                        MediaCacheEntry::Loaded(Arc::clone(d)),
+                                        MediaFormat::Thumbnail(existing_mts.clone()),
+                                    );
+                                }
                             }
+                            entry_ref_to_fetch = entry_ref;
                         }
-                        entry_ref_to_fetch = entry_ref;
                     }
                 }
             }
-        } else {
-            // Entry does not exist, so we need to insert it.
-            let mxc_uri_clone = mxc_uri.clone();
-            let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
-
-            let new_value = match &requested_format {
-                MediaFormat::Thumbnail(requested_mts) => MediaCacheValue {
-                    full_file: None,
-                    thumbnail: Some((Arc::clone(&entry_ref), requested_mts.clone())),
-                },
-                MediaFormat::File => MediaCacheValue {
-                    full_file: Some(Arc::clone(&entry_ref)),
-                    thumbnail: None,
-                },
-            };
-            self.cache.insert(mxc_uri_clone, new_value);
-
-            entry_ref_to_fetch = entry_ref;
+            RawEntryMut::Vacant(vacant) => {
+                let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
+                let value = match &requested_format {
+                    MediaFormat::Thumbnail(requested_mts) => MediaCacheValue {
+                        full_file: None,
+                        thumbnail: Some((Arc::clone(&entry_ref), requested_mts.clone())),
+                    },
+                    MediaFormat::File => MediaCacheValue {
+                        full_file: Some(Arc::clone(&entry_ref)),
+                        thumbnail: None,
+                    },
+                };
+                vacant.insert(mxc_uri.clone(), value);
+                entry_ref_to_fetch = entry_ref;
+            }
         }
 
         sliding_sync::submit_async_request(MatrixRequest::FetchMedia {
