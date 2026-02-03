@@ -290,6 +290,11 @@ impl MatchEvent for AccountSettings {
                         profile.avatar_state = AvatarState::Known(new_avatar_url.clone());
                         profile.avatar_state.update_from_cache(cx);
                         self.populate_from_profile(cx);
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Successfully {} avatar.", if new_avatar_url.is_some() { "updated" } else { "removed" }),
+                            auto_dismissal_duration: Some(4.0),
+                            kind: PopupKind::Success,
+                        });
                     }
                 }
                 Some(AccountDataAction::AvatarChangeFailed(err_msg)) => {
