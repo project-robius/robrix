@@ -57,6 +57,7 @@ url = "2.5.0"
 bytesize = "2.0"
 bitflags = "2.6.0"
 indexmap = "2.6.0"
+hashbrown = { version = "0.16", features = ["raw-entry"] }
 blurhash = { version = "0.2.3", default-features = false }
 
 ## Dependencies for TSP support.

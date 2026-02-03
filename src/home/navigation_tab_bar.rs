@@ -550,7 +550,7 @@ pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
         // If we have an avatar URI to fetch, try to fetch it.
         let mut new_profile_with_avatar = None;
         if let Some(Some(avatar_uri)) = avatar_uri_to_fetch {
-            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, avatar_uri) {
+            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, &avatar_uri) {
                 if let Some(p) = own_profile.as_mut() {
                     p.avatar_state = AvatarState::Loaded(data);
                     new_profile_with_avatar = Some(p.clone());

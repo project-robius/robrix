@@ -496,7 +496,7 @@ impl Widget for UserProfileSlidingPane {
                     }
                     // If we know the avatar URI, try to get/fetch the actual avatar image data.
                     if let AvatarState::Known(Some(uri)) = &our_info.avatar_state {
-                        if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri.to_owned()) {
+                        if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri) {
                             our_info.avatar_state = AvatarState::Loaded(data);
                         }
                     }
@@ -652,7 +652,7 @@ impl UserProfileSlidingPane {
             }
         }
         if let AvatarState::Known(Some(uri)) = &info.avatar_state {
-            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(_cx, uri.clone()) {
+            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(_cx, uri) {
                 info.avatar_state = AvatarState::Loaded(data);
             }
         }

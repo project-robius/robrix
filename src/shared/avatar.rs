@@ -310,7 +310,7 @@ impl Avatar {
 
         let (avatar_img_data_opt, profile_drawn) = match avatar_state.clone() {
             AvatarState::Loaded(data) => (Some(data), true),
-            AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
+            AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, &uri) {
                 AvatarCacheEntry::Loaded(data) => (Some(data), true),
                 AvatarCacheEntry::Failed => (None, true),
                 AvatarCacheEntry::Requested => (None, false),
