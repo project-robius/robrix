@@ -1670,11 +1670,10 @@ async fn matrix_worker_task(
                         Ok(_) => {
                              log!("Successfully set display name.");
                              if let Some(user_id) = current_user_id() {
-                                 // Re-fetch the user profile to ensure our local cache is up-to-date.
-                                 submit_async_request(MatrixRequest::GetUserProfile {
-                                    user_id,
-                                    room_id: None,
-                                    local_only: false,
+                                 // Update the local cache directly to avoid a round-trip to the server.
+                                 enqueue_user_profile_update(UserProfileUpdate::UsernameOnly {
+                                     user_id,
+                                     new_username: new_display_name,
                                  });
                              }
                              enqueue_popup_notification(PopupItem {

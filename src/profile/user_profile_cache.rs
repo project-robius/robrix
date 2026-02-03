@@ -52,6 +52,11 @@ pub enum UserProfileUpdate {
     },
     /// An update to the user's profile only, without changes to room membership info.
     UserProfileOnly(UserProfile),
+    /// An update to only the username of a user.
+    UsernameOnly {
+        user_id: OwnedUserId,
+        new_username: Option<String>,
+    },
 }
 impl UserProfileUpdate {
     /// Returns the user ID associated with this update.
@@ -61,6 +66,7 @@ impl UserProfileUpdate {
             UserProfileUpdate::Full { new_profile, .. } => &new_profile.user_id,
             UserProfileUpdate::RoomMemberOnly { room_member, .. } => room_member.user_id(),
             UserProfileUpdate::UserProfileOnly(profile) => &profile.user_id,
+            UserProfileUpdate::UsernameOnly { user_id, .. } => user_id,
         }
     }
 
@@ -156,6 +162,13 @@ impl UserProfileUpdate {
                             user_profile: new_profile,
                             rooms: BTreeMap::new(),
                         });
+                    }
+                }
+            }
+            UserProfileUpdate::UsernameOnly { user_id, new_username } => {
+                if let Entry::Occupied(mut entry) = cache.entry(user_id) {
+                    if let UserProfileCacheEntry::Loaded { user_profile, .. } = entry.get_mut() {
+                        user_profile.username = new_username;
                     }
                 }
             }
