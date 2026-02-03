@@ -1671,10 +1671,11 @@ async fn matrix_worker_task(
                              log!("Successfully set display name.");
                              if let Some(user_id) = current_user_id() {
                                  // Update the local cache directly to avoid a round-trip to the server.
-                                 enqueue_user_profile_update(UserProfileUpdate::UsernameOnly {
+                                 enqueue_user_profile_update(UserProfileUpdate::UserProfileOnly(UserProfile {
                                      user_id,
-                                     new_username: new_display_name,
-                                 });
+                                     username: new_display_name,
+                                     avatar_state: AvatarState::Unknown,
+                                 }));
                              }
                              enqueue_popup_notification(PopupItem {
                                 message: String::from("Display name updated successfully."),

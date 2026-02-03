@@ -304,7 +304,9 @@ impl MatchEvent for AccountSettings {
         let display_name_input = self.view.text_input(ids!(display_name_input));
 
         if let Some(new_name) = display_name_input.changed(actions) {
-            let should_enable = new_name.as_str() != own_profile.username.as_deref().unwrap_or("");
+            let new_name_str = new_name.as_str();
+            let should_enable = !new_name_str.trim().is_empty()
+                && new_name_str != own_profile.username.as_deref().unwrap_or("");
             self.set_buttons_enabled(cx, should_enable);
         }
 

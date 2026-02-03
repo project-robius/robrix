@@ -52,11 +52,6 @@ pub enum UserProfileUpdate {
     },
     /// An update to the user's profile only, without changes to room membership info.
     UserProfileOnly(UserProfile),
-    /// An update to only the username of a user.
-    UsernameOnly {
-        user_id: OwnedUserId,
-        new_username: Option<String>,
-    },
 }
 impl UserProfileUpdate {
     /// Returns the user ID associated with this update.
@@ -66,7 +61,6 @@ impl UserProfileUpdate {
             UserProfileUpdate::Full { new_profile, .. } => &new_profile.user_id,
             UserProfileUpdate::RoomMemberOnly { room_member, .. } => room_member.user_id(),
             UserProfileUpdate::UserProfileOnly(profile) => &profile.user_id,
-            UserProfileUpdate::UsernameOnly { user_id, .. } => user_id,
         }
     }
 
@@ -144,7 +138,7 @@ impl UserProfileUpdate {
                     }
                 }
             }
-            UserProfileUpdate::UserProfileOnly(new_profile) => {
+            UserProfileUpdate::UserProfileOnly(mut new_profile) => {
                 match cache.entry(new_profile.user_id.clone()) {
                     Entry::Occupied(mut entry) => match entry.get_mut() {
                         e @ UserProfileCacheEntry::Requested => {
@@ -154,6 +148,16 @@ impl UserProfileUpdate {
                             };
                         }
                         UserProfileCacheEntry::Loaded { user_profile, .. } => {
+                            // If the new profile has an unknown avatar state, but the existing one has a known/loaded one,
+                            // then preserve the existing avatar state.
+                            if matches!(new_profile.avatar_state, AvatarState::Unknown) {
+                                match &user_profile.avatar_state {
+                                    s @ AvatarState::Known(_) | s @ AvatarState::Loaded(_) | s @ AvatarState::Failed => {
+                                        new_profile.avatar_state = s.clone();
+                                    }
+                                    AvatarState::Unknown => { }
+                                }
+                            }
                             *user_profile = new_profile;
                         }
                     }
@@ -162,13 +166,6 @@ impl UserProfileUpdate {
                             user_profile: new_profile,
                             rooms: BTreeMap::new(),
                         });
-                    }
-                }
-            }
-            UserProfileUpdate::UsernameOnly { user_id, new_username } => {
-                if let Entry::Occupied(mut entry) = cache.entry(user_id) {
-                    if let UserProfileCacheEntry::Loaded { user_profile, .. } = entry.get_mut() {
-                        user_profile.username = new_username;
                     }
                 }
             }
