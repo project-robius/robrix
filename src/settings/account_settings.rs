@@ -1,6 +1,6 @@
 use makepad_widgets::{text::selection::Cursor, *};
 
-use crate::{logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, utils};
+use crate::{avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
 
 live_design! {
     use link::theme::*;
@@ -253,6 +253,17 @@ impl Widget for AccountSettings {
 }
 
 impl MatchEvent for AccountSettings {
+    fn handle_signal(&mut self, cx: &mut Cx) {
+        if self.own_profile.is_none() {
+            return;
+        }
+        avatar_cache::process_avatar_updates(cx);
+
+        if let Some(profile) = self.own_profile.as_mut() {
+            profile.avatar_state.update_from_cache(cx);
+        }
+    }
+
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         // Handle LogoutAction::InProgress to update button state
         for action in actions {
@@ -266,9 +277,37 @@ impl MatchEvent for AccountSettings {
                     logout_button.set_text(cx, "Log out");
                     logout_button.set_enabled(cx, true);
                 }
+                continue;
+            }
+
+            // Handle account data changes.
+            // Note: the NavigationTabBar handles removing stale profile data from the cache,
+            // so we only need to update this widget's local profile info.
+            match action.downcast_ref() {
+                Some(AccountDataAction::AvatarChanged(new_avatar_url)) => {
+                    // Update our cached profile with the new avatar URL
+                    if let Some(profile) = self.own_profile.as_mut() {
+                        profile.avatar_state = AvatarState::Known(new_avatar_url.clone());
+                        profile.avatar_state.update_from_cache(cx);
+                        self.populate_from_profile(cx);
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Successfully {} avatar.", if new_avatar_url.is_some() { "updated" } else { "removed" }),
+                            auto_dismissal_duration: Some(4.0),
+                            kind: PopupKind::Success,
+                        });
+                    }
+                }
+                Some(AccountDataAction::AvatarChangeFailed(err_msg)) => {
+                    enqueue_popup_notification(PopupItem {
+                        message: err_msg.clone(),
+                        auto_dismissal_duration: Some(4.0),
+                        kind: PopupKind::Error
+                    });
+                }
+                _ => {}
             }
         }
-        
+
         let Some(own_profile) = &self.own_profile else { return };
 
         if self.view.button(ids!(upload_avatar_button)).clicked(actions) {
@@ -281,11 +320,11 @@ impl MatchEvent for AccountSettings {
         }
 
         if self.view.button(ids!(delete_avatar_button)).clicked(actions) {
-            // TODO: support removing the avatar picture.
+            submit_async_request(MatrixRequest::SetAvatar { avatar_url: None });
             enqueue_popup_notification(PopupItem {
-                message: String::from("Avatar deletion is not yet implemented."),
-                auto_dismissal_duration: Some(4.0),
-                kind: PopupKind::Warning,
+                message: String::from("Removing your avatar..."),
+                auto_dismissal_duration: Some(5.0),
+                kind: PopupKind::Info,
             });
         }
 
@@ -397,13 +436,17 @@ impl AccountSettings {
                 |cx, img| utils::load_png_or_jpg(&img, cx, avatar_img_data),
             ).is_ok();
         }
+        // Disable the delete avatar button if the user has no avatar
         if !drew_avatar {
+            self.view.button(ids!(delete_avatar_button)).set_enabled(cx, false);
             our_own_avatar.show_text(
                 cx,
                 Some(COLOR_ROBRIX_PURPLE),
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
                 own_profile.displayable_name(),
             );
+        } else {
+            self.view.button(ids!(delete_avatar_button)).set_enabled(cx, true);
         }
 
         self.view

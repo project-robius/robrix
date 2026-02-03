@@ -60,7 +60,6 @@ impl Widget for EditedIndicator {
         let area = self.view.area();
         let should_hover_in = match event.hits(cx, area) {
             Hit::FingerLongPress(_)
-            | Hit::FingerHoverOver(..) // TODO: remove once CalloutTooltip bug is fixed
             | Hit::FingerHoverIn(..) => true,
             // TODO: show edit history modal on click
             // Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => {

@@ -44,7 +44,7 @@ live_design! {
         flow: Right,
         align: {y: 0.5}
         padding: 5,
-        margin: {top: 5, bottom: 10}
+        margin: {top: 10, bottom: 0}
         cursor: Hand
 
         show_bg: true

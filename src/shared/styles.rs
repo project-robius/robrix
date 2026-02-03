@@ -61,6 +61,8 @@ live_design! {
         font_size: (USERNAME_FONT_SIZE),
     }
 
+    pub COLOR_ROBRIX_PURPLE = #572DCC; // the purple color from the Robrix logo
+    pub COLOR_ROBRIX_CYAN = #05CDC7; // the cyan color from the Robrix logo
 
     pub TYPING_NOTICE_TEXT_COLOR = #121570
 
@@ -92,8 +94,6 @@ live_design! {
     }
 
     pub ROOM_NAME_TEXT_COLOR = #x0
-
-    pub COLOR_ROBRIX_PURPLE = #572DCC; // the purple color from the Robrix logo
     pub COLOR_META = #xccc
 
     pub COLOR_DIVIDER = #00000018
@@ -112,6 +112,7 @@ live_design! {
     pub COLOR_PRIMARY = #ffffff
     pub COLOR_PRIMARY_DARKER = #fefefe
     pub COLOR_SECONDARY = #E3E3E3
+    pub COLOR_SECONDARY_DARKER = #C8C8C8
 
     pub COLOR_ACTIVE_PRIMARY = #0f88fe
     pub COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
@@ -121,7 +122,11 @@ live_design! {
     pub COLOR_AVATAR_BG = #52b2ac
     pub COLOR_AVATAR_BG_IDLE = #d8d8d8
 
-    pub COLOR_UNREAD_MESSAGE_BADGE = (COLOR_AVATAR_BG)
+
+    pub COLOR_UNREAD_BADGE_MENTIONS = #FF0000;
+    pub COLOR_UNREAD_BADGE_MARKED   = (COLOR_ROBRIX_CYAN);
+    pub COLOR_UNREAD_BADGE_MESSAGES = #AAAAAA
+
 
     pub COLOR_TEXT_IDLE = #d8d8d8
     pub COLOR_TEXT = #1C274C
@@ -187,14 +192,12 @@ live_design! {
         width: Fill, height: Fit,
         margin: 0,
         align: {y: 0.5}
-        empty_text: "Enter text..."
 
         draw_bg: {
             color: (COLOR_PRIMARY)
             border_radius: 2.0
             border_size: 0.0
 
-            // TODO: determine these other colors below
             color_hover: (COLOR_PRIMARY)
             color_focus: (COLOR_PRIMARY)
             color_down: (COLOR_PRIMARY)
@@ -261,27 +264,29 @@ live_design! {
         width: Fill, height: Fit
         flow: RightWrap,
         draw_bg: {
-            color: (COLOR_SECONDARY)
+            color: (COLOR_SECONDARY_DARKER)
             border_radius: 2.0
             border_size: 1.0
 
-            // TODO: determine these other colors below
+            color: (COLOR_PRIMARY)
             color_hover: (COLOR_PRIMARY)
             color_focus: (COLOR_PRIMARY)
             color_down: (COLOR_PRIMARY)
-            color_empty: (COLOR_SECONDARY)
+            color_empty: (COLOR_PRIMARY)
             color_disabled: (COLOR_BG_DISABLED)
 
-            border_color: (COLOR_SECONDARY)
+            border_color: (COLOR_SECONDARY_DARKER)
             border_color_hover: (COLOR_ACTIVE_PRIMARY)
             border_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
             border_color_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_empty: (COLOR_SECONDARY_DARKER)
             border_color_disabled: (COLOR_FG_DISABLED)
 
-            border_color_2: (COLOR_SECONDARY)
+            border_color_2: (COLOR_SECONDARY_DARKER)
             border_color_2_hover: (COLOR_ACTIVE_PRIMARY)
             border_color_2_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
             border_color_2_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_2_empty: (COLOR_SECONDARY_DARKER)
             border_color_2_disabled: (COLOR_FG_DISABLED)
         }
         draw_text: {
@@ -315,6 +320,14 @@ pub const COLOR_FG_DANGER_RED:         Vec4 = vec4(0.863, 0.0, 0.02, 1.0);
 pub const COLOR_BG_DANGER_RED:         Vec4 = vec4(1.0, 0.941, 0.941, 1.0);
 /// #572DCC
 pub const COLOR_ROBRIX_PURPLE:         Vec4 = vec4(0.341, 0.176, 0.8, 1.0);
+/// #05CDC7
+pub const COLOR_ROBRIX_CYAN:           Vec4 = vec4(0.031, 0.804, 0.78, 1.0);
+/// #FF0000
+pub const COLOR_UNREAD_BADGE_MENTIONS: Vec4 = vec4(1.0, 0.0, 0.0, 1.0);
+/// #572DCC
+pub const COLOR_UNREAD_BADGE_MARKED:   Vec4 = COLOR_ROBRIX_CYAN;
+/// #AAAAAA
+pub const COLOR_UNREAD_BADGE_MESSAGES: Vec4 = vec4(0.667, 0.667, 0.667, 1.0);
 /// #FF6e00
 pub const COLOR_UNKNOWN_ROOM_AVATAR:   Vec4 = vec4(1.0, 0.431, 0.0, 1.0);
 /// #fcdb03
@@ -326,4 +339,4 @@ pub const COLOR_WHITE:                 Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
 /// #888888
 pub const COLOR_MESSAGE_NOTICE_TEXT:   Vec4 = vec4(0.5, 0.5, 0.5, 1.0);
 /// #953800
-pub const COLOR_WARNING_NOT_FOUND:    Vec4 = vec4(0.584, 0.219, 0.0, 1.0);
+pub const COLOR_WARNING_NOT_FOUND:     Vec4 = vec4(0.584, 0.219, 0.0, 1.0);
