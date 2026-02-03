@@ -323,7 +323,7 @@ impl MatchEvent for AccountSettings {
             submit_async_request(MatrixRequest::SetAvatar { avatar_url: None });
             enqueue_popup_notification(PopupItem {
                 message: String::from("Removing your avatar..."),
-                auto_dismissal_duration: Some(3.0),
+                auto_dismissal_duration: Some(5.0),
                 kind: PopupKind::Info,
             });
         }
