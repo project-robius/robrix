@@ -278,6 +278,15 @@ pub enum MatrixLinkAction {
     None,
 }
 
+/// Actions emitted when account data (e.g., avatar, display name) changes.
+#[derive(Clone, Debug)]
+pub enum AccountDataAction {
+    /// The user's avatar was successfully updated or removed.
+    AvatarChanged(Option<OwnedMxcUri>),
+    /// Failed to update or remove the user's avatar.
+    AvatarChangeFailed(String),
+}
+
 /// The set of requests for async work that can be made to the worker thread.
 #[allow(clippy::large_enum_variant)]
 pub enum MatrixRequest {
@@ -406,6 +415,13 @@ pub enum MatrixRequest {
         /// The room ID of the room where the user is a member,
         /// which is only needed because it isn't present in the `RoomMember` object.
         room_id: OwnedRoomId,
+    },
+    /// Request to set or remove the avatar of the current user's account.
+    ///
+    /// * If `avatar_url` is `Some`, the avatar will be set to the given MXC URI.
+    /// * If `avatar_url` is `None`, the avatar will be removed.
+    SetAvatar {
+        avatar_url: Option<OwnedMxcUri>,
     },
     /// Request to resolve a room alias into a room ID and the servers that know about that room.
     ResolveRoomAlias(OwnedRoomAliasId),
@@ -1023,6 +1039,24 @@ async fn matrix_worker_task(
                     match result {
                         Ok(_) => log!("Set low priority to {} for room {}", is_low_priority, room_id),
                         Err(e) => error!("Failed to set low priority to {} for room {}: {:?}", is_low_priority, room_id, e),
+                    }
+                });
+            }
+            MatrixRequest::SetAvatar { avatar_url } => {
+                let Some(client) = get_client() else { continue };
+                let _set_avatar_task = Handle::current().spawn(async move {
+                    let is_removing = avatar_url.is_none();
+                    log!("Sending request to {} avatar...", if is_removing { "remove" } else { "set" });
+                    let result = client.account().set_avatar_url(avatar_url.as_deref()).await;
+                    match result {
+                        Ok(_) => {
+                            log!("Successfully {} avatar.", if is_removing { "removed" } else { "set" });
+                            Cx::post_action(AccountDataAction::AvatarChanged(avatar_url));
+                        }
+                        Err(e) => {
+                            let err_msg = format!("Failed to {} avatar: {e}", if is_removing { "remove" } else { "set" });
+                            Cx::post_action(AccountDataAction::AvatarChangeFailed(err_msg));
+                        }
                     }
                 });
             }
