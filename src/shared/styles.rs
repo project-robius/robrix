@@ -112,6 +112,7 @@ live_design! {
     pub COLOR_PRIMARY = #ffffff
     pub COLOR_PRIMARY_DARKER = #fefefe
     pub COLOR_SECONDARY = #E3E3E3
+    pub COLOR_SECONDARY_DARKER = #C8C8C8
 
     pub COLOR_ACTIVE_PRIMARY = #0f88fe
     pub COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
@@ -191,14 +192,12 @@ live_design! {
         width: Fill, height: Fit,
         margin: 0,
         align: {y: 0.5}
-        empty_text: "Enter text..."
 
         draw_bg: {
             color: (COLOR_PRIMARY)
             border_radius: 2.0
             border_size: 0.0
 
-            // TODO: determine these other colors below
             color_hover: (COLOR_PRIMARY)
             color_focus: (COLOR_PRIMARY)
             color_down: (COLOR_PRIMARY)
@@ -265,27 +264,29 @@ live_design! {
         width: Fill, height: Fit
         flow: RightWrap,
         draw_bg: {
-            color: (COLOR_SECONDARY)
+            color: (COLOR_SECONDARY_DARKER)
             border_radius: 2.0
             border_size: 1.0
 
-            // TODO: determine these other colors below
+            color: (COLOR_PRIMARY)
             color_hover: (COLOR_PRIMARY)
             color_focus: (COLOR_PRIMARY)
             color_down: (COLOR_PRIMARY)
-            color_empty: (COLOR_SECONDARY)
+            color_empty: (COLOR_PRIMARY)
             color_disabled: (COLOR_BG_DISABLED)
 
-            border_color: (COLOR_SECONDARY)
+            border_color: (COLOR_SECONDARY_DARKER)
             border_color_hover: (COLOR_ACTIVE_PRIMARY)
             border_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
             border_color_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_empty: (COLOR_SECONDARY_DARKER)
             border_color_disabled: (COLOR_FG_DISABLED)
 
-            border_color_2: (COLOR_SECONDARY)
+            border_color_2: (COLOR_SECONDARY_DARKER)
             border_color_2_hover: (COLOR_ACTIVE_PRIMARY)
             border_color_2_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
             border_color_2_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_2_empty: (COLOR_SECONDARY_DARKER)
             border_color_2_disabled: (COLOR_FG_DISABLED)
         }
         draw_text: {

@@ -30,7 +30,7 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, it
 use std::io;
 use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::TimelineUpdate, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -737,21 +737,27 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::InviteUser { room_id, user_id } => {
-                let (timeline, sender) = {
-                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                let timeline = {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
                         error!("BUG: room info not found for invite user request {room_id}, {user_id}");
                         continue;
                     };
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                    room_info.timeline.clone()
                 };
 
                 let _invite_task = Handle::current().spawn(async move {
                     log!("Sending request to invite user {user_id} to room {room_id}...");
-                    let result = timeline.room().invite_user_by_id(&user_id).await;
-                    match sender.send(TimelineUpdate::InviteSent { user_id, result }) {
-                        Ok(_) => SignalToUI::set_ui_signal(),
-                        Err(e) => error!("Failed to send timeline update: {e:?} for InviteUser request, room {room_id}."),
+                    match timeline.room().invite_user_by_id(&user_id).await {
+                        Ok(_) => Cx::post_action(InviteResultAction::Sent {
+                            room_id,
+                            user_id,
+                        }),
+                        Err(error) => Cx::post_action(InviteResultAction::Failed {
+                            room_id,
+                            user_id,
+                            error,
+                        }),
                     }
                 });
             }
@@ -1945,7 +1951,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     // from the UI, and forward them to this task (via the login_sender --> login_receiver).
     let mut matrix_worker_task_handle = rt.spawn(matrix_worker_task(receiver, login_sender));
 
-    let most_recent_user_id = persistence::most_recent_user_id();
+    let most_recent_user_id = persistence::most_recent_user_id().await;
     log!("Most recent user ID: {most_recent_user_id:?}");
     let cli_parse_result = Cli::try_parse();
     let cli_has_valid_username_password = cli_parse_result.as_ref()

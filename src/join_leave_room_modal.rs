@@ -6,6 +6,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
+use crate::shared::styles::{COLOR_ACTIVE_PRIMARY, COLOR_PRIMARY, COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN};
 
 live_design! {
     use link::theme::*;
@@ -241,8 +242,8 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         }
 
         let Some(kind) = self.kind.as_ref() else { return };
-
         let mut needs_redraw = false;
+
         if accept_button.clicked(actions) {
             if let Some(successful) = self.final_success {
                 cx.action(JoinLeaveRoomModalAction::Close { successful, was_internal: true });
@@ -313,6 +314,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
             }
         }
 
+        let mut new_final_success = None;
         for action in actions {
             match action.downcast_ref() {
                 Some(JoinRoomResultAction::Joined { room_id }) if room_id == kind.room_id() => {
@@ -326,11 +328,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         "Successfully joined \"{}\".",
                         kind.room_name(),
                     ));
-                    accept_button.set_enabled(cx, true);
-                    accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
-                    cancel_button.set_visible(cx, false);
-                    self.final_success = Some(true);
-                    needs_redraw = true;
+                    new_final_success = Some(true);
                 }
                 Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == kind.room_id() => {
                     self.view.label(ids!(title)).set_text(cx, "Error joining room!");
@@ -342,11 +340,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         kind: PopupKind::Error,
                         auto_dismissal_duration: None
                     });
-                    accept_button.set_enabled(cx, true);
-                    accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
-                    cancel_button.set_visible(cx, false);
-                    self.final_success = Some(false);
-                    needs_redraw = true;
+                    new_final_success = Some(false);
                 }
                 _ => {}
             }
@@ -376,11 +370,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     self.view.label(ids!(title)).set_text(cx, title);
                     self.view.label(ids!(description)).set_text(cx, &description);
                     enqueue_popup_notification(PopupItem { message: popup_msg, kind: PopupKind::Success, auto_dismissal_duration: Some(5.0) });
-                    accept_button.set_enabled(cx, true);
-                    accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
-                    cancel_button.set_visible(cx, false);
-                    self.final_success = Some(true);
-                    needs_redraw = true;
+                    new_final_success = Some(true);
                 }
                 Some(LeaveRoomResultAction::Failed { room_id, error }) if room_id == kind.room_id() => {
                     let title: &str;
@@ -402,16 +392,31 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     self.view.label(ids!(title)).set_text(cx, title);
                     self.view.label(ids!(description)).set_text(cx, &description);
                     enqueue_popup_notification(PopupItem { message: popup_msg, kind: PopupKind::Error, auto_dismissal_duration: None });
-                    accept_button.set_enabled(cx, true);
-                    accept_button.set_text(cx, "Okay"); // TODO: set color to blue (like login button)
-                    cancel_button.set_visible(cx, false);
-                    self.final_success = Some(false);
-                    needs_redraw = true;
+                    new_final_success = Some(false);
                 }
                 _ => {}
             }
         }
 
+        if let Some(success) = new_final_success {
+            self.final_success = Some(success);
+            needs_redraw = true;
+            accept_button.apply_over(cx, live!{
+                enabled: true
+                text: "Okay"
+                draw_bg: {
+                    color: (COLOR_ACTIVE_PRIMARY),
+                    border_color: (COLOR_ACTIVE_PRIMARY)
+                }
+                draw_text: {
+                    color: (COLOR_PRIMARY)
+                }
+                draw_icon: {
+                    color: (COLOR_PRIMARY)
+                }
+            });
+            cancel_button.set_visible(cx, false);
+        }
         if needs_redraw {
             self.redraw(cx);
         }
@@ -490,6 +495,18 @@ impl JoinLeaveRoomModal {
         let accept_button = self.button(ids!(accept_button));
         let cancel_button = self.button(ids!(cancel_button));
         accept_button.set_text(cx, "Yes");
+        accept_button.apply_over(cx, live!{
+            draw_bg: {
+                border_color: (COLOR_FG_ACCEPT_GREEN),
+                color: (COLOR_BG_ACCEPT_GREEN)
+            }
+            draw_text: {
+                color: (COLOR_FG_ACCEPT_GREEN)
+            }
+            draw_icon: {
+                color: (COLOR_FG_ACCEPT_GREEN)
+            }
+        });
         accept_button.set_enabled(cx, true);
         accept_button.set_visible(cx, true);
         accept_button.reset_hover(cx);
