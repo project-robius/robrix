@@ -220,7 +220,6 @@ pub async fn save_session(
     }
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
         use tokio::io::AsyncWriteExt;
         let mut options = tokio::fs::OpenOptions::new();
         options.write(true).create(true).truncate(true).mode(0o600);
