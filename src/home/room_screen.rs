@@ -1883,34 +1883,34 @@ impl RoomScreen {
                         );
                     }
                 }
-                MessageAction::ViewSource(_details) => {
-                    enqueue_popup_notification(PopupItem { message: "Viewing an event's source is not yet implemented.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
-                    // TODO: re-use Franco's implementation below:
+                MessageAction::ViewSource(details) => {
+                    let Some(tl) = self.tl_state.as_ref() else { continue };
+                    let Some(event_tl_item) = tl.items
+                        .get(details.item_id)
+                        .and_then(|tl_item| tl_item.as_event().cloned())
+                        .filter(|ev| ev.event_id() == details.event_id.as_deref())
+                    else {
+                        enqueue_popup_notification(PopupItem {
+                            message: "Could not find message in timeline to view source.".to_string(),
+                            kind: PopupKind::Error,
+                            auto_dismissal_duration: None,
+                        });
+                        continue;
+                    };
 
-                    // let Some(tl) = self.tl_state.as_mut() else { continue };
-                    // let Some(event_tl_item) = tl.items
-                    //     .get(details.item_id)
-                    //     .and_then(|tl_item| tl_item.as_event().cloned())
-                    //     .filter(|ev| ev.event_id() == details.event_id.as_deref())
-                    // else {
-                    //     continue;
-                    // };
+                    // Get the original JSON from the event and pretty-print it
+                    let original_json: Option<String> = event_tl_item
+                        .original_json()
+                        .and_then(|raw_event| serde_json::to_value(raw_event).ok())
+                        .and_then(|value| serde_json::to_string_pretty(&value).ok());
 
-                    // let Some(_message_event) = event_tl_item.content().as_message() else {
-                    //     continue;
-                    // };
+                    let event_id = event_tl_item.event_id().map(|e| e.to_owned());
 
-                    // let original_json: Option<serde_json::Value> = event_tl_item
-                    //     .original_json()
-                    //     .and_then(|raw_event| serde_json::to_value(raw_event).ok());
-                    // let room_id = self.room_id.to_owned();
-                    // let event_id = event_tl_item.event_id().map(|e| e.to_owned());
-
-                    // cx.widget_action(
-                    //     widget_uid,
-                    //     &scope.path,
-                    //     MessageAction::MessageSourceModalOpen { room_id, event_id, original_json },
-                    // );
+                    cx.action(super::event_source_modal::EventSourceModalAction::Open {
+                        room_id: tl.room_id.clone(),
+                        event_id,
+                        original_json,
+                    });
                 }
                 MessageAction::JumpToRelated(details) => {
                     let Some(related_event_id) = details.related_event_id.as_ref() else {
