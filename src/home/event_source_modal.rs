@@ -1,7 +1,7 @@
 //! A modal dialog that displays the raw JSON source of a Matrix event.
 
 use makepad_code_editor::code_view::CodeViewWidgetExt;
-use makepad_widgets::{text::selection::Selection, *};
+use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId};
 
 use crate::shared::popup_list::{PopupItem, PopupKind, enqueue_popup_notification};
