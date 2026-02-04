@@ -729,7 +729,7 @@ impl Widget for RoomScreen {
                             })),
                             ..Default::default()
                         };
-                        cx.action(InviteAction::ShowInviteConfirmationModal(RefCell::new(Some(content))));
+                        cx.action(InviteAction::ShowConfirmationModal(RefCell::new(Some(content))));
                     }
                 }
             }
@@ -744,28 +744,6 @@ impl Widget for RoomScreen {
                         self.room_name_id = None;
                         self.set_displayed_room(cx, room_name_id);
                         return;
-                    }
-                }
-
-                // Handle InviteResultAction to show popup notifications.
-                if let Some(InviteResultAction::Sent { room_id, .. }) = action.downcast_ref() {
-                    // Only handle if this is for the current room.
-                    if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_id) {
-                        enqueue_popup_notification(PopupItem {
-                            message: "Sent invite successfully.".to_string(),
-                            auto_dismissal_duration: Some(4.0),
-                            kind: PopupKind::Success,
-                        });
-                    }
-                }
-                if let Some(InviteResultAction::Failed { room_id, error, .. }) = action.downcast_ref() {
-                    // Only handle if this is for the current room.
-                    if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_id) {
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Failed to send invite.\n\nError: {error}"),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Error,
-                        });
                     }
                 }
 
@@ -1503,6 +1481,20 @@ impl RoomScreen {
                     tl.tombstone_info = Some(successor_room_details);
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
+                TimelineUpdate::InviteSent { result, .. } => {
+                    match result {
+                        Ok(_) => enqueue_popup_notification(PopupItem {
+                            message: "Sent invite successfully.".to_string(),
+                            auto_dismissal_duration: Some(4.0),
+                            kind: PopupKind::Success,
+                        }),
+                        Err(e) => enqueue_popup_notification(PopupItem {
+                            message: format!("Failed to send invite.\n\nError: {e}"),
+                            auto_dismissal_duration: None,
+                            kind: PopupKind::Error,
+                        }),
+                    }
+                }
             }
         }
 
@@ -2575,6 +2567,11 @@ pub enum TimelineUpdate {
     Tombstoned(SuccessorRoomDetails),
     /// A notice that link preview data for a URL has been fetched and is now available.
     LinkPreviewFetched,
+    /// A notice that inviting the given user to this room succeeded or failed.
+    InviteSent {
+        user_id: OwnedUserId,
+        result: matrix_sdk::Result<()>,
+    },
 }
 
 thread_local! {
@@ -3453,7 +3450,7 @@ fn populate_image_message_content(
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
     let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(&mxc_uri, MEDIA_THUMBNAIL_FORMAT.into()) {
+        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
                 let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri)),|cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
@@ -4175,28 +4172,7 @@ pub enum InviteAction {
     /// The content is wrapped in a `RefCell` to ensure that only one entity handles it
     /// and that that one entity can take ownership of the content object,
     /// which avoids having to clone it.
-    ShowInviteConfirmationModal(RefCell<Option<ConfirmationModalContent>>),
-}
-
-/// The result of inviting a user to a room.
-///
-#[derive(Debug)]
-pub enum InviteResultAction {
-    /// The invite was sent successfully.
-    ///
-    /// This action is posted in response to the [`MatrixRequest::InviteUser`] request.
-    Sent {
-        room_id: OwnedRoomId,
-        user_id: OwnedUserId,
-    },
-    /// The invite failed to be sent.
-    ///
-    /// This action is posted in response to the [`MatrixRequest::InviteUser`] request.
-    Failed {
-        room_id: OwnedRoomId,
-        user_id: OwnedUserId,
-        error: matrix_sdk::Error,
-    },
+    ShowConfirmationModal(RefCell<Option<ConfirmationModalContent>>),
 }
 
 

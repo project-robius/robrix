@@ -56,27 +56,18 @@ live_design! {
             color: #FFF
         }
 
-        <ScrollYView> {
-            width: Fill, height: Fill,
+        <ScrollXYView> {
+            width: Fit, height: Fill,
             // Note: *do NOT* vertically center this, it will break scrolling.
             align: {x: 0.5}
             show_bg: true,
             draw_bg: {
-                color: (COLOR_SECONDARY)
-                // color: (COLOR_PRIMARY) // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
-            }
-            // allow the view to be scrollable but hide the actual scroll bar
-            scroll_bars: {
-                scroll_bar_y: {
-                    bar_size: 0.0
-                    min_handle_size: 0.0
-                }
+                color: (COLOR_PRIMARY)
             }
         
             <RoundedView> {
-                margin: {top: 40, bottom: 40}
-                width: Fill // TODO: once Makepad supports it, use `Fill {max: 375}`
-                height: Fit
+                margin: 40
+                width: Fit, height: Fit
                 align: {x: 0.5, y: 0.5}
                 flow: Overlay,
 
@@ -87,12 +78,11 @@ live_design! {
                 }
 
                 <View> {
-                    width: Fill // TODO: once Makepad supports it, use `Fill {max: 375}`
-                    height: Fit
+                    width: Fit, height: Fit
                     flow: Down
                     align: {x: 0.5, y: 0.5}
-                    padding: {top: 30, bottom: 30}
-                    margin: {top: 40, bottom: 40}
+                    padding: 30
+                    margin: 40
                     spacing: 15.0
 
                     logo_image = <Image> {
@@ -112,15 +102,15 @@ live_design! {
                         text: "Login to Robrix"
                     }
 
-                    user_id_input = <SimpleTextInput> {
-                        width: 275, height: Fit
+                    user_id_input = <RobrixTextInput> {
+                        width: 250, height: Fit
                         flow: Right, // do not wrap
                         padding: 10,
                         empty_text: "User ID"
                     }
 
-                    password_input = <SimpleTextInput> {
-                        width: 275, height: Fit
+                    password_input = <RobrixTextInput> {
+                        width: 250, height: Fit
                         flow: Right, // do not wrap
                         padding: 10,
                         empty_text: "Password"
@@ -128,13 +118,13 @@ live_design! {
                     }
 
                     <View> {
-                        width: 275, height: Fit,
+                        width: 250, height: Fit,
                         flow: Down,
 
-                        homeserver_input = <SimpleTextInput> {
-                            width: 275, height: Fit,
+                        homeserver_input = <RobrixTextInput> {
+                            width: Fill, height: Fit,
                             flow: Right, // do not wrap
-                            padding: {top: 5, bottom: 5, left: 10, right: 10}
+                            padding: {top: 3, bottom: 3}
                             empty_text: "matrix.org"
                             draw_text: {
                                 text_style: <TITLE_TEXT>{font_size: 10.0}
@@ -142,7 +132,7 @@ live_design! {
                         }
 
                         <View> {
-                            width: 275,
+                            width: 250,
                             height: Fit,
                             flow: Right,
                             padding: {top: 3, left: 2, right: 2}
@@ -171,7 +161,7 @@ live_design! {
                     
 
                     login_button = <RobrixIconButton> {
-                        width: 275,
+                        width: 250,
                         height: 40
                         padding: 10
                         margin: {top: 5, bottom: 10}
@@ -187,7 +177,6 @@ live_design! {
                     }
 
                     left_line = <LineH> {
-                        width: 275
                         margin: {bottom: -5}
                         draw_bg: { color: #C8C8C8 }
                     }
@@ -202,8 +191,9 @@ live_design! {
                     }
 
                     sso_view = <View> {
-                        width: 275, height: Fit,
-                        margin: {left: 30, right: 5} // make the inner view 240 pixels wide
+                        align: {x: 0.5}
+                        width: 250, height: Fit,
+                        margin: {left: 5, right: 5} // make the inner view 240 pixels wide
                         flow: RightWrap,
                         apple_button = <SsoButton> {
                             image = <SsoImage> {
@@ -238,7 +228,7 @@ live_design! {
                     }
 
                     <View> {
-                        width: 275,
+                        width: 250,
                         height: Fit,
                         flow: Right,
                         // padding: 3,

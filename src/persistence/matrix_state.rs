@@ -103,11 +103,10 @@ pub fn session_file_path(user_id: &UserId) -> PathBuf {
 const LATEST_USER_ID_FILE_NAME: &str = "latest_user_id.txt";
 
 /// Returns the user ID of the most recently-logged in user session.
-pub async fn most_recent_user_id() -> Option<OwnedUserId> {
-    tokio::fs::read_to_string(
+pub fn most_recent_user_id() -> Option<OwnedUserId> {
+    std::fs::read_to_string(
         app_data_dir().join(LATEST_USER_ID_FILE_NAME)
     )
-    .await
     .ok()?
     .trim()
     .try_into()
@@ -131,13 +130,7 @@ async fn save_latest_user_id(user_id: &UserId) -> anyhow::Result<()> {
 pub async fn restore_session(
     user_id: Option<OwnedUserId>
 ) -> anyhow::Result<(Client, Option<String>)> {
-    let user_id = if let Some(user_id) = user_id {
-        Some(user_id)
-    } else {
-        most_recent_user_id().await
-    };
-
-    let Some(user_id) = user_id else {
+    let Some(user_id) = user_id.or_else(most_recent_user_id) else {
         log!("Could not find previous latest User ID");
         bail!("Could not find previous latest User ID");
     };

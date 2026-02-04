@@ -20,13 +20,13 @@ use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map::Entry}, rc::R
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk_ui::spaces::room_list::SpaceRoomListPaginationState;
-use ruma::events::tag::TagName;
 use tokio::sync::mpsc::UnboundedSender;
 use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}};
 use crate::{
     app::{AppState, SelectedRoom},
     home::{
-        navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}
+        navigation_tab_bar::{NavigationBarAction, SelectedTab},
+        space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt},
     },
     room::{
         FetchedRoomAvatar,
@@ -38,9 +38,10 @@ use crate::{
         popup_list::{PopupItem, PopupKind, enqueue_popup_notification},
         room_filter_input_bar::RoomFilterAction,
     },
-    sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, submit_async_request},
+    sliding_sync::{MatrixRequest, PaginationDirection, submit_async_request},
     space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction}, utils::RoomNameId,
 };
+use super::rooms_list_entry::RoomsListEntryAction;
 
 /// Whether to pre-paginate visible rooms at least once in order to
 /// be able to display the latest message in a room's RoomsListEntry,
@@ -64,7 +65,7 @@ pub fn get_invited_rooms(_cx: &mut Cx) -> Rc<RefCell<HashMap<OwnedRoomId, Invite
     ALL_INVITED_ROOMS.with(Rc::clone)
 }
 
-/// Clears all invited rooms known to the global rooms list.
+/// Clears all invited rooms
 ///
 /// This function requires passing in a reference to `Cx`,
 /// which isn't used, but acts as a guarantee that this function
@@ -131,7 +132,6 @@ live_design! {
             auto_tail: false,
             width: Fill, height: Fill
             flow: Down,
-            padding: {top: 5}
             spacing: 0.0
 
             collapsible_header = <CollapsibleHeader> {}
@@ -175,7 +175,6 @@ pub enum RoomsListUpdate {
     /// Update the number of unread messages and mentions for the given room.
     UpdateNumUnreadMessages {
         room_id: OwnedRoomId,
-        is_marked_unread: bool,
         unread_messages: UnreadMessageCount,
         unread_mentions: u64,
     },
@@ -247,11 +246,6 @@ pub enum RoomsListAction {
     InviteAccepted {
         room_name_id: RoomNameId,
     },
-    /// Open the room context menu for the given room.
-    OpenRoomContextMenu {
-        details: RoomContextMenuDetails,
-        pos: DVec2,
-    },
     None,
 }
 
@@ -268,8 +262,6 @@ pub struct JoinedRoomInfo {
     pub num_unread_messages: u64,
     /// The number of unread mentions in this room.
     pub num_unread_mentions: u64,
-    /// Whether the room is manually marked as unread.
-    pub is_marked_unread: bool,
     /// The canonical alias for this room, if any.
     pub canonical_alias: Option<OwnedRoomAliasId>,
     /// The alternative aliases for this room, if any.
@@ -571,13 +563,12 @@ impl RoomsList {
                         error!("Error: couldn't find room {room_id} to update latest event");
                     }
                 }
-                RoomsListUpdate::UpdateNumUnreadMessages { room_id, is_marked_unread, unread_messages, unread_mentions } => {
+                RoomsListUpdate::UpdateNumUnreadMessages { room_id, unread_messages, unread_mentions } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         (room.num_unread_messages, room.num_unread_mentions) = match unread_messages {
                             UnreadMessageCount::Unknown => (0, 0),
                             UnreadMessageCount::Known(count) => (count, unread_mentions),
                         };
-                        room.is_marked_unread = is_marked_unread;
                     } else {
                         warning!("Warning: couldn't find room {} to update unread messages count", room_id);
                     }
@@ -672,14 +663,9 @@ impl RoomsList {
                         error!("Error: couldn't find room {room_id} to update is_direct");
                     }
                 }
-                RoomsListUpdate::RemoveRoom { room_id, new_state } => {
-                    // TODO: once we have a dedicated LoadingScreen widget, we should emit an action
-                    // to replace this room (if it's currently open) with the LoadingScreen widget,
-                    // which should show whether it has been left, kicked, or banned,
-                    // and then options/buttons for the user to re-join it if desired.
-
+                RoomsListUpdate::RemoveRoom { room_id, new_state: _ } => {
                     if let Some(removed) = self.all_joined_rooms.remove(&room_id) {
-                        log!("Removed room {room_id} from the list of all joined rooms, now has state {new_state:?}");
+                        log!("Removed room {room_id} from the list of all joined rooms");
                         let list_to_remove_from = if removed.is_direct {
                             &mut self.displayed_direct_rooms
                         } else {
@@ -1078,8 +1064,7 @@ impl Widget for RoomsList {
             self.handle_rooms_list_updates(cx, event, scope);
         }
 
-        // First, we handle any actions that came from widgets within the room list,
-        // e.g., the user clicking on a RoomsListEntry to select a room.
+        // Now, handle any actions on this widget, e.g., a user selecting a room.
         // We use Scope `props` to pass down the current scrolling state of the PortalList.
         let props = RoomsListScopeProps {
             was_scrolling: self.view.portal_list(ids!(list)).was_scrolling(),
@@ -1089,46 +1074,27 @@ impl Widget for RoomsList {
         );
         for action in rooms_list_actions {
             // Handle a regular room (joined or invited) being clicked.
-            if let RoomsListEntryAction::PrimaryClicked(room_id) = action.as_widget_action().cast() {
-                let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&room_id) {
+            if let RoomsListEntryAction::Clicked(clicked_room_id) = action.as_widget_action().cast() {
+                let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
                     SelectedRoom::JoinedRoom {
                         room_name_id: jr.room_name_id.clone(),
                     }
-                } else if let Some(ir) = self.invited_rooms.borrow().get(&room_id) {
+                } else if let Some(ir) = self.invited_rooms.borrow().get(&clicked_room_id) {
                     SelectedRoom::InvitedRoom {
                         room_name_id: ir.room_name_id.clone(),
                     }
                 } else {
-                    error!("BUG: couldn't find clicked room details for room {room_id}");
+                    error!("BUG: couldn't find clicked room details for room {clicked_room_id}");
                     continue;
                 };
 
-                self.current_active_room = Some(room_id.clone());
+                self.current_active_room = Some(clicked_room_id.clone());
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
                     RoomsListAction::Selected(new_selected_room),
                 );
                 self.redraw(cx);
-            }
-            // Handle a room being right-clicked or long-pressed by opening the room context menu.
-            else if let RoomsListEntryAction::SecondaryClicked(room_id, pos) = action.as_widget_action().cast() {
-                // Determine details for the context menu
-                let Some(jr) = self.all_joined_rooms.get(&room_id) else {
-                    error!("BUG: couldn't find right-clicked room details for room {room_id}");
-                    continue;
-                };
-                let details = RoomContextMenuDetails {
-                    room_name_id: jr.room_name_id.clone(),
-                    is_favorite: jr.tags.contains_key(&TagName::Favorite),
-                    is_low_priority: jr.tags.contains_key(&TagName::LowPriority),
-                    is_marked_unread: jr.is_marked_unread,
-                };
-                cx.widget_action(
-                    self.widget_uid(),
-                    &scope.path,
-                    RoomsListAction::OpenRoomContextMenu { details, pos },
-                );
             }
             // Handle the space lobby being clicked.
             else if let Some(SpaceLobbyAction::SpaceLobbyEntryClicked) = action.downcast_ref() {
@@ -1161,7 +1127,6 @@ impl Widget for RoomsList {
             }
         }
 
-        // Second, handle any other actions that came from other widgets/components.
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast() {
@@ -1220,35 +1185,6 @@ impl Widget for RoomsList {
 
                     self.update_displayed_rooms(cx);
                     continue;
-                }
-
-                // Handle a matrix link being generated.
-                fn on_link_generated(cx: &mut Cx, link: &str) {
-                    cx.copy_to_clipboard(link);
-                    enqueue_popup_notification(PopupItem {
-                        message: "Link copied to clipboard.".to_string(),
-                        auto_dismissal_duration: Some(3.0),
-                        kind: PopupKind::Success,
-                    });
-                }
-                match action.downcast_ref() {
-                    Some(MatrixLinkAction::MatrixToUri(link)) => {
-                        on_link_generated(cx, &link.to_string());
-                        continue;
-                    }
-                    Some(MatrixLinkAction::MatrixUri(link)) => {
-                        on_link_generated(cx, &link.to_string());
-                        continue;
-                    }
-                    Some(MatrixLinkAction::Error(err)) => {
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Failed to generate link: {}", err),
-                            auto_dismissal_duration: Some(5.0),
-                            kind: PopupKind::Error,
-                        });
-                        continue;
-                    }
-                    _ => {}
                 }
 
                 if let Some(space_room_list_action) = action.downcast_ref() {

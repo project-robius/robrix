@@ -294,6 +294,9 @@ impl Widget for SpacesBarEntry {
                 self.animator_play(cx, ids!(hover.on));
                 emit_hover_in_action(self, cx);
             }
+            Hit::FingerHoverOver(_) => {
+                emit_hover_in_action(self, cx);
+            }
             Hit::FingerHoverOut(_) => {
                 self.animator_play(cx, ids!(hover.off));
                 cx.widget_action(
@@ -338,6 +341,7 @@ impl Widget for SpacesBarEntry {
             Hit::FingerUp(fe) if !fe.is_over => {
                 self.animator_play(cx, ids!(hover.off));
             }
+            Hit::FingerMove(_fe) => { }
             _ => {}
         }
     }

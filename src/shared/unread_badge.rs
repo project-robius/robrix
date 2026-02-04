@@ -3,13 +3,13 @@
 
 use makepad_widgets::*;
 
-use crate::shared::styles::*;
-
 live_design! {
     use link::theme::*;
     use link::widgets::*;
     use link::shaders::*;
-    use crate::shared::styles::*;
+
+    pub UNREAD_HIGHLIGHT_COLOR = #FF0000;
+    pub UNREAD_DEFAULT_COLOR = #AAAAAA;
 
     pub UnreadBadge = {{UnreadBadge}} {
         width: 30, height: 20,
@@ -21,7 +21,9 @@ live_design! {
             height: Fill,
             show_bg: true,
             draw_bg: {
-                instance badge_color: (COLOR_UNREAD_BADGE_MESSAGES),
+                instance highlight: 0.0,
+                instance highlight_color: (UNREAD_HIGHLIGHT_COLOR),
+                instance default_color: (UNREAD_DEFAULT_COLOR),
                 instance border_radius: 4.0
                 // Adjust this border_size to larger value to make oval smaller 
                 instance border_size: 2.0
@@ -34,7 +36,7 @@ live_design! {
                         self.rect_size.y - 2.0,
                         max(1.0, self.border_radius)
                     )
-                    sdf.fill_keep(self.badge_color);
+                    sdf.fill_keep(mix(self.default_color, self.highlight_color, self.highlight));
                     return sdf.result;
                 }
             }
@@ -58,7 +60,6 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct UnreadBadge {
     #[deref] view: View,
-    #[live] is_marked_unread: bool,
     #[live] unread_mentions: u64,
     #[live] unread_messages: u64,
 }
@@ -93,18 +94,7 @@ impl Widget for UnreadBadge {
             self.view(ids!(rounded_view)).apply_over(cx, live!{
                 draw_bg: {
                     border_size: (border_size),
-                    badge_color: (COLOR_UNREAD_BADGE_MENTIONS)
-                }
-            });
-            self.visible = true;
-        }
-        // If there are no unread mentions but this is marked as unread, show the badge as a dot.
-        else if self.is_marked_unread {
-            self.label(ids!(label_count)).set_text(cx, "");
-            self.view(ids!(rounded_view)).apply_over(cx, live!{
-                draw_bg: {
-                    border_size: 6.0, // larger value = smaller dot
-                    badge_color: (COLOR_UNREAD_BADGE_MARKED)
+                    highlight: 1.0
                 }
             });
             self.visible = true;
@@ -117,13 +107,13 @@ impl Widget for UnreadBadge {
             self.view(ids!(rounded_view)).apply_over(cx, live!{
                 draw_bg: {
                     border_size: (border_size),
-                    badge_color: (COLOR_UNREAD_BADGE_MESSAGES)
+                    highlight: 0.0
                 }
             });
             self.visible = true;
         }
         else {
-            // If there are no unreads of any kind, hide the badge
+            // If there are no unread mentions and no unread messages, hide the badge
             self.visible = false;
         }
 
@@ -133,12 +123,11 @@ impl Widget for UnreadBadge {
 
 impl UnreadBadgeRef {
     /// Sets the unread mentions and messages counts without explicitly redrawing the badge.
-    pub fn update_counts(&self, is_marked_unread: bool, num_unread_mentions: u64, num_unread_messages: u64) {
+    pub fn update_counts(&self, num_unread_mentions: u64, num_unread_messages: u64) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.is_marked_unread = is_marked_unread;
             inner.unread_mentions = num_unread_mentions;
             inner.unread_messages = num_unread_messages;
-            inner.visible = is_marked_unread || num_unread_mentions > 0 || num_unread_messages > 0;
+            inner.visible = num_unread_mentions > 0 || num_unread_messages > 0;
         }
     }
 }

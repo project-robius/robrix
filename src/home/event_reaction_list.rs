@@ -150,7 +150,8 @@ impl Widget for ReactionList {
                     cx.set_key_focus(button_area);
                     break;
                 }
-                Hit::FingerHoverIn(..) => {
+                Hit::FingerHoverOver(..) // TODO: remove once CalloutTooltip bug is fixed
+                | Hit::FingerHoverIn(..) => {
                     self.do_hover_in(cx, scope, button_ref, reaction_data.clone());
                     break;
                 }

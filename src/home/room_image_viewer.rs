@@ -22,7 +22,7 @@ pub fn populate_matrix_image_modal(
         return;
     };
     // Try to get media from cache or trigger fetch
-    let media_entry = media_cache.try_get_media_or_fetch(&mxc_uri, MediaFormat::File);
+    let media_entry = media_cache.try_get_media_or_fetch(mxc_uri.clone(), MediaFormat::File);
 
     // Handle the different media states
     match media_entry {
