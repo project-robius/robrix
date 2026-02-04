@@ -835,7 +835,7 @@ impl Widget for SpaceLobbyScreen {
                                     ).is_ok();
                                 }
                                 AvatarState::Known(Some(uri)) => {
-                                    match avatar_cache::get_or_fetch_avatar(cx, uri.to_owned()) {
+                                    match avatar_cache::get_or_fetch_avatar(cx, uri) {
                                         AvatarCacheEntry::Loaded(data) => {
                                             drew_avatar = avatar_ref.show_image(
                                                 cx,

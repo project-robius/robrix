@@ -497,7 +497,7 @@ impl MentionableTextInput {
             .unwrap_or_else(|| "R".to_string());
 
         if let Some(avatar_url) = &room_props.room_avatar_url {
-            match get_or_fetch_avatar(cx, avatar_url.to_owned()) {
+            match get_or_fetch_avatar(cx, avatar_url) {
                 AvatarCacheEntry::Loaded(avatar_data) => {
                     // Display room avatar
                     let result = avatar_ref.show_image(cx, None, |cx, img| {
@@ -633,7 +633,7 @@ impl MentionableTextInput {
 
             let avatar = item.avatar(ids!(user_info.avatar));
             if let Some(mxc_uri) = member.avatar_url() {
-                match get_or_fetch_avatar(cx, mxc_uri.to_owned()) {
+                match get_or_fetch_avatar(cx, &mxc_uri.to_owned()) {
                     AvatarCacheEntry::Loaded(avatar_data) => {
                         let _ = avatar.show_image(cx, None, |cx, img| {
                             utils::load_png_or_jpg(&img, cx, &avatar_data)
