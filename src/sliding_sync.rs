@@ -285,6 +285,10 @@ pub enum AccountDataAction {
     AvatarChanged(Option<OwnedMxcUri>),
     /// Failed to update or remove the user's avatar.
     AvatarChangeFailed(String),
+    /// The user's display name was successfully updated or removed.
+    DisplayNameChanged(Option<String>),
+    /// Failed to update the user's display name.
+    DisplayNameChangeFailed(String),
 }
 
 /// The set of requests for async work that can be made to the worker thread.
@@ -421,11 +425,16 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
     },
     /// Request to set or remove the avatar of the current user's account.
-    ///
-    /// * If `avatar_url` is `Some`, the avatar will be set to the given MXC URI.
-    /// * If `avatar_url` is `None`, the avatar will be removed.
     SetAvatar {
+        /// * If `Some`, the avatar will be set to the given MXC URI.
+        /// * If `None`, the avatar will be removed.
         avatar_url: Option<OwnedMxcUri>,
+    },
+    /// Request to set or remove the display name of the current user's account.
+    SetDisplayName {
+        /// * If `Some`, the display name will be set to the given value.
+        /// * If `None`, the display name will be removed.
+        new_display_name: Option<String>,
     },
     /// Request to resolve a room alias into a room ID and the servers that know about that room.
     ResolveRoomAlias(OwnedRoomAliasId),
@@ -1099,6 +1108,27 @@ async fn matrix_worker_task(
                         Err(e) => {
                             let err_msg = format!("Failed to {} avatar: {e}", if is_removing { "remove" } else { "set" });
                             Cx::post_action(AccountDataAction::AvatarChangeFailed(err_msg));
+                        }
+                    }
+                });
+            }
+            MatrixRequest::SetDisplayName { new_display_name } => {
+                let Some(client) = get_client() else { continue };
+                let _set_display_name_task = Handle::current().spawn(async move {
+                    let is_removing = new_display_name.is_none();
+                    log!("Sending request to {} display name{}...",
+                        if is_removing { "remove" } else { "set" },
+                        new_display_name.as_ref().map(|n| format!(" to '{n}'")).unwrap_or_default()
+                    );
+                    let result = client.account().set_display_name(new_display_name.as_deref()).await;
+                    match result {
+                        Ok(_) => {
+                            log!("Successfully {} display name.", if is_removing { "removed" } else { "set" });
+                            Cx::post_action(AccountDataAction::DisplayNameChanged(new_display_name));
+                        }
+                        Err(e) => {
+                            let err_msg = format!("Failed to {} display name: {e}", if is_removing { "remove" } else { "set" });
+                            Cx::post_action(AccountDataAction::DisplayNameChangeFailed(err_msg));
                         }
                     }
                 });

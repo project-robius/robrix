@@ -8,9 +8,10 @@ description = "A Matrix chat client written using Makepad + Robius app dev frame
 documentation = "https://docs.rs/robrix"
 edition = "2024"  ## mostly just to allow let-chains
 homepage = "https://robius.rs/"
-keywords = ["matrix", "chat", "client", "robrix", "robius"]
+keywords = ["matrix", "chat", "client", "robius", "makepad"]
 license = "MIT"
 readme = "README.md"
+categories = [ "gui" ]
 repository = "https://github.com/project-robius/robrix"
 version = "0.0.1-pre-alpha-4"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
@@ -50,6 +51,7 @@ matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch 
 ## Enable a few extra features:
 ## * "compat-optional" feature to allow missing body field in m.room.tombstone event.
 ## * "compat-unset-avatar" feature to allow deleting the user's avatar to work properly.
+## * Note: we need a feature like "compat-unset-display-name" to unset display names, but that doesn't exist yet.
 ruma = { version = "0.14.1", features = ["compat-optional", "compat-unset-avatar"] } 
 rand = "0.8.5"
 rangemap = "1.5.0"

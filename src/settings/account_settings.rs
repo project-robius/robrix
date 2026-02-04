@@ -239,6 +239,9 @@ pub struct AccountSettings {
     #[deref] view: View,
 
     #[rust] own_profile: Option<UserProfile>,
+    /// Tracks whether a display name change request is in flight.
+    /// When `true`, prevents `Event::Signal` from overwriting the text input.
+    #[rust] display_name_change_pending: bool,
 }
 
 impl Widget for AccountSettings {
@@ -265,24 +268,23 @@ impl MatchEvent for AccountSettings {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        // Handle LogoutAction::InProgress to update button state
+        let accept_display_name_button = self.view.button(ids!(accept_display_name_button));
+        let cancel_display_name_button = self.view.button(ids!(cancel_display_name_button));
+        let display_name_input = self.view.text_input(ids!(display_name_input));
+
         for action in actions {
-            if let Some(LogoutAction::InProgress(value)) = action.downcast_ref() {
+            // Handle LogoutAction::InProgress to update button state
+            if let Some(LogoutAction::InProgress(is_in_progress)) = action.downcast_ref() {
                 let logout_button = self.view.button(ids!(logout_button));
-                if *value {
-                    logout_button.set_text(cx, "Log out in progress...");
-                    logout_button.set_enabled(cx, false);
-                    logout_button.reset_hover(cx);
-                } else {
-                    logout_button.set_text(cx, "Log out");
-                    logout_button.set_enabled(cx, true);
-                }
+                logout_button.set_text(cx, if *is_in_progress { "Logging out..." } else { "Log out" });
+                logout_button.set_enabled(cx, !*is_in_progress);
+                logout_button.reset_hover(cx);
                 continue;
             }
 
             // Handle account data changes.
-            // Note: the NavigationTabBar handles removing stale profile data from the cache,
-            // so we only need to update this widget's local profile info.
+            // Note: the NavigationTabBar handles removing stale data from the user_profile_cache,
+            // so here, we only need to update this widget's local profile info.
             match action.downcast_ref() {
                 Some(AccountDataAction::AvatarChanged(new_avatar_url)) => {
                     // Update our cached profile with the new avatar URL
@@ -298,6 +300,32 @@ impl MatchEvent for AccountSettings {
                     }
                 }
                 Some(AccountDataAction::AvatarChangeFailed(err_msg)) => {
+                    enqueue_popup_notification(PopupItem {
+                        message: err_msg.clone(),
+                        auto_dismissal_duration: Some(4.0),
+                        kind: PopupKind::Error
+                    });
+                }
+                Some(AccountDataAction::DisplayNameChanged(new_name)) => {
+                    self.display_name_change_pending = false;
+                    // Update our cached profile with the new display name
+                    if let Some(profile) = self.own_profile.as_mut() {
+                        profile.username = new_name.clone();
+                    }
+                    // Update the text input and disable buttons
+                    let display_name_input = self.view.text_input(ids!(display_name_input));
+                    display_name_input.set_text(cx, new_name.as_deref().unwrap_or_default());
+                    Self::set_display_name_buttons_enabled(cx, false, &accept_display_name_button, &cancel_display_name_button);
+                    enqueue_popup_notification(PopupItem {
+                        message: format!("Successfully {} display name.", if new_name.is_some() { "updated" } else { "removed" }),
+                        auto_dismissal_duration: Some(4.0),
+                        kind: PopupKind::Success,
+                    });
+                }
+                Some(AccountDataAction::DisplayNameChangeFailed(err_msg)) => {
+                    self.display_name_change_pending = false;
+                    // Re-enable the buttons so user can try again
+                    Self::set_display_name_buttons_enabled(cx, true, &accept_display_name_button, &cancel_display_name_button);
                     enqueue_popup_notification(PopupItem {
                         message: err_msg.clone(),
                         auto_dismissal_duration: Some(4.0),
@@ -328,51 +356,12 @@ impl MatchEvent for AccountSettings {
             });
         }
 
-        let accept_display_name_button = self.view.button(ids!(accept_display_name_button));
-        let cancel_display_name_button = self.view.button(ids!(cancel_display_name_button));
-        let display_name_input = self.view.text_input(ids!(display_name_input));
-        let enable_buttons = |cx: &mut Cx, enable: bool| {
-            accept_display_name_button.set_enabled(cx, enable);
-            cancel_display_name_button.set_enabled(cx, enable);
-            let (accept_button_fg_color, accept_button_bg_color) = if enable {
-                (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
-            } else {
-                (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
-            };
-            let (cancel_button_fg_color, cancel_button_bg_color) = if enable {
-                (COLOR_FG_DANGER_RED, COLOR_BG_DANGER_RED)
-            } else {
-                (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
-            };
-            accept_display_name_button.apply_over(cx, live!(
-                draw_bg: {
-                    color: (accept_button_bg_color),
-                    border_color: (accept_button_fg_color),
-                },
-                draw_text: {
-                    color: (accept_button_fg_color),
-                },
-                draw_icon: {
-                    color: (accept_button_fg_color),
-                }
-            ));
-            cancel_display_name_button.apply_over(cx, live!(
-                draw_bg: {
-                    color: (cancel_button_bg_color),
-                    border_color: (cancel_button_fg_color),
-                },
-                draw_text: {
-                    color: (cancel_button_fg_color),
-                },
-                draw_icon: {
-                    color: (cancel_button_fg_color),
-                }
-            ));
-        };
-
         if let Some(new_name) = display_name_input.changed(actions) {
-            let should_enable = new_name.as_str() != own_profile.username.as_deref().unwrap_or("");
-            enable_buttons(cx, should_enable);
+            let trimmed = new_name.trim();
+            let current_name = own_profile.username.as_deref().unwrap_or("");
+            // Only enable buttons if the trimmed name differs from the current name
+            let enable = trimmed != current_name;
+            Self::set_display_name_buttons_enabled(cx, enable, &accept_display_name_button, &cancel_display_name_button);
         }
 
         if cancel_display_name_button.clicked(actions) {
@@ -380,15 +369,22 @@ impl MatchEvent for AccountSettings {
             let new_text = own_profile.username.as_deref().unwrap_or("");
             display_name_input.set_text(cx, new_text);
             display_name_input.set_cursor(cx, Cursor { index: new_text.len(), prefer_next_row: false }, false);
-            enable_buttons(cx, false);
+            Self::set_display_name_buttons_enabled(cx, false, &accept_display_name_button, &cancel_display_name_button);
         }
 
         if accept_display_name_button.clicked(actions) {
-            // TODO: support changing the display name.
+            let new_display_name = match display_name_input.text().trim() {
+                "" => None,
+                name => Some(name.to_string()),
+            };
+            self.display_name_change_pending = true;
+            // Disable buttons while the request is in flight
+            Self::set_display_name_buttons_enabled(cx, false, &accept_display_name_button, &cancel_display_name_button);
+            submit_async_request(MatrixRequest::SetDisplayName { new_display_name });
             enqueue_popup_notification(PopupItem {
-                message: String::from("Display name change is not yet implemented."),
-                auto_dismissal_duration: Some(4.0),
-                kind: PopupKind::Warning
+                message: String::from("Uploading new display name..."),
+                auto_dismissal_duration: Some(5.0),
+                kind: PopupKind::Info,
             });
         }
 
@@ -470,6 +466,52 @@ impl AccountSettings {
         self.view.button(ids!(manage_account_button)).reset_hover(cx);
         self.view.button(ids!(logout_button)).reset_hover(cx);
         self.view.redraw(cx);
+    }
+
+    /// Enable or disable the display name accept and cancel buttons.
+    fn set_display_name_buttons_enabled(
+        cx: &mut Cx,
+        enable: bool,
+        accept_display_name_button: &ButtonRef,
+        cancel_display_name_button: &ButtonRef,
+    ) {
+        let (accept_button_fg_color, accept_button_bg_color) = if enable {
+            (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
+        } else {
+            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+        };
+        let (cancel_button_fg_color, cancel_button_bg_color) = if enable {
+            (COLOR_FG_DANGER_RED, COLOR_BG_DANGER_RED)
+        } else {
+            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+        };
+
+        accept_display_name_button.apply_over(cx, live!(
+            enabled: (enable),
+            draw_bg: {
+                color: (accept_button_bg_color),
+                border_color: (accept_button_fg_color),
+            },
+            draw_text: {
+                color: (accept_button_fg_color),
+            },
+            draw_icon: {
+                color: (accept_button_fg_color),
+            }
+        ));
+        cancel_display_name_button.apply_over(cx, live!(
+            enabled: (enable),
+            draw_bg: {
+                color: (cancel_button_bg_color),
+                border_color: (cancel_button_fg_color),
+            },
+            draw_text: {
+                color: (cancel_button_fg_color),
+            },
+            draw_icon: {
+                color: (cancel_button_fg_color),
+            }
+        ));
     }
 }
 
