@@ -9,7 +9,7 @@ use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
-        assign, api::client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
+        api::client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
             room::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             }, MessageLikeEventType, StateEventType
@@ -905,36 +905,16 @@ async fn matrix_worker_task(
                 let Some(client) = get_client() else { continue };
                 let _create_dm_task = Handle::current().spawn(async move {
                     log!("Handling CreateOrOpenDirectMessage for user {}", user_id);
-                    let mut existing_room_id = None;
 
-                    // Check for existing DM
-                    for room in client.joined_rooms() {
-                        if room.is_direct().await.unwrap_or(false) {
-                            if let Ok(Some(_member)) = room.get_member(&user_id).await {
-                                existing_room_id = Some(room.room_id().to_owned());
-                                break;
-                            }
-                        }
-                    }
-
-                    let room_id = if let Some(id) = existing_room_id {
-                        log!("Found existing DM room: {}", id);
-                        id
+                    let room = if let Some(room) = client.get_dm_room(&user_id) {
+                        log!("Found existing DM room: {}", room.room_id());
+                        room
                     } else {
                         log!("Creating new DM room with {}", user_id);
-                        let request = assign!(
-                            matrix_sdk::ruma::api::client::room::create_room::v3::Request::new(),
-                            {
-                                invite: vec![user_id.clone()],
-                                is_direct: true,
-                                preset: Some(matrix_sdk::ruma::room::RoomType::PrivateChat),
-                            }
-                        );
-
-                        match client.create_room(request).await {
-                            Ok(response) => {
-                                log!("Successfully created DM room: {}", response.room_id());
-                                response.room_id().to_owned()
+                        match client.create_dm(&user_id).await {
+                            Ok(room) => {
+                                log!("Successfully created DM room: {}", room.room_id());
+                                room
                             },
                             Err(e) => {
                                 error!("Failed to create DM with {user_id}: {e}");
@@ -949,12 +929,9 @@ async fn matrix_worker_task(
                     };
 
                     // Navigate to room
-                    let room_name_id = if let Some(room) = client.get_room(&room_id) {
-                         let display_name = room.display_name().await.unwrap_or(RoomDisplayName::Empty);
-                         RoomNameId::new(display_name, room_id.clone())
-                    } else {
-                         RoomNameId::empty(room_id.clone())
-                    };
+                    let room_id = room.room_id().to_owned();
+                    let display_name = room.display_name().await.unwrap_or(RoomDisplayName::Empty);
+                    let room_name_id = RoomNameId::new(display_name, room_id.clone());
 
                     Cx::post_action(AppStateAction::NavigateToRoom {
                         room_to_close: None,
