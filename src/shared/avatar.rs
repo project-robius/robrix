@@ -308,9 +308,9 @@ impl Avatar {
             .or_else(try_get_cached_username_avatar)
             .unwrap_or((None, AvatarState::Unknown));
 
-        let (avatar_img_data_opt, profile_drawn) = match avatar_state.clone() {
+        let (avatar_img_data_opt, profile_drawn) = match avatar_state {
             AvatarState::Loaded(data) => (Some(data), true),
-            AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
+            AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, &uri) {
                 AvatarCacheEntry::Loaded(data) => (Some(data), true),
                 AvatarCacheEntry::Failed => (None, true),
                 AvatarCacheEntry::Requested => (None, false),
@@ -477,9 +477,22 @@ impl std::fmt::Debug for AvatarState {
     }
 }
 impl AvatarState {
+    /// Tries to update this `AvatarState` if it has a known avatar URI
+    /// by loading the avatar from the cache.
+    ///
+    /// Returns the image data if this `AvatarState` is in the `Loaded` state.
+    pub fn update_from_cache(&mut self, cx: &mut Cx) -> Option<&Arc<[u8]>> {
+        if let Self::Known(Some(uri)) = self {
+            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri) {
+                *self = Self::Loaded(data.clone());
+            }
+        }
+        self.data()
+    }
+
     /// Returns the avatar data, if in the `Loaded` state.
     pub fn data(&self) -> Option<&Arc<[u8]>> {
-        if let AvatarState::Loaded(data) = self {
+        if let Self::Loaded(data) = self {
             Some(data)
         } else {
             None
@@ -488,7 +501,7 @@ impl AvatarState {
 
     /// Returns the avatar URI, if in the `Known` state and it exists.
     pub fn uri(&self) -> Option<&OwnedMxcUri> {
-        if let AvatarState::Known(Some(uri)) = self {
+        if let Self::Known(Some(uri)) = self {
             Some(uri)
         } else {
             None

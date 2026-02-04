@@ -3453,7 +3453,7 @@ fn populate_image_message_content(
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
     let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
+        match media_cache.try_get_media_or_fetch(&mxc_uri, MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
                 let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri)),|cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)

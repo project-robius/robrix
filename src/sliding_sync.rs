@@ -28,7 +28,6 @@ use tokio::{
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
 use std::io;
-use crate::profile::user_profile::ProfileAction;
 use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
@@ -279,6 +278,19 @@ pub enum MatrixLinkAction {
     None,
 }
 
+/// Actions emitted when account data (e.g., avatar, display name) changes.
+#[derive(Clone, Debug)]
+pub enum AccountDataAction {
+    /// The user's avatar was successfully updated or removed.
+    AvatarChanged(Option<OwnedMxcUri>),
+    /// Failed to update or remove the user's avatar.
+    AvatarChangeFailed(String),
+    /// The user's display name was successfully updated.
+    DisplayNameChanged(Option<String>),
+    /// Failed to update the user's display name.
+    DisplayNameChangeFailed(String),
+}
+
 /// The set of requests for async work that can be made to the worker thread.
 #[allow(clippy::large_enum_variant)]
 pub enum MatrixRequest {
@@ -407,6 +419,13 @@ pub enum MatrixRequest {
         /// The room ID of the room where the user is a member,
         /// which is only needed because it isn't present in the `RoomMember` object.
         room_id: OwnedRoomId,
+    },
+    /// Request to set or remove the avatar of the current user's account.
+    ///
+    /// * If `avatar_url` is `Some`, the avatar will be set to the given MXC URI.
+    /// * If `avatar_url` is `None`, the avatar will be removed.
+    SetAvatar {
+        avatar_url: Option<OwnedMxcUri>,
     },
     /// Request to resolve a room alias into a room ID and the servers that know about that room.
     ResolveRoomAlias(OwnedRoomAliasId),
@@ -1028,6 +1047,24 @@ async fn matrix_worker_task(
                     match result {
                         Ok(_) => log!("Set low priority to {} for room {}", is_low_priority, room_id),
                         Err(e) => error!("Failed to set low priority to {} for room {}: {:?}", is_low_priority, room_id, e),
+                    }
+                });
+            }
+            MatrixRequest::SetAvatar { avatar_url } => {
+                let Some(client) = get_client() else { continue };
+                let _set_avatar_task = Handle::current().spawn(async move {
+                    let is_removing = avatar_url.is_none();
+                    log!("Sending request to {} avatar...", if is_removing { "remove" } else { "set" });
+                    let result = client.account().set_avatar_url(avatar_url.as_deref()).await;
+                    match result {
+                        Ok(_) => {
+                            log!("Successfully {} avatar.", if is_removing { "removed" } else { "set" });
+                            Cx::post_action(AccountDataAction::AvatarChanged(avatar_url));
+                        }
+                        Err(e) => {
+                            let err_msg = format!("Failed to {} avatar: {e}", if is_removing { "remove" } else { "set" });
+                            Cx::post_action(AccountDataAction::AvatarChangeFailed(err_msg));
+                        }
                     }
                 });
             }
@@ -1673,7 +1710,7 @@ async fn matrix_worker_task(
                                  // Update the local cache directly to avoid a round-trip to the server.
                                  enqueue_user_profile_update(UserProfileUpdate::UserProfileOnly(UserProfile {
                                      user_id,
-                                     username: new_display_name,
+                                     username: new_display_name.clone(),
                                      avatar_state: AvatarState::Unknown,
                                  }));
                              }
@@ -1682,6 +1719,7 @@ async fn matrix_worker_task(
                                 kind: PopupKind::Success,
                                 auto_dismissal_duration: Some(3.0),
                              });
+                             Cx::post_action(AccountDataAction::DisplayNameChanged(new_display_name));
                         },
                         Err(e) => {
                             error!("Failed to set display name: {e:?}");
@@ -1690,7 +1728,7 @@ async fn matrix_worker_task(
                                 kind: PopupKind::Error,
                                 auto_dismissal_duration: None,
                              });
-                             Cx::post_action(ProfileAction::DisplayNameSetFailed(e.to_string()));
+                             Cx::post_action(AccountDataAction::DisplayNameChangeFailed(e.to_string()));
                         }
                     }
                 });
@@ -1990,7 +2028,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     // from the UI, and forward them to this task (via the login_sender --> login_receiver).
     let mut matrix_worker_task_handle = rt.spawn(matrix_worker_task(receiver, login_sender));
 
-    let most_recent_user_id = persistence::most_recent_user_id();
+    let most_recent_user_id = persistence::most_recent_user_id().await;
     log!("Most recent user ID: {most_recent_user_id:?}");
     let cli_parse_result = Cli::try_parse();
     let cli_has_valid_username_password = cli_parse_result.as_ref()
