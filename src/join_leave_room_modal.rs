@@ -28,7 +28,7 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: #fff
-                border_radius: 3.0
+                border_radius: 4.0
             }
 
             title_view = <View> {
