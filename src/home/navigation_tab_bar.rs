@@ -368,6 +368,20 @@ impl Widget for ProfileIcon {
                         // this is only handled in the account settings screen
                         continue;
                     }
+                    Some(AccountDataAction::DisplayNameChanged(new_display_name)) => {
+                        if let Some(p) = self.own_profile.as_mut() {
+                            p.username = new_display_name.clone();
+                            user_profile_cache::enqueue_user_profile_update(
+                                UserProfileUpdate::UserProfileOnly(p.clone())
+                            );
+                            self.view.redraw(cx);
+                        }
+                        continue;
+                    }
+                    Some(AccountDataAction::DisplayNameChangeFailed(_)) => {
+                        // this is only handled in the account settings screen
+                        continue;
+                    }
                     _ => {}
                 }
             }

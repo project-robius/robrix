@@ -415,6 +415,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     color: (COLOR_PRIMARY)
                 }
             });
+            accept_button.reset_hover(cx);
             cancel_button.set_visible(cx, false);
         }
         if needs_redraw {
