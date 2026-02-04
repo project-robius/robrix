@@ -11,7 +11,7 @@ thread_local! {
     /// A cache of Avatar images, indexed by Matrix URI.
     ///
     /// To be of any use, this cache must only be accessed by the main UI thread.
-    static AVATAR_NEW_CACHE: RefCell<HashMap<OwnedMxcUri, AvatarCacheEntry>> = const { RefCell::new(HashMap::new()) };
+    static AVATAR_NEW_CACHE: RefCell<HashMap<OwnedMxcUri, AvatarCacheEntry>> = RefCell::new(HashMap::new());
 }
 
 /// An entry in the avatar cache.
@@ -67,15 +67,15 @@ pub fn process_avatar_updates(_cx: &mut Cx) {
 /// must only be called by the main UI thread.
 pub fn get_or_fetch_avatar(
     _cx: &mut Cx,
-    mxc_uri: &OwnedMxcUri,
+    avatar_uri: &OwnedMxcUri,
 ) -> AvatarCacheEntry {
     AVATAR_NEW_CACHE.with_borrow_mut(|cache| {
-        match cache.raw_entry_mut().from_key(mxc_uri) {
+        match cache.raw_entry_mut().from_key(avatar_uri) {
             RawEntryMut::Occupied(occupied) => occupied.get().clone(),
             RawEntryMut::Vacant(vacant) => {
-                vacant.insert(mxc_uri.clone(), AvatarCacheEntry::Requested);
+                vacant.insert(avatar_uri.clone(), AvatarCacheEntry::Requested);
                 submit_async_request(MatrixRequest::FetchAvatar {
-                    mxc_uri: mxc_uri.clone(),
+                    mxc_uri: avatar_uri.clone(),
                     on_fetched: enqueue_avatar_update,
                 });
                 AvatarCacheEntry::Requested

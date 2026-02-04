@@ -308,7 +308,7 @@ impl Avatar {
             .or_else(try_get_cached_username_avatar)
             .unwrap_or((None, AvatarState::Unknown));
 
-        let (avatar_img_data_opt, profile_drawn) = match avatar_state.clone() {
+        let (avatar_img_data_opt, profile_drawn) = match avatar_state {
             AvatarState::Loaded(data) => (Some(data), true),
             AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, &uri) {
                 AvatarCacheEntry::Loaded(data) => (Some(data), true),
@@ -483,7 +483,7 @@ impl AvatarState {
     /// Returns the image data if this `AvatarState` is in the `Loaded` state.
     pub fn update_from_cache(&mut self, cx: &mut Cx) -> Option<&Arc<[u8]>> {
         if let Self::Known(Some(uri)) = self {
-            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri.clone()) {
+            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri) {
                 *self = Self::Loaded(data.clone());
             }
         }

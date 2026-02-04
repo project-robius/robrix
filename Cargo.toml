@@ -27,6 +27,9 @@ robius-location = { git = "https://github.com/project-robius/robius" }
 
 
 anyhow = "1.0"
+bitflags = "2.6.0"
+blurhash = { version = "0.2.3", default-features = false }
+bytesize = "2.0"
 chrono = "0.4"
 clap = { version = "4.0.16", features = ["derive"] }
 crossbeam-channel = "0.5.10"
@@ -35,7 +38,9 @@ eyeball = { version = "0.8.8", features = ["tracing"] }     # same as matrix-sdk
 eyeball-im = { version = "0.8.0", features = ["tracing"] }  # same as matrix-sdk-ui
 imbl = { version = "6.1.0", features = ["serde"] }          # same as matrix-sdk-ui
 futures-util = "0.3"
+hashbrown = { version = "0.16", features = ["raw-entry"] }
 htmlize = "1.0.5"
+indexmap = "2.6.0"
 imghdr = "0.7.0"
 linkify = "0.10.0"
 matrix-sdk-base = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main" }
@@ -51,15 +56,12 @@ rangemap = "1.5.0"
 sanitize-filename = "0.6"
 serde = "1.0"
 serde_json = "1.0"
+thiserror = "2.0.16"
 tokio = { version = "1.43.1", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = "0.3.17"
 unicode-segmentation = "1.11.0"
 url = "2.5.0"
-bytesize = "2.0"
-bitflags = "2.6.0"
-indexmap = "2.6.0"
-hashbrown = { version = "0.16", features = ["raw-entry"] }
-blurhash = { version = "0.2.3", default-features = false }
+
 
 ## Dependencies for TSP support.
 ## Commit "f0bc4625dcd729e07e4a36257df2f1d94c81cef4" is the most recent one without the invalid change to pin serde to 1.0.219.
@@ -81,8 +83,6 @@ reqwest = { version = "0.12", default-features = false, features = [
     "http2",
     "macos-system-configuration",
 ] }
-thiserror = "2.0.16"
-hashbrown = { version = "0.16.1", features = ["raw-entry"] }
 
 
 [features]

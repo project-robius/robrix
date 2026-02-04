@@ -362,7 +362,7 @@ impl MatrixLinkPill {
             ) {
                 Some((name, avatar)) => {
                     self.set_text(cx, &name);
-                    self.populate_avatar(cx, avatar.uri().cloned());
+                    self.populate_avatar(cx, avatar.uri());
                 }
                 None => {
                     self.set_text(cx, user_id.as_ref());
@@ -376,7 +376,7 @@ impl MatrixLinkPill {
         match &self.state {
             MatrixLinkPillState::Loaded { name, avatar_url, .. } => {
                 self.label(ids!(title)).set_text(cx, name);
-                self.populate_avatar(cx, avatar_url.clone());
+                self.populate_avatar(cx, avatar_url.as_ref());
                 return;
             }
             MatrixLinkPillState::None => {
@@ -398,10 +398,10 @@ impl MatrixLinkPill {
         self.populate_avatar(cx, None);
     }
 
-    fn populate_avatar(&self, cx: &mut Cx, avatar_url: Option<OwnedMxcUri>) {
+    fn populate_avatar(&self, cx: &mut Cx, avatar_url: Option<&OwnedMxcUri>) {
         let avatar_ref = self.avatar(ids!(avatar));
         if let Some(avatar_url) = avatar_url {
-            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, &avatar_url) {
+            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, avatar_url) {
                 let res = avatar_ref.show_image(
                     cx,
                     None, // Don't make this avatar clickable
