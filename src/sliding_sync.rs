@@ -34,7 +34,7 @@ use crate::{
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
-    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
+    }, room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
         avatar::AvatarState, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
@@ -359,6 +359,10 @@ pub enum MatrixRequest {
     /// Request to fetch the full details (the room preview) of a tombstoned room.
     GetSuccessorRoomDetails {
         tombstoned_room_id: OwnedRoomId,
+    },
+    /// Request to create or open a direct message room with the given user.
+    CreateOrOpenDirectMessage {
+        user_id: OwnedUserId,
     },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
@@ -895,6 +899,45 @@ async fn matrix_worker_task(
                     tombstoned_room_id,
                     sender,
                 );
+            }
+
+            MatrixRequest::CreateOrOpenDirectMessage { user_id } => {
+                let Some(client) = get_client() else { continue };
+                let _create_dm_task = Handle::current().spawn(async move {
+                    log!("Handling CreateOrOpenDirectMessage for user {}", user_id);
+
+                    let room = if let Some(room) = client.get_dm_room(&user_id) {
+                        log!("Found existing DM room: {}", room.room_id());
+                        room
+                    } else {
+                        log!("Creating new DM room with {}", user_id);
+                        match client.create_dm(&user_id).await {
+                            Ok(room) => {
+                                log!("Successfully created DM room: {}", room.room_id());
+                                room
+                            },
+                            Err(e) => {
+                                error!("Failed to create DM with {user_id}: {e}");
+                                enqueue_popup_notification(PopupItem {
+                                    message: format!("Failed to create Direct Message: {e}"),
+                                    kind: PopupKind::Error,
+                                    auto_dismissal_duration: None,
+                                });
+                                return;
+                            }
+                        }
+                    };
+
+                    // Navigate to room
+                    let room_id = room.room_id().to_owned();
+                    let display_name = room.display_name().await.unwrap_or(RoomDisplayName::Empty);
+                    let room_name_id = RoomNameId::new(display_name, room_id.clone());
+
+                    Cx::post_action(AppStateAction::NavigateToRoom {
+                        room_to_close: None,
+                        destination_room: BasicRoomDetails::RoomId(room_name_id),
+                    });
+                });
             }
 
             MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
