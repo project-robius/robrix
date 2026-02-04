@@ -518,7 +518,11 @@ impl Widget for UserProfileSlidingPane {
 
         if let Event::Actions(actions) = event {
 
-            // TODO: handle actions for the `direct_message_button`
+            if self.button(ids!(direct_message_button)).clicked(actions) {
+                submit_async_request(MatrixRequest::CreateOrOpenDirectMessage {
+                    user_id: info.user_id.clone(),
+                });
+            }
 
             if self.button(ids!(copy_link_to_user_button)).clicked(actions) {
                 let matrix_to_uri = info.user_id.matrix_to_uri().to_string();
@@ -586,8 +590,7 @@ impl Widget for UserProfileSlidingPane {
             .map(|rm| rm.is_account_user())
             .unwrap_or_else(|| current_user_id().is_some_and(|uid| uid == info.user_id));
 
-        // TODO: uncomment the line below once the `direct_message_button` logic is implemented.
-        // self.button(ids!(direct_message_button)).set_enabled(!is_pane_showing_current_account);
+        self.button(ids!(direct_message_button)).set_enabled(cx, !is_pane_showing_current_account);
 
         let ignore_user_button = self.button(ids!(ignore_user_button));
         ignore_user_button.set_enabled(cx, !is_pane_showing_current_account && info.room_member.is_some());
