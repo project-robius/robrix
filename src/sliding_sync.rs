@@ -2331,12 +2331,12 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     ).await;
 
                     let joined_room_ids: Vec<OwnedRoomId> = new_room_infos.iter()
-                        .filter(|r| matches!(r.state, RoomState::Joined))
+                        .filter(|r| matches!(r.state, RoomState::Joined | RoomState::Invited))
                         .map(|r| r.room_id.clone())
                         .collect();
 
                     if !joined_room_ids.is_empty() {
-                        let room_refs: Vec<&OwnedRoomId> = joined_room_ids.iter().collect();
+                        let room_refs: Vec<&matrix_sdk::ruma::RoomId> = joined_room_ids.iter().map(|id| id.as_ref()).collect();
                         room_list_service.subscribe_to_rooms(&room_refs).await;
                     }
 
@@ -2445,12 +2445,12 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     ).await;
 
                     let joined_room_ids: Vec<OwnedRoomId> = new_room_infos.iter()
-                        .filter(|r| matches!(r.state, RoomState::Joined))
+                        .filter(|r| matches!(r.state, RoomState::Joined | RoomState::Invited))
                         .map(|r| r.room_id.clone())
                         .collect();
 
                     if !joined_room_ids.is_empty() {
-                        let room_refs: Vec<&OwnedRoomId> = joined_room_ids.iter().collect();
+                        let room_refs: Vec<&matrix_sdk::ruma::RoomId> = joined_room_ids.iter().map(|id| id.as_ref()).collect();
                         room_list_service.subscribe_to_rooms(&room_refs).await;
                     }
 
