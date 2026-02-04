@@ -223,7 +223,7 @@ impl WidgetMatchEvent for EventSourceModal {
 
         if self.view.button(ids!(room_id_row.copy_button)).clicked(actions) {
             if let Some(room_id) = &self.room_id {
-                cx.copy_to_clipboard(&room_id.to_string());
+                cx.copy_to_clipboard(room_id.as_str());
                 enqueue_popup_notification(PopupItem {
                     message: "Copied Room ID to clipboard.".to_string(),
                     auto_dismissal_duration: Some(3.0),
@@ -234,7 +234,7 @@ impl WidgetMatchEvent for EventSourceModal {
 
         if self.view.button(ids!(event_id_row.copy_button)).clicked(actions) {
             if let Some(event_id) = &self.event_id {
-                cx.copy_to_clipboard(&event_id.to_string());
+                cx.copy_to_clipboard(event_id.as_str());
                 enqueue_popup_notification(PopupItem {
                     message: "Copied Event ID to clipboard.".to_string(),
                     auto_dismissal_duration: Some(3.0),
