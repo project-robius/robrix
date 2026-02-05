@@ -170,11 +170,9 @@ impl MainDesktopUI {
         let mut insert_after = None;
         if let Some(last_room) = &self.most_recently_selected_room {
             let last_room_id = LiveId::from_str(last_room.room_id().as_str());
-            if let Some(state) = dock.clone_state() {
-                if let Some(DockItem::Tabs { tabs, .. }) = state.get(&tab_bar) {
-                    if let Some(idx) = tabs.iter().position(|t| *t == last_room_id) {
-                        insert_after = Some(idx + 1);
-                    }
+            if let Some((found_tab_bar_id, idx)) = dock.find_tab_bar_of_tab(last_room_id) {
+                if found_tab_bar_id == tab_bar {
+                    insert_after = Some(idx + 1);
                 }
             }
         }
