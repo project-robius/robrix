@@ -2708,7 +2708,7 @@ async fn add_new_room(
         RoomState::Invited => {
             let invite_details = new_room.room.invite_details().await.ok();
             let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
-            let room_avatar = room_avatar(&new_room.room, &room_name_id).await;
+            let room_avatar = room_avatar(&new_room.room, &room_name_id, new_room.is_direct).await;
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
                 Some(InviterInfo {
                     user_id: inviter.user_id().to_owned(),
@@ -3419,8 +3419,9 @@ fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
     let room_id = room.room_id.clone();
     let room_name_id = RoomNameId::from((room.display_name.clone(), room.room_id.clone()));
     let inner_room = room.room.clone();
+    let is_direct = room.is_direct;
     Handle::current().spawn(async move {
-        let room_avatar = room_avatar(&inner_room, &room_name_id).await;
+        let room_avatar = room_avatar(&inner_room, &room_name_id, is_direct).await;
         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
             room_id,
             room_avatar,
@@ -3430,15 +3431,17 @@ fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
 
 /// Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
-async fn room_avatar(room: &Room, room_name_id: &RoomNameId) -> FetchedRoomAvatar {
+async fn room_avatar(room: &Room, room_name_id: &RoomNameId, is_direct: bool) -> FetchedRoomAvatar {
     match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
         Ok(Some(avatar)) => FetchedRoomAvatar::Image(avatar.into()),
         _ => {
-            if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
-                if room_members.len() == 2 {
-                    if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
-                        if let Ok(Some(avatar)) = non_account_member.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-                            return FetchedRoomAvatar::Image(avatar.into());
+            if is_direct {
+                if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
+                    if room_members.len() == 2 {
+                        if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
+                            if let Ok(Some(avatar)) = non_account_member.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
+                                return FetchedRoomAvatar::Image(avatar.into());
+                            }
                         }
                     }
                 }
