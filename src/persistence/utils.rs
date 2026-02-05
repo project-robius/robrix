@@ -1,45 +1,36 @@
 use std::path::Path;
-use tokio::io::AsyncWriteExt;
 
 /// Writes the given content to a file at the given path, ensuring that the file
 /// is only readable/writable by the current user (permission 0o600 on Unix).
 ///
-/// On non-Unix platforms, this falls back to the default file permissions
-/// (usually inherited from the directory or user profile).
+/// This uses the `tempfile` crate to perform an atomic write:
+/// 1. A temporary file is created in the same directory (inheriting secure defaults, e.g. 0600 on Unix).
+/// 2. Content is written to the temporary file.
+/// 3. The temporary file is atomically renamed to the target path.
+///
+/// This implementation is platform-agnostic and avoids platform-specific `cfg` blocks.
 pub async fn write_to_file_securely<P: AsRef<Path>, C: AsRef<[u8]>>(
     path: P,
     content: C,
 ) -> std::io::Result<()> {
-    let path = path.as_ref();
-    let content = content.as_ref();
+    let path = path.as_ref().to_owned();
+    let content = content.as_ref().to_vec();
 
-    let mut options = tokio::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    tokio::task::spawn_blocking(move || {
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        // Create a temporary file in the same directory to ensure atomic move/persist works.
+        // `tempfile::Builder` defaults to secure permissions (0600 on Unix).
+        let mut temp = tempfile::Builder::new()
+            .prefix(".tmp")
+            .tempfile_in(parent)?;
 
-    #[cfg(unix)]
-    {
-        // On Unix, `tokio::fs::OpenOptions` has an inherent `mode` method
-        // in recent versions, which makes this trait import unused.
-        // However, we import it to ensure compatibility if the inherent method is missing,
-        // and allow unused_imports to suppress warnings if it is present.
-        #[allow(unused_imports)]
-        use std::os::unix::fs::OpenOptionsExt;
+        use std::io::Write;
+        temp.write_all(&content)?;
 
-        // We set it to 0o600 (read/write for owner only).
-        options.mode(0o600);
-    }
+        // Persist the temporary file to the final destination.
+        // This performs an atomic rename.
+        temp.persist(path).map_err(|e| e.error)?;
 
-    let mut file = options.open(path).await?;
-
-    #[cfg(unix)]
-    {
-        // Explicitly set permissions to handle cases where the file already existed
-        // with insecure permissions (OpenOptions::mode only applies to creation).
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o600);
-        file.set_permissions(perms).await?;
-    }
-
-    file.write_all(content).await?;
-    Ok(())
+        Ok(())
+    }).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
 }
