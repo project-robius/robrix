@@ -13,5 +13,9 @@
 **Action:** Always look for loops calling async methods that take a list; refactor to batch calls where possible.
 
 ## 2026-02-04 - [Parallelizing Async Tasks]
-**Learning:** When processing a list of items where each item requires async work (like `add_new_room`), using `join_all` to run them concurrently is much faster than sequential iteration. Combining dependent steps (like `from_room` + `add_new_room`) into a single async closure per item allows maximizing concurrency by removing unnecessary barriers between steps.
+**Learning:** When processing a list of items where each item requires async work (like `add_new_room`), using `join_all` to run them concurrently is much faster than sequential iteration. Combining dependent steps (like `from_room` + `add_new_room`) into a single async closure per item allows maximizing concurrency.
 **Action:** Identify sequential `await` loops in async functions and refactor to `join_all` if the operations are independent.
+
+## 2026-02-04 - [Commit Reversion]
+**Learning:** Sometimes an overly complex "finalization" commit can obscure the actual functional improvement. Reverting to the functional state (single `join_all`) was necessary.
+**Action:** Verify functionality before decorative commits.

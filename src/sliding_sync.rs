@@ -20,7 +20,7 @@ use matrix_sdk_ui::{
     RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
 };
 use robius_open::Uri;
-use ruma::{events::tag::Tags, OwnedRoomOrAliasId};
+use ruma::{OwnedRoomOrAliasId, RoomId, events::tag::Tags};
 use tokio::{
     runtime::Handle,
     sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
@@ -2326,24 +2326,22 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     let _num_new_rooms = new_rooms.len();
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append {_num_new_rooms}"); }
 
-                    let rooms: Vec<matrix_sdk::Room> = new_rooms.into_iter().map(|r| r.into_inner()).collect();
-                    let room_refs: Vec<&matrix_sdk::ruma::RoomId> = rooms.iter().map(|r| r.room_id()).collect();
-                    if !room_refs.is_empty() {
-                        room_list_service.subscribe_to_rooms(&room_refs).await;
-                    }
-
-                    // Parallelize the creation of RoomInfo and adding of new rooms.
+                    // Parallelize creating each room's RoomListServiceRoomInfo and adding that new room.
                     // We combine `from_room` and `add_new_room` into a single async task per room.
                     let new_room_infos: Vec<RoomListServiceRoomInfo> = join_all(
-                        rooms.into_iter().map(|room| async {
-                            let room_info = RoomListServiceRoomInfo::from_room(room).await;
-                            // We ignore errors from add_new_room as we still want to track the room info
-                            if let Err(e) = add_new_room(&room_info, &room_list_service).await {
-                                error!("Failed to add new room {}: {:?}", room_info.room_id, e);
+                        new_rooms.into_iter().map(|room| async {
+                            let room_info = RoomListServiceRoomInfo::from_room(room.into_inner()).await;
+                            if let Err(e) = add_new_room(&room_info, &room_list_service, false).await {
+                                error!("Failed to add new room: {:?} ({}); error: {:?}", room_info.display_name, room_info.room_id, e);
                             }
                             room_info
                         })
                     ).await;
+
+                    let room_refs: Vec<&RoomId> = new_room_infos.iter().map(|r| r.room_id.as_ref()).collect();
+                    if !room_refs.is_empty() {
+                        room_list_service.subscribe_to_rooms(&room_refs).await;
+                    }
 
                     all_known_rooms.extend(new_room_infos);
                 }
@@ -2356,15 +2354,13 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
                     let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner()).await;
-                    room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
-                    add_new_room(&new_room, &room_list_service).await?;
+                    add_new_room(&new_room, &room_list_service, true).await?;
                     all_known_rooms.push_front(new_room);
                 }
                 VectorDiff::PushBack { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
                     let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner()).await;
-                    room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
-                    add_new_room(&new_room, &room_list_service).await?;
+                    add_new_room(&new_room, &room_list_service, true).await?;
                     all_known_rooms.push_back(new_room);
                 }
                 remove_diff @ VectorDiff::PopFront => {
@@ -2394,8 +2390,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 VectorDiff::Insert { index, value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
                     let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner()).await;
-                    room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
-                    add_new_room(&new_room, &room_list_service).await?;
+                    add_new_room(&new_room, &room_list_service, true).await?;
                     all_known_rooms.insert(index, new_room);
                 }
                 VectorDiff::Set { index, value: changed_room } => {
@@ -2445,24 +2440,22 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     ALL_JOINED_ROOMS.lock().unwrap().clear();
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
 
-                    let rooms: Vec<matrix_sdk::Room> = new_rooms.into_iter().map(|r| r.into_inner()).collect();
-                    let room_refs: Vec<&matrix_sdk::ruma::RoomId> = rooms.iter().map(|r| r.room_id()).collect();
-                    if !room_refs.is_empty() {
-                        room_list_service.subscribe_to_rooms(&room_refs).await;
-                    }
-
-                    // Parallelize the creation of RoomInfo and adding of new rooms.
+                    // Parallelize creating each room's RoomListServiceRoomInfo and adding that new room.
                     // We combine `from_room` and `add_new_room` into a single async task per room.
                     let new_room_infos: Vec<RoomListServiceRoomInfo> = join_all(
-                        rooms.into_iter().map(|room| async {
-                            let room_info = RoomListServiceRoomInfo::from_room(room).await;
-                            // We ignore errors from add_new_room as we still want to track the room info
-                            if let Err(e) = add_new_room(&room_info, &room_list_service).await {
-                                error!("Failed to add new room {}: {:?}", room_info.room_id, e);
+                        new_rooms.into_iter().map(|room| async {
+                            let room_info = RoomListServiceRoomInfo::from_room(room.into_inner()).await;
+                            if let Err(e) = add_new_room(&room_info, &room_list_service, false).await {
+                                error!("Failed to add new room: {:?} ({}); error: {:?}", room_info.display_name, room_info.room_id, e);
                             }
                             room_info
                         })
                     ).await;
+
+                    let room_refs: Vec<&RoomId> = new_room_infos.iter().map(|r| r.room_id.as_ref()).collect();
+                    if !room_refs.is_empty() {
+                        room_list_service.subscribe_to_rooms(&room_refs).await;
+                    }
 
                     all_known_rooms.extend(new_room_infos);
                 }
@@ -2568,13 +2561,11 @@ async fn update_room(
                 }
                 RoomState::Joined => {
                     log!("update_room(): adding new Joined room: {:?} ({new_room_id})", new_room.display_name);
-                    room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
-                    return add_new_room(new_room, room_list_service).await;
+                    return add_new_room(new_room, room_list_service, true).await;
                 }
                 RoomState::Invited => {
                     log!("update_room(): adding new Invited room: {:?} ({new_room_id})", new_room.display_name);
-                    room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
-                    return add_new_room(new_room, room_list_service).await;
+                    return add_new_room(new_room, room_list_service, true).await;
                 }
                 RoomState::Knocked => {
                     // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
@@ -2701,8 +2692,7 @@ async fn update_room(
             old_room.room_id, new_room_id,
         );
         remove_room(old_room);
-        room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
-        add_new_room(new_room, room_list_service).await
+        add_new_room(new_room, room_list_service, true).await
     }
 }
 
@@ -2723,6 +2713,7 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
 async fn add_new_room(
     new_room: &RoomListServiceRoomInfo,
     room_list_service: &RoomListService,
+    subscribe: bool,
 ) -> Result<()> {
     match new_room.state {
         RoomState::Knocked => {
@@ -2782,6 +2773,11 @@ async fn add_new_room(
         RoomState::Joined => { } // Fall through to adding the joined room below.
     }
 
+    // If we didn't already subscribe to this room, do so now.
+    // This ensures we will properly receive all of its states and latest event.
+    if subscribe {
+        room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
+    }
 
     let timeline = Arc::new(
         new_room.room.timeline_builder()
