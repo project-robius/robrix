@@ -231,19 +231,7 @@ live_design! {
             }
         }
 
-        // json_input = <SimpleTextInput> {
-        //     margin: 5
-        //     width: Fill,
-        //     height: Fit
-        //     draw_text: {
-        //         text_style: <THEME_FONT_CODE> { font_size: 11 }
-        //         wrap: Word
-        //     }
-
-        //     is_read_only: true,
-        //     empty_text: ""
-        // }
-
+        // just some extra space at the bottom
         <View> {
             width: Fill, height: 25
         }
@@ -349,27 +337,16 @@ impl EventSourceModal {
         self.event_id = event_id.clone();
         self.original_json = original_json.clone();
 
-        // Update UI labels
         self.view.label(ids!(room_id_row.value)).set_text(cx, room_id.as_str());
         self.view.label(ids!(event_id_row.value)).set_text(
             cx,
             event_id.as_ref().map(|e| e.as_str()).unwrap_or("<Event ID Unknown>"),
         );
 
-        // Set the JSON source in the text input
-        // let json_input = self.view.text_input(ids!(json_input));
-        // json_input.set_text(
-        //     cx,
-        //     original_json.as_deref().unwrap_or("<Unable to load event source JSON>"),
-        // );
-        // json_input.set_selection(cx, Selection::default());
-
-        let code_view = self.view.code_view(ids!(code_view));
-        code_view.set_text(
+        self.view.code_view(ids!(code_view)).set_text(
             cx,
             original_json.as_deref().unwrap_or("<Unable to load event source JSON>"),
         );
-        // TODO: clear selection in code_view/code_editor?
 
         self.view.button(ids!(close_button)).reset_hover(cx);
         self.view.button(ids!(room_id_row.copy_button)).reset_hover(cx);
