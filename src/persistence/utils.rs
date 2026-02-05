@@ -46,7 +46,7 @@ pub async fn write_to_file_securely<P: AsRef<Path>, C: AsRef<[u8]>>(
                 // However, `persist` implementation details might vary.
 
                 // If we are here, we still own the temp file (in `e.file`).
-                let mut temp = e.file;
+                let temp = e.file;
 
                 // Remove the target file.
                 if let Err(rm_err) = std::fs::remove_file(&path) {
@@ -61,5 +61,5 @@ pub async fn write_to_file_securely<P: AsRef<Path>, C: AsRef<[u8]>>(
             },
             Err(e) => Err(e.error),
         }
-    }).await.map_err(|e| std::io::Error::other(e))?
+    }).await.map_err(std::io::Error::other)?
 }
