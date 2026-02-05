@@ -218,18 +218,7 @@ pub async fn save_session(
     if let Some(parent) = session_file.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
-    #[cfg(unix)]
-    {
-        use tokio::io::AsyncWriteExt;
-        let mut options = tokio::fs::OpenOptions::new();
-        options.write(true).create(true).truncate(true).mode(0o600);
-        let mut file = options.open(&session_file).await?;
-        file.write_all(serialized_session.as_bytes()).await?;
-    }
-    #[cfg(not(unix))]
-    {
-        tokio::fs::write(&session_file, serialized_session).await?;
-    }
+    super::utils::write_to_file_securely(&session_file, serialized_session).await?;
 
     log!("Session persisted to: {}", session_file.display());
     Ok(())
