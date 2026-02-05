@@ -35,7 +35,7 @@ use crate::{
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
-    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
+    }, room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
         avatar::AvatarState, file_previewer::FilePreviewerMetaData, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
@@ -279,6 +279,19 @@ pub enum MatrixLinkAction {
     None,
 }
 
+/// Actions emitted when account data (e.g., avatar, display name) changes.
+#[derive(Clone, Debug)]
+pub enum AccountDataAction {
+    /// The user's avatar was successfully updated or removed.
+    AvatarChanged(Option<OwnedMxcUri>),
+    /// Failed to update or remove the user's avatar.
+    AvatarChangeFailed(String),
+    /// The user's display name was successfully updated or removed.
+    DisplayNameChanged(Option<String>),
+    /// Failed to update the user's display name.
+    DisplayNameChangeFailed(String),
+}
+
 /// The set of requests for async work that can be made to the worker thread.
 #[allow(clippy::large_enum_variant)]
 pub enum MatrixRequest {
@@ -352,6 +365,10 @@ pub enum MatrixRequest {
     GetSuccessorRoomDetails {
         tombstoned_room_id: OwnedRoomId,
     },
+    /// Request to create or open a direct message room with the given user.
+    CreateOrOpenDirectMessage {
+        user_id: OwnedUserId,
+    },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
         user_id: OwnedUserId,
@@ -407,6 +424,18 @@ pub enum MatrixRequest {
         /// The room ID of the room where the user is a member,
         /// which is only needed because it isn't present in the `RoomMember` object.
         room_id: OwnedRoomId,
+    },
+    /// Request to set or remove the avatar of the current user's account.
+    SetAvatar {
+        /// * If `Some`, the avatar will be set to the given MXC URI.
+        /// * If `None`, the avatar will be removed.
+        avatar_url: Option<OwnedMxcUri>,
+    },
+    /// Request to set or remove the display name of the current user's account.
+    SetDisplayName {
+        /// * If `Some`, the display name will be set to the given value.
+        /// * If `None`, the display name will be removed.
+        new_display_name: Option<String>,
     },
     /// Request to resolve a room alias into a room ID and the servers that know about that room.
     ResolveRoomAlias(OwnedRoomAliasId),
@@ -894,6 +923,45 @@ async fn matrix_worker_task(
                 );
             }
 
+            MatrixRequest::CreateOrOpenDirectMessage { user_id } => {
+                let Some(client) = get_client() else { continue };
+                let _create_dm_task = Handle::current().spawn(async move {
+                    log!("Handling CreateOrOpenDirectMessage for user {}", user_id);
+
+                    let room = if let Some(room) = client.get_dm_room(&user_id) {
+                        log!("Found existing DM room: {}", room.room_id());
+                        room
+                    } else {
+                        log!("Creating new DM room with {}", user_id);
+                        match client.create_dm(&user_id).await {
+                            Ok(room) => {
+                                log!("Successfully created DM room: {}", room.room_id());
+                                room
+                            },
+                            Err(e) => {
+                                error!("Failed to create DM with {user_id}: {e}");
+                                enqueue_popup_notification(PopupItem {
+                                    message: format!("Failed to create Direct Message: {e}"),
+                                    kind: PopupKind::Error,
+                                    auto_dismissal_duration: None,
+                                });
+                                return;
+                            }
+                        }
+                    };
+
+                    // Navigate to room
+                    let room_id = room.room_id().to_owned();
+                    let display_name = room.display_name().await.unwrap_or(RoomDisplayName::Empty);
+                    let room_name_id = RoomNameId::new(display_name, room_id.clone());
+
+                    Cx::post_action(AppStateAction::NavigateToRoom {
+                        room_to_close: None,
+                        destination_room: BasicRoomDetails::RoomId(room_name_id),
+                    });
+                });
+            }
+
             MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
                 let Some(client) = get_client() else { continue };
                 let _fetch_task = Handle::current().spawn(async move {
@@ -1036,6 +1104,45 @@ async fn matrix_worker_task(
                     match result {
                         Ok(_) => log!("Set low priority to {} for room {}", is_low_priority, room_id),
                         Err(e) => error!("Failed to set low priority to {} for room {}: {:?}", is_low_priority, room_id, e),
+                    }
+                });
+            }
+            MatrixRequest::SetAvatar { avatar_url } => {
+                let Some(client) = get_client() else { continue };
+                let _set_avatar_task = Handle::current().spawn(async move {
+                    let is_removing = avatar_url.is_none();
+                    log!("Sending request to {} avatar...", if is_removing { "remove" } else { "set" });
+                    let result = client.account().set_avatar_url(avatar_url.as_deref()).await;
+                    match result {
+                        Ok(_) => {
+                            log!("Successfully {} avatar.", if is_removing { "removed" } else { "set" });
+                            Cx::post_action(AccountDataAction::AvatarChanged(avatar_url));
+                        }
+                        Err(e) => {
+                            let err_msg = format!("Failed to {} avatar: {e}", if is_removing { "remove" } else { "set" });
+                            Cx::post_action(AccountDataAction::AvatarChangeFailed(err_msg));
+                        }
+                    }
+                });
+            }
+            MatrixRequest::SetDisplayName { new_display_name } => {
+                let Some(client) = get_client() else { continue };
+                let _set_display_name_task = Handle::current().spawn(async move {
+                    let is_removing = new_display_name.is_none();
+                    log!("Sending request to {} display name{}...",
+                        if is_removing { "remove" } else { "set" },
+                        new_display_name.as_ref().map(|n| format!(" to '{n}'")).unwrap_or_default()
+                    );
+                    let result = client.account().set_display_name(new_display_name.as_deref()).await;
+                    match result {
+                        Ok(_) => {
+                            log!("Successfully {} display name.", if is_removing { "removed" } else { "set" });
+                            Cx::post_action(AccountDataAction::DisplayNameChanged(new_display_name));
+                        }
+                        Err(e) => {
+                            let err_msg = format!("Failed to {} display name: {e}", if is_removing { "remove" } else { "set" });
+                            Cx::post_action(AccountDataAction::DisplayNameChangeFailed(err_msg));
+                        }
                     }
                 });
             }
@@ -2091,7 +2198,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     // from the UI, and forward them to this task (via the login_sender --> login_receiver).
     let mut matrix_worker_task_handle = rt.spawn(matrix_worker_task(receiver, login_sender));
 
-    let most_recent_user_id = persistence::most_recent_user_id();
+    let most_recent_user_id = persistence::most_recent_user_id().await;
     log!("Most recent user ID: {most_recent_user_id:?}");
     let cli_parse_result = Cli::try_parse();
     let cli_has_valid_username_password = cli_parse_result.as_ref()

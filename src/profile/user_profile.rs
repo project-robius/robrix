@@ -4,7 +4,7 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_ignored, submit_async_request}, utils
+    avatar_cache, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_ignored, submit_async_request}, utils
 };
 use super::user_profile_cache;
 
@@ -495,11 +495,8 @@ impl Widget for UserProfileSlidingPane {
                         our_info.avatar_state = AvatarState::Known(Some(avatar_uri));
                     }
                     // If we know the avatar URI, try to get/fetch the actual avatar image data.
-                    if let AvatarState::Known(Some(uri)) = &our_info.avatar_state {
-                        if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri.to_owned()) {
-                            our_info.avatar_state = AvatarState::Loaded(data);
-                        }
-                    }
+                    our_info.avatar_state.update_from_cache(cx);
+
                     // If the new avatar state is fully `Loaded`, keep it as is.
                     // If the new avatar state is *not* fully `Loaded`, but the previous one was, keep the previous one.
                     match (prev_avatar_state, &mut our_info.avatar_state) {
@@ -521,7 +518,11 @@ impl Widget for UserProfileSlidingPane {
 
         if let Event::Actions(actions) = event {
 
-            // TODO: handle actions for the `direct_message_button`
+            if self.button(ids!(direct_message_button)).clicked(actions) {
+                submit_async_request(MatrixRequest::CreateOrOpenDirectMessage {
+                    user_id: info.user_id.clone(),
+                });
+            }
 
             if self.button(ids!(copy_link_to_user_button)).clicked(actions) {
                 let matrix_to_uri = info.user_id.matrix_to_uri().to_string();
@@ -589,8 +590,7 @@ impl Widget for UserProfileSlidingPane {
             .map(|rm| rm.is_account_user())
             .unwrap_or_else(|| current_user_id().is_some_and(|uid| uid == info.user_id));
 
-        // TODO: uncomment the line below once the `direct_message_button` logic is implemented.
-        // self.button(ids!(direct_message_button)).set_enabled(!is_pane_showing_current_account);
+        self.button(ids!(direct_message_button)).set_enabled(cx, !is_pane_showing_current_account);
 
         let ignore_user_button = self.button(ids!(ignore_user_button));
         ignore_user_button.set_enabled(cx, !is_pane_showing_current_account && info.room_member.is_some());
@@ -620,10 +620,10 @@ impl UserProfileSlidingPane {
     /// retrieve the user's room membership info from the local cache,
     /// and then submit a request to asynchronously fetch it from the server
     /// if it's not found in the cache.
-    pub fn set_info(&mut self, _cx: &mut Cx, mut info: UserProfilePaneInfo) {
+    pub fn set_info(&mut self, cx: &mut Cx, mut info: UserProfilePaneInfo) {
         if info.room_member.is_none() {
             if let Some((new_profile, Some(room_member))) = user_profile_cache::with_user_profile(
-                _cx,
+                cx,
                 info.user_id.clone(),
                 Some(&info.room_id),
                 true,
@@ -651,17 +651,13 @@ impl UserProfileSlidingPane {
                 info.room_member = Some(room_member);
             }
         }
-        if let AvatarState::Known(Some(uri)) = &info.avatar_state {
-            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(_cx, uri.clone()) {
-                info.avatar_state = AvatarState::Loaded(data);
-            }
-        }
+        info.avatar_state.update_from_cache(cx);
         
         // If TSP is enabled, populate the TSP verification info for this user.
         #[cfg(feature = "tsp")] {
             use crate::tsp::verify_user::TspVerifyUserWidgetExt;
             self.view.tsp_verify_user(ids!(tsp_verify_user))
-                .show(_cx, info.user_id.clone());
+                .show(cx, info.user_id.clone());
         }
 
         self.info = Some(info);

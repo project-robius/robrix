@@ -1,4 +1,5 @@
-use std::{cell::RefCell, collections::{btree_map::Entry, BTreeMap}, sync::Arc};
+use std::{cell::RefCell, sync::Arc};
+use hashbrown::hash_map::{HashMap, RawEntryMut};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::{Cx, SignalToUI};
 use matrix_sdk::ruma::OwnedMxcUri;
@@ -10,7 +11,7 @@ thread_local! {
     /// A cache of Avatar images, indexed by Matrix URI.
     ///
     /// To be of any use, this cache must only be accessed by the main UI thread.
-    static AVATAR_NEW_CACHE: RefCell<BTreeMap<OwnedMxcUri, AvatarCacheEntry>> = const { RefCell::new(BTreeMap::new()) };
+    static AVATAR_NEW_CACHE: RefCell<HashMap<OwnedMxcUri, AvatarCacheEntry>> = RefCell::new(HashMap::new());
 }
 
 /// An entry in the avatar cache.
@@ -66,20 +67,20 @@ pub fn process_avatar_updates(_cx: &mut Cx) {
 /// must only be called by the main UI thread.
 pub fn get_or_fetch_avatar(
     _cx: &mut Cx,
-    mxc_uri: OwnedMxcUri,
+    avatar_uri: &OwnedMxcUri,
 ) -> AvatarCacheEntry {
     AVATAR_NEW_CACHE.with_borrow_mut(|cache| {
-        match cache.entry(mxc_uri.clone()) {
-            Entry::Vacant(vacant) => {
-                vacant.insert(AvatarCacheEntry::Requested);
-            },
-            Entry::Occupied(occupied) => return occupied.get().clone(),
+        match cache.raw_entry_mut().from_key(avatar_uri) {
+            RawEntryMut::Occupied(occupied) => occupied.get().clone(),
+            RawEntryMut::Vacant(vacant) => {
+                vacant.insert(avatar_uri.clone(), AvatarCacheEntry::Requested);
+                submit_async_request(MatrixRequest::FetchAvatar {
+                    mxc_uri: avatar_uri.clone(),
+                    on_fetched: enqueue_avatar_update,
+                });
+                AvatarCacheEntry::Requested
+            }
         }
-        submit_async_request(MatrixRequest::FetchAvatar {
-            mxc_uri,
-            on_fetched: enqueue_avatar_update,
-        });
-        AvatarCacheEntry::Requested
     })
 }
 

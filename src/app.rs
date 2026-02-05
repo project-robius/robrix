@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache,
     home::{
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt},
         invite_modal::{InviteModalAction, InviteModalWidgetRefExt},
         main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, room_context_menu::RoomContextMenuWidgetRefExt
     },
@@ -45,6 +46,7 @@ live_design! {
     use crate::home::new_message_context_menu::*;
     use crate::home::room_context_menu::*;
     use crate::home::invite_modal::InviteModal;
+    use crate::home::event_source_modal::EventSourceModal;
     use crate::shared::callout_tooltip::CalloutTooltip;
     use crate::shared::image_viewer::ImageViewer;
     use crate::shared::file_previewer::FilePreviewer;
@@ -150,6 +152,16 @@ live_design! {
                             }
                         }
 
+                        // Show the event source modal (View Source for messages).
+                        event_source_modal = <Modal> {
+                            content: {
+                                height: Fill,
+                                width: Fill,
+                                align: {x: 0.5, y: 0.5},
+                                event_source_modal_inner = <EventSourceModal> {}
+                            }
+                        }
+
                         // Show incoming verification requests in front of the aforementioned UI elements.
                         verification_modal = <Modal> {
                             content: {
@@ -161,6 +173,8 @@ live_design! {
                                 tsp_verification_modal_inner = <TspVerificationModal> {}
                             }
                         }
+
+                        <PopupList> {}
 
                         // Tooltips must be shown in front of all other UI elements,
                         // since they can be shown as a hover atop any other widget.
@@ -188,10 +202,12 @@ pub struct App {
 impl LiveRegister for App {
     fn live_register(cx: &mut Cx) {
         // Order matters here, as some widget definitions depend on others.
-        // `makepad_widgets` must be registered first,
+        // The main `makepad_widgets` crate must be registered first,
+        // then other first-party makepad crates (like `makepad_code_editor`),
         // then `shared`` widgets (in which styles are defined),
         // then other modules widgets.
         makepad_widgets::live_design(cx);
+        makepad_code_editor::live_design(cx);
         // Override Makepad's default desktop dark theme with the desktop light theme.
         cx.link(id!(theme), id!(theme_desktop_light));
         crate::shared::live_design(cx);
@@ -526,7 +542,7 @@ impl MatchEvent for App {
             match action.downcast_ref() {
                 Some(InviteModalAction::Open(room_name_id)) => {
                     self.ui.invite_modal(ids!(invite_modal_inner)).show(cx, room_name_id.clone());
-                    self.ui.modal(ids!(invite_modal)).open(cx);
+                    self.ui.modal(ids!(invite_modal)).open(cx); 
                     continue;
                 }
                 Some(InviteModalAction::Close) => {
@@ -536,17 +552,20 @@ impl MatchEvent for App {
                 _ => {}
             }
 
-            // // message source modal handling.
-            // match action.as_widget_action().cast() {
-            //     MessageAction::MessageSourceModalOpen { room_id: _, event_id: _, original_json: _ } => {
-            //        // self.ui.message_source(ids!(message_source_modal_inner)).initialize_with_data(room_id, event_id, original_json);
-            //        // self.ui.modal(ids!(message_source_modal)).open(cx);
-            //     }
-            //     MessageAction::MessageSourceModalClose => {
-            //         self.ui.modal(ids!(message_source_modal)).close(cx);
-            //     }
-            //     _ => {}
-            // }
+            // Handle EventSourceModalAction to open/close the event source modal.
+            match action.downcast_ref() {
+                Some(EventSourceModalAction::Open { room_id, event_id, original_json }) => {
+                    self.ui.event_source_modal(ids!(event_source_modal_inner))
+                        .show(cx, room_id.clone(), event_id.clone(), original_json.clone());
+                    self.ui.modal(ids!(event_source_modal)).open(cx);
+                    continue;
+                }
+                Some(EventSourceModalAction::Close) => {
+                    self.ui.modal(ids!(event_source_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
         }
     }
 }
