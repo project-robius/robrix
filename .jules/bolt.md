@@ -11,3 +11,7 @@
 ## 2026-02-04 - [Batching Room Subscriptions]
 **Learning:** Matrix SDK `subscribe_to_rooms` incurs overhead. Batching subscriptions during bulk updates (`Append`/`Reset`) is significantly more efficient than individual calls. Also, caller responsibility for subscription allows cleaner separation of concerns than burying it in helper functions like `add_new_room`.
 **Action:** Always look for loops calling async methods that take a list; refactor to batch calls where possible.
+
+## 2026-02-04 - [Parallelizing Async Tasks]
+**Learning:** When processing a list of items where each item requires async work (like `add_new_room`), using `join_all` to run them concurrently is much faster than sequential iteration. This is safe as long as the critical sections (like shared map insertion) are brief or thread-safe.
+**Action:** Identify sequential `await` loops in async functions and refactor to `join_all` if the operations are independent.

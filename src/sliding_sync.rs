@@ -2335,10 +2335,15 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                         room_list_service.subscribe_to_rooms(&room_refs).await;
                     }
 
-                    for new_room in new_room_infos {
-                        add_new_room(&new_room, &room_list_service).await?;
-                        all_known_rooms.push_back(new_room);
+                    // Parallelize the adding of new rooms, which involves fetching latest events, etc.
+                    let add_room_futures = new_room_infos.iter().map(|room| add_new_room(room, &room_list_service));
+                    let results = join_all(add_room_futures).await;
+
+                    for result in results {
+                        result?;
                     }
+
+                    all_known_rooms.extend(new_room_infos);
                 }
                 VectorDiff::Clear => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Clear"); }
@@ -2447,10 +2452,15 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                         room_list_service.subscribe_to_rooms(&room_refs).await;
                     }
 
-                    for new_room in new_room_infos {
-                        add_new_room(&new_room, &room_list_service).await?;
-                        all_known_rooms.push_back(new_room);
+                    // Parallelize the adding of new rooms, which involves fetching latest events, etc.
+                    let add_room_futures = new_room_infos.iter().map(|room| add_new_room(room, &room_list_service));
+                    let results = join_all(add_room_futures).await;
+
+                    for result in results {
+                        result?;
                     }
+
+                    all_known_rooms.extend(new_room_infos);
                 }
             }
         }
