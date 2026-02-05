@@ -2330,18 +2330,13 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                         new_rooms.into_iter().map(|r| RoomListServiceRoomInfo::from_room(r.into_inner()))
                     ).await;
 
-                    let joined_room_ids: Vec<OwnedRoomId> = new_room_infos.iter()
-                        .filter(|r| matches!(r.state, RoomState::Joined | RoomState::Invited))
-                        .map(|r| r.room_id.clone())
-                        .collect();
-
-                    if !joined_room_ids.is_empty() {
-                        let room_refs: Vec<&matrix_sdk::ruma::RoomId> = joined_room_ids.iter().map(|id| id.as_ref()).collect();
+                    let room_refs: Vec<&matrix_sdk::ruma::RoomId> = new_room_infos.iter().map(|r| r.room_id.as_ref()).collect();
+                    if !room_refs.is_empty() {
                         room_list_service.subscribe_to_rooms(&room_refs).await;
                     }
 
                     for new_room in new_room_infos {
-                        add_new_room(&new_room, &room_list_service, false).await?;
+                        add_new_room(&new_room, &room_list_service).await?;
                         all_known_rooms.push_back(new_room);
                     }
                 }
@@ -2354,13 +2349,15 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
                     let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner()).await;
-                    add_new_room(&new_room, &room_list_service, true).await?;
+                    room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
+                    add_new_room(&new_room, &room_list_service).await?;
                     all_known_rooms.push_front(new_room);
                 }
                 VectorDiff::PushBack { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
                     let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner()).await;
-                    add_new_room(&new_room, &room_list_service, true).await?;
+                    room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
+                    add_new_room(&new_room, &room_list_service).await?;
                     all_known_rooms.push_back(new_room);
                 }
                 remove_diff @ VectorDiff::PopFront => {
@@ -2390,7 +2387,8 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 VectorDiff::Insert { index, value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
                     let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner()).await;
-                    add_new_room(&new_room, &room_list_service, true).await?;
+                    room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
+                    add_new_room(&new_room, &room_list_service).await?;
                     all_known_rooms.insert(index, new_room);
                 }
                 VectorDiff::Set { index, value: changed_room } => {
@@ -2444,18 +2442,13 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                         new_rooms.into_iter().map(|r| RoomListServiceRoomInfo::from_room(r.into_inner()))
                     ).await;
 
-                    let joined_room_ids: Vec<OwnedRoomId> = new_room_infos.iter()
-                        .filter(|r| matches!(r.state, RoomState::Joined | RoomState::Invited))
-                        .map(|r| r.room_id.clone())
-                        .collect();
-
-                    if !joined_room_ids.is_empty() {
-                        let room_refs: Vec<&matrix_sdk::ruma::RoomId> = joined_room_ids.iter().map(|id| id.as_ref()).collect();
+                    let room_refs: Vec<&matrix_sdk::ruma::RoomId> = new_room_infos.iter().map(|r| r.room_id.as_ref()).collect();
+                    if !room_refs.is_empty() {
                         room_list_service.subscribe_to_rooms(&room_refs).await;
                     }
 
                     for new_room in new_room_infos {
-                        add_new_room(&new_room, &room_list_service, false).await?;
+                        add_new_room(&new_room, &room_list_service).await?;
                         all_known_rooms.push_back(new_room);
                     }
                 }
@@ -2561,11 +2554,13 @@ async fn update_room(
                 }
                 RoomState::Joined => {
                     log!("update_room(): adding new Joined room: {:?} ({new_room_id})", new_room.display_name);
-                    return add_new_room(new_room, room_list_service, true).await;
+                    room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
+                    return add_new_room(new_room, room_list_service).await;
                 }
                 RoomState::Invited => {
                     log!("update_room(): adding new Invited room: {:?} ({new_room_id})", new_room.display_name);
-                    return add_new_room(new_room, room_list_service, true).await;
+                    room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
+                    return add_new_room(new_room, room_list_service).await;
                 }
                 RoomState::Knocked => {
                     // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
@@ -2692,7 +2687,8 @@ async fn update_room(
             old_room.room_id, new_room_id,
         );
         remove_room(old_room);
-        add_new_room(new_room, room_list_service, true).await
+        room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
+        add_new_room(new_room, room_list_service).await
     }
 }
 
@@ -2713,7 +2709,6 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
 async fn add_new_room(
     new_room: &RoomListServiceRoomInfo,
     room_list_service: &RoomListService,
-    subscribe: bool,
 ) -> Result<()> {
     match new_room.state {
         RoomState::Knocked => {
@@ -2771,12 +2766,6 @@ async fn add_new_room(
             return Ok(());
         }
         RoomState::Joined => { } // Fall through to adding the joined room below.
-    }
-
-    // Subscribe to all updates for this room in order to properly receive all of its states,
-    // as well as its latest event (via `Room::new_latest_event_*()` and the `LatestEvents` API).
-    if subscribe {
-        room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
     }
 
 
