@@ -2326,22 +2326,24 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     let _num_new_rooms = new_rooms.len();
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append {_num_new_rooms}"); }
 
-                    let new_room_infos = join_all(
-                        new_rooms.into_iter().map(|r| RoomListServiceRoomInfo::from_room(r.into_inner()))
-                    ).await;
-
-                    let room_refs: Vec<&matrix_sdk::ruma::RoomId> = new_room_infos.iter().map(|r| r.room_id.as_ref()).collect();
+                    let rooms: Vec<matrix_sdk::Room> = new_rooms.into_iter().map(|r| r.into_inner()).collect();
+                    let room_refs: Vec<&matrix_sdk::ruma::RoomId> = rooms.iter().map(|r| r.room_id()).collect();
                     if !room_refs.is_empty() {
                         room_list_service.subscribe_to_rooms(&room_refs).await;
                     }
 
-                    // Parallelize the adding of new rooms, which involves fetching latest events, etc.
-                    let add_room_futures = new_room_infos.iter().map(|room| add_new_room(room, &room_list_service));
-                    let results = join_all(add_room_futures).await;
-
-                    for result in results {
-                        result?;
-                    }
+                    // Parallelize the creation of RoomInfo and adding of new rooms.
+                    // We combine `from_room` and `add_new_room` into a single async task per room.
+                    let new_room_infos: Vec<RoomListServiceRoomInfo> = join_all(
+                        rooms.into_iter().map(|room| async {
+                            let room_info = RoomListServiceRoomInfo::from_room(room).await;
+                            // We ignore errors from add_new_room as we still want to track the room info
+                            if let Err(e) = add_new_room(&room_info, &room_list_service).await {
+                                error!("Failed to add new room {}: {:?}", room_info.room_id, e);
+                            }
+                            room_info
+                        })
+                    ).await;
 
                     all_known_rooms.extend(new_room_infos);
                 }
@@ -2443,22 +2445,24 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     ALL_JOINED_ROOMS.lock().unwrap().clear();
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
 
-                    let new_room_infos = join_all(
-                        new_rooms.into_iter().map(|r| RoomListServiceRoomInfo::from_room(r.into_inner()))
-                    ).await;
-
-                    let room_refs: Vec<&matrix_sdk::ruma::RoomId> = new_room_infos.iter().map(|r| r.room_id.as_ref()).collect();
+                    let rooms: Vec<matrix_sdk::Room> = new_rooms.into_iter().map(|r| r.into_inner()).collect();
+                    let room_refs: Vec<&matrix_sdk::ruma::RoomId> = rooms.iter().map(|r| r.room_id()).collect();
                     if !room_refs.is_empty() {
                         room_list_service.subscribe_to_rooms(&room_refs).await;
                     }
 
-                    // Parallelize the adding of new rooms, which involves fetching latest events, etc.
-                    let add_room_futures = new_room_infos.iter().map(|room| add_new_room(room, &room_list_service));
-                    let results = join_all(add_room_futures).await;
-
-                    for result in results {
-                        result?;
-                    }
+                    // Parallelize the creation of RoomInfo and adding of new rooms.
+                    // We combine `from_room` and `add_new_room` into a single async task per room.
+                    let new_room_infos: Vec<RoomListServiceRoomInfo> = join_all(
+                        rooms.into_iter().map(|room| async {
+                            let room_info = RoomListServiceRoomInfo::from_room(room).await;
+                            // We ignore errors from add_new_room as we still want to track the room info
+                            if let Err(e) = add_new_room(&room_info, &room_list_service).await {
+                                error!("Failed to add new room {}: {:?}", room_info.room_id, e);
+                            }
+                            room_info
+                        })
+                    ).await;
 
                     all_known_rooms.extend(new_room_infos);
                 }
