@@ -140,10 +140,8 @@ live_design! {
                 text: "Edit Message"
             }
 
-            // TODO: change text to "Unpin Message" if the message is already pinned,
-            //       using https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk/struct.RoomInfo.html#method.is_pinned_event.
-            //       The caller of `show()` will also need to check if the current user is allowed to
-            //       pin/unpin messages using: https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_pin_or_unpin_event
+            // TODO: check if the current user is allowed to pin/unpin messages:
+            //       <https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_pin_or_unpin_event>
             pin_button = <ContextMenuButton> {
                 draw_icon: { svg_file: (ICON_PIN) }
                 text: "" // set dynamically to "Pin Message" or "Unpin Message"

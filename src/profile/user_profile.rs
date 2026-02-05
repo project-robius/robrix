@@ -187,8 +187,6 @@ live_design! {
             }
 
             direct_message_button = <RobrixIconButton> {
-                // TODO: support this button. Once this is implemented, uncomment the line in draw_walk()
-                enabled: false,
                 margin: 0,
                 padding: {top: 10, bottom: 10, left: 12, right: 15}
                 draw_bg: {

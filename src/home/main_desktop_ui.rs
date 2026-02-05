@@ -152,7 +152,6 @@ impl MainDesktopUI {
         }
 
         // Create a new tab for the room
-        let (tab_bar, _pos) = dock.find_tab_bar_of_tab(id!(home_tab)).unwrap();
         let (kind, name) = match &room {
             SelectedRoom::JoinedRoom { room_name_id }  => (
                 id!(room_screen),
@@ -167,15 +166,15 @@ impl MainDesktopUI {
                 space_name_id.to_string(),
             ),
         };
-        let mut insert_after = None;
-        if let Some(last_room) = &self.most_recently_selected_room {
-            let last_room_id = LiveId::from_str(last_room.room_id().as_str());
-            if let Some((found_tab_bar_id, idx)) = dock.find_tab_bar_of_tab(last_room_id) {
-                if found_tab_bar_id == tab_bar {
-                    insert_after = Some(idx + 1);
-                }
-            }
-        }
+
+        // Insert the tab after the currently-selected room's tab, if possible.
+        // Otherwise, insert it after the home tab, which should always exist.
+        let (tab_bar, insert_after) = self.most_recently_selected_room.as_ref()
+            .and_then(|curr_room| {
+                let curr_room_id = LiveId::from_str(curr_room.room_id().as_str());
+                dock.find_tab_bar_of_tab(curr_room_id)
+            })
+            .unwrap_or_else(|| dock.find_tab_bar_of_tab(id!(home_tab)).unwrap());
 
         let new_tab_widget = dock.create_and_select_tab(
             cx,
@@ -184,7 +183,7 @@ impl MainDesktopUI {
             kind,
             name,
             id!(CloseableTab),
-            insert_after,
+            Some(insert_after),
         );
 
         // if the tab was created, set the room screen and add the room to the room order
