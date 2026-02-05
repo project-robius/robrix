@@ -581,7 +581,9 @@ impl Widget for MatrixHtmlSpan {
                 if reason.is_empty() {
                     tf.draw_text(cx, " [Spoiler]  ");
                 } else {
-                    tf.draw_text(cx, &format!(" [Spoiler: {}]  ", reason));
+                    tf.draw_text(cx, " [Spoiler: ");
+                    tf.draw_text(cx, reason);
+                    tf.draw_text(cx, "]  ");
                 }
                 // tf.font_sizes.pop();
                 tf.italic.pop();
