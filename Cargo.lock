@@ -2965,6 +2965,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-code-editor"
+version = "1.0.0"
+source = "git+https://github.com/makepad/makepad?branch=dev#2898fb1367a95385df79141cd765bf8cf0719b8d"
+dependencies = [
+ "makepad-widgets",
+]
+
+[[package]]
 name = "makepad-derive-live"
 version = "1.0.0"
 source = "git+https://github.com/makepad/makepad?branch=dev#2898fb1367a95385df79141cd765bf8cf0719b8d"
@@ -4879,6 +4887,7 @@ dependencies = [
  "imghdr",
  "indexmap 2.13.0",
  "linkify",
+ "makepad-code-editor",
  "makepad-widgets",
  "matrix-sdk",
  "matrix-sdk-base",

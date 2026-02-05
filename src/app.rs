@@ -195,10 +195,12 @@ pub struct App {
 impl LiveRegister for App {
     fn live_register(cx: &mut Cx) {
         // Order matters here, as some widget definitions depend on others.
-        // `makepad_widgets` must be registered first,
+        // The main `makepad_widgets` crate must be registered first,
+        // then other first-party makepad crates (like `makepad_code_editor`),
         // then `shared`` widgets (in which styles are defined),
         // then other modules widgets.
         makepad_widgets::live_design(cx);
+        makepad_code_editor::live_design(cx);
         // Override Makepad's default desktop dark theme with the desktop light theme.
         cx.link(id!(theme), id!(theme_desktop_light));
         crate::shared::live_design(cx);

@@ -18,6 +18,7 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
 makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
