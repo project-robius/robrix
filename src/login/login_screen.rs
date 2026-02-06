@@ -4,6 +4,7 @@ use makepad_widgets::*;
 use url::Url;
 
 use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
+use crate::shared::callout_tooltip::{TooltipAction, CalloutTooltipOptions};
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
 
@@ -312,6 +313,51 @@ impl Widget for LoginScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         self.match_event(cx, event);
+
+        let provider_brands = ["apple", "facebook", "github", "gitlab", "google", "twitter"];
+        let button_set: &[&[LiveId]] = ids_array!(
+            apple_button,
+            facebook_button,
+            github_button,
+            gitlab_button,
+            google_button,
+            twitter_button
+        );
+
+        for (view_ref, brand) in self.view_set(button_set).iter().zip(&provider_brands) {
+            match event.hits(cx, view_ref.area()) {
+                Hit::FingerHoverIn(..) => {
+                    let name = match *brand {
+                        "apple" => "Apple",
+                        "facebook" => "Facebook",
+                        "github" => "GitHub",
+                        "gitlab" => "GitLab",
+                        "google" => "Google",
+                        "twitter" => "X (Twitter)",
+                        _ => brand,
+                    };
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverIn {
+                            text: format!("Log in with {}", name),
+                            widget_rect: view_ref.area().rect(cx),
+                            options: CalloutTooltipOptions::default(),
+                        },
+                    );
+                    cx.set_cursor(MouseCursor::Hand);
+                }
+                Hit::FingerHoverOut(_) => {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverOut,
+                    );
+                    cx.set_cursor(MouseCursor::Default);
+                }
+                _ => {}
+            }
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
