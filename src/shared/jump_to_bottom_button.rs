@@ -1,4 +1,5 @@
 use makepad_widgets::*;
+use crate::shared::callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition};
 
 const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
 
@@ -99,6 +100,32 @@ pub struct JumpToBottomButton {
 
 impl Widget for JumpToBottomButton {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let button_area = self.button(ids!(jump_to_bottom_button)).area();
+        match event.hits(cx, button_area) {
+            Hit::FingerHoverIn(_) | Hit::FingerLongPress(_) => {
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    TooltipAction::HoverIn {
+                        text: "Jump to bottom".to_string(),
+                        widget_rect: button_area.rect(cx),
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Left,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    TooltipAction::HoverOut,
+                );
+            }
+            _ => {}
+        }
+
         self.view.handle_event(cx, event, scope);
     }
 
