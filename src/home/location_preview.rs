@@ -34,7 +34,7 @@ live_design! {
 
         show_bg: true,
         draw_bg: {
-            color: (COLOR_LOCATION_PREVIEW_BG),
+            color: (COLOR_BG_PREVIEW),
             border_radius: 5.0,
             border_size: 2.0
         }
