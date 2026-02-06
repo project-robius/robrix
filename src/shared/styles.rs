@@ -117,7 +117,8 @@ live_design! {
     pub COLOR_ACTIVE_PRIMARY = #0f88fe
     pub COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
 
-    pub COLOR_LOCATION_PREVIEW_BG = #F0F5FF
+    pub COLOR_BG_PREVIEW = #F0F5FF
+    pub COLOR_BG_PREVIEW_HOVER = #CDEDDF
 
     pub COLOR_AVATAR_BG = #52b2ac
     pub COLOR_AVATAR_BG_IDLE = #d8d8d8
@@ -341,6 +342,6 @@ pub const COLOR_MESSAGE_NOTICE_TEXT:   Vec4 = vec4(0.5, 0.5, 0.5, 1.0);
 /// #953800
 pub const COLOR_WARNING_NOT_FOUND:     Vec4 = vec4(0.584, 0.219, 0.0, 1.0);
 /// #F0F5FF
-pub const COLOR_LOCATION_PREVIEW_BG:   Vec4 = vec4(0.941, 0.961, 1.0, 1.0);
-/// #21B070
-pub const COLOR_LINK_HOVER:            Vec4 = vec4(0.129, 0.690, 0.439, 1.0);
+pub const COLOR_BG_PREVIEW:            Vec4 = vec4(0.941, 0.961, 1.0, 1.0);
+/// #CDEDDF
+pub const COLOR_BG_PREVIEW_HOVER:      Vec4 = vec4(0.804, 0.929, 0.875, 1.0);

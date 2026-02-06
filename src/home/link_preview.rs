@@ -15,7 +15,7 @@ use crate::{
     home::room_screen::TimelineUpdate,
     media_cache::MediaCache,
     shared::{
-        styles::{COLOR_LINK_HOVER, COLOR_LOCATION_PREVIEW_BG},
+        styles::{COLOR_BG_PREVIEW, COLOR_BG_PREVIEW_HOVER},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
     },
     sliding_sync::{submit_async_request, MatrixRequest, UrlPreviewError},
@@ -103,7 +103,7 @@ live_design! {
             spacing: 10
             show_bg: true,
             draw_bg: {
-                color: (COLOR_LOCATION_PREVIEW_BG),
+                color: (COLOR_BG_PREVIEW),
                 border_radius: 4.0
             }
             align: { y: 0.5 }
@@ -204,37 +204,32 @@ impl Widget for LinkPreview {
             match event.hits(cx, view.area()) {
                 Hit::FingerHoverIn(_) | Hit::FingerDown(_) => {
                     view.apply_over(cx, live! {
-                        draw_bg: { color: (COLOR_LINK_HOVER) }
+                        draw_bg: { color: (COLOR_BG_PREVIEW_HOVER) }
                     });
                 }
                 Hit::FingerHoverOut(_) => {
                     view.apply_over(cx, live! {
-                        draw_bg: { color: (COLOR_LOCATION_PREVIEW_BG) }
+                        draw_bg: { color: (COLOR_BG_PREVIEW) }
                     });
                 }
                 Hit::FingerUp(fe) => {
-                    if fe.is_over {
-                        view.apply_over(cx, live! {
-                            draw_bg: { color: (COLOR_LINK_HOVER) }
-                        });
-                        if fe.is_primary_hit() && fe.was_tap() {
-                            if let Some(html_link) = view.link_label(ids!(content_view.title_label)).borrow() {
-                                if !html_link.url.is_empty() {
-                                    cx.widget_action(
-                                        html_link.widget_uid(),
-                                        &scope.path,
-                                        HtmlLinkAction::Clicked {
-                                            url: html_link.url.clone(),
-                                            key_modifiers: fe.modifiers,
-                                        },
-                                    );
-                                }
+                    // return to normal bg color
+                    view.apply_over(cx, live! {
+                        draw_bg: { color: (COLOR_BG_PREVIEW) }
+                    });
+                    if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
+                        if let Some(html_link) = view.link_label(ids!(content_view.title_label)).borrow() {
+                            if !html_link.url.is_empty() {
+                                cx.widget_action(
+                                    html_link.widget_uid(),
+                                    &scope.path,
+                                    HtmlLinkAction::Clicked {
+                                        url: html_link.url.clone(),
+                                        key_modifiers: fe.modifiers,
+                                    },
+                                );
                             }
                         }
-                    } else {
-                        view.apply_over(cx, live! {
-                            draw_bg: { color: (COLOR_LOCATION_PREVIEW_BG) }
-                        });
                     }
                 }
                 _ => {}
