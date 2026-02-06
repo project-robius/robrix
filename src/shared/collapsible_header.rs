@@ -10,6 +10,7 @@
 use makepad_widgets::*;
 
 use crate::home::rooms_list::RoomsListScopeProps;
+use crate::shared::styles::COLOR_ROBRIX_PURPLE;
 
 use super::unread_badge::UnreadBadgeWidgetExt;
 
@@ -149,7 +150,7 @@ impl Widget for CollapsibleHeader {
 
         if let HeaderCategory::SystemAlerts = self.category {
             self.view.apply_over(cx, live!{
-                draw_bg: { color: #888888 }
+                draw_bg: { color: (vec4(0.53, 0.53, 0.53, 1.0)) }
             });
         } else {
             self.view.apply_over(cx, live!{
