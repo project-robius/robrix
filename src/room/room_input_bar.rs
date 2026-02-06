@@ -19,7 +19,7 @@ use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
 
 live_design! {
     use link::theme::*;
@@ -209,6 +209,76 @@ impl Widget for RoomInputBar {
 
         if let Event::Actions(actions) = event {
             self.handle_actions(cx, actions, room_screen_props);
+        }
+
+        // Handle tooltips for buttons
+        let location_button = self.button(ids!(location_button));
+        if let Hit::FingerHoverIn(fe) = event.hits(cx, location_button.area()) {
+            cx.widget_action(
+                room_screen_props.room_screen_widget_uid,
+                &scope.path,
+                TooltipAction::HoverIn {
+                    text: "Share your location".to_string(),
+                    widget_rect: fe.rect,
+                    options: CalloutTooltipOptions {
+                        position: TooltipPosition::Top,
+                        ..Default::default()
+                    }
+                },
+            );
+        }
+        if let Hit::FingerHoverOut(_) = event.hits(cx, location_button.area()) {
+            cx.widget_action(
+                room_screen_props.room_screen_widget_uid,
+                &scope.path,
+                TooltipAction::HoverOut,
+            );
+        }
+
+        let send_button = self.button(ids!(send_message_button));
+        if let Hit::FingerHoverIn(fe) = event.hits(cx, send_button.area()) {
+            cx.widget_action(
+                room_screen_props.room_screen_widget_uid,
+                &scope.path,
+                TooltipAction::HoverIn {
+                    text: "Send message".to_string(),
+                    widget_rect: fe.rect,
+                    options: CalloutTooltipOptions {
+                        position: TooltipPosition::Top,
+                        ..Default::default()
+                    }
+                },
+            );
+        }
+        if let Hit::FingerHoverOut(_) = event.hits(cx, send_button.area()) {
+            cx.widget_action(
+                room_screen_props.room_screen_widget_uid,
+                &scope.path,
+                TooltipAction::HoverOut,
+            );
+        }
+
+        let cancel_reply_button = self.button(ids!(cancel_reply_button));
+        if let Hit::FingerHoverIn(fe) = event.hits(cx, cancel_reply_button.area()) {
+            cx.widget_action(
+                room_screen_props.room_screen_widget_uid,
+                &scope.path,
+                TooltipAction::HoverIn {
+                    text: "Cancel reply".to_string(),
+                    widget_rect: fe.rect,
+                    options: CalloutTooltipOptions {
+                        position: TooltipPosition::Top,
+                        ..Default::default()
+                    }
+                },
+            );
+        }
+        if let Hit::FingerHoverOut(_) = event.hits(cx, cancel_reply_button.area()) {
+            cx.widget_action(
+                room_screen_props.room_screen_widget_uid,
+                &scope.path,
+                TooltipAction::HoverOut,
+            );
         }
 
         self.view.handle_event(cx, event, scope);
