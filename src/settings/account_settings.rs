@@ -48,40 +48,70 @@ live_design! {
                 padding: { left: 10, right: 10 }
                 spacing: 10
 
-                upload_avatar_button = <RobrixIconButton> {
-                    padding: {top: 10, bottom: 10, left: 12, right: 15}
-                    margin: 0,
-                    draw_bg: {
-                        color: (COLOR_ACTIVE_PRIMARY)
+                <View> {
+                    width: Fit, height: Fit
+                    flow: Right,
+                    align: {y: 0.5}
+                    spacing: 10
+
+                    upload_avatar_button = <RobrixIconButton> {
+                        padding: {top: 10, bottom: 10, left: 12, right: 15}
+                        margin: 0,
+                        draw_bg: {
+                            color: (COLOR_ACTIVE_PRIMARY)
+                        }
+                        draw_icon: {
+                            svg_file: (ICON_UPLOAD)
+                            color: (COLOR_PRIMARY)
+                        }
+                        draw_text: {
+                            color: (COLOR_PRIMARY)
+                            text_style: <REGULAR_TEXT> {}
+                        }
+                        icon_walk: {width: 16, height: 16}
+                        text: "Upload Avatar"
                     }
-                    draw_icon: {
-                        svg_file: (ICON_UPLOAD)
-                        color: (COLOR_PRIMARY)
+
+                    upload_avatar_spinner = <LoadingSpinner> {
+                        width: 16, height: 16
+                        visible: false
+                        draw_bg: {
+                            color: (COLOR_ACTIVE_PRIMARY)
+                        }
                     }
-                    draw_text: {
-                        color: (COLOR_PRIMARY)
-                        text_style: <REGULAR_TEXT> {}
-                    }
-                    icon_walk: {width: 16, height: 16}
-                    text: "Upload Avatar"
                 }
 
-                delete_avatar_button = <RobrixIconButton> {
-                    padding: {top: 10, bottom: 10, left: 12, right: 15}
-                    margin: 0,
-                    draw_bg: {
-                        color: (COLOR_BG_DANGER_RED)
-                        border_color: (COLOR_FG_DANGER_RED)
+                <View> {
+                    width: Fit, height: Fit
+                    flow: Right,
+                    align: {y: 0.5}
+                    spacing: 10
+
+                    delete_avatar_button = <RobrixIconButton> {
+                        padding: {top: 10, bottom: 10, left: 12, right: 15}
+                        margin: 0,
+                        draw_bg: {
+                            color: (COLOR_BG_DANGER_RED)
+                            border_color: (COLOR_FG_DANGER_RED)
+                        }
+                        draw_icon: {
+                            svg_file: (ICON_TRASH),
+                            color: (COLOR_FG_DANGER_RED),
+                        }
+                        draw_text: {
+                            color: (COLOR_FG_DANGER_RED),
+                        }
+                        icon_walk: { width: 16, height: 16 }
+                        text: "Delete Avatar"
                     }
-                    draw_icon: {
-                        svg_file: (ICON_TRASH),
-                        color: (COLOR_FG_DANGER_RED),
+
+                    delete_avatar_spinner = <LoadingSpinner> {
+                        width: 16, height: 16
+                        visible: false
+                        draw_bg: {
+                            color: (COLOR_FG_DANGER_RED)
+                        }
                     }
-                    draw_text: {
-                        color: (COLOR_FG_DANGER_RED),
-                    }
-                    icon_walk: { width: 16, height: 16 }
-                    text: "Delete Avatar"
                 }
             }
         }
@@ -144,6 +174,14 @@ live_design! {
                     color: (COLOR_FG_DISABLED),
                 }
                 text: "Cancel"
+            }
+
+            save_name_spinner = <LoadingSpinner> {
+                width: 16, height: 16
+                visible: false
+                draw_bg: {
+                    color: (COLOR_ACTIVE_PRIMARY)
+                }
             }
         }
 
@@ -242,6 +280,10 @@ pub struct AccountSettings {
     /// Tracks whether a display name change request is in flight.
     /// When `true`, prevents `Event::Signal` from overwriting the text input.
     #[rust] display_name_change_pending: bool,
+    /// Tracks whether an avatar upload request is in flight.
+    #[rust] avatar_upload_pending: bool,
+    /// Tracks whether an avatar delete request is in flight.
+    #[rust] avatar_delete_pending: bool,
 }
 
 impl Widget for AccountSettings {
@@ -251,6 +293,9 @@ impl Widget for AccountSettings {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.widget(ids!(save_name_spinner)).set_visible(cx, self.display_name_change_pending);
+        self.view.widget(ids!(upload_avatar_spinner)).set_visible(cx, self.avatar_upload_pending);
+        self.view.widget(ids!(delete_avatar_spinner)).set_visible(cx, self.avatar_delete_pending);
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -287,6 +332,8 @@ impl MatchEvent for AccountSettings {
             // so here, we only need to update this widget's local profile info.
             match action.downcast_ref() {
                 Some(AccountDataAction::AvatarChanged(new_avatar_url)) => {
+                    self.avatar_upload_pending = false;
+                    self.avatar_delete_pending = false;
                     // Update our cached profile with the new avatar URL
                     if let Some(profile) = self.own_profile.as_mut() {
                         profile.avatar_state = AvatarState::Known(new_avatar_url.clone());
@@ -300,6 +347,8 @@ impl MatchEvent for AccountSettings {
                     }
                 }
                 Some(AccountDataAction::AvatarChangeFailed(err_msg)) => {
+                    self.avatar_upload_pending = false;
+                    self.avatar_delete_pending = false;
                     enqueue_popup_notification(PopupItem {
                         message: err_msg.clone(),
                         auto_dismissal_duration: Some(4.0),
@@ -348,6 +397,8 @@ impl MatchEvent for AccountSettings {
         }
 
         if self.view.button(ids!(delete_avatar_button)).clicked(actions) {
+            self.avatar_delete_pending = true;
+            self.view.redraw(cx);
             submit_async_request(MatrixRequest::SetAvatar { avatar_url: None });
             enqueue_popup_notification(PopupItem {
                 message: String::from("Removing your avatar..."),
