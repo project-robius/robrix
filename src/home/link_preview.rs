@@ -14,7 +14,10 @@ use url::Url;
 use crate::{
     home::room_screen::TimelineUpdate,
     media_cache::MediaCache,
-    shared::text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
+    shared::{
+        styles::{COLOR_LINK_HOVER, COLOR_LOCATION_PREVIEW_BG},
+        text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
+    },
     sliding_sync::{submit_async_request, MatrixRequest, UrlPreviewError},
 };
 
