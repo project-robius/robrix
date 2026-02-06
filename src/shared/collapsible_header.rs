@@ -81,6 +81,8 @@ pub enum HeaderCategory {
     LowPriority,
     /// Rooms that the user has left.
     LeftRooms,
+    /// System alert rooms (e.g. server notices).
+    SystemAlerts,
     None,
 }
 impl HeaderCategory {
@@ -92,6 +94,7 @@ impl HeaderCategory {
             HeaderCategory::DirectRooms => "People",
             HeaderCategory::LowPriority => "Low Priority",
             HeaderCategory::LeftRooms => "Left Rooms",
+            HeaderCategory::SystemAlerts => "System Alerts",
             HeaderCategory::None => "",
         }
     }
@@ -143,6 +146,17 @@ impl Widget for CollapsibleHeader {
                 draw_icon: { rotation_angle: (angle) }
             },
         );
+
+        if let HeaderCategory::SystemAlerts = self.category {
+            self.view.apply_over(cx, live!{
+                draw_bg: { color: #888888 }
+            });
+        } else {
+            self.view.apply_over(cx, live!{
+                draw_bg: { color: (COLOR_HEADER_BG) }
+            });
+        }
+
         self.view.draw_walk(cx, scope, walk)
     }
 }
