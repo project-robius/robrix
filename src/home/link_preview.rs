@@ -100,7 +100,7 @@ live_design! {
             spacing: 10
             show_bg: true,
             draw_bg: {
-                color: #f5f5f5,
+                color: (COLOR_LOCATION_PREVIEW_BG),
                 border_radius: 4.0
             }
             align: { y: 0.5 }
@@ -199,18 +199,39 @@ impl Widget for LinkPreview {
 
         for view in self.children.iter() {
             match event.hits(cx, view.area()) {
-                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                    if let Some(html_link) = view.link_label(ids!(content_view.title_label)).borrow() {
-                        if !html_link.url.is_empty() {
-                            cx.widget_action(
-                                html_link.widget_uid(),
-                                &scope.path,
-                                HtmlLinkAction::Clicked {
-                                    url: html_link.url.clone(),
-                                    key_modifiers: fe.modifiers,
-                                },
-                            );
+                Hit::FingerHoverIn(_) | Hit::FingerDown(_) => {
+                    view.apply_over(cx, live! {
+                        draw_bg: { color: (COLOR_LINK_HOVER) }
+                    });
+                }
+                Hit::FingerHoverOut(_) => {
+                    view.apply_over(cx, live! {
+                        draw_bg: { color: (COLOR_LOCATION_PREVIEW_BG) }
+                    });
+                }
+                Hit::FingerUp(fe) => {
+                    if fe.is_over {
+                        view.apply_over(cx, live! {
+                            draw_bg: { color: (COLOR_LINK_HOVER) }
+                        });
+                        if fe.is_primary_hit() && fe.was_tap() {
+                            if let Some(html_link) = view.link_label(ids!(content_view.title_label)).borrow() {
+                                if !html_link.url.is_empty() {
+                                    cx.widget_action(
+                                        html_link.widget_uid(),
+                                        &scope.path,
+                                        HtmlLinkAction::Clicked {
+                                            url: html_link.url.clone(),
+                                            key_modifiers: fe.modifiers,
+                                        },
+                                    );
+                                }
+                            }
                         }
+                    } else {
+                        view.apply_over(cx, live! {
+                            draw_bg: { color: (COLOR_LOCATION_PREVIEW_BG) }
+                        });
                     }
                 }
                 _ => {}
