@@ -91,6 +91,7 @@ live_design! {
         }
 
         item_template: <RoundedView> {
+            cursor: Hand,
             flow: Right,
             spacing: 4.0,
             width: Fill, height: Fit,
@@ -197,19 +198,22 @@ impl Widget for LinkPreview {
         }
 
         for view in self.children.iter() {
-            if let Some(html_link) = view.link_label(ids!(content_view.title_label)).borrow() {
-                if let Event::Actions(actions) = event {
-                    if html_link.clicked(actions) && !html_link.url.is_empty() {
-                        cx.widget_action(
-                            html_link.widget_uid(),
-                            &scope.path,
-                            HtmlLinkAction::Clicked {
-                                url: html_link.url.clone(),
-                                key_modifiers: KeyModifiers::default(),
-                            },
-                        );
+            match event.hits(cx, view.area()) {
+                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                    if let Some(html_link) = view.link_label(ids!(content_view.title_label)).borrow() {
+                        if !html_link.url.is_empty() {
+                            cx.widget_action(
+                                html_link.widget_uid(),
+                                &scope.path,
+                                HtmlLinkAction::Clicked {
+                                    url: html_link.url.clone(),
+                                    key_modifiers: fe.modifiers,
+                                },
+                            );
+                        }
                     }
                 }
+                _ => {}
             }
             view.handle_event(cx, event, scope);
         }
