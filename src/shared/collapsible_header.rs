@@ -153,7 +153,7 @@ impl Widget for CollapsibleHeader {
             });
         } else {
             self.view.apply_over(cx, live!{
-                draw_bg: { color: (COLOR_HEADER_BG) }
+                draw_bg: { color: (COLOR_ROBRIX_PURPLE) }
             });
         }
 

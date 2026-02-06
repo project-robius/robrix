@@ -482,7 +482,7 @@ macro_rules! should_display_room {
         !$self.hidden_rooms.contains($room_id)
             && ($self.display_filter)($room)
             && $self.selected_space.as_ref()
-                .is_none_or(|space| $self.is_room_indirectly_in_space(space.room_id(), $room_id))
+                .is_none_or(|space| RoomsList::is_room_indirectly_in_space(&$self.space_map, space.room_id(), $room_id))
     };
 }
 
@@ -905,9 +905,10 @@ impl RoomsList {
         self.display_filter = display_fn;
 
         self.displayed_invited_rooms = self.generate_displayed_invited_rooms(sort_fn.as_deref());
-        let (regular, direct) = self.generate_displayed_joined_rooms(sort_fn.as_deref());
+        let (regular, direct, system_alerts) = self.generate_displayed_joined_rooms(sort_fn.as_deref());
         self.displayed_regular_rooms = regular;
         self.displayed_direct_rooms = direct;
+        self.displayed_system_alert_rooms = system_alerts;
 
         self.update_status();
         self.view.portal_list(ids!(list)).set_first_id_and_scroll(0, 0.0);
@@ -1147,13 +1148,13 @@ impl RoomsList {
     /// Returns whether the given target room or space is indirectly within the given parent space.
     ///
     /// This will recursively search all nested spaces within the given `parent_space`.
-    fn is_room_indirectly_in_space(&self, parent_space: &OwnedRoomId, target: &OwnedRoomId) -> bool {
-        if let Some(smv) = self.space_map.get(parent_space) {
+    fn is_room_indirectly_in_space(space_map: &HashMap<OwnedRoomId, SpaceMapValue>, parent_space: &OwnedRoomId, target: &OwnedRoomId) -> bool {
+        if let Some(smv) = space_map.get(parent_space) {
             if smv.direct_child_rooms.contains(target) {
                 return true;
             }
             for subspace in smv.direct_subspaces.iter() {
-                if self.is_room_indirectly_in_space(subspace, target) {
+                if Self::is_room_indirectly_in_space(space_map, subspace, target) {
                     return true;
                 }
             }
