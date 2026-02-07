@@ -768,7 +768,6 @@ impl RoomsList {
                     }
                     else if let Some(i) = self.displayed_invited_rooms.iter().position(|r| r == &room_id) {
                         self.displayed_invited_rooms.remove(i);
-                        continue;
                     }
                 }
                 RoomsListUpdate::ScrollToRoom(room_id) => {
@@ -1103,7 +1102,7 @@ impl RoomsList {
                 // we also must know all of the rooms within that space's subspaces.
                 // Thus, we must continue paginating this space until we fully fetch
                 // all of its children, such that we can see if any of them are subspaces,
-                // and then we'll paaginate those as well.
+                // and then we'll paginate those as well.
                 if !is_fully_paginated {
                     if sender.send(SpaceRequest::PaginateSpaceRoomList {
                         space_id: space_id.clone(),
