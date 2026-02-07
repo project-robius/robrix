@@ -1,6 +1,6 @@
 use makepad_widgets::{text::selection::Cursor, *};
 
-use crate::{avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
+use crate::{avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
 
 live_design! {
     use link::theme::*;
@@ -292,6 +292,35 @@ pub struct AccountSettings {
 impl Widget for AccountSettings {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.match_event(cx, event);
+
+        // Tooltip logic for copy_user_id_button
+        let copy_button = self.view.button(ids!(copy_user_id_button));
+        let copy_button_area = copy_button.area();
+        match event.hits(cx, copy_button_area) {
+            Hit::FingerHoverIn(_) => {
+                cx.widget_action(
+                    copy_button.widget_uid(),
+                    &scope.path,
+                    TooltipAction::HoverIn {
+                        text: "Copy User ID".to_string(),
+                        widget_rect: copy_button_area.rect(cx),
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Top,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(
+                    copy_button.widget_uid(),
+                    &scope.path,
+                    TooltipAction::HoverOut,
+                );
+            }
+            _ => {}
+        }
+
         self.view.handle_event(cx, event, scope);
     }
 
