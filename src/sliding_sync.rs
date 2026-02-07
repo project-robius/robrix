@@ -8,16 +8,16 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
-        api::client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
-            room::{
-                message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
-            }, MessageLikeEventType, StateEventType
-        }, matrix_uri::MatrixId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
+    Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom, attachment::Thumbnail, config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{RoomMember, edit::EditedContent, reply::Reply}, ruma::{
+        MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, api::client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
+            MessageLikeEventType, StateEventType, room::{
+                MediaSource, message::RoomMessageEventContent, power_levels::RoomPowerLevels
+            }
+        }, matrix_uri::MatrixId
+    }, sliding_sync::VersionBuilder
 };
 use matrix_sdk_ui::{
-    RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
+    RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{AttachmentSource, LatestEventValue, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineReadReceiptTracking}
 };
 use robius_open::Uri;
 use ruma::{OwnedRoomOrAliasId, RoomId, events::tag::Tags};
@@ -35,7 +35,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
-        avatar::AvatarState, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
+        avatar::AvatarState, file_upload_modal::FileData, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, progress_bar::ProgressBarAction
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -462,6 +462,16 @@ pub enum MatrixRequest {
         replied_to: Option<Reply>,
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
+    },
+    /// Request to send an attachment to the given room.
+    SendAttachment {
+        room_id: OwnedRoomId,
+        file_data: FileData,
+        replied_to: Option<Reply>,
+        #[cfg(feature = "tsp")]
+        sign_with_tsp: bool,
+        /// Optional sender to receive the task's AbortHandle for cancellation support
+        abort_handle_sender: Option<crossbeam_channel::Sender<tokio::task::AbortHandle>>,
     },
     /// Sends a notice to the given room that the current user is or is not typing.
     ///
@@ -1485,6 +1495,89 @@ async fn matrix_worker_task(
                     }
                     SignalToUI::set_ui_signal();
                 });
+            }
+
+            MatrixRequest::SendAttachment {
+                room_id,
+                file_data,
+                replied_to,
+                #[cfg(feature = "tsp")]
+                sign_with_tsp: _,
+                abort_handle_sender,
+            } => {
+                let timeline = {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                        log!("BUG: room info not found for uploading file to room {room_id}");
+                        continue;
+                    };
+                    room_info.timeline.clone()
+                };
+                let file_meta = file_data.0.clone();
+                let thumbnail= file_data.1.as_ref().map(|t| {
+                  Thumbnail { data: t.data.clone(), content_type: t.content_type.clone(), height: t.height, width: t.width, size: t.size }
+                });
+                let upload_progress_handler = Arc::new(Mutex::new(None));
+                let upload_progress_handler_clone = upload_progress_handler.clone();
+                let room_id_clone = room_id.clone();
+                // Spawn a new async task that will upload the file.
+                let upload_task = Handle::current().spawn(async move {
+                    log!("Uploading file to room {room_id}: {file_meta:?}...");
+                    let mime_type  = file_meta.mime.clone();
+                    let attachment_config = matrix_sdk_ui::timeline::AttachmentConfig {
+                        txn_id: None,
+                        info: None,
+                        thumbnail,
+                        caption: None,
+                        mentions: None,
+                        in_reply_to: replied_to.map(|in_reply_to| in_reply_to.event_id),
+                    };
+                    // Note: Matrix SDK doesn't currently support progress tracking via observable
+                    Cx::post_action(ProgressBarAction::Update { current: 0, total: file_meta.file_size as usize});
+                    let source = AttachmentSource::File(file_meta.file_path.clone());
+                    
+                    let send_attachment = timeline.send_attachment(
+                        source,
+                        mime_type,
+                        attachment_config
+                    );
+                    let mut subscriber = send_attachment.subscribe_to_send_progress();                    
+                    let upload_task_progress = Handle::current().spawn(async move {
+                        while let Some(progress) = subscriber.next().await {
+                            Cx::post_action(ProgressBarAction::Update { current: progress.current, total: file_meta.file_size as usize});
+                        }
+                    });
+                    if let Ok(mut progress_sender) = upload_progress_handler_clone.clone().lock() {
+                        *progress_sender = Some(upload_task_progress);
+                    }
+                    
+                    match send_attachment.await {
+                        Ok(_) => {
+                            log!("Successfully uploaded and sent file to room {room_id}");
+                            Cx::post_action(ProgressBarAction::Update { current: file_meta.file_size as usize, total: file_meta.file_size as usize });
+                        }
+                        Err(e) => {
+                            error!("Failed to upload file to room {room_id}: {e:?}");
+                            // Set progress to completion state (0/0) to hide the progress bar
+                            Cx::post_action(ProgressBarAction::Update { current: 0, total: 0 });
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Failed to upload file: {e}"),
+                                kind: PopupKind::Error,
+                                auto_dismissal_duration: None
+                            });
+                        }
+                    }
+                });
+                // Send the AbortHandle back to the UI for cancellation support
+                if let Some(sender) = abort_handle_sender {
+                    let _ = sender.send(upload_task.abort_handle());
+                    if let Ok(progress_sender) = upload_progress_handler.clone().lock() {
+                        log!("Successfully aborting uploading file to room {room_id_clone}");
+                        if let Some(progress_sender) = &(*progress_sender) {
+                            let _ = sender.send(progress_sender.abort_handle());
+                        }
+                    }
+                }
             }
 
             MatrixRequest::ReadReceipt { room_id, event_id } => {

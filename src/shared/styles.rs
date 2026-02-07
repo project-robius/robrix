@@ -6,6 +6,7 @@ live_design! {
     use link::widgets::*;
 
     pub ICON_ADD             = dep("crate://self/resources/icons/add.svg")
+    pub ICON_ADD_ATTACHMENT  = dep("crate://self/resources/icons/add_attachment.svg")
     pub ICON_ADD_REACTION    = dep("crate://self/resources/icons/add_reaction.svg")
     pub ICON_ADD_USER        = dep("crate://self/resources/icons/add_user.svg") // TODO: FIX
     pub ICON_ADD_WALLET      = dep("crate://self/resources/icons/add_wallet.svg")
@@ -19,6 +20,7 @@ live_design! {
     pub ICON_COPY            = dep("crate://self/resources/icons/copy.svg")
     pub ICON_EDIT            = dep("crate://self/resources/icons/edit.svg")
     pub ICON_EXTERNAL_LINK   = dep("crate://self/resources/icons/external_link.svg")
+    pub ICON_FILE            = dep("crate://self/resources/icons/file.svg")
     pub ICON_IMPORT          = dep("crate://self/resources/icons/import.svg") // TODO: FIX
     pub ICON_HIERARCHY       = dep("crate://self/resources/icons/hierarchy.svg")
     pub ICON_HOME            = dep("crate://self/resources/icons/home.svg")

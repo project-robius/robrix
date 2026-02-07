@@ -15,11 +15,14 @@
 //! * A "cannot-send-message" notice, which is shown if the user cannot send messages to the room.
 //!
 
+use std::sync::Arc;
+
 use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
-use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
+use ruma::{OwnedRoomId, events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetExt}, image_utils::generate_thumbnail_if_image, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{FileLoadReceiver, FilePreviewerMetaData}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, UserPowerLevels, submit_async_request}, utils};
+use crate::shared::file_upload_modal::FilePreviewerAction;
 
 live_design! {
     use link::theme::*;
@@ -34,10 +37,13 @@ live_design! {
     use crate::home::location_preview::*;
     use crate::home::tombstone_footer::TombstoneFooter;
     use crate::home::editing_pane::*;
+    use crate::home::thumbnail_loading::*;
+    use crate::home::upload_progress::*;
 
     use link::tsp_link::TspSignAnycastCheckbox;
 
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
+    ICON_ADD_ATTACHMENT = dep("crate://self/resources/icons/add_attachment.svg")
 
 
     pub RoomInputBar = {{RoomInputBar}}<RoundedView> {
@@ -67,6 +73,12 @@ live_design! {
 
         // Below that, display a preview of the current location that a user is about to send.
         location_preview = <LocationPreview> { }
+
+        // Upload progress bar
+        upload_progress_view = <UploadProgressView> {}
+
+        // Thumbnail loading view
+        thumbnail_loading_view = <ThumbnailLoadingView> {}
 
         // Below that, display one of multiple possible views:
         // * the message input bar (buttons and message TextInput).
@@ -99,6 +111,20 @@ live_design! {
                         color: (COLOR_BG_PREVIEW),
                     }
                     icon_walk: {width: Fit, height: 23, margin: {bottom: -1}}
+                    text: "",
+                }
+
+                send_attachment_button = <RobrixIconButton> {
+                    margin: {left: 4}
+                    spacing: 0,
+                    draw_icon: {
+                        svg_file: (ICON_ADD_ATTACHMENT)
+                        color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                    },
+                    draw_bg: {
+                        color: (COLOR_PRIMARY),
+                    }
+                    icon_walk: {width: 20, height: 23, margin: {bottom: -1, left: 5}}
                     text: "",
                 }
 
@@ -170,12 +196,13 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomInputBar {
     #[deref] view: View,
-
     /// Whether the `ReplyingPreview` was visible when the `EditingPane` was shown.
     /// If true, when the `EditingPane` gets hidden, we need to re-show the `ReplyingPreview`.
     #[rust] was_replying_preview_visible: bool,
     /// Info about the message event that the user is currently replying to, if any.
     #[rust] replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+    #[rust] background_task_id: u32,
+    #[rust] receiver: Option<(u32, FileLoadReceiver)>,
 }
 
 impl Widget for RoomInputBar {
@@ -210,7 +237,30 @@ impl Widget for RoomInputBar {
         if let Event::Actions(actions) = event {
             self.handle_actions(cx, actions, room_screen_props);
         }
-
+        if let (Event::Signal, Some((_background_task_id, receiver))) = (event, &mut self.receiver) {
+            let mut remove_receiver = false;
+            match receiver.try_recv() {
+                Ok(Some(file)) => {
+                    cx.action(FilePreviewerAction::Show(file));
+                    remove_receiver = true;
+                }
+                Ok(None) => {
+                    cx.action(FilePreviewerAction::Hide);
+                    remove_receiver = true;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    remove_receiver = true;
+                }
+            }
+            if remove_receiver {
+                self.receiver = None;
+                cx.set_cursor(MouseCursor::Default);
+                // Hide loading spinner when file loading is complete
+                self.view.view(ids!(thumbnail_loading_view)).set_visible(cx, false);
+                self.redraw(cx);
+            }
+        }
         self.view.handle_event(cx, event, scope);
     }
 
@@ -251,6 +301,95 @@ impl RoomInputBar {
             }
             self.view.location_preview(ids!(location_preview)).show();
             self.redraw(cx);
+        }
+
+        // Handle the file attachment upload button being clicked.
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        if self.button(ids!(send_attachment_button)).clicked(actions) {
+            if let Some(selected_file_path) = rfd::FileDialog::new().pick_file() {
+                // Check file size before reading to prevent memory issues
+                let file_size = match std::fs::metadata(&selected_file_path) {
+                    Ok(metadata) => metadata.len(),
+                    Err(e) => {
+                        error!("Failed to read file metadata for {:?}: {}", selected_file_path, e);
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Unable to access file: {}", e),
+                            auto_dismissal_duration: None,
+                            kind: PopupKind::Error
+                        });
+                        return;
+                    }
+                };
+
+                // Check for empty files
+                if file_size == 0 {
+                    enqueue_popup_notification(PopupItem {
+                        message: String::from("Cannot upload empty file"),
+                        auto_dismissal_duration: None,
+                        kind: PopupKind::Error
+                    });
+                    return;
+                }
+
+                let filename = selected_file_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                // Detect the MIME type from the file extension
+                let mime_str = mime_guess::from_path(&selected_file_path)
+                    .first_or_octet_stream()
+                    .to_string();
+                use mime_guess::mime;
+                let mime: mime::Mime = mime_str.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
+                let (sender, receiver) = std::sync::mpsc::channel();
+                self.background_task_id = self.background_task_id.wrapping_add(1);
+                self.receiver = Some((self.background_task_id, receiver));
+
+                // Show loading spinner while generating thumbnail
+                self.view.view(ids!(thumbnail_loading_view)).set_visible(cx, true);
+                self.redraw(cx);
+                
+                // Read file in background thread to avoid blocking the UI
+                cx.spawn_thread(move || {
+                    match generate_thumbnail_if_image(&selected_file_path, &mime) {
+                        Ok(file_data) => {
+                            let metadata = FilePreviewerMetaData {
+                                filename,
+                                mime,
+                                file_size,
+                                file_path: selected_file_path.clone(),
+                            };
+                            if sender.send(Some(Arc::new((metadata, file_data)))).is_err() {
+                                error!("Failed to send file data to UI: receiver dropped");
+                            }
+
+                        }
+                        Err(read_error) => {
+                            error!("Failed to read file {:?}: {}", selected_file_path, read_error);
+                            enqueue_popup_notification(PopupItem {
+                                message: format!("Unable to read the file: {}", read_error),
+                                auto_dismissal_duration: None,
+                                kind: PopupKind::Error
+                            });
+                            if sender.send(None).is_err() {
+                                error!("Failed to send file data to UI: receiver dropped");
+                            }
+                        }
+                    }
+                    SignalToUI::set_ui_signal();
+                });
+            }
+        }
+
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        if self.button(ids!(send_attachment_button)).clicked(actions) {
+            enqueue_popup_notification(PopupItem {
+                message: format!("Sending attachment is not supported on this platform"),
+                auto_dismissal_duration: Some(3.0),
+                kind: PopupKind::Warning
+            });
         }
 
         // Handle the send location button being clicked.
@@ -346,6 +485,39 @@ impl RoomInputBar {
         if self.view.editing_pane(ids!(editing_pane)).was_hidden(actions) {
             self.on_editing_pane_hidden(cx);
         }
+
+        // Handle file upload confirmation from the file previewer
+        for action in actions {
+            if let Some(FilePreviewerAction::Upload(file_data)) = action.downcast_ref() {
+                // If replying to a message, construct the reply metadata
+                let replied_to = self.replying_to.take().and_then(|(event_tl_item, _embedded_event)|
+                    event_tl_item.event_id().map(|event_id|
+                        Reply {
+                            event_id: event_id.to_owned(),
+                            enforce_thread: EnforceThread::MaybeThreaded,
+                        }
+                    )
+                );
+
+                // Set up progress tracking for the upload
+                // Create a channel to receive the upload task's AbortHandle for cancellation support
+                let (abort_sender, abort_receiver) = crossbeam_channel::bounded(1);
+                let upload_progress_view = self.upload_progress_view(ids!(upload_progress_view));
+                upload_progress_view.set_abort_receiver(abort_receiver);
+                upload_progress_view.set_visible(cx, true);
+                submit_async_request(MatrixRequest::SendAttachment {
+                    room_id: room_screen_props.room_name_id.room_id().clone(),
+                    file_data: file_data.clone(),
+                    replied_to,
+                    #[cfg(feature = "tsp")]
+                    sign_with_tsp: self.is_tsp_signing_enabled(cx),
+                    abort_handle_sender: Some(abort_sender),
+                });
+
+                self.clear_replying_to(cx);
+            }
+        }
+
     }
 
     /// Shows a preview of the given event that the user is currently replying to
