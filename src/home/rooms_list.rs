@@ -854,13 +854,13 @@ impl RoomsList {
             + self.displayed_direct_rooms.len()
             + self.displayed_regular_rooms.len();
 
-        let mut text = match (self.display_filter.is_some(), num_rooms) {
-            (false, 0) => "No matching rooms found".to_string(),
-            (false, 1) => "Found 1 matching room".to_string(),
-            (false, n) => format!("Found {n} matching rooms"),
+        let mut text = match (self.display_filter.is_none(), num_rooms) {
             (true, 0)  => "No joined or invited rooms found".to_string(),
             (true, 1)  => "Loaded 1 room".to_string(),
             (true, n)  => format!("Loaded {n} rooms"),
+            (false, 0) => "No matching rooms found".to_string(),
+            (false, 1) => "Found 1 matching room".to_string(),
+            (false, n) => format!("Found {n} matching rooms"),
         };
         match self.selected_space.is_some() {
             true => text.push_str(" in this space."),
@@ -920,8 +920,8 @@ impl RoomsList {
     /// 2. displayed_regular_rooms
     /// 3. displayed_direct_rooms
     ///
-    /// If a sort function is provided, the rooms are ordered based on that.
-    /// Otherwise, the rooms are ordered based on the `all_known_rooms_order` (the default).
+    /// If `self.sort_fn` is `Some`, the rooms are ordered based on that function.
+    /// Otherwise, the rooms are ordered based on `self.all_known_rooms_order` (the default).
     fn generate_displayed_rooms(&self) -> (Vec<OwnedRoomId>,Vec<OwnedRoomId>, Vec<OwnedRoomId>) {
         let mut new_displayed_invited_rooms = Vec::new();
         let mut new_displayed_regular_rooms = Vec::new();
