@@ -36,8 +36,8 @@ live_design! {
 
     pub FileUploadModal = {{FileUploadModal}}<RoundedView> {
         width: Fill { max: 1000 }
-        height: Fill
-        align: {x: 0.5, y: 0}
+        height: Fit
+        align: {x: 0.5, y: 0.5}
         margin: 40,
 
         flow: Down
@@ -121,13 +121,13 @@ live_design! {
 
         // Image preview (visible only for image files)
         image_view = <View> {
-            width: Fill, height: Fill,
+            width: Fill, height: Fit { max: 400 },
             flow: Down,
             align: {x: 0.5, y: 0.5}
             margin: {top: 5, bottom: 5}
 
             preview_image = <Image> {
-                width: Fill, height: Fill,
+                width: Fill, height: 300,
                 fit: Smallest,
             }
         }
