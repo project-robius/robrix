@@ -24,7 +24,7 @@ use crate::{
     shared::{callout_tooltip::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, confirmation_modal::ConfirmationModalWidgetRefExt, file_previewer::FilePreviewerAction, image_viewer::{ImageViewerAction, LoadState}}, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, confirmation_modal::ConfirmationModalWidgetRefExt, file_upload_modal::FilePreviewerAction, image_viewer::{ImageViewerAction, LoadState}}, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -49,7 +49,7 @@ live_design! {
     use crate::home::event_source_modal::EventSourceModal;
     use crate::shared::callout_tooltip::CalloutTooltip;
     use crate::shared::image_viewer::ImageViewer;
-    use crate::shared::file_previewer::FilePreviewer;
+    use crate::shared::file_upload_modal::FileUploadModal;
     use link::tsp_link::TspVerificationModal;
 
 
@@ -114,10 +114,11 @@ live_design! {
                         }
                         file_upload_modal = <Modal> {
                             content: {
-                                file_upload_modal_inner = <FilePreviewer> {}
+                                height: Fill, width: Fill,
+                                align: {x: 0.5, y: 0.5},
+                                file_upload_modal_inner = <FileUploadModal> {}
                             }
                         }
-                        <PopupList> {}
                         
                         // Context menus should be shown in front of other UI elements,
                         // but behind verification modals.

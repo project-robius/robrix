@@ -4,7 +4,7 @@ live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
-    
+
     pub ICON_ADD             = dep("crate://self/resources/icons/add.svg")
     pub ICON_ADD_ATTACHMENT  = dep("crate://self/resources/icons/add_attachment.svg")
     pub ICON_ADD_REACTION    = dep("crate://self/resources/icons/add_reaction.svg")

@@ -16,73 +16,13 @@
 //!
 
 use std::sync::Arc;
-use std::fs::File;
-use std::io::BufReader;
 
-extern crate image as image_crate;
-use image_crate::{ImageFormat, ImageReader};
 use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
-use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, file_previewer::{FileLoadReceiver, FilePreviewerMetaData, format_file_size}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, progress::ProgressWidgetExt, styles::*}, sliding_sync::{MatrixRequest, UserPowerLevels, submit_async_request}, utils};
-use crate::shared::file_previewer::FilePreviewerAction;
-
-/// Maximum file size allowed for upload (100 MB).
-/// Files larger than this will be rejected to prevent memory issues.
-const MAX_FILE_SIZE_BYTES: u64 = 100 * 1024 * 1024;
-
-/// Maximum dimensions for image thumbnails
-const THUMBNAIL_MAX_WIDTH: u32 = 1920;
-const THUMBNAIL_MAX_HEIGHT: u32 = 1920;
-
-/// Generates a thumbnail for an image file.
-///
-/// For images, this decodes the image and creates a thumbnail to reduce upload size.
-/// For non-image files, this simply reads the entire file.
-///
-/// # Arguments
-/// * `path` - Path to the file
-/// * `mime` - MIME type of the file
-///
-/// # Returns
-/// * `Ok(Vec<u8>)` - The file data (thumbnail for images, original data for other files)
-/// * `Err(Box<dyn std::error::Error>)` - Error if file cannot be read or processed
-fn generate_thumbnail_if_image(
-    path: &std::path::Path,
-    mime: &mime_guess::Mime,
-) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
-    use mime_guess::mime;
-
-    // Only generate thumbnails for images
-    if mime.type_() == mime::IMAGE {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-
-        // Use ImageReader to decode only what's needed
-        let img = ImageReader::new(reader)
-            .with_guessed_format()?
-            .decode()?;
-
-        // Create thumbnail if image is larger than max dimensions
-        let (width, height) = (img.width(), img.height());
-        let needs_resize = width > THUMBNAIL_MAX_WIDTH || height > THUMBNAIL_MAX_HEIGHT;
-
-        let final_img = if needs_resize {
-            img.thumbnail(THUMBNAIL_MAX_WIDTH, THUMBNAIL_MAX_HEIGHT)
-        } else {
-            img
-        };
-
-        // Save to bytes as JPEG for efficient compression
-        let mut bytes = Vec::new();
-        final_img.write_to(&mut std::io::Cursor::new(&mut bytes), ImageFormat::Jpeg)?;
-
-        Ok(Some(bytes))
-    } else {
-        Ok(None)
-    }
-}
+use ruma::{OwnedRoomId, events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetExt}, image_utils::generate_thumbnail_if_image, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{FileLoadReceiver, FilePreviewerMetaData}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, UserPowerLevels, submit_async_request}, utils};
+use crate::shared::file_upload_modal::FilePreviewerAction;
 
 live_design! {
     use link::theme::*;
@@ -93,11 +33,12 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::mentionable_text_input::MentionableTextInput;
-    use crate::shared::progress::Progress;
     use crate::room::reply_preview::*;
     use crate::home::location_preview::*;
     use crate::home::tombstone_footer::TombstoneFooter;
     use crate::home::editing_pane::*;
+    use crate::home::thumbnail_loading::*;
+    use crate::home::upload_progress::*;
 
     use link::tsp_link::TspSignAnycastCheckbox;
 
@@ -134,80 +75,10 @@ live_design! {
         location_preview = <LocationPreview> { }
 
         // Upload progress bar
-        upload_progress_view = <View> {
-            visible: false,
-            width: Fill,
-            height: Fit,
-            padding: {top: 8, bottom: 8, left: 10, right: 10}
-            flow: Down,
-            spacing: 5,
-
-            header_row = <View> {
-                width: Fill,
-                height: Fit,
-                flow: Right,
-                align: {y: 0.5}
-                spacing: 10,
-
-                progress_label = <Label> {
-                    width: Fill,
-                    height: Fit,
-                    draw_text: {
-                        text_style: <REGULAR_TEXT>{font_size: 10},
-                        color: #666
-                    }
-                    text: "Uploading..."
-                }
-
-                cancel_upload_button = <Button> {
-                    width: Fit,
-                    height: Fit,
-                    padding: {top: 4, bottom: 4, left: 8, right: 8}
-                    draw_text: {
-                        text_style: <REGULAR_TEXT>{font_size: 9},
-                        color: #fff
-                    }
-                    draw_bg: {
-                        color: #c44
-                    }
-                    text: "Cancel"
-                }
-            }
-
-            progress = <Progress> {
-
-            }
-        }
+        upload_progress_view = <UploadProgressView> {}
 
         // Thumbnail loading view
-        thumbnail_loading_view = <View> {
-            visible: false,
-            width: Fill,
-            height: Fit,
-            padding: {top: 8, bottom: 8, left: 10, right: 10}
-            flow: Right,
-            spacing: 10,
-            align: {y: 0.5}
-
-            loading_spinner = <LoadingSpinner> {
-                width: 25,
-                height: 25,
-                draw_bg: {
-                    color: (COLOR_ACTIVE_PRIMARY)
-                    border_size: 3.0,
-                }
-            }
-
-            loading_text = <Label> {
-                width: Fit,
-                height: Fit,
-                draw_text: {
-                    text_style: <REGULAR_TEXT>{font_size: 11},
-                    color: #666
-                }
-                text: "Generating thumbnail..."
-            }
-        }
+        thumbnail_loading_view = <ThumbnailLoadingView> {}
 
         // Below that, display one of multiple possible views:
         // * the message input bar (buttons and message TextInput).
@@ -243,7 +114,7 @@ live_design! {
                     text: "",
                 }
 
-                attachment_upload_button = <RobrixIconButton> {
+                send_attachment_button = <RobrixIconButton> {
                     margin: {left: 4}
                     spacing: 0,
                     draw_icon: {
@@ -330,12 +201,6 @@ pub struct RoomInputBar {
     #[rust] was_replying_preview_visible: bool,
     /// Info about the message event that the user is currently replying to, if any.
     #[rust] replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
-    /// Subscriber for upload progress updates
-    #[rust] upload_progress_subscriber: Option<eyeball::Subscriber<matrix_sdk::TransmissionProgress>>,
-    /// AbortHandle for cancelling an in-progress upload
-    #[rust] upload_abort_handle: Option<tokio::task::AbortHandle>,
-    /// Receiver for getting the upload task's AbortHandle
-    #[rust] upload_abort_receiver: Option<crossbeam_channel::Receiver<tokio::task::AbortHandle>>,
     #[rust] background_task_id: u32,
     #[rust] receiver: Option<(u32, FileLoadReceiver)>,
 }
@@ -367,41 +232,6 @@ impl Widget for RoomInputBar {
                 }
             }
             _ => {}
-        }
-
-        // Update upload progress display
-        if let Some(subscriber) = &self.upload_progress_subscriber {
-            let progress = subscriber.get();
-            if progress.current >= progress.total {
-                // Upload complete, hide the progress bar
-                self.view.view(ids!(upload_progress_view)).set_visible(cx, false);
-                self.upload_progress_subscriber = None;
-                // Clear abort handle since upload is done
-                self.upload_abort_handle = None;
-                self.upload_abort_receiver = None;
-            } else {
-                self.view.view(ids!(upload_progress_view)).set_visible(cx, true);
-
-                // Calculate progress percentage, avoiding division by zero
-                let progress_percentage = if progress.total > 0 {
-                    (progress.current as f64 / progress.total as f64) * 100.0
-                } else {
-                    0.0
-                };
-
-                self.view.progress(ids!(upload_progress_view.progress)).set_value(cx, progress_percentage);
-                let progress_label = self.view.label(ids!(upload_progress_view.header_row.progress_label));
-                progress_label.set_text(cx, &format!("Uploading... {:.0}%", progress_percentage));
-            }
-            self.redraw(cx);
-        }
-
-        // Poll for the upload task's abort handle (for cancellation support)
-        if let Some(receiver) = &self.upload_abort_receiver {
-            if let Ok(handle) = receiver.try_recv() {
-                self.upload_abort_handle = Some(handle);
-                self.upload_abort_receiver = None;
-            }
         }
 
         if let Event::Actions(actions) = event {
@@ -474,15 +304,8 @@ impl RoomInputBar {
         }
 
         // Handle the file attachment upload button being clicked.
-        if self.button(ids!(attachment_upload_button)).clicked(actions) {
-            if !cx.display_context.is_desktop() {
-                enqueue_popup_notification(PopupItem {
-                    message: String::from("File upload not supported on mobile"),
-                    auto_dismissal_duration: None,
-                    kind: PopupKind::Error
-                });
-                return;
-            }
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        if self.button(ids!(send_attachment_button)).clicked(actions) {
             if let Some(selected_file_path) = rfd::FileDialog::new().pick_file() {
                 // Check file size before reading to prevent memory issues
                 let file_size = match std::fs::metadata(&selected_file_path) {
@@ -508,20 +331,6 @@ impl RoomInputBar {
                     return;
                 }
 
-                // Check if file exceeds maximum size
-                if file_size > MAX_FILE_SIZE_BYTES {
-                    enqueue_popup_notification(PopupItem {
-                        message: format!(
-                            "File too large ({}). Maximum allowed size is {}",
-                            format_file_size(file_size),
-                            format_file_size(MAX_FILE_SIZE_BYTES)
-                        ),
-                        auto_dismissal_duration: None,
-                        kind: PopupKind::Error
-                    });
-                    return;
-                }
-
                 let filename = selected_file_path
                     .file_name()
                     .and_then(|n| n.to_str())
@@ -534,7 +343,6 @@ impl RoomInputBar {
                     .to_string();
                 use mime_guess::mime;
                 let mime: mime::Mime = mime_str.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
-
                 let (sender, receiver) = std::sync::mpsc::channel();
                 self.background_task_id = self.background_task_id.wrapping_add(1);
                 self.receiver = Some((self.background_task_id, receiver));
@@ -542,7 +350,7 @@ impl RoomInputBar {
                 // Show loading spinner while generating thumbnail
                 self.view.view(ids!(thumbnail_loading_view)).set_visible(cx, true);
                 self.redraw(cx);
-
+                
                 // Read file in background thread to avoid blocking the UI
                 cx.spawn_thread(move || {
                     match generate_thumbnail_if_image(&selected_file_path, &mime) {
@@ -575,23 +383,13 @@ impl RoomInputBar {
             }
         }
 
-        // Handle cancel upload button being clicked.
-        if self.button(ids!(upload_progress_view.header_row.cancel_upload_button)).clicked(actions) {
-            log!("Upload cancelled by user");
-            // Abort the upload task if we have a handle
-            if let Some(abort_handle) = self.upload_abort_handle.take() {
-                abort_handle.abort();
-            }
-            // Hide the progress bar immediately
-            self.view.view(ids!(upload_progress_view)).set_visible(cx, false);
-            self.upload_progress_subscriber = None;
-            self.upload_abort_receiver = None;
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        if self.button(ids!(send_attachment_button)).clicked(actions) {
             enqueue_popup_notification(PopupItem {
-                message: String::from("Upload cancelled"),
-                kind: PopupKind::Info,
-                auto_dismissal_duration: Some(3.0)
+                message: format!("Sending attachment is not supported on this platform"),
+                auto_dismissal_duration: Some(3.0),
+                kind: PopupKind::Warning
             });
-            self.redraw(cx);
         }
 
         // Handle the send location button being clicked.
@@ -690,7 +488,7 @@ impl RoomInputBar {
 
         // Handle file upload confirmation from the file previewer
         for action in actions {
-            if let Some(FilePreviewerAction::Upload(file_meta)) = action.downcast_ref() {
+            if let Some(FilePreviewerAction::Upload(file_data)) = action.downcast_ref() {
                 // If replying to a message, construct the reply metadata
                 let replied_to = self.replying_to.take().and_then(|(event_tl_item, _embedded_event)|
                     event_tl_item.event_id().map(|event_id|
@@ -702,26 +500,17 @@ impl RoomInputBar {
                 );
 
                 // Set up progress tracking for the upload
-                use matrix_sdk::TransmissionProgress;
-                let progress_observable = eyeball::SharedObservable::new(TransmissionProgress::default());
-                let progress_subscriber = progress_observable.subscribe();
-
-                self.upload_progress_subscriber = Some(progress_subscriber);
-                progress_observable.set(TransmissionProgress { current: 0, total: 100 });
-
                 // Create a channel to receive the upload task's AbortHandle for cancellation support
                 let (abort_sender, abort_receiver) = crossbeam_channel::bounded(1);
-                // Clear any previous abort handle and store the new receiver
-                self.upload_abort_handle = None;
-                self.upload_abort_receiver = Some(abort_receiver);
-
-                submit_async_request(MatrixRequest::Upload {
+                let upload_progress_view = self.upload_progress_view(ids!(upload_progress_view));
+                upload_progress_view.set_abort_receiver(abort_receiver);
+                upload_progress_view.set_visible(cx, true);
+                submit_async_request(MatrixRequest::SendAttachment {
                     room_id: room_screen_props.room_name_id.room_id().clone(),
-                    file_meta: file_meta.clone(),
+                    file_data: file_data.clone(),
                     replied_to,
                     #[cfg(feature = "tsp")]
-                    sign_with_tsp: false,
-                    progress_sender: Some(progress_observable),
+                    sign_with_tsp: self.is_tsp_signing_enabled(cx),
                     abort_handle_sender: Some(abort_sender),
                 });
 

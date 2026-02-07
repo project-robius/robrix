@@ -48,6 +48,7 @@ pub mod media_cache;
 pub mod verification;
 
 pub mod utils;
+pub mod image_utils;
 pub mod temp_storage;
 pub mod location;
 

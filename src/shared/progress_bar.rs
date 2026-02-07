@@ -4,14 +4,48 @@
 
 use makepad_widgets::*;
 
+/// Action to update a progress bar with current/total values.
+#[derive(Clone, Debug, DefaultNone)]
+pub enum ProgressBarAction {
+    /// Update progress with current and total byte counts.
+    Update { current: usize, total: usize },
+    None,
+}
+
+impl ProgressBarAction {
+    /// Returns true if the progress is complete (current >= total).
+    pub fn is_complete(&self) -> bool {
+        match self {
+            ProgressBarAction::Update { current, total } => current >= total,
+            ProgressBarAction::None => false,
+        }
+    }
+
+    /// Returns the progress as a percentage (0.0-100.0).
+    pub fn percentage(&self) -> f64 {
+        match self {
+            ProgressBarAction::Update { current, total } => {
+                if *total > 0 {
+                    (*current as f64 / *total as f64) * 100.0
+                } else {
+                    0.0
+                }
+            }
+            ProgressBarAction::None => 0.0,
+        }
+    }
+}
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
 
+    use crate::shared::styles::*;
+
     // A horizontal progress bar with rounded ends (capsule shape).
     // Displays progress from 0% to 100% with a colored fill.
-    pub Progress = {{Progress}} {
+    pub ProgressBar = {{ProgressBar}} {
         width: Fill,
         height: 8,
 
@@ -55,7 +89,7 @@ live_design! {
 
 /// A horizontal progress bar widget that displays a percentage value (0-100).
 #[derive(Live, LiveHook, Widget)]
-pub struct Progress {
+pub struct ProgressBar {
     #[redraw]
     #[live]
     draw_bg: DrawQuad,
@@ -67,8 +101,27 @@ pub struct Progress {
     value: f64,
 }
 
-impl Widget for Progress {
-    fn handle_event(&mut self, _cx: &mut Cx, _event: &Event, _scope: &mut Scope) {}
+impl Widget for ProgressBar {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                if let Some(ProgressBarAction::Update { current, total }) = action.downcast_ref() {
+                    if current >= total {
+                        // Upload complete, set to 100%
+                        self.set_value(cx, 100.0);
+                    } else {
+                        // Calculate progress percentage, avoiding division by zero
+                        let progress_percentage = if *total > 0 {
+                            (*current as f64 / *total as f64) * 100.0
+                        } else {
+                            0.0
+                        };
+                        self.set_value(cx, progress_percentage);
+                    }
+                }
+            }
+        }
+    }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
         // Convert percentage (0-100) to normalized progress (0.0-1.0) for shader
@@ -85,7 +138,7 @@ impl Widget for Progress {
     }
 }
 
-impl Progress {
+impl ProgressBar {
     /// Returns the current progress value as a percentage (0.0-100.0).
     pub fn value(&self) -> f64 {
         self.value
@@ -99,7 +152,7 @@ impl Progress {
     }
 }
 
-impl ProgressRef {
+impl ProgressBarRef {
     /// Returns the current progress value as a percentage (0.0-100.0).
     /// Returns 0.0 if the widget reference is invalid.
     pub fn value(&self) -> f64 {
