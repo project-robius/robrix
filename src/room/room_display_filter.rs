@@ -142,21 +142,16 @@ fn default_room_filter_fn(_: &dyn FilterableRoom) -> bool {
 ///
 /// If the function returns `true`, the room is displayed; otherwise, it is not shown.
 /// The default value is a filter function that always returns `true`.
-///
-/// ## Example
-/// The following example shows how to create and apply a filter function
-/// that only displays rooms that have a displayable name starting with the letter "M":
-/// ```rust,norun
-/// rooms_list.display_filter = RoomDisplayFilter(Box::new(
-///     |room| room.room_name.as_ref().is_some_and(|n| n.starts_with("M"))
-/// ));
-/// rooms_list.displayed_rooms = rooms_list.all_joined_rooms.iter()
-///    .filter(|(_, room)| (rooms_list.display_filter)(room))
-///    .collect();
-/// // Then redraw the rooms_list widget.
-/// ```
 #[derive(Default)]
 pub struct RoomDisplayFilter(Option<Box<RoomFilterFn>>);
+impl RoomDisplayFilter {
+    pub fn is_some(&self) -> bool {
+        self.0.is_some()
+    }
+    pub fn is_none(&self) -> bool {
+        self.0.is_none()
+    }
+}
 impl Deref for RoomDisplayFilter {
     type Target = RoomFilterFn;
     fn deref(&self) -> &Self::Target {
