@@ -524,8 +524,8 @@ impl LiveHook for MatrixHtmlSpan {
 impl Widget for MatrixHtmlSpan {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
         let mut needs_redraw = false;
-        for area in self.drawn_areas.clone().into_iter() {
-            match event.hits(cx, area) {
+        for area in &self.drawn_areas {
+            match event.hits(cx, *area) {
                 Hit::FingerDown(..) if self.grab_key_focus => {
                     cx.set_key_focus(self.area());
                 }

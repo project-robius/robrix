@@ -108,7 +108,7 @@ live_design! {
                         color: (COLOR_ACTIVE_PRIMARY_DARKER)
                     },
                     draw_bg: {
-                        color: (COLOR_LOCATION_PREVIEW_BG),
+                        color: (COLOR_BG_PREVIEW),
                     }
                     icon_walk: {width: Fit, height: 23, margin: {bottom: -1}}
                     text: "",

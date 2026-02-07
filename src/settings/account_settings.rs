@@ -48,40 +48,72 @@ live_design! {
                 padding: { left: 10, right: 10 }
                 spacing: 10
 
-                upload_avatar_button = <RobrixIconButton> {
-                    padding: {top: 10, bottom: 10, left: 12, right: 15}
-                    margin: 0,
-                    draw_bg: {
-                        color: (COLOR_ACTIVE_PRIMARY)
+                <View> {
+                    width: Fit, height: Fit
+                    flow: Right,
+                    align: {y: 0.5}
+                    spacing: 10
+
+                    upload_avatar_button = <RobrixIconButton> {
+                        width: 140,
+                        padding: {top: 10, bottom: 10, left: 12, right: 15}
+                        margin: 0,
+                        draw_bg: {
+                            color: (COLOR_ACTIVE_PRIMARY)
+                        }
+                        draw_icon: {
+                            svg_file: (ICON_UPLOAD)
+                            color: (COLOR_PRIMARY)
+                        }
+                        draw_text: {
+                            color: (COLOR_PRIMARY)
+                            text_style: <REGULAR_TEXT> {}
+                        }
+                        icon_walk: {width: 16, height: 16}
+                        text: "Upload Avatar"
                     }
-                    draw_icon: {
-                        svg_file: (ICON_UPLOAD)
-                        color: (COLOR_PRIMARY)
+
+                    upload_avatar_spinner = <LoadingSpinner> {
+                        width: 16, height: 16
+                        visible: false
+                        draw_bg: {
+                            color: (COLOR_ACTIVE_PRIMARY)
+                        }
                     }
-                    draw_text: {
-                        color: (COLOR_PRIMARY)
-                        text_style: <REGULAR_TEXT> {}
-                    }
-                    icon_walk: {width: 16, height: 16}
-                    text: "Upload Avatar"
                 }
 
-                delete_avatar_button = <RobrixIconButton> {
-                    padding: {top: 10, bottom: 10, left: 12, right: 15}
-                    margin: 0,
-                    draw_bg: {
-                        color: (COLOR_BG_DANGER_RED)
-                        border_color: (COLOR_FG_DANGER_RED)
+                <View> {
+                    width: Fit, height: Fit
+                    flow: Right,
+                    align: {y: 0.5}
+                    spacing: 10
+
+                    delete_avatar_button = <RobrixIconButton> {
+                        width: 140,
+                        padding: {top: 10, bottom: 10, left: 12, right: 15}
+                        margin: 0,
+                        draw_bg: {
+                            color: (COLOR_BG_DANGER_RED)
+                            border_color: (COLOR_FG_DANGER_RED)
+                        }
+                        draw_icon: {
+                            svg_file: (ICON_TRASH),
+                            color: (COLOR_FG_DANGER_RED),
+                        }
+                        draw_text: {
+                            color: (COLOR_FG_DANGER_RED),
+                        }
+                        icon_walk: { width: 16, height: 16 }
+                        text: "Delete Avatar"
                     }
-                    draw_icon: {
-                        svg_file: (ICON_TRASH),
-                        color: (COLOR_FG_DANGER_RED),
+
+                    delete_avatar_spinner = <LoadingSpinner> {
+                        width: 16, height: 16
+                        visible: false
+                        draw_bg: {
+                            color: (COLOR_ACTIVE_PRIMARY)
+                        }
                     }
-                    draw_text: {
-                        color: (COLOR_FG_DANGER_RED),
-                    }
-                    icon_walk: { width: 16, height: 16 }
-                    text: "Delete Avatar"
                 }
             }
         }
@@ -104,6 +136,26 @@ live_design! {
 
             // These buttons are disabled by default, and enabled when the user
             // changes the `display_name_input` text.
+            cancel_display_name_button = <RobrixIconButton> {
+                enabled: false,
+                width: Fit, height: Fit,
+                padding: 10,
+                margin: {left: 5},
+
+                draw_bg: {
+                    color: (COLOR_BG_DISABLED)
+                }
+                draw_icon: {
+                    svg_file: (ICON_FORBIDDEN),
+                    color: (COLOR_FG_DISABLED)
+                }
+                icon_walk: {width: 16, height: 16, margin: 0}
+                draw_text: {
+                    color: (COLOR_FG_DISABLED),
+                }
+                text: "Cancel"
+            }
+
             accept_display_name_button = <RobrixIconButton> {
                 enabled: false,
                 width: Fit, height: Fit,
@@ -126,24 +178,13 @@ live_design! {
                 text: "Save Name"
             }
 
-            cancel_display_name_button = <RobrixIconButton> {
-                enabled: false,
-                width: Fit, height: Fit,
-                padding: 10,
-                margin: {left: 5},
-
+            save_name_spinner = <LoadingSpinner> {
+                width: 16, height: 16
+                margin: {left: 5, top: 13} // vertically center with buttons
+                visible: false
                 draw_bg: {
-                    color: (COLOR_BG_DISABLED)
+                    color: (COLOR_ACTIVE_PRIMARY)
                 }
-                draw_icon: {
-                    svg_file: (ICON_FORBIDDEN),
-                    color: (COLOR_FG_DISABLED)
-                }
-                icon_walk: {width: 16, height: 16, margin: 0}
-                draw_text: {
-                    color: (COLOR_FG_DISABLED),
-                }
-                text: "Cancel"
             }
         }
 
@@ -241,7 +282,11 @@ pub struct AccountSettings {
     #[rust] own_profile: Option<UserProfile>,
     /// Tracks whether a display name change request is in flight.
     /// When `true`, prevents `Event::Signal` from overwriting the text input.
-    #[rust] display_name_change_pending: bool,
+    #[rust] is_display_name_change_pending: bool,
+    /// Tracks whether an avatar upload request is in flight.
+    #[rust] is_avatar_upload_pending: bool,
+    /// Tracks whether an avatar delete request is in flight.
+    #[rust] is_avatar_delete_pending: bool,
 }
 
 impl Widget for AccountSettings {
@@ -251,6 +296,9 @@ impl Widget for AccountSettings {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.widget(ids!(save_name_spinner)).set_visible(cx, self.is_display_name_change_pending);
+        self.view.widget(ids!(upload_avatar_spinner)).set_visible(cx, self.is_avatar_upload_pending);
+        self.view.widget(ids!(delete_avatar_spinner)).set_visible(cx, self.is_avatar_delete_pending);
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -287,6 +335,8 @@ impl MatchEvent for AccountSettings {
             // so here, we only need to update this widget's local profile info.
             match action.downcast_ref() {
                 Some(AccountDataAction::AvatarChanged(new_avatar_url)) => {
+                    self.is_avatar_upload_pending = false;
+                    self.is_avatar_delete_pending = false;
                     // Update our cached profile with the new avatar URL
                     if let Some(profile) = self.own_profile.as_mut() {
                         profile.avatar_state = AvatarState::Known(new_avatar_url.clone());
@@ -300,6 +350,10 @@ impl MatchEvent for AccountSettings {
                     }
                 }
                 Some(AccountDataAction::AvatarChangeFailed(err_msg)) => {
+                    self.is_avatar_upload_pending = false;
+                    self.is_avatar_delete_pending = false;
+                    // Re-enable the button so user can try again
+                    Self::enable_delete_avatar_button(cx, true, &self.view.button(ids!(delete_avatar_button)));
                     enqueue_popup_notification(PopupItem {
                         message: err_msg.clone(),
                         auto_dismissal_duration: Some(4.0),
@@ -307,7 +361,7 @@ impl MatchEvent for AccountSettings {
                     });
                 }
                 Some(AccountDataAction::DisplayNameChanged(new_name)) => {
-                    self.display_name_change_pending = false;
+                    self.is_display_name_change_pending = false;
                     // Update our cached profile with the new display name
                     if let Some(profile) = self.own_profile.as_mut() {
                         profile.username = new_name.clone();
@@ -315,7 +369,7 @@ impl MatchEvent for AccountSettings {
                     // Update the text input and disable buttons
                     let display_name_input = self.view.text_input(ids!(display_name_input));
                     display_name_input.set_text(cx, new_name.as_deref().unwrap_or_default());
-                    Self::set_display_name_buttons_enabled(cx, false, &accept_display_name_button, &cancel_display_name_button);
+                    Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
                     enqueue_popup_notification(PopupItem {
                         message: format!("Successfully {} display name.", if new_name.is_some() { "updated" } else { "removed" }),
                         auto_dismissal_duration: Some(4.0),
@@ -323,9 +377,9 @@ impl MatchEvent for AccountSettings {
                     });
                 }
                 Some(AccountDataAction::DisplayNameChangeFailed(err_msg)) => {
-                    self.display_name_change_pending = false;
+                    self.is_display_name_change_pending = false;
                     // Re-enable the buttons so user can try again
-                    Self::set_display_name_buttons_enabled(cx, true, &accept_display_name_button, &cancel_display_name_button);
+                    Self::enable_display_name_buttons(cx, true, &accept_display_name_button, &cancel_display_name_button);
                     enqueue_popup_notification(PopupItem {
                         message: err_msg.clone(),
                         auto_dismissal_duration: Some(4.0),
@@ -348,6 +402,8 @@ impl MatchEvent for AccountSettings {
         }
 
         if self.view.button(ids!(delete_avatar_button)).clicked(actions) {
+            self.is_avatar_delete_pending = true;
+            self.view.redraw(cx);
             submit_async_request(MatrixRequest::SetAvatar { avatar_url: None });
             enqueue_popup_notification(PopupItem {
                 message: String::from("Removing your avatar..."),
@@ -361,7 +417,7 @@ impl MatchEvent for AccountSettings {
             let current_name = own_profile.username.as_deref().unwrap_or("");
             // Only enable buttons if the trimmed name differs from the current name
             let enable = trimmed != current_name;
-            Self::set_display_name_buttons_enabled(cx, enable, &accept_display_name_button, &cancel_display_name_button);
+            Self::enable_display_name_buttons(cx, enable, &accept_display_name_button, &cancel_display_name_button);
         }
 
         if cancel_display_name_button.clicked(actions) {
@@ -369,7 +425,7 @@ impl MatchEvent for AccountSettings {
             let new_text = own_profile.username.as_deref().unwrap_or("");
             display_name_input.set_text(cx, new_text);
             display_name_input.set_cursor(cx, Cursor { index: new_text.len(), prefer_next_row: false }, false);
-            Self::set_display_name_buttons_enabled(cx, false, &accept_display_name_button, &cancel_display_name_button);
+            Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
         }
 
         if accept_display_name_button.clicked(actions) {
@@ -377,9 +433,9 @@ impl MatchEvent for AccountSettings {
                 "" => None,
                 name => Some(name.to_string()),
             };
-            self.display_name_change_pending = true;
+            self.is_display_name_change_pending = true;
             // Disable buttons while the request is in flight
-            Self::set_display_name_buttons_enabled(cx, false, &accept_display_name_button, &cancel_display_name_button);
+            Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
             submit_async_request(MatrixRequest::SetDisplayName { new_display_name });
             enqueue_popup_notification(PopupItem {
                 message: String::from("Uploading new display name..."),
@@ -433,16 +489,17 @@ impl AccountSettings {
             ).is_ok();
         }
         // Disable the delete avatar button if the user has no avatar
-        if !drew_avatar {
-            self.view.button(ids!(delete_avatar_button)).set_enabled(cx, false);
+        let delete_avatar_button = self.view.button(ids!(delete_avatar_button));
+        if drew_avatar {
+            Self::enable_delete_avatar_button(cx, true, &delete_avatar_button);
+        } else {
+            Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
             our_own_avatar.show_text(
                 cx,
                 Some(COLOR_ROBRIX_PURPLE),
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
                 own_profile.displayable_name(),
             );
-        } else {
-            self.view.button(ids!(delete_avatar_button)).set_enabled(cx, true);
         }
 
         self.view
@@ -468,8 +525,34 @@ impl AccountSettings {
         self.view.redraw(cx);
     }
 
+    /// Enable or disable the delete avatar button.
+    fn enable_delete_avatar_button(
+        cx: &mut Cx,
+        enable: bool,
+        delete_avatar_button: &ButtonRef,
+    ) {
+        let (delete_button_fg_color, delete_button_bg_color) = if enable {
+            (COLOR_FG_DANGER_RED, COLOR_BG_DANGER_RED)
+        } else {
+            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+        };
+        delete_avatar_button.apply_over(cx, live!{
+            enabled: (enable),
+            draw_bg: {
+                color: (delete_button_bg_color),
+                border_color: (delete_button_fg_color),
+            }
+            draw_icon: {
+                color: (delete_button_fg_color),
+            }
+            draw_text: {
+                color: (delete_button_fg_color),
+            }
+        });
+    }
+
     /// Enable or disable the display name accept and cancel buttons.
-    fn set_display_name_buttons_enabled(
+    fn enable_display_name_buttons(
         cx: &mut Cx,
         enable: bool,
         accept_display_name_button: &ButtonRef,

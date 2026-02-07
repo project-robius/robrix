@@ -252,7 +252,7 @@ impl RoomDisplayFilterBuilder {
             .any(|alias| alias.as_str().eq_ignore_ascii_case(keywords))
     }
 
-    fn matches_room_tags(room: &dyn FilterableRoom, keywords: &str) -> bool {
+    fn matches_room_tags(room: &dyn FilterableRoom, search_tags: &HashSet<String>) -> bool {
         fn is_tag_match(search_tag: &str, tag_name: &TagName) -> bool {
             match tag_name {
                 TagName::Favorite => ["favourite", "favorite", "fav"].contains(&search_tag),
@@ -271,11 +271,6 @@ impl RoomDisplayFilterBuilder {
                 _ => false,
             }
         }
-
-        let search_tags: HashSet<&str> = keywords
-            .split_whitespace()
-            .map(|tag| tag.trim_start_matches(':'))
-            .collect();
 
         let tags = room.tags();
         search_tags.iter().all(|search_tag| {
@@ -297,6 +292,7 @@ impl RoomDisplayFilterBuilder {
     fn matches_filter(
         room: &dyn FilterableRoom,
         keywords: &str,
+        search_tags: &HashSet<String>,
         filter_criteria: RoomFilterCriteria,
     ) -> bool {
         if filter_criteria.is_empty() {
@@ -321,7 +317,7 @@ impl RoomDisplayFilterBuilder {
                 RoomFilterCriteria::RoomTags
                     if filter_criteria.contains(RoomFilterCriteria::RoomTags) =>
                 {
-                    Self::matches_room_tags(room, cleaned_keywords)
+                    Self::matches_room_tags(room, search_tags)
                 }
                 _ => false,
             }
@@ -339,7 +335,7 @@ impl RoomDisplayFilterBuilder {
                 matches |= Self::matches_room_alias(room, cleaned_keywords);
             }
             if filter_criteria.contains(RoomFilterCriteria::RoomTags) {
-                matches |= Self::matches_room_tags(room, cleaned_keywords);
+                matches |= Self::matches_room_tags(room, search_tags);
             }
 
             matches
@@ -353,10 +349,15 @@ impl RoomDisplayFilterBuilder {
         let filter = if keywords.is_empty() || filter_criteria.is_empty() {
             RoomDisplayFilter::default()
         } else {
+            let processed_keywords = keywords.trim().to_lowercase();
+            let search_tags: HashSet<String> = processed_keywords
+                .split_whitespace()
+                .map(|tag| tag.trim_start_matches(':').to_string())
+                .collect();
+
             RoomDisplayFilter(Some(Box::new(
                 move |room| {
-                    let keywords = keywords.trim().to_lowercase();
-                    Self::matches_filter(room, &keywords, self.filter_criteria)
+                    Self::matches_filter(room, &processed_keywords, &search_tags, filter_criteria)
                 }
             )))
         };
