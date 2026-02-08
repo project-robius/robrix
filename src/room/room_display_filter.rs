@@ -28,7 +28,12 @@ impl FilterableRoom for JoinedRoomInfo {
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        Cow::Owned(self.room_name_id.to_string())
+        match self.room_name_id.display_name() {
+            RoomDisplayName::Aliased(name)
+            | RoomDisplayName::Calculated(name)
+            | RoomDisplayName::Named(name) => Cow::Borrowed(name),
+            _ => Cow::Owned(self.room_name_id.to_string()),
+        }
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -62,7 +67,12 @@ impl FilterableRoom for InvitedRoomInfo {
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        Cow::Owned(self.room_name_id.to_string())
+        match self.room_name_id.display_name() {
+            RoomDisplayName::Aliased(name)
+            | RoomDisplayName::Calculated(name)
+            | RoomDisplayName::Named(name) => Cow::Borrowed(name),
+            _ => Cow::Owned(self.room_name_id.to_string()),
+        }
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -284,59 +294,6 @@ impl RoomDisplayFilterBuilder {
         }
     }
 
-    fn matches_filter(
-        room: &dyn FilterableRoom,
-        keywords: &str,
-        search_tags: &HashSet<String>,
-        filter_criteria: RoomFilterCriteria,
-    ) -> bool {
-        if filter_criteria.is_empty() {
-            return false;
-        }
-
-        let (specific_type, cleaned_keywords) = Self::pre_match_filter_check(keywords);
-
-        if specific_type != RoomFilterCriteria::All {
-            // When using a special prefix, only check that specific type
-            match specific_type {
-                RoomFilterCriteria::RoomId
-                    if filter_criteria.contains(RoomFilterCriteria::RoomId) =>
-                {
-                    Self::matches_room_id(room, cleaned_keywords)
-                }
-                RoomFilterCriteria::RoomAlias
-                    if filter_criteria.contains(RoomFilterCriteria::RoomAlias) =>
-                {
-                    Self::matches_room_alias(room, cleaned_keywords)
-                }
-                RoomFilterCriteria::RoomTags
-                    if filter_criteria.contains(RoomFilterCriteria::RoomTags) =>
-                {
-                    Self::matches_room_tags(room, search_tags)
-                }
-                _ => false,
-            }
-        } else {
-            // No special prefix, check all enabled filter types
-            let mut matches = false;
-
-            if filter_criteria.contains(RoomFilterCriteria::RoomId) {
-                matches |= Self::matches_room_id(room, cleaned_keywords);
-            }
-            if filter_criteria.contains(RoomFilterCriteria::RoomName) {
-                matches |= Self::matches_room_name(room, cleaned_keywords);
-            }
-            if filter_criteria.contains(RoomFilterCriteria::RoomAlias) {
-                matches |= Self::matches_room_alias(room, cleaned_keywords);
-            }
-            if filter_criteria.contains(RoomFilterCriteria::RoomTags) {
-                matches |= Self::matches_room_tags(room, search_tags);
-            }
-
-            matches
-        }
-    }
-
     pub fn build(self) -> (RoomDisplayFilter, Option<Box<SortFn>>) {
         let keywords = self.keywords;
         let filter_criteria = self.filter_criteria;
@@ -345,14 +302,61 @@ impl RoomDisplayFilterBuilder {
             RoomDisplayFilter::default()
         } else {
             let processed_keywords = keywords.trim().to_lowercase();
+            // Hoist the prefix check out of the closure so it runs once per filter update,
+            // not once per room.
+            let (specific_type, _) = Self::pre_match_filter_check(&processed_keywords);
+
             let search_tags: HashSet<String> = processed_keywords
                 .split_whitespace()
                 .map(|tag| tag.trim_start_matches(':').to_string())
                 .collect();
 
+            // Capture keywords locally to move into the closure.
+            let keywords = processed_keywords;
+
             RoomDisplayFilter(Some(Box::new(
                 move |room| {
-                    Self::matches_filter(room, &processed_keywords, &search_tags, filter_criteria)
+                    if specific_type != RoomFilterCriteria::All {
+                        // When using a special prefix, only check that specific type
+                        match specific_type {
+                            RoomFilterCriteria::RoomId
+                                if filter_criteria.contains(RoomFilterCriteria::RoomId) =>
+                            {
+                                Self::matches_room_id(room, &keywords)
+                            }
+                            RoomFilterCriteria::RoomAlias
+                                if filter_criteria.contains(RoomFilterCriteria::RoomAlias) =>
+                            {
+                                Self::matches_room_alias(room, &keywords)
+                            }
+                            RoomFilterCriteria::RoomTags
+                                if filter_criteria.contains(RoomFilterCriteria::RoomTags) =>
+                            {
+                                Self::matches_room_tags(room, &search_tags)
+                            }
+                            _ => false,
+                        }
+                    } else {
+                        // No special prefix, check all enabled filter types.
+                        // We short-circuit (return true early) to avoid unnecessary checks.
+                        if filter_criteria.contains(RoomFilterCriteria::RoomId)
+                            && Self::matches_room_id(room, &keywords) {
+                            return true;
+                        }
+                        if filter_criteria.contains(RoomFilterCriteria::RoomName)
+                            && Self::matches_room_name(room, &keywords) {
+                            return true;
+                        }
+                        if filter_criteria.contains(RoomFilterCriteria::RoomAlias)
+                            && Self::matches_room_alias(room, &keywords) {
+                            return true;
+                        }
+                        if filter_criteria.contains(RoomFilterCriteria::RoomTags)
+                            && Self::matches_room_tags(room, &search_tags) {
+                            return true;
+                        }
+                        false
+                    }
                 }
             )))
         };
