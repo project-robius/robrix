@@ -47,6 +47,8 @@ use crate::{
 /// and to have something to immediately show when a user first opens a room.
 const PREPAGINATE_VISIBLE_ROOMS: bool = true;
 
+const COLOR_SYSTEM_ALERT_HEADER_BG: Vec4 = vec4(0.533, 0.533, 0.533, 1.0); // #888
+
 thread_local! {
     /// The list of all invited rooms, which is only tracked here
     /// because the backend doesn't need to track any info about them.
@@ -432,6 +434,11 @@ pub struct RoomsList {
     /// The currently-active sort function for the list of rooms.
     #[rust] sort_fn: Option<Box<SortFn>>,
 
+    /// The list of system alert rooms (e.g. server notices) currently displayed in the UI.
+    #[rust] displayed_system_alert_rooms: Vec<OwnedRoomId>,
+    #[rust(false)] is_system_alert_rooms_header_expanded: bool,
+    #[rust] system_alert_rooms_indexes: RoomCategoryIndexes,
+
     /// The list of invited rooms currently displayed in the UI.
     #[rust] displayed_invited_rooms: Vec<OwnedRoomId>,
     #[rust(false)] is_invited_rooms_header_expanded: bool,
@@ -530,10 +537,13 @@ impl RoomsList {
                 RoomsListUpdate::AddJoinedRoom(joined_room) => {
                     let room_id = joined_room.room_name_id.room_id().clone();
                     let is_direct = joined_room.is_direct;
+                    let is_system_alert = joined_room.tags.contains_key(&TagName::ServerNotice);
                     let should_display = should_display_room!(self, &room_id, &joined_room);
                     let _replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
                     if should_display {
-                        if is_direct {
+                        if is_system_alert {
+                            self.displayed_system_alert_rooms.push(room_id.clone());
+                        } else if is_direct {
                             self.displayed_direct_rooms.push(room_id.clone());
                         } else {
                             self.displayed_regular_rooms.push(room_id.clone());
@@ -601,8 +611,14 @@ impl RoomsList {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.room_name_id = new_room_name;
                         let is_direct = room.is_direct;
+                        let is_system_alert = room.tags.contains_key(&TagName::ServerNotice);
                         let should_display = should_display_room!(self, &room_id, room);
-                        let (pos_in_list, displayed_list) = if is_direct {
+                        let (pos_in_list, displayed_list) = if is_system_alert {
+                            (
+                                self.displayed_system_alert_rooms.iter().position(|r| r == &room_id),
+                                &mut self.displayed_system_alert_rooms,
+                            )
+                        } else if is_direct {
                             (
                                 self.displayed_direct_rooms.iter().position(|r| r == &room_id),
                                 &mut self.displayed_direct_rooms,
@@ -647,6 +663,12 @@ impl RoomsList {
                         if was_direct == is_direct {
                             continue;
                         }
+                        // If the room is a system alert room, we don't move it between categories
+                        // regardless of whether its "direct" status changed.
+                        if room.tags.contains_key(&TagName::ServerNotice) {
+                            room.is_direct = is_direct;
+                            continue;
+                        }
                         enqueue_popup_notification(PopupItem {
                             message: format!("{} was changed from {} to {}.",
                                 room.room_name_id,
@@ -688,7 +710,10 @@ impl RoomsList {
 
                     if let Some(removed) = self.all_joined_rooms.remove(&room_id) {
                         log!("Removed room {room_id} from the list of all joined rooms, now has state {new_state:?}");
-                        let list_to_remove_from = if removed.is_direct {
+                        let is_system_alert = removed.tags.contains_key(&TagName::ServerNotice);
+                        let list_to_remove_from = if is_system_alert {
+                            &mut self.displayed_system_alert_rooms
+                        } else if removed.is_direct {
                             &mut self.displayed_direct_rooms
                         } else {
                             &mut self.displayed_regular_rooms
@@ -709,6 +734,7 @@ impl RoomsList {
                 }
                 RoomsListUpdate::ClearRooms => {
                     self.all_joined_rooms.clear();
+                    self.displayed_system_alert_rooms.clear();
                     self.displayed_direct_rooms.clear();
                     self.displayed_regular_rooms.clear();
                     self.invited_rooms.borrow_mut().clear();
@@ -724,6 +750,7 @@ impl RoomsList {
                 RoomsListUpdate::Tags { room_id, new_tags } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.tags = new_tags;
+                        self.update_displayed_rooms(cx, false);
                     } else if let Some(_room) = self.invited_rooms.borrow().get(&room_id) {
                         log!("Ignoring updated tags update for invited room {room_id}");
                     } else {
@@ -737,8 +764,14 @@ impl RoomsList {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.is_tombstoned = true;
                         let is_direct = room.is_direct;
+                        let is_system_alert = room.tags.contains_key(&TagName::ServerNotice);
                         let should_display = should_display_room!(self, &room_id, room);
-                        let (pos_in_list, displayed_list) = if is_direct {
+                        let (pos_in_list, displayed_list) = if is_system_alert {
+                            (
+                                self.displayed_system_alert_rooms.iter().position(|r| r == &room_id),
+                                &mut self.displayed_system_alert_rooms,
+                            )
+                        } else if is_direct {
                             (
                                 self.displayed_direct_rooms.iter().position(|r| r == &room_id),
                                 &mut self.displayed_direct_rooms,
@@ -770,6 +803,9 @@ impl RoomsList {
                     else if let Some(i) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
                         self.displayed_direct_rooms.remove(i);
                     }
+                    else if let Some(i) = self.displayed_system_alert_rooms.iter().position(|r| r == &room_id) {
+                        self.displayed_system_alert_rooms.remove(i);
+                    }
                     else if let Some(i) = self.displayed_invited_rooms.iter().position(|r| r == &room_id) {
                         self.displayed_invited_rooms.remove(i);
                     }
@@ -787,6 +823,9 @@ impl RoomsList {
                     }
                     else if let Some(invited_index) = self.displayed_invited_rooms.iter().position(|r| r == &room_id) {
                         self.invited_rooms_indexes.first_room_index + invited_index
+                    }
+                    else if let Some(system_alert_index) = self.displayed_system_alert_rooms.iter().position(|r| r == &room_id) {
+                        self.system_alert_rooms_indexes.first_room_index + system_alert_index
                     }
                     else { continue };
                     // Scroll to just above the room to make it more obviously visible.
@@ -869,7 +908,8 @@ impl RoomsList {
     fn update_status(&mut self) {
         let num_rooms = self.displayed_invited_rooms.len()
             + self.displayed_direct_rooms.len()
-            + self.displayed_regular_rooms.len();
+            + self.displayed_regular_rooms.len()
+            + self.displayed_system_alert_rooms.len();
 
         let mut text = match (self.display_filter.is_none(), num_rooms) {
             (true, 0)  => "No joined or invited rooms found".to_string(),
@@ -909,7 +949,8 @@ impl RoomsList {
     /// If `false`, the scroll position is preserved, unless it exceeds the new list length,
     /// in which case the logic in `draw_walk()` will limit it to the max valid index.
     fn update_displayed_rooms(&mut self, cx: &mut Cx, reset_scroll: bool) {
-        let (invited, regular, direct) = self.generate_displayed_rooms();
+        let (system_alerts, invited, regular, direct) = self.generate_displayed_rooms();
+        self.displayed_system_alert_rooms = system_alerts;
         self.displayed_invited_rooms = invited;
         self.displayed_regular_rooms = regular;
         self.displayed_direct_rooms = direct;
@@ -931,14 +972,17 @@ impl RoomsList {
     ///
     /// If `self.sort_fn` is `Some`, the rooms are ordered based on that function.
     /// Otherwise, the rooms are ordered based on `self.all_known_rooms_order` (the default).
-    fn generate_displayed_rooms(&self) -> (Vec<OwnedRoomId>,Vec<OwnedRoomId>, Vec<OwnedRoomId>) {
+    fn generate_displayed_rooms(&self) -> (Vec<OwnedRoomId>, Vec<OwnedRoomId>, Vec<OwnedRoomId>, Vec<OwnedRoomId>) {
+        let mut new_displayed_system_alert_rooms = Vec::new();
         let mut new_displayed_invited_rooms = Vec::new();
         let mut new_displayed_regular_rooms = Vec::new();
         let mut new_displayed_direct_rooms = Vec::new();
 
         let mut push_joined_room = |room_id: &OwnedRoomId, jr: &JoinedRoomInfo| {
             let room_id = room_id.clone();
-            if jr.is_direct {
+            if jr.tags.contains_key(&TagName::ServerNotice) {
+                new_displayed_system_alert_rooms.push(room_id);
+            } else if jr.is_direct {
                 new_displayed_direct_rooms.push(room_id);
             } else {
                 new_displayed_regular_rooms.push(room_id);
@@ -980,24 +1024,36 @@ impl RoomsList {
             }
         }
 
-        (new_displayed_invited_rooms, new_displayed_regular_rooms, new_displayed_direct_rooms)
+        (new_displayed_system_alert_rooms, new_displayed_invited_rooms, new_displayed_regular_rooms, new_displayed_direct_rooms)
     }
 
     /// Calculates the indexes in the PortalList where the headers and rooms should be drawn.
     ///
     /// Updates the following three fields:
-    /// 1. `invited_rooms_indexes`: the indexes for the invited rooms,
-    /// 2. `direct_rooms_indexes`: the indexes for the direct rooms (DMs / People),
-    /// 3. `regular_rooms_indexes`: the indexes for the regular non-direct joined rooms.
+    /// 1. `system_alert_rooms_indexes`: the indexes for the system alert rooms (e.g. server notices),
+    /// 2. `invited_rooms_indexes`: the indexes for the invited rooms,
+    /// 3. `direct_rooms_indexes`: the indexes for the direct rooms (DMs / People),
+    /// 4. `regular_rooms_indexes`: the indexes for the regular non-direct joined rooms.
     fn recalculate_indexes(&mut self) {
         // Based on the various displayed room lists and is_expanded state of each room header,
         // calculate the indexes in the PortalList where the headers and rooms should be drawn.
+        let should_show_system_alert_rooms_header = !self.displayed_system_alert_rooms.is_empty();
         let should_show_invited_rooms_header = !self.displayed_invited_rooms.is_empty();
         let should_show_direct_rooms_header  = !self.displayed_direct_rooms.is_empty();
         let should_show_regular_rooms_header = !self.displayed_regular_rooms.is_empty();
 
-        let index_of_invited_rooms_header = should_show_invited_rooms_header.then_some(0);
-        let index_of_first_invited_room = should_show_invited_rooms_header as usize;
+        let index_of_system_alert_rooms_header = should_show_system_alert_rooms_header.then_some(0);
+        let index_of_first_system_alert_room = should_show_system_alert_rooms_header as usize;
+        let index_after_system_alert_rooms = index_of_first_system_alert_room +
+            if self.is_system_alert_rooms_header_expanded {
+                self.displayed_system_alert_rooms.len()
+            } else {
+                0
+            };
+
+        let index_of_invited_rooms_header = should_show_invited_rooms_header.then_some(index_after_system_alert_rooms);
+        let index_of_first_invited_room = index_after_system_alert_rooms +
+            should_show_invited_rooms_header as usize;
         let index_after_invited_rooms = index_of_first_invited_room +
             if self.is_invited_rooms_header_expanded {
                 self.displayed_invited_rooms.len()
@@ -1027,6 +1083,11 @@ impl RoomsList {
                 0
             };
 
+        self.system_alert_rooms_indexes = RoomCategoryIndexes {
+            header_index: index_of_system_alert_rooms_header,
+            first_room_index: index_of_first_system_alert_room,
+            after_rooms_index: index_after_system_alert_rooms,
+        };
         self.invited_rooms_indexes = RoomCategoryIndexes {
             header_index: index_of_invited_rooms_header,
             first_room_index: index_of_first_invited_room,
@@ -1222,6 +1283,9 @@ impl Widget for RoomsList {
             // Handle a collapsible header being clicked.
             else if let CollapsibleHeaderAction::Toggled { category } = action.as_widget_action().cast() {
                 match category {
+                    HeaderCategory::SystemAlerts => {
+                        self.is_system_alert_rooms_header_expanded = !self.is_system_alert_rooms_header_expanded;
+                    }
                     HeaderCategory::Invites => {
                         self.is_invited_rooms_header_expanded = !self.is_invited_rooms_header_expanded;
                     }
@@ -1350,6 +1414,14 @@ impl Widget for RoomsList {
         // Add one for the status label
         let total_count = status_label_id + 1;
 
+        let get_system_alert_room_id = |portal_list_index: usize| {
+            portal_list_index.checked_sub(self.system_alert_rooms_indexes.first_room_index)
+                .and_then(|index| self.is_system_alert_rooms_header_expanded
+                    .then(|| self.displayed_system_alert_rooms.get(index))
+                )
+                .flatten()
+        };
+
         let get_invited_room_id = |portal_list_index: usize| {
             portal_list_index.checked_sub(self.invited_rooms_indexes.first_room_index)
                 .and_then(|index| self.is_invited_rooms_header_expanded
@@ -1388,7 +1460,32 @@ impl Widget for RoomsList {
             while let Some(portal_list_index) = list.next_visible_item(cx) {
                 let mut scope = Scope::empty();
 
-                if self.invited_rooms_indexes.header_index == Some(portal_list_index) {
+                if self.system_alert_rooms_indexes.header_index == Some(portal_list_index) {
+                    let item = list.item(cx, portal_list_index, id!(collapsible_header));
+                    item.as_collapsible_header().set_details(
+                        cx,
+                        self.is_system_alert_rooms_header_expanded,
+                        HeaderCategory::SystemAlerts,
+                        self.displayed_system_alert_rooms.len() as u64,
+                    );
+                    item.apply_over(cx, live!{
+                        draw_bg: { color: (COLOR_SYSTEM_ALERT_HEADER_BG) }
+                    });
+                    item.draw_all(cx, &mut scope);
+                }
+                else if let Some(room_id) = get_system_alert_room_id(portal_list_index) {
+                    if let Some(room) = self.all_joined_rooms.get_mut(room_id) {
+                        let item = list.item(cx, portal_list_index, id!(rooms_list_entry));
+                        room.is_selected =
+                            self.current_active_room.as_deref() == Some(room_id);
+                        // Pass the room info down to the RoomsListEntry widget via Scope.
+                        scope = Scope::with_props(&*room);
+                        item.draw_all(cx, &mut scope);
+                    } else {
+                        list.item(cx, portal_list_index, id!(empty)).draw_all(cx, &mut scope);
+                    }
+                }
+                else if self.invited_rooms_indexes.header_index == Some(portal_list_index) {
                     let item = list.item(cx, portal_list_index, id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
