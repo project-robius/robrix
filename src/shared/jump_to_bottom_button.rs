@@ -40,7 +40,8 @@ live_design! {
                         sdf.fill_keep(self.background_color);
                         return sdf.result
                     }
-                }
+                } 
+                enable_long_press: true,
             }
 
             // A badge overlay on the jump to bottom button showing unread messages

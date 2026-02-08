@@ -1,6 +1,6 @@
 use makepad_widgets::{text::selection::Cursor, *};
 
-use crate::{avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
+use crate::{avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
 
 live_design! {
     use link::theme::*;
@@ -198,6 +198,7 @@ live_design! {
             spacing: 10
 
             copy_user_id_button = <RobrixIconButton> {
+                enable_long_press: true,
                 margin: {left: 5}
                 padding: 12,
                 spacing: 0,
@@ -292,6 +293,34 @@ pub struct AccountSettings {
 impl Widget for AccountSettings {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.match_event(cx, event);
+
+        let copy_user_id_button = self.view.button(ids!(copy_user_id_button));
+        let copy_user_id_button_area = copy_user_id_button.area();
+        match event.hits(cx, copy_user_id_button_area) {
+            Hit::FingerHoverIn(_) | Hit::FingerLongPress(_) => {
+                cx.widget_action(
+                    copy_user_id_button.widget_uid(),
+                    &scope.path,
+                    TooltipAction::HoverIn {
+                        text: "Copy User ID".to_string(),
+                        widget_rect: copy_user_id_button_area.rect(cx),
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Top,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(
+                    copy_user_id_button.widget_uid(),
+                    &scope.path,
+                    TooltipAction::HoverOut,
+                );
+            }
+            _ => {}
+        }
+
         self.view.handle_event(cx, event, scope);
     }
 
