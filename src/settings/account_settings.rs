@@ -198,6 +198,7 @@ live_design! {
             spacing: 10
 
             copy_user_id_button = <RobrixIconButton> {
+                enable_long_press: true,
                 margin: {left: 5}
                 padding: 12,
                 spacing: 0,
@@ -293,17 +294,16 @@ impl Widget for AccountSettings {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.match_event(cx, event);
 
-        // Tooltip logic for copy_user_id_button
-        let copy_button = self.view.button(ids!(copy_user_id_button));
-        let copy_button_area = copy_button.area();
-        match event.hits(cx, copy_button_area) {
-            Hit::FingerHoverIn(_) => {
+        let copy_user_id_button = self.view.button(ids!(copy_user_id_button));
+        let copy_user_id_button_area = copy_user_id_button.area();
+        match event.hits(cx, copy_user_id_button_area) {
+            Hit::FingerHoverIn(_) | Hit::FingerLongPress(_) => {
                 cx.widget_action(
-                    copy_button.widget_uid(),
+                    copy_user_id_button.widget_uid(),
                     &scope.path,
                     TooltipAction::HoverIn {
                         text: "Copy User ID".to_string(),
-                        widget_rect: copy_button_area.rect(cx),
+                        widget_rect: copy_user_id_button_area.rect(cx),
                         options: CalloutTooltipOptions {
                             position: TooltipPosition::Top,
                             ..Default::default()
@@ -313,7 +313,7 @@ impl Widget for AccountSettings {
             }
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(
-                    copy_button.widget_uid(),
+                    copy_user_id_button.widget_uid(),
                     &scope.path,
                     TooltipAction::HoverOut,
                 );
