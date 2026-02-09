@@ -1,6 +1,8 @@
+use std::cell::RefCell;
+
 use makepad_widgets::{text::selection::Cursor, *};
 
-use crate::{avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
+use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
 
 live_design! {
     use link::theme::*;
@@ -377,6 +379,7 @@ impl MatchEvent for AccountSettings {
                             kind: PopupKind::Success,
                         });
                     }
+                    continue;
                 }
                 Some(AccountDataAction::AvatarChangeFailed(err_msg)) => {
                     self.is_avatar_upload_pending = false;
@@ -388,6 +391,7 @@ impl MatchEvent for AccountSettings {
                         auto_dismissal_duration: Some(4.0),
                         kind: PopupKind::Error
                     });
+                    continue;
                 }
                 Some(AccountDataAction::DisplayNameChanged(new_name)) => {
                     self.is_display_name_change_pending = false;
@@ -404,6 +408,7 @@ impl MatchEvent for AccountSettings {
                         auto_dismissal_duration: Some(4.0),
                         kind: PopupKind::Success,
                     });
+                    continue;
                 }
                 Some(AccountDataAction::DisplayNameChangeFailed(err_msg)) => {
                     self.is_display_name_change_pending = false;
@@ -414,6 +419,19 @@ impl MatchEvent for AccountSettings {
                         auto_dismissal_duration: Some(4.0),
                         kind: PopupKind::Error
                     });
+                    continue;
+                }
+                _ => {}
+            }
+
+            match action.downcast_ref() {
+                Some(AccountSettingsAction::AvatarDeleteStarted) => {
+                    self.is_avatar_delete_pending = true;
+                    continue;
+                }
+                Some(AccountSettingsAction::AvatarUploadStarted) => {
+                    self.is_avatar_upload_pending = true;
+                    continue;
                 }
                 _ => {}
             }
@@ -431,14 +449,22 @@ impl MatchEvent for AccountSettings {
         }
 
         if self.view.button(ids!(delete_avatar_button)).clicked(actions) {
-            self.is_avatar_delete_pending = true;
-            self.view.redraw(cx);
-            submit_async_request(MatrixRequest::SetAvatar { avatar_url: None });
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Removing your avatar..."),
-                auto_dismissal_duration: Some(5.0),
-                kind: PopupKind::Info,
-            });
+            let content = ConfirmationModalContent {
+                title_text: "Delete Avatar".into(),
+                body_text: "Are you sure you want to remove your avatar?".into(),
+                accept_button_text: Some("Delete".into()),
+                on_accept_clicked: Some(Box::new(|cx| {
+                    submit_async_request(MatrixRequest::SetAvatar { avatar_url: None });
+                    cx.action(AccountSettingsAction::AvatarDeleteStarted);
+                    enqueue_popup_notification(PopupItem {
+                        message: String::from("Removing your avatar..."),
+                        auto_dismissal_duration: Some(5.0),
+                        kind: PopupKind::Info,
+                    });
+                })),
+                ..Default::default()
+            };
+            cx.action(ConfirmDeleteAction::Show(RefCell::new(Some(content))));
         }
 
         if let Some(new_name) = display_name_input.changed(actions) {
@@ -633,4 +659,13 @@ impl AccountSettingsRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.populate(cx, own_profile);
     }
+}
+
+/// Actions that are handled by the AccountSettings widget.
+#[derive(Debug)]
+pub enum AccountSettingsAction {
+    /// The avatar delete operation was started (e.g., confirmed in a modal).
+    AvatarDeleteStarted,
+    /// The avatar upload operation was started (e.g., confirmed in a modal).
+    AvatarUploadStarted,
 }
