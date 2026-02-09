@@ -579,12 +579,17 @@ impl AccountSettings {
 
     /// Show and initializes the account settings within the SettingsScreen.
     pub fn populate(&mut self, cx: &mut Cx, own_profile: UserProfile) {
-        self.view
-            .text_input(ids!(display_name_input))
-            .set_text(cx, own_profile.username.as_deref().unwrap_or_default());
-        self.view
-            .label(ids!(user_id))
+        self.view.label(ids!(user_id))
             .set_text(cx, own_profile.user_id.as_str());
+        self.view.text_input(ids!(display_name_input))
+            .set_text(cx, own_profile.username.as_deref().unwrap_or_default());
+        Self::enable_display_name_buttons(
+            cx,
+            false,
+            &self.view.button(ids!(accept_display_name_button)),
+            &self.view.button(ids!(cancel_display_name_button)),
+        );
+
         self.own_profile = Some(own_profile);
         self.populate_avatar_views(cx);
 
@@ -631,7 +636,7 @@ impl AccountSettings {
         upload_avatar_button: &ButtonRef,
     ) {
         let (upload_button_fg_color, upload_button_bg_color) = if enable {
-            (COLOR_ACTIVE_PRIMARY, COLOR_PRIMARY)
+            (COLOR_PRIMARY, COLOR_ACTIVE_PRIMARY)
         } else {
             (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
         };
