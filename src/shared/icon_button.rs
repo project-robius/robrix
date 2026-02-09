@@ -1,4 +1,5 @@
 use makepad_widgets::*;
+use crate::shared::callout_tooltip::{CalloutTooltipOptions, TooltipAction};
 
 live_design! {
     use link::theme::*;
@@ -57,7 +58,7 @@ live_design! {
 
     // Customized button widget, based on the RoundedView shaders with some modifications
     // which is a better fit with our application UI design
-    pub RobrixIconButton = <Button> {
+    pub RobrixIconButton = {{RobrixIconButton}} <Button> {
         width: Fit,
         height: Fit,
         spacing: 10,
@@ -111,5 +112,50 @@ live_design! {
             }
         }
         text: ""
+        tooltip: ""
+    }
+}
+
+#[derive(Live, LiveHook, Widget)]
+pub struct RobrixIconButton {
+    #[deref] button: Button,
+    #[live] tooltip: String,
+}
+
+impl Widget for RobrixIconButton {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let widget_uid = self.widget_uid();
+        // Check for hover events on the button's background area
+        match event.hits(cx, self.button.area()) {
+            Hit::FingerHoverIn(_) => {
+                if !self.tooltip.is_empty() {
+                    cx.widget_action(
+                        widget_uid,
+                        &scope.path,
+                        TooltipAction::HoverIn {
+                            text: self.tooltip.clone(),
+                            widget_rect: self.button.area().rect(cx),
+                            options: CalloutTooltipOptions::default(),
+                        },
+                    );
+                }
+            }
+            Hit::FingerHoverOut(_) => {
+                 if !self.tooltip.is_empty() {
+                    cx.widget_action(
+                        widget_uid,
+                        &scope.path,
+                        TooltipAction::HoverOut,
+                    );
+                }
+            }
+            _ => {}
+        }
+
+        self.button.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.button.draw_walk(cx, scope, walk)
     }
 }
