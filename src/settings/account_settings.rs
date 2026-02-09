@@ -283,13 +283,6 @@ pub struct AccountSettings {
     #[deref] view: View,
 
     #[rust] own_profile: Option<UserProfile>,
-    /// Tracks whether a display name change request is in flight.
-    /// When `true`, prevents `Event::Signal` from overwriting the text input.
-    #[rust] is_display_name_change_pending: bool,
-    /// Tracks whether an avatar upload request is in flight.
-    #[rust] is_avatar_upload_pending: bool,
-    /// Tracks whether an avatar delete request is in flight.
-    #[rust] is_avatar_delete_pending: bool,
 }
 
 impl Widget for AccountSettings {
@@ -327,9 +320,6 @@ impl Widget for AccountSettings {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.widget(ids!(save_name_spinner)).set_visible(cx, self.is_display_name_change_pending);
-        self.view.widget(ids!(upload_avatar_spinner)).set_visible(cx, self.is_avatar_upload_pending);
-        self.view.widget(ids!(delete_avatar_spinner)).set_visible(cx, self.is_avatar_delete_pending);
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -350,6 +340,8 @@ impl MatchEvent for AccountSettings {
         let accept_display_name_button = self.view.button(ids!(accept_display_name_button));
         let cancel_display_name_button = self.view.button(ids!(cancel_display_name_button));
         let display_name_input = self.view.text_input(ids!(display_name_input));
+        let delete_avatar_button = self.view.button(ids!(delete_avatar_button));
+        let upload_avatar_button = self.view.button(ids!(upload_avatar_button));
 
         for action in actions {
             // Handle LogoutAction::InProgress to update button state
@@ -366,15 +358,15 @@ impl MatchEvent for AccountSettings {
             // so here, we only need to update this widget's local profile info.
             match action.downcast_ref() {
                 Some(AccountDataAction::AvatarChanged(new_avatar_url)) => {
-                    self.is_avatar_upload_pending = false;
-                    self.is_avatar_delete_pending = false;
+                    self.view.widget(ids!(upload_avatar_spinner)).set_visible(cx, false);
+                    self.view.widget(ids!(delete_avatar_spinner)).set_visible(cx, false);
                     // Update our cached profile with the new avatar URL
                     if let Some(profile) = self.own_profile.as_mut() {
                         profile.avatar_state = AvatarState::Known(new_avatar_url.clone());
                         profile.avatar_state.update_from_cache(cx);
-                        self.populate_from_profile(cx);
+                        self.populate_avatar_views(cx);
                         enqueue_popup_notification(PopupItem {
-                            message: format!("Successfully {} avatar.", if new_avatar_url.is_some() { "updated" } else { "removed" }),
+                            message: format!("Successfully {} avatar.", if new_avatar_url.is_some() { "updated" } else { "deleted" }),
                             auto_dismissal_duration: Some(4.0),
                             kind: PopupKind::Success,
                         });
@@ -382,10 +374,15 @@ impl MatchEvent for AccountSettings {
                     continue;
                 }
                 Some(AccountDataAction::AvatarChangeFailed(err_msg)) => {
-                    self.is_avatar_upload_pending = false;
-                    self.is_avatar_delete_pending = false;
-                    // Re-enable the button so user can try again
-                    Self::enable_delete_avatar_button(cx, true, &self.view.button(ids!(delete_avatar_button)));
+                    self.view.widget(ids!(upload_avatar_spinner)).set_visible(cx, false);
+                    self.view.widget(ids!(delete_avatar_spinner)).set_visible(cx, false);
+                    // Re-enable the avatar buttons so user can try again
+                    Self::enable_upload_avatar_button(cx, true, &upload_avatar_button);
+                    Self::enable_delete_avatar_button(
+                        cx,
+                        self.own_profile.as_ref().is_some_and(|p| p.avatar_state.has_avatar()),
+                        &delete_avatar_button
+                    );
                     enqueue_popup_notification(PopupItem {
                         message: err_msg.clone(),
                         auto_dismissal_duration: Some(4.0),
@@ -394,14 +391,17 @@ impl MatchEvent for AccountSettings {
                     continue;
                 }
                 Some(AccountDataAction::DisplayNameChanged(new_name)) => {
-                    self.is_display_name_change_pending = false;
+                    self.view.widget(ids!(save_name_spinner)).set_visible(cx, false);
                     // Update our cached profile with the new display name
                     if let Some(profile) = self.own_profile.as_mut() {
                         profile.username = new_name.clone();
                     }
-                    // Update the text input and disable buttons
-                    let display_name_input = self.view.text_input(ids!(display_name_input));
-                    display_name_input.set_text(cx, new_name.as_deref().unwrap_or_default());
+                    // Update the display name text input and disable buttons
+                    let (text, len) = new_name.as_deref().map(|s| (s, s.len())).unwrap_or_default();
+                    display_name_input.set_text(cx, text);
+                    display_name_input.set_cursor(cx, Cursor { index: len, prefer_next_row: false }, false);
+                    display_name_input.set_is_read_only(cx, false);
+                    display_name_input.set_disabled(cx, false);
                     Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
                     enqueue_popup_notification(PopupItem {
                         message: format!("Successfully {} display name.", if new_name.is_some() { "updated" } else { "removed" }),
@@ -411,8 +411,10 @@ impl MatchEvent for AccountSettings {
                     continue;
                 }
                 Some(AccountDataAction::DisplayNameChangeFailed(err_msg)) => {
-                    self.is_display_name_change_pending = false;
-                    // Re-enable the buttons so user can try again
+                    self.view.widget(ids!(save_name_spinner)).set_visible(cx, false);
+                    // Re-enable the buttons and text input so that the user can try again
+                    display_name_input.set_is_read_only(cx, false);
+                    display_name_input.set_disabled(cx, false);
                     Self::enable_display_name_buttons(cx, true, &accept_display_name_button, &cancel_display_name_button);
                     enqueue_popup_notification(PopupItem {
                         message: err_msg.clone(),
@@ -426,11 +428,15 @@ impl MatchEvent for AccountSettings {
 
             match action.downcast_ref() {
                 Some(AccountSettingsAction::AvatarDeleteStarted) => {
-                    self.is_avatar_delete_pending = true;
+                    self.view.widget(ids!(delete_avatar_spinner)).set_visible(cx, true);
+                    Self::enable_upload_avatar_button(cx, false, &upload_avatar_button);
+                    Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
                     continue;
                 }
                 Some(AccountSettingsAction::AvatarUploadStarted) => {
-                    self.is_avatar_upload_pending = true;
+                    self.view.widget(ids!(upload_avatar_spinner)).set_visible(cx, true);
+                    Self::enable_upload_avatar_button(cx, false, &upload_avatar_button);
+                    Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
                     continue;
                 }
                 _ => {}
@@ -439,8 +445,10 @@ impl MatchEvent for AccountSettings {
 
         let Some(own_profile) = &self.own_profile else { return };
 
-        if self.view.button(ids!(upload_avatar_button)).clicked(actions) {
-            // TODO: support uploading a new avatar picture.
+        if upload_avatar_button.clicked(actions) {
+            // TODO: uncomment the below once avatar uploading is implemented
+            // Self::enable_upload_avatar_button(cx, false, &upload_avatar_button);
+            // Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
             enqueue_popup_notification(PopupItem {
                 message: String::from("Avatar uploading is not yet implemented."),
                 auto_dismissal_duration: Some(4.0),
@@ -448,16 +456,19 @@ impl MatchEvent for AccountSettings {
             });
         }
 
-        if self.view.button(ids!(delete_avatar_button)).clicked(actions) {
+        if delete_avatar_button.clicked(actions) {
+            // Don't immediately disable the buttons. Instead, we wait for the user
+            // to confirm the action in the confirmation modal,
+            // and then we disable the buttons in the AvatarDeleteStarted action handler.
             let content = ConfirmationModalContent {
                 title_text: "Delete Avatar".into(),
-                body_text: "Are you sure you want to remove your avatar?".into(),
+                body_text: "Are you sure you want to delete your avatar?".into(),
                 accept_button_text: Some("Delete".into()),
                 on_accept_clicked: Some(Box::new(|cx| {
                     submit_async_request(MatrixRequest::SetAvatar { avatar_url: None });
                     cx.action(AccountSettingsAction::AvatarDeleteStarted);
                     enqueue_popup_notification(PopupItem {
-                        message: String::from("Removing your avatar..."),
+                        message: String::from("Deleting your avatar..."),
                         auto_dismissal_duration: Some(5.0),
                         kind: PopupKind::Info,
                     });
@@ -467,10 +478,10 @@ impl MatchEvent for AccountSettings {
             cx.action(ConfirmDeleteAction::Show(RefCell::new(Some(content))));
         }
 
+        // Enable the name change buttons if the user modified the display name to be different.
         if let Some(new_name) = display_name_input.changed(actions) {
             let trimmed = new_name.trim();
             let current_name = own_profile.username.as_deref().unwrap_or("");
-            // Only enable buttons if the trimmed name differs from the current name
             let enable = trimmed != current_name;
             Self::enable_display_name_buttons(cx, enable, &accept_display_name_button, &cancel_display_name_button);
         }
@@ -488,10 +499,12 @@ impl MatchEvent for AccountSettings {
                 "" => None,
                 name => Some(name.to_string()),
             };
-            self.is_display_name_change_pending = true;
-            // Disable buttons while the request is in flight
-            Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
+            // While the request is in flight, show the loading spinner and disable the buttons & text input
             submit_async_request(MatrixRequest::SetDisplayName { new_display_name });
+            self.view.widget(ids!(save_name_spinner)).set_visible(cx, true);
+            display_name_input.set_disabled(cx, true);
+            display_name_input.set_is_read_only(cx, true);
+            Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
             enqueue_popup_notification(PopupItem {
                 message: String::from("Uploading new display name..."),
                 auto_dismissal_duration: Some(5.0),
@@ -525,12 +538,12 @@ impl MatchEvent for AccountSettings {
 }
 
 impl AccountSettings {
-    /// Populate the account settings view with the user's profile data.
+    /// Populate avatar-related views with the user's profile data.
     ///
     /// This does nothing if `self.own_profile` is `None`.
-    fn populate_from_profile(&mut self, cx: &mut Cx) {
+    fn populate_avatar_views(&mut self, cx: &mut Cx) {
         let Some(own_profile) = &self.own_profile else {
-            error!("BUG: AccountSettings::populate_from_profile() called with no profile data.");
+            error!("BUG: AccountSettings::populate_avatar_views() called with no profile data.");
             return;
         };
 
@@ -543,12 +556,7 @@ impl AccountSettings {
                 |cx, img| utils::load_png_or_jpg(&img, cx, avatar_img_data),
             ).is_ok();
         }
-        // Disable the delete avatar button if the user has no avatar
-        let delete_avatar_button = self.view.button(ids!(delete_avatar_button));
-        if drew_avatar {
-            Self::enable_delete_avatar_button(cx, true, &delete_avatar_button);
-        } else {
-            Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
+        if !drew_avatar {
             our_own_avatar.show_text(
                 cx,
                 Some(COLOR_ROBRIX_PURPLE),
@@ -557,18 +565,28 @@ impl AccountSettings {
             );
         }
 
+        Self::enable_upload_avatar_button(
+            cx,
+            true,
+            &self.view.button(ids!(upload_avatar_button))
+        );
+        Self::enable_delete_avatar_button(
+            cx,
+            own_profile.avatar_state.has_avatar(),
+            &self.view.button(ids!(delete_avatar_button))
+        );
+    }
+
+    /// Show and initializes the account settings within the SettingsScreen.
+    pub fn populate(&mut self, cx: &mut Cx, own_profile: UserProfile) {
         self.view
             .text_input(ids!(display_name_input))
             .set_text(cx, own_profile.username.as_deref().unwrap_or_default());
         self.view
             .label(ids!(user_id))
             .set_text(cx, own_profile.user_id.as_str());
-    }
-
-    /// Show and initializes the account settings within the SettingsScreen.
-    pub fn populate(&mut self, cx: &mut Cx, own_profile: UserProfile) {
         self.own_profile = Some(own_profile);
-        self.populate_from_profile(cx);
+        self.populate_avatar_views(cx);
 
         self.view.button(ids!(upload_avatar_button)).reset_hover(cx);
         self.view.button(ids!(delete_avatar_button)).reset_hover(cx);
@@ -602,6 +620,32 @@ impl AccountSettings {
             }
             draw_text: {
                 color: (delete_button_fg_color),
+            }
+        });
+    }
+
+    /// Enable or disable the upload avatar button.
+    fn enable_upload_avatar_button(
+        cx: &mut Cx,
+        enable: bool,
+        upload_avatar_button: &ButtonRef,
+    ) {
+        let (upload_button_fg_color, upload_button_bg_color) = if enable {
+            (COLOR_ACTIVE_PRIMARY, COLOR_PRIMARY)
+        } else {
+            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+        };
+        upload_avatar_button.apply_over(cx, live!{
+            enabled: (enable),
+            draw_bg: {
+                color: (upload_button_bg_color),
+                border_color: (upload_button_fg_color),
+            }
+            draw_icon: {
+                color: (upload_button_fg_color),
+            }
+            draw_text: {
+                color: (upload_button_fg_color),
             }
         });
     }
