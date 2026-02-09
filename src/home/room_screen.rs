@@ -25,7 +25,7 @@ use matrix_sdk_ui::timeline::{
 use ruma::{OwnedUserId, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}};
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, ConfirmDeleteAction}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -1936,28 +1936,39 @@ impl RoomScreen {
                 }
                 MessageAction::Redact { details, reason } => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    let mut success = false;
                     if let Some(timeline_item) = tl.items.get(details.item_id) {
                         if let Some(event_tl_item) = timeline_item.as_event() {
                             if event_tl_item.event_id() == details.event_id.as_deref() {
                                 let timeline_event_id = event_tl_item.identifier();
-                                submit_async_request(MatrixRequest::RedactMessage {
-                                    room_id: tl.room_id.clone(),
-                                    timeline_event_id,
-                                    reason,
-                                });
-                                success = true;
+                                let room_id = tl.room_id.clone();
+                                let content = ConfirmationModalContent {
+                                    title_text: "Delete Message".into(),
+                                    body_text: "Are you sure you want to delete this message? This cannot be undone.".into(),
+                                    accept_button_text: Some("Delete".into()),
+                                    on_accept_clicked: Some(Box::new(move |_cx| {
+                                        submit_async_request(MatrixRequest::RedactMessage {
+                                            room_id,
+                                            timeline_event_id,
+                                            reason,
+                                        });
+                                    })),
+                                    ..Default::default()
+                                };
+                                cx.action(ConfirmDeleteAction::Show(RefCell::new(Some(content))));
+                                continue;
                             }
                         }
                     }
-                    if !success {
-                        enqueue_popup_notification(PopupItem { message: "Couldn't find message in timeline to delete.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
-                        error!("MessageAction::Redact: couldn't find event [{}] {:?} to react to in room {}",
-                            details.item_id,
-                            details.event_id.as_deref(),
-                            tl.room_id,
-                        );
-                    }
+                    enqueue_popup_notification(PopupItem {
+                        message: "Couldn't find message in timeline to delete.".to_string(),
+                        auto_dismissal_duration: None,
+                        kind: PopupKind::Error,
+                    });
+                    error!("MessageAction::Redact: couldn't find event [{}] {:?} to delete in room {}",
+                        details.item_id,
+                        details.event_id.as_deref(),
+                        tl.room_id,
+                    );
                 }
                 // MessageAction::Report(details) => {
                 //     // TODO
