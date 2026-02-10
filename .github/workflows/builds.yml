@@ -194,7 +194,12 @@ jobs:
           cargo makepad apple ios \
           --org=rs.robius \
           --app=robrix \
-          run-sim -p robrix --profile fast
+          run-sim -p robrix \
+          --config profile.dev.opt-level=0 \
+          --config profile.dev.debug=false \
+          --config profile.dev.lto=\"off\" \
+          --config profile.dev.strip=true \
+          --config profile.dev.debug-assertions=false
         continue-on-error: true # iOS builds may fail due to signing requirements in CI
 
   build_android_on_macos:
@@ -223,7 +228,12 @@ jobs:
         env:
           RUSTFLAGS: "-D warnings"
         run: |
-          cargo makepad android build -p robrix --profile fast
+          cargo makepad android build -p robrix \
+          --config profile.dev.opt-level=0 \
+          --config profile.dev.debug=false \
+          --config profile.dev.lto=\"off\" \
+          --config profile.dev.strip=true \
+          --config profile.dev.debug-assertions=false
 
   build_android_on_linux:
     name: Build Android (Linux Host)
@@ -251,7 +261,12 @@ jobs:
         env:
           RUSTFLAGS: "-D warnings"
         run: |
-          cargo makepad android build -p robrix --profile fast
+          cargo makepad android build -p robrix \
+          --config profile.dev.opt-level=0 \
+          --config profile.dev.debug=false \
+          --config profile.dev.lto=\"off\" \
+          --config profile.dev.strip=true \
+          --config profile.dev.debug-assertions=false
 
   build_android_on_windows:
     name: Build Android (Windows Host)
@@ -279,7 +294,14 @@ jobs:
         env:
           RUSTFLAGS: "-D warnings"
         run: |
-          cargo makepad android build -p robrix --profile fast
+          ## Note: we can't use the profile here because cargo-makepad doesn't support custom profiles.
+          # cargo makepad android build -p robrix --profile fast
+          cargo makepad android build -p robrix \
+          --config profile.dev.opt-level=0 \
+          --config profile.dev.debug=false \
+          --config profile.dev.lto=\"off\" \
+          --config profile.dev.strip=true \
+          --config profile.dev.debug-assertions=false
 
   # Build Summary
   build_summary:
