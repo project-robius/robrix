@@ -2,11 +2,12 @@
 //!
 //! See `handle_startup()` for the first code that runs on app startup.
 
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 use makepad_widgets::*;
 use matrix_sdk::{RoomState, ruma::{OwnedRoomId, RoomId}};
 use serde::{Deserialize, Serialize};
 use crate::{
+    shared::confirmation_modal::ConfirmationModalContent,
     avatar_cache::clear_avatar_cache,
     home::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt},
@@ -167,6 +168,13 @@ live_design! {
                             }
                         }
 
+                        // A modal to confirm any deletion/removal action.
+                        delete_confirmation_modal = <Modal> {
+                            content: {
+                                delete_confirmation_modal_inner = <NegativeConfirmationModal> { }
+                            }
+                        }
+
                         <PopupList> {}
 
                         // Tooltips must be shown in front of all other UI elements,
@@ -283,6 +291,11 @@ impl MatchEvent for App {
         let invite_confirmation_modal_inner = self.ui.confirmation_modal(ids!(invite_confirmation_modal_inner));
         if let Some(_accepted) = invite_confirmation_modal_inner.closed(actions) {
             self.ui.modal(ids!(invite_confirmation_modal)).close(cx);
+        }
+
+        let delete_confirmation_modal_inner = self.ui.confirmation_modal(ids!(delete_confirmation_modal_inner));
+        if let Some(_accepted) = delete_confirmation_modal_inner.closed(actions) {
+            self.ui.modal(ids!(delete_confirmation_modal)).close(cx);
         }
 
         for action in actions {
@@ -516,6 +529,15 @@ impl MatchEvent for App {
                 if let Some(content) = content_opt.borrow_mut().take() {
                     invite_confirmation_modal_inner.show(cx, content);
                     self.ui.modal(ids!(invite_confirmation_modal)).open(cx);
+                }
+                continue;
+            }
+
+            // Handle a request to show the delete confirmation modal.
+            if let Some(ConfirmDeleteAction::Show(content_opt)) = action.downcast_ref() {
+                if let Some(content) = content_opt.borrow_mut().take() {
+                    self.ui.confirmation_modal(ids!(delete_confirmation_modal_inner)).show(cx, content);
+                    self.ui.modal(ids!(delete_confirmation_modal)).open(cx);
                 }
                 continue;
             }
@@ -839,4 +861,17 @@ pub enum AppStateAction {
         destination_room: BasicRoomDetails,
     },
     None,
+}
+
+/// An action to show a deletion/removal confirmation modal.
+///
+/// This is NOT a widget action.
+#[derive(Debug)]
+pub enum ConfirmDeleteAction {
+    /// Show the deletion confirmation modal with the given content.
+    ///
+    /// The content is wrapped in a `RefCell` to ensure that only one entity handles it
+    /// and that that one entity can take ownership of the content object,
+    /// which avoids having to clone it.
+    Show(RefCell<Option<ConfirmationModalContent>>),
 }

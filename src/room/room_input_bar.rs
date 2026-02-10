@@ -15,11 +15,12 @@
 //! * A "cannot-send-message" notice, which is shown if the user cannot send messages to the room.
 //!
 
+
 use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
 
 live_design! {
     use link::theme::*;
@@ -197,11 +198,11 @@ impl Widget for RoomInputBar {
                         MessageAction::JumpToEvent(event_id),
                     );
                 } else {
-                    enqueue_popup_notification(PopupItem {
-                        message: String::from("BUG: couldn't find the message you're replying to."),
-                        kind: PopupKind::Error,
-                        auto_dismissal_duration: None
-                    });
+                    enqueue_popup_notification(
+                        "BUG: couldn't find the message you're replying to.",
+                        PopupKind::Error,
+                        None,
+                    );
                 }
             }
             _ => {}
@@ -243,11 +244,11 @@ impl RoomInputBar {
             log!("Add location button clicked; requesting current location...");
             if let Err(_e) = init_location_subscriber(cx) {
                 error!("Failed to initialize location subscriber");
-                enqueue_popup_notification(PopupItem {
-                    message: String::from("Failed to initialize location services."),
-                    kind: PopupKind::Error,
-                    auto_dismissal_duration: None
-                });
+                enqueue_popup_notification(
+                    "Failed to initialize location services.",
+                    PopupKind::Error,
+                    None,
+                );
             }
             self.view.location_preview(ids!(location_preview)).show();
             self.redraw(cx);

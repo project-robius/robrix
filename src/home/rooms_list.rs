@@ -35,7 +35,7 @@ use crate::{
     shared::{
         collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
         jump_to_bottom_button::UnreadMessageCount,
-        popup_list::{PopupItem, PopupKind, enqueue_popup_notification},
+        popup_list::{PopupKind, enqueue_popup_notification},
         room_filter_input_bar::RoomFilterAction,
     },
     sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, submit_async_request},
@@ -647,15 +647,15 @@ impl RoomsList {
                         if was_direct == is_direct {
                             continue;
                         }
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("{} was changed from {} to {}.",
+                        enqueue_popup_notification(
+                            format!("{} was changed from {} to {}.",
                                 room.room_name_id,
                                 if room.is_direct { "direct" } else { "regular" },
                                 if is_direct { "direct" } else { "regular" }
                             ),
-                            auto_dismissal_duration: Some(5.0),
-                            kind: PopupKind::Info,
-                        });
+                            PopupKind::Info,
+                            Some(5.0),
+                        );
 
                         // Remove the room from the previous list (direct or regular).
                         let list_to_remove_from = if was_direct {
@@ -1119,14 +1119,15 @@ impl RoomsList {
             }
             SpaceRoomListAction::PaginationError { space_id, error } => {
                 error!("RoomsList: failed to paginate rooms in space {space_id}: {error:?}");
-                enqueue_popup_notification(PopupItem {
-                    message: "Failed to fetch more rooms in this space. Try again later.".to_string(),
-                    auto_dismissal_duration: None,
-                    kind: PopupKind::Error,
-                });
+                enqueue_popup_notification(
+                    "Failed to fetch more rooms in this space. Try again later.",
+                    PopupKind::Error,
+                    None,
+                );
             }
-            // DetailedChildren is handled by SpaceLobbyScreen, not RoomsList.
-            SpaceRoomListAction::DetailedChildren { .. } => { }
+            // Details-related space actions are handled by SpaceLobbyScreen, not RoomsList.
+            SpaceRoomListAction::DetailedChildren { .. }
+            | SpaceRoomListAction::TopLevelSpaceDetails(_) => { }
         }
     }
 
@@ -1302,11 +1303,11 @@ impl Widget for RoomsList {
                 // Handle a matrix link being generated.
                 fn on_link_generated(cx: &mut Cx, link: &str) {
                     cx.copy_to_clipboard(link);
-                    enqueue_popup_notification(PopupItem {
-                        message: "Link copied to clipboard.".to_string(),
-                        auto_dismissal_duration: Some(3.0),
-                        kind: PopupKind::Success,
-                    });
+                    enqueue_popup_notification(
+                        "Link copied to clipboard.",
+                        PopupKind::Success,
+                        Some(3.0),
+                    );
                 }
                 match action.downcast_ref() {
                     Some(MatrixLinkAction::MatrixToUri(link)) => {
@@ -1318,11 +1319,11 @@ impl Widget for RoomsList {
                         continue;
                     }
                     Some(MatrixLinkAction::Error(err)) => {
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Failed to generate link: {}", err),
-                            auto_dismissal_duration: Some(5.0),
-                            kind: PopupKind::Error,
-                        });
+                        enqueue_popup_notification(
+                            format!("Failed to generate link: {}", err),
+                            PopupKind::Error,
+                            Some(5.0),
+                        );
                         continue;
                     }
                     _ => {}
