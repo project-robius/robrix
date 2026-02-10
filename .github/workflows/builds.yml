@@ -133,6 +133,9 @@ jobs:
     name: Build Windows
     runs-on: windows-2022
     if: github.event.pull_request.draft == false
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -272,6 +275,9 @@ jobs:
     name: Build Android (Windows Host)
     runs-on: windows-2022
     if: github.event.pull_request.draft == false
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
