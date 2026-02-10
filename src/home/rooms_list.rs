@@ -1125,8 +1125,9 @@ impl RoomsList {
                     kind: PopupKind::Error,
                 });
             }
-            // DetailedChildren is handled by SpaceLobbyScreen, not RoomsList.
-            SpaceRoomListAction::DetailedChildren { .. } => { }
+            // Details-related space actions are handled by SpaceLobbyScreen, not RoomsList.
+            SpaceRoomListAction::DetailedChildren { .. }
+            | SpaceRoomListAction::TopLevelSpaceDetails(_) => { }
         }
     }
 

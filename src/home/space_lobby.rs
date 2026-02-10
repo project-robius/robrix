@@ -398,18 +398,18 @@ live_design! {
                 color: #fafafa
             }
 
-            title = <Label> {
+            space_info_label = <Label> {
                 width: Fill,
                 height: Fit,
+                margin: {left: 2}
                 draw_text: {
-                    text_style: <REGULAR_TEXT>{font_size: 9},
+                    text_style: <REGULAR_TEXT>{font_size: 10},
                     color: #737373,
-                    wrap: Word,
+                    wrap: Ellipsis,
                 }
-                text: "Rooms and Spaces in"
+                text: "Welcome to the space:"
             }
             
-            // Parent space row with avatar and name
             parent_space_row = <View> {
                 width: Fill,
                 height: Fit,
@@ -751,6 +751,22 @@ impl Widget for SpaceLobbyScreen {
             for action in actions {
                 if let Some(SpaceRoomListAction::DetailedChildren { space_id, children, .. }) = action.downcast_ref() {
                     self.update_children_in_space(cx, space_id, children);
+                }
+
+                // Handle receiving space details (join rule, member count).
+                if let Some(SpaceRoomListAction::TopLevelSpaceDetails(sr)) = action.downcast_ref() {
+                    if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == &sr.room_id) {
+                        self.view.label(ids!(header.space_info_label)).set_text(cx, &format!(
+                            "{}  ·  {} {}",
+                            match sr.join_rule {
+                                Some(JoinRuleSummary::Public) => "🌐  Public space",
+                                _ => "🔒  Private space",
+                            },
+                            sr.num_joined_members,
+                            if sr.num_joined_members == 1 { "member" } else { "members" }
+                        ));
+                        self.redraw(cx);
+                    }
                 }
 
                 // Handle SubspaceEntry clicks
@@ -1103,10 +1119,15 @@ impl SpaceLobbyScreen {
                 space_id: space_name_id.room_id().clone(),
                 parent_chain: parent_chain_opt.unwrap_or_default(),
             });
+            let _ = sender.send(SpaceRequest::GetTopLevelSpaceDetails {
+                space_id: space_name_id.room_id().clone(),
+            });
             self.space_request_sender = Some(sender);
         }
 
+        // Clear the main content until we receive the async space info responses.
         self.tree_entries.clear();
+        self.view.label(ids!(header.space_info_label)).set_text(cx, "");
         self.is_loading = true;
 
         // Restore UI state if we've viewed this space before, otherwise start fresh
@@ -1122,6 +1143,7 @@ impl SpaceLobbyScreen {
         let avatar_ref = self.view.avatar(ids!(header.parent_space_row.parent_avatar));
         let first_char = utils::user_name_first_letter(&space_name);
         avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
+
         self.redraw(cx);
     }
 }
