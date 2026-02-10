@@ -69,6 +69,8 @@ live_design! {
 /// The categories of collapsible headers in the rooms list.
 #[derive(Copy, Clone, Debug, DefaultNone)]
 pub enum HeaderCategory {
+    /// System notices and alerts.
+    SystemAlerts,
     /// Rooms the user has been invited to but has not yet joined.
     Invites,
     /// Joined rooms that the user has marked as favorites.
@@ -86,6 +88,7 @@ pub enum HeaderCategory {
 impl HeaderCategory {
     fn as_str(&self) -> &'static str {
         match self {
+            HeaderCategory::SystemAlerts => "System Alerts",
             HeaderCategory::Invites => "Invites",
             HeaderCategory::Favorites => "Favorites",
             HeaderCategory::RegularRooms => "Rooms",
