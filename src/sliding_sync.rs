@@ -35,7 +35,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
-        avatar::AvatarState, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
+        avatar::AvatarState, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, avatar_from_room_name, VecDiff}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -176,12 +176,12 @@ async fn login(
                 if let Err(e) = persistence::save_session(&client, client_session).await {
                     let err_msg = format!("Failed to save session state to storage: {e}");
                     error!("{err_msg}");
-                    enqueue_popup_notification(PopupItem { message: err_msg, kind: PopupKind::Error, auto_dismissal_duration: None });
+                    enqueue_popup_notification(err_msg, PopupKind::Error, None);
                 }
                 Ok((client, None))
             } else {
                 let err_msg = format!("Failed to login as {}: {:?}", cli.user_id, login_result);
-                enqueue_popup_notification(PopupItem { message: err_msg.clone(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                enqueue_popup_notification(err_msg.clone(), PopupKind::Error, None);
                 enqueue_rooms_list_update(RoomsListUpdate::Status { status: err_msg.clone() });
                 bail!(err_msg);
             }
@@ -929,11 +929,11 @@ async fn matrix_worker_task(
                             },
                             Err(e) => {
                                 error!("Failed to create DM with {user_id}: {e}");
-                                enqueue_popup_notification(PopupItem {
-                                    message: format!("Failed to create Direct Message: {e}"),
-                                    kind: PopupKind::Error,
-                                    auto_dismissal_duration: None,
-                                });
+                                enqueue_popup_notification(
+                                    format!("Failed to create Direct Message: {e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
                                 return;
                             }
                         }
@@ -1444,22 +1444,22 @@ async fn matrix_worker_task(
                                             }
                                             Err(e) => {
                                                 error!("Failed to sign message with TSP: {e:?}");
-                                                enqueue_popup_notification(PopupItem {
-                                                    message: format!("Failed to sign message with TSP: {e}"),
-                                                    kind: PopupKind::Error,
-                                                    auto_dismissal_duration: None
-                                                });
+                                                enqueue_popup_notification(
+                                                    format!("Failed to sign message with TSP: {e}"),
+                                                    PopupKind::Error,
+                                                    None,
+                                                );
                                                 return;
                                             }
                                         }
                                     }
                                     Err(e) => {
                                         error!("Failed to serialize message to bytes for TSP signing: {e:?}");
-                                        enqueue_popup_notification(PopupItem {
-                                            message: format!("Failed to serialize message for TSP signing: {e}"),
-                                            kind: PopupKind::Error,
-                                            auto_dismissal_duration: None
-                                        });
+                                        enqueue_popup_notification(
+                                            format!("Failed to serialize message for TSP signing: {e}"),
+                                            PopupKind::Error,
+                                            None,
+                                        );
                                         return;
                                     }
                                 }
@@ -1473,7 +1473,7 @@ async fn matrix_worker_task(
                             Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send reply message to room {room_id}: {_e:?}");
-                                enqueue_popup_notification(PopupItem { message: format!("Failed to send reply: {_e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
+                                enqueue_popup_notification(format!("Failed to send reply: {_e}"), PopupKind::Error, None);
                             }
                         }
                     } else {
@@ -1481,7 +1481,7 @@ async fn matrix_worker_task(
                             Ok(_send_handle) => log!("Sent message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send message to room {room_id}: {_e:?}");
-                                enqueue_popup_notification(PopupItem { message: format!("Failed to send message: {_e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
+                                enqueue_popup_notification(format!("Failed to send message: {_e}"), PopupKind::Error, None);
                             }
                         }
                     }
@@ -1606,7 +1606,11 @@ async fn matrix_worker_task(
                         Ok(()) => log!("Successfully redacted message in room {room_id}."),
                         Err(e) => {
                             error!("Failed to redact message in {room_id}; error: {e:?}");
-                            enqueue_popup_notification(PopupItem { message: format!("Failed to redact message. Error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
+                            enqueue_popup_notification(
+                                format!("Failed to redact message. Error: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
                         }
                     }
                 });
@@ -2186,11 +2190,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         Err(e) => {
             error!("BUG: failed to create SyncService: {e:?}");
             let err = format!("Please restart Robrix.\n\nFailed to create Matrix sync service: {e}.");
-            enqueue_popup_notification(PopupItem {
-                message: err.clone(),
-                auto_dismissal_duration: None,
-                kind: PopupKind::Error,
-            });
+            enqueue_popup_notification(
+                err.clone(),
+                PopupKind::Error,
+                None,
+            );
             enqueue_rooms_list_update(RoomsListUpdate::Status { status: err });
             return;
         }
@@ -2234,11 +2238,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("Rooms list update error: {e}"),
-                                kind: PopupKind::Error,
-                                auto_dismissal_duration: None,
-                            });
+                            enqueue_popup_notification(
+                                format!("Rooms list update error: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
                         }
                     },
                     Err(e) => {
@@ -2257,11 +2261,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                             status: e.to_string(),
                         });
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Room list service  error: {e}"),
-                            kind: PopupKind::Error,
-                            auto_dismissal_duration: None,
-                        });
+                        enqueue_popup_notification(
+                            format!("Room list service  error: {e}"),
+                            PopupKind::Error,
+                            None,
+                        );
                     },
                     Err(e) => {
                         error!("BUG: failed to join room list service loop task: {e:?}");
@@ -2279,11 +2283,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                             status: e.to_string(),
                         });
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Space service error: {e}"),
-                            kind: PopupKind::Error,
-                            auto_dismissal_duration: None,
-                        });
+                        enqueue_popup_notification(
+                            format!("Space service error: {e}"),
+                            PopupKind::Error,
+                            None,
+                        );
                     },
                     Err(e) => {
                         error!("BUG: failed to join space service loop task: {e:?}");
@@ -2947,11 +2951,11 @@ fn handle_load_app_state(user_id: OwnedUserId) {
             }
             Err(_e) => {
                 log!("Failed to restore dock layout from persistent state: {_e}");
-                enqueue_popup_notification(PopupItem {
-                    message: String::from("Could not restore the previous dock layout."),
-                    kind: PopupKind::Error,
-                    auto_dismissal_duration: None
-                });
+                enqueue_popup_notification(
+                    "Could not restore the previous dock layout.",
+                    PopupKind::Error,
+                    None,
+                );
             }
         }
     });
@@ -2968,11 +2972,11 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
                     if let Some(ss) = get_sync_service() {
                         ss.start().await;
                     } else {
-                        enqueue_popup_notification(PopupItem {
-                            message: "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.".into(),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Error,
-                        });
+                        enqueue_popup_notification(
+                            "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.",
+                            PopupKind::Error,
+                            None,
+                        );
                     }
                 }
                 other => Cx::post_action(RoomsListHeaderAction::StateUpdate(other)),

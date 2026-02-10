@@ -399,7 +399,7 @@ live_design! {
 
             show_bg: true,
             draw_bg: {
-                color: #fafafa
+                color: (COLOR_BG_PREVIEW)
             }
 
             space_info_label = <Label> {
@@ -430,6 +430,7 @@ live_design! {
                 parent_name = <Label> {
                     width: Fill,
                     height: Fit,
+                    margin: {top: 4} // vertically center-align with the avatar
                     draw_text: {
                         text_style: <TITLE_TEXT>{font_size: 14},
                         color: #1a1a1a,
@@ -441,6 +442,7 @@ live_design! {
                 invite_button = <RobrixIconButton> {
                     width: Fit
                     align: {x: 0.5, y: 0.5}
+                    margin: {left: 6}
                     padding: 12,
                     draw_icon: {
                         svg_file: (ICON_ADD_USER)
