@@ -789,9 +789,7 @@ async fn matrix_worker_task(
                         Cx::post_action(InviteResultAction::Failed {
                             room_id,
                             user_id,
-                            error: matrix_sdk::Error::UnknownError(
-                                String::from("Room/Space not found in client's known list.").into()
-                            ),
+                            error: matrix_sdk::Error::UnknownError("Room/Space not found in client's known list.".into()),
                         })
                     }
                 });
@@ -848,9 +846,7 @@ async fn matrix_worker_task(
                         error!("BUG: client could not get room with ID {room_id}");
                         LeaveRoomResultAction::Failed {
                             room_id,
-                            error: matrix_sdk::Error::UnknownError(
-                                String::from("Client couldn't locate room to leave it.").into()
-                            ),
+                            error: matrix_sdk::Error::UnknownError("Client couldn't locate room to leave it.".into()),
                         }
                     };
                     Cx::post_action(result_action);
@@ -3603,14 +3599,9 @@ async fn spawn_sso_server(
                         break
                     }
                 }
-                Uri::new(&sso_url).open().map_err(|err| {
-                    Error::UnknownError(
-                        Box::new(io::Error::other(
-                            format!("Unable to open SSO login url. Error: {:?}", err),
-                        ))
-                        .into(),
-                    )
-                })
+                Uri::new(&sso_url).open().map_err(|err|
+                    Error::Io(io::Error::other(format!("Unable to open SSO login url. Error: {:?}", err)))
+                )
             })
             .identity_provider_id(&identity_provider_id)
             .initial_device_display_name(&format!("robrix-sso-{brand}"))
