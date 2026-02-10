@@ -15,7 +15,7 @@ live_design! {
         align: {x: 0.5}
 
         <RoundedView> {
-            // Same width as LoginStatusModal for consistency
+            // Keep parity with LoginStatusModal width by averaging both legacy widths.
             width: ((320+250)/2),
             height: Fit,
             flow: Down,

@@ -94,7 +94,7 @@ live_design! {
             color: #FFF
         }
 
-        <ScrollXYView> {
+        <ScrollYView> {
             width: Fit, height: Fill,
             // Note: *do NOT* vertically center this, it will break scrolling.
             align: {x: 0.5}
@@ -335,6 +335,7 @@ live_design! {
                                 width: Fill, height: Fit
                                 padding: 10,
                                 empty_text: "Registration token"
+                                is_password: true,
                             }
                         }
 
