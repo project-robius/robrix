@@ -96,7 +96,7 @@ jobs:
         env:
           RUSTFLAGS: "-D warnings"
         run: |
-          cargo build
+          cargo build --profile fast
 
   build_macos:
     name: Build macOS (${{ matrix.arch }})
@@ -127,7 +127,7 @@ jobs:
         env:
           RUSTFLAGS: "-D warnings"
         run: |
-          cargo build
+          cargo build --profile fast
 
   build_windows:
     name: Build Windows
@@ -148,7 +148,7 @@ jobs:
         env:
           RUSTFLAGS: "-D warnings"
         run: |
-          cargo build
+          cargo build --profile fast
 
   # ═══════════════════════════════════════════════════════════════════════════════════════
   # CROSS-PLATFORM MOBILE BUILDS
@@ -194,7 +194,7 @@ jobs:
           cargo makepad apple ios \
           --org=rs.robius \
           --app=robrix \
-          run-sim -p robrix
+          run-sim -p robrix --profile fast
         continue-on-error: true # iOS builds may fail due to signing requirements in CI
 
   build_android_on_macos:
@@ -223,7 +223,7 @@ jobs:
         env:
           RUSTFLAGS: "-D warnings"
         run: |
-          cargo makepad android build -p robrix
+          cargo makepad android build -p robrix --profile fast
 
   build_android_on_linux:
     name: Build Android (Linux Host)
@@ -251,7 +251,7 @@ jobs:
         env:
           RUSTFLAGS: "-D warnings"
         run: |
-          cargo makepad android build -p robrix
+          cargo makepad android build -p robrix --profile fast
 
   build_android_on_windows:
     name: Build Android (Windows Host)
@@ -279,7 +279,7 @@ jobs:
         env:
           RUSTFLAGS: "-D warnings"
         run: |
-          cargo makepad android build -p robrix
+          cargo makepad android build -p robrix --profile fast
 
   # Build Summary
   build_summary:
