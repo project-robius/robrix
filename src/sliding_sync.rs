@@ -766,27 +766,33 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::InviteUser { room_id, user_id } => {
-                let timeline = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                        error!("BUG: room info not found for invite user request {room_id}, {user_id}");
-                        continue;
-                    };
-                    room_info.timeline.clone()
-                };
-
+                let Some(client) = get_client() else { continue };
                 let _invite_task = Handle::current().spawn(async move {
-                    log!("Sending request to invite user {user_id} to room {room_id}...");
-                    match timeline.room().invite_user_by_id(&user_id).await {
-                        Ok(_) => Cx::post_action(InviteResultAction::Sent {
+                    // We use `client.get_room()` here because the room might also be a space,
+                    // not just a joined room.
+                    if let Some(room) = client.get_room(&room_id) {
+                        log!("Sending request to invite user {user_id} to room {room_id}...");
+                        match room.invite_user_by_id(&user_id).await {
+                            Ok(_) => Cx::post_action(InviteResultAction::Sent {
+                                room_id,
+                                user_id,
+                            }),
+                            Err(error) => Cx::post_action(InviteResultAction::Failed {
+                                room_id,
+                                user_id,
+                                error,
+                            }),
+                        }
+                    }
+                    else {
+                        error!("Room/Space not found for invite user request {room_id}, {user_id}");
+                        Cx::post_action(InviteResultAction::Failed {
                             room_id,
                             user_id,
-                        }),
-                        Err(error) => Cx::post_action(InviteResultAction::Failed {
-                            room_id,
-                            user_id,
-                            error,
-                        }),
+                            error: matrix_sdk::Error::UnknownError(
+                                String::from("Room/Space not found in client's known list.").into()
+                            ),
+                        })
                     }
                 });
             }
