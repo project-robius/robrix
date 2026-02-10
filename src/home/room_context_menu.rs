@@ -3,7 +3,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use crate::{shared::popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
+use crate::{home::invite_modal::InviteModalAction, shared::popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
 
 const BUTTON_HEIGHT: f64 = 35.0;
 const MENU_WIDTH: f64 = 215.0;
@@ -136,7 +136,6 @@ pub struct RoomContextMenuDetails {
 #[derive(Clone, DefaultNone, Debug)]
 pub enum RoomContextMenuAction {
     Notifications(OwnedRoomId),
-    Invite(OwnedRoomId),
     OpenRoomSettings(OwnedRoomId),
     None,
 }
@@ -236,12 +235,7 @@ impl WidgetMatchEvent for RoomContextMenu {
             close_menu = true;
         }
         else if self.button(ids!(invite_button)).clicked(actions) {
-            // TODO: handle/implement this
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Sending a room invite is not yet implemented."),
-                auto_dismissal_duration: Some(5.0),
-                kind: PopupKind::Warning,
-            });
+            cx.action(InviteModalAction::Open(details.room_name_id.clone()));
             close_menu = true;
         }
         else if self.button(ids!(leave_button)).clicked(actions) {

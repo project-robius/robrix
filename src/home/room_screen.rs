@@ -25,7 +25,7 @@ use matrix_sdk_ui::timeline::{
 use ruma::{OwnedUserId, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}};
 
 use crate::{
-    app::AppStateAction, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, ConfirmDeleteAction}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -729,7 +729,7 @@ impl Widget for RoomScreen {
                             })),
                             ..Default::default()
                         };
-                        cx.action(InviteAction::ShowConfirmationModal(RefCell::new(Some(content))));
+                        cx.action(InviteAction::ShowInviteConfirmationModal(RefCell::new(Some(content))));
                     }
                 }
             }
@@ -744,6 +744,28 @@ impl Widget for RoomScreen {
                         self.room_name_id = None;
                         self.set_displayed_room(cx, room_name_id);
                         return;
+                    }
+                }
+
+                // Handle InviteResultAction to show popup notifications.
+                if let Some(InviteResultAction::Sent { room_id, .. }) = action.downcast_ref() {
+                    // Only handle if this is for the current room.
+                    if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_id) {
+                        enqueue_popup_notification(PopupItem {
+                            message: "Sent invite successfully.".to_string(),
+                            auto_dismissal_duration: Some(4.0),
+                            kind: PopupKind::Success,
+                        });
+                    }
+                }
+                if let Some(InviteResultAction::Failed { room_id, error, .. }) = action.downcast_ref() {
+                    // Only handle if this is for the current room.
+                    if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_id) {
+                        enqueue_popup_notification(PopupItem {
+                            message: format!("Failed to send invite.\n\nError: {error}"),
+                            auto_dismissal_duration: None,
+                            kind: PopupKind::Error,
+                        });
                     }
                 }
 
@@ -1481,20 +1503,6 @@ impl RoomScreen {
                     tl.tombstone_info = Some(successor_room_details);
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
-                TimelineUpdate::InviteSent { result, .. } => {
-                    match result {
-                        Ok(_) => enqueue_popup_notification(PopupItem {
-                            message: "Sent invite successfully.".to_string(),
-                            auto_dismissal_duration: Some(4.0),
-                            kind: PopupKind::Success,
-                        }),
-                        Err(e) => enqueue_popup_notification(PopupItem {
-                            message: format!("Failed to send invite.\n\nError: {e}"),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Error,
-                        }),
-                    }
-                }
             }
         }
 
@@ -1875,34 +1883,34 @@ impl RoomScreen {
                         );
                     }
                 }
-                MessageAction::ViewSource(_details) => {
-                    enqueue_popup_notification(PopupItem { message: "Viewing an event's source is not yet implemented.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
-                    // TODO: re-use Franco's implementation below:
+                MessageAction::ViewSource(details) => {
+                    let Some(tl) = self.tl_state.as_ref() else { continue };
+                    let Some(event_tl_item) = tl.items
+                        .get(details.item_id)
+                        .and_then(|tl_item| tl_item.as_event().cloned())
+                        .filter(|ev| ev.event_id() == details.event_id.as_deref())
+                    else {
+                        enqueue_popup_notification(PopupItem {
+                            message: "Could not find message in timeline to view source.".to_string(),
+                            kind: PopupKind::Error,
+                            auto_dismissal_duration: None,
+                        });
+                        continue;
+                    };
 
-                    // let Some(tl) = self.tl_state.as_mut() else { continue };
-                    // let Some(event_tl_item) = tl.items
-                    //     .get(details.item_id)
-                    //     .and_then(|tl_item| tl_item.as_event().cloned())
-                    //     .filter(|ev| ev.event_id() == details.event_id.as_deref())
-                    // else {
-                    //     continue;
-                    // };
+                    // Get the original JSON from the event and pretty-print it
+                    let original_json: Option<String> = event_tl_item
+                        .original_json()
+                        .and_then(|raw_event| serde_json::to_value(raw_event).ok())
+                        .and_then(|value| serde_json::to_string_pretty(&value).ok());
 
-                    // let Some(_message_event) = event_tl_item.content().as_message() else {
-                    //     continue;
-                    // };
+                    let event_id = event_tl_item.event_id().map(|e| e.to_owned());
 
-                    // let original_json: Option<serde_json::Value> = event_tl_item
-                    //     .original_json()
-                    //     .and_then(|raw_event| serde_json::to_value(raw_event).ok());
-                    // let room_id = self.room_id.to_owned();
-                    // let event_id = event_tl_item.event_id().map(|e| e.to_owned());
-
-                    // cx.widget_action(
-                    //     widget_uid,
-                    //     &scope.path,
-                    //     MessageAction::MessageSourceModalOpen { room_id, event_id, original_json },
-                    // );
+                    cx.action(super::event_source_modal::EventSourceModalAction::Open {
+                        room_id: tl.room_id.clone(),
+                        event_id,
+                        original_json,
+                    });
                 }
                 MessageAction::JumpToRelated(details) => {
                     let Some(related_event_id) = details.related_event_id.as_ref() else {
@@ -1928,28 +1936,39 @@ impl RoomScreen {
                 }
                 MessageAction::Redact { details, reason } => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    let mut success = false;
                     if let Some(timeline_item) = tl.items.get(details.item_id) {
                         if let Some(event_tl_item) = timeline_item.as_event() {
                             if event_tl_item.event_id() == details.event_id.as_deref() {
                                 let timeline_event_id = event_tl_item.identifier();
-                                submit_async_request(MatrixRequest::RedactMessage {
-                                    room_id: tl.room_id.clone(),
-                                    timeline_event_id,
-                                    reason,
-                                });
-                                success = true;
+                                let room_id = tl.room_id.clone();
+                                let content = ConfirmationModalContent {
+                                    title_text: "Delete Message".into(),
+                                    body_text: "Are you sure you want to delete this message? This cannot be undone.".into(),
+                                    accept_button_text: Some("Delete".into()),
+                                    on_accept_clicked: Some(Box::new(move |_cx| {
+                                        submit_async_request(MatrixRequest::RedactMessage {
+                                            room_id,
+                                            timeline_event_id,
+                                            reason,
+                                        });
+                                    })),
+                                    ..Default::default()
+                                };
+                                cx.action(ConfirmDeleteAction::Show(RefCell::new(Some(content))));
+                                continue;
                             }
                         }
                     }
-                    if !success {
-                        enqueue_popup_notification(PopupItem { message: "Couldn't find message in timeline to delete.".to_string(), kind: PopupKind::Error, auto_dismissal_duration: None });
-                        error!("MessageAction::Redact: couldn't find event [{}] {:?} to react to in room {}",
-                            details.item_id,
-                            details.event_id.as_deref(),
-                            tl.room_id,
-                        );
-                    }
+                    enqueue_popup_notification(PopupItem {
+                        message: "Couldn't find message in timeline to delete.".to_string(),
+                        auto_dismissal_duration: None,
+                        kind: PopupKind::Error,
+                    });
+                    error!("MessageAction::Redact: couldn't find event [{}] {:?} to delete in room {}",
+                        details.item_id,
+                        details.event_id.as_deref(),
+                        tl.room_id,
+                    );
                 }
                 // MessageAction::Report(details) => {
                 //     // TODO
@@ -2567,11 +2586,6 @@ pub enum TimelineUpdate {
     Tombstoned(SuccessorRoomDetails),
     /// A notice that link preview data for a URL has been fetched and is now available.
     LinkPreviewFetched,
-    /// A notice that inviting the given user to this room succeeded or failed.
-    InviteSent {
-        user_id: OwnedUserId,
-        result: matrix_sdk::Result<()>,
-    },
 }
 
 thread_local! {
@@ -3450,7 +3464,7 @@ fn populate_image_message_content(
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
     let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
+        match media_cache.try_get_media_or_fetch(&mxc_uri, MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
                 let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri)),|cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
@@ -4172,7 +4186,28 @@ pub enum InviteAction {
     /// The content is wrapped in a `RefCell` to ensure that only one entity handles it
     /// and that that one entity can take ownership of the content object,
     /// which avoids having to clone it.
-    ShowConfirmationModal(RefCell<Option<ConfirmationModalContent>>),
+    ShowInviteConfirmationModal(RefCell<Option<ConfirmationModalContent>>),
+}
+
+/// The result of inviting a user to a room.
+///
+#[derive(Debug)]
+pub enum InviteResultAction {
+    /// The invite was sent successfully.
+    ///
+    /// This action is posted in response to the [`MatrixRequest::InviteUser`] request.
+    Sent {
+        room_id: OwnedRoomId,
+        user_id: OwnedUserId,
+    },
+    /// The invite failed to be sent.
+    ///
+    /// This action is posted in response to the [`MatrixRequest::InviteUser`] request.
+    Failed {
+        room_id: OwnedRoomId,
+        user_id: OwnedUserId,
+        error: matrix_sdk::Error,
+    },
 }
 
 

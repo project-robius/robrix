@@ -61,6 +61,12 @@ pub enum SpaceRequest {
         space_id: OwnedRoomId,
         parent_chain: ParentChain,
     },
+    /// Get full details about a top-level space.
+    ///
+    /// This will result in a [`SpaceRoomListAction::TopLevelSpaceDetails`] action being emitted.
+    GetTopLevelSpaceDetails {
+        space_id: OwnedRoomId,
+    },
 }
 
 /// Internal requests sent from the [`space_service_loop`] to a specific space's [`space_room_list_loop`].
@@ -155,6 +161,13 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                     let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id, &parent_chain).await;
                     if sender.send(SpaceRoomListRequest::GetDetailedChildren).is_err() {
                         error!("BUG: failed to send GetDetailedChildren request to space room list loop for space {space_id}");
+                    }
+                }
+                SpaceRequest::GetTopLevelSpaceDetails { space_id } => {
+                    if let Some(space) = all_joined_spaces.iter().find(|s| s.room_id == space_id) {
+                        Cx::post_action(SpaceRoomListAction::TopLevelSpaceDetails(space.clone()));
+                    } else {
+                        error!("GetSpaceDetails: space {space_id} not found in all_joined_spaces");
                     }
                 }
             }
@@ -738,6 +751,10 @@ pub enum SpaceRoomListAction {
         parent_chain: ParentChain,
         children: Vector<SpaceRoom>,
     },
+    /// Summary details about a single top-level space.
+    ///
+    /// This is sent in response to a [`SpaceRequest::GetTopLevelSpaceDetails`] request.
+    TopLevelSpaceDetails(SpaceRoom),
 }
 impl std::fmt::Debug for SpaceRoomListAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -768,6 +785,11 @@ impl std::fmt::Debug for SpaceRoomListAction {
                     .field("space_id", space_id)
                     .field("parent_chain", &parent_chain)
                     .field("num_children", &children.len())
+                    .finish()
+            }
+            SpaceRoomListAction::TopLevelSpaceDetails(space) => {
+                f.debug_tuple("SpaceRoomListAction::TopLevelSpaceDetails")
+                    .field(space)
                     .finish()
             }
         }

@@ -112,11 +112,13 @@ live_design! {
     pub COLOR_PRIMARY = #ffffff
     pub COLOR_PRIMARY_DARKER = #fefefe
     pub COLOR_SECONDARY = #E3E3E3
+    pub COLOR_SECONDARY_DARKER = #C8C8C8
 
     pub COLOR_ACTIVE_PRIMARY = #0f88fe
     pub COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
 
-    pub COLOR_LOCATION_PREVIEW_BG = #F0F5FF
+    pub COLOR_BG_PREVIEW = #F0F5FF
+    pub COLOR_BG_PREVIEW_HOVER = #CDEDDF
 
     pub COLOR_AVATAR_BG = #52b2ac
     pub COLOR_AVATAR_BG_IDLE = #d8d8d8
@@ -191,14 +193,12 @@ live_design! {
         width: Fill, height: Fit,
         margin: 0,
         align: {y: 0.5}
-        empty_text: "Enter text..."
 
         draw_bg: {
             color: (COLOR_PRIMARY)
             border_radius: 2.0
             border_size: 0.0
 
-            // TODO: determine these other colors below
             color_hover: (COLOR_PRIMARY)
             color_focus: (COLOR_PRIMARY)
             color_down: (COLOR_PRIMARY)
@@ -265,27 +265,29 @@ live_design! {
         width: Fill, height: Fit
         flow: RightWrap,
         draw_bg: {
-            color: (COLOR_SECONDARY)
+            color: (COLOR_SECONDARY_DARKER)
             border_radius: 2.0
             border_size: 1.0
 
-            // TODO: determine these other colors below
+            color: (COLOR_PRIMARY)
             color_hover: (COLOR_PRIMARY)
             color_focus: (COLOR_PRIMARY)
             color_down: (COLOR_PRIMARY)
-            color_empty: (COLOR_SECONDARY)
+            color_empty: (COLOR_PRIMARY)
             color_disabled: (COLOR_BG_DISABLED)
 
-            border_color: (COLOR_SECONDARY)
+            border_color: (COLOR_SECONDARY_DARKER)
             border_color_hover: (COLOR_ACTIVE_PRIMARY)
             border_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
             border_color_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_empty: (COLOR_SECONDARY_DARKER)
             border_color_disabled: (COLOR_FG_DISABLED)
 
-            border_color_2: (COLOR_SECONDARY)
+            border_color_2: (COLOR_SECONDARY_DARKER)
             border_color_2_hover: (COLOR_ACTIVE_PRIMARY)
             border_color_2_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
             border_color_2_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_2_empty: (COLOR_SECONDARY_DARKER)
             border_color_2_disabled: (COLOR_FG_DISABLED)
         }
         draw_text: {
@@ -339,3 +341,7 @@ pub const COLOR_WHITE:                 Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
 pub const COLOR_MESSAGE_NOTICE_TEXT:   Vec4 = vec4(0.5, 0.5, 0.5, 1.0);
 /// #953800
 pub const COLOR_WARNING_NOT_FOUND:     Vec4 = vec4(0.584, 0.219, 0.0, 1.0);
+/// #F0F5FF
+pub const COLOR_BG_PREVIEW:            Vec4 = vec4(0.941, 0.961, 1.0, 1.0);
+/// #CDEDDF
+pub const COLOR_BG_PREVIEW_HOVER:      Vec4 = vec4(0.804, 0.929, 0.875, 1.0);

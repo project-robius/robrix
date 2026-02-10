@@ -8,15 +8,17 @@ description = "A Matrix chat client written using Makepad + Robius app dev frame
 documentation = "https://docs.rs/robrix"
 edition = "2024"  ## mostly just to allow let-chains
 homepage = "https://robius.rs/"
-keywords = ["matrix", "chat", "client", "robrix", "robius"]
+keywords = ["matrix", "chat", "client", "robius", "makepad"]
 license = "MIT"
 readme = "README.md"
+categories = [ "gui" ]
 repository = "https://github.com/project-robius/robrix"
 version = "0.0.1-pre-alpha-4"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
 makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
@@ -27,6 +29,9 @@ robius-location = { git = "https://github.com/project-robius/robius" }
 
 
 anyhow = "1.0"
+bitflags = "2.6.0"
+blurhash = { version = "0.2.3", default-features = false }
+bytesize = "2.0"
 chrono = "0.4"
 clap = { version = "4.0.16", features = ["derive"] }
 crossbeam-channel = "0.5.10"
@@ -35,28 +40,31 @@ eyeball = { version = "0.8.8", features = ["tracing"] }     # same as matrix-sdk
 eyeball-im = { version = "0.8.0", features = ["tracing"] }  # same as matrix-sdk-ui
 imbl = { version = "6.1.0", features = ["serde"] }          # same as matrix-sdk-ui
 futures-util = "0.3"
+hashbrown = { version = "0.16", features = ["raw-entry"] }
 htmlize = "1.0.5"
+indexmap = "2.6.0"
 imghdr = "0.7.0"
 linkify = "0.10.0"
 matrix-sdk-base = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main" }
 matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
 matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "rustls-tls" ] }
-## Enable the "compat-optional" feature to allow missing body field in m.room.tombstone event.
-## Use the same version specified in matrix-sdk's Cargo.toml.
-ruma = { version = "0.14.1", features = ["compat-optional"] } 
+## Use the same ruma version as what's specified in matrix-sdk's Cargo.toml.
+## Enable a few extra features:
+## * "compat-optional" feature to allow missing body field in m.room.tombstone event.
+## * "compat-unset-avatar" feature to allow deleting the user's avatar to work properly.
+## * Note: we need a feature like "compat-unset-display-name" to unset display names, but that doesn't exist yet.
+ruma = { version = "0.14.1", features = ["compat-optional", "compat-unset-avatar"] } 
 rand = "0.8.5"
 rangemap = "1.5.0"
 sanitize-filename = "0.6"
 serde = "1.0"
 serde_json = "1.0"
+thiserror = "2.0.16"
 tokio = { version = "1.43.1", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = "0.3.17"
 unicode-segmentation = "1.11.0"
 url = "2.5.0"
-bytesize = "2.0"
-bitflags = "2.6.0"
-indexmap = "2.6.0"
-blurhash = { version = "0.2.3", default-features = false }
+
 
 ## Dependencies for TSP support.
 ## Commit "f0bc4625dcd729e07e4a36257df2f1d94c81cef4" is the most recent one without the invalid change to pin serde to 1.0.219.
@@ -78,7 +86,6 @@ reqwest = { version = "0.12", default-features = false, features = [
     "http2",
     "macos-system-configuration",
 ] }
-thiserror = "2.0.16"
 
 
 [features]

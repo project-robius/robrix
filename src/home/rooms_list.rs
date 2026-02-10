@@ -16,7 +16,7 @@
 //! so you can use it from other widgets or functions on the main UI thread
 //! that need to query basic info about a particular room or space.
 
-use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map::Entry}, rc::Rc, sync::Arc};
+use std::{cell::RefCell, collections::{HashMap, HashSet, VecDeque, hash_map::Entry}, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk_ui::spaces::room_list::SpaceRoomListPaginationState;
@@ -39,7 +39,7 @@ use crate::{
         room_filter_input_bar::RoomFilterAction,
     },
     sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, submit_async_request},
-    space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction}, utils::RoomNameId,
+    space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction}, utils::{RoomNameId, VecDiff},
 };
 
 /// Whether to pre-paginate visible rooms at least once in order to
@@ -225,6 +225,8 @@ pub enum RoomsListUpdate {
     /// The background space service is now listening for requests,
     /// and the sender-side channel endpoint is included.
     SpaceRequestSender(UnboundedSender<SpaceRequest>),
+    /// Update the ordering of rooms based on the given diff.
+    RoomOrderUpdate(VecDiff<OwnedRoomId>),
 }
 
 static PENDING_ROOM_UPDATES: SegQueue<RoomsListUpdate> = SegQueue::new();
@@ -397,6 +399,9 @@ pub struct RoomsList {
     /// This includes both direct rooms and regular rooms, but not invited rooms.
     #[rust] all_joined_rooms: HashMap<OwnedRoomId, JoinedRoomInfo>,
 
+    /// The list of all room IDs in display order, matching the order from the room list service.
+    #[rust] all_known_rooms_order: VecDeque<OwnedRoomId>,
+
     /// The space that is currently selected as a display filter for the rooms list, if any.
     /// * If `None` (default), no space is selected, and all rooms can be shown.
     /// * If `Some`, the rooms list is in "space" mode. A special "Space Lobby" entry
@@ -424,24 +429,25 @@ pub struct RoomsList {
     /// 2. This does *not* get auto-applied when it changes, for performance reasons.
     #[rust] display_filter: RoomDisplayFilter,
 
-    /// The latest keywords (trimmed) entered into the `RoomFilterInputBar`.
-    ///
-    /// If empty, there are no filter keywords in use, and all rooms/spaces should be shown.
-    #[rust] filter_keywords: String,
+    /// The currently-active sort function for the list of rooms.
+    #[rust] sort_fn: Option<Box<SortFn>>,
 
     /// The list of invited rooms currently displayed in the UI.
     #[rust] displayed_invited_rooms: Vec<OwnedRoomId>,
     #[rust(false)] is_invited_rooms_header_expanded: bool,
+    #[rust] invited_rooms_indexes: RoomCategoryIndexes,
 
     /// The list of direct rooms currently displayed in the UI.
     #[rust] displayed_direct_rooms: Vec<OwnedRoomId>,
     #[rust(false)] is_direct_rooms_header_expanded: bool,
+    #[rust] direct_rooms_indexes: RoomCategoryIndexes,
 
     /// The list of regular (non-direct) joined rooms currently displayed in the UI.
     ///
     /// **Direct rooms are excluded** from this; they are in `displayed_direct_rooms`.
     #[rust] displayed_regular_rooms: Vec<OwnedRoomId>,
     #[rust(true)] is_regular_rooms_header_expanded: bool,
+    #[rust] regular_rooms_indexes: RoomCategoryIndexes,
 
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
@@ -507,6 +513,7 @@ impl RoomsList {
     /// Handle all pending updates to the list of all rooms.
     fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, scope: &mut Scope) {
         let mut num_updates: usize = 0;
+        let mut needs_sort = false;
         while let Some(update) = PENDING_ROOM_UPDATES.pop() {
             num_updates += 1;
             match update {
@@ -573,10 +580,11 @@ impl RoomsList {
                 }
                 RoomsListUpdate::UpdateNumUnreadMessages { room_id, is_marked_unread, unread_messages, unread_mentions } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
-                        (room.num_unread_messages, room.num_unread_mentions) = match unread_messages {
-                            UnreadMessageCount::Unknown => (0, 0),
-                            UnreadMessageCount::Known(count) => (count, unread_mentions),
+                        room.num_unread_messages = match unread_messages {
+                            UnreadMessageCount::Unknown => 0,
+                            UnreadMessageCount::Known(count) => count,
                         };
+                        room.num_unread_mentions = unread_mentions;
                         room.is_marked_unread = is_marked_unread;
                     } else {
                         warning!("Warning: couldn't find room {} to update unread messages count", room_id);
@@ -764,19 +772,21 @@ impl RoomsList {
                     }
                     else if let Some(i) = self.displayed_invited_rooms.iter().position(|r| r == &room_id) {
                         self.displayed_invited_rooms.remove(i);
-                        continue;
                     }
                 }
                 RoomsListUpdate::ScrollToRoom(room_id) => {
+                    // Ensure indexes are fresh in case rooms were added/removed in this batch of updates.
+                    self.recalculate_indexes();
                     let portal_list = self.view.portal_list(ids!(list));
                     let speed = 50.0;
-                    let portal_list_index = if let Some(direct_index) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
-                        let (_, direct_rooms_indexes, _) = self.calculate_indexes();
-                        direct_rooms_indexes.first_room_index + direct_index
+                    let portal_list_index = if let Some(regular_index) = self.displayed_regular_rooms.iter().position(|r| r == &room_id) {
+                        self.regular_rooms_indexes.first_room_index + regular_index
                     }
-                    else if let Some(regular_index) = self.displayed_regular_rooms.iter().position(|r| r == &room_id) {
-                        let (_, _, regular_rooms_indexes) = self.calculate_indexes();
-                        regular_rooms_indexes.first_room_index + regular_index
+                    else if let Some(direct_index) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
+                        self.direct_rooms_indexes.first_room_index + direct_index
+                    }
+                    else if let Some(invited_index) = self.displayed_invited_rooms.iter().position(|r| r == &room_id) {
+                        self.invited_rooms_indexes.first_room_index + invited_index
                     }
                     else { continue };
                     // Scroll to just above the room to make it more obviously visible.
@@ -786,6 +796,64 @@ impl RoomsList {
                     self.space_request_sender = Some(sender);
                     num_updates -= 1;  // this does not require a redraw.
                 }
+                RoomsListUpdate::RoomOrderUpdate(diff) => {
+                    match diff {
+                        VecDiff::Append { values } => {
+                            self.all_known_rooms_order.extend(values);
+                            needs_sort = true;
+                        }
+                        VecDiff::Clear => {
+                            self.all_known_rooms_order.clear();
+                            needs_sort = true;
+                        }
+                        VecDiff::PushFront { value } => {
+                            self.all_known_rooms_order.push_front(value);
+                            needs_sort = true;
+                        }
+                        VecDiff::PushBack { value } => {
+                            self.all_known_rooms_order.push_back(value);
+                            needs_sort = true;
+                        }
+                        VecDiff::PopFront => {
+                            self.all_known_rooms_order.pop_front();
+                            needs_sort = true;
+                        }
+                        VecDiff::PopBack => {
+                            self.all_known_rooms_order.pop_back();
+                            needs_sort = true;
+                        }
+                        VecDiff::Insert { index, value } => {
+                            if index <= self.all_known_rooms_order.len() {
+                                self.all_known_rooms_order.insert(index, value);
+                                needs_sort = true;
+                            }
+                        }
+                        VecDiff::Set { index, value } => {
+                            if let Some(existing) = self.all_known_rooms_order.get_mut(index) {
+                                if *existing != value {
+                                    *existing = value;
+                                    needs_sort = true;
+                                }
+                            }
+                        }
+                        VecDiff::Remove { index } => {
+                            if index < self.all_known_rooms_order.len() {
+                                self.all_known_rooms_order.remove(index);
+                                needs_sort = true;
+                            }
+                        }
+                        VecDiff::Truncate { length } => {
+                            self.all_known_rooms_order.truncate(length);
+                            needs_sort = true;
+                        }
+                    }
+                }
+            }
+        }
+        if needs_sort {
+            // Only re-sort if there's no active sort function
+            if self.sort_fn.is_none() {
+                self.update_displayed_rooms(cx, false);
             }
         }
         if num_updates > 0 {
@@ -803,8 +871,8 @@ impl RoomsList {
             + self.displayed_direct_rooms.len()
             + self.displayed_regular_rooms.len();
 
-        let mut text = match (self.filter_keywords.is_empty(), num_rooms) {
-            (true, 0)  => "No joined rooms found".to_string(),
+        let mut text = match (self.display_filter.is_none(), num_rooms) {
+            (true, 0)  => "No joined or invited rooms found".to_string(),
             (true, 1)  => "Loaded 1 room".to_string(),
             (true, n)  => format!("Loaded {n} rooms"),
             (false, 0) => "No matching rooms found".to_string(),
@@ -818,62 +886,57 @@ impl RoomsList {
         self.status = text;
     }
 
-    /// Updates and redraws the lists of displayed rooms in the RoomsList.
-    /// 
-    /// This will update the display filter based on the current filter keywords
-    /// and the currently-selected space (if any).
-    fn update_displayed_rooms(&mut self, cx: &mut Cx) {
+    /// Updates the display filter and sort function based on the
+    /// current filter keywords and the currently-selected space (if any).
+    fn regenerate_display_filter_and_sort_fn(&mut self, filter_keywords: &str) {
         // Determine and set the filter function and sort function.
-        let (display_fn, sort_fn) = if self.filter_keywords.is_empty() {
+        let (display_fn, sort_fn) = if filter_keywords.is_empty() {
             (RoomDisplayFilter::default(), None)
         } else {
             // Create a new filter function based on the given keywords.
             RoomDisplayFilterBuilder::new()
-                .set_keywords(self.filter_keywords.clone())
+                .set_keywords(filter_keywords.into())
                 .set_filter_criteria(RoomFilterCriteria::All)
                 .build()
         };
         self.display_filter = display_fn;
+        self.sort_fn = sort_fn;
+    }
 
-        self.displayed_invited_rooms = self.generate_displayed_invited_rooms(sort_fn.as_deref());
-        let (regular, direct) = self.generate_displayed_joined_rooms(sort_fn.as_deref());
+    /// Updates and redraws the lists of displayed rooms in the RoomsList.
+    ///
+    /// If `reset_scroll` is true, the portal list will scroll to the top.
+    /// If `false`, the scroll position is preserved, unless it exceeds the new list length,
+    /// in which case the logic in `draw_walk()` will limit it to the max valid index.
+    fn update_displayed_rooms(&mut self, cx: &mut Cx, reset_scroll: bool) {
+        let (invited, regular, direct) = self.generate_displayed_rooms();
+        self.displayed_invited_rooms = invited;
         self.displayed_regular_rooms = regular;
         self.displayed_direct_rooms = direct;
 
         self.update_status();
-        self.view.portal_list(ids!(list)).set_first_id_and_scroll(0, 0.0);
+
+        let portal_list = self.view.portal_list(ids!(list));
+        if reset_scroll {
+            portal_list.set_first_id_and_scroll(0, 0.0);
+        }
         self.redraw(cx);
     }
 
-    /// Generates the list of displayed invited rooms based on the current filter
-    /// and the given sort function.
-    fn generate_displayed_invited_rooms(&self, sort_fn: Option<&SortFn>) -> Vec<OwnedRoomId> {
-        let invited_rooms_ref = self.invited_rooms.borrow();
-        let filtered_invited_rooms_iter = invited_rooms_ref
-            .iter()
-            .filter(|&(room_id, room)| should_display_room!(self, room_id, room));
 
-        if let Some(sort_fn) = sort_fn {
-            let mut filtered_invited_rooms = filtered_invited_rooms_iter
-                .collect::<Vec<_>>();
-            filtered_invited_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(*room_a, *room_b));
-            filtered_invited_rooms
-                .into_iter()
-                .map(|(room_id, _)| room_id.clone())
-                .collect()
-        } else {
-            filtered_invited_rooms_iter
-                .map(|(room_id, _)| room_id.clone())
-                .collect()
-        }
-    }
-
-    /// Generates a tuple of (displayed regular rooms, displayed direct rooms)
-    /// based on the current `display_filter` function and the given sort function.
-    fn generate_displayed_joined_rooms(&self, sort_fn: Option<&SortFn>) -> (Vec<OwnedRoomId>, Vec<OwnedRoomId>) {
+    /// Generates a tuple of three kinds of displayed rooms (accounting for the current `display_filter`):
+    /// 1. displayed_invited_rooms
+    /// 2. displayed_regular_rooms
+    /// 3. displayed_direct_rooms
+    ///
+    /// If `self.sort_fn` is `Some`, the rooms are ordered based on that function.
+    /// Otherwise, the rooms are ordered based on `self.all_known_rooms_order` (the default).
+    fn generate_displayed_rooms(&self) -> (Vec<OwnedRoomId>,Vec<OwnedRoomId>, Vec<OwnedRoomId>) {
+        let mut new_displayed_invited_rooms = Vec::new();
         let mut new_displayed_regular_rooms = Vec::new();
         let mut new_displayed_direct_rooms = Vec::new();
-        let mut push_room = |room_id: &OwnedRoomId, jr: &JoinedRoomInfo| {
+
+        let mut push_joined_room = |room_id: &OwnedRoomId, jr: &JoinedRoomInfo| {
             let room_id = room_id.clone();
             if jr.is_direct {
                 new_displayed_direct_rooms.push(room_id);
@@ -882,36 +945,55 @@ impl RoomsList {
             }
         };
 
-        let filtered_joined_rooms_iter = self.all_joined_rooms
-            .iter()
-            .filter(|&(room_id, room)| should_display_room!(self, room_id, room));
+        let invited_rooms_ref = self.invited_rooms.borrow();
 
-        if let Some(sort_fn) = sort_fn {
-            let mut filtered_rooms = filtered_joined_rooms_iter.collect::<Vec<_>>();
-            filtered_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(*room_a, *room_b));
-            for (room_id, jr) in filtered_rooms.into_iter() {
-                push_room(room_id, jr)
+        // If a sort function was provided, use it.
+        if let Some(sort_fn) = self.sort_fn.as_deref() {
+            let mut filtered_joined_rooms = self.all_joined_rooms.iter()
+                .filter(|&(room_id, room)| should_display_room!(self, room_id, room))
+                .collect::<Vec<_>>();
+            filtered_joined_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(*room_a, *room_b));
+            for (room_id, jr) in filtered_joined_rooms.into_iter() {
+                push_joined_room(room_id, jr)
             }
-        } else {
-            for (room_id, jr) in filtered_joined_rooms_iter {
-                push_room(room_id, jr)
-            }
-        };
 
-        (new_displayed_regular_rooms, new_displayed_direct_rooms)
+            let mut filtered_invited_rooms = invited_rooms_ref.iter()
+                .filter(|&(room_id, room)| should_display_room!(self, room_id, room))
+                .collect::<Vec<_>>();
+            filtered_invited_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(*room_a, *room_b));
+            for (room_id, _ir) in filtered_invited_rooms.into_iter() {
+                new_displayed_invited_rooms.push(room_id.clone());
+            }
+        }
+        // Otherwise, if no sort function was provided (default), use the `all_known_rooms_order`.
+        else {
+            for room_id in &self.all_known_rooms_order {
+                if let Some(jr) = self.all_joined_rooms.get(room_id) {
+                    if should_display_room!(self, room_id, jr) {
+                        push_joined_room(room_id, jr);
+                    }
+                } else if let Some(ir) = invited_rooms_ref.get(room_id) {
+                    if should_display_room!(self, room_id, ir) {
+                        new_displayed_invited_rooms.push(room_id.clone());
+                    }
+                }
+            }
+        }
+
+        (new_displayed_invited_rooms, new_displayed_regular_rooms, new_displayed_direct_rooms)
     }
 
-    /// Calculate the indices in the PortalList where the headers and rooms should be drawn.
+    /// Calculates the indexes in the PortalList where the headers and rooms should be drawn.
     ///
-    /// Returns a tuple of:
-    /// 1. The indexes for the invited rooms,
-    /// 2. The indexes for the direct rooms (DMs / People),
-    /// 3. The indexes for the regular non-direct joined rooms.
-    fn calculate_indexes(&self) -> (RoomCategoryIndexes, RoomCategoryIndexes, RoomCategoryIndexes) {
+    /// Updates the following three fields:
+    /// 1. `invited_rooms_indexes`: the indexes for the invited rooms,
+    /// 2. `direct_rooms_indexes`: the indexes for the direct rooms (DMs / People),
+    /// 3. `regular_rooms_indexes`: the indexes for the regular non-direct joined rooms.
+    fn recalculate_indexes(&mut self) {
         // Based on the various displayed room lists and is_expanded state of each room header,
-        // calculate the indices in the PortalList where the headers and rooms should be drawn.
+        // calculate the indexes in the PortalList where the headers and rooms should be drawn.
         let should_show_invited_rooms_header = !self.displayed_invited_rooms.is_empty();
-        let should_show_direct_rooms_header = !self.displayed_direct_rooms.is_empty();
+        let should_show_direct_rooms_header  = !self.displayed_direct_rooms.is_empty();
         let should_show_regular_rooms_header = !self.displayed_regular_rooms.is_empty();
 
         let index_of_invited_rooms_header = should_show_invited_rooms_header.then_some(0);
@@ -945,26 +1027,21 @@ impl RoomsList {
                 0
             };
 
-        let invited_rooms_indexes = RoomCategoryIndexes {
+        self.invited_rooms_indexes = RoomCategoryIndexes {
             header_index: index_of_invited_rooms_header,
             first_room_index: index_of_first_invited_room,
             after_rooms_index: index_after_invited_rooms,
         };
-        let direct_rooms_indexes = RoomCategoryIndexes {
+        self.direct_rooms_indexes = RoomCategoryIndexes {
             header_index: index_of_direct_rooms_header,
             first_room_index: index_of_first_direct_room,
             after_rooms_index: index_after_direct_rooms,
         };
-        let regular_rooms_indexes = RoomCategoryIndexes {
+        self.regular_rooms_indexes = RoomCategoryIndexes {
             header_index: index_of_regular_rooms_header,
             first_room_index: index_of_first_regular_room,
             after_rooms_index: index_after_regular_rooms,
         };
-        (
-            invited_rooms_indexes,
-            direct_rooms_indexes,
-            regular_rooms_indexes,
-        )
     }
 
     /// Handle any incoming updates to spaces' room lists and pagination state.
@@ -991,7 +1068,7 @@ impl RoomsList {
                     sel_space.room_id() == space_id
                     || parent_chain.contains(sel_space.room_id())
                 ) {
-                    self.update_displayed_rooms(cx);
+                    self.update_displayed_rooms(cx, false);
                 }
             }
             SpaceRoomListAction::PaginationState { space_id, parent_chain, state } => {
@@ -1030,7 +1107,7 @@ impl RoomsList {
                 // we also must know all of the rooms within that space's subspaces.
                 // Thus, we must continue paginating this space until we fully fetch
                 // all of its children, such that we can see if any of them are subspaces,
-                // and then we'll paaginate those as well.
+                // and then we'll paginate those as well.
                 if !is_fully_paginated {
                     if sender.send(SpaceRequest::PaginateSpaceRoomList {
                         space_id: space_id.clone(),
@@ -1048,8 +1125,9 @@ impl RoomsList {
                     kind: PopupKind::Error,
                 });
             }
-            // DetailedChildren is handled by SpaceLobbyScreen, not RoomsList.
-            SpaceRoomListAction::DetailedChildren { .. } => { }
+            // Details-related space actions are handled by SpaceLobbyScreen, not RoomsList.
+            SpaceRoomListAction::DetailedChildren { .. }
+            | SpaceRoomListAction::TopLevelSpaceDetails(_) => { }
         }
     }
 
@@ -1164,9 +1242,9 @@ impl Widget for RoomsList {
         // Second, handle any other actions that came from other widgets/components.
         if let Event::Actions(actions) = event {
             for action in actions {
-                if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast() {
-                    self.filter_keywords = keywords;
-                    self.update_displayed_rooms(cx);
+                if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast_ref() {
+                    self.regenerate_display_filter_and_sort_fn(keywords);
+                    self.update_displayed_rooms(cx, true);
                     continue;
                 }
 
@@ -1218,7 +1296,7 @@ impl Widget for RoomsList {
                         }
                     }
 
-                    self.update_displayed_rooms(cx);
+                    self.update_displayed_rooms(cx, true);
                     continue;
                 }
 
@@ -1266,16 +1344,15 @@ impl Widget for RoomsList {
             .map(|sel_room| sel_room.room_id().clone());
 
         // Based on the various displayed room lists and is_expanded state of each room header,
-        // calculate the indices in the PortalList where the headers and rooms should be drawn.
-        let (invited_rooms_indexes, direct_rooms_indexes, regular_rooms_indexes) =
-            self.calculate_indexes();
+        // calculate the indexes in the PortalList where the headers and rooms should be drawn.
+        self.recalculate_indexes();
 
-        let status_label_id = regular_rooms_indexes.after_rooms_index;
+        let status_label_id = self.regular_rooms_indexes.after_rooms_index;
         // Add one for the status label
         let total_count = status_label_id + 1;
 
         let get_invited_room_id = |portal_list_index: usize| {
-            portal_list_index.checked_sub(invited_rooms_indexes.first_room_index)
+            portal_list_index.checked_sub(self.invited_rooms_indexes.first_room_index)
                 .and_then(|index| self.is_invited_rooms_header_expanded
                     .then(|| self.displayed_invited_rooms.get(index))
                 )
@@ -1283,14 +1360,14 @@ impl Widget for RoomsList {
         };
 
         let get_direct_room_id = |portal_list_index: usize| {
-            portal_list_index.checked_sub(direct_rooms_indexes.first_room_index)
+            portal_list_index.checked_sub(self.direct_rooms_indexes.first_room_index)
                 .and_then(|index| self.is_direct_rooms_header_expanded
                     .then(|| self.displayed_direct_rooms.get(index))
                 )
                 .flatten()
         };
         let get_regular_room_id = |portal_list_index: usize| {
-            portal_list_index.checked_sub(regular_rooms_indexes.first_room_index)
+            portal_list_index.checked_sub(self.regular_rooms_indexes.first_room_index)
                 .and_then(|index| self.is_regular_rooms_header_expanded
                     .then(|| self.displayed_regular_rooms.get(index))
                 )
@@ -1299,8 +1376,12 @@ impl Widget for RoomsList {
 
         // Start the actual drawing procedure.
         while let Some(widget_to_draw) = self.view.draw_walk(cx, scope, walk).step() {
-            // We only care about drawing the portal list.
+            // Ensure that the portal list is not scrolled past the end of the list.
             let portal_list_ref = widget_to_draw.as_portal_list();
+            if portal_list_ref.first_id() > status_label_id {
+                portal_list_ref.set_first_id_and_scroll(status_label_id, 0.0);
+            }
+            // We only care about drawing the portal list.
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
 
             list.set_item_range(cx, 0, total_count);
@@ -1308,7 +1389,7 @@ impl Widget for RoomsList {
             while let Some(portal_list_index) = list.next_visible_item(cx) {
                 let mut scope = Scope::empty();
 
-                if invited_rooms_indexes.header_index == Some(portal_list_index) {
+                if self.invited_rooms_indexes.header_index == Some(portal_list_index) {
                     let item = list.item(cx, portal_list_index, id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
@@ -1332,7 +1413,7 @@ impl Widget for RoomsList {
                             .draw_all(cx, &mut scope);
                     }
                 }
-                else if direct_rooms_indexes.header_index == Some(portal_list_index) {
+                else if self.direct_rooms_indexes.header_index == Some(portal_list_index) {
                     let item = list.item(cx, portal_list_index, id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
@@ -1367,7 +1448,7 @@ impl Widget for RoomsList {
                             .draw_all(cx, &mut scope);
                     }
                 }
-                else if regular_rooms_indexes.header_index == Some(portal_list_index) {
+                else if self.regular_rooms_indexes.header_index == Some(portal_list_index) {
                     let item = list.item(cx, portal_list_index, id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
@@ -1488,7 +1569,7 @@ pub struct RoomsListScopeProps {
 /// The set of indexes for each room category in the the RoomsList's PortalList.
 ///
 /// Each category's room count should be `after_rooms_index - first_room_index`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Default)]
 struct RoomCategoryIndexes {
     /// The index of this room category's header, at which a `<CollapsibleHeader>` widget is displayed.
     ///
