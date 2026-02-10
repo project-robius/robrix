@@ -2018,7 +2018,7 @@ struct RoomListServiceRoomInfo {
     room: matrix_sdk::Room,
 }
 impl RoomListServiceRoomInfo {
-    async fn from_room(room: matrix_sdk::Room, current_user_id: Option<&UserId>) -> Self {
+    async fn from_room(room: matrix_sdk::Room, current_user_id: &Option<OwnedUserId>) -> Self {
         Self {
             room_id: room.room_id().to_owned(),
             state: room.state(),
@@ -2027,7 +2027,7 @@ impl RoomListServiceRoomInfo {
             is_tombstoned: room.is_tombstoned(),
             tags: room.tags().await.ok().flatten(),
             user_power_levels: if let Some(user_id) = current_user_id {
-                UserPowerLevels::from_room(&room, user_id).await
+                UserPowerLevels::from_room(&room, user_id.deref()).await
             } else {
                 None
             },
@@ -2039,7 +2039,7 @@ impl RoomListServiceRoomInfo {
             room,
         }
     }
-    async fn from_room_ref(room: &matrix_sdk::Room, current_user_id: Option<&UserId>) -> Self {
+    async fn from_room_ref(room: &matrix_sdk::Room, current_user_id: &Option<OwnedUserId>) -> Self {
         Self::from_room(room.clone(), current_user_id).await
     }
 }
@@ -2318,11 +2318,10 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
     ));
 
     let mut all_known_rooms: Vector<RoomListServiceRoomInfo> = Vector::new();
+    let current_user_id = current_user_id();
 
     pin_mut!(room_diff_stream);
     while let Some(batch) = room_diff_stream.next().await {
-        let current_user_id = current_user_id();
-        let user_id_ref = current_user_id.as_deref();
         let mut peekable_diffs = batch.into_iter().peekable();
         while let Some(diff) = peekable_diffs.next() {
             let is_reset = matches!(diff, VectorDiff::Reset { .. });
@@ -2349,15 +2348,12 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     // Parallelize creating each room's RoomListServiceRoomInfo and adding that new room.
                     // We combine `from_room` and `add_new_room` into a single async task per room.
                     let new_room_infos: Vec<RoomListServiceRoomInfo> = join_all(
-                        new_rooms.into_iter().map(|room| {
-                            let room_list_service = room_list_service.clone();
-                            async move {
-                                let room_info = RoomListServiceRoomInfo::from_room(room.into_inner(), user_id_ref).await;
-                                if let Err(e) = add_new_room(&room_info, &room_list_service, false).await {
-                                    error!("Failed to add new room: {:?} ({}); error: {:?}", room_info.display_name, room_info.room_id, e);
-                                }
-                                room_info
+                        new_rooms.into_iter().map(|room| async {
+                            let room_info = RoomListServiceRoomInfo::from_room(room.into_inner(), &current_user_id).await;
+                            if let Err(e) = add_new_room(&room_info, &room_list_service, false).await {
+                                error!("Failed to add new room: {:?} ({}); error: {:?}", room_info.display_name, room_info.room_id, e);
                             }
+                            room_info
                         })
                     ).await;
 
@@ -2388,7 +2384,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 }
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
-                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), user_id_ref).await;
+                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id).await;
                     let room_id = new_room.room_id.clone();
                     add_new_room(&new_room, &room_list_service, true).await?;
                     enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -2398,7 +2394,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 }
                 VectorDiff::PushBack { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
-                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), user_id_ref).await;
+                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id).await;
                     let room_id = new_room.room_id.clone();
                     add_new_room(&new_room, &room_list_service, true).await?;
                     enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -2416,7 +2412,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                             &mut peekable_diffs,
                             &mut all_known_rooms,
                             &room_list_service,
-                            user_id_ref,
+                            &current_user_id,
                         ).await?;
                     }
                 }
@@ -2430,13 +2426,13 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                             &mut peekable_diffs,
                             &mut all_known_rooms,
                             &room_list_service,
-                            user_id_ref,
+                            &current_user_id,
                         ).await?;
                     }
                 }
                 VectorDiff::Insert { index, value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
-                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), user_id_ref).await;
+                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id).await;
                     let room_id = new_room.room_id.clone();
                     add_new_room(&new_room, &room_list_service, true).await?;
                     enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -2446,7 +2442,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 }
                 VectorDiff::Set { index, value: changed_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Set at {index}"); }
-                    let changed_room = RoomListServiceRoomInfo::from_room(changed_room.into_inner(), user_id_ref).await;
+                    let changed_room = RoomListServiceRoomInfo::from_room(changed_room.into_inner(), &current_user_id).await;
                     if let Some(old_room) = all_known_rooms.get(index) {
                         update_room(old_room, &changed_room, &room_list_service).await?;
                     } else {
@@ -2469,7 +2465,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                             &mut peekable_diffs,
                             &mut all_known_rooms,
                             &room_list_service,
-                            user_id_ref,
+                            &current_user_id,
                         ).await?;
                     } else {
                         error!("BUG: room_list: diff Remove index {index} out of bounds, len {}", all_known_rooms.len());
@@ -2511,7 +2507,7 @@ async fn optimize_remove_then_add_into_update(
     peekable_diffs: &mut Peekable<impl Iterator<Item = VectorDiff<RoomListItem>>>,
     all_known_rooms: &mut Vector<RoomListServiceRoomInfo>,
     room_list_service: &RoomListService,
-    current_user_id: Option<&UserId>,
+    current_user_id: &Option<OwnedUserId>,
 ) -> Result<()> {
     let next_diff_was_handled: bool;
     match peekable_diffs.peek() {
