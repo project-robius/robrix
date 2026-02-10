@@ -7,19 +7,14 @@ use makepad_widgets::*;
 use matrix_sdk::{RoomState, ruma::{OwnedRoomId, RoomId}};
 use serde::{Deserialize, Serialize};
 use crate::{
-    shared::confirmation_modal::ConfirmationModalContent,
-    avatar_cache::clear_avatar_cache,
-    home::{
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt},
-        invite_modal::{InviteModalAction, InviteModalWidgetRefExt},
-        main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, room_context_menu::RoomContextMenuWidgetRefExt
-    },
-    join_leave_room_modal::{
+    avatar_cache::clear_avatar_cache, home::{
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+    }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, register::register_screen::RegisterAction, room::BasicRoomDetails, shared::{callout_tooltip::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, confirmation_modal::ConfirmationModalWidgetRefExt, image_viewer::{ImageViewerAction, LoadState}}, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}}, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
