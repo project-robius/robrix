@@ -18,7 +18,10 @@ use crate::shared::avatar::AvatarState;
 use crate::utils::replace_linebreaks_separators;
 use crate::{
     avatar_cache::{self, AvatarCacheEntry},
-    home::rooms_list::RoomsListRef,
+    home::{
+        invite_modal::InviteModalAction,
+        rooms_list::RoomsListRef,
+    },
     shared::avatar::{AvatarWidgetExt, AvatarWidgetRefExt},
     space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction},
     utils::{self, RoomNameId},
@@ -33,6 +36,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::avatar::*;
+    use crate::shared::icon_button::RobrixIconButton;
 
     ICON_COLLAPSE = dep("crate://self/resources/icons/triangle_fill.svg")
 
@@ -433,6 +437,27 @@ live_design! {
                     }
                     text: ""
                 }
+
+                invite_button = <RobrixIconButton> {
+                    width: Fit
+                    align: {x: 0.5, y: 0.5}
+                    padding: 12,
+                    draw_icon: {
+                        svg_file: (ICON_ADD_USER)
+                        color: (COLOR_FG_ACCEPT_GREEN),
+                    }
+                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+
+                    draw_bg: {
+                        border_size: 0.75
+                        border_color: (COLOR_FG_ACCEPT_GREEN),
+                        color: (COLOR_BG_ACCEPT_GREEN)
+                    }
+                    text: "Invite"
+                    draw_text:{
+                        color: (COLOR_FG_ACCEPT_GREEN),
+                    }
+                }
             }
         }
 
@@ -779,8 +804,15 @@ impl Widget for SpaceLobbyScreen {
                     // TODO: Navigate to the room
                 }
             }
+
+            // Handle the invite button being clicked in the header.
+            if self.view.button(ids!(header.parent_space_row.invite_button)).clicked(actions) {
+                if let Some(room_name_id) = self.space_name_id.as_ref() {
+                    cx.action(InviteModalAction::Open(room_name_id.clone()));
+                }
+            }
         }
-    }
+        }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         while let Some(widget_to_draw) = self.view.draw_walk(cx, scope, walk).step() {

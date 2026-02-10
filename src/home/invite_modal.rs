@@ -77,7 +77,7 @@ live_design! {
                     icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
 
                     draw_bg: {
-                        border_size: 1.0
+                        border_size: 0.75
                         border_color: (COLOR_BG_DISABLED),
                         color: (COLOR_SECONDARY)
                     }
@@ -98,6 +98,7 @@ live_design! {
                     icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
 
                     draw_bg: {
+                        border_size: 0.75
                         border_color: (COLOR_FG_ACCEPT_GREEN),
                         color: (COLOR_BG_ACCEPT_GREEN)
                     }
