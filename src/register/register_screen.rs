@@ -55,7 +55,13 @@ use makepad_widgets::*;
 use url::Url;
 use crate::sliding_sync::{submit_async_request, MatrixRequest, RegisterRequest};
 use crate::login::login_screen::LoginAction;
-use super::register_status_modal::RegisterStatusModalAction;
+use super::{
+    register_status_modal::RegisterStatusModalAction,
+    validation::{
+        MIN_PASSWORD_CHARS, needs_custom_homeserver_input, normalize_custom_homeserver,
+        normalize_username, password_has_min_chars,
+    },
+};
 
 live_design! {
     use link::theme::*;
@@ -68,7 +74,7 @@ live_design! {
     use crate::register::register_status_modal::RegisterStatusModal;
 
     IMG_APP_LOGO = dep("crate://self/resources/robrix_logo_alpha.png")
-    
+
     MaskableButton = <RobrixIconButton> {
         draw_bg: {
             instance mask: 0.0
@@ -245,7 +251,7 @@ live_design! {
                         custom_homeserver = <View> {
                             width: Fill, height: Fit
                             visible: false
-                            
+
                             custom_homeserver_input = <RobrixTextInput> {
                                 width: Fill, height: Fit
                                 padding: {top: 5, bottom: 5}
@@ -404,21 +410,31 @@ live_design! {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct RegisterScreen {
-    #[deref] view: View,
-    #[rust] is_homeserver_editing: bool,
-    #[rust] selected_homeserver: String,
-    #[rust] sso_pending: bool,
-    #[rust] sso_redirect_url: Option<String>,
-    #[rust] registration_token_required: bool,
+    #[deref]
+    view: View,
+    #[rust]
+    is_homeserver_editing: bool,
+    #[rust]
+    selected_homeserver: String,
+    #[rust]
+    pending_custom_homeserver: bool,
+    #[rust]
+    sso_pending: bool,
+    #[rust]
+    sso_redirect_url: Option<String>,
+    #[rust]
+    registration_token_required: bool,
 }
 
 impl RegisterScreen {
     fn toggle_homeserver_options(&mut self, cx: &mut Cx) {
         self.is_homeserver_editing = !self.is_homeserver_editing;
-        self.view.view(ids!(homeserver_options)).set_visible(cx, self.is_homeserver_editing);
+        self.view
+            .view(ids!(homeserver_options))
+            .set_visible(cx, self.is_homeserver_editing);
         self.redraw(cx);
     }
-    
+
     fn show_warning(&self, message: &str) {
         use crate::shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind};
         enqueue_popup_notification(PopupItem {
@@ -427,22 +443,29 @@ impl RegisterScreen {
             auto_dismissal_duration: Some(3.0),
         });
     }
-    
+
     fn update_button_mask(&self, button: &ButtonRef, cx: &mut Cx, mask: f32) {
-        button.apply_over(cx, live! {
-            draw_bg: { mask: (mask) }
-        });
+        button.apply_over(
+            cx,
+            live! {
+                draw_bg: { mask: (mask) }
+            },
+        );
     }
 
     fn set_registration_token_required(&mut self, cx: &mut Cx, required: bool) {
         self.registration_token_required = required;
-        self.view.view(ids!(registration_token_area)).set_visible(cx, required);
+        self.view
+            .view(ids!(registration_token_area))
+            .set_visible(cx, required);
         if !required {
-            self.view.text_input(ids!(registration_token_input)).set_text(cx, "");
+            self.view
+                .text_input(ids!(registration_token_input))
+                .set_text(cx, "");
         }
         self.redraw(cx);
     }
-    
+
     fn reset_modal_state(&mut self, cx: &mut Cx) {
         let register_button = self.view.button(ids!(register_button));
         register_button.set_enabled(cx, true);
@@ -452,11 +475,16 @@ impl RegisterScreen {
     }
 
     fn update_registration_mode(&mut self, cx: &mut Cx) {
-        let is_matrix_org = self.selected_homeserver == "matrix.org" || self.selected_homeserver.is_empty();
+        let is_matrix_org = !self.pending_custom_homeserver
+            && (self.selected_homeserver == "matrix.org" || self.selected_homeserver.is_empty());
 
         // Update UI based on homeserver selection
-        self.view.view(ids!(sso_area)).set_visible(cx, is_matrix_org);
-        self.view.view(ids!(password_area)).set_visible(cx, !is_matrix_org);
+        self.view
+            .view(ids!(sso_area))
+            .set_visible(cx, is_matrix_org);
+        self.view
+            .view(ids!(password_area))
+            .set_visible(cx, !is_matrix_org);
 
         // Update description text
         let desc_label = self.view.label(ids!(homeserver_description));
@@ -475,14 +503,21 @@ impl RegisterScreen {
         // Reset internal state
         self.is_homeserver_editing = false;
         self.selected_homeserver = "matrix.org".to_string();
+        self.pending_custom_homeserver = false;
         self.sso_pending = false;
         self.sso_redirect_url = None;
         self.set_registration_token_required(cx, false);
 
         // Reset homeserver selection UI
-        self.view.view(ids!(homeserver_options)).set_visible(cx, false);
-        self.view.label(ids!(selected_homeserver)).set_text(cx, "matrix.org");
-        self.view.view(ids!(custom_homeserver)).set_visible(cx, false);
+        self.view
+            .view(ids!(homeserver_options))
+            .set_visible(cx, false);
+        self.view
+            .label(ids!(selected_homeserver))
+            .set_text(cx, "matrix.org");
+        self.view
+            .view(ids!(custom_homeserver))
+            .set_visible(cx, false);
 
         // Reset homeserver option buttons
         let matrix_option_button = self.view.button(ids!(matrix_option));
@@ -493,8 +528,12 @@ impl RegisterScreen {
         // Clear input fields
         self.view.text_input(ids!(username_input)).set_text(cx, "");
         self.view.text_input(ids!(password_input)).set_text(cx, "");
-        self.view.text_input(ids!(confirm_password_input)).set_text(cx, "");
-        self.view.text_input(ids!(custom_homeserver_input)).set_text(cx, "");
+        self.view
+            .text_input(ids!(confirm_password_input))
+            .set_text(cx, "");
+        self.view
+            .text_input(ids!(custom_homeserver_input))
+            .set_text(cx, "");
 
         // Reset button states
         let register_button = self.view.button(ids!(register_button));
@@ -533,16 +572,17 @@ impl MatchEvent for RegisterScreen {
         let login_button = self.view.button(ids!(login_button));
         let edit_button = self.view.button(ids!(edit_button));
         let sso_button = self.view.button(ids!(sso_button));
-        
+
         // Initialize selected_homeserver if empty
         if self.selected_homeserver.is_empty() {
             self.selected_homeserver = "matrix.org".to_string();
+            self.pending_custom_homeserver = false;
         }
 
         if login_button.clicked(actions) {
             cx.action(RegisterAction::NavigateToLogin);
         }
-        
+
         // Handle Edit button click
         if edit_button.clicked(actions) {
             self.toggle_homeserver_options(cx);
@@ -565,64 +605,83 @@ impl MatchEvent for RegisterScreen {
             // Use the same SSO flow as login screen - spawn SSO server with Google provider
             // This follows Element's implementation where SSO login and registration share the same OAuth flow
             // The Matrix server will handle whether to create a new account or login existing user
-            submit_async_request(MatrixRequest::SpawnSSOServer{
+            submit_async_request(MatrixRequest::SpawnSSOServer {
                 identity_provider_id: "oidc-google".to_string(),
                 brand: "google".to_string(),
                 homeserver_url: String::new(), // Use default matrix.org
                 is_registration: true,
             });
         }
-        
+
         // Handle homeserver selection buttons
         let matrix_option_button = self.view.button(ids!(matrix_option));
         let other_option_button = self.view.button(ids!(other_option));
-        
+
         if matrix_option_button.clicked(actions) {
             self.selected_homeserver = "matrix.org".to_string();
-            self.view.label(ids!(selected_homeserver)).set_text(cx, "matrix.org");
-            self.view.view(ids!(custom_homeserver)).set_visible(cx, false);
-            
+            self.pending_custom_homeserver = false;
+            self.view
+                .label(ids!(selected_homeserver))
+                .set_text(cx, "matrix.org");
+            self.view
+                .view(ids!(custom_homeserver))
+                .set_visible(cx, false);
+
             // Update button styles to show selection
             matrix_option_button.set_text(cx, "● matrix.org");
             other_option_button.set_text(cx, "○ Other homeserver");
-            
+
             self.is_homeserver_editing = false;
-            self.view.view(ids!(homeserver_options)).set_visible(cx, false);
+            self.view
+                .view(ids!(homeserver_options))
+                .set_visible(cx, false);
             self.update_registration_mode(cx);
         }
-        
+
         if other_option_button.clicked(actions) {
-            self.view.view(ids!(custom_homeserver)).set_visible(cx, true);
-            
+            self.pending_custom_homeserver = true;
+            self.selected_homeserver.clear();
+            self.view
+                .view(ids!(custom_homeserver))
+                .set_visible(cx, true);
+            self.view
+                .label(ids!(selected_homeserver))
+                .set_text(cx, "Custom homeserver (required)");
+
             // Update button styles to show selection
             matrix_option_button.set_text(cx, "○ matrix.org");
             other_option_button.set_text(cx, "● Other homeserver");
+            self.update_registration_mode(cx);
         }
-        
-        // Handle custom homeserver input
-        if let Some(text_event) = self.view.text_input(ids!(custom_homeserver_input)).changed(actions) {
-            let trimmed = text_event.trim();
-            if !trimmed.is_empty() {
-                // Validate URL: accept full URLs or domain-only input
-                let is_valid_url = if trimmed.contains("://") {
-                    // Full URL provided - validate it properly
-                    url::Url::parse(trimmed).is_ok()
-                } else {
-                    // Domain-only input - try to parse with https:// prefix
-                    url::Url::parse(&format!("https://{}", trimmed)).is_ok()
-                };
 
-                if is_valid_url {
-                    self.selected_homeserver = trimmed.to_string();
-                    self.view.label(ids!(selected_homeserver)).set_text(cx, trimmed);
-                    if trimmed != text_event {
-                        self.view.text_input(ids!(custom_homeserver_input)).set_text(cx, trimmed);
-                    }
-                    self.update_registration_mode(cx);
+        // Handle custom homeserver input
+        if let Some(text_event) = self
+            .view
+            .text_input(ids!(custom_homeserver_input))
+            .changed(actions)
+        {
+            if let Some(normalized) = normalize_custom_homeserver(&text_event) {
+                self.selected_homeserver = normalized.clone();
+                self.pending_custom_homeserver = false;
+                self.view
+                    .label(ids!(selected_homeserver))
+                    .set_text(cx, &normalized);
+                if normalized != text_event {
+                    self.view
+                        .text_input(ids!(custom_homeserver_input))
+                        .set_text(cx, &normalized);
                 }
+            } else {
+                self.pending_custom_homeserver = true;
+                self.selected_homeserver.clear();
+                self.view
+                    .label(ids!(selected_homeserver))
+                    .set_text(cx, "Custom homeserver (required)");
             }
+
+            self.update_registration_mode(cx);
         }
-        
+
         // Handle password-based registration
         let register_button = self.view.button(ids!(register_button));
         let username_input = self.view.text_input(ids!(username_input));
@@ -636,14 +695,21 @@ impl MatchEvent for RegisterScreen {
             || confirm_password_input.returned(actions).is_some()
             || registration_token_input.returned(actions).is_some()
         {
-            let username = username_input.text();
+            let raw_username = username_input.text();
             let password = password_input.text();
             let confirm_password = confirm_password_input.text();
             let registration_token = registration_token_input.text();
 
-            if username.is_empty() {
-                self.show_warning("Username is required");
-                return;
+            let username = match normalize_username(&raw_username) {
+                Ok(username) => username,
+                Err(error_msg) => {
+                    self.show_warning(error_msg);
+                    return;
+                }
+            };
+
+            if username != raw_username {
+                username_input.set_text(cx, &username);
             }
 
             if password.is_empty() {
@@ -652,13 +718,21 @@ impl MatchEvent for RegisterScreen {
             }
 
             // Check password strength - minimum 8 characters
-            if password.len() < 8 {
+            if !password_has_min_chars(&password, MIN_PASSWORD_CHARS) {
                 self.show_warning("Password must be at least 8 characters");
                 return;
             }
 
             if password != confirm_password {
                 self.show_warning("Passwords do not match");
+                return;
+            }
+
+            if needs_custom_homeserver_input(
+                self.pending_custom_homeserver,
+                &self.selected_homeserver,
+            ) {
+                self.show_warning("Please enter a valid custom homeserver URL");
                 return;
             }
 
@@ -696,14 +770,14 @@ impl MatchEvent for RegisterScreen {
                     }
                 },
             }));
-
-            cx.action(RegisterAction::RegistrationSubmitted);
         }
 
         // Handle modal closing for both success and failure in one place
         for action in actions {
             // Handle RegisterStatusModal close action
-            if let Some(RegisterStatusModalAction::Close { was_internal }) = action.downcast_ref::<RegisterStatusModalAction>() {
+            if let Some(RegisterStatusModalAction::Close { was_internal }) =
+                action.downcast_ref::<RegisterStatusModalAction>()
+            {
                 if *was_internal {
                     self.view.modal(ids!(status_modal)).close(cx);
                 }
@@ -711,7 +785,10 @@ impl MatchEvent for RegisterScreen {
                     // SSO flow canceled/dismissed - re-enable SSO button so user can retry
                     if let Some(sso_redirect_url) = &self.sso_redirect_url {
                         let request_id = id!(REGISTER_SSO_CANCEL_BUTTON);
-                        let request = HttpRequest::new(format!("{}/?login_token=", sso_redirect_url), HttpMethod::GET);
+                        let request = HttpRequest::new(
+                            format!("{}/?login_token=", sso_redirect_url),
+                            HttpMethod::GET,
+                        );
                         cx.http_request(request_id, request);
                     }
                     self.sso_pending = false;
@@ -732,44 +809,42 @@ impl MatchEvent for RegisterScreen {
                     cx.action(RegisterAction::RegistrationSuccess);
                 }
             }
-            
-            // Handle RegisterAction for SSO (now directly sent from sliding_sync.rs)
-            match action.downcast_ref::<RegisterAction>() {
-                Some(RegisterAction::SsoRegistrationPending(pending)) => {
-                    // Update pending state (modal already shown when button clicked)
-                    if !*pending {
-                        // SSO ended
-                        self.sso_pending = false;
-                        self.sso_redirect_url = None;
-                        self.update_button_mask(&sso_button, cx, 0.0);
-                        self.view.modal(ids!(status_modal)).close(cx);
-                    }
-                    self.redraw(cx);
-                }
-                Some(RegisterAction::SsoRegistrationStatus { status }) => {
-                    // Update SSO status in modal (only if our modal is already open)
-                    if self.sso_pending {
-                        let status_label = self.view.label(ids!(status_modal_inner.status));
-                        status_label.set_text(cx, status);
-                        let cancel_button = self.view.button(ids!(status_modal_inner.cancel_button));
-                        cancel_button.set_text(cx, "Cancel");
-                        self.redraw(cx);
-                    }
-                }
-                Some(RegisterAction::RegistrationTokenRequired) => {
-                    if !self.registration_token_required {
-                        self.set_registration_token_required(cx, true);
-                        self.view.text_input(ids!(registration_token_input)).set_key_focus(cx);
-                    }
-                }
-                Some(RegisterAction::SsoSetRedirectUrl(url)) => {
-                    self.sso_redirect_url = Some(url.to_string());
-                }
-                _ => {}
-            }
 
             if let Some(reg_action) = action.downcast_ref::<RegisterAction>() {
                 match reg_action {
+                    RegisterAction::SsoRegistrationPending(pending) => {
+                        // Update pending state (modal already shown when button clicked)
+                        if !*pending {
+                            // SSO ended
+                            self.sso_pending = false;
+                            self.sso_redirect_url = None;
+                            self.update_button_mask(&sso_button, cx, 0.0);
+                            self.view.modal(ids!(status_modal)).close(cx);
+                        }
+                        self.redraw(cx);
+                    }
+                    RegisterAction::SsoRegistrationStatus { status } => {
+                        // Update SSO status in modal (only if our modal is already open)
+                        if self.sso_pending {
+                            let status_label = self.view.label(ids!(status_modal_inner.status));
+                            status_label.set_text(cx, status);
+                            let cancel_button =
+                                self.view.button(ids!(status_modal_inner.cancel_button));
+                            cancel_button.set_text(cx, "Cancel");
+                            self.redraw(cx);
+                        }
+                    }
+                    RegisterAction::RegistrationTokenRequired => {
+                        if !self.registration_token_required {
+                            self.set_registration_token_required(cx, true);
+                            self.view
+                                .text_input(ids!(registration_token_input))
+                                .set_key_focus(cx);
+                        }
+                    }
+                    RegisterAction::SsoSetRedirectUrl(url) => {
+                        self.sso_redirect_url = Some(url.to_string());
+                    }
                     RegisterAction::RegistrationSuccess => {
                         // Close modal and let app.rs handle screen transition
                         self.view.modal(ids!(status_modal)).close(cx);
@@ -799,7 +874,7 @@ impl MatchEvent for RegisterScreen {
 }
 
 /// Actions for the registration screen.
-/// 
+///
 /// These actions handle both password-based and SSO registration flows.
 /// SSO actions are completely independent from LoginAction to ensure
 /// no interference between login and register screens.
@@ -807,8 +882,6 @@ impl MatchEvent for RegisterScreen {
 pub enum RegisterAction {
     /// User requested to go back to the login screen
     NavigateToLogin,
-    /// Password registration was submitted (internal use)
-    RegistrationSubmitted,
     /// Registration completed successfully (both password and SSO)
     RegistrationSuccess,
     /// Registration failed with error message (both password and SSO)
@@ -818,7 +891,9 @@ pub enum RegisterAction {
     /// - `false`: SSO flow ended, button should be re-enabled
     SsoRegistrationPending(bool),
     /// SSO registration progress update (e.g., "Opening browser...")
-    SsoRegistrationStatus { status: String },
+    SsoRegistrationStatus {
+        status: String,
+    },
     /// Set the SSO redirect URL for cancellation
     SsoSetRedirectUrl(Url),
     /// Password registration flow needs a server-provided token

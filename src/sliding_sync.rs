@@ -9,7 +9,7 @@ use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
-        api::client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
+        api::client::{account::register::v3::Request as MatrixRegisterRequest, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
             room::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             }, MessageLikeEventType, StateEventType
@@ -254,9 +254,7 @@ async fn register_user(register_request: RegisterRequest) -> std::result::Result
         .await
         .map_err(|e| RegisterFlowError::Other(e.to_string()))?;
 
-    use matrix_sdk::ruma::api::client::account::register::v3::Request as RegisterRequest;
-
-    let mut req = RegisterRequest::new();
+    let mut req = MatrixRegisterRequest::new();
     req.username = Some(cli.user_id.as_str().into());
     req.password = Some(cli.password.as_str().into());
     req.initial_device_display_name = Some("robrix-register".into());
