@@ -929,11 +929,11 @@ async fn matrix_worker_task(
                             },
                             Err(e) => {
                                 error!("Failed to create DM with {user_id}: {e}");
-                                    enqueue_popup_notification(
-                                        format!("Failed to create Direct Message: {e}"),
-                                        PopupKind::Error,
-                                        None,
-                                    );
+                                enqueue_popup_notification(
+                                    format!("Failed to create Direct Message: {e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
                                 return;
                             }
                         }
