@@ -20,7 +20,7 @@ use matrix_sdk_ui::{
     RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
 };
 use robius_open::Uri;
-use ruma::{OwnedRoomOrAliasId, api::client::uiaa::{AuthData, AuthType, Dummy, RegistrationToken, UiaaInfo}, events::tag::Tags};
+use ruma::{OwnedRoomOrAliasId, api::client::{error::ErrorKind, uiaa::{AuthData, AuthType, Dummy, RegistrationToken, UiaaInfo}}, events::tag::Tags};
 use tokio::{
     runtime::Handle,
     sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
@@ -242,10 +242,8 @@ async fn login(
 /// - `m.login.registration_token`: Requires pre-shared token from user (obtained out-of-band)
 /// - Others (captcha, email, etc.): Not supported
 async fn register_user(register_request: RegisterRequest) -> std::result::Result<(Client, ClientSessionPersisted), RegisterFlowError> {
-    // Create a Cli struct from the register request
+    // Only pass the homeserver to build_client; username/password are not needed there.
     let cli = Cli {
-        user_id: register_request.username.clone(),
-        password: register_request.password.clone(),
         homeserver: register_request.homeserver,
         ..Default::default()
     };
@@ -255,8 +253,8 @@ async fn register_user(register_request: RegisterRequest) -> std::result::Result
         .map_err(|e| RegisterFlowError::Other(e.to_string()))?;
 
     let mut req = MatrixRegisterRequest::new();
-    req.username = Some(cli.user_id.as_str().into());
-    req.password = Some(cli.password.as_str().into());
+    req.username = Some(register_request.username.as_str().into());
+    req.password = Some(register_request.password.as_str().into());
     req.initial_device_display_name = Some("robrix-register".into());
 
     let sanitized_registration_token = register_request
@@ -306,12 +304,13 @@ async fn register_user(register_request: RegisterRequest) -> std::result::Result
                     match client.matrix_auth().register(req.clone()).await {
                         Ok(_) => break,
                         Err(err) => {
-                            // Check for invalid registration token error.
-                            // Note: The Matrix SDK doesn't expose a typed error variant for this yet,
-                            // so we check both the error message and the error kind as a best-effort approach.
-                            // This should be updated to use a structured error type when available in the SDK.
+                            // Try structured error detection first via the UIAA auth_error field.
                             let err_string = err.to_string();
-                            let is_token_error = err_string.contains("Invalid registration token")
+                            let is_token_error = err.as_uiaa_response()
+                                .and_then(|info| info.auth_error.as_ref())
+                                .is_some_and(|e| matches!(e.kind, ErrorKind::InvalidParam | ErrorKind::Unauthorized))
+                                // Fallback to string matching for servers that don't use standard error codes.
+                                || err_string.contains("Invalid registration token")
                                 || err_string.contains("M_INVALID_PARAM");
 
                             if is_token_error {
@@ -338,8 +337,8 @@ async fn register_user(register_request: RegisterRequest) -> std::result::Result
     // The Matrix SDK automatically logs in the user upon successful registration
     // This check confirms that the registration was successful and the session is established
     if client.matrix_auth().logged_in() {
-        log!("Registration successful for user: {}", cli.user_id);
-        let status = format!("Registered as {}.\n → Loading rooms...", cli.user_id);
+        log!("Registration successful for user: {}", register_request.username);
+        let status = format!("Registered as {}.\n → Loading rooms...", register_request.username);
         enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
         // Session persistence is deferred: after registration we post LoginBySSOSuccess,
@@ -795,30 +794,36 @@ async fn matrix_worker_task(
                             submit_async_request(MatrixRequest::Login(login_req));
                         }
                         Err(e) => {
-                            let (error_msg, popup_kind) = match e {
+                            let (error_msg, popup_kind, show_popup) = match e {
                                 RegisterFlowError::TokenRequired => (
                                     String::from("Registration token required. Please enter your token and try again."),
                                     PopupKind::Warning,
+                                    false, // Token input field appearing is sufficient feedback
                                 ),
                                 RegisterFlowError::TokenInvalid => (
                                     String::from("Invalid registration token. Please check the token and try again."),
                                     PopupKind::Error,
+                                    true,
                                 ),
                                 RegisterFlowError::UnsupportedUia => (
                                     String::from("This server requires verification steps that are not yet supported. Please use the web client to register."),
                                     PopupKind::Error,
+                                    true,
                                 ),
                                 RegisterFlowError::Other(msg) => (
                                     format!("Registration failed: {msg}"),
                                     PopupKind::Error,
+                                    true,
                                 ),
                             };
                             error!("{error_msg}");
-                            enqueue_popup_notification(PopupItem {
-                                message: error_msg.clone(),
-                                kind: popup_kind,
-                                auto_dismissal_duration: None,
-                            });
+                            if show_popup {
+                                enqueue_popup_notification(PopupItem {
+                                    message: error_msg.clone(),
+                                    kind: popup_kind,
+                                    auto_dismissal_duration: None,
+                                });
+                            }
                             Cx::post_action(RegisterAction::RegistrationFailure(error_msg));
                         }
                     }
@@ -3774,6 +3779,30 @@ async fn spawn_sso_server(
     let client_and_session_opt = DEFAULT_SSO_CLIENT.lock().unwrap().take();
 
     Handle::current().spawn(async move {
+        // Helper closures to dispatch the correct action type based on whether
+        // this SSO flow is for registration or login.
+        let post_pending = |pending: bool| {
+            if is_registration {
+                Cx::post_action(RegisterAction::SsoRegistrationPending(pending));
+            } else {
+                Cx::post_action(LoginAction::SsoPending(pending));
+            }
+        };
+        let post_status = |title: &str, status: String| {
+            if is_registration {
+                Cx::post_action(RegisterAction::SsoRegistrationStatus { status });
+            } else {
+                Cx::post_action(LoginAction::Status { title: title.to_string(), status });
+            }
+        };
+        let post_failure = |msg: String| {
+            if is_registration {
+                Cx::post_action(RegisterAction::RegistrationFailure(msg));
+            } else {
+                Cx::post_action(LoginAction::LoginFailure(msg));
+            }
+        };
+
         // Try to use the DEFAULT_SSO_CLIENT that we proactively created
         // during initialization (to speed up opening the SSO browser window).
         let mut client_and_session = client_and_session_opt;
@@ -3801,45 +3830,30 @@ async fn spawn_sso_server(
         }
 
         let Some((client, client_session)) = client_and_session else {
-            if is_registration {
-                Cx::post_action(RegisterAction::RegistrationFailure(
-                    if let Some(err) = build_client_error {
-                        format!("Could not create client object. Please try to register again.\n\nError: {err}")
-                    } else {
-                        String::from("Could not create client object. Please try to register again.")
-                    }
-                ));
-            } else {
-                Cx::post_action(LoginAction::LoginFailure(
-                    if let Some(err) = build_client_error {
-                        format!("Could not create client object. Please try to login again.\n\nError: {err}")
-                    } else {
-                        String::from("Could not create client object. Please try to login again.")
-                    }
-                ));
-            }
+            let action = if is_registration { "register" } else { "login" };
+            post_failure(
+                if let Some(err) = build_client_error {
+                    format!("Could not create client object. Please try to {action} again.\n\nError: {err}")
+                } else {
+                    format!("Could not create client object. Please try to {action} again.")
+                }
+            );
             // This ensures that the called to `DEFAULT_SSO_CLIENT_NOTIFIER.notified()`
             // at the top of this function will not block upon the next login attempt.
             DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
-            if is_registration {
-                Cx::post_action(RegisterAction::SsoRegistrationPending(false));
-            } else {
-                Cx::post_action(LoginAction::SsoPending(false));
-            }
+            post_pending(false);
             return;
         };
 
         let mut is_logged_in = false;
-        if is_registration {
-            Cx::post_action(RegisterAction::SsoRegistrationStatus {
-                status: "Please finish registration using your browser, and then come back to Robrix.".into(),
-            });
-        } else {
-            Cx::post_action(LoginAction::Status {
-                title: "Opening your browser...".into(),
-                status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
-            });
-        }
+        post_status(
+            "Opening your browser...",
+            if is_registration {
+                "Please finish registration using your browser, and then come back to Robrix.".into()
+            } else {
+                "Please finish logging in using your browser, and then come back to Robrix.".into()
+            }
+        );
         let is_registration_for_sso = is_registration;
         match client
             .matrix_auth()
@@ -3878,15 +3892,9 @@ async fn spawn_sso_server(
                 if !is_logged_in {
                     if let Err(e) = login_sender.send(LoginRequest::LoginBySSOSuccess(client, client_session)).await {
                         error!("Error sending login request to login_sender: {e:?}");
-                        if is_registration {
-                            Cx::post_action(RegisterAction::RegistrationFailure(String::from(
-                                "BUG: failed to send login request to matrix worker thread."
-                            )));
-                        } else {
-                            Cx::post_action(LoginAction::LoginFailure(String::from(
-                                "BUG: failed to send login request to matrix worker thread."
-                            )));
-                        }
+                        post_failure(String::from(
+                            "BUG: failed to send login request to matrix worker thread."
+                        ));
                     }
                     enqueue_rooms_list_update(RoomsListUpdate::Status {
                         status: format!(
@@ -3899,11 +3907,8 @@ async fn spawn_sso_server(
             Err(e) => {
                 if !is_logged_in {
                     error!("SSO Login failed: {e:?}");
-                    if is_registration {
-                        Cx::post_action(RegisterAction::RegistrationFailure(format!("SSO registration failed: {e}")));
-                    } else {
-                        Cx::post_action(LoginAction::LoginFailure(format!("SSO login failed: {e}")));
-                    }
+                    let action = if is_registration { "registration" } else { "login" };
+                    post_failure(format!("SSO {action} failed: {e}"));
                 }
             }
         }
@@ -3911,11 +3916,7 @@ async fn spawn_sso_server(
         // This ensures that the called to `DEFAULT_SSO_CLIENT_NOTIFIER.notified()`
         // at the top of this function will not block upon the next login attempt.
         DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
-        if is_registration {
-            Cx::post_action(RegisterAction::SsoRegistrationPending(false));
-        } else {
-            Cx::post_action(LoginAction::SsoPending(false));
-        }
+        post_pending(false);
     });
 }
 

@@ -42,7 +42,8 @@ pub(super) fn normalize_custom_homeserver(raw: &str) -> Option<String> {
         format!("https://{trimmed}")
     };
 
-    Url::parse(&normalized).ok().map(|_| normalized)
+    let url = Url::parse(&normalized).ok()?;
+    matches!(url.scheme(), "http" | "https").then_some(normalized)
 }
 
 pub(super) fn needs_custom_homeserver_input(
@@ -86,6 +87,16 @@ mod tests {
             normalize_custom_homeserver("my-server.example").as_deref(),
             Some("https://my-server.example"),
         );
+    }
+
+    #[test]
+    fn normalize_custom_homeserver_rejects_non_http_schemes() {
+        assert_eq!(normalize_custom_homeserver("ftp://evil.com"), None);
+        assert_eq!(normalize_custom_homeserver("file:///etc/passwd"), None);
+        assert_eq!(normalize_custom_homeserver("javascript://alert(1)"), None);
+        // http and https are accepted
+        assert!(normalize_custom_homeserver("http://my-server.example").is_some());
+        assert!(normalize_custom_homeserver("https://my-server.example").is_some());
     }
 
     #[test]
