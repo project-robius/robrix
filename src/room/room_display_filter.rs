@@ -32,7 +32,8 @@ impl FilterableRoom for JoinedRoomInfo {
             RoomDisplayName::Aliased(name)
             | RoomDisplayName::Calculated(name)
             | RoomDisplayName::Named(name) => Cow::Borrowed(name),
-            _ => Cow::Owned(self.room_name_id.to_string()),
+            RoomDisplayName::EmptyWas(name) => format!("Empty was {name}").into(),
+            RoomDisplayName::Empty => "Empty".into(),
         }
     }
 
@@ -71,7 +72,8 @@ impl FilterableRoom for InvitedRoomInfo {
             RoomDisplayName::Aliased(name)
             | RoomDisplayName::Calculated(name)
             | RoomDisplayName::Named(name) => Cow::Borrowed(name),
-            _ => Cow::Owned(self.room_name_id.to_string()),
+            RoomDisplayName::EmptyWas(name) => format!("Empty was {name}").into(),
+            RoomDisplayName::Empty => "Empty".into(),
         }
     }
 
@@ -265,13 +267,10 @@ impl RoomDisplayFilterBuilder {
                     ["low_priority", "low-priority", "lowpriority", "lowPriority"]
                         .contains(&search_tag)
                 }
-                TagName::ServerNotice => [
-                    "server_notice",
-                    "server-notice",
-                    "servernotice",
-                    "serverNotice",
-                ]
-                .contains(&search_tag),
+                TagName::ServerNotice => {
+                    ["server_notice", "server-notice", "servernotice", "serverNotice"]
+                        .contains(&search_tag)
+                }
                 TagName::User(user_tag) => user_tag.as_ref().eq_ignore_ascii_case(search_tag),
                 _ => false,
             }
@@ -295,71 +294,62 @@ impl RoomDisplayFilterBuilder {
     }
 
     pub fn build(self) -> (RoomDisplayFilter, Option<Box<SortFn>>) {
-        let keywords = self.keywords;
-        let filter_criteria = self.filter_criteria;
+        let keywords = self.keywords.trim();
+        let criteria = self.filter_criteria;
 
-        let filter = if keywords.is_empty() || filter_criteria.is_empty() {
-            RoomDisplayFilter::default()
-        } else {
-            let processed_keywords = keywords.trim().to_lowercase();
-            // Hoist the prefix check out of the closure so it runs once per filter update,
-            // not once per room.
-            let (specific_type, _) = Self::pre_match_filter_check(&processed_keywords);
+        if keywords.is_empty() || criteria.is_empty() {
+            return (RoomDisplayFilter::default(), self.sort_fn);
+        }
 
-            let search_tags: HashSet<String> = processed_keywords
-                .split_whitespace()
-                .map(|tag| tag.trim_start_matches(':').to_string())
-                .collect();
+        let keywords = keywords.to_lowercase();
+        let (specific_type, _) = Self::pre_match_filter_check(&keywords);
 
-            // Capture keywords locally to move into the closure.
-            let keywords = processed_keywords;
+        let search_tags: HashSet<String> = keywords
+            .split_whitespace()
+            .map(|tag| tag.trim_start_matches(':').to_string())
+            .collect();
 
-            RoomDisplayFilter(Some(Box::new(
-                move |room| {
-                    if specific_type != RoomFilterCriteria::All {
-                        // When using a special prefix, only check that specific type
-                        match specific_type {
-                            RoomFilterCriteria::RoomId
-                                if filter_criteria.contains(RoomFilterCriteria::RoomId) =>
-                            {
-                                Self::matches_room_id(room, &keywords)
-                            }
-                            RoomFilterCriteria::RoomAlias
-                                if filter_criteria.contains(RoomFilterCriteria::RoomAlias) =>
-                            {
-                                Self::matches_room_alias(room, &keywords)
-                            }
-                            RoomFilterCriteria::RoomTags
-                                if filter_criteria.contains(RoomFilterCriteria::RoomTags) =>
-                            {
-                                Self::matches_room_tags(room, &search_tags)
-                            }
-                            _ => false,
-                        }
-                    } else {
-                        // No special prefix, check all enabled filter types.
-                        // We short-circuit (return true early) to avoid unnecessary checks.
-                        if filter_criteria.contains(RoomFilterCriteria::RoomId)
-                            && Self::matches_room_id(room, &keywords) {
-                            return true;
-                        }
-                        if filter_criteria.contains(RoomFilterCriteria::RoomName)
-                            && Self::matches_room_name(room, &keywords) {
-                            return true;
-                        }
-                        if filter_criteria.contains(RoomFilterCriteria::RoomAlias)
-                            && Self::matches_room_alias(room, &keywords) {
-                            return true;
-                        }
-                        if filter_criteria.contains(RoomFilterCriteria::RoomTags)
-                            && Self::matches_room_tags(room, &search_tags) {
-                            return true;
-                        }
-                        false
+        let filter = RoomDisplayFilter(Some(Box::new(move |room| {
+            if specific_type != RoomFilterCriteria::All {
+                // When using a special prefix, only check that specific type
+                match specific_type {
+                    RoomFilterCriteria::RoomId if criteria.contains(RoomFilterCriteria::RoomId) => {
+                        Self::matches_room_id(room, &keywords)
                     }
+                    RoomFilterCriteria::RoomAlias if criteria.contains(RoomFilterCriteria::RoomAlias) => {
+                        Self::matches_room_alias(room, &keywords)
+                    }
+                    RoomFilterCriteria::RoomTags if criteria.contains(RoomFilterCriteria::RoomTags) => {
+                        Self::matches_room_tags(room, &search_tags)
+                    }
+                    _ => false,
                 }
-            )))
-        };
+            } else {
+                // No special prefix, check all enabled filter types in a short-circuiting manner.
+                if criteria.contains(RoomFilterCriteria::RoomId)
+                    && Self::matches_room_id(room, &keywords)
+                {
+                    return true;
+                }
+                if criteria.contains(RoomFilterCriteria::RoomName)
+                    && Self::matches_room_name(room, &keywords)
+                {
+                    return true;
+                }
+                if criteria.contains(RoomFilterCriteria::RoomAlias)
+                    && Self::matches_room_alias(room, &keywords)
+                {
+                    return true;
+                }
+                if criteria.contains(RoomFilterCriteria::RoomTags)
+                    && Self::matches_room_tags(room, &search_tags)
+                {
+                    return true;
+                }
+                false
+            }
+        })));
+
         (filter, self.sort_fn)
     }
 }
