@@ -1127,7 +1127,7 @@ impl RoomsList {
             }
             // Details-related space actions are handled by SpaceLobbyScreen, not RoomsList.
             SpaceRoomListAction::DetailedChildren { .. }
-            | SpaceRoomListAction::TopLevelSpaceDetails { .. } => { }
+            | SpaceRoomListAction::TopLevelSpaceDetails(_) => { }
         }
     }
 
