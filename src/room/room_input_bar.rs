@@ -100,6 +100,7 @@ live_design! {
                     }
                     icon_walk: {width: Fit, height: 23, margin: {bottom: -1}}
                     text: "",
+                    tooltip: "Share Location"
                 }
 
                 // A checkbox that enables TSP signing for the outgoing message.
@@ -135,6 +136,7 @@ live_design! {
                     draw_bg: {
                         color: (COLOR_BG_DISABLED),
                     }
+                    tooltip: "Send Message"
                 }
             }
 

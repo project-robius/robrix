@@ -1,4 +1,5 @@
 use makepad_widgets::*;
+use crate::shared::callout_tooltip::{TooltipAction, CalloutTooltipOptions, TooltipPosition};
 
 live_design! {
     use link::theme::*;
@@ -57,7 +58,7 @@ live_design! {
 
     // Customized button widget, based on the RoundedView shaders with some modifications
     // which is a better fit with our application UI design
-    pub RobrixIconButton = <Button> {
+    pub RobrixIconButton = {{RobrixIconButton}} {
         width: Fit,
         height: Fit,
         spacing: 10,
@@ -111,5 +112,62 @@ live_design! {
             }
         }
         text: ""
+        tooltip: ""
+    }
+}
+
+#[derive(Live, LiveHook, Widget)]
+pub struct RobrixIconButton {
+    #[deref]
+    button: Button,
+
+    #[live]
+    tooltip: String,
+}
+
+impl Widget for RobrixIconButton {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        match event.hits(cx, self.button.area()) {
+            Hit::FingerHoverIn(_) => {
+                cx.set_cursor(MouseCursor::Hand);
+                if !self.tooltip.is_empty() {
+                    let widget_rect = self.button.area().rect(cx);
+                    let position = if widget_rect.pos.y < 50.0 {
+                        TooltipPosition::Bottom
+                    } else {
+                        TooltipPosition::Top
+                    };
+
+                    cx.widget_action(
+                        self.button.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverIn {
+                            text: self.tooltip.clone(),
+                            widget_rect,
+                            options: CalloutTooltipOptions {
+                                position,
+                                ..Default::default()
+                            },
+                        },
+                    );
+                }
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.set_cursor(MouseCursor::Arrow);
+                 if !self.tooltip.is_empty() {
+                    cx.widget_action(
+                        self.button.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverOut,
+                    );
+                }
+            }
+            _ => ()
+        }
+        self.button.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.button.draw_walk(cx, scope, walk)
     }
 }
