@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     app_data_dir,
     login::login_screen::LoginAction,
+    persistence::write_file_securely,
 };
 
 /// The data needed to re-build a client.
@@ -116,7 +117,7 @@ pub async fn most_recent_user_id() -> Option<OwnedUserId> {
 
 /// Save which user was the most recently logged in.
 async fn save_latest_user_id(user_id: &UserId) -> anyhow::Result<()> {
-    tokio::fs::write(
+    write_file_securely(
         app_data_dir().join(LATEST_USER_ID_FILE_NAME),
         user_id.as_str(),
     ).await?;
@@ -218,7 +219,7 @@ pub async fn save_session(
     if let Some(parent) = session_file.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
-    tokio::fs::write(&session_file, serialized_session).await?;
+    write_file_securely(&session_file, serialized_session).await?;
 
     log!("Session persisted to: {}", session_file.display());
     Ok(())
