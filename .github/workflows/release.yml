@@ -44,8 +44,8 @@ on:
         required: false
         type: boolean
         default: false
-      build_android:
-        description: 'Build Android APK'
+      build_android_aarch64:
+        description: 'Build Android APK (aarch64 only)'
         required: false
         type: boolean
         default: false
@@ -97,7 +97,11 @@ jobs:
           TAG_REF="${GITHUB_REF##*/}"
           echo "Current tag: $TAG_REF"
 
-          CARGO_MANIFEST_VERSION=$(cargo metadata --no-deps --format-version 1 --frozen | jq -r '.packages[0].version')
+          CARGO_MANIFEST_VERSION=$(cargo metadata --no-deps --format-version 1 --frozen | jq -r '.packages[] | select(.name=="robrix") | .version' | head -n1)
+          if [[ -z "$CARGO_MANIFEST_VERSION" || "$CARGO_MANIFEST_VERSION" == "null" ]]; then
+            echo "Error: Failed to resolve robrix version from Cargo metadata."
+            exit 1
+          fi
           echo "Cargo.toml Robrix version: $CARGO_MANIFEST_VERSION"
 
           if [[ "$TAG_REF" != "v$CARGO_MANIFEST_VERSION" ]]; then
@@ -121,87 +125,45 @@ jobs:
     steps:
       - name: Build matrix from inputs
         id: set
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const isPush = context.eventName === 'push';
+            const inputs = context.payload.inputs || {};
+            const enabled = (value) => String(value).trim().toLowerCase() === 'true';
 
-          def truthy(value: str) -> bool:
-              if value is None:
-                  return False
-              return str(value).strip().lower() == "true"
+            const linux = [];
+            const macos = [];
+            const windows = [];
 
-          event_name = os.environ.get("GITHUB_EVENT_NAME", "")
-          inputs = {}
-          event_path = os.environ.get("GITHUB_EVENT_PATH")
-          if event_path and Path(event_path).exists():
-              with open(event_path, "r", encoding="utf-8") as handle:
-                  payload = json.load(handle)
-              inputs = payload.get("inputs") or {}
+            const addLinux = (os, arch) => linux.push({ os, arch });
+            const addMacos = (os, arch) => macos.push({ os, arch });
+            const addWindows = () => windows.push({ os: 'windows-2022', arch: 'x86_64' });
 
-          linux = []
-          macos = []
-          windows = []
+            if (isPush) {
+              addLinux('ubuntu-24.04', 'x86_64');
+              addLinux('ubuntu-24.04-arm', 'aarch64');
+              addLinux('ubuntu-22.04', 'x86_64');
+              addLinux('ubuntu-22.04-arm', 'aarch64');
+              addMacos('macos-14', 'aarch64');
+              addMacos('macos-15-intel', 'x86_64');
+              addWindows();
+            } else {
+              if (enabled(inputs.build_ubuntu_24_x86_64)) addLinux('ubuntu-24.04', 'x86_64');
+              if (enabled(inputs.build_ubuntu_24_aarch64)) addLinux('ubuntu-24.04-arm', 'aarch64');
+              if (enabled(inputs.build_ubuntu_22_x86_64)) addLinux('ubuntu-22.04', 'x86_64');
+              if (enabled(inputs.build_ubuntu_22_aarch64)) addLinux('ubuntu-22.04-arm', 'aarch64');
+              if (enabled(inputs.build_macos_14_aarch64)) addMacos('macos-14', 'aarch64');
+              if (enabled(inputs.build_macos_15_x86_64)) addMacos('macos-15-intel', 'x86_64');
+              if (enabled(inputs.build_windows_2022_x86_64)) addWindows();
+            }
 
-          def add_linux(os_name: str, arch: str) -> None:
-              linux.append({
-                  "os": os_name,
-                  "arch": arch,
-                  "packager_formats": "deb,appimage",
-              })
-
-          def add_macos(os_name: str, arch: str) -> None:
-              macos.append({
-                  "os": os_name,
-                  "arch": arch,
-                  "packager_formats": "dmg",
-              })
-
-          def add_windows() -> None:
-              windows.append({
-                  "os": "windows-2022",
-                  "arch": "x86_64",
-                  "packager_formats": "nsis",
-              })
-
-          if event_name == "push":
-              add_linux("ubuntu-24.04", "x86_64")
-              add_linux("ubuntu-24.04-arm", "aarch64")
-              add_linux("ubuntu-22.04", "x86_64")
-              add_linux("ubuntu-22.04-arm", "aarch64")
-              add_macos("macos-14", "aarch64")
-              add_macos("macos-15-intel", "x86_64")
-              add_windows()
-          else:
-              if truthy(inputs.get("build_ubuntu_24_x86_64")):
-                  add_linux("ubuntu-24.04", "x86_64")
-              if truthy(inputs.get("build_ubuntu_24_aarch64")):
-                  add_linux("ubuntu-24.04-arm", "aarch64")
-              if truthy(inputs.get("build_ubuntu_22_x86_64")):
-                  add_linux("ubuntu-22.04", "x86_64")
-              if truthy(inputs.get("build_ubuntu_22_aarch64")):
-                  add_linux("ubuntu-22.04-arm", "aarch64")
-              if truthy(inputs.get("build_macos_14_aarch64")):
-                  add_macos("macos-14", "aarch64")
-              if truthy(inputs.get("build_macos_15_x86_64")):
-                  add_macos("macos-15-intel", "x86_64")
-              if truthy(inputs.get("build_windows_2022_x86_64")):
-                  add_windows()
-
-          outputs = {
-              "linux_matrix": json.dumps({"include": linux}),
-              "macos_matrix": json.dumps({"include": macos}),
-              "windows_matrix": json.dumps({"include": windows}),
-              "run_linux": "true" if linux else "false",
-              "run_macos": "true" if macos else "false",
-              "run_windows": "true" if windows else "false",
-          }
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              for key, value in outputs.items():
-                  handle.write(f"{key}={value}\n")
-          PY
+            core.setOutput('linux_matrix', JSON.stringify({ include: linux }));
+            core.setOutput('macos_matrix', JSON.stringify({ include: macos }));
+            core.setOutput('windows_matrix', JSON.stringify({ include: windows }));
+            core.setOutput('run_linux', linux.length > 0 ? 'true' : 'false');
+            core.setOutput('run_macos', macos.length > 0 ? 'true' : 'false');
+            core.setOutput('run_windows', windows.length > 0 ? 'true' : 'false');
 
   create_release:
     name: Create Release
@@ -215,7 +177,7 @@ jobs:
             needs.determine_matrices.outputs.run_linux == 'true' ||
             needs.determine_matrices.outputs.run_macos == 'true' ||
             needs.determine_matrices.outputs.run_windows == 'true' ||
-            github.event.inputs.build_android == 'true' ||
+            github.event.inputs.build_android_aarch64 == 'true' ||
             github.event.inputs.build_ios == 'true'
           )
         )
@@ -223,54 +185,38 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       release_id: ${{ steps.create_release.outputs.id }}
-      release_tag: ${{ steps.resolve.outputs.tag }}
-      release_name: ${{ steps.resolve.outputs.name }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Resolve release metadata
         id: resolve
+        shell: bash
         run: |
-          python - <<'PY'
-          import os
-          from pathlib import Path
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            resolved_tag="${{ github.ref_name }}"
+          else
+            resolved_tag="${{ github.event.inputs.release_tag }}"
+            if [[ -z "$resolved_tag" ]]; then
+              resolved_version="$(awk '
+                /^\[package\]$/ { in_package=1; next }
+                /^\[/ { in_package=0 }
+                in_package && $1 == "version" {
+                  gsub(/"/, "", $3);
+                  print $3;
+                  exit;
+                }
+              ' Cargo.toml)"
+              if [[ -z "$resolved_version" ]]; then
+                echo "Error: Unable to resolve package.version from Cargo.toml."
+                exit 1
+              fi
+              resolved_tag="v${resolved_version}"
+              echo "release_tag not provided; fallback to ${resolved_tag}"
+            fi
+          fi
 
-          def read_version(path: str) -> str:
-              in_package = False
-              for raw_line in Path(path).read_text(encoding="utf-8").splitlines():
-                  line = raw_line.strip()
-                  if line.startswith("[") and line.endswith("]"):
-                      in_package = line == "[package]"
-                      continue
-                  if not in_package or not line.startswith("version"):
-                      continue
-                  _, value = line.split("=", 1)
-                  value = value.strip().strip('"').strip("'")
-                  if value:
-                      return value
-              return ""
-
-          event_name = os.environ.get("GITHUB_EVENT_NAME", "")
-          ref_name = os.environ.get("GITHUB_REF_NAME", "").strip()
-          release_tag_input = os.environ.get("RELEASE_TAG", "").strip()
-          version = read_version("Cargo.toml")
-
-          if event_name == "push" and ref_name:
-              tag = ref_name
-              name = f"Robrix {ref_name}"
-          else:
-              if not version:
-                  raise SystemExit("Unable to resolve Cargo.toml package version.")
-              tag = release_tag_input or f"v{version}"
-              tag = tag.replace("__VERSION__", version)
-              name = f"Robrix v{version}"
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"tag={tag}\n")
-              handle.write(f"name={name}\n")
-          PY
-        env:
-          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+          echo "tag=${resolved_tag}" >> "$GITHUB_OUTPUT"
+          echo "name=Robrix ${resolved_tag}" >> "$GITHUB_OUTPUT"
 
       - name: Create Release
         id: create_release
@@ -316,11 +262,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (desktop)
-        uses: Project-Robius-China/makepad-packaging-action@main
+        uses: project-robius/makepad-packaging-action@main
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          packager_formats: ${{ matrix.packager_formats }}
+          packager_formats: deb
           releaseId: ${{ needs.create_release.outputs.release_id }}
 
   for_macos:
@@ -338,11 +284,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (macos)
-        uses: Project-Robius-China/makepad-packaging-action@main
+        uses: project-robius/makepad-packaging-action@main
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          packager_formats: ${{ matrix.packager_formats }}
+          packager_formats: dmg
           releaseId: ${{ needs.create_release.outputs.release_id }}
 
   for_windows:
@@ -360,17 +306,17 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (windows)
-        uses: Project-Robius-China/makepad-packaging-action@main
+        uses: project-robius/makepad-packaging-action@main
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          packager_formats: ${{ matrix.packager_formats }}
+          packager_formats: nsis
           releaseId: ${{ needs.create_release.outputs.release_id }}
 
   for_android:
-    name: Release Robrix for Android
+    name: Release Robrix for Android (aarch64)
     needs: [check_tag_version, create_release]
-    if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_android == 'true')) }}
+    if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_android_aarch64 == 'true')) }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -379,9 +325,15 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (android)
-        uses: Project-Robius-China/makepad-packaging-action@main
+        uses: project-robius/makepad-packaging-action@main
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
+            --config profile.dev.opt-level=0
+            --config profile.dev.debug=false
+            --config profile.dev.lto=off
+            --config profile.dev.strip=true
+            --config profile.dev.debug-assertions=false
         with:
           args: --target aarch64-linux-android
           releaseId: ${{ needs.create_release.outputs.release_id }}
@@ -397,10 +349,17 @@ jobs:
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Package (iOS)
-        uses: Project-Robius-China/makepad-packaging-action@main
+      - name: Package (iOS + TestFlight)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload_testflight == 'true' }}
+        uses: project-robius/makepad-packaging-action@main
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
+            --config profile.dev.opt-level=0
+            --config profile.dev.debug=false
+            --config profile.dev.lto=off
+            --config profile.dev.strip=true
+            --config profile.dev.debug-assertions=false
           MAKEPAD_IOS_ORG: org.robius.robrix
           MAKEPAD_IOS_APP: Robrix
           MAKEPAD_IOS_CREATE_IPA: 'true'
@@ -409,11 +368,33 @@ jobs:
           APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
           APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
           APPLE_SIGNING_IDENTITY: Apple Development
-          # IOS upload testflight disabled for now
-          MAKEPAD_IOS_UPLOAD_TESTFLIGHT: ${{ inputs.upload_testflight }}
+          MAKEPAD_IOS_UPLOAD_TESTFLIGHT: 'true'
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        with:
+          args: --target aarch64-apple-ios
+          releaseId: ${{ needs.create_release.outputs.release_id }}
+
+      - name: Package (iOS)
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.upload_testflight != 'true' }}
+        uses: project-robius/makepad-packaging-action@main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
+            --config profile.dev.opt-level=0
+            --config profile.dev.debug=false
+            --config profile.dev.lto=off
+            --config profile.dev.strip=true
+            --config profile.dev.debug-assertions=false
+          MAKEPAD_IOS_ORG: org.robius.robrix
+          MAKEPAD_IOS_APP: Robrix
+          MAKEPAD_IOS_CREATE_IPA: 'true'
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: Apple Development
         with:
           args: --target aarch64-apple-ios
           releaseId: ${{ needs.create_release.outputs.release_id }}
