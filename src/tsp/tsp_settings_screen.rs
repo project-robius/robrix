@@ -1,6 +1,7 @@
+
 use makepad_widgets::*;
 
-use crate::{shared::{popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
+use crate::{shared::{popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
 const REPUBLISH_IDENTITY_BUTTON_TEXT: &str = "Republish Current Identity to DID Server";
 
@@ -349,20 +350,20 @@ impl MatchEvent for TspSettingsScreen {
                     else {
                         continue;
                     }
-                    enqueue_popup_notification(PopupItem {
-                        message: format!("Removed wallet \"{}\".", metadata.wallet_name),
-                        auto_dismissal_duration: Some(4.0),
-                        kind: PopupKind::Success,
-                    });
+                    enqueue_popup_notification(
+                        format!("Removed wallet \"{}\".", metadata.wallet_name),
+                        PopupKind::Success,
+                        Some(4.0),
+                    );
                     if *was_default {
                         // If the removed wallet was the default wallet, notify the user.
                         // The user should then select another wallet as the default.
-                        enqueue_popup_notification(PopupItem {
-                            message: String::from("The default wallet was removed.\n\n\
-                                TSP features will not work properly until you set a default wallet."),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Warning,
-                        });
+                        enqueue_popup_notification(
+                            "The default wallet was removed.\n\n\
+                                TSP features will not work properly until you set a default wallet.",
+                            PopupKind::Warning,
+                            None,
+                        );
                     }
                     self.view.redraw(cx);
                     continue;
@@ -384,11 +385,11 @@ impl MatchEvent for TspSettingsScreen {
                     continue;
                 }
                 Some(TspWalletAction::DefaultWalletChanged(Err(_))) => {
-                    enqueue_popup_notification(PopupItem {
-                        message: String::from("Failed to set default wallet, could not find or open selected wallet."),
-                        auto_dismissal_duration: None,
-                        kind: PopupKind::Error,
-                    });
+                    enqueue_popup_notification(
+                        "Failed to set default wallet, could not find or open selected wallet.",
+                        PopupKind::Error,
+                        None,
+                    );
                     continue;
                 }
 
@@ -404,11 +405,11 @@ impl MatchEvent for TspSettingsScreen {
                     continue;
                 }
                 Some(TspWalletAction::WalletOpened(Err(e))) => {
-                    enqueue_popup_notification(PopupItem {
-                        message: format!("Failed to open wallet: {e}"),
-                        auto_dismissal_duration: None,
-                        kind: PopupKind::Error,
-                    });
+                    enqueue_popup_notification(
+                        format!("Failed to open wallet: {e}"),
+                        PopupKind::Error,
+                        None,
+                    );
                     continue;
                 }
 
@@ -435,18 +436,18 @@ impl MatchEvent for TspSettingsScreen {
                     ));
                     match result {
                         Ok(did) => {
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("Successfully republished identity \"{}\" to the DID server.", did),
-                                auto_dismissal_duration: Some(5.0),
-                                kind: PopupKind::Success,
-                            });
+                            enqueue_popup_notification(
+                                format!("Successfully republished identity \"{}\" to the DID server.", did),
+                                PopupKind::Success,
+                                Some(5.0),
+                            );
                         }
                         Err(e) => {
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("Failed to republish identity to the DID server: {e}"),
-                                auto_dismissal_duration: None,
-                                kind: PopupKind::Error,
-                            });
+                            enqueue_popup_notification(
+                                format!("Failed to republish identity to the DID server: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
                         }
                     }
                     continue;
@@ -464,17 +465,17 @@ impl MatchEvent for TspSettingsScreen {
         if self.view.button(ids!(copy_identity_button)).clicked(actions) { 
             if let Some(did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
                 cx.copy_to_clipboard(did);
-                enqueue_popup_notification(PopupItem {
-                    message: String::from("Copied your default TSP identity to the clipboard."),
-                    auto_dismissal_duration: Some(3.0),
-                    kind: PopupKind::Success,
-                });
+                enqueue_popup_notification(
+                    "Copied your default TSP identity to the clipboard.",
+                    PopupKind::Success,
+                    Some(3.0),
+                );
             } else {
-                enqueue_popup_notification(PopupItem {
-                    message: String::from("No default TSP identity has been set."),
-                    auto_dismissal_duration: Some(4.0),
-                    kind: PopupKind::Warning,
-                });
+                enqueue_popup_notification(
+                    "No default TSP identity has been set.",
+                    PopupKind::Warning,
+                    Some(4.0),
+                );
             }
         }
 
@@ -491,11 +492,11 @@ impl MatchEvent for TspSettingsScreen {
 
                     submit_tsp_request(TspRequest::RepublishDid { did: our_did.to_string() });
                 } else {
-                    enqueue_popup_notification(PopupItem {
-                        message: String::from("You must set a default TSP identity to be republished."),
-                        auto_dismissal_duration: Some(5.0),
-                        kind: PopupKind::Error,
-                    });
+                    enqueue_popup_notification(
+                        "You must set a default TSP identity to be republished.",
+                        PopupKind::Error,
+                        Some(5.0),
+                    );
                 }
             }
         }
@@ -512,11 +513,11 @@ impl MatchEvent for TspSettingsScreen {
 
         if self.view.button(ids!(import_wallet_button)).clicked(actions) {
             // TODO: support importing an existing wallet.
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Importing an existing wallet is not yet implemented."),
-                auto_dismissal_duration: Some(4.0),
-                kind: PopupKind::Warning,
-            });
+            enqueue_popup_notification(
+                "Importing an existing wallet is not yet implemented.",
+                PopupKind::Warning,
+                Some(4.0),
+            );
         }
     }
 }
@@ -548,19 +549,19 @@ impl TspSettingsScreen {
     /// Returns `true` if a default wallet is set, `false` otherwise.
     fn has_default_wallet(&self) -> bool {
         let Some(wallets) = self.wallets.as_ref() else {
-            enqueue_popup_notification(PopupItem {
-                message: String::from("No TSP wallets found.\n\nPlease create or import a wallet."),
-                auto_dismissal_duration: Some(5.0),
-                kind: PopupKind::Warning,
-            });
+            enqueue_popup_notification(
+                "No TSP wallets found.\n\nPlease create or import a wallet.",
+                PopupKind::Warning,
+                Some(5.0),
+            );
             return false;
         };
         if wallets.active_wallet.is_none() {
-            enqueue_popup_notification(PopupItem {
-                message: String::from("No default TSP wallet is set.\n\nPlease select or create a default wallet."),
-                auto_dismissal_duration: Some(5.0),
-                kind: PopupKind::Warning,
-            });
+            enqueue_popup_notification(
+                "No default TSP wallet is set.\n\nPlease select or create a default wallet.",
+                PopupKind::Warning,
+                Some(5.0),
+            );
             return false;
         }
         true

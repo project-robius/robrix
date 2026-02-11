@@ -362,7 +362,7 @@ impl MatrixLinkPill {
             ) {
                 Some((name, avatar)) => {
                     self.set_text(cx, &name);
-                    self.populate_avatar(cx, avatar.uri().cloned());
+                    self.populate_avatar(cx, avatar.uri());
                 }
                 None => {
                     self.set_text(cx, user_id.as_ref());
@@ -376,7 +376,7 @@ impl MatrixLinkPill {
         match &self.state {
             MatrixLinkPillState::Loaded { name, avatar_url, .. } => {
                 self.label(ids!(title)).set_text(cx, name);
-                self.populate_avatar(cx, avatar_url.clone());
+                self.populate_avatar(cx, avatar_url.as_ref());
                 return;
             }
             MatrixLinkPillState::None => {
@@ -398,7 +398,7 @@ impl MatrixLinkPill {
         self.populate_avatar(cx, None);
     }
 
-    fn populate_avatar(&self, cx: &mut Cx, avatar_url: Option<OwnedMxcUri>) {
+    fn populate_avatar(&self, cx: &mut Cx, avatar_url: Option<&OwnedMxcUri>) {
         let avatar_ref = self.avatar(ids!(avatar));
         if let Some(avatar_url) = avatar_url {
             if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, avatar_url) {
@@ -524,8 +524,8 @@ impl LiveHook for MatrixHtmlSpan {
 impl Widget for MatrixHtmlSpan {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
         let mut needs_redraw = false;
-        for area in self.drawn_areas.clone().into_iter() {
-            match event.hits(cx, area) {
+        for area in &self.drawn_areas {
+            match event.hits(cx, *area) {
                 Hit::FingerDown(..) if self.grab_key_focus => {
                     cx.set_key_focus(self.area());
                 }

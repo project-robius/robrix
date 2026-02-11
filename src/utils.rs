@@ -135,6 +135,34 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
 }
 
 
+/// A simplified version of `eyeball_im::VectorDiff` that uses `Vec` instead of `imbl::Vector`.
+///
+/// This is used to communicate room order changes from the room list service to the RoomsList widget.
+#[derive(Debug)]
+pub enum VecDiff<T> {
+    /// Append the given elements at the end.
+    Append { values: Vec<T> },
+    /// Clear the list.
+    Clear,
+    /// Insert an element at the given index.
+    Insert { index: usize, value: T },
+    /// Set (replace) the element at the given index.
+    Set { index: usize, value: T },
+    /// Remove the element at the given index.
+    Remove { index: usize },
+    /// Push an element at the front.
+    PushFront { value: T },
+    /// Push an element at the back.
+    PushBack { value: T },
+    /// Pop an element from the front.
+    PopFront,
+    /// Pop an element from the back.
+    PopBack,
+    /// Truncate the list to the given length.
+    Truncate { length: usize },
+}
+
+
 pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
     let millis: i64 = millis.get().into();
     Local.timestamp_millis_opt(millis).single()
@@ -769,6 +797,7 @@ impl AsRef<OwnedRoomId> for RoomNameId {
         &self.room_id
     }
 }
+
 /// Display implementation that automatically handles Empty names by falling back to room ID.
 ///
 /// - `Empty` → displays room ID

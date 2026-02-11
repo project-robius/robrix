@@ -2,13 +2,15 @@
 //!
 //! See `handle_startup()` for the first code that runs on app startup.
 
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 use makepad_widgets::*;
 use matrix_sdk::{RoomState, ruma::{OwnedRoomId, RoomId}};
 use serde::{Deserialize, Serialize};
 use crate::{
+    shared::confirmation_modal::ConfirmationModalContent,
     avatar_cache::clear_avatar_cache,
     home::{
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt},
         invite_modal::{InviteModalAction, InviteModalWidgetRefExt},
         main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, room_context_menu::RoomContextMenuWidgetRefExt
     },
@@ -45,6 +47,7 @@ live_design! {
     use crate::home::new_message_context_menu::*;
     use crate::home::room_context_menu::*;
     use crate::home::invite_modal::InviteModal;
+    use crate::home::event_source_modal::EventSourceModal;
     use crate::shared::callout_tooltip::CalloutTooltip;
     use crate::shared::image_viewer::ImageViewer;
     use link::tsp_link::TspVerificationModal;
@@ -109,7 +112,6 @@ live_design! {
                                 image_viewer_modal_inner = <ImageViewer> {}
                             }
                         }
-                        <PopupList> {}
                         
                         // Context menus should be shown in front of other UI elements,
                         // but behind verification modals.
@@ -144,6 +146,16 @@ live_design! {
                             }
                         }
 
+                        // Show the event source modal (View Source for messages).
+                        event_source_modal = <Modal> {
+                            content: {
+                                height: Fill,
+                                width: Fill,
+                                align: {x: 0.5, y: 0.5},
+                                event_source_modal_inner = <EventSourceModal> {}
+                            }
+                        }
+
                         // Show incoming verification requests in front of the aforementioned UI elements.
                         verification_modal = <Modal> {
                             content: {
@@ -155,6 +167,15 @@ live_design! {
                                 tsp_verification_modal_inner = <TspVerificationModal> {}
                             }
                         }
+
+                        // A modal to confirm any deletion/removal action.
+                        delete_confirmation_modal = <Modal> {
+                            content: {
+                                delete_confirmation_modal_inner = <NegativeConfirmationModal> { }
+                            }
+                        }
+
+                        <PopupList> {}
 
                         // Tooltips must be shown in front of all other UI elements,
                         // since they can be shown as a hover atop any other widget.
@@ -182,10 +203,12 @@ pub struct App {
 impl LiveRegister for App {
     fn live_register(cx: &mut Cx) {
         // Order matters here, as some widget definitions depend on others.
-        // `makepad_widgets` must be registered first,
+        // The main `makepad_widgets` crate must be registered first,
+        // then other first-party makepad crates (like `makepad_code_editor`),
         // then `shared`` widgets (in which styles are defined),
         // then other modules widgets.
         makepad_widgets::live_design(cx);
+        makepad_code_editor::live_design(cx);
         // Override Makepad's default desktop dark theme with the desktop light theme.
         cx.link(id!(theme), id!(theme_desktop_light));
         crate::shared::live_design(cx);
@@ -268,6 +291,11 @@ impl MatchEvent for App {
         let invite_confirmation_modal_inner = self.ui.confirmation_modal(ids!(invite_confirmation_modal_inner));
         if let Some(_accepted) = invite_confirmation_modal_inner.closed(actions) {
             self.ui.modal(ids!(invite_confirmation_modal)).close(cx);
+        }
+
+        let delete_confirmation_modal_inner = self.ui.confirmation_modal(ids!(delete_confirmation_modal_inner));
+        if let Some(_accepted) = delete_confirmation_modal_inner.closed(actions) {
+            self.ui.modal(ids!(delete_confirmation_modal)).close(cx);
         }
 
         for action in actions {
@@ -505,11 +533,20 @@ impl MatchEvent for App {
                 continue;
             }
 
+            // Handle a request to show the delete confirmation modal.
+            if let Some(ConfirmDeleteAction::Show(content_opt)) = action.downcast_ref() {
+                if let Some(content) = content_opt.borrow_mut().take() {
+                    self.ui.confirmation_modal(ids!(delete_confirmation_modal_inner)).show(cx, content);
+                    self.ui.modal(ids!(delete_confirmation_modal)).open(cx);
+                }
+                continue;
+            }
+
             // Handle InviteModalAction to open/close the invite modal.
             match action.downcast_ref() {
                 Some(InviteModalAction::Open(room_name_id)) => {
                     self.ui.invite_modal(ids!(invite_modal_inner)).show(cx, room_name_id.clone());
-                    self.ui.modal(ids!(invite_modal)).open(cx);
+                    self.ui.modal(ids!(invite_modal)).open(cx); 
                     continue;
                 }
                 Some(InviteModalAction::Close) => {
@@ -519,17 +556,20 @@ impl MatchEvent for App {
                 _ => {}
             }
 
-            // // message source modal handling.
-            // match action.as_widget_action().cast() {
-            //     MessageAction::MessageSourceModalOpen { room_id: _, event_id: _, original_json: _ } => {
-            //        // self.ui.message_source(ids!(message_source_modal_inner)).initialize_with_data(room_id, event_id, original_json);
-            //        // self.ui.modal(ids!(message_source_modal)).open(cx);
-            //     }
-            //     MessageAction::MessageSourceModalClose => {
-            //         self.ui.modal(ids!(message_source_modal)).close(cx);
-            //     }
-            //     _ => {}
-            // }
+            // Handle EventSourceModalAction to open/close the event source modal.
+            match action.downcast_ref() {
+                Some(EventSourceModalAction::Open { room_id, event_id, original_json }) => {
+                    self.ui.event_source_modal(ids!(event_source_modal_inner))
+                        .show(cx, room_id.clone(), event_id.clone(), original_json.clone());
+                    self.ui.modal(ids!(event_source_modal)).open(cx);
+                    continue;
+                }
+                Some(EventSourceModalAction::Close) => {
+                    self.ui.modal(ids!(event_source_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
         }
     }
 }
@@ -821,4 +861,17 @@ pub enum AppStateAction {
         destination_room: BasicRoomDetails,
     },
     None,
+}
+
+/// An action to show a deletion/removal confirmation modal.
+///
+/// This is NOT a widget action.
+#[derive(Debug)]
+pub enum ConfirmDeleteAction {
+    /// Show the deletion confirmation modal with the given content.
+    ///
+    /// The content is wrapped in a `RefCell` to ensure that only one entity handles it
+    /// and that that one entity can take ownership of the content object,
+    /// which avoids having to clone it.
+    Show(RefCell<Option<ConfirmationModalContent>>),
 }

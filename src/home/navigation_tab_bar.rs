@@ -35,7 +35,7 @@ use crate::{
         user_profile_cache::{self, UserProfileUpdate},
     }, shared::{
         avatar::{AvatarState, AvatarWidgetExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, styles::*, verification_badge::VerificationBadgeWidgetExt
-    }, sliding_sync::current_user_id, utils::{self, RoomNameId}
+    }, sliding_sync::{current_user_id, AccountDataAction}, utils::{self, RoomNameId}
 };
 
 live_design! {
@@ -299,23 +299,33 @@ impl LiveHook for ProfileIcon {
 
 impl Widget for ProfileIcon {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // A UI Signal indicates that a user profile or avatar may have been updated in the background.
+        // A UI Signal indicates that a user profile or avatar may have been updated.
         if let Event::Signal = event {
-            user_profile_cache::process_user_profile_updates(cx);
-            avatar_cache::process_avatar_updates(cx);
-
-            // Refetch our profile if we don't have it yet, or if we're waiting for an avatar image.
-            if self.own_profile.as_ref().is_none_or(|p| p.avatar_state.uri().is_some()) {
+            let mut needs_redraw = false;
+            // Refetch our profile if we don't have it yet.
+            if self.own_profile.is_none() {
+                user_profile_cache::process_user_profile_updates(cx);
                 self.own_profile = get_own_profile(cx);
-                if self.own_profile.is_some() {
-                    self.view.redraw(cx);
+                needs_redraw = true;
+            }
+            // If we're waiting for an avatar image, process avatar updates.
+            if let Some(p) = self.own_profile.as_mut() && p.avatar_state.uri().is_some() {
+                avatar_cache::process_avatar_updates(cx);
+                let new_data = p.avatar_state.update_from_cache(cx);
+                needs_redraw |= new_data.is_some();
+                if new_data.is_some() {
+                    user_profile_cache::enqueue_user_profile_update(
+                        UserProfileUpdate::UserProfileOnly(p.clone())
+                    );
                 }
+            }
+            if needs_redraw {
+                self.view.redraw(cx);
             }
         }
 
-        // TODO: handle actions related to the currently-logged-in user account,
-        //       such as changing their avatar, display name, etc.
-
+        // Handle actions related to the currently-logged-in user account,
+        // such as changing their avatar, display name, etc.
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
@@ -329,13 +339,57 @@ impl Widget for ProfileIcon {
                     self.view.redraw(cx);
                     continue;
                 }
+
+                // Handle account data changes (e.g., avatar updated/removed)
+                match action.downcast_ref() {
+                    Some(AccountDataAction::AvatarChanged(None)) => {
+                        // Update both this widget's local profile info and the user profile cache.
+                        if let Some(p) = self.own_profile.as_mut() {
+                            p.avatar_state = AvatarState::Known(None);
+                            user_profile_cache::enqueue_user_profile_update(
+                                UserProfileUpdate::UserProfileOnly(p.clone())
+                            );
+                            self.view.redraw(cx);
+                        }
+                        continue;
+                    }
+                    Some(AccountDataAction::AvatarChanged(Some(new_uri))) => {
+                        if let Some(p) = self.own_profile.as_mut() {
+                            p.avatar_state = AvatarState::Known(Some(new_uri.clone()));
+                            p.avatar_state.update_from_cache(cx);
+                            user_profile_cache::enqueue_user_profile_update(
+                                UserProfileUpdate::UserProfileOnly(p.clone())
+                            );
+                            self.view.redraw(cx);
+                        }
+                        continue;
+                    }
+                    Some(AccountDataAction::AvatarChangeFailed(_)) => {
+                        // this is only handled in the account settings screen
+                        continue;
+                    }
+                    Some(AccountDataAction::DisplayNameChanged(new_display_name)) => {
+                        if let Some(p) = self.own_profile.as_mut() {
+                            p.username = new_display_name.clone();
+                            user_profile_cache::enqueue_user_profile_update(
+                                UserProfileUpdate::UserProfileOnly(p.clone())
+                            );
+                            self.view.redraw(cx);
+                        }
+                        continue;
+                    }
+                    Some(AccountDataAction::DisplayNameChangeFailed(_)) => {
+                        // this is only handled in the account settings screen
+                        continue;
+                    }
+                    _ => {}
+                }
             }
         }
 
         let area = self.view.area();
         match event.hits(cx, area) {
-            Hit::FingerLongPress(_)
-            | Hit::FingerHoverIn(_) => {
+            Hit::FingerLongPress(_) | Hit::FingerHoverIn(_) => {
                 let (verification_str, bg_color) = self.view
                     .verification_badge(ids!(verification_badge))
                     .tooltip_content();
@@ -547,20 +601,16 @@ pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
             },
         );
         // If we have an avatar URI to fetch, try to fetch it.
-        let mut new_profile_with_avatar = None;
         if let Some(Some(avatar_uri)) = avatar_uri_to_fetch {
-            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, avatar_uri) {
+            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, &avatar_uri) {
                 if let Some(p) = own_profile.as_mut() {
                     p.avatar_state = AvatarState::Loaded(data);
-                    new_profile_with_avatar = Some(p.clone());
+                    // Update the user profile cache with the new avatar data.
+                    user_profile_cache::enqueue_user_profile_update(
+                        UserProfileUpdate::UserProfileOnly(p.clone())
+                    );
                 }
             }
-        }
-        // Update the user profile cache if we got new avatar data.
-        if let Some(new_profile) = new_profile_with_avatar {
-            user_profile_cache::enqueue_user_profile_update(
-                UserProfileUpdate::UserProfileOnly(new_profile)
-            );
         }
     }
 

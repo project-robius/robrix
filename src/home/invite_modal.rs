@@ -41,6 +41,9 @@ live_design! {
                 align: {x: 0.5, y: 0.0}
 
                 title = <Label> {
+                    width: Fill
+                    height: Fit
+                    align: {x: 0.5}
                     flow: RightWrap,
                     draw_text: {
                         text_style: <TITLE_TEXT>{font_size: 13},
@@ -77,7 +80,7 @@ live_design! {
                     icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
 
                     draw_bg: {
-                        border_size: 1.0
+                        border_size: 0.75
                         border_color: (COLOR_BG_DISABLED),
                         color: (COLOR_SECONDARY)
                     }
@@ -98,6 +101,7 @@ live_design! {
                     icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
 
                     draw_bg: {
+                        border_size: 0.75
                         border_color: (COLOR_FG_ACCEPT_GREEN),
                         color: (COLOR_BG_ACCEPT_GREEN)
                     }
@@ -128,17 +132,25 @@ live_design! {
                 }
             }
 
-            status_label = <Label> {
+            status_label_view = <View> {
+                visible: false
                 width: Fill,
                 height: Fit,
-                flow: RightWrap,
                 align: {x: 0.5, y: 0.0}
-                draw_text: {
-                    wrap: Word
-                    text_style: <REGULAR_TEXT>{font_size: 11},
-                    color: #000
+
+                status_label = <Label> {
+                    width: Fill,
+                    height: Fit,
+                    flow: RightWrap,
+                    align: {x: 0.5, y: 0.0}
+                    margin: {top: 10}
+                    draw_text: {
+                        wrap: Word
+                        text_style: <REGULAR_TEXT>{font_size: 11},
+                        color: #000
+                    }
+                    text: ""
                 }
-                text: ""
             }
         }
     }
@@ -212,7 +224,8 @@ impl WidgetMatchEvent for InviteModal {
 
         let confirm_button = self.view.button(ids!(confirm_button));
         let user_id_input = self.view.text_input(ids!(user_id_input));
-        let status_label = self.view.label(ids!(status_label));
+        let status_view = self.view.view(ids!(status_label_view));
+        let status_label_view = self.view.label(ids!(status_label_view.status_label));
 
         // Handle return key or invite button click.
         if let Some(user_id_str) = confirm_button.clicked(actions)
@@ -221,12 +234,13 @@ impl WidgetMatchEvent for InviteModal {
         {
             // Validate the user ID
             if user_id_str.is_empty() {
-                status_label.apply_over(cx, live!{
+                status_label_view.apply_over(cx, live!{
                     text: "Please enter a user ID.",
                     draw_text: {
                         color: (COLOR_FG_DANGER_RED),
                     },
                 });
+                status_view.set_visible(cx, true);
                 self.view.redraw(cx);
                 return;
             }
@@ -240,23 +254,25 @@ impl WidgetMatchEvent for InviteModal {
                             user_id: user_id.to_owned(),
                         });
                         self.state = InviteModalState::WaitingForInvite(user_id.to_owned());
-                        status_label.apply_over(cx, live!(
+                        status_label_view.apply_over(cx, live!(
                             text: "Sending invite...",
                             draw_text: {
                                 color: (COLOR_ACTIVE_PRIMARY_DARKER),
                             },
                         ));
+                        status_view.set_visible(cx, true);
                         confirm_button.set_enabled(cx, false);
                         user_id_input.set_is_read_only(cx, true);
                     }
                 }
                 Err(_) => {
-                    status_label.apply_over(cx, live!(
+                    status_label_view.apply_over(cx, live!(
                         text: "Invalid User ID. Expected format: @user:server.xyz",
                         draw_text: {
                             color: (COLOR_FG_DANGER_RED),
                         },
                     ));
+                    status_view.set_visible(cx, true);
                     user_id_input.set_key_focus(cx);
                 }
             }
@@ -272,12 +288,13 @@ impl WidgetMatchEvent for InviteModal {
                             && invited_user_id == user_id
                     => {
                         let status = format!("Successfully invited {user_id}!");
-                        status_label.apply_over(cx, live!{
+                        status_label_view.apply_over(cx, live!{
                             text: (status),
                             draw_text: {
                                 color: (COLOR_FG_ACCEPT_GREEN)
                             }
                         });
+                        status_view.set_visible(cx, true);
                         confirm_button.set_visible(cx, false);
                         cancel_button.set_visible(cx, false);
                         okay_button.set_visible(cx, true);
@@ -288,12 +305,13 @@ impl WidgetMatchEvent for InviteModal {
                             && invited_user_id == user_id
                     => {
                         let status = format!("Failed to send invite: {error}");
-                        status_label.apply_over(cx, live!{
+                        status_label_view.apply_over(cx, live!{
                             text: (status),
                             draw_text: {
                                 color: (COLOR_FG_DANGER_RED),
                             }
                         });
+                        status_view.set_visible(cx, true);
                         confirm_button.set_enabled(cx, true);
                         user_id_input.set_is_read_only(cx, false);
                         user_id_input.set_key_focus(cx);
@@ -325,7 +343,6 @@ impl InviteModal {
         let cancel_button = self.view.button(ids!(cancel_button));
         let okay_button = self.view.button(ids!(okay_button));
         let user_id_input = self.view.text_input(ids!(user_id_input));
-        let status_label = self.view.label(ids!(status_label));
         confirm_button.set_visible(cx, true);
         confirm_button.set_enabled(cx, true);
         confirm_button.reset_hover(cx);
@@ -336,7 +353,8 @@ impl InviteModal {
         okay_button.reset_hover(cx);
         user_id_input.set_is_read_only(cx, false);
         user_id_input.set_text(cx, "");
-        status_label.set_text(cx, "");
+        self.view.view(ids!(status_label_view)).set_visible(cx, false);
+        self.view.label(ids!(status_label_view.status_label)).set_text(cx, "");
         self.view.redraw(cx);
     }
 }

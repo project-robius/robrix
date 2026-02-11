@@ -3,7 +3,7 @@ use bitflags::bitflags;
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
-use futures_util::{pin_mut, StreamExt};
+use futures_util::{future::join_all, pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
@@ -20,23 +20,24 @@ use matrix_sdk_ui::{
     RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
 };
 use robius_open::Uri;
-use ruma::{events::tag::Tags, OwnedRoomOrAliasId};
+use ruma::{OwnedRoomOrAliasId, events::tag::Tags};
 use tokio::{
     runtime::Handle,
     sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
+use std::{cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
 use std::io;
+use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
-    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
-        avatar::AvatarState, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
-    }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
+    }, room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
+        avatar::AvatarState, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
+    }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, avatar_from_room_name, VecDiff}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -176,12 +177,12 @@ async fn login(
                 if let Err(e) = persistence::save_session(&client, client_session).await {
                     let err_msg = format!("Failed to save session state to storage: {e}");
                     error!("{err_msg}");
-                    enqueue_popup_notification(PopupItem { message: err_msg, kind: PopupKind::Error, auto_dismissal_duration: None });
+                    enqueue_popup_notification(err_msg, PopupKind::Error, None);
                 }
                 Ok((client, None))
             } else {
                 let err_msg = format!("Failed to login as {}: {:?}", cli.user_id, login_result);
-                enqueue_popup_notification(PopupItem { message: err_msg.clone(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                enqueue_popup_notification(err_msg.clone(), PopupKind::Error, None);
                 enqueue_rooms_list_update(RoomsListUpdate::Status { status: err_msg.clone() });
                 bail!(err_msg);
             }
@@ -278,6 +279,19 @@ pub enum MatrixLinkAction {
     None,
 }
 
+/// Actions emitted when account data (e.g., avatar, display name) changes.
+#[derive(Clone, Debug)]
+pub enum AccountDataAction {
+    /// The user's avatar was successfully updated or removed.
+    AvatarChanged(Option<OwnedMxcUri>),
+    /// Failed to update or remove the user's avatar.
+    AvatarChangeFailed(String),
+    /// The user's display name was successfully updated or removed.
+    DisplayNameChanged(Option<String>),
+    /// Failed to update the user's display name.
+    DisplayNameChangeFailed(String),
+}
+
 /// The set of requests for async work that can be made to the worker thread.
 #[allow(clippy::large_enum_variant)]
 pub enum MatrixRequest {
@@ -351,6 +365,10 @@ pub enum MatrixRequest {
     GetSuccessorRoomDetails {
         tombstoned_room_id: OwnedRoomId,
     },
+    /// Request to create or open a direct message room with the given user.
+    CreateOrOpenDirectMessage {
+        user_id: OwnedUserId,
+    },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
         user_id: OwnedUserId,
@@ -406,6 +424,18 @@ pub enum MatrixRequest {
         /// The room ID of the room where the user is a member,
         /// which is only needed because it isn't present in the `RoomMember` object.
         room_id: OwnedRoomId,
+    },
+    /// Request to set or remove the avatar of the current user's account.
+    SetAvatar {
+        /// * If `Some`, the avatar will be set to the given MXC URI.
+        /// * If `None`, the avatar will be removed.
+        avatar_url: Option<OwnedMxcUri>,
+    },
+    /// Request to set or remove the display name of the current user's account.
+    SetDisplayName {
+        /// * If `Some`, the display name will be set to the given value.
+        /// * If `None`, the display name will be removed.
+        new_display_name: Option<String>,
     },
     /// Request to resolve a room alias into a room ID and the servers that know about that room.
     ResolveRoomAlias(OwnedRoomAliasId),
@@ -559,8 +589,8 @@ async fn matrix_worker_task(
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started matrix_worker_task.");
-    let mut subscribers_own_user_read_receipts: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
-    let mut subscribers_pinned_events: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
+    let mut subscribers_own_user_read_receipts: HashMap<OwnedRoomId, JoinHandle<()>> = HashMap::new();
+    let mut subscribers_pinned_events: HashMap<OwnedRoomId, JoinHandle<()>> = HashMap::new();
 
     while let Some(request) = request_receiver.recv().await {
         match request {
@@ -737,27 +767,31 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::InviteUser { room_id, user_id } => {
-                let timeline = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                        error!("BUG: room info not found for invite user request {room_id}, {user_id}");
-                        continue;
-                    };
-                    room_info.timeline.clone()
-                };
-
+                let Some(client) = get_client() else { continue };
                 let _invite_task = Handle::current().spawn(async move {
-                    log!("Sending request to invite user {user_id} to room {room_id}...");
-                    match timeline.room().invite_user_by_id(&user_id).await {
-                        Ok(_) => Cx::post_action(InviteResultAction::Sent {
+                    // We use `client.get_room()` here because the room might also be a space,
+                    // not just a joined room.
+                    if let Some(room) = client.get_room(&room_id) {
+                        log!("Sending request to invite user {user_id} to room {room_id}...");
+                        match room.invite_user_by_id(&user_id).await {
+                            Ok(_) => Cx::post_action(InviteResultAction::Sent {
+                                room_id,
+                                user_id,
+                            }),
+                            Err(error) => Cx::post_action(InviteResultAction::Failed {
+                                room_id,
+                                user_id,
+                                error,
+                            }),
+                        }
+                    }
+                    else {
+                        error!("Room/Space not found for invite user request {room_id}, {user_id}");
+                        Cx::post_action(InviteResultAction::Failed {
                             room_id,
                             user_id,
-                        }),
-                        Err(error) => Cx::post_action(InviteResultAction::Failed {
-                            room_id,
-                            user_id,
-                            error,
-                        }),
+                            error: matrix_sdk::Error::UnknownError("Room/Space not found in client's known list.".into()),
+                        })
                     }
                 });
             }
@@ -813,9 +847,7 @@ async fn matrix_worker_task(
                         error!("BUG: client could not get room with ID {room_id}");
                         LeaveRoomResultAction::Failed {
                             room_id,
-                            error: matrix_sdk::Error::UnknownError(
-                                String::from("Client couldn't locate room to leave it.").into()
-                            ),
+                            error: matrix_sdk::Error::UnknownError("Client couldn't locate room to leave it.".into()),
                         }
                     };
                     Cx::post_action(result_action);
@@ -879,6 +911,45 @@ async fn matrix_worker_task(
                     tombstoned_room_id,
                     sender,
                 );
+            }
+
+            MatrixRequest::CreateOrOpenDirectMessage { user_id } => {
+                let Some(client) = get_client() else { continue };
+                let _create_dm_task = Handle::current().spawn(async move {
+                    log!("Handling CreateOrOpenDirectMessage for user {}", user_id);
+
+                    let room = if let Some(room) = client.get_dm_room(&user_id) {
+                        log!("Found existing DM room: {}", room.room_id());
+                        room
+                    } else {
+                        log!("Creating new DM room with {}", user_id);
+                        match client.create_dm(&user_id).await {
+                            Ok(room) => {
+                                log!("Successfully created DM room: {}", room.room_id());
+                                room
+                            },
+                            Err(e) => {
+                                error!("Failed to create DM with {user_id}: {e}");
+                                enqueue_popup_notification(
+                                    format!("Failed to create Direct Message: {e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                                return;
+                            }
+                        }
+                    };
+
+                    // Navigate to room
+                    let room_id = room.room_id().to_owned();
+                    let display_name = room.display_name().await.unwrap_or(RoomDisplayName::Empty);
+                    let room_name_id = RoomNameId::new(display_name, room_id.clone());
+
+                    Cx::post_action(AppStateAction::NavigateToRoom {
+                        room_to_close: None,
+                        destination_room: BasicRoomDetails::RoomId(room_name_id),
+                    });
+                });
             }
 
             MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
@@ -1023,6 +1094,45 @@ async fn matrix_worker_task(
                     match result {
                         Ok(_) => log!("Set low priority to {} for room {}", is_low_priority, room_id),
                         Err(e) => error!("Failed to set low priority to {} for room {}: {:?}", is_low_priority, room_id, e),
+                    }
+                });
+            }
+            MatrixRequest::SetAvatar { avatar_url } => {
+                let Some(client) = get_client() else { continue };
+                let _set_avatar_task = Handle::current().spawn(async move {
+                    let is_removing = avatar_url.is_none();
+                    log!("Sending request to {} avatar...", if is_removing { "remove" } else { "set" });
+                    let result = client.account().set_avatar_url(avatar_url.as_deref()).await;
+                    match result {
+                        Ok(_) => {
+                            log!("Successfully {} avatar.", if is_removing { "removed" } else { "set" });
+                            Cx::post_action(AccountDataAction::AvatarChanged(avatar_url));
+                        }
+                        Err(e) => {
+                            let err_msg = format!("Failed to {} avatar: {e}", if is_removing { "remove" } else { "set" });
+                            Cx::post_action(AccountDataAction::AvatarChangeFailed(err_msg));
+                        }
+                    }
+                });
+            }
+            MatrixRequest::SetDisplayName { new_display_name } => {
+                let Some(client) = get_client() else { continue };
+                let _set_display_name_task = Handle::current().spawn(async move {
+                    let is_removing = new_display_name.is_none();
+                    log!("Sending request to {} display name{}...",
+                        if is_removing { "remove" } else { "set" },
+                        new_display_name.as_ref().map(|n| format!(" to '{n}'")).unwrap_or_default()
+                    );
+                    let result = client.account().set_display_name(new_display_name.as_deref()).await;
+                    match result {
+                        Ok(_) => {
+                            log!("Successfully {} display name.", if is_removing { "removed" } else { "set" });
+                            Cx::post_action(AccountDataAction::DisplayNameChanged(new_display_name));
+                        }
+                        Err(e) => {
+                            let err_msg = format!("Failed to {} display name: {e}", if is_removing { "remove" } else { "set" });
+                            Cx::post_action(AccountDataAction::DisplayNameChangeFailed(err_msg));
+                        }
                     }
                 });
             }
@@ -1335,22 +1445,22 @@ async fn matrix_worker_task(
                                             }
                                             Err(e) => {
                                                 error!("Failed to sign message with TSP: {e:?}");
-                                                enqueue_popup_notification(PopupItem {
-                                                    message: format!("Failed to sign message with TSP: {e}"),
-                                                    kind: PopupKind::Error,
-                                                    auto_dismissal_duration: None
-                                                });
+                                                enqueue_popup_notification(
+                                                    format!("Failed to sign message with TSP: {e}"),
+                                                    PopupKind::Error,
+                                                    None,
+                                                );
                                                 return;
                                             }
                                         }
                                     }
                                     Err(e) => {
                                         error!("Failed to serialize message to bytes for TSP signing: {e:?}");
-                                        enqueue_popup_notification(PopupItem {
-                                            message: format!("Failed to serialize message for TSP signing: {e}"),
-                                            kind: PopupKind::Error,
-                                            auto_dismissal_duration: None
-                                        });
+                                        enqueue_popup_notification(
+                                            format!("Failed to serialize message for TSP signing: {e}"),
+                                            PopupKind::Error,
+                                            None,
+                                        );
                                         return;
                                     }
                                 }
@@ -1364,7 +1474,7 @@ async fn matrix_worker_task(
                             Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send reply message to room {room_id}: {_e:?}");
-                                enqueue_popup_notification(PopupItem { message: format!("Failed to send reply: {_e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
+                                enqueue_popup_notification(format!("Failed to send reply: {_e}"), PopupKind::Error, None);
                             }
                         }
                     } else {
@@ -1372,7 +1482,7 @@ async fn matrix_worker_task(
                             Ok(_send_handle) => log!("Sent message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send message to room {room_id}: {_e:?}");
-                                enqueue_popup_notification(PopupItem { message: format!("Failed to send message: {_e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
+                                enqueue_popup_notification(format!("Failed to send message: {_e}"), PopupKind::Error, None);
                             }
                         }
                     }
@@ -1497,7 +1607,11 @@ async fn matrix_worker_task(
                         Ok(()) => log!("Successfully redacted message in room {room_id}."),
                         Err(e) => {
                             error!("Failed to redact message in {room_id}; error: {e:?}");
-                            enqueue_popup_notification(PopupItem { message: format!("Failed to redact message. Error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
+                            enqueue_popup_notification(
+                                format!("Failed to redact message. Error: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
                         }
                     }
                 });
@@ -1674,10 +1788,9 @@ static REQUEST_SENDER: Mutex<Option<UnboundedSender<MatrixRequest>>> = Mutex::ne
 /// A client object that is proactively created during initialization
 /// in order to speed up the client-building process when the user logs in.
 static DEFAULT_SSO_CLIENT: Mutex<Option<(Client, ClientSessionPersisted)>> = Mutex::new(None);
+
 /// Used to notify the SSO login task that the async creation of the `DEFAULT_SSO_CLIENT` has finished.
-static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
-    || Arc::new(Notify::new())
-);
+static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(|| Arc::new(Notify::new()));
 
 /// Blocks the current thread until the given future completes.
 ///
@@ -1790,8 +1903,12 @@ impl Drop for JoinedRoomDetails {
 }
 
 
+/// A const-compatible hasher, used for `static` items containing `HashMap`s or `HashSet`s.
+type ConstHasher = BuildHasherDefault<DefaultHasher>;
+
 /// Information about all joined rooms that our client currently know about.
-static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
+/// We use a `HashMap` for O(1) lookups, as this is accessed frequently (e.g. every timeline update).
+static ALL_JOINED_ROOMS: Mutex<HashMap<OwnedRoomId, JoinedRoomDetails, ConstHasher>> = Mutex::new(HashMap::with_hasher(BuildHasherDefault::new()));
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
@@ -1819,10 +1936,10 @@ pub fn get_sync_service() -> Option<Arc<SyncService>> {
 /// The list of users that the current user has chosen to ignore.
 /// Ideally we shouldn't have to maintain this list ourselves,
 /// but the Matrix SDK doesn't currently properly maintain the list of ignored users.
-static IGNORED_USERS: Mutex<BTreeSet<OwnedUserId>> = Mutex::new(BTreeSet::new());
+static IGNORED_USERS: Mutex<HashSet<OwnedUserId, ConstHasher>> = Mutex::new(HashSet::with_hasher(BuildHasherDefault::new()));
 
 /// Returns a deep clone of the current list of ignored users.
-pub fn get_ignored_users() -> BTreeSet<OwnedUserId> {
+pub fn get_ignored_users() -> HashSet<OwnedUserId, ConstHasher> {
     IGNORED_USERS.lock().unwrap().clone()
 }
 
@@ -1909,7 +2026,7 @@ struct RoomListServiceRoomInfo {
     room: matrix_sdk::Room,
 }
 impl RoomListServiceRoomInfo {
-    async fn from_room(room: matrix_sdk::Room) -> Self {
+    async fn from_room(room: matrix_sdk::Room, current_user_id: &Option<OwnedUserId>) -> Self {
         Self {
             room_id: room.room_id().to_owned(),
             state: room.state(),
@@ -1917,8 +2034,8 @@ impl RoomListServiceRoomInfo {
             is_marked_unread: room.is_marked_unread(),
             is_tombstoned: room.is_tombstoned(),
             tags: room.tags().await.ok().flatten(),
-            user_power_levels: if let Some(user_id) = current_user_id() {
-                UserPowerLevels::from_room(&room, &user_id).await
+            user_power_levels: if let Some(user_id) = current_user_id {
+                UserPowerLevels::from_room(&room, user_id.deref()).await
             } else {
                 None
             },
@@ -1930,8 +2047,8 @@ impl RoomListServiceRoomInfo {
             room,
         }
     }
-    async fn from_room_ref(room: &matrix_sdk::Room) -> Self {
-        Self::from_room(room.clone()).await
+    async fn from_room_ref(room: &matrix_sdk::Room, current_user_id: &Option<OwnedUserId>) -> Self {
+        Self::from_room(room.clone(), current_user_id).await
     }
 }
 
@@ -2077,11 +2194,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         Err(e) => {
             error!("BUG: failed to create SyncService: {e:?}");
             let err = format!("Please restart Robrix.\n\nFailed to create Matrix sync service: {e}.");
-            enqueue_popup_notification(PopupItem {
-                message: err.clone(),
-                auto_dismissal_duration: None,
-                kind: PopupKind::Error,
-            });
+            enqueue_popup_notification(
+                err.clone(),
+                PopupKind::Error,
+                None,
+            );
             enqueue_rooms_list_update(RoomsListUpdate::Status { status: err });
             return;
         }
@@ -2125,11 +2242,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("Rooms list update error: {e}"),
-                                kind: PopupKind::Error,
-                                auto_dismissal_duration: None,
-                            });
+                            enqueue_popup_notification(
+                                format!("Rooms list update error: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
                         }
                     },
                     Err(e) => {
@@ -2148,11 +2265,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                             status: e.to_string(),
                         });
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Room list service  error: {e}"),
-                            kind: PopupKind::Error,
-                            auto_dismissal_duration: None,
-                        });
+                        enqueue_popup_notification(
+                            format!("Room list service  error: {e}"),
+                            PopupKind::Error,
+                            None,
+                        );
                     },
                     Err(e) => {
                         error!("BUG: failed to join room list service loop task: {e:?}");
@@ -2170,11 +2287,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                             status: e.to_string(),
                         });
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Space service error: {e}"),
-                            kind: PopupKind::Error,
-                            auto_dismissal_duration: None,
-                        });
+                        enqueue_popup_notification(
+                            format!("Space service error: {e}"),
+                            PopupKind::Error,
+                            None,
+                        );
                     },
                     Err(e) => {
                         error!("BUG: failed to join space service loop task: {e:?}");
@@ -2209,92 +2326,157 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
     ));
 
     let mut all_known_rooms: Vector<RoomListServiceRoomInfo> = Vector::new();
+    let current_user_id = current_user_id();
 
     pin_mut!(room_diff_stream);
     while let Some(batch) = room_diff_stream.next().await {
         let mut peekable_diffs = batch.into_iter().peekable();
         while let Some(diff) = peekable_diffs.next() {
+            let is_reset = matches!(diff, VectorDiff::Reset { .. });
             match diff {
-                VectorDiff::Append { values: new_rooms } => {
+                VectorDiff::Append { values: new_rooms }
+                | VectorDiff::Reset { values: new_rooms } => {
+                    // Append and Reset are identical, except for Reset first clears all rooms.
                     let _num_new_rooms = new_rooms.len();
-                    if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append {_num_new_rooms}"); }
-                    for new_room in new_rooms {
-                        let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner()).await;
-                        add_new_room(&new_room, &room_list_service).await?;
-                        all_known_rooms.push_back(new_room);
+                    if is_reset {
+                        if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Reset, old length {}, new length {}", all_known_rooms.len(), new_rooms.len()); }
+                        // Iterate manually so we can know which rooms are being removed.
+                        while let Some(room) = all_known_rooms.pop_back() {
+                            remove_room(&room);
+                        }
+                        // ALL_JOINED_ROOMS should already be empty due to successive calls to `remove_room()`,
+                        // so this is just a sanity check.
+                        ALL_JOINED_ROOMS.lock().unwrap().clear();
+                        enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
+                        enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(VecDiff::Clear));
+                    } else {
+                        if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append, old length {}, adding {} new items", all_known_rooms.len(), _num_new_rooms); }
+                    }
+
+                    // Parallelize creating each room's RoomListServiceRoomInfo and adding that new room.
+                    // We combine `from_room` and `add_new_room` into a single async task per room.
+                    let new_room_infos: Vec<RoomListServiceRoomInfo> = join_all(
+                        new_rooms.into_iter().map(|room| async {
+                            let room_info = RoomListServiceRoomInfo::from_room(room.into_inner(), &current_user_id).await;
+                            if let Err(e) = add_new_room(&room_info, &room_list_service, false).await {
+                                error!("Failed to add new room: {:?} ({}); error: {:?}", room_info.display_name, room_info.room_id, e);
+                            }
+                            room_info
+                        })
+                    ).await;
+
+                    // Send room order update with the new room IDs
+                    let (room_id_refs, room_ids) = {
+                        let mut room_id_refs = Vec::with_capacity(new_room_infos.len());
+                        let mut room_ids = Vec::with_capacity(new_room_infos.len());
+                        for r in &new_room_infos {
+                            room_id_refs.push(r.room_id.as_ref());
+                            room_ids.push(r.room_id.clone());
+                        }
+                        (room_id_refs, room_ids)
+                    };
+                    if !room_ids.is_empty() {
+                        enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
+                            VecDiff::Append { values: room_ids }
+                        ));
+                        room_list_service.subscribe_to_rooms(&room_id_refs).await;
+                        all_known_rooms.extend(new_room_infos);
                     }
                 }
                 VectorDiff::Clear => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Clear"); }
                     all_known_rooms.clear();
                     ALL_JOINED_ROOMS.lock().unwrap().clear();
+                    enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(VecDiff::Clear));
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
                 }
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
-                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner()).await;
-                    add_new_room(&new_room, &room_list_service).await?;
+                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id).await;
+                    let room_id = new_room.room_id.clone();
+                    add_new_room(&new_room, &room_list_service, true).await?;
+                    enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
+                        VecDiff::PushFront { value: room_id }
+                    ));
                     all_known_rooms.push_front(new_room);
                 }
                 VectorDiff::PushBack { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
-                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner()).await;
-                    add_new_room(&new_room, &room_list_service).await?;
+                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id).await;
+                    let room_id = new_room.room_id.clone();
+                    add_new_room(&new_room, &room_list_service, true).await?;
+                    enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
+                        VecDiff::PushBack { value: room_id }
+                    ));
                     all_known_rooms.push_back(new_room);
                 }
                 remove_diff @ VectorDiff::PopFront => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopFront"); }
                     if let Some(room) = all_known_rooms.pop_front() {
+                        enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(VecDiff::PopFront));
                         optimize_remove_then_add_into_update(
                             remove_diff,
                             &room,
                             &mut peekable_diffs,
                             &mut all_known_rooms,
                             &room_list_service,
+                            &current_user_id,
                         ).await?;
                     }
                 }
                 remove_diff @ VectorDiff::PopBack => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopBack"); }
                     if let Some(room) = all_known_rooms.pop_back() {
+                        enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(VecDiff::PopBack));
                         optimize_remove_then_add_into_update(
                             remove_diff,
                             &room,
                             &mut peekable_diffs,
                             &mut all_known_rooms,
                             &room_list_service,
+                            &current_user_id,
                         ).await?;
                     }
                 }
                 VectorDiff::Insert { index, value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
-                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner()).await;
-                    add_new_room(&new_room, &room_list_service).await?;
+                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id).await;
+                    let room_id = new_room.room_id.clone();
+                    add_new_room(&new_room, &room_list_service, true).await?;
+                    enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
+                        VecDiff::Insert { index, value: room_id }
+                    ));
                     all_known_rooms.insert(index, new_room);
                 }
                 VectorDiff::Set { index, value: changed_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Set at {index}"); }
-                    let changed_room = RoomListServiceRoomInfo::from_room(changed_room.into_inner()).await;
+                    let changed_room = RoomListServiceRoomInfo::from_room(changed_room.into_inner(), &current_user_id).await;
                     if let Some(old_room) = all_known_rooms.get(index) {
                         update_room(old_room, &changed_room, &room_list_service).await?;
                     } else {
                         error!("BUG: room list diff: Set index {index} was out of bounds.");
                     }
+                    // Send order update (room ID at this index may have changed)
+                    enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
+                        VecDiff::Set { index, value: changed_room.room_id.clone() }
+                    ));
                     all_known_rooms.set(index, changed_room);
                 }
-                remove_diff @ VectorDiff::Remove { index: remove_index } => {
-                    if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Remove at {remove_index}"); }
-                    if remove_index < all_known_rooms.len() {
-                        let room = all_known_rooms.remove(remove_index);
+                remove_diff @ VectorDiff::Remove { index } => {
+                    if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Remove at {index}"); }
+                    if index < all_known_rooms.len() {
+                        let room = all_known_rooms.remove(index);
+                        enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(VecDiff::Remove { index }));
                         optimize_remove_then_add_into_update(
                             remove_diff,
                             &room,
                             &mut peekable_diffs,
                             &mut all_known_rooms,
                             &room_list_service,
+                            &current_user_id,
                         ).await?;
                     } else {
-                        error!("BUG: room_list: diff Remove index {remove_index} out of bounds, len {}", all_known_rooms.len());
+                        error!("BUG: room_list: diff Remove index {index} out of bounds, len {}", all_known_rooms.len());
                     }
                 }
                 VectorDiff::Truncate { length } => {
@@ -2306,23 +2488,9 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                         }
                     }
                     all_known_rooms.truncate(length); // sanity check
-                }
-                VectorDiff::Reset { values: new_rooms } => {
-                    // We implement this by clearing all rooms and then adding back the new values.
-                    if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Reset, old length {}, new length {}", all_known_rooms.len(), new_rooms.len()); }
-                    // Iterate manually so we can know which rooms are being removed.
-                    while let Some(room) = all_known_rooms.pop_back() {
-                        remove_room(&room);
-                    }
-                    // ALL_JOINED_ROOMS should already be empty due to successive calls to `remove_room()`,
-                    // so this is just a sanity check.
-                    ALL_JOINED_ROOMS.lock().unwrap().clear();
-                    enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
-                    for new_room in new_rooms.into_iter() {
-                        let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner()).await;
-                        add_new_room(&new_room, &room_list_service).await?;
-                        all_known_rooms.push_back(new_room);
-                    }
+                    enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
+                        VecDiff::Truncate { length }
+                    ));
                 }
             }
         }
@@ -2347,6 +2515,7 @@ async fn optimize_remove_then_add_into_update(
     peekable_diffs: &mut Peekable<impl Iterator<Item = VectorDiff<RoomListItem>>>,
     all_known_rooms: &mut Vector<RoomListServiceRoomInfo>,
     room_list_service: &RoomListService,
+    current_user_id: &Option<OwnedUserId>,
 ) -> Result<()> {
     let next_diff_was_handled: bool;
     match peekable_diffs.peek() {
@@ -2356,8 +2525,12 @@ async fn optimize_remove_then_add_into_update(
             if LOG_ROOM_LIST_DIFFS {
                 log!("Optimizing {remove_diff:?} + Insert({insert_index}) into Update for room {}", room.room_id);
             }
-            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref()).await;
+            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref(), current_user_id).await;
             update_room(room, &new_room, room_list_service).await?;
+            // Send order update for the insert
+            enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
+                VecDiff::Insert { index: *insert_index, value: new_room.room_id.clone() }
+            ));
             all_known_rooms.insert(*insert_index, new_room);
             next_diff_was_handled = true;
         }
@@ -2367,8 +2540,12 @@ async fn optimize_remove_then_add_into_update(
             if LOG_ROOM_LIST_DIFFS {
                 log!("Optimizing {remove_diff:?} + PushFront into Update for room {}", room.room_id);
             }
-            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref()).await;
+            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref(), current_user_id).await;
             update_room(room, &new_room, room_list_service).await?;
+            // Send order update for the push front
+            enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
+                VecDiff::PushFront { value: new_room.room_id.clone() }
+            ));
             all_known_rooms.push_front(new_room);
             next_diff_was_handled = true;
         }
@@ -2378,8 +2555,12 @@ async fn optimize_remove_then_add_into_update(
             if LOG_ROOM_LIST_DIFFS {
                 log!("Optimizing {remove_diff:?} + PushBack into Update for room {}", room.room_id);
             }
-            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref()).await;
+            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref(), current_user_id).await;
             update_room(room, &new_room, room_list_service).await?;
+            // Send order update for the push back
+            enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
+                VecDiff::PushBack { value: new_room.room_id.clone() }
+            ));
             all_known_rooms.push_back(new_room);
             next_diff_was_handled = true;
         }
@@ -2426,11 +2607,11 @@ async fn update_room(
                 }
                 RoomState::Joined => {
                     log!("update_room(): adding new Joined room: {:?} ({new_room_id})", new_room.display_name);
-                    return add_new_room(new_room, room_list_service).await;
+                    return add_new_room(new_room, room_list_service, true).await;
                 }
                 RoomState::Invited => {
                     log!("update_room(): adding new Invited room: {:?} ({new_room_id})", new_room.display_name);
-                    return add_new_room(new_room, room_list_service).await;
+                    return add_new_room(new_room, room_list_service, true).await;
                 }
                 RoomState::Knocked => {
                     // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
@@ -2557,7 +2738,7 @@ async fn update_room(
             old_room.room_id, new_room_id,
         );
         remove_room(old_room);
-        add_new_room(new_room, room_list_service).await
+        add_new_room(new_room, room_list_service, true).await
     }
 }
 
@@ -2578,6 +2759,7 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
 async fn add_new_room(
     new_room: &RoomListServiceRoomInfo,
     room_list_service: &RoomListService,
+    subscribe: bool,
 ) -> Result<()> {
     match new_room.state {
         RoomState::Knocked => {
@@ -2637,10 +2819,11 @@ async fn add_new_room(
         RoomState::Joined => { } // Fall through to adding the joined room below.
     }
 
-    // Subscribe to all updates for this room in order to properly receive all of its states,
-    // as well as its latest event (via `Room::new_latest_event_*()` and the `LatestEvents` API).
-    room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
-
+    // If we didn't already subscribe to this room, do so now.
+    // This ensures we will properly receive all of its states and latest event.
+    if subscribe {
+        room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
+    }
 
     let timeline = Arc::new(
         new_room.room.timeline_builder()
@@ -2708,7 +2891,7 @@ async fn add_new_room(
 }
 
 #[allow(unused)]
-async fn current_ignore_user_list(client: &Client) -> Option<BTreeSet<OwnedUserId>> {
+async fn current_ignore_user_list(client: &Client) -> Option<HashSet<OwnedUserId>> {
     use matrix_sdk::ruma::events::ignored_user_list::IgnoredUserListEventContent;
     let ignored_users = client.account()
         .account_data::<IgnoredUserListEventContent>()
@@ -2733,7 +2916,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
             let ignored_users_new = ignore_list
                 .into_iter()
                 .filter_map(|u| OwnedUserId::try_from(u).ok())
-                .collect::<BTreeSet<_>>();
+                .collect::<HashSet<_, ConstHasher>>();
 
             // TODO: when we support persistent state, don't forget to update `IGNORED_USERS` upon app boot.
             let mut ignored_users_old = IGNORED_USERS.lock().unwrap();
@@ -2777,11 +2960,11 @@ fn handle_load_app_state(user_id: OwnedUserId) {
             }
             Err(_e) => {
                 log!("Failed to restore dock layout from persistent state: {_e}");
-                enqueue_popup_notification(PopupItem {
-                    message: String::from("Could not restore the previous dock layout."),
-                    kind: PopupKind::Error,
-                    auto_dismissal_duration: None
-                });
+                enqueue_popup_notification(
+                    "Could not restore the previous dock layout.",
+                    PopupKind::Error,
+                    None,
+                );
             }
         }
     });
@@ -2798,11 +2981,11 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
                     if let Some(ss) = get_sync_service() {
                         ss.start().await;
                     } else {
-                        enqueue_popup_notification(PopupItem {
-                            message: "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.".into(),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Error,
-                        });
+                        enqueue_popup_notification(
+                            "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.",
+                            PopupKind::Error,
+                            None,
+                        );
                     }
                 }
                 other => Cx::post_action(RoomsListHeaderAction::StateUpdate(other)),
@@ -3429,14 +3612,9 @@ async fn spawn_sso_server(
                         break
                     }
                 }
-                Uri::new(&sso_url).open().map_err(|err| {
-                    Error::UnknownError(
-                        Box::new(io::Error::other(
-                            format!("Unable to open SSO login url. Error: {:?}", err),
-                        ))
-                        .into(),
-                    )
-                })
+                Uri::new(&sso_url).open().map_err(|err|
+                    Error::Io(io::Error::other(format!("Unable to open SSO login url. Error: {:?}", err)))
+                )
             })
             .identity_provider_id(&identity_provider_id)
             .initial_device_display_name(&format!("robrix-sso-{brand}"))

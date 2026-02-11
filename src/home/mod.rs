@@ -3,6 +3,7 @@ use makepad_widgets::Cx;
 pub mod add_room;
 pub mod edited_indicator;
 pub mod editing_pane;
+pub mod event_source_modal;
 pub mod home_screen;
 pub mod invite_modal;
 pub mod invite_screen;
@@ -42,6 +43,7 @@ pub fn live_design(cx: &mut Cx) {
     edited_indicator::live_design(cx);
     editing_pane::live_design(cx);
     new_message_context_menu::live_design(cx);
+    event_source_modal::live_design(cx);
     room_context_menu::live_design(cx);
     invite_modal::live_design(cx);
     invite_screen::live_design(cx);
