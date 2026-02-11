@@ -2027,22 +2027,32 @@ struct RoomListServiceRoomInfo {
 }
 impl RoomListServiceRoomInfo {
     async fn from_room(room: matrix_sdk::Room, current_user_id: &Option<OwnedUserId>) -> Self {
-        Self {
-            room_id: room.room_id().to_owned(),
-            state: room.state(),
-            is_direct: room.is_direct().await.unwrap_or(false),
-            is_marked_unread: room.is_marked_unread(),
-            is_tombstoned: room.is_tombstoned(),
-            tags: room.tags().await.ok().flatten(),
-            user_power_levels: if let Some(user_id) = current_user_id {
+        let is_direct_fut = room.is_direct();
+        let tags_fut = room.tags();
+        let display_name_fut = room.display_name();
+        let power_levels_fut = async {
+            if let Some(user_id) = current_user_id {
                 UserPowerLevels::from_room(&room, user_id.deref()).await
             } else {
                 None
-            },
+            }
+        };
+
+        let (is_direct_res, tags_res, display_name_res, user_power_levels) =
+            tokio::join!(is_direct_fut, tags_fut, display_name_fut, power_levels_fut);
+
+        Self {
+            room_id: room.room_id().to_owned(),
+            state: room.state(),
+            is_direct: is_direct_res.unwrap_or(false),
+            is_marked_unread: room.is_marked_unread(),
+            is_tombstoned: room.is_tombstoned(),
+            tags: tags_res.ok().flatten(),
+            user_power_levels,
             latest_event_timestamp: room.latest_event_timestamp(),
             num_unread_messages: room.num_unread_messages(),
             num_unread_mentions: room.num_unread_mentions(),
-            display_name: room.display_name().await.ok(),
+            display_name: display_name_res.ok(),
             room_avatar: room.avatar_url(),
             room,
         }
