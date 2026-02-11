@@ -4,7 +4,7 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    avatar_cache, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_ignored, submit_async_request}, utils
+    avatar_cache, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_ignored, submit_async_request}, utils
 };
 use super::user_profile_cache;
 
@@ -525,11 +525,11 @@ impl Widget for UserProfileSlidingPane {
             if self.button(ids!(copy_link_to_user_button)).clicked(actions) {
                 let matrix_to_uri = info.user_id.matrix_to_uri().to_string();
                 cx.copy_to_clipboard(&matrix_to_uri);
-                enqueue_popup_notification(PopupItem {
-                    message: String::from("Copied User ID to the clipboard."),
-                    auto_dismissal_duration: Some(3.0),
-                    kind: PopupKind::Success
-                });
+                enqueue_popup_notification(
+                    "Copied User ID to the clipboard.",
+                    PopupKind::Success,
+                    Some(3.0),
+                );
             }
 
             // TODO: implement the third button: `jump_to_read_receipt_button`,

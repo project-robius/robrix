@@ -507,4 +507,10 @@ impl AvatarState {
             None
         }
     }
+
+    /// Returns true if this `AvatarState` indicates that the user/room/space has an avatar,
+    /// i.e. it is `Known(Some)` or `Loaded`.
+    pub fn has_avatar(&self) -> bool {
+        matches!(self, Self::Known(Some(_)) | Self::Loaded(_))
+    }
 }

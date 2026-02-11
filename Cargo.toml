@@ -160,6 +160,17 @@ inherits = "release"
 codegen-units = 1
 lto = "fat" 
 
+## For very fast compilation, not for creating an actual high-quality executable.
+## This is primarily useful for CI builds.
+[profile.fast]
+inherits = "dev"
+opt-level = 0
+debug = false
+lto = "off"
+strip = true
+debug-assertions = false
+
+
 
 ## Configuration for `cargo packager`
 [package.metadata.packager]

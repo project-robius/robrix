@@ -4,7 +4,8 @@ use std::cell::RefCell;
 use makepad_widgets::*;
 
 use crate::{
-    shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}},
+    app::ConfirmDeleteAction,
+    shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupKind}},
     tsp::{submit_tsp_request, tsp_settings_screen::{WalletStatus, WalletStatusAndDefault}, TspRequest, TspWalletMetadata}
 };
 
@@ -160,6 +161,7 @@ impl Widget for WalletEntry {
             if self.view.button(ids!(set_default_wallet_button)).clicked(actions) {
                 submit_tsp_request(TspRequest::SetDefaultWallet(metadata.clone()));
             }
+
             if self.view.button(ids!(remove_wallet_button)).clicked(actions) {
                 let metadata_clone = metadata.clone();
                 let content = ConfirmationModalContent {
@@ -175,15 +177,16 @@ impl Widget for WalletEntry {
                     })),
                     ..Default::default()
                 };
-                cx.action(TspWalletEntryAction::ShowConfirmationModal(RefCell::new(Some(content))));
+                cx.action(ConfirmDeleteAction::Show(RefCell::new(Some(content))));
             }
+
             if self.view.button(ids!(delete_wallet_button)).clicked(actions) {
                 // TODO: Implement the delete wallet feature.
-                enqueue_popup_notification(PopupItem {
-                    message: "Delete wallet feature is not yet implemented.".to_string(),
-                    auto_dismissal_duration: None,
-                    kind: PopupKind::Warning,
-                });
+                enqueue_popup_notification(
+                    "Delete wallet feature is not yet implemented.",
+                    PopupKind::Warning,
+                    None,
+                );
             }
         }
     }
@@ -229,18 +232,4 @@ impl Widget for WalletEntry {
 
         self.view.draw_walk(cx, scope, walk)
     }
-}
-
-
-/// Actions related to a single TSP wallet.
-///
-/// These are NOT widget actions, just regular actions.
-#[derive(Debug)]
-pub enum TspWalletEntryAction {
-    /// Show a confirmation modal for an action related to a TSP wallet entry.
-    ///
-    /// The content is wrapped in a `RefCell` to ensure that only one entity handles it
-    /// and that that one entity can take ownership of the content object,
-    /// which avoids having to clone it.
-    ShowConfirmationModal(RefCell<Option<ConfirmationModalContent>>),
 }

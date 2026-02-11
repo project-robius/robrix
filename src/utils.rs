@@ -797,6 +797,7 @@ impl AsRef<OwnedRoomId> for RoomNameId {
         &self.room_id
     }
 }
+
 /// Display implementation that automatically handles Empty names by falling back to room ID.
 ///
 /// - `Empty` → displays room ID
