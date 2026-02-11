@@ -26,7 +26,7 @@ use tokio::{
     sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
-use std::{cmp::{max, min}, future::Future, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
+use std::{cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
 use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
@@ -1782,10 +1782,9 @@ static REQUEST_SENDER: Mutex<Option<UnboundedSender<MatrixRequest>>> = Mutex::ne
 /// A client object that is proactively created during initialization
 /// in order to speed up the client-building process when the user logs in.
 static DEFAULT_SSO_CLIENT: Mutex<Option<(Client, ClientSessionPersisted)>> = Mutex::new(None);
+
 /// Used to notify the SSO login task that the async creation of the `DEFAULT_SSO_CLIENT` has finished.
-static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
-    || Arc::new(Notify::new())
-);
+static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(|| Arc::new(Notify::new()));
 
 /// Blocks the current thread until the given future completes.
 ///
@@ -1898,9 +1897,12 @@ impl Drop for JoinedRoomDetails {
 }
 
 
+/// A const-compatible hasher, used for `static` items containing `HashMap`s or `HashSet`s.
+type ConstHasher = BuildHasherDefault<DefaultHasher>;
+
 /// Information about all joined rooms that our client currently know about.
 /// We use a `HashMap` for O(1) lookups, as this is accessed frequently (e.g. every timeline update).
-static ALL_JOINED_ROOMS: LazyLock<Mutex<HashMap<OwnedRoomId, JoinedRoomDetails>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static ALL_JOINED_ROOMS: Mutex<HashMap<OwnedRoomId, JoinedRoomDetails, ConstHasher>> = Mutex::new(HashMap::with_hasher(BuildHasherDefault::new()));
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
@@ -1916,7 +1918,7 @@ pub fn current_user_id() -> Option<OwnedUserId> {
     )
 }
 
-/// The singleton sync service.
+/// The singleton sync s00ervice.
 static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
 
 
@@ -1928,10 +1930,10 @@ pub fn get_sync_service() -> Option<Arc<SyncService>> {
 /// The list of users that the current user has chosen to ignore.
 /// Ideally we shouldn't have to maintain this list ourselves,
 /// but the Matrix SDK doesn't currently properly maintain the list of ignored users.
-static IGNORED_USERS: LazyLock<Mutex<HashSet<OwnedUserId>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+static IGNORED_USERS: Mutex<HashSet<OwnedUserId, ConstHasher>> = Mutex::new(HashSet::with_hasher(BuildHasherDefault::new()));
 
 /// Returns a deep clone of the current list of ignored users.
-pub fn get_ignored_users() -> HashSet<OwnedUserId> {
+pub fn get_ignored_users() -> HashSet<OwnedUserId, ConstHasher> {
     IGNORED_USERS.lock().unwrap().clone()
 }
 
@@ -2903,7 +2905,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
             let ignored_users_new = ignore_list
                 .into_iter()
                 .filter_map(|u| OwnedUserId::try_from(u).ok())
-                .collect::<HashSet<_>>();
+                .collect::<HashSet<_, ConstHasher>>();
 
             // TODO: when we support persistent state, don't forget to update `IGNORED_USERS` upon app boot.
             let mut ignored_users_old = IGNORED_USERS.lock().unwrap();
