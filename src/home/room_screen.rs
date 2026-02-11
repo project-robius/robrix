@@ -1734,7 +1734,7 @@ impl RoomScreen {
                 }
                 MessageAction::Reply(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, &details).cloned() {
+                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details).cloned() {
                         let replied_to_info = EmbeddedEvent::from_timeline_item(&event_tl_item);
                         self.view.room_input_bar(ids!(room_input_bar))
                             .show_replying_to(cx, (event_tl_item, replied_to_info), &tl.room_id);
@@ -1754,7 +1754,7 @@ impl RoomScreen {
                 }
                 MessageAction::Edit(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, &details) {
+                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) {
                         self.view.room_input_bar(ids!(room_input_bar))
                             .show_editing_pane(cx, event_tl_item.clone(), tl.room_id.clone());
                     }
@@ -1824,7 +1824,7 @@ impl RoomScreen {
                 }
                 MessageAction::CopyText(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, &details) {
+                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) {
                         cx.copy_to_clipboard(&plaintext_body_of_timeline_item(event_tl_item));
                     }
                     else {
@@ -1845,7 +1845,7 @@ impl RoomScreen {
                     // The logic for getting the formatted body of a message is the same
                     // as the logic used in `populate_message_view()`.
                     let mut success = false;
-                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, &details) {
+                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) {
                         if let Some(message) = event_tl_item.content().as_message() {
                             match message.msgtype() {
                                 MessageType::Text(TextMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
@@ -1897,7 +1897,7 @@ impl RoomScreen {
                 }
                 MessageAction::ViewSource(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { continue };
-                    let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, &details) else {
+                    let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) else {
                         enqueue_popup_notification(
                             "Could not find message in timeline to view source.",
                             PopupKind::Error,
@@ -1940,7 +1940,7 @@ impl RoomScreen {
                 MessageAction::JumpToEvent(event_id) => {
                     self.jump_to_event(
                         cx,
-                        &event_id,
+                        event_id,
                         None,
                         portal_list,
                         loading_pane
@@ -2001,7 +2001,7 @@ impl RoomScreen {
 
         // Attempt to find the index of replied-to message in the timeline.
         // Start from the current item's index (`tl_idx`) and search backwards,
-        // since we know the related message must come before the current item.∆∆˚
+        // since we know the related message must come before the current item.
         let mut num_items_searched = 0;
         let related_msg_tl_index = tl.items
             .focus()
