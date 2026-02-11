@@ -1918,7 +1918,7 @@ pub fn current_user_id() -> Option<OwnedUserId> {
     )
 }
 
-/// The singleton sync s00ervice.
+/// The singleton sync service.
 static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
 
 
