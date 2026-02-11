@@ -268,7 +268,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (desktop)
-        uses: project-robius/makepad-packaging-action@main
+        uses: project-robius/makepad-packaging-action@v1
         with:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: deb
@@ -289,7 +289,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (macos)
-        uses: project-robius/makepad-packaging-action@main
+        uses: project-robius/makepad-packaging-action@v1
         with:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: dmg
@@ -310,7 +310,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (windows)
-        uses: project-robius/makepad-packaging-action@main
+        uses: project-robius/makepad-packaging-action@v1
         with:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: nsis
@@ -328,7 +328,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (android)
-        uses: project-robius/makepad-packaging-action@main
+        uses: project-robius/makepad-packaging-action@v1
         env:
           MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
             --config profile.dev.opt-level=0
@@ -354,7 +354,7 @@ jobs:
 
       - name: Package (iOS + TestFlight)
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload_testflight == 'true' }}
-        uses: project-robius/makepad-packaging-action@main
+        uses: project-robius/makepad-packaging-action@v1
         env:
           MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
             --config profile.dev.opt-level=0
@@ -381,7 +381,7 @@ jobs:
 
       - name: Package (iOS)
         if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.upload_testflight != 'true' }}
-        uses: project-robius/makepad-packaging-action@main
+        uses: project-robius/makepad-packaging-action@v1
         env:
           MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
             --config profile.dev.opt-level=0
