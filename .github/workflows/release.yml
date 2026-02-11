@@ -226,16 +226,14 @@ jobs:
           name: ${{ steps.resolve.outputs.name }}
           draft: ${{ github.event_name == 'workflow_dispatch' }}
           prerelease: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.pre_release == 'true') || (github.event_name == 'push' && contains(github.ref, '-')) }}
-          token: ${{ secrets.ROBRIX_RELEASE || github.token }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.ROBRIX_RELEASE || github.token }}
+          token: ${{ secrets.ROBRIX_RELEASE }}
 
       - name: Verify release access
         shell: bash
         run: |
           gh api "repos/${{ github.repository }}/releases/${{ steps.create_release.outputs.id }}" --jq '.id'
         env:
-          GH_TOKEN: ${{ secrets.ROBRIX_RELEASE || github.token }}
+          GH_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
 
   for_linux:
     name: Release Robrix for Linux (${{ matrix.os }}, ${{ matrix.arch }})
@@ -271,10 +269,8 @@ jobs:
 
       - name: Package (desktop)
         uses: project-robius/makepad-packaging-action@main
-        env:
-          GITHUB_TOKEN: ${{ secrets.ROBRIX_RELEASE || github.token }}
         with:
-          github_token: ${{ secrets.ROBRIX_RELEASE || github.token }}
+          github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: deb
           releaseId: ${{ needs.create_release.outputs.release_id }}
 
@@ -294,10 +290,8 @@ jobs:
 
       - name: Package (macos)
         uses: project-robius/makepad-packaging-action@main
-        env:
-          GITHUB_TOKEN: ${{ secrets.ROBRIX_RELEASE || github.token }}
         with:
-          github_token: ${{ secrets.ROBRIX_RELEASE || github.token }}
+          github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: dmg
           releaseId: ${{ needs.create_release.outputs.release_id }}
 
@@ -317,10 +311,8 @@ jobs:
 
       - name: Package (windows)
         uses: project-robius/makepad-packaging-action@main
-        env:
-          GITHUB_TOKEN: ${{ secrets.ROBRIX_RELEASE || github.token }}
         with:
-          github_token: ${{ secrets.ROBRIX_RELEASE || github.token }}
+          github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: nsis
           releaseId: ${{ needs.create_release.outputs.release_id }}
 
@@ -338,7 +330,6 @@ jobs:
       - name: Package (android)
         uses: project-robius/makepad-packaging-action@main
         env:
-          GITHUB_TOKEN: ${{ secrets.ROBRIX_RELEASE || github.token }}
           MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
             --config profile.dev.opt-level=0
             --config profile.dev.debug=false
@@ -346,7 +337,7 @@ jobs:
             --config profile.dev.strip=true
             --config profile.dev.debug-assertions=false
         with:
-          github_token: ${{ secrets.ROBRIX_RELEASE || github.token }}
+          github_token: ${{ secrets.ROBRIX_RELEASE }}
           args: --target aarch64-linux-android
           releaseId: ${{ needs.create_release.outputs.release_id }}
 
@@ -365,7 +356,6 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload_testflight == 'true' }}
         uses: project-robius/makepad-packaging-action@main
         env:
-          GITHUB_TOKEN: ${{ secrets.ROBRIX_RELEASE || github.token }}
           MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
             --config profile.dev.opt-level=0
             --config profile.dev.debug=false
@@ -385,7 +375,7 @@ jobs:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         with:
-          github_token: ${{ secrets.ROBRIX_RELEASE || github.token }}
+          github_token: ${{ secrets.ROBRIX_RELEASE }}
           args: --target aarch64-apple-ios
           releaseId: ${{ needs.create_release.outputs.release_id }}
 
@@ -393,7 +383,6 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.upload_testflight != 'true' }}
         uses: project-robius/makepad-packaging-action@main
         env:
-          GITHUB_TOKEN: ${{ secrets.ROBRIX_RELEASE || github.token }}
           MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
             --config profile.dev.opt-level=0
             --config profile.dev.debug=false
@@ -409,6 +398,6 @@ jobs:
           APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
           APPLE_SIGNING_IDENTITY: Apple Development
         with:
-          github_token: ${{ secrets.ROBRIX_RELEASE || github.token }}
+          github_token: ${{ secrets.ROBRIX_RELEASE }}
           args: --target aarch64-apple-ios
           releaseId: ${{ needs.create_release.outputs.release_id }}
