@@ -1398,7 +1398,7 @@ impl RoomScreen {
                     enqueue_popup_notification(
                         utils::stringify_pagination_error(&error, room_name.as_deref().unwrap_or(UNNAMED_ROOM)),
                         PopupKind::Error,
-                        None,
+                        Some(10.0),
                     );
                     done_loading = true;
                 }
@@ -1577,8 +1577,8 @@ impl RoomScreen {
                     if self.room_name_id.as_ref().is_some_and(|r| r.room_id() == room_id) {
                         enqueue_popup_notification(
                             "You are already viewing that room.",
-                            PopupKind::Error,
-                            None,
+                            PopupKind::Info,
+                            Some(4.0),
                         );
                         return true;
                     }
@@ -1628,7 +1628,7 @@ impl RoomScreen {
                     enqueue_popup_notification(
                         format!("Could not open URL: {url}"),
                         PopupKind::Error,
-                        None,
+                        Some(10.0),
                     );
                 }
             }
@@ -1643,7 +1643,7 @@ impl RoomScreen {
                     enqueue_popup_notification(
                         format!("Could not open URL: {url}"),
                         PopupKind::Error,
-                        None,
+                        Some(10.0),
                     );
                 }
             }
