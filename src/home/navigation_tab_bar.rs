@@ -512,6 +512,44 @@ impl Widget for NavigationTabBar {
                 }
             }
         }
+
+        // Handle tooltips for navigation buttons
+        let tooltip_mappings = [
+            (ids!(home_button), "Home"),
+            (ids!(add_room_button), "Add / Join Room"),
+            (ids!(settings_button), "Settings"),
+            (ids!(toggle_spaces_bar_button), "Spaces"),
+        ];
+
+        for (button_id, text) in tooltip_mappings {
+            let button = self.view.widget(button_id);
+            let area = button.area();
+            match event.hits(cx, area) {
+                Hit::FingerHoverIn(_) => {
+                    let options = CalloutTooltipOptions {
+                        position: if cx.display_context.is_desktop() {
+                            TooltipPosition::Right
+                        } else {
+                            TooltipPosition::Top
+                        },
+                        ..Default::default()
+                    };
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverIn {
+                            text: text.to_string(),
+                            widget_rect: area.rect(cx),
+                            options,
+                        },
+                    );
+                }
+                Hit::FingerHoverOut(_) => {
+                     cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
+                }
+                _ => {}
+            }
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
