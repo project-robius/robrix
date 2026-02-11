@@ -26,8 +26,9 @@ use tokio::{
     sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, future::Future, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
+use std::{cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
 use std::io;
+use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
@@ -35,7 +36,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, register::register_screen::RegisterAction, room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
-        avatar::AvatarState, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}
+        avatar::AvatarState, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, avatar_from_room_name, VecDiff}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -204,12 +205,12 @@ async fn login(
                 if let Err(e) = persistence::save_session(&client, client_session).await {
                     let err_msg = format!("Failed to save session state to storage: {e}");
                     error!("{err_msg}");
-                    enqueue_popup_notification(PopupItem { message: err_msg, kind: PopupKind::Error, auto_dismissal_duration: None });
+                    enqueue_popup_notification(err_msg, PopupKind::Error, None);
                 }
                 Ok((client, None))
             } else {
                 let err_msg = format!("Failed to login as {}: {:?}", cli.user_id, login_result);
-                enqueue_popup_notification(PopupItem { message: err_msg.clone(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                enqueue_popup_notification(err_msg.clone(), PopupKind::Error, None);
                 enqueue_rooms_list_update(RoomsListUpdate::Status { status: err_msg.clone() });
                 bail!(err_msg);
             }
@@ -346,11 +347,7 @@ async fn register_user(register_request: RegisterRequest) -> std::result::Result
         Ok((client, client_session))
     } else {
         let err_msg = "Registration completed but user is not logged in".to_string();
-        enqueue_popup_notification(PopupItem {
-            message: err_msg.clone(),
-            kind: PopupKind::Error,
-            auto_dismissal_duration: None
-        });
+        enqueue_popup_notification(err_msg.clone(), PopupKind::Error, None);
         Err(RegisterFlowError::Other(err_msg))
     }
 }
@@ -756,8 +753,8 @@ async fn matrix_worker_task(
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started matrix_worker_task.");
-    let mut subscribers_own_user_read_receipts: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
-    let mut subscribers_pinned_events: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
+    let mut subscribers_own_user_read_receipts: HashMap<OwnedRoomId, JoinHandle<()>> = HashMap::new();
+    let mut subscribers_pinned_events: HashMap<OwnedRoomId, JoinHandle<()>> = HashMap::new();
 
     while let Some(request) = request_receiver.recv().await {
         match request {
@@ -818,11 +815,7 @@ async fn matrix_worker_task(
                             };
                             error!("{error_msg}");
                             if show_popup {
-                                enqueue_popup_notification(PopupItem {
-                                    message: error_msg.clone(),
-                                    kind: popup_kind,
-                                    auto_dismissal_duration: None,
-                                });
+                                enqueue_popup_notification(error_msg.clone(), popup_kind, None);
                             }
                             Cx::post_action(RegisterAction::RegistrationFailure(error_msg));
                         }
@@ -1157,11 +1150,11 @@ async fn matrix_worker_task(
                             },
                             Err(e) => {
                                 error!("Failed to create DM with {user_id}: {e}");
-                                enqueue_popup_notification(PopupItem {
-                                    message: format!("Failed to create Direct Message: {e}"),
-                                    kind: PopupKind::Error,
-                                    auto_dismissal_duration: None,
-                                });
+                                enqueue_popup_notification(
+                                    format!("Failed to create Direct Message: {e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
                                 return;
                             }
                         }
@@ -1672,22 +1665,22 @@ async fn matrix_worker_task(
                                             }
                                             Err(e) => {
                                                 error!("Failed to sign message with TSP: {e:?}");
-                                                enqueue_popup_notification(PopupItem {
-                                                    message: format!("Failed to sign message with TSP: {e}"),
-                                                    kind: PopupKind::Error,
-                                                    auto_dismissal_duration: None
-                                                });
+                                                enqueue_popup_notification(
+                                                    format!("Failed to sign message with TSP: {e}"),
+                                                    PopupKind::Error,
+                                                    None,
+                                                );
                                                 return;
                                             }
                                         }
                                     }
                                     Err(e) => {
                                         error!("Failed to serialize message to bytes for TSP signing: {e:?}");
-                                        enqueue_popup_notification(PopupItem {
-                                            message: format!("Failed to serialize message for TSP signing: {e}"),
-                                            kind: PopupKind::Error,
-                                            auto_dismissal_duration: None
-                                        });
+                                        enqueue_popup_notification(
+                                            format!("Failed to serialize message for TSP signing: {e}"),
+                                            PopupKind::Error,
+                                            None,
+                                        );
                                         return;
                                     }
                                 }
@@ -1701,7 +1694,7 @@ async fn matrix_worker_task(
                             Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send reply message to room {room_id}: {_e:?}");
-                                enqueue_popup_notification(PopupItem { message: format!("Failed to send reply: {_e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
+                                enqueue_popup_notification(format!("Failed to send reply: {_e}"), PopupKind::Error, None);
                             }
                         }
                     } else {
@@ -1709,7 +1702,7 @@ async fn matrix_worker_task(
                             Ok(_send_handle) => log!("Sent message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send message to room {room_id}: {_e:?}");
-                                enqueue_popup_notification(PopupItem { message: format!("Failed to send message: {_e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
+                                enqueue_popup_notification(format!("Failed to send message: {_e}"), PopupKind::Error, None);
                             }
                         }
                     }
@@ -1834,7 +1827,11 @@ async fn matrix_worker_task(
                         Ok(()) => log!("Successfully redacted message in room {room_id}."),
                         Err(e) => {
                             error!("Failed to redact message in {room_id}; error: {e:?}");
-                            enqueue_popup_notification(PopupItem { message: format!("Failed to redact message. Error: {e}"), kind: PopupKind::Error, auto_dismissal_duration: None });
+                            enqueue_popup_notification(
+                                format!("Failed to redact message. Error: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
                         }
                     }
                 });
@@ -2011,10 +2008,9 @@ static REQUEST_SENDER: Mutex<Option<UnboundedSender<MatrixRequest>>> = Mutex::ne
 /// A client object that is proactively created during initialization
 /// in order to speed up the client-building process when the user logs in.
 static DEFAULT_SSO_CLIENT: Mutex<Option<(Client, ClientSessionPersisted)>> = Mutex::new(None);
+
 /// Used to notify the SSO login task that the async creation of the `DEFAULT_SSO_CLIENT` has finished.
-static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
-    || Arc::new(Notify::new())
-);
+static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(|| Arc::new(Notify::new()));
 
 /// Blocks the current thread until the given future completes.
 ///
@@ -2127,8 +2123,12 @@ impl Drop for JoinedRoomDetails {
 }
 
 
+/// A const-compatible hasher, used for `static` items containing `HashMap`s or `HashSet`s.
+type ConstHasher = BuildHasherDefault<DefaultHasher>;
+
 /// Information about all joined rooms that our client currently know about.
-static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
+/// We use a `HashMap` for O(1) lookups, as this is accessed frequently (e.g. every timeline update).
+static ALL_JOINED_ROOMS: Mutex<HashMap<OwnedRoomId, JoinedRoomDetails, ConstHasher>> = Mutex::new(HashMap::with_hasher(BuildHasherDefault::new()));
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
@@ -2156,10 +2156,10 @@ pub fn get_sync_service() -> Option<Arc<SyncService>> {
 /// The list of users that the current user has chosen to ignore.
 /// Ideally we shouldn't have to maintain this list ourselves,
 /// but the Matrix SDK doesn't currently properly maintain the list of ignored users.
-static IGNORED_USERS: Mutex<BTreeSet<OwnedUserId>> = Mutex::new(BTreeSet::new());
+static IGNORED_USERS: Mutex<HashSet<OwnedUserId, ConstHasher>> = Mutex::new(HashSet::with_hasher(BuildHasherDefault::new()));
 
 /// Returns a deep clone of the current list of ignored users.
-pub fn get_ignored_users() -> BTreeSet<OwnedUserId> {
+pub fn get_ignored_users() -> HashSet<OwnedUserId, ConstHasher> {
     IGNORED_USERS.lock().unwrap().clone()
 }
 
@@ -2246,7 +2246,7 @@ struct RoomListServiceRoomInfo {
     room: matrix_sdk::Room,
 }
 impl RoomListServiceRoomInfo {
-    async fn from_room(room: matrix_sdk::Room) -> Self {
+    async fn from_room(room: matrix_sdk::Room, current_user_id: &Option<OwnedUserId>) -> Self {
         Self {
             room_id: room.room_id().to_owned(),
             state: room.state(),
@@ -2254,8 +2254,8 @@ impl RoomListServiceRoomInfo {
             is_marked_unread: room.is_marked_unread(),
             is_tombstoned: room.is_tombstoned(),
             tags: room.tags().await.ok().flatten(),
-            user_power_levels: if let Some(user_id) = current_user_id() {
-                UserPowerLevels::from_room(&room, &user_id).await
+            user_power_levels: if let Some(user_id) = current_user_id {
+                UserPowerLevels::from_room(&room, user_id.deref()).await
             } else {
                 None
             },
@@ -2267,8 +2267,8 @@ impl RoomListServiceRoomInfo {
             room,
         }
     }
-    async fn from_room_ref(room: &matrix_sdk::Room) -> Self {
-        Self::from_room(room.clone()).await
+    async fn from_room_ref(room: &matrix_sdk::Room, current_user_id: &Option<OwnedUserId>) -> Self {
+        Self::from_room(room.clone(), current_user_id).await
     }
 }
 
@@ -2414,11 +2414,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         Err(e) => {
             error!("BUG: failed to create SyncService: {e:?}");
             let err = format!("Please restart Robrix.\n\nFailed to create Matrix sync service: {e}.");
-            enqueue_popup_notification(PopupItem {
-                message: err.clone(),
-                auto_dismissal_duration: None,
-                kind: PopupKind::Error,
-            });
+            enqueue_popup_notification(
+                err.clone(),
+                PopupKind::Error,
+                None,
+            );
             enqueue_rooms_list_update(RoomsListUpdate::Status { status: err });
             return;
         }
@@ -2462,11 +2462,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("Rooms list update error: {e}"),
-                                kind: PopupKind::Error,
-                                auto_dismissal_duration: None,
-                            });
+                            enqueue_popup_notification(
+                                format!("Rooms list update error: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
                         }
                     },
                     Err(e) => {
@@ -2485,11 +2485,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                             status: e.to_string(),
                         });
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Room list service  error: {e}"),
-                            kind: PopupKind::Error,
-                            auto_dismissal_duration: None,
-                        });
+                        enqueue_popup_notification(
+                            format!("Room list service  error: {e}"),
+                            PopupKind::Error,
+                            None,
+                        );
                     },
                     Err(e) => {
                         error!("BUG: failed to join room list service loop task: {e:?}");
@@ -2507,11 +2507,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                             status: e.to_string(),
                         });
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Space service error: {e}"),
-                            kind: PopupKind::Error,
-                            auto_dismissal_duration: None,
-                        });
+                        enqueue_popup_notification(
+                            format!("Space service error: {e}"),
+                            PopupKind::Error,
+                            None,
+                        );
                     },
                     Err(e) => {
                         error!("BUG: failed to join space service loop task: {e:?}");
@@ -2546,6 +2546,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
     ));
 
     let mut all_known_rooms: Vector<RoomListServiceRoomInfo> = Vector::new();
+    let current_user_id = current_user_id();
 
     pin_mut!(room_diff_stream);
     while let Some(batch) = room_diff_stream.next().await {
@@ -2576,7 +2577,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     // We combine `from_room` and `add_new_room` into a single async task per room.
                     let new_room_infos: Vec<RoomListServiceRoomInfo> = join_all(
                         new_rooms.into_iter().map(|room| async {
-                            let room_info = RoomListServiceRoomInfo::from_room(room.into_inner()).await;
+                            let room_info = RoomListServiceRoomInfo::from_room(room.into_inner(), &current_user_id).await;
                             if let Err(e) = add_new_room(&room_info, &room_list_service, false).await {
                                 error!("Failed to add new room: {:?} ({}); error: {:?}", room_info.display_name, room_info.room_id, e);
                             }
@@ -2611,7 +2612,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 }
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
-                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner()).await;
+                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id).await;
                     let room_id = new_room.room_id.clone();
                     add_new_room(&new_room, &room_list_service, true).await?;
                     enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -2621,7 +2622,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 }
                 VectorDiff::PushBack { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
-                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner()).await;
+                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id).await;
                     let room_id = new_room.room_id.clone();
                     add_new_room(&new_room, &room_list_service, true).await?;
                     enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -2639,6 +2640,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                             &mut peekable_diffs,
                             &mut all_known_rooms,
                             &room_list_service,
+                            &current_user_id,
                         ).await?;
                     }
                 }
@@ -2652,12 +2654,13 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                             &mut peekable_diffs,
                             &mut all_known_rooms,
                             &room_list_service,
+                            &current_user_id,
                         ).await?;
                     }
                 }
                 VectorDiff::Insert { index, value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
-                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner()).await;
+                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id).await;
                     let room_id = new_room.room_id.clone();
                     add_new_room(&new_room, &room_list_service, true).await?;
                     enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -2667,7 +2670,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 }
                 VectorDiff::Set { index, value: changed_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Set at {index}"); }
-                    let changed_room = RoomListServiceRoomInfo::from_room(changed_room.into_inner()).await;
+                    let changed_room = RoomListServiceRoomInfo::from_room(changed_room.into_inner(), &current_user_id).await;
                     if let Some(old_room) = all_known_rooms.get(index) {
                         update_room(old_room, &changed_room, &room_list_service).await?;
                     } else {
@@ -2690,6 +2693,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                             &mut peekable_diffs,
                             &mut all_known_rooms,
                             &room_list_service,
+                            &current_user_id,
                         ).await?;
                     } else {
                         error!("BUG: room_list: diff Remove index {index} out of bounds, len {}", all_known_rooms.len());
@@ -2731,6 +2735,7 @@ async fn optimize_remove_then_add_into_update(
     peekable_diffs: &mut Peekable<impl Iterator<Item = VectorDiff<RoomListItem>>>,
     all_known_rooms: &mut Vector<RoomListServiceRoomInfo>,
     room_list_service: &RoomListService,
+    current_user_id: &Option<OwnedUserId>,
 ) -> Result<()> {
     let next_diff_was_handled: bool;
     match peekable_diffs.peek() {
@@ -2740,7 +2745,7 @@ async fn optimize_remove_then_add_into_update(
             if LOG_ROOM_LIST_DIFFS {
                 log!("Optimizing {remove_diff:?} + Insert({insert_index}) into Update for room {}", room.room_id);
             }
-            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref()).await;
+            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref(), current_user_id).await;
             update_room(room, &new_room, room_list_service).await?;
             // Send order update for the insert
             enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -2755,7 +2760,7 @@ async fn optimize_remove_then_add_into_update(
             if LOG_ROOM_LIST_DIFFS {
                 log!("Optimizing {remove_diff:?} + PushFront into Update for room {}", room.room_id);
             }
-            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref()).await;
+            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref(), current_user_id).await;
             update_room(room, &new_room, room_list_service).await?;
             // Send order update for the push front
             enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -2770,7 +2775,7 @@ async fn optimize_remove_then_add_into_update(
             if LOG_ROOM_LIST_DIFFS {
                 log!("Optimizing {remove_diff:?} + PushBack into Update for room {}", room.room_id);
             }
-            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref()).await;
+            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref(), current_user_id).await;
             update_room(room, &new_room, room_list_service).await?;
             // Send order update for the push back
             enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -3106,7 +3111,7 @@ async fn add_new_room(
 }
 
 #[allow(unused)]
-async fn current_ignore_user_list(client: &Client) -> Option<BTreeSet<OwnedUserId>> {
+async fn current_ignore_user_list(client: &Client) -> Option<HashSet<OwnedUserId>> {
     use matrix_sdk::ruma::events::ignored_user_list::IgnoredUserListEventContent;
     let ignored_users = client.account()
         .account_data::<IgnoredUserListEventContent>()
@@ -3131,7 +3136,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
             let ignored_users_new = ignore_list
                 .into_iter()
                 .filter_map(|u| OwnedUserId::try_from(u).ok())
-                .collect::<BTreeSet<_>>();
+                .collect::<HashSet<_, ConstHasher>>();
 
             // TODO: when we support persistent state, don't forget to update `IGNORED_USERS` upon app boot.
             let mut ignored_users_old = IGNORED_USERS.lock().unwrap();
@@ -3175,11 +3180,11 @@ fn handle_load_app_state(user_id: OwnedUserId) {
             }
             Err(_e) => {
                 log!("Failed to restore dock layout from persistent state: {_e}");
-                enqueue_popup_notification(PopupItem {
-                    message: String::from("Could not restore the previous dock layout."),
-                    kind: PopupKind::Error,
-                    auto_dismissal_duration: None
-                });
+                enqueue_popup_notification(
+                    "Could not restore the previous dock layout.",
+                    PopupKind::Error,
+                    None,
+                );
             }
         }
     });
@@ -3196,11 +3201,11 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
                     if let Some(ss) = get_sync_service() {
                         ss.start().await;
                     } else {
-                        enqueue_popup_notification(PopupItem {
-                            message: "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.".into(),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Error,
-                        });
+                        enqueue_popup_notification(
+                            "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.",
+                            PopupKind::Error,
+                            None,
+                        );
                     }
                 }
                 other => Cx::post_action(RoomsListHeaderAction::StateUpdate(other)),

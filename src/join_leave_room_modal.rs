@@ -2,10 +2,12 @@
 //!
 //! Also used as a confirmation dialog for accepting or rejecting room invites.
 
+use std::borrow::Cow;
+
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
+use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
 use crate::shared::styles::{COLOR_ACTIVE_PRIMARY, COLOR_PRIMARY, COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN};
 
 live_design! {
@@ -318,11 +320,11 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         for action in actions {
             match action.downcast_ref() {
                 Some(JoinRoomResultAction::Joined { room_id }) if room_id == kind.room_id() => {
-                    enqueue_popup_notification(PopupItem {
-                        message: "Successfully joined room.".into(),
-                        kind: PopupKind::Success,
-                        auto_dismissal_duration: Some(3.0),
-                    });
+                    enqueue_popup_notification(
+                        "Successfully joined room.",
+                        PopupKind::Success,
+                        Some(3.0),
+                    );
                     self.view.label(ids!(title)).set_text(cx, "Joined room!");
                     self.view.label(ids!(description)).set_text(cx, &format!(
                         "Successfully joined \"{}\".",
@@ -335,11 +337,11 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     let was_invite = matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_));
                     let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, was_invite);
                     self.view.label(ids!(description)).set_text(cx, &msg);
-                    enqueue_popup_notification(PopupItem {
-                        message: msg,
-                        kind: PopupKind::Error,
-                        auto_dismissal_duration: None
-                    });
+                    enqueue_popup_notification(
+                        msg,
+                        PopupKind::Error,
+                        None,
+                    );
                     new_final_success = Some(false);
                 }
                 _ => {}
@@ -348,7 +350,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                 Some(LeaveRoomResultAction::Left { room_id }) if room_id == kind.room_id() => {
                     let title: &str;
                     let description: String;
-                    let popup_msg: String;
+                    let popup_msg: Cow<'static, str>;
                     match kind {
                         JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_) => {
                             title = "Rejected invite!";
@@ -369,13 +371,13 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     }
                     self.view.label(ids!(title)).set_text(cx, title);
                     self.view.label(ids!(description)).set_text(cx, &description);
-                    enqueue_popup_notification(PopupItem { message: popup_msg, kind: PopupKind::Success, auto_dismissal_duration: Some(5.0) });
+                    enqueue_popup_notification(popup_msg, PopupKind::Success, Some(5.0));
                     new_final_success = Some(true);
                 }
                 Some(LeaveRoomResultAction::Failed { room_id, error }) if room_id == kind.room_id() => {
                     let title: &str;
                     let description: String;
-                    let popup_msg: String;
+                    let popup_msg: Cow<'static, str>;
                     match kind {
                         JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_) => {
                             title = "Error rejecting invite!";
@@ -391,7 +393,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
 
                     self.view.label(ids!(title)).set_text(cx, title);
                     self.view.label(ids!(description)).set_text(cx, &description);
-                    enqueue_popup_notification(PopupItem { message: popup_msg, kind: PopupKind::Error, auto_dismissal_duration: None });
+                    enqueue_popup_notification(popup_msg, PopupKind::Error, None);
                     new_final_success = Some(false);
                 }
                 _ => {}

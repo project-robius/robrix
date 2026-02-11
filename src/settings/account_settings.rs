@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use makepad_widgets::{text::selection::Cursor, *};
 
-use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
+use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
 
 live_design! {
     use link::theme::*;
@@ -365,11 +365,11 @@ impl MatchEvent for AccountSettings {
                         profile.avatar_state = AvatarState::Known(new_avatar_url.clone());
                         profile.avatar_state.update_from_cache(cx);
                         self.populate_avatar_views(cx);
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Successfully {} avatar.", if new_avatar_url.is_some() { "updated" } else { "deleted" }),
-                            auto_dismissal_duration: Some(4.0),
-                            kind: PopupKind::Success,
-                        });
+                        enqueue_popup_notification(
+                            format!("Successfully {} avatar.", if new_avatar_url.is_some() { "updated" } else { "deleted" }),
+                            PopupKind::Success,
+                            Some(4.0),
+                        );
                     }
                     continue;
                 }
@@ -383,11 +383,11 @@ impl MatchEvent for AccountSettings {
                         self.own_profile.as_ref().is_some_and(|p| p.avatar_state.has_avatar()),
                         &delete_avatar_button
                     );
-                    enqueue_popup_notification(PopupItem {
-                        message: err_msg.clone(),
-                        auto_dismissal_duration: Some(4.0),
-                        kind: PopupKind::Error
-                    });
+                    enqueue_popup_notification(
+                        err_msg.clone(),
+                        PopupKind::Error,
+                        Some(4.0),
+                    );
                     continue;
                 }
                 Some(AccountDataAction::DisplayNameChanged(new_name)) => {
@@ -403,11 +403,11 @@ impl MatchEvent for AccountSettings {
                     display_name_input.set_is_read_only(cx, false);
                     display_name_input.set_disabled(cx, false);
                     Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
-                    enqueue_popup_notification(PopupItem {
-                        message: format!("Successfully {} display name.", if new_name.is_some() { "updated" } else { "removed" }),
-                        auto_dismissal_duration: Some(4.0),
-                        kind: PopupKind::Success,
-                    });
+                    enqueue_popup_notification(
+                        format!("Successfully {} display name.", if new_name.is_some() { "updated" } else { "removed" }),
+                        PopupKind::Success,
+                        Some(4.0),
+                    );
                     continue;
                 }
                 Some(AccountDataAction::DisplayNameChangeFailed(err_msg)) => {
@@ -416,11 +416,11 @@ impl MatchEvent for AccountSettings {
                     display_name_input.set_is_read_only(cx, false);
                     display_name_input.set_disabled(cx, false);
                     Self::enable_display_name_buttons(cx, true, &accept_display_name_button, &cancel_display_name_button);
-                    enqueue_popup_notification(PopupItem {
-                        message: err_msg.clone(),
-                        auto_dismissal_duration: Some(4.0),
-                        kind: PopupKind::Error
-                    });
+                    enqueue_popup_notification(
+                        err_msg.clone(),
+                        PopupKind::Error,
+                        Some(4.0),
+                    );
                     continue;
                 }
                 _ => {}
@@ -449,11 +449,11 @@ impl MatchEvent for AccountSettings {
             // TODO: uncomment the below once avatar uploading is implemented
             // Self::enable_upload_avatar_button(cx, false, &upload_avatar_button);
             // Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Avatar uploading is not yet implemented."),
-                auto_dismissal_duration: Some(4.0),
-                kind: PopupKind::Warning
-            });
+            enqueue_popup_notification(
+                "Avatar uploading is not yet implemented.",
+                PopupKind::Warning,
+                Some(4.0),
+            );
         }
 
         if delete_avatar_button.clicked(actions) {
@@ -467,11 +467,11 @@ impl MatchEvent for AccountSettings {
                 on_accept_clicked: Some(Box::new(|cx| {
                     submit_async_request(MatrixRequest::SetAvatar { avatar_url: None });
                     cx.action(AccountSettingsAction::AvatarDeleteStarted);
-                    enqueue_popup_notification(PopupItem {
-                        message: String::from("Deleting your avatar..."),
-                        auto_dismissal_duration: Some(5.0),
-                        kind: PopupKind::Info,
-                    });
+                    enqueue_popup_notification(
+                        "Deleting your avatar...",
+                        PopupKind::Info,
+                        Some(5.0),
+                    );
                 })),
                 ..Default::default()
             };
@@ -505,30 +505,30 @@ impl MatchEvent for AccountSettings {
             display_name_input.set_disabled(cx, true);
             display_name_input.set_is_read_only(cx, true);
             Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Uploading new display name..."),
-                auto_dismissal_duration: Some(5.0),
-                kind: PopupKind::Info,
-            });
+            enqueue_popup_notification(
+                "Uploading new display name...",
+                PopupKind::Info,
+                Some(5.0),
+            );
         }
 
         if self.view.button(ids!(copy_user_id_button)).clicked(actions) {
             cx.copy_to_clipboard(own_profile.user_id.as_str());
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Copied your User ID to the clipboard."),
-                auto_dismissal_duration: Some(3.0),
-                kind: PopupKind::Success
-            });
+            enqueue_popup_notification(
+                "Copied your User ID to the clipboard.",
+                PopupKind::Success,
+                Some(3.0),
+            );
         }
 
         if self.view.button(ids!(manage_account_button)).clicked(actions) {
             // TODO: support opening the user's account management page in a browser,
             //       or perhaps in an in-app pane if that's what is needed for regular UN+PW login.
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Account management is not yet implemented."),
-                auto_dismissal_duration: Some(4.0),
-                kind: PopupKind::Warning
-            });
+            enqueue_popup_notification(
+                "Account management is not yet implemented.",
+                PopupKind::Warning,
+                Some(4.0),
+            );
         }
 
         if self.view.button(ids!(logout_button)).clicked(actions) {

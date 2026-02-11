@@ -457,12 +457,8 @@ impl RegisterScreen {
     }
 
     fn show_warning(&self, message: &str) {
-        use crate::shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind};
-        enqueue_popup_notification(PopupItem {
-            message: message.to_string(),
-            kind: PopupKind::Warning,
-            auto_dismissal_duration: Some(3.0),
-        });
+        use crate::shared::popup_list::{enqueue_popup_notification, PopupKind};
+        enqueue_popup_notification(message.to_string(), PopupKind::Warning, Some(3.0));
     }
 
     fn update_button_mask(&self, button: &ButtonRef, cx: &mut Cx, mask: f32) {

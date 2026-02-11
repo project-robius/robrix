@@ -5,7 +5,7 @@ use makepad_widgets::*;
 
 use crate::{
     app::ConfirmDeleteAction,
-    shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}},
+    shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupKind}},
     tsp::{submit_tsp_request, tsp_settings_screen::{WalletStatus, WalletStatusAndDefault}, TspRequest, TspWalletMetadata}
 };
 
@@ -182,11 +182,11 @@ impl Widget for WalletEntry {
 
             if self.view.button(ids!(delete_wallet_button)).clicked(actions) {
                 // TODO: Implement the delete wallet feature.
-                enqueue_popup_notification(PopupItem {
-                    message: "Delete wallet feature is not yet implemented.".to_string(),
-                    auto_dismissal_duration: None,
-                    kind: PopupKind::Warning,
-                });
+                enqueue_popup_notification(
+                    "Delete wallet feature is not yet implemented.",
+                    PopupKind::Warning,
+                    None,
+                );
             }
         }
     }

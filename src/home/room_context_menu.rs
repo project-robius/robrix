@@ -3,7 +3,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use crate::{home::invite_modal::InviteModalAction, shared::popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
+use crate::{home::invite_modal::InviteModalAction, shared::popup_list::{PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
 
 const BUTTON_HEIGHT: f64 = 35.0;
 const MENU_WIDTH: f64 = 215.0;
@@ -218,20 +218,20 @@ impl WidgetMatchEvent for RoomContextMenu {
         }
          else if self.button(ids!(room_settings_button)).clicked(actions) {
             // TODO: handle/implement this
-            enqueue_popup_notification(PopupItem {
-                message: String::from("The room settings page is not yet implemented."),
-                auto_dismissal_duration: Some(5.0),
-                kind: PopupKind::Warning,
-            });
+            enqueue_popup_notification(
+                "The room settings page is not yet implemented.",
+                PopupKind::Warning,
+                Some(5.0),
+            );
             close_menu = true;
         }
         else if self.button(ids!(notifications_button)).clicked(actions) {
             // TODO: handle/implement this
-            enqueue_popup_notification(PopupItem {
-                message: String::from("The room notifications page is not yet implemented."),
-                auto_dismissal_duration: Some(5.0),
-                kind: PopupKind::Warning,
-            });
+            enqueue_popup_notification(
+                "The room notifications page is not yet implemented.",
+                PopupKind::Warning,
+                Some(5.0),
+            );
             close_menu = true;
         }
         else if self.button(ids!(invite_button)).clicked(actions) {
