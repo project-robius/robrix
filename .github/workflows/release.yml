@@ -331,7 +331,7 @@ jobs:
           MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
             --config profile.dev.opt-level=0
             --config profile.dev.debug=false
-            --config profile.dev.lto=off
+            --config profile.dev.lto=false
             --config profile.dev.strip=true
             --config profile.dev.debug-assertions=false
         with:
@@ -357,7 +357,7 @@ jobs:
           MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
             --config profile.dev.opt-level=0
             --config profile.dev.debug=false
-            --config profile.dev.lto=off
+            --config profile.dev.lto=false
             --config profile.dev.strip=true
             --config profile.dev.debug-assertions=false
           MAKEPAD_IOS_ORG: org.robius.robrix
@@ -384,7 +384,7 @@ jobs:
           MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
             --config profile.dev.opt-level=0
             --config profile.dev.debug=false
-            --config profile.dev.lto=off
+            --config profile.dev.lto=false
             --config profile.dev.strip=true
             --config profile.dev.debug-assertions=false
           MAKEPAD_IOS_ORG: org.robius.robrix
