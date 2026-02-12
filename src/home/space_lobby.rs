@@ -308,7 +308,7 @@ live_design! {
             }
         }
 
-        action_buttons = <View> {
+        buttons_view = <View> {
             width: Fit,
             height: Fit,
             flow: Right,
@@ -655,7 +655,7 @@ pub struct SubspaceEntry {
     #[animator] animator: Animator,
     #[rust] room_id: Option<OwnedRoomId>,
     #[rust] is_space: bool,
-    #[rust] show_action_buttons: bool,
+    #[rust] show_buttons_view: bool,
 }
 
 /// Action emitted when a subspace entry is clicked.
@@ -675,46 +675,54 @@ impl Widget for SubspaceEntry {
             self.redraw(cx);
         }
 
-        let actions_rect = self.view.view(ids!(action_buttons)).area().rect(cx);
-        let actions_are_active = self.show_action_buttons;
+        let buttons_view_rect = self.view.view(ids!(buttons_view)).area().rect(cx);
+        let are_buttons_visible = self.show_buttons_view;
         match event.hits_with_test(cx, self.view.area(), |abs, rect, _| {
-            rect.contains(abs) && !(actions_are_active && actions_rect.contains(abs))
+            rect.contains(abs) && !(are_buttons_visible && buttons_view_rect.contains(abs))
         }) {
-            Hit::FingerHoverIn(_) | Hit::FingerHoverOver(_) => {
+            Hit::FingerHoverIn(_) => {
                 self.animator_play(cx, ids!(hover.on));
-                if !self.show_action_buttons {
-                    self.show_action_buttons = true;
-                    self.view.view(ids!(action_buttons)).set_visible(cx, true);
+                if !self.show_buttons_view {
+                    self.show_buttons_view = true;
+                    self.view.view(ids!(buttons_view)).set_visible(cx, true);
                     self.redraw(cx);
                 }
+            }
+            // Occasionally there's an issue with Makepad hover events where hover in/out
+            // doesn't work as expected, so we double-check here.
+            Hit::FingerHoverOver(_) if !self.show_buttons_view => {
+                self.animator_play(cx, ids!(hover.on));
+                self.show_buttons_view = true;
+                self.view.view(ids!(buttons_view)).set_visible(cx, true);
+                self.redraw(cx);
             }
             Hit::FingerHoverOut(fe) => {
-                // Moving from the row into action buttons emits a row hover-out.
-                // Keep actions visible while the cursor remains over those buttons.
-                let row_rect = self.view.area().rect(cx);
-                let in_actions = self.show_action_buttons && actions_rect.contains(fe.abs);
-                if !row_rect.contains(fe.abs) && !in_actions {
+                // When the mouse moves from the main SubspaceEntry area into the buttons_view,
+                // Makepad emits a HoverOut hit, but we don't want that to actually count as a hover-out
+                // because the mouse is still hovering over the buttons_view.
+                let entry_rect = self.view.area().rect(cx);
+                let is_over_buttons_view = self.show_buttons_view && buttons_view_rect.contains(fe.abs);
+                if !entry_rect.contains(fe.abs) && !is_over_buttons_view {
                     self.animator_play(cx, ids!(hover.off));
-                    self.show_action_buttons = false;
-                    self.view.view(ids!(action_buttons)).set_visible(cx, false);
+                    self.show_buttons_view = false;
+                    self.view.view(ids!(buttons_view)).set_visible(cx, false);
                     self.redraw(cx);
                 }
             }
-            Hit::FingerDown(_) => { cx.set_key_focus(self.view.area()); }
+            Hit::FingerDown(_) => {
+                cx.set_key_focus(self.view.area());
+            }
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                let clicked_action_buttons = self.show_action_buttons
-                    && self.view.view(ids!(action_buttons)).area().rect(cx).contains(fe.abs);
-                if !clicked_action_buttons {
-                    if let Some(room_id) = self.room_id.clone() {
-                        let action = if self.is_space {
-                            SubspaceEntryAction::SpaceClicked { space_id: room_id }
-                        } else {
-                            SubspaceEntryAction::RoomClicked { room_id }
-                        };
+                let is_within_buttons_view = self.show_buttons_view
+                    && self.view.view(ids!(buttons_view)).area().rect(cx).contains(fe.abs);
+                if !is_within_buttons_view {
+                    if let Some(room_id) = self.room_id.as_ref() {
                         cx.widget_action(
                             self.widget_uid(),
                             &scope.path, 
-                            action,
+                            self.is_space
+                                .then_some(SubspaceEntryAction::SpaceClicked { space_id: room_id.clone() })
+                                .unwrap_or(SubspaceEntryAction::RoomClicked { room_id: room_id.clone() }),
                         );
                     }
                 }
@@ -725,7 +733,7 @@ impl Widget for SubspaceEntry {
         self.view.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {
-            if self.view.button(ids!(action_buttons.join_button)).clicked(actions) {
+            if self.view.button(ids!(buttons_view.join_button)).clicked(actions) {
                 if let Some(room_id) = self.room_id.clone() {
                     cx.widget_action(
                         self.widget_uid(),
@@ -734,7 +742,7 @@ impl Widget for SubspaceEntry {
                     );
                 }
             }
-            if self.view.button(ids!(action_buttons.leave_button)).clicked(actions) {
+            if self.view.button(ids!(buttons_view.leave_button)).clicked(actions) {
                 if let Some(room_id) = self.room_id.clone() {
                     cx.widget_action(
                         self.widget_uid(),
@@ -743,7 +751,7 @@ impl Widget for SubspaceEntry {
                     );
                 }
             }
-            if self.view.button(ids!(action_buttons.view_button)).clicked(actions) {
+            if self.view.button(ids!(buttons_view.view_button)).clicked(actions) {
                 if let Some(room_id) = self.room_id.clone() {
                     cx.widget_action(
                         self.widget_uid(),
@@ -968,17 +976,17 @@ impl Widget for SpaceLobbyScreen {
                             let show_view_button = show_leave_button && !info.is_space();
                             let item = if info.is_space() {
                                 let item = list.item(cx, item_id, id!(subspace_entry));
-                                let mut show_action_buttons = false;
+                                let mut show_buttons_view = false;
                                 if let Some(mut inner) = item.borrow_mut::<SubspaceEntry>() {
                                     let id_changed = inner.room_id.as_ref() != Some(&info.id);
                                     inner.room_id = Some(info.id.clone());
                                     inner.is_space = true;
                                     if id_changed {
-                                        inner.show_action_buttons = false;
+                                        inner.show_buttons_view = false;
                                     }
-                                    show_action_buttons = inner.show_action_buttons;
+                                    show_buttons_view = inner.show_buttons_view;
                                 }
-                                item.view(ids!(action_buttons)).set_visible(cx, show_action_buttons);
+                                item.view(ids!(buttons_view)).set_visible(cx, show_buttons_view);
                                 // Expand icon
                                 let is_expanded = self.expanded_spaces.contains(&info.id);
                                 let angle = if is_expanded { 180.0 } else { 90.0 };
@@ -988,23 +996,23 @@ impl Widget for SpaceLobbyScreen {
                                 item
                             } else {
                                 let item = list.item(cx, item_id, id!(room_entry));
-                                let mut show_action_buttons = false;
+                                let mut show_buttons_view = false;
                                 if let Some(mut inner) = item.borrow_mut::<SubspaceEntry>() {
                                     let id_changed = inner.room_id.as_ref() != Some(&info.id);
                                     inner.room_id = Some(info.id.clone());
                                     inner.is_space = false;
                                     if id_changed {
-                                        inner.show_action_buttons = false;
+                                        inner.show_buttons_view = false;
                                     }
-                                    show_action_buttons = inner.show_action_buttons;
+                                    show_buttons_view = inner.show_buttons_view;
                                 }
-                                item.view(ids!(action_buttons)).set_visible(cx, show_action_buttons);
+                                item.view(ids!(buttons_view)).set_visible(cx, show_buttons_view);
                                 item
                             };
 
-                            item.button(ids!(action_buttons.join_button)).set_visible(cx, show_join_button);
-                            item.button(ids!(action_buttons.leave_button)).set_visible(cx, show_leave_button);
-                            item.button(ids!(action_buttons.view_button)).set_visible(cx, show_view_button);
+                            item.button(ids!(buttons_view.join_button)).set_visible(cx, show_join_button);
+                            item.button(ids!(buttons_view.leave_button)).set_visible(cx, show_leave_button);
+                            item.button(ids!(buttons_view.view_button)).set_visible(cx, show_view_button);
 
                             // Below, draw things that are common to child rooms and subspaces.
                             item.label(ids!(content.name_label)).set_text(cx, &info.name);
