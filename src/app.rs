@@ -612,6 +612,11 @@ impl MatchEvent for App {
                                     user_profile,
                                     allow_create: true,
                                 });
+                                enqueue_popup_notification(
+                                    "Sending request to create DM room...\n\nThe room will be shown once it has been created by the homeserver.".to_string(),
+                                    PopupKind::Info,
+                                    Some(10.0),
+                                );
                             })),
                             ..Default::default()
                         },

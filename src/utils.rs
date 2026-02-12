@@ -232,8 +232,8 @@ pub fn stringify_pagination_error(
     use matrix_sdk_ui::timeline::Error as TimelineError;
 
     #[allow(clippy::single_match)]
-    let match_sdk_error = |sdk_error: &Box<matrix_sdk::Error>| {
-        match sdk_error.deref() {
+    let match_sdk_error = |sdk_error: &matrix_sdk::Error| {
+        match sdk_error {
             matrix_sdk::Error::Http(http_error) => match http_error.deref() {
                 matrix_sdk::HttpError::Reqwest(reqwest_error) if reqwest_error.is_timeout() => {
                     return Some(format!("Failed to load earlier messages in \"{room_name}\": request timed out."));
