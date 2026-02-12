@@ -379,7 +379,7 @@ live_design! {
     }
 
     // Entry for a child room within a space, which cannot be expanded.
-    pub RoomEntry = {{RoomEntry}}<SubspaceEntry> {
+    pub RoomEntry = <SubspaceEntry> {
         cursor: Default
 
         expand_icon = <View> {
@@ -653,32 +653,16 @@ impl Widget for TreeLines {
 pub struct SubspaceEntry {
     #[deref] view: View,
     #[animator] animator: Animator,
-    #[rust] space_id: Option<OwnedRoomId>,
-    #[rust] show_action_buttons: bool,
-}
-
-/// A clickable entry for a child room.
-#[derive(Live, LiveHook, Widget)]
-pub struct RoomEntry {
-    #[deref] view: View,
-    #[animator] animator: Animator,
     #[rust] room_id: Option<OwnedRoomId>,
+    #[rust] is_space: bool,
     #[rust] show_action_buttons: bool,
 }
 
 /// Action emitted when a subspace entry is clicked.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum SubspaceEntryAction {
-    Clicked { space_id: OwnedRoomId },
-    JoinClicked { space_id: OwnedRoomId },
-    LeaveClicked { space_id: OwnedRoomId },
-    None,
-}
-
-/// Action emitted when a room entry is clicked.
-#[derive(Clone, Debug, DefaultNone)]
-pub enum RoomEntryAction {
-    Clicked { room_id: OwnedRoomId },
+    SpaceClicked { space_id: OwnedRoomId },
+    RoomClicked { room_id: OwnedRoomId },
     JoinClicked { room_id: OwnedRoomId },
     LeaveClicked { room_id: OwnedRoomId },
     ViewClicked { room_id: OwnedRoomId },
@@ -715,11 +699,16 @@ impl Widget for SubspaceEntry {
                 let clicked_action_buttons = self.show_action_buttons
                     && self.view.view(ids!(action_buttons)).area().rect(cx).contains(fe.abs);
                 if !clicked_action_buttons {
-                    if let Some(space_id) = self.space_id.clone() {
+                    if let Some(room_id) = self.room_id.clone() {
+                        let action = if self.is_space {
+                            SubspaceEntryAction::SpaceClicked { space_id: room_id }
+                        } else {
+                            SubspaceEntryAction::RoomClicked { room_id }
+                        };
                         cx.widget_action(
                             self.widget_uid(),
                             &scope.path, 
-                            SubspaceEntryAction::Clicked { space_id },
+                            action,
                         );
                     }
                 }
@@ -731,79 +720,11 @@ impl Widget for SubspaceEntry {
 
         if let Event::Actions(actions) = event {
             if self.view.button(ids!(action_buttons.join_button)).clicked(actions) {
-                if let Some(space_id) = self.space_id.clone() {
-                    cx.widget_action(
-                        self.widget_uid(),
-                        &scope.path,
-                        SubspaceEntryAction::JoinClicked { space_id },
-                    );
-                }
-            }
-            if self.view.button(ids!(action_buttons.leave_button)).clicked(actions) {
-                if let Some(space_id) = self.space_id.clone() {
-                    cx.widget_action(
-                        self.widget_uid(),
-                        &scope.path,
-                        SubspaceEntryAction::LeaveClicked { space_id },
-                    );
-                }
-            }
-        }
-    }
-
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk)
-    }
-}
-
-impl Widget for RoomEntry {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if self.animator_handle_event(cx, event).must_redraw() {
-            self.redraw(cx);
-        }
-
-        let actions_rect = self.view.view(ids!(action_buttons)).area().rect(cx);
-        match event.hits_with_test(cx, self.view.area(), |abs, rect, _| {
-            rect.contains(abs) && !actions_rect.contains(abs)
-        }) {
-            Hit::FingerHoverIn(_) => {
-                self.animator_play(cx, ids!(hover.on));
-                self.show_action_buttons = true;
-                self.view.view(ids!(action_buttons)).set_visible(cx, true);
-            }
-            Hit::FingerHoverOut(fe) => {
-                // Moving from the row into action buttons emits a row hover-out.
-                // Keep actions visible while the cursor remains over those buttons.
-                let row_rect = self.view.area().rect(cx);
-                if !row_rect.contains(fe.abs) && !actions_rect.contains(fe.abs) {
-                    self.animator_play(cx, ids!(hover.off));
-                    self.show_action_buttons = false;
-                    self.view.view(ids!(action_buttons)).set_visible(cx, false);
-                }
-            }
-            Hit::FingerDown(_) => { cx.set_key_focus(self.view.area()); }
-            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                let clicked_action_buttons = self.show_action_buttons
-                    && self.view.view(ids!(action_buttons)).area().rect(cx).contains(fe.abs);
-                if !clicked_action_buttons {
-                    if let Some(room_id) = self.room_id.clone() {
-                        cx.widget_action(self.widget_uid(), &scope.path,
-                            RoomEntryAction::Clicked { room_id });
-                    }
-                }
-            }
-            _ => {}
-        }
-
-        self.view.handle_event(cx, event, scope);
-
-        if let Event::Actions(actions) = event {
-            if self.view.button(ids!(action_buttons.join_button)).clicked(actions) {
                 if let Some(room_id) = self.room_id.clone() {
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
-                        RoomEntryAction::JoinClicked { room_id },
+                        SubspaceEntryAction::JoinClicked { room_id },
                     );
                 }
             }
@@ -812,7 +733,7 @@ impl Widget for RoomEntry {
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
-                        RoomEntryAction::LeaveClicked { room_id },
+                        SubspaceEntryAction::LeaveClicked { room_id },
                     );
                 }
             }
@@ -821,7 +742,7 @@ impl Widget for RoomEntry {
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
-                        RoomEntryAction::ViewClicked { room_id },
+                        SubspaceEntryAction::ViewClicked { room_id },
                     );
                 }
             }
@@ -966,34 +887,13 @@ impl Widget for SpaceLobbyScreen {
 
                 // Handle SubspaceEntry clicks
                 match action.as_widget_action().cast() {
-                    SubspaceEntryAction::Clicked { space_id } => {
+                    SubspaceEntryAction::SpaceClicked { space_id } => {
                         self.toggle_space_expansion(cx, &space_id);
                     }
-                    SubspaceEntryAction::JoinClicked { space_id } => {
-                        cx.action(JoinLeaveRoomModalAction::Open {
-                            kind: JoinLeaveModalKind::JoinRoom(
-                                self.basic_room_details_for(&space_id)
-                            ),
-                            show_tip: false,
-                        });
-                    }
-                    SubspaceEntryAction::LeaveClicked { space_id } => {
-                        cx.action(JoinLeaveRoomModalAction::Open {
-                            kind: JoinLeaveModalKind::LeaveRoom(
-                                self.basic_room_details_for(&space_id)
-                            ),
-                            show_tip: false,
-                        });
-                    }
-                    SubspaceEntryAction::None => { }
-                }
-
-                // Handle RoomEntry clicks
-                match action.as_widget_action().cast() {
-                    RoomEntryAction::Clicked { room_id: _ } => {
+                    SubspaceEntryAction::RoomClicked { room_id: _ } => {
                         // TODO: Navigate to the room on entry click.
                     }
-                    RoomEntryAction::JoinClicked { room_id } => {
+                    SubspaceEntryAction::JoinClicked { room_id } => {
                         cx.action(JoinLeaveRoomModalAction::Open {
                             kind: JoinLeaveModalKind::JoinRoom(
                                 self.basic_room_details_for(&room_id)
@@ -1001,7 +901,7 @@ impl Widget for SpaceLobbyScreen {
                             show_tip: false,
                         });
                     }
-                    RoomEntryAction::LeaveClicked { room_id } => {
+                    SubspaceEntryAction::LeaveClicked { room_id } => {
                         cx.action(JoinLeaveRoomModalAction::Open {
                             kind: JoinLeaveModalKind::LeaveRoom(
                                 self.basic_room_details_for(&room_id)
@@ -1009,10 +909,10 @@ impl Widget for SpaceLobbyScreen {
                             show_tip: false,
                         });
                     }
-                    RoomEntryAction::ViewClicked { room_id } => {
+                    SubspaceEntryAction::ViewClicked { room_id } => {
                         self.emit_view_room_action(cx, &scope.path, &room_id);
                     }
-                    RoomEntryAction::None => { }
+                    SubspaceEntryAction::None => { }
                 }
             }
 
@@ -1064,11 +964,12 @@ impl Widget for SpaceLobbyScreen {
                                 let item = list.item(cx, item_id, id!(subspace_entry));
                                 let mut show_action_buttons = false;
                                 if let Some(mut inner) = item.borrow_mut::<SubspaceEntry>() {
-                                    let id_changed = inner.space_id.as_ref() != Some(&info.id);
+                                    let id_changed = inner.room_id.as_ref() != Some(&info.id);
                                     if id_changed {
                                         inner.show_action_buttons = false;
                                     }
-                                    inner.space_id = Some(info.id.clone());
+                                    inner.room_id = Some(info.id.clone());
+                                    inner.is_space = true;
                                     show_action_buttons = inner.show_action_buttons;
                                 }
                                 item.view(ids!(action_buttons)).set_visible(cx, show_action_buttons);
@@ -1082,12 +983,13 @@ impl Widget for SpaceLobbyScreen {
                             } else {
                                 let item = list.item(cx, item_id, id!(room_entry));
                                 let mut show_action_buttons = false;
-                                if let Some(mut inner) = item.borrow_mut::<RoomEntry>() {
+                                if let Some(mut inner) = item.borrow_mut::<SubspaceEntry>() {
                                     let id_changed = inner.room_id.as_ref() != Some(&info.id);
                                     if id_changed {
                                         inner.show_action_buttons = false;
                                     }
                                     inner.room_id = Some(info.id.clone());
+                                    inner.is_space = false;
                                     show_action_buttons = inner.show_action_buttons;
                                 }
                                 item.view(ids!(action_buttons)).set_visible(cx, show_action_buttons);
