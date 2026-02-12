@@ -676,22 +676,28 @@ impl Widget for SubspaceEntry {
         }
 
         let actions_rect = self.view.view(ids!(action_buttons)).area().rect(cx);
+        let actions_are_active = self.show_action_buttons;
         match event.hits_with_test(cx, self.view.area(), |abs, rect, _| {
-            rect.contains(abs) && !actions_rect.contains(abs)
+            rect.contains(abs) && !(actions_are_active && actions_rect.contains(abs))
         }) {
-            Hit::FingerHoverIn(_) => {
+            Hit::FingerHoverIn(_) | Hit::FingerHoverOver(_) => {
                 self.animator_play(cx, ids!(hover.on));
-                self.show_action_buttons = true;
-                self.view.view(ids!(action_buttons)).set_visible(cx, true);
+                if !self.show_action_buttons {
+                    self.show_action_buttons = true;
+                    self.view.view(ids!(action_buttons)).set_visible(cx, true);
+                    self.redraw(cx);
+                }
             }
             Hit::FingerHoverOut(fe) => {
                 // Moving from the row into action buttons emits a row hover-out.
                 // Keep actions visible while the cursor remains over those buttons.
                 let row_rect = self.view.area().rect(cx);
-                if !row_rect.contains(fe.abs) && !actions_rect.contains(fe.abs) {
+                let in_actions = self.show_action_buttons && actions_rect.contains(fe.abs);
+                if !row_rect.contains(fe.abs) && !in_actions {
                     self.animator_play(cx, ids!(hover.off));
                     self.show_action_buttons = false;
                     self.view.view(ids!(action_buttons)).set_visible(cx, false);
+                    self.redraw(cx);
                 }
             }
             Hit::FingerDown(_) => { cx.set_key_focus(self.view.area()); }
@@ -965,11 +971,11 @@ impl Widget for SpaceLobbyScreen {
                                 let mut show_action_buttons = false;
                                 if let Some(mut inner) = item.borrow_mut::<SubspaceEntry>() {
                                     let id_changed = inner.room_id.as_ref() != Some(&info.id);
+                                    inner.room_id = Some(info.id.clone());
+                                    inner.is_space = true;
                                     if id_changed {
                                         inner.show_action_buttons = false;
                                     }
-                                    inner.room_id = Some(info.id.clone());
-                                    inner.is_space = true;
                                     show_action_buttons = inner.show_action_buttons;
                                 }
                                 item.view(ids!(action_buttons)).set_visible(cx, show_action_buttons);
@@ -985,11 +991,11 @@ impl Widget for SpaceLobbyScreen {
                                 let mut show_action_buttons = false;
                                 if let Some(mut inner) = item.borrow_mut::<SubspaceEntry>() {
                                     let id_changed = inner.room_id.as_ref() != Some(&info.id);
+                                    inner.room_id = Some(info.id.clone());
+                                    inner.is_space = false;
                                     if id_changed {
                                         inner.show_action_buttons = false;
                                     }
-                                    inner.room_id = Some(info.id.clone());
-                                    inner.is_space = false;
                                     show_action_buttons = inner.show_action_buttons;
                                 }
                                 item.view(ids!(action_buttons)).set_visible(cx, show_action_buttons);
