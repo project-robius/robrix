@@ -194,6 +194,10 @@ pub struct App {
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
     /// Also includes an optional room ID to be closed once the awaited room has been loaded.
     #[rust] waiting_to_navigate_to_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
+    /// Whether app state has been saved in the current outgoing lifecycle
+    /// sequence (Pause → Background → Shutdown) and not yet restored.
+    /// Used to deduplicate saves and gate restores.
+    #[rust] state_saved: bool,
 }
 
 impl LiveRegister for App {
@@ -650,38 +654,52 @@ fn clear_all_app_state(cx: &mut Cx) {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        if let Event::Shutdown = event {
-            let window_ref = self.ui.window(ids!(main_window));
-            if let Err(e) = persistence::save_window_state(window_ref, cx) {
-                error!("Failed to save window state. Error: {e}");
-            }
-            if let Some(user_id) = current_user_id() {
-                let app_state = self.app_state.clone();
-                if let Err(e) = persistence::save_app_state(app_state, user_id) {
-                    error!("Failed to save app state. Error: {e}");
+        match event {
+            // Outgoing: app is being suspended or hidden.
+            // Save state (deduplicated) and stop sync to save battery.
+            Event::Pause | Event::Background => {
+                if !self.state_saved {
+                    self.save_lifecycle_state(cx);
+                }
+                // stop() is idempotent — safe if already stopped by a prior Pause.
+                if let Some(sync_service) = crate::sliding_sync::get_sync_service() {
+                    if crate::sliding_sync::block_on_async_with_timeout(
+                        Some(std::time::Duration::from_secs(2)),
+                        async move { sync_service.stop().await },
+                    ).is_err() {
+                        error!("Timed out while stopping sync service.");
+                    }
                 }
             }
-            #[cfg(feature = "tsp")] {
-                // Save the TSP wallet state, if it exists, with a 3-second timeout.
-                let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
-                let res = crate::sliding_sync::block_on_async_with_timeout(
-                    Some(std::time::Duration::from_secs(3)),
-                    async move {
-                        match tsp_state.close_and_serialize().await {
-                            Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
-                                Ok(_) => { }
-                                Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
-                            }
-                            Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
-                        }
-                    },
-                );
-                if let Err(_e) = res {
-                    error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
+
+            // Incoming: app is returning to the foreground.
+            // Restore state (only if we previously saved) and restart sync.
+            Event::Foreground | Event::Resume => {
+                if self.state_saved {
+                    self.restore_all_state(cx);
                 }
+                // start() is idempotent — no-op if already Running.
+                if let Some(sync_service) = crate::sliding_sync::get_sync_service() {
+                    if crate::sliding_sync::block_on_async_with_timeout(
+                        Some(std::time::Duration::from_secs(2)),
+                        async move { sync_service.start().await },
+                    ).is_err() {
+                        error!("Timed out while restarting sync service.");
+                    }
+                }
+                // Full redraw to ensure UI reflects any state changes.
+                self.ui.redraw(cx);
             }
+
+            // Terminal: process is about to exit.
+            // Save everything including TSP (destructive, but process is ending).
+            Event::Shutdown => {
+                self.save_all_state(cx);
+            }
+
+            _ => {}
         }
-        
+
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
@@ -722,6 +740,79 @@ impl AppMain for App {
 }
 
 impl App {
+    /// Saves window geometry and AppState to persistent storage.
+    /// Does NOT save TSP state (see `save_all_state` for that).
+    /// Best-effort: continues saving remaining parts even if one fails.
+    fn save_lifecycle_state(&mut self, cx: &mut Cx) {
+        let window_ref = self.ui.window(ids!(main_window));
+        if let Err(e) = persistence::save_window_state(window_ref, cx) {
+            error!("Failed to save window state. Error: {e}");
+        }
+        if let Some(user_id) = current_user_id() {
+            let app_state = self.app_state.clone();
+            if let Err(e) = persistence::save_app_state(app_state, user_id) {
+                error!("Failed to save app state. Error: {e}");
+            }
+        }
+        self.state_saved = true;
+    }
+
+    /// Saves ALL app state including TSP wallet state.
+    /// TSP save is destructive (`close_and_serialize` consumes TspState),
+    /// so this should only be called when the process is about to exit.
+    fn save_all_state(&mut self, cx: &mut Cx) {
+        self.save_lifecycle_state(cx);
+        #[cfg(feature = "tsp")] {
+            let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
+            let res = crate::sliding_sync::block_on_async_with_timeout(
+                Some(std::time::Duration::from_secs(3)),
+                async move {
+                    match tsp_state.close_and_serialize().await {
+                        Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
+                            Ok(_) => { }
+                            Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
+                        }
+                        Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
+                    }
+                },
+            );
+            if let Err(_e) = res {
+                error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
+            }
+        }
+    }
+
+    /// Restores window geometry and AppState from persistent storage.
+    /// TSP state is NOT restored — it's initialized once at startup via `tsp_init()`
+    /// and cannot be re-initialized (one-time CryptoProvider + channel setup).
+    /// Best-effort: continues restoring remaining parts even if one fails.
+    fn restore_all_state(&mut self, cx: &mut Cx) {
+        let window_ref = self.ui.window(ids!(main_window));
+        if let Err(e) = persistence::load_window_state(window_ref, cx) {
+            error!("Failed to restore window state. Error: {e}");
+        }
+        if let Some(user_id) = current_user_id() {
+            match crate::sliding_sync::block_on_async_with_timeout(
+                Some(std::time::Duration::from_secs(3)),
+                persistence::load_app_state(&user_id),
+            ) {
+                Ok(Ok(restored_state)) => {
+                    // Preserve the actual logged_in state — the persisted value may be stale.
+                    let logged_in = self.app_state.logged_in;
+                    self.app_state = restored_state;
+                    self.app_state.logged_in = logged_in;
+                    cx.action(MainDesktopUiAction::LoadDockFromAppState);
+                }
+                Ok(Err(e)) => error!("Failed to restore app state. Error: {e}"),
+                Err(_) => error!("Timed out while restoring app state."),
+            }
+        }
+
+        // Clear the pending-save flag after each restore attempt so
+        // future outgoing lifecycle events can persist fresh state.
+        self.state_saved = false;
+    }
+
     fn update_login_visibility(&self, cx: &mut Cx) {
         let show_login = !self.app_state.logged_in;
         if !show_login {
