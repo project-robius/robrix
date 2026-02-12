@@ -264,13 +264,12 @@ pub fn text_preview_of_message(
             text.formatted
                 .as_ref()
                 .and_then(|fb|
-                    (fb.format == MessageFormat::Html).then(||
-                        utils::linkify(
-                            utils::trim_start_html_whitespace(&fb.body),
-                            true,
-                        )
-                        .to_string()
-                    )
+                    (fb.format == MessageFormat::Html).then(|| {
+                        let filtered_and_trimmed = utils::trim_start_html_whitespace(
+                            utils::remove_mx_reply(&fb.body)
+                        );
+                        utils::linkify(filtered_and_trimmed, true).to_string()
+                    })
                 )
                 .unwrap_or_else(|| match utils::linkify(&text.body, false) {
                     Cow::Borrowed(plaintext) => htmlize::escape_text(plaintext).to_string(),
