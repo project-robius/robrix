@@ -176,6 +176,23 @@ pub fn replace_linebreaks_separators(s: &str) -> String {
     )
 }
 
+/// Looks for and removes the `<mx-reply>` element from the given HTML message body, if it exists.
+///
+/// Follows this behavior defined in the Matrix spec:
+/// <https://spec.matrix.org/v1.13/client-server-api/#rich-replies>
+pub fn remove_mx_reply(html_message_body: &str) -> &str {
+    const MX_REPLY_START: &str = "<mx-reply>";
+    const MX_REPLY_END:   &str = "</mx-reply>";
+    if html_message_body.trim().starts_with(MX_REPLY_START) {
+        if let Some(end) = html_message_body.find(MX_REPLY_END) {
+            if let Some(after) = html_message_body.get(end + MX_REPLY_END.len() ..) {
+                return after;
+            }
+        }
+    }
+    html_message_body
+}
+
 /// Returns a string error message, handling special cases related to joining/leaving rooms.
 pub fn stringify_join_leave_error(
     error: &matrix_sdk::Error,
@@ -254,7 +271,7 @@ pub fn stringify_pagination_error(
         | TimelineError::EventCacheError(EventCacheError::BackpaginationError(sdk_error)) =>
         {
             if let Some(message) = match_sdk_error(sdk_error) {
-                return message;
+                return message; 
             }
         }
         _ => {}
