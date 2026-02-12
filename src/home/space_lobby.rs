@@ -733,8 +733,13 @@ impl Widget for SubspaceEntry {
         self.view.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {
-            if self.view.button(ids!(buttons_view.join_button)).clicked(actions) {
+            let join_button = self.view.button(ids!(buttons_view.join_button));
+            let leave_button = self.view.button(ids!(buttons_view.leave_button));
+            let view_button = self.view.button(ids!(buttons_view.view_button));
+
+            if join_button.clicked(actions) {
                 if let Some(room_id) = self.room_id.clone() {
+                    join_button.reset_hover(cx);
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
@@ -742,8 +747,9 @@ impl Widget for SubspaceEntry {
                     );
                 }
             }
-            if self.view.button(ids!(buttons_view.leave_button)).clicked(actions) {
+            if leave_button.clicked(actions) {
                 if let Some(room_id) = self.room_id.clone() {
+                    leave_button.reset_hover(cx);
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
@@ -751,8 +757,9 @@ impl Widget for SubspaceEntry {
                     );
                 }
             }
-            if self.view.button(ids!(buttons_view.view_button)).clicked(actions) {
+            if view_button.clicked(actions) {
                 if let Some(room_id) = self.room_id.clone() {
+                    view_button.reset_hover(cx);
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
