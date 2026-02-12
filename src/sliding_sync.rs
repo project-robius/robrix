@@ -35,7 +35,7 @@ use crate::{
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
-    }, room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
+    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
         avatar::AvatarState, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, avatar_from_room_name, VecDiff}, verification::add_verification_event_handlers_and_sync_client
 };
@@ -270,13 +270,12 @@ pub type OnLinkPreviewFetchedFn = fn(
 );
 
 
-
+/// Actions emitted in response to a [`MatrixRequest::GenerateMatrixLink`].
 #[derive(Clone, Debug)]
 pub enum MatrixLinkAction {
     MatrixToUri(MatrixToUri),
     MatrixUri(MatrixUri),
     Error(String),
-    None,
 }
 
 /// Actions emitted when account data (e.g., avatar, display name) changes.
@@ -290,6 +289,30 @@ pub enum AccountDataAction {
     DisplayNameChanged(Option<String>),
     /// Failed to update the user's display name.
     DisplayNameChangeFailed(String),
+}
+
+/// Actions emitted in response to a [`MatrixRequest::OpenOrCreateDirectMessage`].
+#[derive(Debug)]
+pub enum DirectMessageRoomAction {
+    /// A direct message room already existed with the given user.
+    FoundExisting {
+        user_id: OwnedUserId,
+        room_name_id: RoomNameId,
+    },
+    /// A direct message room didn't exist, and we didn't attempt to create a new one.
+    DidNotExist {
+        user_profile: UserProfile,
+    },
+    /// A direct message room didn't exist, but we successfully created a new one.
+    NewlyCreated {
+        user_profile: UserProfile,
+        room_name_id: RoomNameId,
+    },
+    /// A direct message room didn't exist, and we failed to create a new one.
+    FailedToCreate {
+        user_profile: UserProfile,
+        error: matrix_sdk::Error,
+    },
 }
 
 /// The set of requests for async work that can be made to the worker thread.
@@ -366,8 +389,15 @@ pub enum MatrixRequest {
         tombstoned_room_id: OwnedRoomId,
     },
     /// Request to create or open a direct message room with the given user.
-    CreateOrOpenDirectMessage {
-        user_id: OwnedUserId,
+    ///
+    /// If there is no existing DM room with the given user, this will create a new DM room
+    /// if `allow_create` is `true`; otherwise it will emit an action indicating that
+    /// no DM room existed, upon which the UI will prompt the user to confirm that they want
+    /// to proceed with creating a new DM room.
+    #[doc(alias("dm"))]
+    OpenOrCreateDirectMessage {
+        user_profile: UserProfile,
+        allow_create: bool,
     },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
@@ -913,42 +943,38 @@ async fn matrix_worker_task(
                 );
             }
 
-            MatrixRequest::CreateOrOpenDirectMessage { user_id } => {
+            MatrixRequest::OpenOrCreateDirectMessage { user_profile, allow_create } => {
                 let Some(client) = get_client() else { continue };
                 let _create_dm_task = Handle::current().spawn(async move {
-                    log!("Handling CreateOrOpenDirectMessage for user {}", user_id);
-
-                    let room = if let Some(room) = client.get_dm_room(&user_id) {
+                    if let Some(room) = client.get_dm_room(&user_profile.user_id) {
                         log!("Found existing DM room: {}", room.room_id());
-                        room
-                    } else {
-                        log!("Creating new DM room with {}", user_id);
-                        match client.create_dm(&user_id).await {
-                            Ok(room) => {
-                                log!("Successfully created DM room: {}", room.room_id());
-                                room
-                            },
-                            Err(e) => {
-                                error!("Failed to create DM with {user_id}: {e}");
-                                enqueue_popup_notification(
-                                    format!("Failed to create Direct Message: {e}"),
-                                    PopupKind::Error,
-                                    None,
-                                );
-                                return;
-                            }
+                        Cx::post_action(DirectMessageRoomAction::FoundExisting {
+                            user_id: user_profile.user_id,
+                            room_name_id: RoomNameId::from_room(&room).await,
+                        });
+                        return;
+                    }
+                    if !allow_create {
+                        Cx::post_action(DirectMessageRoomAction::DidNotExist { user_profile });
+                        return;
+                    }
+                    log!("Creating new DM room with {user_profile:?}...");
+                    match client.create_dm(&user_profile.user_id).await {
+                        Ok(room) => {
+                            log!("Successfully created DM room: {}", room.room_id());
+                            Cx::post_action(DirectMessageRoomAction::NewlyCreated {
+                                user_profile,
+                                room_name_id: RoomNameId::from_room(&room).await,
+                            });
+                        },
+                        Err(error) => {
+                            error!("Failed to create DM with {user_profile:?}: {error}");
+                            Cx::post_action(DirectMessageRoomAction::FailedToCreate {
+                                user_profile,
+                                error,
+                            });
                         }
-                    };
-
-                    // Navigate to room
-                    let room_id = room.room_id().to_owned();
-                    let display_name = room.display_name().await.unwrap_or(RoomDisplayName::Empty);
-                    let room_name_id = RoomNameId::new(display_name, room_id.clone());
-
-                    Cx::post_action(AppStateAction::NavigateToRoom {
-                        room_to_close: None,
-                        destination_room: BasicRoomDetails::RoomId(room_name_id),
-                    });
+                    }
                 });
             }
 
