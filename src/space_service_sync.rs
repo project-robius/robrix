@@ -37,6 +37,12 @@ pub enum SpaceRequest {
     UnsubscribeFromSpaceRoomList {
         space_id: OwnedRoomId,
     },
+    /// Leave the given space and all rooms included by the SDK's leave-space process.
+    ///
+    /// This uses [`SpaceService::leave_space`] and then leaves every returned room.
+    LeaveSpace {
+        space_id: OwnedRoomId,
+    },
     /// Paginate the given space's room list, i.e., fetch the next batch of rooms in the list.
     ///
     /// This will result in a [`SpaceRoomListAction::PaginationState`] action being emitted,
@@ -155,6 +161,21 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                     if let Some((sender, join_handle)) = space_room_list_tasks.remove(&space_id) {
                         let _ = sender.send(SpaceRoomListRequest::Shutdown);
                         let _ = join_handle.await;
+                    }
+                }
+                SpaceRequest::LeaveSpace { space_id } => {
+                    match space_service.leave_space(&space_id).await {
+                        Ok(handle) => {
+                            if let Err(error) = handle.leave(|_| true).await {
+                                error!("LeaveSpace: failed to leave all rooms in space {space_id}: {error:?}");
+                            } else if let Some((sender, join_handle)) = space_room_list_tasks.remove(&space_id) {
+                                let _ = sender.send(SpaceRoomListRequest::Shutdown);
+                                let _ = join_handle.await;
+                            }
+                        }
+                        Err(error) => {
+                            error!("LeaveSpace: failed to initialize leave process for space {space_id}: {error:?}");
+                        }
                     }
                 }
                 SpaceRequest::GetDetailedChildren { space_id, parent_chain } => {
