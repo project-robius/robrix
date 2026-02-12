@@ -232,14 +232,11 @@ pub fn stringify_pagination_error(
     use matrix_sdk_ui::timeline::Error as TimelineError;
 
     #[allow(clippy::single_match)]
-    let match_paginator_error = |paginator_error: &PaginatorError| {
-        match paginator_error {
-            PaginatorError::SdkError(sdk_error) => match sdk_error.deref() {
-                matrix_sdk::Error::Http(http_error) => match http_error.deref() {
-                    matrix_sdk::HttpError::Reqwest(reqwest_error) if reqwest_error.is_timeout() => {
-                        return Some(format!("Failed to load earlier messages in \"{room_name}\": request timed out."));
-                    }
-                    _ => {}
+    let match_sdk_error = |sdk_error: &matrix_sdk::Error| {
+        match sdk_error {
+            matrix_sdk::Error::Http(http_error) => match http_error.deref() {
+                matrix_sdk::HttpError::Reqwest(reqwest_error) if reqwest_error.is_timeout() => {
+                    return Some(format!("Failed to load earlier messages in \"{room_name}\": request timed out."));
                 }
                 _ => {}
             }
@@ -253,14 +250,12 @@ pub fn stringify_pagination_error(
             return format!("Failed to load earlier messages in \"{room_name}\": \
                 pagination is not supported in this timeline focus mode.");
         }
-        TimelineError::PaginationError(PaginationError::Paginator(paginator_error)) => {
-            if let Some(message) = match_paginator_error(paginator_error) {
+        TimelineError::PaginationError(PaginationError::Paginator(PaginatorError::SdkError(sdk_error)))
+        | TimelineError::EventCacheError(EventCacheError::BackpaginationError(sdk_error)) =>
+        {
+            if let Some(message) = match_sdk_error(sdk_error) {
                 return message;
             }
-        }
-        TimelineError::EventCacheError(EventCacheError::BackpaginationError(error)) => {
-            return format!("Failed to load earlier messages in \"{room_name}\": \
-                Back-pagination error in the event cache: {error}.");
         }
         _ => {}
     }
@@ -713,6 +708,14 @@ impl RoomNameId {
     /// Creates a new `RoomNameId` with an empty display name.
     pub fn empty(room_id: OwnedRoomId) -> Self {
         Self::new(RoomDisplayName::Empty, room_id)
+    }
+
+    /// Creates a new `RoomNameId` from a `Room`.
+    pub async fn from_room(room: &matrix_sdk::Room) -> Self {
+        Self::new(
+            room.display_name().await.unwrap_or(RoomDisplayName::Empty),
+            room.room_id().to_owned(),
+        )
     }
 
     /// Get a reference to the underlying display name.
