@@ -886,24 +886,42 @@ impl Widget for SpaceLobbyScreen {
 
         if let Event::Actions(actions) = event {
             for action in actions {
-                if let Some(SpaceRoomListAction::DetailedChildren { space_id, children, .. }) = action.downcast_ref() {
-                    self.update_children_in_space(cx, space_id, children);
-                }
-
-                // Handle receiving space details (join rule, member count).
-                if let Some(SpaceRoomListAction::TopLevelSpaceDetails(sr)) = action.downcast_ref() {
-                    if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == &sr.room_id) {
-                        self.view.label(ids!(header.space_info_label)).set_text(cx, &format!(
-                            "{}  ·  {} {}",
-                            match sr.join_rule {
-                                Some(JoinRuleSummary::Public) => "🌐  Public space",
-                                _ => "🔒  Private space",
-                            },
-                            sr.num_joined_members,
-                            if sr.num_joined_members == 1 { "member" } else { "members" }
-                        ));
-                        self.redraw(cx);
+                match action.downcast_ref() {
+                    Some(SpaceRoomListAction::DetailedChildren { space_id, children, .. }) => {
+                        self.update_children_in_space(cx, space_id, children);
                     }
+
+                    // Handle receiving top-level space details (join rule, member count).
+                    Some(SpaceRoomListAction::TopLevelSpaceDetails(sr)) => {
+                        if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == &sr.room_id) {
+                            self.view.label(ids!(header.space_info_label)).set_text(cx, &format!(
+                                "{}  ·  {} {}",
+                                match sr.join_rule {
+                                    Some(JoinRuleSummary::Public) => "🌐  Public space",
+                                    _ => "🔒  Private space",
+                                },
+                                sr.num_joined_members,
+                                if sr.num_joined_members == 1 { "member" } else { "members" }
+                            ));
+                            self.redraw(cx);
+                        }
+                    }
+
+                    // Handle a change to the set of children in this space or any of its child subspaces.
+                    Some(SpaceRoomListAction::UpdatedChildren { space_id, parent_chain, .. }) => {
+                        if self.space_name_id.as_ref().is_some_and(|sni|
+                            sni.room_id() == space_id
+                            || parent_chain.iter().any(|ancestor_id| sni.room_id() == ancestor_id)
+                        ) {
+                            if let Some(sender) = &self.space_request_sender {
+                                let _ = sender.send(SpaceRequest::GetDetailedChildren {
+                                    space_id: space_id.clone(),
+                                    parent_chain: parent_chain.clone(),
+                                });
+                            }
+                        }
+                    }
+                    _ => { }
                 }
 
                 // Handle SubspaceEntry clicks
