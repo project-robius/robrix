@@ -17,7 +17,7 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
 };
 use matrix_sdk_ui::{
-    RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
+    RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
 };
 use robius_open::Uri;
 use ruma::{OwnedRoomOrAliasId, events::tag::Tags};
@@ -109,6 +109,9 @@ async fn build_client(
         .server_name_or_homeserver_url(homeserver_url)
         // Use a sqlite database to persist the client's encryption setup.
         .sqlite_store(&db_path, Some(&passphrase))
+        .with_threading_support(matrix_sdk::ThreadingSupport::Enabled {
+            with_subscriptions: true,
+        })
         // The sliding sync proxy has now been deprecated in favor of native sliding sync.
         .sliding_sync_version_builder(VersionBuilder::DiscoverNative)
         .with_decryption_settings(DecryptionSettings {
@@ -327,6 +330,8 @@ pub enum MatrixRequest {
     /// Request to paginate the older (or newer) events of a room's timeline.
     PaginateRoomTimeline {
         room_id: OwnedRoomId,
+        /// If `Some`, paginate a thread-focused timeline rooted at this event.
+        thread_root_event_id: Option<OwnedEventId>,
         /// The maximum number of timeline events to fetch in each pagination batch.
         num_events: u16,
         direction: PaginationDirection,
@@ -334,18 +339,29 @@ pub enum MatrixRequest {
     /// Request to edit the content of an event in the given room's timeline.
     EditMessage {
         room_id: OwnedRoomId,
+        /// If `Some`, use a thread-focused timeline rooted at this event.
+        thread_root_event_id: Option<OwnedEventId>,
         timeline_event_item_id: TimelineEventItemId,
         edited_content: EditedContent,
     },
     /// Request to fetch the full details of the given event in the given room's timeline.
     FetchDetailsForEvent {
         room_id: OwnedRoomId,
+        /// If `Some`, use a thread-focused timeline rooted at this event.
+        thread_root_event_id: Option<OwnedEventId>,
         event_id: OwnedEventId,
     },
     /// Request to fetch profile information for all members of a room.
     /// This can be *very* slow depending on the number of members in the room.
     SyncRoomMemberList {
         room_id: OwnedRoomId,
+        /// If `Some`, send completion updates to this thread-focused timeline.
+        thread_root_event_id: Option<OwnedEventId>,
+    },
+    /// Request to create a thread-focused timeline for the given room and thread root event.
+    CreateThreadTimeline {
+        room_id: OwnedRoomId,
+        thread_root_event_id: OwnedEventId,
     },
     /// Request to knock on (request an invite to) the given room.
     Knock {
@@ -371,6 +387,8 @@ pub enum MatrixRequest {
     /// This returns the list of members that can be displayed in the UI.
     GetRoomMembers {
         room_id: OwnedRoomId,
+        /// If `Some`, send updates to this thread-focused timeline.
+        thread_root_event_id: Option<OwnedEventId>,
         memberships: RoomMemberships,
         /// * If `true` (not recommended), only the local cache will be accessed.
         /// * If `false` (recommended), details will be fetched from the server.
@@ -414,6 +432,8 @@ pub enum MatrixRequest {
     /// Request to fetch the number of unread messages in the given room.
     GetNumberUnreadMessages {
         room_id: OwnedRoomId,
+        /// If `Some`, send unread-count updates to this thread-focused timeline.
+        thread_root_event_id: Option<OwnedEventId>,
     },
     /// Request to set the unread flag for the given room.
     SetUnreadFlag {
@@ -489,6 +509,8 @@ pub enum MatrixRequest {
     /// Request to send a message to the given room.
     SendMessage {
         room_id: OwnedRoomId,
+        /// If `Some`, send via a thread-focused timeline rooted at this event.
+        thread_root_event_id: Option<OwnedEventId>,
         message: RoomMessageEventContent,
         replied_to: Option<Reply>,
         #[cfg(feature = "tsp")]
@@ -517,6 +539,8 @@ pub enum MatrixRequest {
     /// This request does not return a response or notify the UI thread.
     SubscribeToTypingNotices {
         room_id: OwnedRoomId,
+        /// If `Some`, send typing updates to this thread-focused timeline.
+        thread_root_event_id: Option<OwnedEventId>,
         /// Whether to subscribe or unsubscribe.
         subscribe: bool,
     },
@@ -525,23 +549,31 @@ pub enum MatrixRequest {
     /// This request does not return a response or notify the UI thread.
     SubscribeToOwnUserReadReceiptsChanged {
         room_id: OwnedRoomId,
+        /// If `Some`, send read receipt updates to this thread-focused timeline.
+        thread_root_event_id: Option<OwnedEventId>,
         /// Whether to subscribe or unsubscribe.
         subscribe: bool,
     },
     /// Subscribe to changes in the set of pinned events for the given room.
     SubscribeToPinnedEvents {
         room_id: OwnedRoomId,
+        /// If `Some`, send pinned-event updates to this thread-focused timeline.
+        thread_root_event_id: Option<OwnedEventId>,
         /// Whether to subscribe or unsubscribe.
         subscribe: bool,
     },
     /// Sends a read receipt for the given event in the given room.
     ReadReceipt {
         room_id: OwnedRoomId,
+        /// If `Some`, send via a thread-focused timeline rooted at this event.
+        thread_root_event_id: Option<OwnedEventId>,
         event_id: OwnedEventId,
     },
     /// Sends a fully-read receipt for the given event in the given room.
     FullyReadReceipt {
         room_id: OwnedRoomId,
+        /// If `Some`, send via a thread-focused timeline rooted at this event.
+        thread_root_event_id: Option<OwnedEventId>,
         event_id: OwnedEventId,
     },
     /// Sends a request to obtain the power levels for this room.
@@ -549,10 +581,14 @@ pub enum MatrixRequest {
     /// The response is delivered back to the main UI thread via [`TimelineUpdate::UserPowerLevels`].
     GetRoomPowerLevels {
         room_id: OwnedRoomId,
+        /// If `Some`, send updates to this thread-focused timeline.
+        thread_root_event_id: Option<OwnedEventId>,
     },
     /// Toggles the given reaction to the given event in the given room.
     ToggleReaction {
         room_id: OwnedRoomId,
+        /// If `Some`, use a thread-focused timeline rooted at this event.
+        thread_root_event_id: Option<OwnedEventId>,
         timeline_event_id: TimelineEventItemId,
         reaction: String,
     },
@@ -560,6 +596,8 @@ pub enum MatrixRequest {
     #[doc(alias("delete"))]
     RedactMessage {
         room_id: OwnedRoomId,
+        /// If `Some`, use a thread-focused timeline rooted at this event.
+        thread_root_event_id: Option<OwnedEventId>,
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
     },
@@ -567,6 +605,8 @@ pub enum MatrixRequest {
     #[doc(alias("unpin"))]
     PinEvent {
         room_id: OwnedRoomId,
+        /// If `Some`, use a thread-focused timeline rooted at this event.
+        thread_root_event_id: Option<OwnedEventId>,
         event_id: OwnedEventId,
         pin: bool,
     },
@@ -649,16 +689,26 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
+            MatrixRequest::PaginateRoomTimeline {
+                room_id,
+                thread_root_event_id,
+                num_events,
+                direction,
+            } => {
                 let (timeline, sender) = {
                     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         log!("Skipping pagination request for not-yet-known room {room_id}");
                         continue;
                     };
-
-                    let timeline_ref = room_info.timeline.clone();
-                    let sender = room_info.timeline_update_sender.clone();
+                    let Some((timeline_ref, sender)) =
+                        get_timeline_and_sender(room_info, thread_root_event_id.as_ref())
+                    else {
+                        log!(
+                            "Skipping pagination request for missing thread timeline in room {room_id}, thread: {thread_root_event_id:?}",
+                        );
+                        continue;
+                    };
                     (timeline_ref, sender)
                 };
 
@@ -698,14 +748,27 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::EditMessage { room_id, timeline_event_item_id: timeline_event_id, edited_content } => {
+            MatrixRequest::EditMessage {
+                room_id,
+                thread_root_event_id,
+                timeline_event_item_id: timeline_event_id,
+                edited_content,
+            } => {
                 let (timeline, sender) = {
                     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         error!("BUG: room info not found for edit request, room {room_id}");
                         continue;
                     };
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                    let Some((timeline, sender)) =
+                        get_timeline_and_sender(room_info, thread_root_event_id.as_ref())
+                    else {
+                        error!(
+                            "BUG: thread timeline not found for edit request, room {room_id}, thread: {thread_root_event_id:?}",
+                        );
+                        continue;
+                    };
+                    (timeline, sender)
                 };
 
                 // Spawn a new async task that will make the actual edit request.
@@ -724,15 +787,21 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::FetchDetailsForEvent { room_id, event_id } => {
+            MatrixRequest::FetchDetailsForEvent {
+                room_id,
+                thread_root_event_id,
+                event_id,
+            } => {
                 let (timeline, sender) = {
                     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         error!("BUG: room info not found for fetch details for event request {room_id}");
                         continue;
                     };
-
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                    get_timeline_and_sender_with_main_fallback(
+                        room_info,
+                        thread_root_event_id.as_ref(),
+                    )
                 };
 
                 // Spawn a new async task that will make the actual fetch request.
@@ -755,15 +824,20 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::SyncRoomMemberList { room_id } => {
+            MatrixRequest::SyncRoomMemberList {
+                room_id,
+                thread_root_event_id,
+            } => {
                 let (timeline, sender) = {
                     let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get(&room_id) else {
                         error!("BUG: room info not found for fetch members request {room_id}");
                         continue;
                     };
-
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                    get_timeline_and_sender_immutable_with_main_fallback(
+                        room_info,
+                        thread_root_event_id.as_ref(),
+                    )
                 };
 
                 // Spawn a new async task that will make the actual fetch request.
@@ -773,6 +847,97 @@ async fn matrix_worker_task(
                     log!("Completed sync room members request for room {room_id}.");
                     sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
                     SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::CreateThreadTimeline {
+                room_id,
+                thread_root_event_id,
+            } => {
+                let room = {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                        error!(
+                            "BUG: room info not found for create thread timeline request, room {room_id}",
+                        );
+                        continue;
+                    };
+
+                    if room_info.thread_timelines.contains_key(&thread_root_event_id) {
+                        continue;
+                    }
+
+                    if !room_info
+                        .pending_thread_timeline_creations
+                        .insert(thread_root_event_id.clone())
+                    {
+                        continue;
+                    }
+
+                    room_info.timeline.room().clone()
+                };
+
+                let _create_thread_timeline_task = Handle::current().spawn(async move {
+                    log!(
+                        "Creating thread-focused timeline for room {room_id}, root event {thread_root_event_id}...",
+                    );
+                    let build_result = room
+                        .timeline_builder()
+                        .track_read_marker_and_receipts(TimelineReadReceiptTracking::AllEvents)
+                        .with_focus(TimelineFocus::Thread {
+                            root_event_id: thread_root_event_id.clone(),
+                        })
+                        .build()
+                        .await;
+
+                    match build_result {
+                        Ok(timeline) => {
+                            let timeline = Arc::new(timeline);
+                            let (timeline_update_sender, timeline_update_receiver) =
+                                crossbeam_channel::unbounded();
+                            let (request_sender, request_receiver) = watch::channel(Vec::new());
+                            let timeline_subscriber_handler_task =
+                                Handle::current().spawn(timeline_subscriber_handler(
+                                    room.clone(),
+                                    timeline.clone(),
+                                    timeline_update_sender.clone(),
+                                    request_receiver,
+                                    Some(thread_root_event_id.clone()),
+                                ));
+
+                            let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                                return;
+                            };
+                            room_info
+                                .pending_thread_timeline_creations
+                                .remove(&thread_root_event_id);
+                            room_info.thread_timelines.insert(
+                                thread_root_event_id.clone(),
+                                ThreadTimelineDetails {
+                                    timeline,
+                                    timeline_update_sender,
+                                    timeline_singleton_endpoints: Some((
+                                        timeline_update_receiver,
+                                        request_sender,
+                                    )),
+                                    timeline_subscriber_handler_task,
+                                },
+                            );
+                            SignalToUI::set_ui_signal();
+                        }
+                        Err(error) => {
+                            let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            if let Some(room_info) = all_joined_rooms.get_mut(&room_id) {
+                                room_info
+                                    .pending_thread_timeline_creations
+                                    .remove(&thread_root_event_id);
+                            }
+                            error!(
+                                "Failed to create thread-focused timeline for room {room_id}, root {thread_root_event_id}: {error}",
+                            );
+                        }
+                    }
                 });
             }
 
@@ -884,14 +1049,22 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::GetRoomMembers { room_id, memberships, local_only } => {
+            MatrixRequest::GetRoomMembers {
+                room_id,
+                thread_root_event_id,
+                memberships,
+                local_only,
+            } => {
                 let (timeline, sender) = {
                     let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get(&room_id) else {
                         log!("BUG: room info not found for get room members request {room_id}");
                         continue;
                     };
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                    get_timeline_and_sender_immutable_with_main_fallback(
+                        room_info,
+                        thread_root_event_id.as_ref(),
+                    )
                 };
 
                 let _get_members_task = Handle::current().spawn(async move {
@@ -1047,15 +1220,20 @@ async fn matrix_worker_task(
                     }
                 });
             }
-            MatrixRequest::GetNumberUnreadMessages { room_id } => {
+            MatrixRequest::GetNumberUnreadMessages {
+                room_id,
+                thread_root_event_id,
+            } => {
                 let (timeline, sender) = {
                     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         log!("Skipping get number of unread messages request for not-yet-known room {room_id}");
                         continue;
                     };
-
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                    get_timeline_and_sender_with_main_fallback(
+                        room_info,
+                        thread_root_event_id.as_ref(),
+                    )
                 };
                 let _get_unreads_task = Handle::current().spawn(async move {
                     match sender.send(TimelineUpdate::NewUnreadMessagesCount(
@@ -1240,6 +1418,7 @@ async fn matrix_worker_task(
                     // and all other rooms will be re-paginated in `handle_ignore_user_list_subscriber()`.`
                     submit_async_request(MatrixRequest::PaginateRoomTimeline {
                         room_id,
+                        thread_root_event_id: None,
                         num_events: 50,
                         direction: PaginationDirection::Backwards,
                     });
@@ -1258,7 +1437,11 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::SubscribeToTypingNotices { room_id, subscribe } => {
+            MatrixRequest::SubscribeToTypingNotices {
+                room_id,
+                thread_root_event_id,
+                subscribe,
+            } => {
                 let (room, timeline_update_sender, mut typing_notice_receiver) = {
                     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
@@ -1283,7 +1466,15 @@ async fn matrix_worker_task(
                         continue;
                     };
                     // Here: we don't have an existing subscriber running, so we fall through and start one.
-                    (room, room_info.timeline_update_sender.clone(), recv)
+                    let Some((_, timeline_update_sender)) =
+                        get_timeline_and_sender(room_info, thread_root_event_id.as_ref())
+                    else {
+                        log!(
+                            "BUG: thread timeline not found for typing notice subscription, room {room_id}, thread: {thread_root_event_id:?}",
+                        );
+                        continue;
+                    };
+                    (room, timeline_update_sender, recv)
                 };
 
                 let _typing_notices_task = Handle::current().spawn(async move {
@@ -1308,7 +1499,11 @@ async fn matrix_worker_task(
                     // log!("Note: typing notifications recv loop has ended for room {}", room_id);
                 });
             }
-            MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
+            MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
+                room_id,
+                thread_root_event_id,
+                subscribe,
+            } => {
                 if !subscribe {
                     if let Some(task_handler) = subscribers_own_user_read_receipts.remove(&room_id) {
                         task_handler.abort();
@@ -1321,7 +1516,15 @@ async fn matrix_worker_task(
                         log!("BUG: room info not found for subscribe to own user read receipts changed request, room {room_id}");
                         continue;
                     };
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                    let Some((timeline, sender)) =
+                        get_timeline_and_sender(room_info, thread_root_event_id.as_ref())
+                    else {
+                        log!(
+                            "BUG: thread timeline not found for own user read receipts subscription, room {room_id}, thread: {thread_root_event_id:?}",
+                        );
+                        continue;
+                    };
+                    (timeline, sender)
                 };
                 let room_id_clone = room_id.clone();
                 let subscribe_own_read_receipt_task = Handle::current().spawn(async move {
@@ -1362,7 +1565,11 @@ async fn matrix_worker_task(
                 });
                 subscribers_own_user_read_receipts.insert(room_id, subscribe_own_read_receipt_task);
             }
-            MatrixRequest::SubscribeToPinnedEvents { room_id, subscribe } => {
+            MatrixRequest::SubscribeToPinnedEvents {
+                room_id,
+                thread_root_event_id,
+                subscribe,
+            } => {
                 if !subscribe {
                     if let Some(task_handler) = subscribers_pinned_events.remove(&room_id) {
                         task_handler.abort();
@@ -1375,7 +1582,15 @@ async fn matrix_worker_task(
                         log!("BUG: room info not found for subscribe to pinned events request, room {room_id}");
                         continue;
                     };
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                    let Some((timeline, sender)) =
+                        get_timeline_and_sender(room_info, thread_root_event_id.as_ref())
+                    else {
+                        log!(
+                            "BUG: thread timeline not found for pinned events subscription, room {room_id}, thread: {thread_root_event_id:?}",
+                        );
+                        continue;
+                    };
+                    (timeline, sender)
                 };
                 let subscribe_pinned_events_task = Handle::current().spawn(async move {
                     // Send an initial update, as the stream may not update immediately.
@@ -1434,18 +1649,27 @@ async fn matrix_worker_task(
 
             MatrixRequest::SendMessage {
                 room_id,
+                thread_root_event_id,
                 message,
                 replied_to,
                 #[cfg(feature = "tsp")]
                 sign_with_tsp,
             } => {
                 let timeline = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         log!("BUG: room info not found for send message request {room_id}");
                         continue;
                     };
-                    room_info.timeline.clone()
+                    let Some((timeline, _sender)) =
+                        get_timeline_and_sender(room_info, thread_root_event_id.as_ref())
+                    else {
+                        log!(
+                            "BUG: thread timeline not found for send message request, room {room_id}, thread: {thread_root_event_id:?}",
+                        );
+                        continue;
+                    };
+                    timeline
                 };
 
                 // Spawn a new async task that will send the actual message.
@@ -1496,7 +1720,23 @@ async fn matrix_worker_task(
                     };
 
                     if let Some(replied_to_info) = replied_to {
-                        match timeline.send_reply(message.into(), replied_to_info.event_id).await {
+                        let reply_content = match timeline
+                            .room()
+                            .make_reply_event(message.into(), replied_to_info)
+                            .await
+                        {
+                            Ok(content) => content,
+                            Err(_e) => {
+                                error!("Failed to build reply content in room {room_id}: {_e:?}");
+                                enqueue_popup_notification(
+                                    format!("Failed to send reply: {_e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                                return;
+                            }
+                        };
+                        match timeline.send(reply_content.into()).await {
                             Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send reply message to room {room_id}: {_e:?}");
@@ -1516,14 +1756,26 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::ReadReceipt { room_id, event_id } => {
+            MatrixRequest::ReadReceipt {
+                room_id,
+                thread_root_event_id,
+                event_id,
+            } => {
                 let timeline = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         log!("BUG: room info not found when sending read receipt, room {room_id}, {event_id}");
                         continue;
                     };
-                    room_info.timeline.clone()
+                    let Some((timeline, _sender)) =
+                        get_timeline_and_sender(room_info, thread_root_event_id.as_ref())
+                    else {
+                        log!(
+                            "BUG: thread timeline not found when sending read receipt, room {room_id}, thread: {thread_root_event_id:?}",
+                        );
+                        continue;
+                    };
+                    timeline
                 };
                 let _send_rr_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(ReceiptType::Read, event_id.clone()).await {
@@ -1540,14 +1792,27 @@ async fn matrix_worker_task(
                 });
             },
 
-            MatrixRequest::FullyReadReceipt { room_id, event_id, .. } => {
+            MatrixRequest::FullyReadReceipt {
+                room_id,
+                thread_root_event_id,
+                event_id,
+                ..
+            } => {
                 let timeline = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         log!("BUG: room info not found when sending fully read receipt, room {room_id}, {event_id}");
                         continue;
                     };
-                    room_info.timeline.clone()
+                    let Some((timeline, _sender)) =
+                        get_timeline_and_sender(room_info, thread_root_event_id.as_ref())
+                    else {
+                        log!(
+                            "BUG: thread timeline not found when sending fully read receipt, room {room_id}, thread: {thread_root_event_id:?}",
+                        );
+                        continue;
+                    };
+                    timeline
                 };
                 let _send_frr_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(ReceiptType::FullyRead, event_id.clone()).await {
@@ -1566,15 +1831,20 @@ async fn matrix_worker_task(
                 });
             },
 
-            MatrixRequest::GetRoomPowerLevels { room_id } => {
+            MatrixRequest::GetRoomPowerLevels {
+                room_id,
+                thread_root_event_id,
+            } => {
                 let (timeline, sender) = {
                     let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get(&room_id) else {
                         log!("BUG: room info not found for get room power levels request {room_id}");
                         continue;
                     };
-
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                    get_timeline_and_sender_immutable_with_main_fallback(
+                        room_info,
+                        thread_root_event_id.as_ref(),
+                    )
                 };
 
                 let Some(user_id) = current_user_id() else { continue };
@@ -1596,14 +1866,27 @@ async fn matrix_worker_task(
                     }
                 });
             },
-            MatrixRequest::ToggleReaction { room_id, timeline_event_id, reaction } => {
+            MatrixRequest::ToggleReaction {
+                room_id,
+                thread_root_event_id,
+                timeline_event_id,
+                reaction,
+            } => {
                 let timeline = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         log!("BUG: room info not found for send toggle reaction {room_id}");
                         continue;
                     };
-                    room_info.timeline.clone()
+                    let Some((timeline, _sender)) =
+                        get_timeline_and_sender(room_info, thread_root_event_id.as_ref())
+                    else {
+                        log!(
+                            "BUG: thread timeline not found for toggle reaction request, room {room_id}, thread: {thread_root_event_id:?}",
+                        );
+                        continue;
+                    };
+                    timeline
                 };
 
                 let _toggle_reaction_task = Handle::current().spawn(async move {
@@ -1618,14 +1901,27 @@ async fn matrix_worker_task(
                 });
 
             },
-            MatrixRequest::RedactMessage { room_id, timeline_event_id, reason } => {
+            MatrixRequest::RedactMessage {
+                room_id,
+                thread_root_event_id,
+                timeline_event_id,
+                reason,
+            } => {
                 let timeline = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         log!("BUG: room info not found for redact message {room_id}");
                         continue;
                     };
-                    room_info.timeline.clone()
+                    let Some((timeline, _sender)) =
+                        get_timeline_and_sender(room_info, thread_root_event_id.as_ref())
+                    else {
+                        log!(
+                            "BUG: thread timeline not found for redact message request, room {room_id}, thread: {thread_root_event_id:?}",
+                        );
+                        continue;
+                    };
+                    timeline
                 };
 
                 let _redact_task = Handle::current().spawn(async move {
@@ -1642,14 +1938,27 @@ async fn matrix_worker_task(
                     }
                 });
             },
-            MatrixRequest::PinEvent { room_id, event_id, pin } => {
+            MatrixRequest::PinEvent {
+                room_id,
+                thread_root_event_id,
+                event_id,
+                pin,
+            } => {
                 let (timeline, sender) = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         log!("BUG: room info not found for pin message {room_id}");
                         continue;
                     };
-                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                    let Some((timeline, sender)) =
+                        get_timeline_and_sender(room_info, thread_root_event_id.as_ref())
+                    else {
+                        log!(
+                            "BUG: thread timeline not found for pin message request, room {room_id}, thread: {thread_root_event_id:?}",
+                        );
+                        continue;
+                    };
+                    (timeline, sender)
                 };
 
                 let _pin_task = Handle::current().spawn(async move {
@@ -1891,6 +2200,20 @@ pub struct TimelineEndpoints {
 }
 
 /// Backend-specific details about a joined room that our client currently knows about.
+struct ThreadTimelineDetails {
+    /// A reference to this thread-focused timeline of events.
+    timeline: Arc<Timeline>,
+    /// A clone-able sender for updates to this thread-focused timeline.
+    timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
+    /// The singleton endpoints for this thread-focused timeline.
+    timeline_singleton_endpoints: Option<(
+        crossbeam_channel::Receiver<TimelineUpdate>,
+        TimelineRequestSender,
+    )>,
+    /// The async task that listens for updates for this thread-focused timeline.
+    timeline_subscriber_handler_task: JoinHandle<()>,
+}
+
 struct JoinedRoomDetails {
     #[allow(unused)]
     room_id: OwnedRoomId,
@@ -1914,6 +2237,10 @@ struct JoinedRoomDetails {
     )>,
     /// The async task that listens for timeline updates for this room and sends them to the UI thread.
     timeline_subscriber_handler_task: JoinHandle<()>,
+    /// Thread-focused timelines for this room, keyed by thread root event ID.
+    thread_timelines: HashMap<OwnedEventId, ThreadTimelineDetails, ConstHasher>,
+    /// The set of thread timelines currently being created, to avoid duplicate in-flight work.
+    pending_thread_timeline_creations: HashSet<OwnedEventId, ConstHasher>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
     /// A drop guard for the event handler that represents a subscription to pinned events for this room.
@@ -1923,6 +2250,9 @@ impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
         log!("Dropping JoinedRoomDetails for room {}", self.room_id);
         self.timeline_subscriber_handler_task.abort();
+        for thread_timeline in self.thread_timelines.values() {
+            thread_timeline.timeline_subscriber_handler_task.abort();
+        }
         drop(self.typing_notice_subscriber.take());
         drop(self.pinned_events_subscriber.take());
     }
@@ -1974,6 +2304,66 @@ pub fn is_user_ignored(user_id: &UserId) -> bool {
     IGNORED_USERS.lock().unwrap().contains(user_id)
 }
 
+fn get_timeline_and_sender(
+    room_info: &mut JoinedRoomDetails,
+    thread_root_event_id: Option<&OwnedEventId>,
+) -> Option<(Arc<Timeline>, crossbeam_channel::Sender<TimelineUpdate>)> {
+    match thread_root_event_id {
+        Some(thread_root_event_id) => room_info
+            .thread_timelines
+            .get_mut(thread_root_event_id)
+            .map(|thread_timeline| {
+                (
+                    thread_timeline.timeline.clone(),
+                    thread_timeline.timeline_update_sender.clone(),
+                )
+            }),
+        None => Some((room_info.timeline.clone(), room_info.timeline_update_sender.clone())),
+    }
+}
+
+fn get_timeline_and_sender_with_main_fallback(
+    room_info: &mut JoinedRoomDetails,
+    thread_root_event_id: Option<&OwnedEventId>,
+) -> (Arc<Timeline>, crossbeam_channel::Sender<TimelineUpdate>) {
+    get_timeline_and_sender(room_info, thread_root_event_id).unwrap_or_else(|| {
+        (
+            room_info.timeline.clone(),
+            room_info.timeline_update_sender.clone(),
+        )
+    })
+}
+
+fn get_timeline_and_sender_immutable(
+    room_info: &JoinedRoomDetails,
+    thread_root_event_id: Option<&OwnedEventId>,
+) -> Option<(Arc<Timeline>, crossbeam_channel::Sender<TimelineUpdate>)> {
+    match thread_root_event_id {
+        Some(thread_root_event_id) => room_info
+            .thread_timelines
+            .get(thread_root_event_id)
+            .map(|thread_timeline| {
+                (
+                    thread_timeline.timeline.clone(),
+                    thread_timeline.timeline_update_sender.clone(),
+                )
+            }),
+        None => Some((room_info.timeline.clone(), room_info.timeline_update_sender.clone())),
+    }
+}
+
+fn get_timeline_and_sender_immutable_with_main_fallback(
+    room_info: &JoinedRoomDetails,
+    thread_root_event_id: Option<&OwnedEventId>,
+) -> (Arc<Timeline>, crossbeam_channel::Sender<TimelineUpdate>) {
+    get_timeline_and_sender_immutable(room_info, thread_root_event_id).unwrap_or_else(|| {
+        (
+            room_info.timeline.clone(),
+            room_info.timeline_update_sender.clone(),
+        )
+    })
+}
+
 
 /// Returns three channel endpoints related to the timeline for the given joined room.
 ///
@@ -1984,18 +2374,40 @@ pub fn is_user_ignored(user_id: &UserId) -> bool {
 /// This will only succeed once per room, as only a single channel receiver can exist.
 pub fn take_timeline_endpoints(
     room_id: &OwnedRoomId,
+    thread_root_event_id: Option<&OwnedEventId>,
 ) -> Option<TimelineEndpoints> {
     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
     all_joined_rooms
         .get_mut(room_id)
-        .and_then(|jrd| jrd.timeline_singleton_endpoints.take()
-            .map(|(update_receiver, request_sender)| (
-                jrd.timeline_update_sender.clone(),
-                update_receiver,
-                request_sender,
-                jrd.timeline.room().successor_room(),
-            ))
-        )
+        .and_then(|jrd| {
+            match thread_root_event_id {
+                Some(thread_root_event_id) => jrd
+                    .thread_timelines
+                    .get_mut(thread_root_event_id)
+                    .and_then(|thread_timeline| {
+                        thread_timeline.timeline_singleton_endpoints.take().map(
+                            |(update_receiver, request_sender)| {
+                                (
+                                    thread_timeline.timeline_update_sender.clone(),
+                                    update_receiver,
+                                    request_sender,
+                                    thread_timeline.timeline.room().successor_room(),
+                                )
+                            },
+                        )
+                    }),
+                None => jrd.timeline_singleton_endpoints.take().map(
+                    |(update_receiver, request_sender)| {
+                        (
+                            jrd.timeline_update_sender.clone(),
+                            update_receiver,
+                            request_sender,
+                            jrd.timeline.room().successor_room(),
+                        )
+                    },
+                ),
+            }
+        })
         .map(|(update_sender, update_receiver, request_sender, successor_room)| {
             TimelineEndpoints {
                 update_sender,
@@ -2853,6 +3265,9 @@ async fn add_new_room(
 
     let timeline = Arc::new(
         new_room.room.timeline_builder()
+            .with_focus(TimelineFocus::Live {
+                hide_threaded_events: false,
+            })
             .track_read_marker_and_receipts(TimelineReadReceiptTracking::AllEvents)
             .build()
             .await
@@ -2866,6 +3281,7 @@ async fn add_new_room(
         timeline.clone(),
         timeline_update_sender.clone(),
         request_receiver,
+        None,
     ));
 
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can send
@@ -2880,6 +3296,8 @@ async fn add_new_room(
             timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender)),
             timeline_update_sender,
             timeline_subscriber_handler_task,
+            thread_timelines: HashMap::with_hasher(BuildHasherDefault::new()),
+            pending_thread_timeline_creations: HashSet::with_hasher(BuildHasherDefault::new()),
             typing_notice_subscriber: None,
             pinned_events_subscriber: None,
         },
@@ -2957,6 +3375,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
                 for joined_room in client.joined_rooms() {
                     submit_async_request(MatrixRequest::PaginateRoomTimeline {
                         room_id: joined_room.room_id().to_owned(),
+                        thread_root_event_id: None,
                         num_events: 50,
                         direction: PaginationDirection::Backwards,
                     });
@@ -3224,6 +3643,7 @@ async fn timeline_subscriber_handler(
     timeline: Arc<Timeline>,
     timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
     mut request_receiver: watch::Receiver<Vec<BackwardsPaginateUntilEventRequest>>,
+    thread_root_event_id: Option<OwnedEventId>,
 ) {
 
     /// An inner function that searches the given new timeline items for a target event.
@@ -3335,6 +3755,7 @@ async fn timeline_subscriber_handler(
                         // we need to start loading previous items into the timeline.
                         submit_async_request(MatrixRequest::PaginateRoomTimeline {
                             room_id: room_id.clone(),
+                            thread_root_event_id: thread_root_event_id.clone(),
                             num_events: 50,
                             direction: PaginationDirection::Backwards,
                         });

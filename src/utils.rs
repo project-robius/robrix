@@ -630,6 +630,7 @@ pub fn get_or_fetch_event_sender(
                 if let Some(event_id) = event_tl_item.event_id() {
                     submit_async_request(MatrixRequest::FetchDetailsForEvent {
                         room_id: room_id.clone(),
+                        thread_root_event_id: None,
                         event_id: event_id.to_owned(),
                     });
                 }

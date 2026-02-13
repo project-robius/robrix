@@ -176,6 +176,7 @@ impl Widget for ReactionList {
                         };
                         submit_async_request(MatrixRequest::ToggleReaction {
                             room_id: room_id.clone(),
+                            thread_root_event_id: None,
                             timeline_event_id: timeline_event_id.clone(),
                             reaction: reaction_data.reaction.clone(),
                         });

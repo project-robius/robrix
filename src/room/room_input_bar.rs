@@ -19,7 +19,7 @@
 use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
-use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
+use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
 
 live_design! {
@@ -264,17 +264,31 @@ impl RoomInputBar {
                         LocationMessageEventContent::new(geo_uri.clone(), geo_uri)
                     )
                 );
+                let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
+                    event_tl_item.event_id().map(|event_id| {
+                        let enforce_thread = if room_screen_props.thread_root_event_id.is_some() {
+                            EnforceThread::Threaded(ReplyWithinThread::Yes)
+                        } else {
+                            EnforceThread::MaybeThreaded
+                        };
+                        Reply {
+                            event_id: event_id.to_owned(),
+                            enforce_thread,
+                        }
+                    })
+                ).or_else(||
+                    room_screen_props.thread_root_event_id.as_ref().map(|thread_root_event_id|
+                        Reply {
+                            event_id: thread_root_event_id.clone(),
+                            enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
+                        }
+                    )
+                );
                 submit_async_request(MatrixRequest::SendMessage {
                     room_id: room_screen_props.room_name_id.room_id().clone(),
                     message,
-                    replied_to: self.replying_to.take().and_then(|(event_tl_item, _emb)|
-                        event_tl_item.event_id().map(|event_id|
-                            Reply {
-                                event_id: event_id.to_owned(),
-                                enforce_thread: EnforceThread::MaybeThreaded,
-                            }
-                        )
-                    ),
+                    replied_to,
+                    thread_root_event_id: room_screen_props.thread_root_event_id.clone(),
                     #[cfg(feature = "tsp")]
                     sign_with_tsp: self.is_tsp_signing_enabled(cx),
                 });
@@ -292,17 +306,31 @@ impl RoomInputBar {
             let entered_text = mentionable_text_input.text().trim().to_string();
             if !entered_text.is_empty() {
                 let message = mentionable_text_input.create_message_with_mentions(&entered_text);
+                let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
+                    event_tl_item.event_id().map(|event_id| {
+                        let enforce_thread = if room_screen_props.thread_root_event_id.is_some() {
+                            EnforceThread::Threaded(ReplyWithinThread::Yes)
+                        } else {
+                            EnforceThread::MaybeThreaded
+                        };
+                        Reply {
+                            event_id: event_id.to_owned(),
+                            enforce_thread,
+                        }
+                    })
+                ).or_else(||
+                    room_screen_props.thread_root_event_id.as_ref().map(|thread_root_event_id|
+                        Reply {
+                            event_id: thread_root_event_id.clone(),
+                            enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
+                        }
+                    )
+                );
                 submit_async_request(MatrixRequest::SendMessage {
                     room_id: room_screen_props.room_name_id.room_id().clone(),
                     message,
-                    replied_to: self.replying_to.take().and_then(|(event_tl_item, _emb)|
-                        event_tl_item.event_id().map(|event_id|
-                            Reply {
-                                event_id: event_id.to_owned(),
-                                enforce_thread: EnforceThread::MaybeThreaded,
-                            }
-                        )
-                    ),
+                    replied_to,
+                    thread_root_event_id: room_screen_props.thread_root_event_id.clone(),
                     #[cfg(feature = "tsp")]
                     sign_with_tsp: self.is_tsp_signing_enabled(cx),
                 });
@@ -416,6 +444,7 @@ impl RoomInputBar {
         cx: &mut Cx,
         behavior: ShowEditingPaneBehavior,
         room_id: OwnedRoomId,
+        thread_root_event_id: Option<OwnedEventId>,
     ) {
         // We must hide the input_bar while the editing pane is shown,
         // otherwise a very-tall inputted message might show up underneath a shorter editing pane.
@@ -432,10 +461,10 @@ impl RoomInputBar {
         let editing_pane = self.view.editing_pane(ids!(editing_pane));
         match behavior {
             ShowEditingPaneBehavior::ShowNew { event_tl_item } => {
-                editing_pane.show(cx, event_tl_item, room_id);
+                editing_pane.show(cx, event_tl_item, room_id, thread_root_event_id);
             }
             ShowEditingPaneBehavior::RestoreExisting { editing_pane_state } => {
-                editing_pane.restore_state(cx, editing_pane_state, room_id);
+                editing_pane.restore_state(cx, editing_pane_state, room_id, thread_root_event_id);
             }
         };
 
@@ -541,12 +570,14 @@ impl RoomInputBarRef {
         cx: &mut Cx,
         event_tl_item: EventTimelineItem,
         room_id: OwnedRoomId,
+        thread_root_event_id: Option<OwnedEventId>,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.show_editing_pane(
             cx,
             ShowEditingPaneBehavior::ShowNew { event_tl_item },
             room_id,
+            thread_root_event_id,
         );
     }
 
@@ -605,6 +636,7 @@ impl RoomInputBarRef {
         &self,
         cx: &mut Cx,
         room_id: &OwnedRoomId,
+        thread_root_event_id: Option<OwnedEventId>,
         saved_state: RoomInputBarState,
         user_power_levels: UserPowerLevels,
         tombstone_info: Option<&SuccessorRoomDetails>,
@@ -642,6 +674,7 @@ impl RoomInputBarRef {
                 cx,
                 ShowEditingPaneBehavior::RestoreExisting { editing_pane_state },
                 room_id.clone(),
+                thread_root_event_id.clone(),
             );
         } else {
             inner.editing_pane(ids!(editing_pane)).force_reset_hide(cx);

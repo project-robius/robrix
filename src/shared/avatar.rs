@@ -297,6 +297,7 @@ impl Avatar {
                 if let Some(event_id) = event_id {
                     submit_async_request(MatrixRequest::FetchDetailsForEvent {
                         room_id: room_id.to_owned(),
+                        thread_root_event_id: None,
                         event_id: event_id.to_owned(),
                     });
                 }

@@ -4,7 +4,7 @@
 
 use std::{cell::RefCell, collections::HashMap};
 use makepad_widgets::*;
-use matrix_sdk::{RoomState, ruma::{OwnedRoomId, RoomId}};
+use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, RoomId}};
 use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
@@ -380,6 +380,7 @@ impl MatchEvent for App {
                     SelectedRoom::JoinedRoom { room_name_id } => room_name_id.to_string(),
                     SelectedRoom::InvitedRoom { room_name_id } => room_name_id.to_string(),
                     SelectedRoom::Space { space_name_id } => format!("[Space] {}", space_name_id),
+                    SelectedRoom::Thread { room_name_id, .. } => format!("Thread · {}", room_name_id),
                 };
                 self.app_state.selected_room = Some(selected_room);
                 // Set the Stack Navigation header to show the name of the newly-selected room.
@@ -858,6 +859,10 @@ pub enum SelectedRoom {
     JoinedRoom { room_name_id: RoomNameId },
     InvitedRoom { room_name_id: RoomNameId },
     Space { space_name_id: RoomNameId },
+    Thread {
+        room_name_id: RoomNameId,
+        thread_root_event_id: OwnedEventId,
+    },
 }
 
 impl SelectedRoom {
@@ -866,6 +871,7 @@ impl SelectedRoom {
             SelectedRoom::JoinedRoom { room_name_id } => room_name_id.room_id(),
             SelectedRoom::InvitedRoom { room_name_id } => room_name_id.room_id(),
             SelectedRoom::Space { space_name_id } => space_name_id.room_id(),
+            SelectedRoom::Thread { room_name_id, .. } => room_name_id.room_id(),
         }
     }
 
@@ -874,6 +880,14 @@ impl SelectedRoom {
             SelectedRoom::JoinedRoom { room_name_id } => room_name_id,
             SelectedRoom::InvitedRoom { room_name_id } => room_name_id,
             SelectedRoom::Space { space_name_id } => space_name_id,
+            SelectedRoom::Thread { room_name_id, .. } => room_name_id,
+        }
+    }
+
+    pub fn thread_root_event_id(&self) -> Option<&OwnedEventId> {
+        match self {
+            SelectedRoom::Thread { thread_root_event_id, .. } => Some(thread_root_event_id),
+            _ => None,
         }
     }
 
@@ -898,7 +912,24 @@ impl SelectedRoom {
 }
 impl PartialEq for SelectedRoom {
     fn eq(&self, other: &Self) -> bool {
-        self.room_id() == other.room_id()
+        match (self, other) {
+            (
+                SelectedRoom::Thread {
+                    room_name_id: lhs_room_name_id,
+                    thread_root_event_id: lhs_thread_root_event_id,
+                },
+                SelectedRoom::Thread {
+                    room_name_id: rhs_room_name_id,
+                    thread_root_event_id: rhs_thread_root_event_id,
+                },
+            ) => {
+                lhs_room_name_id.room_id() == rhs_room_name_id.room_id()
+                    && lhs_thread_root_event_id == rhs_thread_root_event_id
+            }
+            (SelectedRoom::Thread { .. }, _)
+            | (_, SelectedRoom::Thread { .. }) => false,
+            _ => self.room_id() == other.room_id(),
+        }
     }
 }
 impl Eq for SelectedRoom {}

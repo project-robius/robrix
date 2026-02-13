@@ -89,7 +89,7 @@ impl Widget for MainMobileUI {
                 // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
                 self.view
                     .room_screen(ids!(room_screen))
-                    .set_displayed_room(cx, room_name_id);
+                    .set_displayed_room(cx, room_name_id, None);
             }
             Some(SelectedRoom::InvitedRoom { room_name_id }) => {
                 show_welcome = false;
@@ -108,6 +108,18 @@ impl Widget for MainMobileUI {
                 self.view
                     .space_lobby_screen(ids!(space_lobby_screen))
                     .set_displayed_space(cx, space_name_id);
+            }
+            Some(SelectedRoom::Thread {
+                room_name_id,
+                thread_root_event_id,
+            }) => {
+                show_welcome = false;
+                show_room = true;
+                show_invite = false;
+                show_space_lobby = false;
+                self.view
+                    .room_screen(ids!(room_screen))
+                    .set_displayed_room(cx, room_name_id, Some(thread_root_event_id.clone()));
             }
             None => {
                 show_welcome = true;

@@ -2,6 +2,7 @@ use makepad_widgets::{text::selection::Cursor, *};
 use matrix_sdk::{
     room::edit::EditedContent,
     ruma::{
+        OwnedEventId,
         OwnedRoomId,
         events::{
             poll::unstable_start::{UnstablePollAnswer, UnstablePollStartContentBlock},
@@ -151,6 +152,7 @@ pub enum EditingPaneAction {
 struct EditingPaneInfo {
     event_tl_item: EventTimelineItem,
     room_id: OwnedRoomId,
+    thread_root_event_id: Option<OwnedEventId>,
 }
 
 /// A view that slides in from the bottom of the screen to allow editing a message.
@@ -370,6 +372,7 @@ impl Widget for EditingPane {
 
                 submit_async_request(MatrixRequest::EditMessage {
                     room_id: info.room_id.clone(),
+                    thread_root_event_id: info.thread_root_event_id.clone(),
                     timeline_event_item_id: info.event_tl_item.identifier(),
                     edited_content,
                 });
@@ -426,7 +429,13 @@ impl EditingPane {
     }
 
     /// Shows the editing pane and sets it up to edit the given `event`'s content.
-    pub fn show(&mut self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
+    pub fn show(
+        &mut self,
+        cx: &mut Cx,
+        event_tl_item: EventTimelineItem,
+        room_id: OwnedRoomId,
+        thread_root_event_id: Option<OwnedEventId>,
+    ) {
         if !event_tl_item.is_editable() {
             enqueue_popup_notification(
                 "That message cannot be edited.",
@@ -452,7 +461,11 @@ impl EditingPane {
         }
 
 
-        self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
+        self.info = Some(EditingPaneInfo {
+            event_tl_item,
+            room_id: room_id.clone(),
+            thread_root_event_id,
+        });
 
         self.visible = true;
         self.button(ids!(accept_button)).reset_hover(cx);
@@ -488,12 +501,17 @@ impl EditingPane {
         cx: &mut Cx,
         editing_pane_state: EditingPaneState,
         room_id: OwnedRoomId,
+        thread_root_event_id: Option<OwnedEventId>,
     ) {
         let EditingPaneState { event_tl_item, text_input_state } = editing_pane_state;
         self.mentionable_text_input(ids!(editing_content.edit_text_input))
             .text_input_ref()
             .restore_state(cx, text_input_state);
-        self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
+        self.info = Some(EditingPaneInfo {
+            event_tl_item,
+            room_id: room_id.clone(),
+            thread_root_event_id,
+        });
         self.visible = true;
         self.button(ids!(accept_button)).reset_hover(cx);
         self.button(ids!(cancel_button)).reset_hover(cx);
@@ -537,11 +555,17 @@ impl EditingPaneRef {
     }
 
     /// See [`EditingPane::show()`].
-    pub fn show(&self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
+    pub fn show(
+        &self,
+        cx: &mut Cx,
+        event_tl_item: EventTimelineItem,
+        room_id: OwnedRoomId,
+        thread_root_event_id: Option<OwnedEventId>,
+    ) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.show(cx, event_tl_item, room_id);
+        inner.show(cx, event_tl_item, room_id, thread_root_event_id);
     }
 
     /// See [`EditingPane::save_state()`].
@@ -557,9 +581,10 @@ impl EditingPaneRef {
         cx: &mut Cx,
         editing_pane_state: EditingPaneState,
         room_id: OwnedRoomId,
+        thread_root_event_id: Option<OwnedEventId>,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.restore_state(cx, editing_pane_state, room_id);
+        inner.restore_state(cx, editing_pane_state, room_id, thread_root_event_id);
     }
 
     /// Hides the editing pane immediately and clears its state without animating it out.

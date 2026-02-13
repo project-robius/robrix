@@ -1457,6 +1457,7 @@ impl Widget for RoomsList {
                             direct_room.has_been_paginated = true;
                             submit_async_request(MatrixRequest::PaginateRoomTimeline {
                                 room_id: direct_room.room_name_id.room_id().clone(),
+                                thread_root_event_id: None,
                                 num_events: 50,
                                 direction: PaginationDirection::Backwards,
                             });
@@ -1492,6 +1493,7 @@ impl Widget for RoomsList {
                             regular_room.has_been_paginated = true;
                             submit_async_request(MatrixRequest::PaginateRoomTimeline {
                                 room_id: regular_room.room_name_id.room_id().clone(),
+                                thread_root_event_id: None,
                                 num_events: 50,
                                 direction: PaginationDirection::Backwards,
                             });
