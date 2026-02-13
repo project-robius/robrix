@@ -774,7 +774,10 @@ impl App {
                     room_to_close.cloned(),
                 ));
                 cx.action(JoinLeaveRoomModalAction::Open {
-                    kind: JoinLeaveModalKind::JoinRoom(destination_room.clone()), 
+                    kind: JoinLeaveModalKind::JoinRoom {
+                        details: destination_room.clone(),
+                        is_space: false,
+                    },
                     show_tip: false,
                 });
                 return;

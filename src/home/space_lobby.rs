@@ -658,14 +658,16 @@ pub struct SubspaceEntry {
     #[rust] show_buttons_view: bool,
 }
 
-/// Action emitted when a subspace entry is clicked.
+/// Actions emitted when a `SubspaceEntry` or its buttons are clicked.
+///
+/// These *are* all widget actions.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum SubspaceEntryAction {
     SpaceClicked { space_id: OwnedRoomId },
-    RoomClicked { room_id: OwnedRoomId },
-    JoinClicked { room_id: OwnedRoomId },
-    LeaveClicked { room_id: OwnedRoomId },
-    ViewClicked { room_id: OwnedRoomId },
+    RoomClicked  { room_id: OwnedRoomId },
+    JoinClicked  { room_id: OwnedRoomId, is_space: bool },
+    LeaveClicked { room_id: OwnedRoomId, is_space: bool },
+    ViewClicked  { room_id: OwnedRoomId },
     None,
 }
 
@@ -743,7 +745,7 @@ impl Widget for SubspaceEntry {
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
-                        SubspaceEntryAction::JoinClicked { room_id },
+                        SubspaceEntryAction::JoinClicked { room_id, is_space: self.is_space },
                     );
                 }
             }
@@ -753,7 +755,7 @@ impl Widget for SubspaceEntry {
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
-                        SubspaceEntryAction::LeaveClicked { room_id },
+                        SubspaceEntryAction::LeaveClicked { room_id, is_space: self.is_space },
                     );
                 }
             }
@@ -925,31 +927,48 @@ impl Widget for SpaceLobbyScreen {
                 }
 
                 // Handle SubspaceEntry clicks
-                match action.as_widget_action().cast() {
+                match action.as_widget_action().cast_ref() {
                     SubspaceEntryAction::SpaceClicked { space_id } => {
-                        self.toggle_space_expansion(cx, &space_id);
+                        self.toggle_space_expansion(cx, space_id);
                     }
                     SubspaceEntryAction::RoomClicked { room_id: _ } => {
-                        // TODO: Navigate to the room on entry click.
+                        // TODO: highlight the room, such that on mobile devices
+                        //       it will behave just like we hovered-in on desktop platforms.
                     }
-                    SubspaceEntryAction::JoinClicked { room_id } => {
+                    SubspaceEntryAction::JoinClicked { room_id, is_space } => {
                         cx.action(JoinLeaveRoomModalAction::Open {
-                            kind: JoinLeaveModalKind::JoinRoom(
-                                self.basic_room_details_for(&room_id)
-                            ),
+                            kind: JoinLeaveModalKind::JoinRoom {
+                                details: self.basic_room_details_for(&room_id),
+                                is_space: *is_space,
+                            },
                             show_tip: false,
                         });
                     }
-                    SubspaceEntryAction::LeaveClicked { room_id } => {
-                        cx.action(JoinLeaveRoomModalAction::Open {
-                            kind: JoinLeaveModalKind::LeaveRoom(
-                                self.basic_room_details_for(&room_id)
-                            ),
-                            show_tip: false,
-                        });
+                    SubspaceEntryAction::LeaveClicked { room_id, is_space } => {
+                        if *is_space {
+                            if let Some(space_request_sender) = self.space_request_sender.clone() {
+                                cx.action(JoinLeaveRoomModalAction::Open {
+                                    kind: JoinLeaveModalKind::LeaveSpace {
+                                        details: self.basic_room_details_for(&room_id),
+                                        space_request_sender,
+                                    },
+                                    show_tip: false,
+                                });
+                            }
+                        } else {
+                            cx.action(JoinLeaveRoomModalAction::Open {
+                                kind: JoinLeaveModalKind::LeaveRoom(
+                                    self.basic_room_details_for(&room_id)
+                                ),
+                                show_tip: false,
+                            });
+                        }
                     }
                     SubspaceEntryAction::ViewClicked { room_id } => {
-                        self.emit_view_room_action(cx, &scope.path, &room_id);
+                        cx.action(AppStateAction::NavigateToRoom {
+                            room_to_close: None,
+                            destination_room: self.basic_room_details_for(room_id),
+                        });
                     }
                     SubspaceEntryAction::None => { }
                 }
@@ -992,7 +1011,7 @@ impl Widget for SpaceLobbyScreen {
                     item.view(ids!(loading_spinner)).apply_over(cx, live! { visible: false });
                     item
                 }
-                // Draw a regular entrty
+                // Draw a regular entry
                 else if let Some(entry) = self.tree_entries.get_mut(item_id) {
                     match entry {
                         TreeEntry::Item { info, level, is_last, parent_mask } => {
@@ -1153,26 +1172,16 @@ impl Widget for SpaceLobbyScreen {
 }
 
 impl SpaceLobbyScreen {
+    /// Finds the given room/space ID in the tree and returns its basic details (including name).
     fn basic_room_details_for(&self, room_id: &OwnedRoomId) -> BasicRoomDetails {
-        let room_name = self.tree_entries.iter().find_map(|entry| {
-            let TreeEntry::Item { info, .. } = entry else { return None };
-            if &info.id == room_id {
-                Some(info.name.clone())
-            } else {
-                None
-            }
+        let room_name = self.tree_entries.iter().find_map(|entry| match entry {
+            TreeEntry::Item { info, .. } if &info.id == room_id => Some(info.name.clone()),
+            _ => None,
         });
         let room_name_id: RoomNameId = room_name
             .map(|name| RoomNameId::new(RoomDisplayName::Named(name), room_id.clone()))
             .unwrap_or_else(|| RoomNameId::empty(room_id.clone()));
         BasicRoomDetails::Name(room_name_id)
-    }
-
-    fn emit_view_room_action(&self, cx: &mut Cx, _scope_path: &HeapLiveIdPath, room_id: &OwnedRoomId) {
-        cx.action(AppStateAction::NavigateToRoom {
-            room_to_close: None,
-            destination_room: self.basic_room_details_for(room_id),
-        });
     }
 
     /// Handle receiving detailed children for a space.
