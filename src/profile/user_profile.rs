@@ -4,7 +4,14 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    avatar_cache, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_ignored, submit_async_request}, utils
+    avatar_cache,
+    shared::{
+        avatar::{AvatarState, AvatarWidgetExt},
+        callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition},
+        popup_list::{PopupKind, enqueue_popup_notification},
+    },
+    sliding_sync::{MatrixRequest, current_user_id, is_user_ignored, submit_async_request},
+    utils,
 };
 use super::user_profile_cache;
 
@@ -411,6 +418,32 @@ impl Widget for UserProfileSlidingPane {
         self.view.handle_event(cx, event, scope);
 
         if !self.visible { return; }
+
+        let close_button = self.button(ids!(close_button));
+        match event.hits(cx, close_button.area()) {
+            Hit::FingerHoverIn(fe) => {
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    TooltipAction::HoverIn {
+                        text: "Close".to_string(),
+                        widget_rect: fe.rect,
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Bottom,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    TooltipAction::HoverOut,
+                );
+            }
+            _ => {}
+        }
 
         let animator_action = self.animator_handle_event(cx, event);
         if animator_action.must_redraw() {
