@@ -2053,22 +2053,32 @@ struct RoomListServiceRoomInfo {
 }
 impl RoomListServiceRoomInfo {
     async fn from_room(room: matrix_sdk::Room, current_user_id: &Option<OwnedUserId>) -> Self {
+        // Parallelize fetching of independent room data.
+        let (is_direct, tags, display_name, user_power_levels) = tokio::join!(
+            room.is_direct(),
+            room.tags(),
+            room.display_name(),
+            async {
+                if let Some(user_id) = current_user_id {
+                    UserPowerLevels::from_room(&room, user_id.deref()).await
+                } else {
+                    None
+                }
+            }
+        );
+
         Self {
             room_id: room.room_id().to_owned(),
             state: room.state(),
-            is_direct: room.is_direct().await.unwrap_or(false),
+            is_direct: is_direct.unwrap_or(false),
             is_marked_unread: room.is_marked_unread(),
             is_tombstoned: room.is_tombstoned(),
-            tags: room.tags().await.ok().flatten(),
-            user_power_levels: if let Some(user_id) = current_user_id {
-                UserPowerLevels::from_room(&room, user_id.deref()).await
-            } else {
-                None
-            },
+            tags: tags.ok().flatten(),
+            user_power_levels,
             latest_event_timestamp: room.latest_event_timestamp(),
             num_unread_messages: room.num_unread_messages(),
             num_unread_mentions: room.num_unread_mentions(),
-            display_name: room.display_name().await.ok(),
+            display_name: display_name.ok(),
             room_avatar: room.avatar_url(),
             room,
         }
