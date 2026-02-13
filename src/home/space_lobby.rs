@@ -722,9 +722,11 @@ impl Widget for SubspaceEntry {
                         cx.widget_action(
                             self.widget_uid(),
                             &scope.path, 
-                            self.is_space
-                                .then_some(SubspaceEntryAction::SpaceClicked { space_id: room_id.clone() })
-                                .unwrap_or(SubspaceEntryAction::RoomClicked { room_id: room_id.clone() }),
+                            if self.is_space {
+                                SubspaceEntryAction::SpaceClicked { space_id: room_id.clone() }
+                            } else {
+                                SubspaceEntryAction::RoomClicked { room_id: room_id.clone() }
+                            }
                         );
                     }
                 }
@@ -938,7 +940,7 @@ impl Widget for SpaceLobbyScreen {
                     SubspaceEntryAction::JoinClicked { room_id, is_space } => {
                         cx.action(JoinLeaveRoomModalAction::Open {
                             kind: JoinLeaveModalKind::JoinRoom {
-                                details: self.basic_room_details_for(&room_id),
+                                details: self.basic_room_details_for(room_id),
                                 is_space: *is_space,
                             },
                             show_tip: false,
@@ -949,7 +951,7 @@ impl Widget for SpaceLobbyScreen {
                             if let Some(space_request_sender) = self.space_request_sender.clone() {
                                 cx.action(JoinLeaveRoomModalAction::Open {
                                     kind: JoinLeaveModalKind::LeaveSpace {
-                                        details: self.basic_room_details_for(&room_id),
+                                        details: self.basic_room_details_for(room_id),
                                         space_request_sender,
                                     },
                                     show_tip: false,
@@ -958,7 +960,7 @@ impl Widget for SpaceLobbyScreen {
                         } else {
                             cx.action(JoinLeaveRoomModalAction::Open {
                                 kind: JoinLeaveModalKind::LeaveRoom(
-                                    self.basic_room_details_for(&room_id)
+                                    self.basic_room_details_for(room_id)
                                 ),
                                 show_tip: false,
                             });

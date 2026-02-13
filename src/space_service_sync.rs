@@ -160,7 +160,7 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                 SpaceRequest::UnsubscribeFromSpaceRoomList { space_id } => {
                     if let Some((sender, join_handle)) = space_room_list_tasks.remove(&space_id) {
                         let _ = sender.send(SpaceRoomListRequest::Shutdown);
-                        let _ = join_handle.abort();
+                        join_handle.abort();
                     }
                 }
                 SpaceRequest::LeaveSpace { space_name_id } => {
