@@ -376,7 +376,11 @@ impl MatchEvent for App {
 
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
-                let display_name = selected_room.room_name().to_string();
+                let display_name = match &selected_room {
+                    SelectedRoom::JoinedRoom { room_name_id } => room_name_id.to_string(),
+                    SelectedRoom::InvitedRoom { room_name_id } => room_name_id.to_string(),
+                    SelectedRoom::Space { space_name_id } => format!("[Space] {}", space_name_id),
+                };
                 self.app_state.selected_room = Some(selected_room);
                 // Set the Stack Navigation header to show the name of the newly-selected room.
                 self.ui
@@ -770,7 +774,10 @@ impl App {
                     room_to_close.cloned(),
                 ));
                 cx.action(JoinLeaveRoomModalAction::Open {
-                    kind: JoinLeaveModalKind::JoinRoom(destination_room.clone()), 
+                    kind: JoinLeaveModalKind::JoinRoom {
+                        details: destination_room.clone(),
+                        is_space: false,
+                    },
                     show_tip: false,
                 });
                 return;

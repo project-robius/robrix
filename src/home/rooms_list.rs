@@ -1125,6 +1125,27 @@ impl RoomsList {
                     None,
                 );
             }
+            SpaceRoomListAction::LeaveSpaceResult { space_name_id, result } => match result {
+                Ok(()) => {
+                    enqueue_popup_notification(
+                        format!("Successfully left space \"{}\".", space_name_id),
+                        PopupKind::Success,
+                        Some(4.0),
+                    );
+                    // If the space we left was the currently-selected one, go back to the main Home view.
+                    if self.selected_space.as_ref().is_some_and(|s| s.room_id() == space_name_id.room_id()) {
+                        cx.action(NavigationBarAction::GoToHome);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to leave space {space_name_id:?}: {e:?}");
+                    enqueue_popup_notification(
+                        format!("Failed to leave space \"{space_name_id}\".\n\nError: {e}"),
+                        PopupKind::Error,
+                        None,
+                    );
+                }
+            },
             // Details-related space actions are handled by SpaceLobbyScreen, not RoomsList.
             SpaceRoomListAction::DetailedChildren { .. }
             | SpaceRoomListAction::TopLevelSpaceDetails(_) => { }
