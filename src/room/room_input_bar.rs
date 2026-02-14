@@ -20,7 +20,7 @@ use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, UserPowerLevels}, utils};
 
 live_design! {
     use link::theme::*;
@@ -185,6 +185,50 @@ impl Widget for RoomInputBar {
             .props
             .get::<RoomScreenProps>()
             .expect("BUG: RoomScreenProps should be available in Scope::props for RoomInputBar");
+
+        match event.hits(cx, self.button(ids!(location_button)).area()) {
+            Hit::FingerHoverIn(hover) => {
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    TooltipAction::HoverIn {
+                        text: "Share location".to_string(),
+                        widget_rect: hover.rect,
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Top,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
+            }
+            _ => {}
+        }
+
+        match event.hits(cx, self.button(ids!(send_message_button)).area()) {
+            Hit::FingerHoverIn(hover) => {
+                let text_is_empty = self.mentionable_text_input(ids!(mentionable_text_input)).text().trim().is_empty();
+                let tooltip_text = if text_is_empty { "Type a message to send" } else { "Send message" };
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    TooltipAction::HoverIn {
+                        text: tooltip_text.to_string(),
+                        widget_rect: hover.rect,
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Top,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
+            }
+            _ => {}
+        }
 
         match event.hits(cx, self.view.view(ids!(replying_preview.reply_preview_content)).area()) {
             // If the hit occurred on the replying message preview, jump to it.
