@@ -662,8 +662,8 @@ impl AppMain for App {
             // Outgoing: app is being suspended or hidden.
             // Save state (deduplicated) and stop sync to save battery.
             Event::Pause | Event::Background => {
-                if !self.state_saved {
-                    self.save_lifecycle_state(cx);
+                if !self.state_saved && !self.save_lifecycle_state(cx) {
+                    error!("Lifecycle save incomplete; will retry on next outgoing event.");
                 }
                 // stop() is idempotent — safe if already stopped by a prior Pause.
                 if let Some(sync_service) = crate::sliding_sync::get_sync_service() {
@@ -679,8 +679,8 @@ impl AppMain for App {
             // Incoming: app is returning to the foreground.
             // Restore state (only if we previously saved) and restart sync.
             Event::Foreground | Event::Resume => {
-                if self.state_saved {
-                    self.restore_all_state(cx);
+                if self.state_saved && !self.restore_all_state(cx) {
+                    error!("Lifecycle restore incomplete; will retry on next incoming event.");
                 }
                 // start() is idempotent — no-op if already Running.
                 if let Some(sync_service) = crate::sliding_sync::get_sync_service() {
@@ -747,25 +747,35 @@ impl App {
     /// Saves window geometry and AppState to persistent storage.
     /// Does NOT save TSP state (see `save_all_state` for that).
     /// Best-effort: continues saving remaining parts even if one fails.
-    fn save_lifecycle_state(&mut self, cx: &mut Cx) {
+    /// Returns `true` only if all required saves succeed.
+    fn save_lifecycle_state(&mut self, cx: &mut Cx) -> bool {
+        let mut save_succeeded = true;
         let window_ref = self.ui.window(ids!(main_window));
         if let Err(e) = persistence::save_window_state(window_ref, cx) {
             error!("Failed to save window state. Error: {e}");
+            save_succeeded = false;
         }
         if let Some(user_id) = current_user_id() {
             let app_state = self.app_state.clone();
             if let Err(e) = persistence::save_app_state(app_state, user_id) {
                 error!("Failed to save app state. Error: {e}");
+                save_succeeded = false;
             }
         }
-        self.state_saved = true;
+
+        // Only mark pending restore when lifecycle save succeeded.
+        self.state_saved = save_succeeded;
+        save_succeeded
     }
 
     /// Saves ALL app state including TSP wallet state.
     /// TSP save is destructive (`close_and_serialize` consumes TspState),
     /// so this should only be called when the process is about to exit.
     fn save_all_state(&mut self, cx: &mut Cx) {
-        self.save_lifecycle_state(cx);
+        // Avoid redundant re-save if Pause/Background already persisted state.
+        if !self.state_saved && !self.save_lifecycle_state(cx) {
+            error!("Final lifecycle save incomplete during shutdown.");
+        }
         #[cfg(feature = "tsp")] {
             let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
             let res = crate::sliding_sync::block_on_async_with_timeout(
@@ -790,10 +800,13 @@ impl App {
     /// TSP state is NOT restored — it's initialized once at startup via `tsp_init()`
     /// and cannot be re-initialized (one-time CryptoProvider + channel setup).
     /// Best-effort: continues restoring remaining parts even if one fails.
-    fn restore_all_state(&mut self, cx: &mut Cx) {
+    /// Returns `true` only if all required restores succeed.
+    fn restore_all_state(&mut self, cx: &mut Cx) -> bool {
+        let mut restore_succeeded = true;
         let window_ref = self.ui.window(ids!(main_window));
         if let Err(e) = persistence::load_window_state(window_ref, cx) {
             error!("Failed to restore window state. Error: {e}");
+            restore_succeeded = false;
         }
         if let Some(user_id) = current_user_id() {
             match crate::sliding_sync::block_on_async_with_timeout(
@@ -807,14 +820,25 @@ impl App {
                     self.app_state.logged_in = logged_in;
                     cx.action(MainDesktopUiAction::LoadDockFromAppState);
                 }
-                Ok(Err(e)) => error!("Failed to restore app state. Error: {e}"),
-                Err(_) => error!("Timed out while restoring app state."),
+                Ok(Err(e)) => {
+                    error!("Failed to restore app state. Error: {e}");
+                    restore_succeeded = false;
+                }
+                Err(_) => {
+                    error!("Timed out while restoring app state.");
+                    restore_succeeded = false;
+                }
             }
         }
 
-        // Clear the pending-save flag after each restore attempt so
-        // future outgoing lifecycle events can persist fresh state.
-        self.state_saved = false;
+        // Only clear pending-save flag after a successful restore.
+        // If restore failed, keep `state_saved = true` so next lifecycle
+        // incoming event (e.g., Resume after Foreground) can retry restore.
+        if restore_succeeded {
+            self.state_saved = false;
+        }
+
+        restore_succeeded
     }
 
     fn update_login_visibility(&self, cx: &mut Cx) {
