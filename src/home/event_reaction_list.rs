@@ -183,7 +183,10 @@ impl Widget for ReactionList {
                         let (bg_color, border_color) = if !reaction_data.includes_user {
                             (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
                         } else {
-                            (EMOJI_BG_COLOR_NOT_INCLUDE_SELF, EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF)
+                            (
+                                EMOJI_BG_COLOR_NOT_INCLUDE_SELF,
+                                EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF,
+                            )
                         };
                         button_ref.apply_over(cx, live! {
                             draw_bg: { reaction_bg_color: (bg_color) , reaction_border_color: (border_color) }
@@ -224,18 +227,16 @@ impl ReactionList {
     }
 
     /// Deals with to any event/hit that triggers a hover-out action.
-    fn do_hover_out(
-        &self,
-        cx: &mut Cx,
-        scope: &mut Scope,
-        button_ref: &ButtonRef,
-    ) {
-        cx.widget_action(self.widget_uid(), &scope.path, RoomScreenTooltipActions::HoverOut);
+    fn do_hover_out(&self, cx: &mut Cx, scope: &mut Scope, button_ref: &ButtonRef) {
+        cx.widget_action(
+            self.widget_uid(),
+            &scope.path,
+            RoomScreenTooltipActions::HoverOut,
+        );
         button_ref.apply_over(cx, live!(draw_bg: {hover: 0.0}));
         cx.set_cursor(MouseCursor::Default);
     }
 }
-
 
 impl ReactionListRef {
     /// Set the list of reactions and their counts to display in the ReactionList widget,
@@ -279,7 +280,13 @@ impl ReactionListRef {
                     includes_user = true;
                 }
                 // Prefill each reactor's user profile into the cache so the tooltip will show their display name.
-                let _ = user_profile_cache::with_user_profile(cx, sender.clone(), Some(&room_id), true, |_, _| { });
+                let _ = user_profile_cache::with_user_profile(
+                    cx,
+                    sender.clone(),
+                    Some(&room_id),
+                    true,
+                    |_, _| {},
+                );
             }
 
             let reaction_data = ReactionData {
@@ -291,11 +298,7 @@ impl ReactionListRef {
             let button = WidgetRef::new_from_ptr(cx, inner.item).as_button();
             button.set_text(
                 cx,
-                &format!(
-                    "{}  {}",
-                    reaction_data.reaction,
-                    reaction_senders.len()
-                ),
+                &format!("{}  {}", reaction_data.reaction, reaction_senders.len()),
             );
             let (bg_color, border_color) = if reaction_data.includes_user {
                 (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)

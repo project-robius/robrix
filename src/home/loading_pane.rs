@@ -3,7 +3,6 @@ use matrix_sdk::ruma::OwnedEventId;
 
 use crate::sliding_sync::TimelineRequestSender;
 
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -105,8 +104,6 @@ live_design! {
     }
 }
 
-
-
 /// The state of a LoadingPane: the possible tasks that it may be performing.
 #[derive(Clone, DefaultNone)]
 pub enum LoadingPaneState {
@@ -126,16 +123,25 @@ pub enum LoadingPaneState {
     None,
 }
 
-
 #[derive(Live, LiveHook, Widget)]
 pub struct LoadingPane {
-    #[deref] view: View,
-    #[rust] state: LoadingPaneState,
+    #[deref]
+    view: View,
+    #[rust]
+    state: LoadingPaneState,
 }
 impl Drop for LoadingPane {
     fn drop(&mut self) {
-        if let LoadingPaneState::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = &self.state {
-            warning!("Dropping LoadingPane with target_event_id: {}", target_event_id);
+        if let LoadingPaneState::BackwardsPaginateUntilEvent {
+            target_event_id,
+            request_sender,
+            ..
+        } = &self.state
+        {
+            warning!(
+                "Dropping LoadingPane with target_event_id: {}",
+                target_event_id
+            );
             request_sender.send_if_modified(|requests| {
                 let initial_len = requests.len();
                 requests.retain(|r| &r.target_event_id != target_event_id);
@@ -146,7 +152,6 @@ impl Drop for LoadingPane {
         }
     }
 }
-
 
 impl Widget for LoadingPane {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -160,7 +165,9 @@ impl Widget for LoadingPane {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if !self.visible { return; }
+        if !self.visible {
+            return;
+        }
         self.view.handle_event(cx, event, scope);
 
         let area = self.view.area();
@@ -175,23 +182,31 @@ impl Widget for LoadingPane {
             matches!(
                 event,
                 Event::Actions(actions) if self.button(ids!(cancel_button)).clicked(actions)
-            )
-            || event.back_pressed()
-            || match event.hits_with_capture_overload(cx, area, true) {
-                Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
-                Hit::FingerDown(_fde) => {
-                    cx.set_key_focus(area);
-                    false
+            ) || event.back_pressed()
+                || match event.hits_with_capture_overload(cx, area, true) {
+                    Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
+                    Hit::FingerDown(_fde) => {
+                        cx.set_key_focus(area);
+                        false
+                    }
+                    Hit::FingerUp(fue) if fue.is_over => {
+                        fue.mouse_button().is_some_and(|b| b.is_back())
+                            || !self
+                                .view(ids!(main_content))
+                                .area()
+                                .rect(cx)
+                                .contains(fue.abs)
+                    }
+                    _ => false,
                 }
-                Hit::FingerUp(fue) if fue.is_over => {
-                    fue.mouse_button().is_some_and(|b| b.is_back())
-                    || !self.view(ids!(main_content)).area().rect(cx).contains(fue.abs)
-                }
-                _ => false,
-            }
         };
         if close_pane {
-            if let LoadingPaneState::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = &self.state {
+            if let LoadingPaneState::BackwardsPaginateUntilEvent {
+                target_event_id,
+                request_sender,
+                ..
+            } = &self.state
+            {
                 let _did_send = request_sender.send_if_modified(|requests| {
                     let initial_len = requests.len();
                     requests.retain(|r| &r.target_event_id != target_event_id);
@@ -199,7 +214,8 @@ impl Widget for LoadingPane {
                     // such that they can stop looking for the target event.
                     requests.len() != initial_len
                 });
-                log!("LoadingPane: {} cancel request for target_event_id: {target_event_id}",
+                log!(
+                    "LoadingPane: {} cancel request for target_event_id: {target_event_id}",
                     if _did_send { "Sent" } else { "Did not send" },
                 );
             }
@@ -209,7 +225,6 @@ impl Widget for LoadingPane {
         }
     }
 }
-
 
 impl LoadingPane {
     /// Returns `true` if this pane is currently being shown.
@@ -232,10 +247,13 @@ impl LoadingPane {
                 ..
             } => {
                 self.set_title(cx, "Searching older messages...");
-                self.set_status(cx, &format!(
-                    "Looking for event {target_event_id}\n\n\
+                self.set_status(
+                    cx,
+                    &format!(
+                        "Looking for event {target_event_id}\n\n\
                     Fetched {events_paginated} messages so far...",
-                ));
+                    ),
+                );
                 cancel_button.set_text(cx, "Cancel");
             }
             LoadingPaneState::Error(error_message) => {
@@ -243,7 +261,7 @@ impl LoadingPane {
                 self.set_status(cx, error_message);
                 cancel_button.set_text(cx, "Okay");
             }
-            LoadingPaneState::None => { }
+            LoadingPaneState::None => {}
         }
 
         self.state = state;
@@ -262,13 +280,17 @@ impl LoadingPane {
 impl LoadingPaneRef {
     /// See [`LoadingPane::is_currently_shown()`]
     pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
-        let Some(inner) = self.borrow() else { return false };
+        let Some(inner) = self.borrow() else {
+            return false;
+        };
         inner.is_currently_shown(cx)
     }
 
     /// See [`LoadingPane::show()`]
     pub fn show(&self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.show(cx);
     }
 
@@ -279,17 +301,23 @@ impl LoadingPaneRef {
     }
 
     pub fn set_state(&self, cx: &mut Cx, state: LoadingPaneState) {
-        let Some(mut inner) = self.borrow_mut() else { return }; 
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.set_state(cx, state);
     }
 
     pub fn set_status(&self, cx: &mut Cx, status: &str) {
-        let Some(mut inner) = self.borrow_mut() else { return }; 
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.set_status(cx, status);
     }
 
     pub fn set_title(&self, cx: &mut Cx, title: &str) {
-        let Some(mut inner) = self.borrow_mut() else { return }; 
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.set_title(cx, title);
     }
 }

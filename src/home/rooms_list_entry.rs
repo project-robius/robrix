@@ -2,10 +2,12 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    room::FetchedRoomAvatar, shared::{
-        avatar::AvatarWidgetExt,
-        html_or_plaintext::HtmlOrPlaintextWidgetExt, unread_badge::UnreadBadgeWidgetExt as _,
-    }, utils::{self, relative_format}
+    room::FetchedRoomAvatar,
+    shared::{
+        avatar::AvatarWidgetExt, html_or_plaintext::HtmlOrPlaintextWidgetExt,
+        unread_badge::UnreadBadgeWidgetExt as _,
+    },
+    utils::{self, relative_format},
 };
 
 use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListScopeProps};
@@ -211,8 +213,10 @@ live_design! {
 /// An entry in the rooms list.
 #[derive(Live, Widget)]
 pub struct RoomsListEntry {
-    #[deref] view: View,
-    #[rust] room_id: Option<OwnedRoomId>,
+    #[deref]
+    view: View,
+    #[rust]
+    room_id: Option<OwnedRoomId>,
 }
 
 /// Widget actions that are emitted by a RoomsListEntry.
@@ -231,7 +235,7 @@ impl LiveHook for RoomsListEntry {
         self.view
             .adaptive_view(ids!(adaptive_preview))
             .set_variant_selector(|_cx, parent_size| match parent_size.x {
-                width if width <= 70.0  => id!(OnlyIcon),
+                width if width <= 70.0 => id!(OnlyIcon),
                 width if width <= 200.0 => id!(IconAndName),
                 _ => id!(FullPreview),
             });
@@ -266,10 +270,19 @@ impl Widget for RoomsListEntry {
                         RoomsListEntryAction::SecondaryClicked(room_id.clone(), fe.abs),
                     );
                 }
-                Hit::FingerUp(fe) if !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                    cx.widget_action(uid, &scope.path, RoomsListEntryAction::PrimaryClicked(room_id.clone()));
+                Hit::FingerUp(fe)
+                    if !rooms_list_props.was_scrolling
+                        && fe.is_over
+                        && fe.is_primary_hit()
+                        && fe.was_tap() =>
+                {
+                    cx.widget_action(
+                        uid,
+                        &scope.path,
+                        RoomsListEntryAction::PrimaryClicked(room_id.clone()),
+                    );
                 }
-                _ => { }
+                _ => {}
             }
         }
 
@@ -279,8 +292,7 @@ impl Widget for RoomsListEntry {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if let Some(room_info) = scope.props.get::<JoinedRoomInfo>() {
             self.room_id = Some(room_info.room_name_id.room_id().clone());
-        }
-        else if let Some(room_info) = scope.props.get::<InvitedRoomInfo>() {
+        } else if let Some(room_info) = scope.props.get::<InvitedRoomInfo>() {
             self.room_id = Some(room_info.room_name_id.room_id().clone());
         }
 
@@ -290,7 +302,8 @@ impl Widget for RoomsListEntry {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomsListEntryContent {
-    #[deref] view: View,
+    #[deref]
+    view: View,
 }
 
 impl Widget for RoomsListEntryContent {
@@ -311,12 +324,10 @@ impl Widget for RoomsListEntryContent {
 
 impl RoomsListEntryContent {
     /// Populates this RoomsListEntry with info about a joined room.
-    pub fn draw_joined_room(
-        &mut self,
-        cx: &mut Cx,
-        room_info: &JoinedRoomInfo,
-    ) {
-        self.view.label(ids!(room_name)).set_text(cx, &room_info.room_name_id.to_string());
+    pub fn draw_joined_room(&mut self, cx: &mut Cx, room_info: &JoinedRoomInfo) {
+        self.view
+            .label(ids!(room_name))
+            .set_text(cx, &room_info.room_name_id.to_string());
         if let Some((ts, msg)) = room_info.latest.as_ref() {
             if let Some(human_readable_date) = relative_format(*ts) {
                 self.view
@@ -335,28 +346,36 @@ impl RoomsListEntryContent {
         );
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
         // Show tombstone icon if the room is tombstoned
-        self.view.view(ids!(tombstone_icon)).set_visible(cx, room_info.is_tombstoned);
+        self.view
+            .view(ids!(tombstone_icon))
+            .set_visible(cx, room_info.is_tombstoned);
     }
 
     /// Populates this RoomsListEntry with info about an invited room.
-    pub fn draw_invited_room(
-        &mut self,
-        cx: &mut Cx,
-        room_info: &InvitedRoomInfo,
-    ) {
-        self.view.label(ids!(room_name)).set_text(cx, &room_info.room_name_id.to_string());
+    pub fn draw_invited_room(&mut self, cx: &mut Cx, room_info: &InvitedRoomInfo) {
+        self.view
+            .label(ids!(room_name))
+            .set_text(cx, &room_info.room_name_id.to_string());
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(ids!(timestamp)).set_text(cx, "");
         let inviter_string = match &room_info.inviter_info {
-            Some(InviterInfo { user_id, display_name: Some(dn), .. }) => format!("Invited by <b>{dn}</b> ({user_id})"),
+            Some(InviterInfo {
+                user_id,
+                display_name: Some(dn),
+                ..
+            }) => format!("Invited by <b>{dn}</b> ({user_id})"),
             Some(InviterInfo { user_id, .. }) => format!("Invited by {user_id}"),
             None => String::from("You were invited"),
         };
-        self.view.html_or_plaintext(ids!(latest_message)).show_html(cx, &inviter_string);
+        self.view
+            .html_or_plaintext(ids!(latest_message))
+            .show_html(cx, &inviter_string);
 
         match room_info.room_avatar {
             FetchedRoomAvatar::Text(ref text) => {
-                self.view.avatar(ids!(avatar)).show_text(cx, None, None, text);
+                self.view
+                    .avatar(ids!(avatar))
+                    .show_text(cx, None, None, text);
             }
             FetchedRoomAvatar::Image(ref img_bytes) => {
                 let _ = self.view.avatar(ids!(avatar)).show_image(
@@ -375,15 +394,12 @@ impl RoomsListEntryContent {
     }
 
     /// Populates the widgets common to both invited and joined rooms list entries.
-    pub fn draw_common(
-        &mut self,
-        cx: &mut Cx,
-        room_avatar: &FetchedRoomAvatar,
-        is_selected: bool,
-    ) {
+    pub fn draw_common(&mut self, cx: &mut Cx, room_avatar: &FetchedRoomAvatar, is_selected: bool) {
         match room_avatar {
             FetchedRoomAvatar::Text(text) => {
-                self.view.avatar(ids!(avatar)).show_text(cx, None, None, text);
+                self.view
+                    .avatar(ids!(avatar))
+                    .show_text(cx, None, None, text);
             }
             FetchedRoomAvatar::Image(img_bytes) => {
                 let _ = self.view.avatar(ids!(avatar)).show_image(
@@ -460,31 +476,33 @@ impl RoomsListEntryContent {
         }
 
         if !self.view.html_or_plaintext(ids!(latest_message)).is_empty() {
-            self.view.html_or_plaintext(ids!(latest_message)).apply_over(
-                cx,
-                live!(
-                html_view = {
-                    html = {
-                        font_color: (message_text_color),
-                        draw_normal:      { color: (message_text_color) },
-                        draw_italic:      { color: (message_text_color) },
-                        draw_bold:        { color: (message_text_color) },
-                        draw_bold_italic: { color: (message_text_color) },
-                        draw_block: {
-                            quote_bg_color: (code_bg_color),
-                            code_color: (code_bg_color),
+            self.view
+                .html_or_plaintext(ids!(latest_message))
+                .apply_over(
+                    cx,
+                    live!(
+                    html_view = {
+                        html = {
+                            font_color: (message_text_color),
+                            draw_normal:      { color: (message_text_color) },
+                            draw_italic:      { color: (message_text_color) },
+                            draw_bold:        { color: (message_text_color) },
+                            draw_bold_italic: { color: (message_text_color) },
+                            draw_block: {
+                                quote_bg_color: (code_bg_color),
+                                code_color: (code_bg_color),
+                            }
                         }
                     }
-                }
-                plaintext_view = {
-                    pt_label = {
-                        draw_text: {
-                            color: (message_text_color)
+                    plaintext_view = {
+                        pt_label = {
+                            draw_text: {
+                                color: (message_text_color)
+                            }
                         }
                     }
-                }
-                ),
-            );
+                    ),
+                );
         }
     }
 }

@@ -6,15 +6,11 @@ use makepad_widgets::{log, Cx};
 use matrix_sdk::{
     authentication::matrix::MatrixSession,
     ruma::{OwnedUserId, UserId},
-    sliding_sync,
-    Client,
+    sliding_sync, Client,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    app_data_dir,
-    login::login_screen::LoginAction,
-};
+use crate::{app_data_dir, login::login_screen::LoginAction};
 
 /// The data needed to re-build a client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,11 +43,11 @@ pub struct FullSessionPersisted {
     pub sync_token: Option<String>,
 
     /// The sliding sync version to use for this client session.
-    /// 
+    ///
     /// This determines the sync protocol used by the Matrix client:
     /// - `Native`: Uses the server's native sliding sync implementation for efficient syncing
     /// - `None`: Falls back to standard Matrix sync (without sliding sync optimizations)
-    /// 
+    ///
     /// The value is restored and applied to the client via `client.set_sliding_sync_version()`
     /// when rebuilding the session from persistent storage.
     #[serde(default)]
@@ -83,9 +79,7 @@ impl From<sliding_sync::Version> for SlidingSyncVersion {
 }
 
 fn user_id_to_file_name(user_id: &UserId) -> String {
-    user_id.as_str()
-        .replace(":", "_")
-        .replace("@", "")
+    user_id.as_str().replace(":", "_").replace("@", "")
 }
 
 /// Returns the path to the persistent state directory for the given user.
@@ -104,14 +98,12 @@ const LATEST_USER_ID_FILE_NAME: &str = "latest_user_id.txt";
 
 /// Returns the user ID of the most recently-logged in user session.
 pub async fn most_recent_user_id() -> Option<OwnedUserId> {
-    tokio::fs::read_to_string(
-        app_data_dir().join(LATEST_USER_ID_FILE_NAME)
-    )
-    .await
-    .ok()?
-    .trim()
-    .try_into()
-    .ok()
+    tokio::fs::read_to_string(app_data_dir().join(LATEST_USER_ID_FILE_NAME))
+        .await
+        .ok()?
+        .trim()
+        .try_into()
+        .ok()
 }
 
 /// Save which user was the most recently logged in.
@@ -119,17 +111,17 @@ async fn save_latest_user_id(user_id: &UserId) -> anyhow::Result<()> {
     tokio::fs::write(
         app_data_dir().join(LATEST_USER_ID_FILE_NAME),
         user_id.as_str(),
-    ).await?;
+    )
+    .await?;
     Ok(())
 }
-
 
 /// Restores the given user's previous session from the filesystem.
 ///
 /// If no User ID is specified, the ID of the most recently-logged in user
 /// is retrieved from the filesystem.
 pub async fn restore_session(
-    user_id: Option<OwnedUserId>
+    user_id: Option<OwnedUserId>,
 ) -> anyhow::Result<(Client, Option<String>)> {
     let user_id = if let Some(user_id) = user_id {
         Some(user_id)
@@ -155,8 +147,12 @@ pub async fn restore_session(
 
     // The session was serialized as JSON in a file.
     let serialized_session = tokio::fs::read_to_string(session_file).await?;
-    let FullSessionPersisted { client_session, user_session, sync_token, sliding_sync_version } =
-        serde_json::from_str(&serialized_session)?;
+    let FullSessionPersisted {
+        client_session,
+        user_session,
+        sync_token,
+        sliding_sync_version,
+    } = serde_json::from_str(&serialized_session)?;
 
     let status_str = format!(
         "Loaded session file for {user_id}. Trying to connect to homeserver ({})...",
@@ -176,7 +172,10 @@ pub async fn restore_session(
         .await?;
     let sliding_sync_version = sliding_sync_version.into();
     client.set_sliding_sync_version(sliding_sync_version);
-    let status_str = format!("Authenticating previous login session for {}...", user_session.meta.user_id);
+    let status_str = format!(
+        "Authenticating previous login session for {}...",
+        user_session.meta.user_id
+    );
     log!("{status_str}");
     Cx::post_action(LoginAction::Status {
         title: "Authenticating session".into(),
@@ -213,7 +212,7 @@ pub async fn save_session(
         client_session,
         user_session,
         sync_token: None,
-        sliding_sync_version
+        sliding_sync_version,
     })?;
     if let Some(parent) = session_file.parent() {
         tokio::fs::create_dir_all(parent).await?;
@@ -225,16 +224,17 @@ pub async fn save_session(
 }
 
 /// Remove the LATEST_USER_ID_FILE_NAME file if it exists
-/// 
+///
 /// Returns:
 /// - Ok(true) if file was found and deleted
 /// - Ok(false) if file didn't exist
 /// - Err if deletion failed
 pub async fn delete_latest_user_id() -> anyhow::Result<bool> {
     let last_login_path = app_data_dir().join(LATEST_USER_ID_FILE_NAME);
-    
+
     if last_login_path.exists() {
-        tokio::fs::remove_file(&last_login_path).await
+        tokio::fs::remove_file(&last_login_path)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to remove latest user file: {e}"))
             .map(|_| true)
     } else {

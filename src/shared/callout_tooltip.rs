@@ -33,7 +33,7 @@ live_design! {
                     instance target_pos: vec2(0.0, 0.0),
                     // Size of the moused over widget
                     instance target_size: vec2(0.0, 0.0),
-                    // Expected Width of the the tooltip 
+                    // Expected Width of the the tooltip
                     instance expected_dimension_x: 0.0,
                     // Determine height of the triangle in the callout pointer
                     instance triangle_height: 7.5,
@@ -57,7 +57,7 @@ live_design! {
                             max(1.0, self.border_radius)
                         )
                         sdf.fill(self.background_color);
-               
+
                         let mut vertex1 = vec2(0.0, 0.0);
                         let mut vertex2 = vec2(0.0, 0.0);
                         let mut vertex3 = vec2(0.0, 0.0);
@@ -72,7 +72,7 @@ live_design! {
                             vertex2 = vec2(vertex1.x + triangle_height, vertex1.y - triangle_height);
                             vertex3 = vec2(vertex1.x + triangle_height * 2.0, vertex1.y);
                         } else if self.callout_position == 90.0 {
-                            // Point rightwards  
+                            // Point rightwards
                             // Triangle points to the right from the left edge of the tooltip
                             vertex1 = vec2(rect_size.x - 2.0, rect_size.y * 0.5);
                             vertex2 = vec2(vertex1.x - triangle_height, vertex1.y + triangle_height);
@@ -156,21 +156,24 @@ pub enum TooltipPosition {
     /// The tooltip will be drawn to the left of the target widget.
     Left,
     /// (Default) The tooltip will be drawn to the right of the target widget.
-    #[default] Right,
+    #[default]
+    Right,
 }
 
 /// A tooltip widget that a callout pointing towards the referenced widget.
 #[derive(Live, LiveHook, Widget)]
 pub struct CalloutTooltip {
-    #[deref] view: View,
+    #[deref]
+    view: View,
 
     // The below items are a hack to re-populate this tooltip automatically
     // after a certain time interval, because its repositioning code is
     // currently broken and needs to be rewritten entirely.
-    #[rust] timer_redraw: Timer,
-    #[rust] latest_options: Option<(String, Rect, CalloutTooltipOptions)>,
+    #[rust]
+    timer_redraw: Timer,
+    #[rust]
+    latest_options: Option<(String, Rect, CalloutTooltipOptions)>,
 }
-
 
 #[derive(Debug)]
 struct PositionCalculation {
@@ -243,7 +246,8 @@ impl CalloutTooltip {
             }
             TooltipPosition::Right => {
                 tooltip_pos.x = widget_rect.pos.x + widget_rect.size.x;
-                tooltip_pos.y = widget_rect.pos.y + 0.5 * widget_rect.size.y - expected_dimension.y * 0.5;
+                tooltip_pos.y =
+                    widget_rect.pos.y + 0.5 * widget_rect.size.y - expected_dimension.y * 0.5;
                 width_to_be_fixed = max(
                     screen_size.x - (pos.x + widget_rect.size.x + triangle_height * 2.0),
                     expected_dimension.x,
@@ -251,7 +255,7 @@ impl CalloutTooltip {
                 callout_position = 270.0;
             }
         }
-        
+
         Self::apply_edge_case_fix(
             &options.position,
             &mut tooltip_pos,
@@ -275,7 +279,7 @@ impl CalloutTooltip {
     fn needs_width_fix(tooltip_x: f64, screen_width: f64, expected_width: f64) -> bool {
         tooltip_x == screen_width - expected_width && tooltip_x < 0.0
     }
-    
+
     /// Apply edge case handling for position and width fixing
     fn apply_edge_case_fix(
         position: &TooltipPosition,
@@ -324,8 +328,11 @@ impl CalloutTooltip {
         text_color: Vec4,
         bg_color: Vec4,
     ) {
-        let tooltip_pos = vec2(position_calc.tooltip_pos.x as f32, position_calc.tooltip_pos.y as f32);
-        
+        let tooltip_pos = vec2(
+            position_calc.tooltip_pos.x as f32,
+            position_calc.tooltip_pos.y as f32,
+        );
+
         if position_calc.fixed_width {
             tooltip.apply_over(
                 cx,
@@ -351,27 +358,30 @@ impl CalloutTooltip {
                 }),
             );
         } else {
-            tooltip.apply_over(cx, live!(
-                content: {
-                    margin: { left: (tooltip_pos.x), top: (tooltip_pos.y) },
-                    rounded_view = {
-                        height: Fit,
-                        draw_bg: {
-                            triangle_height: (triangle_height),
-                            background_color: (bg_color),
-                            tooltip_pos: (tooltip_pos),
-                            target_pos: (target),
-                            target_size: (target_size),
-                            expected_dimension_x: (expected_dimension.x),
-                            callout_position: (position_calc.callout_position)
-                        }
-                        tooltip_label = {
-                            width: Fit,
-                            draw_text: { color: (text_color) }
+            tooltip.apply_over(
+                cx,
+                live!(
+                    content: {
+                        margin: { left: (tooltip_pos.x), top: (tooltip_pos.y) },
+                        rounded_view = {
+                            height: Fit,
+                            draw_bg: {
+                                triangle_height: (triangle_height),
+                                background_color: (bg_color),
+                                tooltip_pos: (tooltip_pos),
+                                target_pos: (target),
+                                target_size: (target_size),
+                                expected_dimension_x: (expected_dimension.x),
+                                callout_position: (position_calc.callout_position)
+                            }
+                            tooltip_label = {
+                                width: Fit,
+                                draw_text: { color: (text_color) }
+                            }
                         }
                     }
-                }
-            ));
+                ),
+            );
         }
     }
 
@@ -392,11 +402,7 @@ impl CalloutTooltip {
         is_internal_redraw: bool,
     ) {
         if !is_internal_redraw {
-            self.latest_options = Some((
-                text.to_owned(),
-                widget_rect,
-                options.clone(),
-            ));
+            self.latest_options = Some((text.to_owned(), widget_rect, options.clone()));
         }
 
         let mut tooltip = self.view.tooltip(ids!(tooltip));
@@ -412,14 +418,8 @@ impl CalloutTooltip {
             options.triangle_height,
         );
 
-        let target = vec2(
-            widget_rect.pos.x as f32,
-            widget_rect.pos.y as f32,
-        );
-        let target_size = vec2(
-            widget_rect.size.x as f32,
-            widget_rect.size.y as f32,
-        );
+        let target = vec2(widget_rect.pos.x as f32, widget_rect.pos.y as f32);
+        let target_size = vec2(widget_rect.size.x as f32, widget_rect.size.y as f32);
 
         let mut text_color = options.text_color;
         if expected_dimension.x == 0.0 {

@@ -72,7 +72,7 @@ live_design! {
                     min_handle_size: 0.0
                 }
             }
-        
+
             <RoundedView> {
                 margin: {top: 40, bottom: 40}
                 width: Fill // TODO: once Makepad supports it, use `Fill {max: 375}`
@@ -168,7 +168,7 @@ live_design! {
                             }
                         }
                     }
-                    
+
 
                     login_button = <RobrixIconButton> {
                         width: 275,
@@ -263,7 +263,7 @@ live_design! {
                             draw_bg: { color: #C8C8C8 }
                         }
                     }
-                    
+
                     signup_button = <RobrixIconButton> {
                         width: Fit, height: Fit
                         padding: {left: 15, right: 15, top: 10, bottom: 10}
@@ -296,17 +296,20 @@ live_design! {
     }
 }
 
-static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-for-im/#creating-a-matrix-account";
+static MATRIX_SIGN_UP_URL: &str =
+    "https://matrix.org/docs/chat_basics/matrix-for-im/#creating-a-matrix-account";
 
 #[derive(Live, LiveHook, Widget)]
 pub struct LoginScreen {
-    #[deref] view: View,
+    #[deref]
+    view: View,
     /// Boolean to indicate if the SSO login process is still in flight
-    #[rust] sso_pending: bool,
+    #[rust]
+    sso_pending: bool,
     /// The URL to redirect to after logging in with SSO.
-    #[rust] sso_redirect_url: Option<String>,
+    #[rust]
+    sso_redirect_url: Option<String>,
 }
-
 
 impl Widget for LoginScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -355,23 +358,25 @@ impl MatchEvent for LoginScreen {
                 login_status_modal_inner.set_title(cx, "Logging in...");
                 login_status_modal_inner.set_status(cx, "Waiting for a login response...");
                 login_status_modal_inner.button_ref().set_text(cx, "Cancel");
-                submit_async_request(MatrixRequest::Login(LoginRequest::LoginByPassword(LoginByPassword {
-                    user_id,
-                    password,
-                    homeserver: homeserver.is_empty().not().then_some(homeserver),
-                })));
+                submit_async_request(MatrixRequest::Login(LoginRequest::LoginByPassword(
+                    LoginByPassword {
+                        user_id,
+                        password,
+                        homeserver: homeserver.is_empty().not().then_some(homeserver),
+                    },
+                )));
             }
             login_status_modal.open(cx);
             self.redraw(cx);
         }
-        
+
         let provider_brands = ["apple", "facebook", "github", "gitlab", "google", "twitter"];
         let button_set: &[&[LiveId]] = ids_array!(
-            apple_button, 
-            facebook_button, 
-            github_button, 
-            gitlab_button, 
-            google_button, 
+            apple_button,
+            facebook_button,
+            github_button,
+            gitlab_button,
+            google_button,
             twitter_button
         );
         for action in actions {
@@ -381,15 +386,16 @@ impl MatchEvent for LoginScreen {
 
             // Handle login-related actions received from background async tasks.
             match action.downcast_ref() {
-                Some(LoginAction::CliAutoLogin { user_id, homeserver }) => {
+                Some(LoginAction::CliAutoLogin {
+                    user_id,
+                    homeserver,
+                }) => {
                     user_id_input.set_text(cx, user_id);
                     password_input.set_text(cx, "");
                     homeserver_input.set_text(cx, homeserver.as_deref().unwrap_or_default());
                     login_status_modal_inner.set_title(cx, "Logging in via CLI...");
-                    login_status_modal_inner.set_status(
-                        cx,
-                        &format!("Auto-logging in as user {user_id}...")
-                    );
+                    login_status_modal_inner
+                        .set_status(cx, &format!("Auto-logging in as user {user_id}..."));
                     let login_status_modal_button = login_status_modal_inner.button_ref();
                     login_status_modal_button.set_text(cx, "Cancel");
                     login_status_modal_button.set_enabled(cx, false); // Login cancel not yet supported
@@ -424,17 +430,25 @@ impl MatchEvent for LoginScreen {
                 }
                 Some(LoginAction::SsoPending(pending)) => {
                     for view_ref in self.view_set(button_set).iter() {
-                        let Some(mut view_mut) = view_ref.borrow_mut() else { continue };
+                        let Some(mut view_mut) = view_ref.borrow_mut() else {
+                            continue;
+                        };
                         if *pending {
-                            view_mut.apply_over(cx, live! {
-                                cursor: NotAllowed,
-                                image = { draw_bg: { mask: 1.0 } }
-                            });
+                            view_mut.apply_over(
+                                cx,
+                                live! {
+                                    cursor: NotAllowed,
+                                    image = { draw_bg: { mask: 1.0 } }
+                                },
+                            );
                         } else {
-                            view_mut.apply_over(cx, live! {
-                                cursor: Hand,
-                                image = { draw_bg: { mask: 0.0 } }
-                            });
+                            view_mut.apply_over(
+                                cx,
+                                live! {
+                                    cursor: Hand,
+                                    image = { draw_bg: { mask: 0.0 } }
+                                },
+                            );
                         }
                     }
                     self.sso_pending = *pending;
@@ -443,7 +457,7 @@ impl MatchEvent for LoginScreen {
                 Some(LoginAction::SsoSetRedirectUrl(url)) => {
                     self.sso_redirect_url = Some(url.to_string());
                 }
-                _ => { }
+                _ => {}
             }
         }
 
@@ -452,7 +466,10 @@ impl MatchEvent for LoginScreen {
             let login_status_modal_button = login_status_modal_inner.button_ref();
             if login_status_modal_button.clicked(actions) {
                 let request_id = id!(SSO_CANCEL_BUTTON);
-                let request = HttpRequest::new(format!("{}/?login_token=",sso_redirect_url), HttpMethod::GET);
+                let request = HttpRequest::new(
+                    format!("{}/?login_token=", sso_redirect_url),
+                    HttpMethod::GET,
+                );
                 cx.http_request(request_id, request);
                 self.sso_redirect_url = None;
             }
@@ -461,15 +478,14 @@ impl MatchEvent for LoginScreen {
         // Handle any of the SSO login buttons being clicked
         for (view_ref, brand) in self.view_set(button_set).iter().zip(&provider_brands) {
             if view_ref.finger_up(actions).is_some() && !self.sso_pending {
-                submit_async_request(MatrixRequest::SpawnSSOServer{
-                    identity_provider_id: format!("oidc-{}",brand),
+                submit_async_request(MatrixRequest::SpawnSSOServer {
+                    identity_provider_id: format!("oidc-{}", brand),
                     brand: brand.to_string(),
-                    homeserver_url: homeserver_input.text()
+                    homeserver_url: homeserver_input.text(),
                 });
             }
         }
     }
-
 }
 
 /// Actions sent to or from the login screen.
@@ -494,9 +510,9 @@ pub enum LoginAction {
     /// informing it that the SSO login process is either still in flight (`true`) or has finished (`false`).
     ///
     /// Note that an inner value of `false` does *not* imply that the login request has
-    /// successfully finished. 
+    /// successfully finished.
     /// The login screen can use this to prevent the user from submitting
-    /// additional SSO login requests while a previous request is in flight. 
+    /// additional SSO login requests while a previous request is in flight.
     SsoPending(bool),
     /// Set the SSO redirect URL in the LoginScreen.
     ///

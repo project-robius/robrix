@@ -1,6 +1,10 @@
 use makepad_widgets::*;
 
-use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, settings::settings_screen::SettingsScreenWidgetRefExt};
+use crate::{
+    app::AppState,
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab},
+    settings::settings_screen::SettingsScreenWidgetRefExt,
+};
 
 live_design! {
     use link::theme::*;
@@ -202,7 +206,7 @@ live_design! {
                             // We wrap it in the SpacesBarWrapper in order to animate it in or out,
                             // and wrap *that* in a CachedWidget in order to maintain its shown/hidden state
                             // across AdaptiveView transitions between Mobile view mode and Desktop view mode.
-                            // 
+                            //
                             // ... Then we wrap *that* in a ... <https://www.youtube.com/watch?v=evUWersr7pc>
                             <CachedWidget> {
                                 spaces_bar_wrapper = <SpacesBarWrapper> {}
@@ -222,12 +226,12 @@ live_design! {
                                 // a special view, the `StackViewHeader`.
                                 clip_x:false,
                                 clip_y:false,
-                                                    
+
                                 show_bg: true,
                                 draw_bg: {
                                     uniform color_dither: 1.0
-                                    uniform gradient_border_horizontal: 0.0; 
-                                    uniform gradient_fill_horizontal: 0.0; 
+                                    uniform gradient_border_horizontal: 0.0;
+                                    uniform gradient_fill_horizontal: 0.0;
 
                                     color: (COLOR_PRIMARY_DARKER)
                                     uniform color_2: vec4(-1.0, -1.0, -1.0, -1.0)
@@ -240,14 +244,14 @@ live_design! {
                                     uniform shadow_color: #0005
                                     uniform shadow_radius: 9.0,
                                     uniform shadow_offset: vec2(1.0, 0.0)
-                                                                    
+
                                     varying rect_size2: vec2,
                                     varying rect_size3: vec2,
-                                    varying rect_pos2: vec2,     
-                                    varying rect_shift: vec2,    
+                                    varying rect_pos2: vec2,
+                                    varying rect_shift: vec2,
                                     varying sdf_rect_pos: vec2,
                                     varying sdf_rect_size: vec2,
-                                                                    
+
                                     fn vertex(self) -> vec4 {
                                         let min_offset = min(self.shadow_offset,vec2(0));
                                         self.rect_size2 = self.rect_size + 2.0*vec2(self.shadow_radius);
@@ -256,11 +260,11 @@ live_design! {
                                         self.sdf_rect_size = self.rect_size2 - vec2(self.shadow_radius * 2.0 + self.border_size * 2.0)
                                         self.sdf_rect_pos = -min_offset + vec2(self.border_size + self.shadow_radius);
                                         self.rect_shift = -min_offset;
-                                                                                    
+
                                         return self.clip_and_transform_vertex(self.rect_pos2, self.rect_size3)
                                     }
-                                                                                
-                                    fn pixel(self) -> vec4 {                                                
+
+                                    fn pixel(self) -> vec4 {
                                         let sdf = Sdf2d::viewport(self.pos * self.rect_size3)
                                         let dither = Math::random_2d(self.pos.xy) * 0.04 * self.color_dither;
 
@@ -288,7 +292,7 @@ live_design! {
                                             self.sdf_rect_pos.x,
                                             self.sdf_rect_pos.y,
                                             self.sdf_rect_size.x,
-                                            self.sdf_rect_size.y, 
+                                            self.sdf_rect_size.y,
                                             max(1.0, self.border_radius)
                                         )
                                         if sdf.shape > -1.0{ // try to skip the expensive gauss shadow
@@ -297,7 +301,7 @@ live_design! {
                                             let v = GaussShadow::rounded_box_shadow(vec2(m) + o, self.rect_size2+o, self.pos * (self.rect_size3+vec2(m)), self.shadow_radius*0.5, self.border_radius*2.0);
                                             sdf.clear(self.shadow_color*v)
                                         }
-                                                                                            
+
                                         sdf.fill_keep(mix(self.color, color_2, gradient_fill_dir))
 
                                         if self.border_size > 0.0 {
@@ -352,12 +356,13 @@ live_design! {
     }
 }
 
-
 /// A simple wrapper around the SpacesBar that allows us to animate showing or hiding it.
 #[derive(Live, LiveHook, Widget)]
 pub struct SpacesBarWrapper {
-    #[deref] view: View,
-    #[animator] animator: Animator,
+    #[deref]
+    view: View,
+    #[animator]
+    animator: Animator,
 }
 
 impl Widget for SpacesBarWrapper {
@@ -382,7 +387,9 @@ impl Widget for SpacesBarWrapper {
 impl SpacesBarWrapperRef {
     /// Shows or hides the spaces bar by animating it in or out.
     fn show_or_hide(&self, cx: &mut Cx, show: bool) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         if show {
             inner.animator_play(cx, ids!(spaces_bar_animator.show));
         } else {
@@ -392,18 +399,20 @@ impl SpacesBarWrapperRef {
     }
 }
 
-
 #[derive(Live, LiveHook, Widget)]
 pub struct HomeScreen {
-    #[deref] view: View,
+    #[deref]
+    view: View,
 
     /// The previously-selected navigation tab, used to determine which tab
     /// and top-level view we return to after closing the settings screen.
     ///
     /// Note that the current selected tap is stored in `AppState` so that
     /// other widgets can easily access it.
-    #[rust] previous_selection: SelectedTab,
-    #[rust] is_spaces_bar_shown: bool,
+    #[rust]
+    previous_selection: SelectedTab,
+    #[rust]
+    is_spaces_bar_shown: bool,
 }
 
 impl Widget for HomeScreen {
@@ -416,7 +425,9 @@ impl Widget for HomeScreen {
                         if !matches!(app_state.selected_tab, SelectedTab::Home) {
                             self.previous_selection = app_state.selected_tab.clone();
                             app_state.selected_tab = SelectedTab::Home;
-                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+                            cx.action(NavigationBarAction::TabSelected(
+                                app_state.selected_tab.clone(),
+                            ));
                             self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
                         }
@@ -425,17 +436,23 @@ impl Widget for HomeScreen {
                         if !matches!(app_state.selected_tab, SelectedTab::AddRoom) {
                             self.previous_selection = app_state.selected_tab.clone();
                             app_state.selected_tab = SelectedTab::AddRoom;
-                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+                            cx.action(NavigationBarAction::TabSelected(
+                                app_state.selected_tab.clone(),
+                            ));
                             self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
                         }
                     }
                     Some(NavigationBarAction::GoToSpace { space_name_id }) => {
-                        let new_space_selection = SelectedTab::Space { space_name_id: space_name_id.clone() };
+                        let new_space_selection = SelectedTab::Space {
+                            space_name_id: space_name_id.clone(),
+                        };
                         if app_state.selected_tab != new_space_selection {
                             self.previous_selection = app_state.selected_tab.clone();
                             app_state.selected_tab = new_space_selection;
-                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+                            cx.action(NavigationBarAction::TabSelected(
+                                app_state.selected_tab.clone(),
+                            ));
                             self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
                         }
@@ -445,8 +462,12 @@ impl Widget for HomeScreen {
                         if !matches!(app_state.selected_tab, SelectedTab::Settings) {
                             self.previous_selection = app_state.selected_tab.clone();
                             app_state.selected_tab = SelectedTab::Settings;
-                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
-                            if let Some(settings_page) = self.update_active_page_from_selection(cx, app_state) {
+                            cx.action(NavigationBarAction::TabSelected(
+                                app_state.selected_tab.clone(),
+                            ));
+                            if let Some(settings_page) =
+                                self.update_active_page_from_selection(cx, app_state)
+                            {
                                 settings_page
                                     .settings_screen(ids!(settings_screen))
                                     .populate(cx, None);
@@ -459,19 +480,21 @@ impl Widget for HomeScreen {
                     Some(NavigationBarAction::CloseSettings) => {
                         if matches!(app_state.selected_tab, SelectedTab::Settings) {
                             app_state.selected_tab = self.previous_selection.clone();
-                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+                            cx.action(NavigationBarAction::TabSelected(
+                                app_state.selected_tab.clone(),
+                            ));
                             self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
                         }
                     }
                     Some(NavigationBarAction::ToggleSpacesBar) => {
                         self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
-                        self.view.spaces_bar_wrapper(ids!(spaces_bar_wrapper))
+                        self.view
+                            .spaces_bar_wrapper(ids!(spaces_bar_wrapper))
                             .show_or_hide(cx, self.is_spaces_bar_shown);
                     }
                     // We're the ones who emitted this action, so we don't need to handle it again.
-                    Some(NavigationBarAction::TabSelected(_))
-                    | None => { }
+                    Some(NavigationBarAction::TabSelected(_)) | None => {}
                 }
             }
         }
@@ -502,8 +525,7 @@ impl HomeScreen {
             .set_active_page(
                 cx,
                 match app_state.selected_tab {
-                    SelectedTab::Space { .. }
-                    | SelectedTab::Home => id!(home_page),
+                    SelectedTab::Space { .. } | SelectedTab::Home => id!(home_page),
                     SelectedTab::Settings => id!(settings_page),
                     SelectedTab::AddRoom => id!(add_room_page),
                 },
@@ -515,7 +537,8 @@ impl HomeScreen {
 /// that simply forwards stack view actions to it.
 #[derive(Live, LiveHook, Widget)]
 pub struct StackNavigationWrapper {
-    #[deref] view: View,
+    #[deref]
+    view: View,
 }
 
 impl Widget for StackNavigationWrapper {

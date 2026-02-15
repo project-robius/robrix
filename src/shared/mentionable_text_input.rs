@@ -7,9 +7,11 @@ use crate::shared::bouncing_dots::BouncingDotsWidgetRefExt;
 use crate::shared::styles::COLOR_UNKNOWN_ROOM_AVATAR;
 use crate::utils;
 
-
 use makepad_widgets::{text::selection::Cursor, *};
-use matrix_sdk::ruma::{events::{room::message::RoomMessageEventContent, Mentions}, OwnedRoomId, OwnedUserId};
+use matrix_sdk::ruma::{
+    events::{room::message::RoomMessageEventContent, Mentions},
+    OwnedRoomId, OwnedUserId,
+};
 use matrix_sdk::room::RoomMember;
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_segmentation::UnicodeSegmentation;
@@ -286,48 +288,57 @@ live_design! {
 // /// from normal `@` characters.
 // const MENTION_START_STRING: &str = "\u{8288}@\u{8288}";
 
-
 #[derive(Debug)]
 pub enum MentionableTextInputAction {
     /// Notifies the MentionableTextInput about updated power levels for the room.
     PowerLevelsUpdated {
         room_id: OwnedRoomId,
         can_notify_room: bool,
-    }
+    },
 }
 
 /// Widget that extends CommandTextInput with @mention capabilities
 #[derive(Live, LiveHook, Widget)]
 pub struct MentionableTextInput {
     /// Base command text input
-    #[deref] cmd_text_input: CommandTextInput,
+    #[deref]
+    cmd_text_input: CommandTextInput,
     /// Template for user list items
-    #[live] user_list_item: Option<LivePtr>,
+    #[live]
+    user_list_item: Option<LivePtr>,
     /// Template for the @room mention list item
-    #[live] room_mention_list_item: Option<LivePtr>,
+    #[live]
+    room_mention_list_item: Option<LivePtr>,
     /// Template for loading indicator
-    #[live] loading_indicator: Option<LivePtr>,
+    #[live]
+    loading_indicator: Option<LivePtr>,
     /// Template for no matches indicator
-    #[live] no_matches_indicator: Option<LivePtr>,
+    #[live]
+    no_matches_indicator: Option<LivePtr>,
     /// Position where the @ mention starts
-    #[rust] current_mention_start_index: Option<usize>,
+    #[rust]
+    current_mention_start_index: Option<usize>,
     /// The set of users that were mentioned (at one point) in this text input.
     /// Due to characters being deleted/removed, this list is a *superset*
     /// of possible users who may have been mentioned.
     /// All of these mentions may not exist in the final text input content;
     /// this is just a list of users to search the final sent message for
     /// when adding in new mentions.
-    #[rust] possible_mentions: BTreeMap<OwnedUserId, String>,
+    #[rust]
+    possible_mentions: BTreeMap<OwnedUserId, String>,
     /// Indicates if the `@room` option was explicitly selected.
-    #[rust] possible_room_mention: bool,
+    #[rust]
+    possible_room_mention: bool,
     /// Indicates if currently in mention search mode
-    #[rust] is_searching: bool,
+    #[rust]
+    is_searching: bool,
     /// Whether the current user can notify everyone in the room (@room mention)
-    #[rust] can_notify_room: bool,
+    #[rust]
+    can_notify_room: bool,
     /// Whether the room members are currently being loaded
-    #[rust] members_loading: bool,
+    #[rust]
+    members_loading: bool,
 }
-
 
 impl Widget for MentionableTextInput {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -335,8 +346,12 @@ impl Widget for MentionableTextInput {
 
         // Best practice: Always check Scope first to get current context
         // Scope represents the current widget context as passed down from parents
-        let scope_room_id = scope.props.get::<RoomScreenProps>()
-            .expect("BUG: RoomScreenProps should be available in Scope::props for MentionableTextInput")
+        let scope_room_id = scope
+            .props
+            .get::<RoomScreenProps>()
+            .expect(
+                "BUG: RoomScreenProps should be available in Scope::props for MentionableTextInput",
+            )
             .room_name_id
             .room_id()
             .clone();
@@ -377,7 +392,11 @@ impl Widget for MentionableTextInput {
                 }
 
                 // Handle MentionableTextInputAction actions
-                if let Some(MentionableTextInputAction::PowerLevelsUpdated { room_id, can_notify_room }) = action.downcast_ref() {
+                if let Some(MentionableTextInputAction::PowerLevelsUpdated {
+                    room_id,
+                    can_notify_room,
+                }) = action.downcast_ref()
+                {
                     if &scope_room_id != room_id {
                         continue;
                     }
@@ -429,9 +448,7 @@ impl Widget for MentionableTextInput {
     }
 }
 
-
 impl MentionableTextInput {
-
     /// Check if members are loading and show loading indicator if needed.
     ///
     /// Returns true if we should return early because we're in the loading state.
@@ -481,7 +498,9 @@ impl MentionableTextInput {
             return false;
         }
 
-        let Some(ptr) = self.room_mention_list_item else { return false };
+        let Some(ptr) = self.room_mention_list_item else {
+            return false;
+        };
         let room_mention_item = WidgetRef::new_from_ptr(cx, Some(ptr));
         let mut room_avatar_shown = false;
 
@@ -508,11 +527,16 @@ impl MentionableTextInput {
                     } else {
                         log!("Failed to show @room avatar with room avatar image");
                     }
-                },
+                }
                 AvatarCacheEntry::Requested => {
-                    avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &room_name_first_char);
+                    avatar_ref.show_text(
+                        cx,
+                        Some(COLOR_UNKNOWN_ROOM_AVATAR),
+                        None,
+                        &room_name_first_char,
+                    );
                     room_avatar_shown = true;
-                },
+                }
                 AvatarCacheEntry::Failed => {
                     log!("Failed to load room avatar for @room");
                 }
@@ -521,21 +545,36 @@ impl MentionableTextInput {
 
         // If unable to display room avatar, show first character of room name
         if !room_avatar_shown {
-            avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &room_name_first_char);
+            avatar_ref.show_text(
+                cx,
+                Some(COLOR_UNKNOWN_ROOM_AVATAR),
+                None,
+                &room_name_first_char,
+            );
         }
 
         // Apply layout and height styling based on device type
-        let new_height = if is_desktop { DESKTOP_ITEM_HEIGHT } else { MOBILE_ITEM_HEIGHT };
-        if is_desktop {
-            room_mention_item.apply_over(cx, live! {
-                height: (new_height),
-                flow: Right,
-            });
+        let new_height = if is_desktop {
+            DESKTOP_ITEM_HEIGHT
         } else {
-            room_mention_item.apply_over(cx, live! {
-                height: (new_height),
-                flow: Down,
-            });
+            MOBILE_ITEM_HEIGHT
+        };
+        if is_desktop {
+            room_mention_item.apply_over(
+                cx,
+                live! {
+                    height: (new_height),
+                    flow: Right,
+                },
+            );
+        } else {
+            room_mention_item.apply_over(
+                cx,
+                live! {
+                    height: (new_height),
+                    flow: Down,
+                },
+            );
         }
 
         self.cmd_text_input.add_item(room_mention_item);
@@ -599,11 +638,18 @@ impl MentionableTextInput {
     ) -> usize {
         let mut items_added = 0;
 
-        for (index, (display_name, member)) in matched_members.into_iter().take(user_items_limit).enumerate() {
-            let Some(user_list_item_ptr) = self.user_list_item else { continue };
+        for (index, (display_name, member)) in matched_members
+            .into_iter()
+            .take(user_items_limit)
+            .enumerate()
+        {
+            let Some(user_list_item_ptr) = self.user_list_item else {
+                continue;
+            };
             let item = WidgetRef::new_from_ptr(cx, Some(user_list_item_ptr));
 
-            item.label(ids!(user_info.username)).set_text(cx, &display_name);
+            item.label(ids!(user_info.username))
+                .set_text(cx, &display_name);
 
             // Use the full user ID string
             let user_id_str = member.user_id().as_str();
@@ -697,7 +743,8 @@ impl MentionableTextInput {
             let room_mention_text = room_mention_label.text();
             let room_user_id_text = selected.label(ids!(room_user_id)).text();
 
-            let is_room_mention = { room_mention_text == "Notify the entire room" && room_user_id_text == "@room" };
+            let is_room_mention =
+                { room_mention_text == "Notify the entire room" && room_user_id_text == "@room" };
 
             let mention_to_insert = if is_room_mention {
                 // Always set to true, don't reset previously selected @room mentions
@@ -711,17 +758,14 @@ impl MentionableTextInput {
                     log!("Failed to parse user_id: {}", user_id_str);
                     return;
                 };
-                self.possible_mentions.insert(user_id.clone(), username.clone());
+                self.possible_mentions
+                    .insert(user_id.clone(), username.clone());
 
                 // Currently, we directly insert the markdown link for user mentions
                 // instead of the user's display name, because we don't yet have a way
                 // to track mentioned display names and replace them later.
-                format!(
-                    "[{username}]({}) ",
-                    user_id.matrix_to_uri(),
-                )
+                format!("[{username}]({}) ", user_id.matrix_to_uri(),)
             };
-
 
             // Use utility function to safely replace text
             let new_text = utils::safe_replace_by_byte_indices(
@@ -734,8 +778,14 @@ impl MentionableTextInput {
             self.cmd_text_input.set_text(cx, &new_text);
             // Calculate new cursor position
             let new_pos = start_idx + mention_to_insert.len();
-            text_input_ref.set_cursor(cx, Cursor { index: new_pos, prefer_next_row: false }, false);
-
+            text_input_ref.set_cursor(
+                cx,
+                Cursor {
+                    index: new_pos,
+                    prefer_next_row: false,
+                },
+                false,
+            );
         }
 
         self.is_searching = false;
@@ -756,13 +806,19 @@ impl MentionableTextInput {
             return;
         }
 
-        let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.cursor().index);
+        let cursor_pos = self
+            .cmd_text_input
+            .text_input_ref()
+            .borrow()
+            .map_or(0, |p| p.cursor().index);
 
         // Check if we're currently searching and the @ symbol was deleted
         if self.is_searching {
             if let Some(start_pos) = self.current_mention_start_index {
                 // Check if the @ symbol at the start position still exists
-                if start_pos >= text.len() || text.get(start_pos..start_pos+1).is_some_and(|c| c != "@") {
+                if start_pos >= text.len()
+                    || text.get(start_pos..start_pos + 1).is_some_and(|c| c != "@")
+                {
                     // The @ symbol was deleted, stop searching
                     self.close_mention_popup(cx);
                     return;
@@ -775,11 +831,9 @@ impl MentionableTextInput {
             self.current_mention_start_index = Some(trigger_pos);
             self.is_searching = true;
 
-            let search_text = utils::safe_substring_by_byte_indices(
-                &text,
-                trigger_pos + 1,
-                cursor_pos
-            ).to_lowercase();
+            let search_text =
+                utils::safe_substring_by_byte_indices(&text, trigger_pos + 1, cursor_pos)
+                    .to_lowercase();
 
             // Ensure header view is visible to prevent header disappearing during consecutive @mentions
             let popup = self.cmd_text_input.view(ids!(popup));
@@ -796,7 +850,9 @@ impl MentionableTextInput {
     /// Updates the mention suggestion list based on search
     fn update_user_list(&mut self, cx: &mut Cx, search_text: &str, scope: &mut Scope) {
         // 1. Get Props from Scope
-        let room_props = scope.props.get::<RoomScreenProps>()
+        let room_props = scope
+            .props
+            .get::<RoomScreenProps>()
             .expect("RoomScreenProps should be available in scope for MentionableTextInput");
 
         // 2. Check if members are loading and handle loading state
@@ -819,18 +875,21 @@ impl MentionableTextInput {
         let mut items_added = 0;
 
         // 4. Try to add @room mention item
-        let has_room_item = self.try_search_messages_mention_item(cx, search_text, room_props, is_desktop);
+        let has_room_item =
+            self.try_search_messages_mention_item(cx, search_text, room_props, is_desktop);
         if has_room_item {
             items_added += 1;
         }
 
         // 5. Find and sort matching members
-        let max_matched_members = max_visible_items * 2;  // Buffer for better UX
-        let matched_members = self.find_and_sort_matching_members(search_text, room_members, max_matched_members);
+        let max_matched_members = max_visible_items * 2; // Buffer for better UX
+        let matched_members =
+            self.find_and_sort_matching_members(search_text, room_members, max_matched_members);
 
         // 6. Add user mention items
         let user_items_limit = max_visible_items.saturating_sub(has_room_item as usize);
-        let user_items_added = self.add_user_mention_items(cx, matched_members, user_items_limit, is_desktop);
+        let user_items_added =
+            self.add_user_mention_items(cx, matched_members, user_items_limit, is_desktop);
         items_added += user_items_added;
 
         // 7. Update popup visibility based on whether we have items
@@ -853,8 +912,11 @@ impl MentionableTextInput {
         // Simple logic: trigger when cursor is immediately after @ symbol
         // Only trigger if @ is preceded by whitespace or beginning of text
         if cursor_grapheme_idx > 0 && text_graphemes.get(cursor_grapheme_idx - 1) == Some(&"@") {
-            let is_preceded_by_whitespace_or_start = cursor_grapheme_idx == 1 ||
-                (cursor_grapheme_idx > 1 && text_graphemes.get(cursor_grapheme_idx - 2).is_some_and(|g| g.trim().is_empty()));
+            let is_preceded_by_whitespace_or_start = cursor_grapheme_idx == 1
+                || (cursor_grapheme_idx > 1
+                    && text_graphemes
+                        .get(cursor_grapheme_idx - 2)
+                        .is_some_and(|g| g.trim().is_empty()));
             if is_preceded_by_whitespace_or_start {
                 if let Some(&byte_pos) = byte_positions.get(cursor_grapheme_idx - 1) {
                     return Some(byte_pos);
@@ -865,19 +927,22 @@ impl MentionableTextInput {
         // Find the last @ symbol before the cursor for search continuation
         // Only continue if we're already in search mode
         if self.is_searching {
-            let last_at_pos = text_graphemes.get(..cursor_grapheme_idx)
-                .and_then(|slice| slice.iter()
+            let last_at_pos = text_graphemes.get(..cursor_grapheme_idx).and_then(|slice| {
+                slice
+                    .iter()
                     .enumerate()
                     .filter(|(_, g)| **g == "@")
                     .map(|(i, _)| i)
-                    .next_back());
+                    .next_back()
+            });
 
             if let Some(at_idx) = last_at_pos {
                 // Get the byte position of this @ symbol
                 let &at_byte_pos = byte_positions.get(at_idx)?;
 
                 // Extract the text after the @ symbol up to the cursor position
-                let mention_text = text_graphemes.get(at_idx + 1..cursor_grapheme_idx)
+                let mention_text = text_graphemes
+                    .get(at_idx + 1..cursor_grapheme_idx)
                     .unwrap_or(&[]);
 
                 // Only trigger if this looks like an ongoing mention (contains only alphanumeric and basic chars)
@@ -978,7 +1043,13 @@ impl MentionableTextInput {
         // Priority 6: Localpart contains search text at word boundary
         if let Some(pos) = localpart_lower.find(&search_text_lower) {
             // Check if it's at the start of a word (preceded by non-alphanumeric or at start)
-            if pos == 0 || !localpart_lower.chars().nth(pos - 1).unwrap_or('a').is_alphanumeric() {
+            if pos == 0
+                || !localpart_lower
+                    .chars()
+                    .nth(pos - 1)
+                    .unwrap_or('a')
+                    .is_alphanumeric()
+            {
                 return 6;
             }
         }
@@ -1003,11 +1074,15 @@ impl MentionableTextInput {
         self.cmd_text_input.clear_items();
 
         // Create loading indicator widget
-        let Some(ptr) = self.loading_indicator else { return };
+        let Some(ptr) = self.loading_indicator else {
+            return;
+        };
         let loading_item = WidgetRef::new_from_ptr(cx, Some(ptr));
 
         // Start the loading animation
-        loading_item.bouncing_dots(ids!(loading_animation)).start_animation(cx);
+        loading_item
+            .bouncing_dots(ids!(loading_animation))
+            .start_animation(cx);
 
         // Add the loading indicator to the popup
         self.cmd_text_input.add_item(loading_item);
@@ -1035,7 +1110,9 @@ impl MentionableTextInput {
         self.cmd_text_input.clear_items();
 
         // Create no matches indicator widget
-        let Some(ptr) = self.no_matches_indicator else { return };
+        let Some(ptr) = self.no_matches_indicator else {
+            return;
+        };
         let no_matches_item = WidgetRef::new_from_ptr(cx, Some(ptr));
 
         // Add the no matches indicator to the popup
@@ -1098,9 +1175,6 @@ impl MentionableTextInput {
         self.redraw(cx);
     }
 
-
-
-
     /// Sets whether the current user can notify the entire room (@room mention)
     pub fn set_can_notify_room(&mut self, can_notify: bool) {
         self.can_notify_room = can_notify;
@@ -1110,8 +1184,6 @@ impl MentionableTextInput {
     pub fn can_notify_room(&self) -> bool {
         self.can_notify_room
     }
-
-
 }
 
 impl MentionableTextInputRef {
@@ -1132,7 +1204,6 @@ impl MentionableTextInputRef {
         }
     }
 
-
     /// Sets whether the current user can notify the entire room (@room mention)
     pub fn set_can_notify_room(&self, can_notify: bool) {
         if let Some(mut inner) = self.borrow_mut() {
@@ -1144,7 +1215,6 @@ impl MentionableTextInputRef {
     pub fn can_notify_room(&self) -> bool {
         self.borrow().is_some_and(|inner| inner.can_notify_room())
     }
-
 
     /// Returns the mentions actually present in the given html message content.
     fn get_real_mentions_in_html_text(&self, html: &str) -> Mentions {
@@ -1211,5 +1281,4 @@ impl MentionableTextInputRef {
             message.add_mentions(self.get_real_mentions_in_markdown_text(entered_text))
         }
     }
-
 }

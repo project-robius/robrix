@@ -1,7 +1,11 @@
 use makepad_widgets::*;
 
 use crate::{
-    app::{AppState, AppStateAction, SelectedRoom}, home::{room_screen::RoomScreenWidgetExt, rooms_list::RoomsListAction, space_lobby::SpaceLobbyScreenWidgetExt}
+    app::{AppState, AppStateAction, SelectedRoom},
+    home::{
+        room_screen::RoomScreenWidgetExt, rooms_list::RoomsListAction,
+        space_lobby::SpaceLobbyScreenWidgetExt,
+    },
 };
 
 use super::invite_screen::InviteScreenWidgetExt;
@@ -63,8 +67,12 @@ impl Widget for MainMobileUI {
                     RoomsListAction::Selected(_selected_room) => {}
                     // Because the MainMobileUI is drawn based on the AppState only,
                     // all we need to do is update the AppState here.
-                    RoomsListAction::InviteAccepted { room_name_id: room_name } => {
-                        cx.action(AppStateAction::UpgradedInviteToJoinedRoom(room_name.room_id().clone()));
+                    RoomsListAction::InviteAccepted {
+                        room_name_id: room_name,
+                    } => {
+                        cx.action(AppStateAction::UpgradedInviteToJoinedRoom(
+                            room_name.room_id().clone(),
+                        ));
                     }
                     RoomsListAction::OpenRoomContextMenu { .. } => {}
                     RoomsListAction::None => {}
@@ -119,8 +127,12 @@ impl Widget for MainMobileUI {
 
         self.view.view(ids!(welcome)).set_visible(cx, show_welcome);
         self.view.view(ids!(room_view)).set_visible(cx, show_room);
-        self.view.view(ids!(invite_view)).set_visible(cx, show_invite);
-        self.view.view(ids!(space_lobby_view)).set_visible(cx, show_space_lobby);
+        self.view
+            .view(ids!(invite_view))
+            .set_visible(cx, show_invite);
+        self.view
+            .view(ids!(space_lobby_view))
+            .set_visible(cx, show_space_lobby);
         self.view.draw_walk(cx, scope, walk)
     }
 }

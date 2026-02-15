@@ -85,7 +85,8 @@ live_design! {
 /// A modal dialog that displays the status of a login attempt.
 #[derive(Live, LiveHook, Widget)]
 pub struct LoginStatusModal {
-    #[deref] view: View,
+    #[deref]
+    view: View,
 }
 
 #[derive(Clone, Debug, DefaultNone)]

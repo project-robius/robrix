@@ -76,7 +76,8 @@ live_design! {
 /// See the module-level docs for more detail.
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomFilterInputBar {
-    #[deref] view: View,
+    #[deref]
+    view: View,
 }
 
 /// Actions emitted by the `RoomFilterInputBar` based on user interaction with it.
@@ -117,7 +118,7 @@ impl WidgetMatchEvent for RoomFilterInputBar {
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
-                RoomFilterAction::Changed(keywords)
+                RoomFilterAction::Changed(keywords),
             );
         }
 
@@ -128,7 +129,7 @@ impl WidgetMatchEvent for RoomFilterInputBar {
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
-                RoomFilterAction::Changed(String::new())
+                RoomFilterAction::Changed(String::new()),
             );
         }
     }

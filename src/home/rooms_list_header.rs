@@ -1,6 +1,6 @@
 //! The RoomsListHeader contains the title label and loading spinner for rooms list.
 //!
-//! This widget is designed to be reused across both Desktop and Mobile variants 
+//! This widget is designed to be reused across both Desktop and Mobile variants
 //! of the RoomsSideBar to avoid code duplication.
 
 use std::mem::discriminant;
@@ -8,7 +8,14 @@ use std::mem::discriminant;
 use makepad_widgets::*;
 use matrix_sdk_ui::sync_service::State;
 
-use crate::{home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, shared::{image_viewer::{ImageViewerAction, ImageViewerError, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}};
+use crate::{
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab},
+    shared::{
+        callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition},
+        image_viewer::{ImageViewerAction, ImageViewerError, LoadState},
+        popup_list::{PopupKind, enqueue_popup_notification},
+    },
+};
 
 live_design! {
     use link::theme::*;
@@ -84,9 +91,11 @@ live_design! {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomsListHeader {
-    #[deref] view: View,
+    #[deref]
+    view: View,
 
-    #[rust(State::Idle)] sync_state: State,
+    #[rust(State::Idle)]
+    sync_state: State,
 }
 
 impl Widget for RoomsListHeader {
@@ -100,8 +109,12 @@ impl Widget for RoomsListHeader {
                         if matches!(self.sync_state, State::Offline) {
                             continue;
                         }
-                        self.view.view(ids!(loading_spinner)).set_visible(cx, *is_syncing);
-                        self.view.view(ids!(synced_icon)).set_visible(cx, !*is_syncing);
+                        self.view
+                            .view(ids!(loading_spinner))
+                            .set_visible(cx, *is_syncing);
+                        self.view
+                            .view(ids!(synced_icon))
+                            .set_visible(cx, !*is_syncing);
                         self.view.view(ids!(offline_icon)).set_visible(cx, false);
                         self.redraw(cx);
                         continue;
@@ -120,7 +133,9 @@ impl Widget for RoomsListHeader {
                                 None,
                             );
                             // Since there is no timeout for fetching media, send an action to ImageViewer when syncing is offline.
-                            cx.action(ImageViewerAction::Show(LoadState::Error(ImageViewerError::Offline)));
+                            cx.action(ImageViewerAction::Show(LoadState::Error(
+                                ImageViewerError::Offline,
+                            )));
                         }
                         self.sync_state = new_state.clone();
                         self.redraw(cx);
@@ -143,6 +158,54 @@ impl Widget for RoomsListHeader {
         }
 
         self.view.handle_event(cx, event, scope);
+
+        // Tooltip logic for status icons
+        let check_tooltip = |cx: &mut Cx, widget_uid: WidgetUid, area: Area, text: &str| match event
+            .hits(cx, area)
+        {
+            Hit::FingerHoverIn(_) => {
+                cx.widget_action(
+                    widget_uid,
+                    &scope.path,
+                    TooltipAction::HoverIn {
+                        widget_rect: area.rect(cx),
+                        text: text.to_string(),
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Bottom,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(widget_uid, &scope.path, TooltipAction::HoverOut);
+            }
+            _ => {}
+        };
+
+        let loading_spinner = self.view.widget(ids!(loading_spinner));
+        check_tooltip(
+            cx,
+            loading_spinner.widget_uid(),
+            loading_spinner.area(),
+            "Syncing...",
+        );
+
+        let offline_icon = self.view.view(ids!(offline_icon));
+        check_tooltip(
+            cx,
+            offline_icon.widget_uid(),
+            offline_icon.area(),
+            "Offline: Cannot reach homeserver",
+        );
+
+        let synced_icon = self.view.view(ids!(synced_icon));
+        check_tooltip(
+            cx,
+            synced_icon.widget_uid(),
+            synced_icon.area(),
+            "Fully synced",
+        );
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {

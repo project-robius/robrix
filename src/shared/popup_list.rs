@@ -213,7 +213,7 @@ live_design! {
         flow: Down,
         padding: { top: 3 }
         align: { x: 0.98 }
-        
+
         <RoundedView> {
             width: Fit, height: Fit
             show_bg: true,
@@ -293,7 +293,7 @@ live_design! {
                 main_content = <MainContent> {}
             }
             progress_bar = <ProgressBar> {}
-            // Add a small gap between the progress bar and the end of the popup 
+            // Add a small gap between the progress bar and the end of the popup
             // to ensure the progress bar is within the popup.
             <View> {
                 height: 0.2
@@ -518,7 +518,7 @@ impl RobrixPopupNotification {
             } else {
                 COLOR_WHITE // White text for all other kinds
             };
-            
+
             view.apply_over(
                 cx,
                 live! {

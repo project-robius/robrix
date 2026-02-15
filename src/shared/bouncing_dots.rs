@@ -23,20 +23,20 @@ live_design! {
                 let center_y = self.rect_size.y * 0.5;
                 // Create three circle SDFs
                 sdf.circle(
-                    self.rect_size.x * 0.25, 
-                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq) + center_y, 
+                    self.rect_size.x * 0.25,
+                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq) + center_y,
                     self.dot_radius
                 );
                 sdf.fill(self.color);
                 sdf.circle(
-                    self.rect_size.x * 0.5, 
-                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq + self.phase_offset) + center_y, 
+                    self.rect_size.x * 0.5,
+                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq + self.phase_offset) + center_y,
                     self.dot_radius
                 );
                 sdf.fill(self.color);
                 sdf.circle(
-                    self.rect_size.x * 0.75, 
-                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq + self.phase_offset * 2) + center_y, 
+                    self.rect_size.x * 0.75,
+                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq + self.phase_offset * 2) + center_y,
                     self.dot_radius
                 );
                 sdf.fill(self.color);
@@ -61,14 +61,16 @@ live_design! {
                 }
             }
         }
-        
+
     }
 }
 
 #[derive(Live, LiveHook, Widget)]
 pub struct BouncingDots {
-    #[deref] view: View,
-    #[animator] animator: Animator,
+    #[deref]
+    view: View,
+    #[animator]
+    animator: Animator,
 }
 impl Widget for BouncingDots {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -80,7 +82,6 @@ impl Widget for BouncingDots {
         self.view.draw_walk(cx, scope, walk)
     }
 }
-
 
 impl BouncingDotsRef {
     /// Starts animation of the bouncing dots.

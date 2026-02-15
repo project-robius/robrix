@@ -1,12 +1,18 @@
-
 use std::cell::RefCell;
 
 use makepad_widgets::*;
 
 use crate::{
     app::ConfirmDeleteAction,
-    shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupKind}},
-    tsp::{submit_tsp_request, tsp_settings_screen::{WalletStatus, WalletStatusAndDefault}, TspRequest, TspWalletMetadata}
+    shared::{
+        confirmation_modal::ConfirmationModalContent,
+        popup_list::{enqueue_popup_notification, PopupKind},
+    },
+    tsp::{
+        submit_tsp_request,
+        tsp_settings_screen::{WalletStatus, WalletStatusAndDefault},
+        TspRequest, TspWalletMetadata,
+    },
 };
 
 live_design! {
@@ -143,26 +149,37 @@ live_design! {
 
 }
 
-
 /// A view showing the details of a single TSP wallet (one entry in the wallets list).
 #[derive(Live, LiveHook, Widget)]
 pub struct WalletEntry {
-    #[deref] view: View,
+    #[deref]
+    view: View,
 
-    #[rust] metadata: Option<TspWalletMetadata>,
+    #[rust]
+    metadata: Option<TspWalletMetadata>,
 }
 
 impl Widget for WalletEntry {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
-        let Some(metadata) = self.metadata.as_ref() else { return };
+        let Some(metadata) = self.metadata.as_ref() else {
+            return;
+        };
         if let Event::Actions(actions) = event {
-            if self.view.button(ids!(set_default_wallet_button)).clicked(actions) {
+            if self
+                .view
+                .button(ids!(set_default_wallet_button))
+                .clicked(actions)
+            {
                 submit_tsp_request(TspRequest::SetDefaultWallet(metadata.clone()));
             }
 
-            if self.view.button(ids!(remove_wallet_button)).clicked(actions) {
+            if self
+                .view
+                .button(ids!(remove_wallet_button))
+                .clicked(actions)
+            {
                 let metadata_clone = metadata.clone();
                 let content = ConfirmationModalContent {
                     title_text: "Remove Wallet".into(),
@@ -170,7 +187,8 @@ impl Widget for WalletEntry {
                         "Are you sure you want to remove the wallet \"{}\" \
                         from the list?\n\nThis won't delete the actual wallet file.",
                         metadata.wallet_name
-                    ).into(),
+                    )
+                    .into(),
                     accept_button_text: Some("Remove".into()),
                     on_accept_clicked: Some(Box::new(move |_cx| {
                         submit_tsp_request(TspRequest::RemoveWallet(metadata_clone));
@@ -180,7 +198,11 @@ impl Widget for WalletEntry {
                 cx.action(ConfirmDeleteAction::Show(RefCell::new(Some(content))));
             }
 
-            if self.view.button(ids!(delete_wallet_button)).clicked(actions) {
+            if self
+                .view
+                .button(ids!(delete_wallet_button))
+                .clicked(actions)
+            {
                 // TODO: Implement the delete wallet feature.
                 enqueue_popup_notification(
                     "Delete wallet feature is not yet implemented.",
@@ -200,35 +222,23 @@ impl Widget for WalletEntry {
             self.metadata = Some(metadata.clone());
         }
 
-        self.label(ids!(wallet_name)).set_text(
-            cx,
-            &metadata.wallet_name,
-        );
-        self.label(ids!(wallet_path)).set_text(
-            cx,
-            metadata.url.as_url_unencoded()
-        );
+        self.label(ids!(wallet_name))
+            .set_text(cx, &metadata.wallet_name);
+        self.label(ids!(wallet_path))
+            .set_text(cx, metadata.url.as_url_unencoded());
         // There is a weird makepad bug where if we re-style one instance of the
         // `set_default_wallet_button` in one WalletEntry, all other instances of that button
         // get their styling messed up in weird ways.
         // So, as a workaround, we just hide the button entirely and show a `is_default_label_view` instead.
 
-        self.view(ids!(is_default_label_view)).set_visible(
-            cx,
-            sd.is_default
-        );
-        self.label(ids!(not_found_label_view)).set_visible(
-            cx,
-            sd.status == WalletStatus::NotFound,
-        );
-        self.button(ids!(set_default_wallet_button)).set_visible(
-            cx,
-            !sd.is_default && sd.status != WalletStatus::NotFound,
-        );
-        self.button(ids!(delete_wallet_button)).set_visible(
-            cx,
-            sd.status != WalletStatus::NotFound,
-        );
+        self.view(ids!(is_default_label_view))
+            .set_visible(cx, sd.is_default);
+        self.label(ids!(not_found_label_view))
+            .set_visible(cx, sd.status == WalletStatus::NotFound);
+        self.button(ids!(set_default_wallet_button))
+            .set_visible(cx, !sd.is_default && sd.status != WalletStatus::NotFound);
+        self.button(ids!(delete_wallet_button))
+            .set_visible(cx, sd.status != WalletStatus::NotFound);
 
         self.view.draw_walk(cx, scope, walk)
     }

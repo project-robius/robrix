@@ -6,7 +6,10 @@ use matrix_sdk::{
 };
 use reqwest::StatusCode;
 
-use crate::{media_cache::{MediaCache, MediaCacheEntry}, shared::image_viewer::{ImageViewerAction, ImageViewerError, LoadState}};
+use crate::{
+    media_cache::{MediaCache, MediaCacheEntry},
+    shared::image_viewer::{ImageViewerAction, ImageViewerError, LoadState},
+};
 
 /// Populates the image viewer modal with the given media content.
 ///

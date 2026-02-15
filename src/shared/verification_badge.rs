@@ -7,7 +7,6 @@ use crate::{
     verification::VerificationStateAction,
 };
 
-
 // First, define the verification icons component layout
 live_design! {
     use link::theme::*;
@@ -145,10 +144,7 @@ impl VerificationBadgeRef {
                 please verify Robrix from another client.",
                 Some(COLOR_FG_DANGER_RED),
             ),
-            _ => (
-                "Verification state is unknown.",
-                None,
-            ),
+            _ => ("Verification state is unknown.", None),
         }
     }
 }

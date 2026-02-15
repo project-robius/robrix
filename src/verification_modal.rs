@@ -3,7 +3,9 @@ use std::borrow::Cow;
 use makepad_widgets::*;
 use matrix_sdk::encryption::verification::Verification;
 
-use crate::verification::{VerificationAction, VerificationRequestActionState, VerificationUserResponse};
+use crate::verification::{
+    VerificationAction, VerificationRequestActionState, VerificationUserResponse,
+};
 
 live_design! {
     use link::theme::*;
@@ -76,7 +78,7 @@ live_design! {
                             color: (COLOR_FG_DANGER_RED),
                         }
                         icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
-        
+
                         draw_bg: {
                             border_color: (COLOR_FG_DANGER_RED),
                             color: (COLOR_BG_DANGER_RED)
@@ -95,7 +97,7 @@ live_design! {
                             color: (COLOR_FG_ACCEPT_GREEN),
                         }
                         icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
-        
+
                         draw_bg: {
                             border_color: (COLOR_FG_ACCEPT_GREEN),
                             color: (COLOR_BG_ACCEPT_GREEN)
@@ -113,12 +115,15 @@ live_design! {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct VerificationModal {
-    #[deref] view: View,
-    #[rust] state: Option<VerificationRequestActionState>,
+    #[deref]
+    view: View,
+    #[rust]
+    state: Option<VerificationRequestActionState>,
     /// Whether the modal is in a "final" state,
     /// meaning that the verification process has ended
     /// and that any further interaction with it should close the modal.
-    #[rust(false)] is_final: bool,
+    #[rust(false)]
+    is_final: bool,
 }
 
 /// Actions emitted by the `VerificationModal`.
@@ -182,7 +187,10 @@ impl WidgetMatchEvent for VerificationModal {
                     VerificationAction::RequestCancelled(cancel_info) => {
                         self.label(ids!(prompt)).set_text(
                             cx,
-                            &format!("Verification request was cancelled: {}", cancel_info.reason())
+                            &format!(
+                                "Verification request was cancelled: {}",
+                                cancel_info.reason()
+                            ),
                         );
                         accept_button.set_enabled(cx, true);
                         accept_button.set_text(cx, "Ok");
@@ -194,7 +202,7 @@ impl WidgetMatchEvent for VerificationModal {
                         self.label(ids!(prompt)).set_text(
                             cx,
                             "You successfully accepted the verification request.\n\n\
-                            Waiting for the other device to agree on verification methods..."
+                            Waiting for the other device to agree on verification methods...",
                         );
                         accept_button.set_enabled(cx, false);
                         accept_button.set_text(cx, "Waiting...");
@@ -204,7 +212,8 @@ impl WidgetMatchEvent for VerificationModal {
                     }
 
                     VerificationAction::RequestAcceptError(error) => {
-                        self.label(ids!(prompt)).set_text(cx, 
+                        self.label(ids!(prompt)).set_text(
+                            cx,
                             &format!(
                                 "Error accepting verification request: {}\n\n\
                                 Please try the verification process again.",
@@ -220,7 +229,7 @@ impl WidgetMatchEvent for VerificationModal {
                     VerificationAction::RequestCancelError(error) => {
                         self.label(ids!(prompt)).set_text(
                             cx,
-                            &format!("Error cancelling verification request: {}.", error)
+                            &format!("Error cancelling verification request: {}.", error),
                         );
                         accept_button.set_enabled(cx, true);
                         accept_button.set_text(cx, "Ok");
@@ -250,7 +259,7 @@ impl WidgetMatchEvent for VerificationModal {
                         self.label(ids!(prompt)).set_text(
                             cx,
                             "Both sides have accepted the same verification method(s).\n\n\
-                            Waiting for both devices to exchange keys..."
+                            Waiting for both devices to exchange keys...",
                         );
                         accept_button.set_enabled(cx, false);
                         accept_button.set_text(cx, "Waiting...");
@@ -265,7 +274,8 @@ impl WidgetMatchEvent for VerificationModal {
                                 "Keys have been exchanged. Please verify the following emoji:\
                                 \n   {}\n\n\
                                 Do these emoji keys match?",
-                                emoji_list.emojis
+                                emoji_list
+                                    .emojis
                                     .iter()
                                     .map(|em| format!("{}  ({})", em.symbol, em.description))
                                     .collect::<Vec<_>>()
@@ -291,7 +301,7 @@ impl WidgetMatchEvent for VerificationModal {
                         self.label(ids!(prompt)).set_text(
                             cx,
                             "You successfully confirmed the Short Auth String keys.\n\n\
-                            Waiting for the other device to confirm..."
+                            Waiting for the other device to confirm...",
                         );
                         accept_button.set_enabled(cx, false);
                         accept_button.set_text(cx, "Waiting...");
@@ -312,13 +322,14 @@ impl WidgetMatchEvent for VerificationModal {
                     }
 
                     VerificationAction::RequestCompleted => {
-                        self.label(ids!(prompt)).set_text(cx, "Verification completed successfully!");
+                        self.label(ids!(prompt))
+                            .set_text(cx, "Verification completed successfully!");
                         accept_button.set_text(cx, "Ok");
                         accept_button.set_enabled(cx, true);
                         cancel_button.set_visible(cx, false);
                         self.is_final = true;
                     }
-                    _ => { }
+                    _ => {}
                 }
                 // If we received a `VerificationAction`, we need to redraw the modal content.
                 needs_redraw = true;
@@ -337,25 +348,21 @@ impl VerificationModal {
         self.is_final = false;
     }
 
-    fn initialize_with_data(
-        &mut self,
-        cx: &mut Cx,
-        state: VerificationRequestActionState,
-    ) {
+    fn initialize_with_data(&mut self, cx: &mut Cx, state: VerificationRequestActionState) {
         log!("Initializing verification modal with state: {:?}", state);
         let request = &state.request;
         let prompt_text = if request.is_self_verification() {
             Cow::from("Do you wish to verify your own device?")
         } else {
             if let Some(room_id) = request.room_id() {
-                format!("Do you wish to verify user {} in room {}?",
+                format!(
+                    "Do you wish to verify user {} in room {}?",
                     request.other_user_id(),
                     room_id,
-                ).into()
+                )
+                .into()
             } else {
-                format!("Do you wish to verify user {}?",
-                    request.other_user_id()
-                ).into()
+                format!("Do you wish to verify user {}?", request.other_user_id()).into()
             }
         };
         self.label(ids!(prompt)).set_text(cx, &prompt_text);
@@ -375,11 +382,7 @@ impl VerificationModal {
 }
 
 impl VerificationModalRef {
-    pub fn initialize_with_data(
-        &self,
-        cx: &mut Cx, 
-        state: VerificationRequestActionState,
-    ) {
+    pub fn initialize_with_data(&self, cx: &mut Cx, state: VerificationRequestActionState) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.initialize_with_data(cx, state);
         }

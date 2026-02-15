@@ -56,7 +56,7 @@ live_design! {
         Mobile = <View> {
             width: Fill, height: Fill
             flow: Down,
-            
+
             <RoundedShadowView> {
                 width: Fill, height: Fit
                 padding: {top: 15, left: 15, right: 15, bottom: 10}
@@ -83,7 +83,7 @@ live_design! {
                     height: 39,
                     flow: Right
                     padding: {top: 2, bottom: 2}
-                    spacing: 5 
+                    spacing: 5
                     align: {y: 0.5}
 
                     <CachedWidget> {
@@ -114,7 +114,8 @@ live_design! {
 ///   (because the search bar is at the top of the HomeScreen).
 #[derive(Live, Widget)]
 pub struct RoomsSideBar {
-    #[deref] view: AdaptiveView,
+    #[deref]
+    view: AdaptiveView,
 }
 
 impl LiveHook for RoomsSideBar {
@@ -134,4 +135,3 @@ impl Widget for RoomsSideBar {
         self.view.draw_walk(cx, scope, walk)
     }
 }
-

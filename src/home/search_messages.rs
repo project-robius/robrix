@@ -1,4 +1,3 @@
-
 //! UI widgets for searching messages in one or more rooms.
 
 use makepad_widgets::*;
@@ -40,12 +39,13 @@ live_design! {
         }
     }
 
-    
+
 }
 
 #[derive(Live, LiveHook, Widget)]
 pub struct SearchMessagesButton {
-    #[deref] button: Button,
+    #[deref]
+    button: Button,
 }
 
 impl Widget for SearchMessagesButton {

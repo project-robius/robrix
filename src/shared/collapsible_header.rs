@@ -108,9 +108,12 @@ pub enum CollapsibleHeaderAction {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct CollapsibleHeader {
-    #[deref] view: View,
-    #[rust(true)] is_expanded: bool,
-    #[rust] category: HeaderCategory,
+    #[deref]
+    view: View,
+    #[rust(true)]
+    is_expanded: bool,
+    #[rust]
+    category: HeaderCategory,
 }
 
 impl Widget for CollapsibleHeader {
@@ -122,21 +125,21 @@ impl Widget for CollapsibleHeader {
                 cx.set_key_focus(self.view.area());
             }
             Hit::FingerUp(fe) => {
-                if !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() {
+                if !rooms_list_props.was_scrolling
+                    && fe.is_over
+                    && fe.is_primary_hit()
+                    && fe.was_tap()
+                {
                     self.toggle_collapse(cx, scope);
                 }
             }
-            _ => { }
+            _ => {}
         }
         self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let angle = if self.is_expanded {
-            180.0
-        } else {
-            90.0
-        };
+        let angle = if self.is_expanded { 180.0 } else { 90.0 };
         self.icon(ids!(collapse_icon)).apply_over(
             cx,
             live! {

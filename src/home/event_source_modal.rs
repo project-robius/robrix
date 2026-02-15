@@ -6,7 +6,6 @@ use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId};
 
 use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
 
-
 live_design! {
     use link::theme::*;
     use link::widgets::*;
@@ -70,7 +69,7 @@ live_design! {
         height: Fill // { max: 1400 }
         margin: 40,
         align: {x: 0.5, y: 0}
-            
+
         flow: Down
         padding: {top: 20, right: 25, bottom: 20, left: 25}
 
@@ -159,7 +158,7 @@ live_design! {
         code_block = <View> {
             width: Fill,
             height: Fit,
-            flow: Overlay 
+            flow: Overlay
             // align the left side of the border frame with the left side of the room id / event id rows
             padding: 6
 
@@ -209,7 +208,7 @@ live_design! {
 
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        
+
                         // Draw rounded box - but only the stroke, no fill
                         sdf.box(
                             self.border_size * 0.5,
@@ -218,13 +217,13 @@ live_design! {
                             self.rect_size.y - self.border_size,
                             self.border_radius
                         );
-                        
+
                         // Fill with transparent (let content show through)
                         sdf.fill_keep(vec4(0.0, 0.0, 0.0, 0.0));
-                        
+
                         // Draw the border stroke
                         sdf.stroke(self.border_color, self.border_size);
-                        
+
                         return sdf.result;
                     }
                 }
@@ -251,13 +250,16 @@ pub enum EventSourceModalAction {
     Close,
 }
 
-
 #[derive(Live, LiveHook, Widget)]
 pub struct EventSourceModal {
-    #[deref] view: View,
-    #[rust] room_id: Option<OwnedRoomId>,
-    #[rust] event_id: Option<OwnedEventId>,
-    #[rust] original_json: Option<String>,
+    #[deref]
+    view: View,
+    #[rust]
+    room_id: Option<OwnedRoomId>,
+    #[rust]
+    event_id: Option<OwnedEventId>,
+    #[rust]
+    original_json: Option<String>,
 }
 
 impl Widget for EventSourceModal {
@@ -277,8 +279,10 @@ impl WidgetMatchEvent for EventSourceModal {
 
         // Handle canceling/closing the modal.
         let close_clicked = close_button.clicked(actions);
-        if close_clicked ||
-            actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
+        if close_clicked
+            || actions
+                .iter()
+                .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
         {
             // If the modal was dismissed by clicking outside of it, we MUST NOT emit
             // an EventSourceModalAction::Close action, as that would cause
@@ -289,7 +293,11 @@ impl WidgetMatchEvent for EventSourceModal {
             return;
         }
 
-        if self.view.button(ids!(room_id_row.copy_button)).clicked(actions) {
+        if self
+            .view
+            .button(ids!(room_id_row.copy_button))
+            .clicked(actions)
+        {
             if let Some(room_id) = &self.room_id {
                 cx.copy_to_clipboard(room_id.as_str());
                 enqueue_popup_notification(
@@ -300,7 +308,11 @@ impl WidgetMatchEvent for EventSourceModal {
             }
         }
 
-        if self.view.button(ids!(event_id_row.copy_button)).clicked(actions) {
+        if self
+            .view
+            .button(ids!(event_id_row.copy_button))
+            .clicked(actions)
+        {
             if let Some(event_id) = &self.event_id {
                 cx.copy_to_clipboard(event_id.as_str());
                 enqueue_popup_notification(
@@ -337,20 +349,31 @@ impl EventSourceModal {
         self.event_id = event_id.clone();
         self.original_json = original_json.clone();
 
-        self.view.label(ids!(room_id_row.value)).set_text(cx, room_id.as_str());
+        self.view
+            .label(ids!(room_id_row.value))
+            .set_text(cx, room_id.as_str());
         self.view.label(ids!(event_id_row.value)).set_text(
             cx,
-            event_id.as_ref().map(|e| e.as_str()).unwrap_or("<Event ID Unknown>"),
+            event_id
+                .as_ref()
+                .map(|e| e.as_str())
+                .unwrap_or("<Event ID Unknown>"),
         );
 
         self.view.code_view(ids!(code_view)).set_text(
             cx,
-            original_json.as_deref().unwrap_or("<Unable to load event source JSON>"),
+            original_json
+                .as_deref()
+                .unwrap_or("<Unable to load event source JSON>"),
         );
 
         self.view.button(ids!(close_button)).reset_hover(cx);
-        self.view.button(ids!(room_id_row.copy_button)).reset_hover(cx);
-        self.view.button(ids!(event_id_row.copy_button)).reset_hover(cx);
+        self.view
+            .button(ids!(room_id_row.copy_button))
+            .reset_hover(cx);
+        self.view
+            .button(ids!(event_id_row.copy_button))
+            .reset_hover(cx);
         self.view.button(ids!(copy_source_button)).reset_hover(cx);
         self.view.redraw(cx);
     }
@@ -365,7 +388,9 @@ impl EventSourceModalRef {
         event_id: Option<OwnedEventId>,
         original_json: Option<String>,
     ) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.show(cx, room_id, event_id, original_json);
     }
 }

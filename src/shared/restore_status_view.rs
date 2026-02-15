@@ -46,8 +46,10 @@ live_design! {
 /// A view that displays a spinner and a label to indicate that a restore operation is in progress for a room.
 #[derive(Live, LiveHook, Widget)]
 pub struct RestoreStatusView {
-    #[deref] view: View,
-    #[live(true)] visible: bool,
+    #[deref]
+    view: View,
+    #[live(true)]
+    visible: bool,
 }
 
 impl Widget for RestoreStatusView {
@@ -56,7 +58,7 @@ impl Widget for RestoreStatusView {
             self.view.handle_event(cx, event, scope);
         }
     }
-    
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if self.visible {
             self.view.draw_walk(cx, scope, walk)
@@ -75,8 +77,7 @@ impl RestoreStatusViewRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.visible = visible;
             if !visible {
-                inner.label(ids!(restore_status_label))
-                    .set_text(cx, "");
+                inner.label(ids!(restore_status_label)).set_text(cx, "");
             }
         }
     }
@@ -92,12 +93,7 @@ impl RestoreStatusViewRef {
     ///
     /// The `room_name` parameter is used to fill in the room name in the error message.
     /// Its `Display` implementation automatically handles Empty names by falling back to the room ID.
-    pub fn set_content(
-        &self,
-        cx: &mut Cx,
-        all_rooms_loaded: bool,
-        room_name: &RoomNameId,
-    ) {
+    pub fn set_content(&self, cx: &mut Cx, all_rooms_loaded: bool, room_name: &RoomNameId) {
         let Some(inner) = self.borrow() else { return };
         let restore_status_spinner = inner.view.view(ids!(restore_status_spinner));
         let restore_status_label = inner.view.label(ids!(restore_status_label));
@@ -112,10 +108,8 @@ impl RestoreStatusViewRef {
             );
         } else {
             restore_status_spinner.set_visible(cx, true);
-            restore_status_label.set_text(
-                cx,
-                "Waiting for this room to be loaded from the homeserver",
-            );
+            restore_status_label
+                .set_text(cx, "Waiting for this room to be loaded from the homeserver");
         }
     }
 }

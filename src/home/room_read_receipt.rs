@@ -9,7 +9,6 @@ use matrix_sdk_ui::timeline::EventTimelineItem;
 
 use std::cmp;
 
-
 /// The maximum number of items to display in the read receipts AvatarRow
 /// and its accompanying tooltip.
 pub const MAX_VISIBLE_AVATARS_IN_READ_RECEIPT: usize = 3;
@@ -97,8 +96,7 @@ impl Widget for AvatarRow {
         let widget_rect = self.area.rect(cx);
 
         let should_hover_in = match event.hits(cx, self.area) {
-            Hit::FingerLongPress(_)
-            | Hit::FingerHoverIn(..) => true,
+            Hit::FingerLongPress(_) | Hit::FingerHoverIn(..) => true,
             Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => true,
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
@@ -178,14 +176,8 @@ impl AvatarRow {
             self.buttons.iter_mut().zip(receipts_map.iter().rev())
         {
             if !*drawn {
-                let (_, drawn_status) = avatar_ref.set_avatar_and_get_username(
-                    cx,
-                    room_id,
-                    user_id,
-                    None,
-                    event_id,
-                    true,
-                );
+                let (_, drawn_status) = avatar_ref
+                    .set_avatar_and_get_username(cx, room_id, user_id, None, event_id, true);
                 *drawn = drawn_status;
             }
         }

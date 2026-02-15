@@ -1,7 +1,16 @@
-
 use makepad_widgets::*;
 
-use crate::{shared::{popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
+use crate::{
+    shared::{
+        popup_list::{enqueue_popup_notification, PopupKind},
+        styles::*,
+    },
+    tsp::{
+        create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction,
+        submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction,
+        TspWalletEntry, TspWalletMetadata,
+    },
+};
 
 const REPUBLISH_IDENTITY_BUTTON_TEXT: &str = "Republish Current Identity to DID Server";
 
@@ -216,16 +225,19 @@ impl WalletState {
     fn get(&self, index: usize) -> Option<(&TspWalletMetadata, WalletStatusAndDefault)> {
         if let Some(active) = self.active_wallet.as_ref() {
             if index == 0 {
-                Some((active, WalletStatusAndDefault::new(WalletStatus::Opened, true)))
+                Some((
+                    active,
+                    WalletStatusAndDefault::new(WalletStatus::Opened, true),
+                ))
             } else {
-                self.other_wallets.get(index - 1).map(|(m, s)|
-                    (m, WalletStatusAndDefault::new(*s, false))
-                )
+                self.other_wallets
+                    .get(index - 1)
+                    .map(|(m, s)| (m, WalletStatusAndDefault::new(*s, false)))
             }
         } else {
-            self.other_wallets.get(index).map(|(m, s)|
-                (m, WalletStatusAndDefault::new(*s, false))
-            )
+            self.other_wallets
+                .get(index)
+                .map(|(m, s)| (m, WalletStatusAndDefault::new(*s, false)))
         }
     }
 }
@@ -250,7 +262,8 @@ impl WalletStatusAndDefault {
 /// The view containing all TSP-related settings.
 #[derive(Live, LiveHook, Widget)]
 pub struct TspSettingsScreen {
-    #[deref] view: View,
+    #[deref]
+    view: View,
 
     /// The list of wallets that are known by this widget.
     ///
@@ -262,7 +275,8 @@ pub struct TspSettingsScreen {
     /// This is sort of a "cache" of the wallets that have been drawn
     /// to avoid having to re-fetch them from the shared TSP state every time,
     /// as that requires locking the mutex and can be expensive.
-    #[rust] wallets: Option<WalletState>,
+    #[rust]
+    wallets: Option<WalletState>,
 }
 
 impl Widget for TspSettingsScreen {
@@ -279,35 +293,51 @@ impl Widget for TspSettingsScreen {
         }
 
         // Draw the current identity label and republish button based on the active identity.
-        let (current_did_text, current_did_text_color, show_republish_button) = match
-            self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref())
+        let (current_did_text, current_did_text_color, show_republish_button) = match self
+            .wallets
+            .as_ref()
+            .and_then(|ws| ws.active_identity.as_deref())
         {
             Some(current_did) => (current_did, COLOR_FG_ACCEPT_GREEN, true),
-            None => ("No default identity has been set.", COLOR_WARNING_NOT_FOUND, false),
+            None => (
+                "No default identity has been set.",
+                COLOR_WARNING_NOT_FOUND,
+                false,
+            ),
         };
-        self.view.label(ids!(current_identity_label)).apply_over(cx, live!(
-            text: (current_did_text),
-            draw_text: { color: (current_did_text_color) },
-        ));
-        self.view.button(ids!(republish_identity_button)).set_visible(cx, show_republish_button);
-
+        self.view.label(ids!(current_identity_label)).apply_over(
+            cx,
+            live!(
+                text: (current_did_text),
+                draw_text: { color: (current_did_text_color) },
+            ),
+        );
+        self.view
+            .button(ids!(republish_identity_button))
+            .set_visible(cx, show_republish_button);
 
         // If we don't have any wallets, show the "no wallets" label.
         let is_wallets_empty = self.wallets.as_ref().is_none_or(|w| w.is_empty());
-        self.view.view(ids!(no_wallets_label)).set_visible(cx, is_wallets_empty);
+        self.view
+            .view(ids!(no_wallets_label))
+            .set_visible(cx, is_wallets_empty);
 
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // Here, we only need to handle drawing the wallet list.
             let flat_list_ref = subview.as_flat_list();
             let Some(mut list) = flat_list_ref.borrow_mut() else {
-                error!("!!! TspSettingsScreen::draw_walk(): BUG: expected a FlatList widget, but got something else");
+                error!(
+                    "!!! TspSettingsScreen::draw_walk(): BUG: expected a FlatList widget, but got something else"
+                );
                 continue;
             };
             let Some(wallets) = self.wallets.as_ref() else {
                 return DrawStep::done();
             };
 
-            for (metadata, mut status_and_default) in (0..wallets.len()).filter_map(|i| wallets.get(i)) {
+            for (metadata, mut status_and_default) in
+                (0..wallets.len()).filter_map(|i| wallets.get(i))
+            {
                 let item_live_id = LiveId::from_str(metadata.url.as_url_unencoded());
                 let item = list.item(cx, item_live_id, id!(wallet_entry)).unwrap();
                 // Pass the wallet metadata in through Scope via props,
@@ -327,27 +357,39 @@ impl MatchEvent for TspSettingsScreen {
         for action in actions {
             match action.downcast_ref() {
                 // Add the new wallet to the list of drawn wallets.
-                Some(TspWalletAction::CreateWalletSuccess { metadata, is_default }) => {
+                Some(TspWalletAction::CreateWalletSuccess {
+                    metadata,
+                    is_default,
+                }) => {
                     let wallets = self.wallets.get_or_insert_default();
                     if *is_default {
                         wallets.active_wallet = Some(metadata.clone());
                     } else {
-                        wallets.other_wallets.push((metadata.clone(), WalletStatus::Opened));
+                        wallets
+                            .other_wallets
+                            .push((metadata.clone(), WalletStatus::Opened));
                     }
                     self.view.redraw(cx);
                     continue;
                 }
 
                 // Remove the wallet from the list of drawn wallets.
-                Some(TspWalletAction::WalletRemoved { metadata, was_default }) => {
-                    let Some(wallets) = &mut self.wallets.as_mut() else { continue };
+                Some(TspWalletAction::WalletRemoved {
+                    metadata,
+                    was_default,
+                }) => {
+                    let Some(wallets) = &mut self.wallets.as_mut() else {
+                        continue;
+                    };
                     if *was_default {
                         wallets.active_wallet = None;
-                    }
-                    else if let Some(pos) = wallets.other_wallets.iter().position(|(w, _)| w == metadata) {
+                    } else if let Some(pos) = wallets
+                        .other_wallets
+                        .iter()
+                        .position(|(w, _)| w == metadata)
+                    {
                         wallets.other_wallets.remove(pos);
-                    }
-                    else {
+                    } else {
                         continue;
                     }
                     enqueue_popup_notification(
@@ -375,11 +417,17 @@ impl MatchEvent for TspSettingsScreen {
                     let previous_active = wallets.active_wallet.replace(metadata.clone());
                     // If the newly-default wallet was in the other wallets list, remove it
                     // and then add the previous active wallet back to that other wallets list.
-                    if let Some(idx_to_remove) = wallets.other_wallets.iter().position(|(w, _)| w == metadata) {
+                    if let Some(idx_to_remove) = wallets
+                        .other_wallets
+                        .iter()
+                        .position(|(w, _)| w == metadata)
+                    {
                         wallets.other_wallets.remove(idx_to_remove);
                     }
                     if let Some(previous_active) = previous_active {
-                        wallets.other_wallets.insert(0, (previous_active, WalletStatus::Opened));
+                        wallets
+                            .other_wallets
+                            .insert(0, (previous_active, WalletStatus::Opened));
                     }
                     self.view.redraw(cx);
                     continue;
@@ -396,10 +444,16 @@ impl MatchEvent for TspSettingsScreen {
                 // Handle a newly-opened wallet.
                 Some(TspWalletAction::WalletOpened(Ok(metadata))) => {
                     let wallets = self.wallets.get_or_insert_default();
-                    if let Some((_m, status)) = wallets.other_wallets.iter_mut().find(|(w, _)| w == metadata) {
+                    if let Some((_m, status)) = wallets
+                        .other_wallets
+                        .iter_mut()
+                        .find(|(w, _)| w == metadata)
+                    {
                         *status = WalletStatus::Opened;
                     } else {
-                        wallets.other_wallets.push((metadata.clone(), WalletStatus::Opened));
+                        wallets
+                            .other_wallets
+                            .push((metadata.clone(), WalletStatus::Opened));
                     }
                     self.view.redraw(cx);
                     continue;
@@ -414,8 +468,10 @@ impl MatchEvent for TspSettingsScreen {
                 }
 
                 // This is handled in the CreateWalletModal
-                Some(TspWalletAction::CreateWalletError { .. }) => { continue; }
-                None => { }
+                Some(TspWalletAction::CreateWalletError { .. }) => {
+                    continue;
+                }
+                None => {}
             }
 
             match action.downcast_ref() {
@@ -430,14 +486,20 @@ impl MatchEvent for TspSettingsScreen {
                 }
                 Some(TspIdentityAction::DidRepublishResult(result)) => {
                     // restore the republish button to its original state.
-                    republish_identity_button.apply_over(cx, live!(
-                        enabled: true,
-                        text: (REPUBLISH_IDENTITY_BUTTON_TEXT),
-                    ));
+                    republish_identity_button.apply_over(
+                        cx,
+                        live!(
+                            enabled: true,
+                            text: (REPUBLISH_IDENTITY_BUTTON_TEXT),
+                        ),
+                    );
                     match result {
                         Ok(did) => {
                             enqueue_popup_notification(
-                                format!("Successfully republished identity \"{}\" to the DID server.", did),
+                                format!(
+                                    "Successfully republished identity \"{}\" to the DID server.",
+                                    did
+                                ),
                                 PopupKind::Success,
                                 Some(5.0),
                             );
@@ -452,18 +514,35 @@ impl MatchEvent for TspSettingsScreen {
                     }
                     continue;
                 }
-                Some(TspIdentityAction::SentDidAssociationRequest { .. }) => { continue; } // handled in the TspVerifyUser widget
-                Some(TspIdentityAction::ErrorSendingDidAssociationRequest { .. }) => { continue; } // handled in the TspVerifyUser widget
-                Some(TspIdentityAction::ReceivedDidAssociationResponse { .. }) => { continue; } // handled in the TspVerifyUser widget
-                Some(TspIdentityAction::ReceivedDidAssociationRequest { .. }) => { continue; } // handled in the TspVerificationModal widget
-                Some(TspIdentityAction::ReceiveLoopError { .. }) => { continue; } // handled in the top-level app
-                None => { }
+                Some(TspIdentityAction::SentDidAssociationRequest { .. }) => {
+                    continue;
+                } // handled in the TspVerifyUser widget
+                Some(TspIdentityAction::ErrorSendingDidAssociationRequest { .. }) => {
+                    continue;
+                } // handled in the TspVerifyUser widget
+                Some(TspIdentityAction::ReceivedDidAssociationResponse { .. }) => {
+                    continue;
+                } // handled in the TspVerifyUser widget
+                Some(TspIdentityAction::ReceivedDidAssociationRequest { .. }) => {
+                    continue;
+                } // handled in the TspVerificationModal widget
+                Some(TspIdentityAction::ReceiveLoopError { .. }) => {
+                    continue;
+                } // handled in the top-level app
+                None => {}
             }
         }
 
-
-        if self.view.button(ids!(copy_identity_button)).clicked(actions) { 
-            if let Some(did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
+        if self
+            .view
+            .button(ids!(copy_identity_button))
+            .clicked(actions)
+        {
+            if let Some(did) = self
+                .wallets
+                .as_ref()
+                .and_then(|ws| ws.active_identity.as_deref())
+            {
                 cx.copy_to_clipboard(did);
                 enqueue_popup_notification(
                     "Copied your default TSP identity to the clipboard.",
@@ -482,15 +561,28 @@ impl MatchEvent for TspSettingsScreen {
         // Allow the user to republish their identity to the DID server.
         // This is primarily needed because some DID servers (e.g., the test servers)
         // frequently wipe their identity storage after a certain period of time.
-        if self.view.button(ids!(republish_identity_button)).clicked(actions) {
+        if self
+            .view
+            .button(ids!(republish_identity_button))
+            .clicked(actions)
+        {
             if self.has_default_wallet() {
-                if let Some(our_did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
-                    republish_identity_button.apply_over(cx, live!(
-                        enabled: false,
-                        text: "Republishing DID now...",
-                    ));
+                if let Some(our_did) = self
+                    .wallets
+                    .as_ref()
+                    .and_then(|ws| ws.active_identity.as_deref())
+                {
+                    republish_identity_button.apply_over(
+                        cx,
+                        live!(
+                            enabled: false,
+                            text: "Republishing DID now...",
+                        ),
+                    );
 
-                    submit_tsp_request(TspRequest::RepublishDid { did: our_did.to_string() });
+                    submit_tsp_request(TspRequest::RepublishDid {
+                        did: our_did.to_string(),
+                    });
                 } else {
                     enqueue_popup_notification(
                         "You must set a default TSP identity to be republished.",
@@ -501,7 +593,11 @@ impl MatchEvent for TspSettingsScreen {
             }
         }
 
-        if self.view.button(ids!(create_wallet_button)).clicked(actions) {
+        if self
+            .view
+            .button(ids!(create_wallet_button))
+            .clicked(actions)
+        {
             cx.action(CreateWalletModalAction::Open);
         }
 
@@ -511,7 +607,11 @@ impl MatchEvent for TspSettingsScreen {
             }
         }
 
-        if self.view.button(ids!(import_wallet_button)).clicked(actions) {
+        if self
+            .view
+            .button(ids!(import_wallet_button))
+            .clicked(actions)
+        {
             // TODO: support importing an existing wallet.
             enqueue_popup_notification(
                 "Importing an existing wallet is not yet implemented.",
@@ -526,8 +626,12 @@ impl TspSettingsScreen {
     /// Re-fetches the TSP state and populates this widget's list of wallets.
     fn refresh_wallets(&mut self) {
         let tsp_state = tsp_state_ref().lock().unwrap();
-        let current_wallet = tsp_state.current_wallet.as_ref().map(|w| w.metadata.clone());
-        let other_wallets = tsp_state.other_wallets
+        let current_wallet = tsp_state
+            .current_wallet
+            .as_ref()
+            .map(|w| w.metadata.clone());
+        let other_wallets = tsp_state
+            .other_wallets
             .iter()
             .map(|entry| match entry {
                 TspWalletEntry::Opened(opened) => (opened.metadata.clone(), WalletStatus::Opened),
