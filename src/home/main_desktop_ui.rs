@@ -163,7 +163,7 @@ impl MainDesktopUI {
             ),
             SelectedRoom::Space { space_name_id } => (
                 id!(space_lobby_screen),
-                space_name_id.to_string(),
+                format!("[Space] {}", space_name_id),
             ),
         };
 
