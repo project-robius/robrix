@@ -1934,7 +1934,7 @@ type ConstHasher = BuildHasherDefault<DefaultHasher>;
 
 /// Information about all joined rooms that our client currently know about.
 /// We use a `HashMap` for O(1) lookups, as this is accessed frequently (e.g. every timeline update).
-static ALL_JOINED_ROOMS: Mutex<HashMap<OwnedRoomId, JoinedRoomDetails, ConstHasher>> = Mutex::new(HashMap::with_hasher(BuildHasherDefault::new()));
+static ALL_JOINED_ROOMS: LazyLock<Mutex<HashMap<OwnedRoomId, JoinedRoomDetails>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
