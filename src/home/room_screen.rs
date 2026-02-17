@@ -92,6 +92,35 @@ live_design! {
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
 
+    // A summary at the bottom of a message that is the root of a thread.
+    ThreadRootSummary = <View> {
+        visible: false
+        width: Fill,
+        height: Fit
+        flow: Right,
+        align: {x: 0.0, y: 0.5}
+        spacing: 5.0
+        margin: { top: 5.0 }
+        // padding: { left: 8.0, right: 8.0, top: 6.0, bottom: 6.0 }
+        padding: 20,
+        cursor: Hand
+        show_bg: true
+        draw_bg: {
+            color: #F00
+        }
+
+        thread_summary_count = <Label> {
+            width: Fit,
+            draw_text: {
+                text_style: <SMALL_STATE_TEXT_STYLE> {}
+                color: #2d6fb9
+            }
+            text: ""
+        }
+
+        thread_summary_latest = <HtmlOrPlaintext> {}
+    }
+
     // The view used for each text-based message event in a room's timeline.
     Message = {{Message}} {
         width: Fill,
@@ -207,6 +236,7 @@ live_design! {
                 height: Fit
                 flow: Down,
                 padding: 0.0
+
                 username_view = <View> {
                     flow: Right,
                     width: Fill,
@@ -227,50 +257,14 @@ live_design! {
 
                 message = <HtmlOrPlaintext> { }
                 link_preview_view = <LinkPreview> {}
-
-                // <LineH> {
-                //     margin: {top: 13.0, bottom: 5.0}
-                // }
                 <View> {
                     width: Fill,
                     height: Fit
+                    flow: Right,
                     reaction_list = <ReactionList> { }
                     avatar_row = <AvatarRow> {}
                 }
-
-                thread_root_summary = <View> {
-                    visible: false
-                    width: Fill,
-                    height: Fit
-                    flow: Right,
-                    spacing: 5.0
-                    margin: { top: 5.0 }
-                    padding: { left: 8.0, right: 8.0, top: 6.0, bottom: 6.0 }
-                    cursor: Hand
-                    show_bg: true
-                    draw_bg: {
-                        color: #f4f9ff
-                    }
-
-                    thread_summary_count = <Label> {
-                        width: Fit,
-                        draw_text: {
-                            text_style: <SMALL_STATE_TEXT_STYLE> {}
-                            color: #2d6fb9
-                        }
-                        text: ""
-                    }
-
-                    thread_summary_latest = <Label> {
-                        width: Fill,
-                        draw_text: {
-                            text_style: <SMALL_STATE_TEXT_STYLE> {}
-                            color: #465a74
-                            wrap: Ellipsis,
-                        }
-                        text: ""
-                    }
-                }
+                thread_root_summary = <ThreadRootSummary> {}
             }
         }
     }
@@ -308,43 +302,11 @@ live_design! {
                 <View> {
                     width: Fill,
                     height: Fit
+                    flow: Right,
                     reaction_list = <ReactionList> { }
                     avatar_row = <AvatarRow> {}
                 }
-
-                thread_root_summary = <View> {
-                    visible: false
-                    width: Fill,
-                    height: Fit
-                    flow: Right,
-                    spacing: 5.0
-                    margin: { top: 5.0 }
-                    padding: { left: 8.0, right: 8.0, top: 6.0, bottom: 6.0 }
-                    cursor: Hand
-                    show_bg: true
-                    draw_bg: {
-                        color: #f4f9ff
-                    }
-
-                    thread_summary_count = <Label> {
-                        width: Fit,
-                        draw_text: {
-                            text_style: <SMALL_STATE_TEXT_STYLE> {}
-                            color: #2d6fb9
-                        }
-                        text: ""
-                    }
-
-                    thread_summary_latest = <Label> {
-                        width: Fill,
-                        draw_text: {
-                            text_style: <SMALL_STATE_TEXT_STYLE> {}
-                            color: #465a74
-                            wrap: Ellipsis,
-                        }
-                        text: ""
-                    }
-                }
+                thread_root_summary = <ThreadRootSummary> {}
             }
         }
     }
@@ -357,48 +319,16 @@ live_design! {
                 width: Fill,
                 height: Fit
                 padding: { left: 10.0 }
+
                 message = <TextOrImage> { }
-                v = <View> {
+                <View> {
                     width: Fill,
                     height: Fit,
                     flow: Right,
                     reaction_list = <ReactionList> { }
                     avatar_row = <AvatarRow> {}
                 }
-
-                thread_root_summary = <View> {
-                    visible: false
-                    width: Fill,
-                    height: Fit
-                    flow: Right,
-                    spacing: 5.0
-                    margin: { top: 5.0 }
-                    padding: { left: 8.0, right: 8.0, top: 6.0, bottom: 6.0 }
-                    cursor: Hand
-                    show_bg: true
-                    draw_bg: {
-                        color: #f4f9ff
-                    }
-
-                    thread_summary_count = <Label> {
-                        width: Fit,
-                        draw_text: {
-                            text_style: <SMALL_STATE_TEXT_STYLE> {}
-                            color: #2d6fb9
-                        }
-                        text: ""
-                    }
-
-                    thread_summary_latest = <Label> {
-                        width: Fill,
-                        draw_text: {
-                            text_style: <SMALL_STATE_TEXT_STYLE> {}
-                            color: #465a74
-                            wrap: Ellipsis,
-                        }
-                        text: ""
-                    }
-                }
+                thread_root_summary = <ThreadRootSummary> {}
             }
 
         }
@@ -413,46 +343,13 @@ live_design! {
                 message = <TextOrImage> { }
                 <View> {
                     width: Fill,
-                    height: Fit
+                    height: Fit,
+                    flow: Right,
                     reaction_list = <ReactionList> { }
                     avatar_row = <AvatarRow> {}
                 }
-
-                thread_root_summary = <View> {
-                    visible: false
-                    width: Fill,
-                    height: Fit
-                    flow: Right,
-                    spacing: 5.0
-                    margin: { top: 5.0 }
-                    padding: { left: 8.0, right: 8.0, top: 6.0, bottom: 6.0 }
-                    cursor: Hand
-                    show_bg: true
-                    draw_bg: {
-                        color: #f4f9ff
-                    }
-
-                    thread_summary_count = <Label> {
-                        width: Fit,
-                        draw_text: {
-                            text_style: <SMALL_STATE_TEXT_STYLE> {}
-                            color: #2d6fb9
-                        }
-                        text: ""
-                    }
-
-                    thread_summary_latest = <Label> {
-                        width: Fill,
-                        draw_text: {
-                            text_style: <SMALL_STATE_TEXT_STYLE> {}
-                            color: #465a74
-                            wrap: Ellipsis,
-                        }
-                        text: ""
-                    }
-                }
+                thread_root_summary = <ThreadRootSummary> {}
             }
-
         }
     }
 
@@ -1202,7 +1099,7 @@ impl Widget for RoomScreen {
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
                             TimelineItemContent::MsgLike(msg_like_content) => {
-                                if tl_state.thread_root_event_id.is_none()
+                                if tl_state.thread_root.is_none()
                                     && msg_like_content.thread_root.is_some()
                                 {
                                     // Hide threaded replies from the main room timeline UI.
@@ -1218,7 +1115,7 @@ impl Widget for RoomScreen {
                                                 list,
                                                 item_id,
                                                 room_id,
-                                                tl_state.thread_root_event_id.as_ref(),
+                                                tl_state.thread_root.as_ref(),
                                                 event_tl_item,
                                                 msg_like_content,
                                                 prev_event,
@@ -1331,7 +1228,7 @@ impl Widget for RoomScreen {
                 log!("Automatically paginating timeline to fill viewport for room {:?}", self.room_name_id);
                 submit_async_request(MatrixRequest::PaginateRoomTimeline {
                     room_id: room_id.clone(),
-                    thread_root_event_id: tl_state.thread_root_event_id.clone(),
+                    thread_root_event_id: tl_state.thread_root.clone(),
                     num_events: 50,
                     direction: PaginationDirection::Backwards,
                 });
@@ -1451,7 +1348,7 @@ impl RoomScreen {
                         jump_to_bottom.show_unread_message_badge(cx, UnreadMessageCount::Unknown);
                         submit_async_request(MatrixRequest::GetNumberUnreadMessages{
                             room_id: tl.room_id.clone(),
-                            thread_root_event_id: tl.thread_root_event_id.clone(),
+                            thread_root_event_id: tl.thread_root.clone(),
                         });
                     }
 
@@ -1670,7 +1567,7 @@ impl RoomScreen {
         if should_continue_backwards_pagination {
             submit_async_request(MatrixRequest::PaginateRoomTimeline {
                 room_id: tl.room_id.clone(),
-                thread_root_event_id: tl.thread_root_event_id.clone(),
+                thread_root_event_id: tl.thread_root.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
             });
@@ -1890,7 +1787,7 @@ impl RoomScreen {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     submit_async_request(MatrixRequest::ToggleReaction {
                         room_id: tl.room_id.clone(),
-                        thread_root_event_id: tl.thread_root_event_id.clone(),
+                        thread_root_event_id: tl.thread_root.clone(),
                         timeline_event_id: details.timeline_event_id.clone(),
                         reaction: reaction.clone(),
                     });
@@ -1923,7 +1820,7 @@ impl RoomScreen {
                                 cx,
                                 event_tl_item.clone(),
                                 tl.room_id.clone(),
-                                tl.thread_root_event_id.clone(),
+                                tl.thread_root.clone(),
                             );
                     }
                     else {
@@ -1952,7 +1849,7 @@ impl RoomScreen {
                                 cx,
                                 latest_sent_msg,
                                 tl.room_id.clone(),
-                                tl.thread_root_event_id.clone(),
+                                tl.thread_root.clone(),
                             );
                     }
                     else {
@@ -1969,7 +1866,7 @@ impl RoomScreen {
                         submit_async_request(MatrixRequest::PinEvent {
                             event_id: event_id.clone(),
                             room_id: tl.room_id.clone(),
-                            thread_root_event_id: tl.thread_root_event_id.clone(),
+                            thread_root_event_id: tl.thread_root.clone(),
                             pin: true,
                         });
                     } else {
@@ -1986,7 +1883,7 @@ impl RoomScreen {
                         submit_async_request(MatrixRequest::PinEvent {
                             event_id: event_id.clone(),
                             room_id: tl.room_id.clone(),
-                            thread_root_event_id: tl.thread_root_event_id.clone(),
+                            thread_root_event_id: tl.thread_root.clone(),
                             pin: false,
                         });
                     } else {
@@ -2136,7 +2033,7 @@ impl RoomScreen {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     let timeline_event_id = details.timeline_event_id.clone();
                     let room_id = tl.room_id.clone();
-                    let thread_root_event_id = tl.thread_root_event_id.clone();
+                    let thread_root_event_id = tl.thread_root.clone();
                     let reason = reason.clone();
                     let content = ConfirmationModalContent {
                         title_text: "Delete Message".into(),
@@ -2316,7 +2213,7 @@ impl RoomScreen {
 
             let tl_state = TimelineUiState {
                 room_id: room_id.clone(),
-                thread_root_event_id: thread_root_event_id.clone(),
+                thread_root: thread_root_event_id.clone(),
                 // Initially, we assume the user has all power levels by default.
                 // This avoids unexpectedly hiding any UI elements that should be visible to the user.
                 // This doesn't mean that the user can actually perform all actions;
@@ -2376,7 +2273,7 @@ impl RoomScreen {
                 log!("Sending a first-time backwards pagination request for room {:?}", self.room_name_id);
                 submit_async_request(MatrixRequest::PaginateRoomTimeline {
                     room_id: room_id.clone(),
-                    thread_root_event_id: tl_state.thread_root_event_id.clone(),
+                    thread_root_event_id: tl_state.thread_root.clone(),
                     num_events: 50,
                     direction: PaginationDirection::Backwards,
                 });
@@ -2387,7 +2284,7 @@ impl RoomScreen {
             // So we kick off a request to fetch the room members here upon first viewing the room.
             submit_async_request(MatrixRequest::SyncRoomMemberList {
                 room_id: room_id.clone(),
-                thread_root_event_id: tl_state.thread_root_event_id.clone(),
+                thread_root_event_id: tl_state.thread_root.clone(),
             });
         }
 
@@ -2403,30 +2300,30 @@ impl RoomScreen {
         if self.is_loaded {
             submit_async_request(MatrixRequest::GetRoomPowerLevels {
                 room_id: room_id.clone(),
-                thread_root_event_id: tl_state.thread_root_event_id.clone(),
+                thread_root_event_id: tl_state.thread_root.clone(),
             });
             submit_async_request(MatrixRequest::GetRoomMembers {
                 room_id: room_id.clone(),
-                thread_root_event_id: tl_state.thread_root_event_id.clone(),
+                thread_root_event_id: tl_state.thread_root.clone(),
                 memberships: matrix_sdk::RoomMemberships::JOIN,
                 // Fetch from the local cache, as we already requested to sync
                 // the room members from the homeserver above.
                 local_only: true,
             });
-            if tl_state.thread_root_event_id.is_none() {
+            if tl_state.thread_root.is_none() {
                 submit_async_request(MatrixRequest::SubscribeToTypingNotices {
                     room_id: room_id.clone(),
-                    thread_root_event_id: tl_state.thread_root_event_id.clone(),
+                    thread_root_event_id: tl_state.thread_root.clone(),
                     subscribe: true,
                 });
                 submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
                     room_id: room_id.clone(),
-                    thread_root_event_id: tl_state.thread_root_event_id.clone(),
+                    thread_root_event_id: tl_state.thread_root.clone(),
                     subscribe: true,
                 });
                 submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
                     room_id: room_id.clone(),
-                    thread_root_event_id: tl_state.thread_root_event_id.clone(),
+                    thread_root_event_id: tl_state.thread_root.clone(),
                     subscribe: true,
                 });
             }
@@ -2495,7 +2392,7 @@ impl RoomScreen {
         // Clear room_members to avoid wasting memory (in case this room is never re-opened).
         tl.room_members = None;
         // Store this Timeline's `TimelineUiState` in the global map of states.
-        let state_key = timeline_state_key(&tl.room_id, tl.thread_root_event_id.as_ref());
+        let state_key = timeline_state_key(&tl.room_id, tl.thread_root.as_ref());
         TIMELINE_STATES.with_borrow_mut(|ts| ts.insert(state_key, tl));
     }
 
@@ -2524,7 +2421,7 @@ impl RoomScreen {
         room_input_bar.restore_state(
             cx,
             &tl_state.room_id,
-            tl_state.thread_root_event_id.clone(),
+            tl_state.thread_root.clone(),
             saved_room_input_bar_state,
             tl_state.user_power,
             tl_state.tombstone_info.as_ref(),
@@ -2597,13 +2494,13 @@ impl RoomScreen {
                     };
                     submit_async_request(MatrixRequest::ReadReceipt {
                         room_id: tl_state.room_id.clone(),
-                        thread_root_event_id: tl_state.thread_root_event_id.clone(),
+                        thread_root_event_id: tl_state.thread_root.clone(),
                         event_id: last_event_id.to_owned(),
                     });
                     if tl_state.scrolled_past_read_marker {
                         submit_async_request(MatrixRequest::FullyReadReceipt {
                             room_id: tl_state.room_id.clone(),
-                            thread_root_event_id: tl_state.thread_root_event_id.clone(),
+                            thread_root_event_id: tl_state.thread_root.clone(),
                             event_id: last_event_id.to_owned(),
                         });
                     } else {
@@ -2624,7 +2521,7 @@ impl RoomScreen {
                                 tl_state.scrolled_past_read_marker = true;
                                 submit_async_request(MatrixRequest::FullyReadReceipt {
                                     room_id: tl_state.room_id.clone(),
-                                    thread_root_event_id: tl_state.thread_root_event_id.clone(),
+                                    thread_root_event_id: tl_state.thread_root.clone(),
                                     event_id: last_event_id.to_owned(),
                                 });
                             }
@@ -2658,7 +2555,7 @@ impl RoomScreen {
             );
             submit_async_request(MatrixRequest::PaginateRoomTimeline {
                 room_id: tl.room_id.clone(),
-                thread_root_event_id: tl.thread_root_event_id.clone(),
+                thread_root_event_id: tl.thread_root.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
             });
@@ -2839,8 +2736,9 @@ fn timeline_state_key(
 struct TimelineUiState {
     /// The ID of the room that this timeline is for.
     room_id: OwnedRoomId,
+
     /// If `Some`, this timeline is thread-focused and rooted at this event ID.
-    thread_root_event_id: Option<OwnedEventId>,
+    thread_root: Option<OwnedEventId>,
 
     /// The power levels of the currently logged-in user in this room.
     user_power: UserPowerLevels,
@@ -3476,42 +3374,49 @@ fn populate_message_view(
     };
 
     // If we didn't use a cached item, we need to draw all other message content:
-    // the reactions, the read receipts avatar row, and the reply preview.
+    // the reactions, the read receipts avatar row, the reply preview.
     // We also must set the message details/metadata for the `item` widget representing this message.
     if !used_cached_item {
+        let timeline_event_id = event_tl_item.identifier();
         item.reaction_list(ids!(content.reaction_list)).set_list(
             cx,
             event_tl_item.content().reactions(),
             room_id.to_owned(),
-            event_tl_item.identifier(),
+            timeline_event_id.clone(),
             item_id,
         );
         populate_read_receipts(&item, cx, room_id, event_tl_item);
-        let replied_to_message_view = item.view(ids!(replied_to_message));
         let (is_reply_fully_drawn, replied_to_event_id) = draw_replied_to_message(
             cx,
-            &replied_to_message_view,
+            &item.view(ids!(replied_to_message)),
             room_id,
             thread_root_event_id,
             msg_like_content.in_reply_to.as_ref(),
             event_tl_item.event_id(),
         );
-        let has_thread_summary = populate_thread_root_summary(
-            cx,
-            &item,
-            msg_like_content,
-        );
+        let is_thread_summary_fully_drawn = if thread_root_event_id.is_some() {
+            // If `thread_root_event_id` is `Some`, then we're drawing this message
+            // inside of a thread-focused timeline, so it doesn't make sense to draw
+            // a redundant thread summary since we're already showing the thread content.
+            true
+        } else {
+            populate_thread_root_summary(
+                cx,
+                &item,
+                room_id,
+                msg_like_content,
+            )
+        };
 
         // Set the message details/metadata for the Message widget so that it can handle events.
         let message_details = MessageDetails {
-            timeline_event_id: event_tl_item.identifier(),
+            thread_root_event_id: msg_like_content.thread_root.clone().or_else(|| {
+                msg_like_content.thread_summary.as_ref()
+                    .and_then(|_| event_tl_item.event_id().map(|id| id.to_owned()))
+            }),
+            timeline_event_id,
             item_id,
             related_event_id: replied_to_event_id,
-            thread_root_event_id: if has_thread_summary {
-                event_tl_item.event_id().map(ToOwned::to_owned)
-            } else {
-                None
-            },
             room_screen_widget_uid,
             abilities: MessageAbilities::from_user_power_and_event(
                 user_power_levels,
@@ -3525,8 +3430,10 @@ fn populate_message_view(
         item.as_message().set_data(message_details);
 
         // The content is only considered to be fully drawn if the logic above marked it as such
-        // *and* if the reply preview was also fully drawn.
+        // *and* if the reply preview was also fully drawn
+        // *and* if the thread root summary (if applicable) was also fully drawn.
         new_drawn_status.content_drawn &= is_reply_fully_drawn;
+        new_drawn_status.content_drawn &= is_thread_summary_fully_drawn;
     }
 
     // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
@@ -4107,7 +4014,7 @@ fn draw_replied_to_message(
                     .html_or_plaintext(ids!(replied_to_message_content.reply_preview_body))
                     .show_plaintext(cx, "[Error fetching replied-to event]");
             }
-            status @ TimelineDetails::Pending | status @ TimelineDetails::Unavailable => {
+            td @ TimelineDetails::Pending | td @ TimelineDetails::Unavailable => {
                 // We don't have the replied-to message yet, so we can't fully draw the preview.
                 fully_drawn = false;
                 replied_to_message_view
@@ -4122,7 +4029,7 @@ fn draw_replied_to_message(
 
                 // Confusingly, we need to fetch the details of the `message` (the event that is the reply),
                 // not the details of the original event that this `message` is replying to.
-                if matches!(status, TimelineDetails::Unavailable) {
+                if matches!(td, TimelineDetails::Unavailable) {
                     if let Some(event_id) = message_event_id {
                         submit_async_request(MatrixRequest::FetchDetailsForEvent {
                             room_id: room_id.to_owned(),
@@ -4143,40 +4050,30 @@ fn draw_replied_to_message(
     (fully_drawn, replied_to_event_id)
 }
 
-/// Draws a compact thread summary below a thread root message, if applicable.
+/// Draws a one-line thread summary at the bottom of a message if it is the root of a thread.
+///
+/// Returns whether the thread summary information was available and fully drawn,
+/// i.e., whether it can be considered cached and not needing to be redrawn later.
 fn populate_thread_root_summary(
     cx: &mut Cx2d,
     item: &WidgetRef,
+    room_id: &OwnedRoomId,
     msg_like_content: &MsgLikeContent,
 ) -> bool {
-    fn one_line_summary(text: String) -> String {
-        const MAX_CHARS: usize = 96;
-        let one_line = text.split_whitespace().collect::<Vec<_>>().join(" ");
-        let char_count = one_line.chars().count();
-        if char_count <= MAX_CHARS {
-            return one_line;
-        }
-
-        let mut truncated = String::new();
-        for (idx, ch) in one_line.chars().enumerate() {
-            if idx >= MAX_CHARS.saturating_sub(3) {
-                break;
-            }
-            truncated.push(ch);
-        }
-        truncated.push_str("...");
-        truncated
-    }
+    let fully_drawn: bool;
 
     let thread_summary_view = item.view(ids!(thread_root_summary));
     let Some(thread_summary) = msg_like_content.thread_summary.as_ref() else {
         thread_summary_view.set_visible(cx, false);
-        return false;
+        // consider this as fully drawn since there's no thread summary to show.
+        fully_drawn = true;
+        return fully_drawn;
     };
     thread_summary_view.set_visible(cx, true);
 
-    let latest_preview = match &thread_summary.latest_event {
+    let latest_preview: Cow<str> = match &thread_summary.latest_event {
         TimelineDetails::Ready(embedded_event) => {
+            fully_drawn = true;
             let sender_username = match &embedded_event.sender_profile {
                 TimelineDetails::Ready(profile) => profile
                     .display_name
@@ -4184,30 +4081,43 @@ fn populate_thread_root_summary(
                     .unwrap_or(embedded_event.sender.as_str()),
                 _ => embedded_event.sender.as_str(),
             };
-            text_preview_of_timeline_item(
+            let preview = text_preview_of_timeline_item(
                 &embedded_event.content,
                 &embedded_event.sender,
                 sender_username,
-            )
-            .format_with(sender_username, false)
+            ).format_with(sender_username, true);
+            utils::replace_linebreaks_separators(&preview).into()
         }
-        TimelineDetails::Pending => String::from("Loading latest reply..."),
-        TimelineDetails::Unavailable => String::from("Latest reply unavailable."),
-        TimelineDetails::Error(_) => String::from("Failed to load latest reply."),
+        td @ TimelineDetails::Pending | td @ TimelineDetails::Unavailable => {
+            fully_drawn = false;
+            if matches!(td, TimelineDetails::Unavailable) {
+                if let Some(event_id) = msg_like_content.thread_root.clone() {
+                    log!("Thread summary latest event is unavailable, submitting request to fetch details for event_id: {event_id}");
+                    submit_async_request(MatrixRequest::FetchDetailsForEvent {
+                        room_id: room_id.to_owned(),
+                        thread_root_event_id: None, // send response to this timeline, not the thread root's timeline
+                        event_id,
+                    });
+                }
+            }
+            "<i>Loading latest reply...</i>".into()
+        }
+        TimelineDetails::Error(_) => {
+            fully_drawn = true; // consider this fully drawn since there's no point retrying.
+            "<i>Unable to load latest reply</i>".into()
+        }
     };
     let replies_count = thread_summary.num_replies as u64;
 
-    let replies_count_text = if replies_count == 1 {
-        String::from("1 reply")
-    } else {
-        format!("{replies_count} replies")
+    let replies_count_text = match replies_count {
+        1 => Cow::Borrowed("1 reply"),
+        n => Cow::Owned(format!("{n} replies"))
     };
     item.label(ids!(thread_summary_count))
         .set_text(cx, &replies_count_text);
-
-    item.label(ids!(thread_summary_latest))
-        .set_text(cx, &one_line_summary(latest_preview));
-    true
+    item.html_or_plaintext(ids!(thread_summary_latest))
+        .show_html(cx, latest_preview);
+    fully_drawn
 }
 
 /// Generates a rich HTML text preview of the given `timeline_item_content`

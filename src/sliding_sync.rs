@@ -794,12 +794,12 @@ async fn matrix_worker_task(
             } => {
                 let (timeline, sender) = {
                     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                    let Some(jrd) = all_joined_rooms.get_mut(&room_id) else {
                         error!("BUG: room info not found for fetch details for event request {room_id}");
                         continue;
                     };
                     get_timeline_and_sender_with_main_fallback(
-                        room_info,
+                        jrd,
                         thread_root_event_id.as_ref(),
                     )
                 };
@@ -850,10 +850,7 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::CreateThreadTimeline {
-                room_id,
-                thread_root_event_id,
-            } => {
+            MatrixRequest::CreateThreadTimeline { room_id, thread_root_event_id } => {
                 let room = {
                     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
@@ -2238,9 +2235,9 @@ struct JoinedRoomDetails {
     /// The async task that listens for timeline updates for this room and sends them to the UI thread.
     timeline_subscriber_handler_task: JoinHandle<()>,
     /// Thread-focused timelines for this room, keyed by thread root event ID.
-    thread_timelines: HashMap<OwnedEventId, ThreadTimelineDetails, ConstHasher>,
+    thread_timelines: HashMap<OwnedEventId, ThreadTimelineDetails>,
     /// The set of thread timelines currently being created, to avoid duplicate in-flight work.
-    pending_thread_timeline_creations: HashSet<OwnedEventId, ConstHasher>,
+    pending_thread_timeline_creations: HashSet<OwnedEventId>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
     /// A drop guard for the event handler that represents a subscription to pinned events for this room.
@@ -3296,8 +3293,8 @@ async fn add_new_room(
             timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender)),
             timeline_update_sender,
             timeline_subscriber_handler_task,
-            thread_timelines: HashMap::with_hasher(BuildHasherDefault::new()),
-            pending_thread_timeline_creations: HashSet::with_hasher(BuildHasherDefault::new()),
+            thread_timelines: HashMap::new(),
+            pending_thread_timeline_creations: HashSet::new(),
             typing_notice_subscriber: None,
             pinned_events_subscriber: None,
         },
