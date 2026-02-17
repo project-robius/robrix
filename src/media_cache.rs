@@ -1,6 +1,6 @@
-use std::{ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
+use std::{cell::RefCell, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
 use hashbrown::{hash_map::RawEntryMut, HashMap};
-use makepad_widgets::{error, log, SignalToUI};
+use makepad_widgets::{error, log, Cx, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}, Error, HttpError};
 use reqwest::StatusCode;
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
@@ -16,7 +16,8 @@ pub struct MediaCacheValue {
 #[derive(Debug, Clone)]
 pub enum MediaCacheEntry {
     /// A request has been issued and we're waiting for it to complete.
-    Requested,
+    /// The vector contains the list of timeline update senders that should be notified.
+    Requested(Vec<crossbeam_channel::Sender<TimelineUpdate>>),
     /// The media has been successfully loaded from the server.
     Loaded(Arc<[u8]>),
     /// The media failed to load from the server with reqwest status code.
@@ -26,6 +27,12 @@ pub enum MediaCacheEntry {
 /// A reference to a media cache entry and its associated format.
 pub type MediaCacheEntryRef = Arc<Mutex<MediaCacheEntry>>;
 
+thread_local! {
+    /// A global cache of fetched media, indexed by Matrix URI.
+    ///
+    /// This cache is shared across all rooms to avoid re-fetching the same media.
+    static GLOBAL_MEDIA_CACHE: RefCell<MediaCache> = RefCell::new(MediaCache::new());
+}
 
 /// A cache of fetched media, indexed by Matrix URI.
 ///
@@ -36,8 +43,6 @@ pub struct MediaCache {
     /// We use `hashbrown::HashMap` to enable the `raw_entry` API, which allows
     /// looking up entries by reference (`&OwnedMxcUri`) without cloning the key.
     cache: HashMap<OwnedMxcUri, MediaCacheValue>,
-    /// A channel to send updates to a particular timeline when a media request has completed.
-    timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
 impl Deref for MediaCache {
     type Target = HashMap<OwnedMxcUri, MediaCacheValue>;
@@ -57,12 +62,9 @@ impl MediaCache {
     ///
     /// It will also optionally send updates to the given timeline update sender
     /// when a media request has completed.
-    pub fn new(
-        timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
-    ) -> Self {
+    pub fn new() -> Self {
         Self {
             cache: HashMap::new(),
-            timeline_update_sender,
         }
     }
 
@@ -82,8 +84,14 @@ impl MediaCache {
         &mut self,
         mxc_uri: &OwnedMxcUri,
         requested_format: MediaFormat,
+        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     ) -> (MediaCacheEntry, MediaFormat) {
-        let mut post_request_retval = (MediaCacheEntry::Requested, requested_format.clone());
+        // We initialize the return value with the `Requested` state, which is the default.
+        // We clone the sender so that we can pass it to the background task if needed.
+        let mut post_request_retval = (
+            MediaCacheEntry::Requested(update_sender.clone().map_or_else(Vec::new, |s| vec![s])),
+            requested_format.clone(),
+        );
         let entry_ref_to_fetch: MediaCacheEntryRef;
 
         let entry = self.cache.raw_entry_mut().from_key(mxc_uri);
@@ -94,13 +102,22 @@ impl MediaCache {
                 match requested_format {
                     MediaFormat::Thumbnail(ref requested_mts) => {
                         if let Some((entry_ref, existing_mts)) = value.thumbnail.as_ref() {
+                            let entry_val = entry_ref.lock().unwrap().deref().clone();
+                            // If the entry is currently in the `Requested` state, we add the sender to the list.
+                            if let MediaCacheEntry::Requested(ref mut senders) = *entry_ref.lock().unwrap() {
+                                if let Some(sender) = update_sender {
+                                    senders.push(sender);
+                                }
+                            }
                             return (
-                                entry_ref.lock().unwrap().deref().clone(),
+                                entry_val,
                                 MediaFormat::Thumbnail(existing_mts.clone()),
                             );
                         } else {
                             // Here, a thumbnail was requested but not found, so fetch it.
-                            let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
+                            let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested(
+                                update_sender.map_or_else(Vec::new, |s| vec![s])
+                            )));
                             value.thumbnail = Some((Arc::clone(&entry_ref), requested_mts.clone()));
                             // If a full-size image is already loaded, return it.
                             if let Some(existing_file) = value.full_file.as_ref() {
@@ -116,13 +133,22 @@ impl MediaCache {
                     }
                     MediaFormat::File => {
                         if let Some(entry_ref) = value.full_file.as_ref() {
+                            let entry_val = entry_ref.lock().unwrap().deref().clone();
+                            // If the entry is currently in the `Requested` state, we add the sender to the list.
+                            if let MediaCacheEntry::Requested(ref mut senders) = *entry_ref.lock().unwrap() {
+                                if let Some(sender) = update_sender {
+                                    senders.push(sender);
+                                }
+                            }
                             return (
-                                entry_ref.lock().unwrap().deref().clone(),
+                                entry_val,
                                 MediaFormat::File,
                             );
                         } else {
                             // Here, a full-size image was requested but not found, so fetch it.
-                            let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
+                            let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested(
+                                update_sender.map_or_else(Vec::new, |s| vec![s])
+                            )));
                             value.full_file = Some(entry_ref.clone());
                             // If a thumbnail is already loaded, return it.
                             if let Some((existing_thumbnail, existing_mts)) = value.thumbnail.as_ref() {
@@ -139,7 +165,9 @@ impl MediaCache {
                 }
             }
             RawEntryMut::Vacant(vacant) => {
-                let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
+                let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested(
+                    update_sender.map_or_else(Vec::new, |s| vec![s])
+                )));
                 let value = match &requested_format {
                     MediaFormat::Thumbnail(requested_mts) => MediaCacheValue {
                         full_file: None,
@@ -162,7 +190,7 @@ impl MediaCache {
             },
             on_fetched: insert_into_cache,
             destination: entry_ref_to_fetch,
-            update_sender: self.timeline_update_sender.clone(),
+            update_sender: None,
         });
         post_request_retval
     }
@@ -202,11 +230,34 @@ impl MediaCache {
                     // Return the full_file entry if it exists, otherwise the thumbnail entry
                     cache_value.full_file
                         .or_else(|| cache_value.thumbnail.map(|(entry, _)| entry))
-                        .unwrap_or_else(|| Arc::new(Mutex::new(MediaCacheEntry::Requested)))
+                        .unwrap_or_else(|| Arc::new(Mutex::new(MediaCacheEntry::Requested(Vec::new()))))
                 })
             }
         }
     }
+}
+
+/// Helper function to access the global media cache.
+pub fn get_or_fetch_media(
+    _cx: &mut Cx,
+    mxc_uri: &OwnedMxcUri,
+    requested_format: MediaFormat,
+    update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+) -> (MediaCacheEntry, MediaFormat) {
+    GLOBAL_MEDIA_CACHE.with_borrow_mut(|cache| {
+        cache.try_get_media_or_fetch(mxc_uri, requested_format, update_sender)
+    })
+}
+
+/// Helper function to remove media from the global cache.
+pub fn remove_media(
+    _cx: &mut Cx,
+    mxc_uri: &OwnedMxcUri,
+    format: Option<MediaFormat>,
+) -> Option<MediaCacheEntryRef> {
+    GLOBAL_MEDIA_CACHE.with_borrow_mut(|cache| {
+        cache.remove_cache_entry(mxc_uri, format)
+    })
 }
 
 /// Converts a Matrix SDK error to a MediaCacheEntry::Failed with appropriate status codes.
@@ -272,9 +323,18 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
         Err(e) => error_to_media_cache_entry(e, &request)
     };
 
-    *value_ref.lock().unwrap() = new_value;
+    let mut guard = value_ref.lock().unwrap();
+    let senders = if let MediaCacheEntry::Requested(s) = &*guard {
+        s.clone()
+    } else {
+        Vec::new()
+    };
+    *guard = new_value;
 
     if let Some(sender) = update_sender {
+        let _ = sender.send(TimelineUpdate::MediaFetched(request.clone()));
+    }
+    for sender in senders {
         let _ = sender.send(TimelineUpdate::MediaFetched(request.clone()));
     }
     SignalToUI::set_ui_signal();

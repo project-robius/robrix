@@ -25,7 +25,7 @@ use matrix_sdk_ui::timeline::{
 use ruma::{OwnedUserId, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}};
 
 use crate::{
-    app::{AppStateAction, ConfirmDeleteAction}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, ConfirmDeleteAction}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::RoomsListRef, tombstone_footer::SuccessorRoomDetails}, media_cache::{self, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -1067,7 +1067,7 @@ impl Widget for RoomScreen {
                                         event_tl_item,
                                         msg_like_content,
                                         prev_event,
-                                        &mut tl_state.media_cache,
+                                        Some(tl_state.update_sender.clone()),
                                         &mut tl_state.link_preview_cache,
                                         &tl_state.user_power,
                                         &self.pinned_events,
@@ -1434,7 +1434,7 @@ impl RoomScreen {
                     log!("process_timeline_updates(): media fetched for room {}", tl.room_id);
                     // Set Image to image viewer modal if the media is not a thumbnail.
                     if let (MediaFormat::File, media_source) = (request.format, request.source) {
-                        populate_matrix_image_modal(cx, media_source, &mut tl.media_cache);
+                        populate_matrix_image_modal(cx, media_source, Some(tl.update_sender.clone()));
                     }
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
@@ -1683,7 +1683,7 @@ impl RoomScreen {
             }),
         )));
 
-        populate_matrix_image_modal(cx, media_source, &mut tl_state.media_cache);
+        populate_matrix_image_modal(cx, media_source, Some(tl_state.update_sender.clone()));
     }
 
     /// Looks up the event specified by the given message details in the given timeline.
@@ -2132,8 +2132,8 @@ impl RoomScreen {
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
+                update_sender: update_sender.clone(),
                 request_sender,
-                media_cache: MediaCache::new(Some(update_sender.clone())),
                 link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
@@ -2643,14 +2643,12 @@ struct TimelineUiState {
     /// which is okay because a sender on an unbounded channel never needs to block.
     update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
 
+    /// The channel sender for timeline updates for this room.
+    update_sender: crossbeam_channel::Sender<TimelineUpdate>,
+
     /// The sender for timeline requests from a RoomScreen showing this room
     /// to the background async task that handles this room's timeline updates.
     request_sender: TimelineRequestSender,
-
-    /// The cache of media items (images, videos, etc.) that appear in this timeline.
-    ///
-    /// Currently this excludes avatars, as those are shared across multiple rooms.
-    media_cache: MediaCache,
 
     /// Cache for link preview data indexed by URL to avoid redundant network requests.
     link_preview_cache: LinkPreviewCache,
@@ -2814,7 +2812,7 @@ fn populate_message_view(
     event_tl_item: &EventTimelineItem,
     msg_like_content: &MsgLikeContent,
     prev_event: Option<&Arc<TimelineItem>>,
-    media_cache: &mut MediaCache,
+    update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     link_preview_cache: &mut LinkPreviewCache,
     user_power_levels: &UserPowerLevels,
     pinned_events: &[OwnedEventId],
@@ -2868,7 +2866,7 @@ fn populate_message_view(
                             body,
                             formatted.as_ref(),
                             Some(&mut item.link_preview(ids!(content.link_preview_view))),
-                            Some(media_cache),
+                            update_sender.clone(),
                             Some(link_preview_cache),
                         );
                         (item, false)
@@ -2906,7 +2904,7 @@ fn populate_message_view(
                             body,
                             formatted.as_ref(),
                             Some(&mut item.link_preview(ids!(content.link_preview_view))),
-                            Some(media_cache),
+                            update_sender.clone(),
                             Some(link_preview_cache),
                         );
                         (item, false)
@@ -2951,7 +2949,7 @@ fn populate_message_view(
                                 body: formatted,
                             }),
                             Some(&mut item.link_preview(ids!(content.link_preview_view))),
-                            Some(media_cache),
+                            update_sender.clone(),
                             Some(link_preview_cache),
                         );
                         (item, false)
@@ -2998,7 +2996,7 @@ fn populate_message_view(
                             &body,
                             formatted.as_ref(),
                             Some(&mut item.link_preview(ids!(content.link_preview_view))),
-                            Some(media_cache),
+                            update_sender.clone(),
                             Some(link_preview_cache),
                         );
                         set_username_and_get_avatar_retval = Some((username, profile_drawn));
@@ -3025,7 +3023,7 @@ fn populate_message_view(
                             image_info,
                             image.source.clone(),
                             msg.body(),
-                            media_cache,
+                            update_sender.clone(),
                         );
                         new_drawn_status.content_drawn = is_image_fully_drawn;
                         (item, false)
@@ -3135,7 +3133,7 @@ fn populate_message_view(
                             &verification.body,
                             Some(&formatted),
                             Some(&mut item.link_preview(ids!(content.link_preview_view))),
-                            Some(media_cache),
+                            update_sender.clone(),
                             Some(link_preview_cache),
                         );
                         (item, false)
@@ -3180,7 +3178,7 @@ fn populate_message_view(
                         Some(Box::new(image_info.clone())),
                         MediaSource::Plain(owned_mxc_url.clone()),
                         body,
-                        media_cache,
+                        update_sender.clone(),
                     );
                     new_drawn_status.content_drawn = is_image_fully_drawn;
                     (item, false)
@@ -3385,7 +3383,7 @@ fn populate_text_message_content(
     body: &str,
     formatted_body: Option<&FormattedBody>,
     link_preview_ref: Option<&mut LinkPreviewRef>,
-    media_cache: Option<&mut MediaCache>,
+    update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     link_preview_cache: Option<&mut LinkPreviewCache>,
 ) -> bool {
     // The message was HTML-formatted rich text.
@@ -3410,13 +3408,13 @@ fn populate_text_message_content(
     };
 
     // Populate link previews if all required parameters are provided
-    if let (Some(link_preview_ref), Some(media_cache), Some(link_preview_cache)) = 
-        (link_preview_ref, media_cache, link_preview_cache)
+    if let (Some(link_preview_ref), Some(link_preview_cache)) =
+        (link_preview_ref, link_preview_cache)
     {
         link_preview_ref.populate_below_message(
             cx,
             &links,
-            media_cache,
+            update_sender,
             link_preview_cache,
             &populate_image_message_content,
         )
@@ -3434,7 +3432,7 @@ fn populate_image_message_content(
     image_info_source: Option<Box<ImageInfo>>,
     original_source: MediaSource,
     body: &str,
-    media_cache: &mut MediaCache,
+    update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) -> bool {
     // We don't use thumbnails, as their resolution is too low to be visually useful.
     // We also don't trust the provided mimetype, as it can be incorrect.
@@ -3459,7 +3457,7 @@ fn populate_image_message_content(
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
     let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(&mxc_uri, MEDIA_THUMBNAIL_FORMAT.into()) {
+        match media_cache::get_or_fetch_media(cx, &mxc_uri, MEDIA_THUMBNAIL_FORMAT.into(), update_sender.clone()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
                 let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri)),|cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
@@ -3474,7 +3472,7 @@ fn populate_image_message_content(
                 // We're done drawing the image, so mark it as fully drawn.
                 fully_drawn = true;
             }
-            (MediaCacheEntry::Requested, _media_format) => {
+            (MediaCacheEntry::Requested(_), _media_format) => {
                 // If the image is being fetched, we try to show its blurhash.
                 if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
                     let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri)), |cx, img| {
