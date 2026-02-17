@@ -1683,7 +1683,7 @@ impl RoomScreen {
             }),
         )));
 
-        populate_matrix_image_modal(cx, media_source, &mut tl_state.media_cache);
+        populate_matrix_image_modal(cx, media_source, Some(tl_state.update_sender.clone()));
     }
 
     /// Looks up the event specified by the given message details in the given timeline.
@@ -2132,6 +2132,7 @@ impl RoomScreen {
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
+                update_sender: update_sender.clone(),
                 request_sender,
                 link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
                 saved_state: SavedState::default(),
