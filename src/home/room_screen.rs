@@ -3553,7 +3553,7 @@ fn populate_image_message_content(
             // Use the provided thumbnail URI if it exists; otherwise use the original URI.
             let media_source = image_info.thumbnail_source.clone()
                 .unwrap_or(original_source);
-        populate_matrix_image_modal(cx, media_source, Some(tl_state.update_sender.clone()));
+            fetch_and_show_media_source(cx, media_source, image_info);
         }
         None => {
             text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");
