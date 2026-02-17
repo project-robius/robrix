@@ -2133,7 +2133,6 @@ impl RoomScreen {
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
                 request_sender,
-                media_cache: MediaCache::new(Some(update_sender.clone())),
                 link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
@@ -3472,7 +3471,7 @@ fn populate_image_message_content(
                 // We're done drawing the image, so mark it as fully drawn.
                 fully_drawn = true;
             }
-            (MediaCacheEntry::Requested, _media_format) => {
+            (MediaCacheEntry::Requested(_), _media_format) => {
                 // If the image is being fetched, we try to show its blurhash.
                 if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
                     let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri)), |cx, img| {
@@ -3553,7 +3552,7 @@ fn populate_image_message_content(
             // Use the provided thumbnail URI if it exists; otherwise use the original URI.
             let media_source = image_info.thumbnail_source.clone()
                 .unwrap_or(original_source);
-            fetch_and_show_media_source(cx, media_source, image_info);
+        populate_matrix_image_modal(cx, media_source, Some(tl_state.update_sender.clone()));
         }
         None => {
             text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");
