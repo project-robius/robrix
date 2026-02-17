@@ -473,6 +473,66 @@ impl Widget for NavigationTabBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
+        let tooltip_pos = if cx.display_context.is_desktop() {
+            TooltipPosition::Right
+        } else {
+            TooltipPosition::Top
+        };
+
+        let buttons = [
+            (ids!(home_button), "Home"),
+            (ids!(add_room_button), "Add Room"),
+            (ids!(settings_button), "Settings"),
+        ];
+
+        for (id, text) in buttons {
+            let button = self.view.radio_button(id);
+            match event.hits(cx, button.area()) {
+                Hit::FingerHoverIn(_) => {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverIn {
+                            text: text.to_string(),
+                            widget_rect: button.area().rect(cx),
+                            options: CalloutTooltipOptions {
+                                position: tooltip_pos.clone(),
+                                ..Default::default()
+                            },
+                        },
+                    );
+                }
+                Hit::FingerHoverOut(_) => {
+                    cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
+                }
+                _ => {}
+            }
+        }
+
+        if !cx.display_context.is_desktop() {
+            let button = self.view.button(ids!(toggle_spaces_bar_button));
+            match event.hits(cx, button.area()) {
+                Hit::FingerHoverIn(_) => {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverIn {
+                            text: "Toggle Spaces".to_string(),
+                            widget_rect: button.area().rect(cx),
+                            options: CalloutTooltipOptions {
+                                position: tooltip_pos.clone(),
+                                ..Default::default()
+                            },
+                        },
+                    );
+                }
+                Hit::FingerHoverOut(_) => {
+                    cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
+                }
+                _ => {}
+            }
+        }
+
         if let Event::Actions(actions) = event {
             // Handle one of the radio buttons being clicked (selected).
             let radio_button_set = self.view.radio_button_set(ids_array!(
