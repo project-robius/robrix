@@ -13,7 +13,6 @@ use url::Url;
 
 use crate::{
     home::room_screen::TimelineUpdate,
-    media_cache::MediaCache,
     shared::{
         styles::{COLOR_BG_PREVIEW, COLOR_BG_PREVIEW_HOVER},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
@@ -315,11 +314,11 @@ impl LinkPreviewRef {
         cx: &mut Cx,
         link_preview_cache_entry: LinkPreviewCacheEntry,
         link: &Url,
-        media_cache: &mut MediaCache,
+        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
         image_populate_fn: F,
     ) -> (ViewRef, bool)
     where
-        F: FnOnce(&mut Cx, &TextOrImageRef, Option<Box<ImageInfo>>, MediaSource, &str, &mut MediaCache) -> bool,
+        F: FnOnce(&mut Cx, &TextOrImageRef, Option<Box<ImageInfo>>, MediaSource, &str, Option<crossbeam_channel::Sender<TimelineUpdate>>) -> bool,
     {
         let view_ref = WidgetRef::new_from_ptr(cx, self.item_template()).as_view();
         let mut fully_drawn = true;
@@ -384,7 +383,7 @@ impl LinkPreviewRef {
                 image_info_source,
                 original_source,
                 "",
-                media_cache,
+                update_sender,
             );
         }
 
@@ -402,12 +401,12 @@ impl LinkPreviewRef {
         &mut self,
         cx: &mut Cx,
         links: &Vec<url::Url>,
-        media_cache: &mut MediaCache,
+        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
         link_preview_cache: &mut LinkPreviewCache,
         populate_image_fn: &F,
     ) -> bool 
     where
-        F: Fn(&mut Cx, &TextOrImageRef, Option<Box<ImageInfo>>, MediaSource, &str, &mut MediaCache) -> bool,
+        F: Fn(&mut Cx, &TextOrImageRef, Option<Box<ImageInfo>>, MediaSource, &str, Option<crossbeam_channel::Sender<TimelineUpdate>>) -> bool,
     {
         const SKIPPED_DOMAINS: &[&str] = &["matrix.to", "matrix.io"];
         const MAX_LINK_PREVIEWS_BY_EXPAND: usize = 2;
@@ -437,9 +436,9 @@ impl LinkPreviewRef {
                 cx,
                 link_preview_cache.get_or_fetch_link_preview(url_string),
                 link,
-                media_cache,
-                |cx, text_or_image_ref, image_info_source, original_source, body, media_cache| {
-                    populate_image_fn(cx, text_or_image_ref, image_info_source, original_source, body, media_cache)
+                update_sender.clone(),
+                |cx, text_or_image_ref, image_info_source, original_source, body, update_sender| {
+                    populate_image_fn(cx, text_or_image_ref, image_info_source, original_source, body, update_sender)
                 },
             );
             fully_drawn_count += was_image_drawn as usize;

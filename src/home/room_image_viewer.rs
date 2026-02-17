@@ -6,7 +6,7 @@ use matrix_sdk::{
 };
 use reqwest::StatusCode;
 
-use crate::{media_cache::{MediaCache, MediaCacheEntry}, shared::image_viewer::{ImageViewerAction, ImageViewerError, LoadState}};
+use crate::{home::room_screen::TimelineUpdate, media_cache::{self, MediaCacheEntry}, shared::image_viewer::{ImageViewerAction, ImageViewerError, LoadState}};
 
 /// Populates the image viewer modal with the given media content.
 ///
@@ -16,13 +16,13 @@ use crate::{media_cache::{MediaCache, MediaCacheEntry}, shared::image_viewer::{I
 pub fn populate_matrix_image_modal(
     cx: &mut Cx,
     media_source: MediaSource,
-    media_cache: &mut MediaCache,
+    update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
     let MediaSource::Plain(mxc_uri) = media_source else {
         return;
     };
     // Try to get media from cache or trigger fetch
-    let media_entry = media_cache.try_get_media_or_fetch(&mxc_uri, MediaFormat::File);
+    let media_entry = media_cache::get_or_fetch_media(cx, &mxc_uri, MediaFormat::File, update_sender);
 
     // Handle the different media states
     match media_entry {
@@ -39,7 +39,7 @@ pub fn populate_matrix_image_modal(
             };
             cx.action(ImageViewerAction::Show(LoadState::Error(error)));
             // Remove failed media entry from cache for MediaFormat::File so as to start all over again from loading Thumbnail.
-            media_cache.remove_cache_entry(&mxc_uri, Some(MediaFormat::File));
+            media_cache::remove_media(cx, &mxc_uri, Some(MediaFormat::File));
         }
         _ => {}
     }
