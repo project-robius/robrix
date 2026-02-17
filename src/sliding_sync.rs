@@ -318,45 +318,57 @@ pub enum DirectMessageRoomAction {
     },
 }
 
+/// Either a main room timeline or a thread-focused timeline.
+#[derive(Clone, Debug)]
+pub enum TimelineKind {
+    MainRoom {
+        room_id: OwnedRoomId,
+    },
+    Thread {
+        room_id: OwnedRoomId,
+        thread_root_event_id: OwnedEventId,
+    },
+}
+impl TimelineKind {
+    pub fn room_id(&self) -> &OwnedRoomId {
+        match self {
+            TimelineKind::MainRoom { room_id } => room_id,
+            TimelineKind::Thread { room_id, .. } => room_id,
+        }
+    }
+}
+
 /// The set of requests for async work that can be made to the worker thread.
 #[allow(clippy::large_enum_variant)]
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
     Login(LoginRequest),
     /// Request to logout.
-    Logout{
+    Logout {
         is_desktop: bool,
     },
     /// Request to paginate the older (or newer) events of a room's timeline.
     PaginateRoomTimeline {
-        room_id: OwnedRoomId,
-        /// If `Some`, paginate a thread-focused timeline rooted at this event.
-        thread_root_event_id: Option<OwnedEventId>,
+        timeline_kind: TimelineKind,
         /// The maximum number of timeline events to fetch in each pagination batch.
         num_events: u16,
         direction: PaginationDirection,
     },
     /// Request to edit the content of an event in the given room's timeline.
     EditMessage {
-        room_id: OwnedRoomId,
-        /// If `Some`, use a thread-focused timeline rooted at this event.
-        thread_root_event_id: Option<OwnedEventId>,
+        timeline_kind: TimelineKind,
         timeline_event_item_id: TimelineEventItemId,
         edited_content: EditedContent,
     },
     /// Request to fetch the full details of the given event in the given room's timeline.
     FetchDetailsForEvent {
-        room_id: OwnedRoomId,
-        /// If `Some`, use a thread-focused timeline rooted at this event.
-        thread_root_event_id: Option<OwnedEventId>,
+        timeline_kind: TimelineKind,
         event_id: OwnedEventId,
     },
     /// Request to fetch profile information for all members of a room.
     /// This can be *very* slow depending on the number of members in the room.
     SyncRoomMemberList {
-        room_id: OwnedRoomId,
-        /// If `Some`, send completion updates to this thread-focused timeline.
-        thread_root_event_id: Option<OwnedEventId>,
+        timeline_kind: TimelineKind,
     },
     /// Request to create a thread-focused timeline for the given room and thread root event.
     CreateThreadTimeline {
@@ -386,9 +398,7 @@ pub enum MatrixRequest {
     /// Request to get the actual list of members in a room.
     /// This returns the list of members that can be displayed in the UI.
     GetRoomMembers {
-        room_id: OwnedRoomId,
-        /// If `Some`, send updates to this thread-focused timeline.
-        thread_root_event_id: Option<OwnedEventId>,
+        timeline_kind: TimelineKind,
         memberships: RoomMemberships,
         /// * If `true` (not recommended), only the local cache will be accessed.
         /// * If `false` (recommended), details will be fetched from the server.
@@ -431,9 +441,7 @@ pub enum MatrixRequest {
     },
     /// Request to fetch the number of unread messages in the given room.
     GetNumberUnreadMessages {
-        room_id: OwnedRoomId,
-        /// If `Some`, send unread-count updates to this thread-focused timeline.
-        thread_root_event_id: Option<OwnedEventId>,
+        timeline_kind: TimelineKind,
     },
     /// Request to set the unread flag for the given room.
     SetUnreadFlag {
@@ -508,9 +516,7 @@ pub enum MatrixRequest {
     },
     /// Request to send a message to the given room.
     SendMessage {
-        room_id: OwnedRoomId,
-        /// If `Some`, send via a thread-focused timeline rooted at this event.
-        thread_root_event_id: Option<OwnedEventId>,
+        timeline_kind: TimelineKind,
         message: RoomMessageEventContent,
         replied_to: Option<Reply>,
         #[cfg(feature = "tsp")]
@@ -538,9 +544,7 @@ pub enum MatrixRequest {
     ///
     /// This request does not return a response or notify the UI thread.
     SubscribeToTypingNotices {
-        room_id: OwnedRoomId,
-        /// If `Some`, send typing updates to this thread-focused timeline.
-        thread_root_event_id: Option<OwnedEventId>,
+        timeline_kind: TimelineKind,
         /// Whether to subscribe or unsubscribe.
         subscribe: bool,
     },
@@ -548,32 +552,26 @@ pub enum MatrixRequest {
     ///
     /// This request does not return a response or notify the UI thread.
     SubscribeToOwnUserReadReceiptsChanged {
-        room_id: OwnedRoomId,
-        /// If `Some`, send read receipt updates to this thread-focused timeline.
-        thread_root_event_id: Option<OwnedEventId>,
+        timeline_kind: TimelineKind,
         /// Whether to subscribe or unsubscribe.
         subscribe: bool,
     },
     /// Subscribe to changes in the set of pinned events for the given room.
+    ///
+    /// This is only valid for the main room timeline, not for thread-focused timelines.
     SubscribeToPinnedEvents {
         room_id: OwnedRoomId,
-        /// If `Some`, send pinned-event updates to this thread-focused timeline.
-        thread_root_event_id: Option<OwnedEventId>,
         /// Whether to subscribe or unsubscribe.
         subscribe: bool,
     },
     /// Sends a read receipt for the given event in the given room.
     ReadReceipt {
-        room_id: OwnedRoomId,
-        /// If `Some`, send via a thread-focused timeline rooted at this event.
-        thread_root_event_id: Option<OwnedEventId>,
+        timeline_kind: TimelineKind,
         event_id: OwnedEventId,
     },
     /// Sends a fully-read receipt for the given event in the given room.
     FullyReadReceipt {
-        room_id: OwnedRoomId,
-        /// If `Some`, send via a thread-focused timeline rooted at this event.
-        thread_root_event_id: Option<OwnedEventId>,
+        timeline_kind: TimelineKind,
         event_id: OwnedEventId,
     },
     /// Sends a request to obtain the power levels for this room.
@@ -586,27 +584,21 @@ pub enum MatrixRequest {
     },
     /// Toggles the given reaction to the given event in the given room.
     ToggleReaction {
-        room_id: OwnedRoomId,
-        /// If `Some`, use a thread-focused timeline rooted at this event.
-        thread_root_event_id: Option<OwnedEventId>,
+        timeline_kind: TimelineKind,
         timeline_event_id: TimelineEventItemId,
         reaction: String,
     },
     /// Redacts (deletes) the given event in the given room.
     #[doc(alias("delete"))]
     RedactMessage {
-        room_id: OwnedRoomId,
-        /// If `Some`, use a thread-focused timeline rooted at this event.
-        thread_root_event_id: Option<OwnedEventId>,
+        timeline_kind: TimelineKind,
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
     },
     /// Pin or unpin the given event in the given room.
     #[doc(alias("unpin"))]
     PinEvent {
-        room_id: OwnedRoomId,
-        /// If `Some`, use a thread-focused timeline rooted at this event.
-        thread_root_event_id: Option<OwnedEventId>,
+        timeline_kind: TimelineKind,
         event_id: OwnedEventId,
         pin: bool,
     },
@@ -1217,10 +1209,7 @@ async fn matrix_worker_task(
                     }
                 });
             }
-            MatrixRequest::GetNumberUnreadMessages {
-                room_id,
-                thread_root_event_id,
-            } => {
+            MatrixRequest::GetNumberUnreadMessages { room_id, thread_root_event_id } => {
                 let (timeline, sender) = {
                     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
@@ -1562,11 +1551,7 @@ async fn matrix_worker_task(
                 });
                 subscribers_own_user_read_receipts.insert(room_id, subscribe_own_read_receipt_task);
             }
-            MatrixRequest::SubscribeToPinnedEvents {
-                room_id,
-                thread_root_event_id,
-                subscribe,
-            } => {
+            MatrixRequest::SubscribeToPinnedEvents { room_id, subscribe } => {
                 if !subscribe {
                     if let Some(task_handler) = subscribers_pinned_events.remove(&room_id) {
                         task_handler.abort();
@@ -1996,7 +1981,7 @@ async fn matrix_worker_task(
                     }
                 });
             }
-            MatrixRequest::GetUrlPreview { url, on_fetched, destination, update_sender,} => {
+            MatrixRequest::GetUrlPreview { url, on_fetched, destination, update_sender } => {
                 // const MAX_LOG_RESPONSE_BODY_LENGTH: usize = 1000;
                 // log!("Starting URL preview fetch for: {}", url);
                 let _fetch_url_preview_task = Handle::current().spawn(async move {

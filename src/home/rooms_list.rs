@@ -252,7 +252,7 @@ pub enum RoomsListAction {
     /// Instructs the top-level app to show the context menu for the given room.
     ///
     /// Emitted by the RoomsList when the user right-clicks or long-presses
-    /// on a room in the rooms list
+    /// on a room in the rooms list.
     OpenRoomContextMenu {
         details: RoomContextMenuDetails,
         pos: DVec2,

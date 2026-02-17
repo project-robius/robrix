@@ -892,14 +892,6 @@ impl SelectedRoom {
         }
     }
 
-    pub fn thread_root_event_id(&self) -> Option<&OwnedEventId> {
-        if let SelectedRoom::Thread { thread_root_event_id, .. } = self {
-            Some(thread_root_event_id)
-        } else {
-            None
-        }
-    }
-
     /// Upgrades this room from an invite to a joined room
     /// if its `room_id` matches the given `room_id`.
     ///

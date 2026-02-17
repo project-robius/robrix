@@ -234,7 +234,7 @@ impl Avatar {
     ///
     /// If the user profile is not ready, this function will submit an async request
     /// to fetch the user profile from the server, but only if the event ID is `Some`.
-    /// For Read Receipt cases, there is no user's profile. The Avatar cache is taken from the sender's profile
+    /// For Read Receipt cases, there is no user profile. The Avatar cache is taken from the sender's profile
     ///
     /// This function will always choose a nice, displayable username and avatar.
     ///
