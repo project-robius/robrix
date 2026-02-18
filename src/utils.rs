@@ -8,7 +8,10 @@ use makepad_widgets::{Cx, Event, ImageRef, error, image_cache::ImageError};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}, RoomDisplayName};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
-use crate::{room::FetchedRoomAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::{
+    room::FetchedRoomAvatar,
+    sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
+};
 
 /// The scheme for GEO links, used for location messages in Matrix.
 pub const GEO_URI_SCHEME: &str = "geo:";
@@ -629,8 +632,9 @@ pub fn get_or_fetch_event_sender(
             if let Some(room_id) = room_id {
                 if let Some(event_id) = event_tl_item.event_id() {
                     submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                        room_id: room_id.clone(),
-                        thread_root_event_id: None,
+                        timeline_kind: TimelineKind::MainRoom {
+                            room_id: room_id.clone(),
+                        },
                         event_id: event_id.to_owned(),
                     });
                 }

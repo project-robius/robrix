@@ -38,7 +38,7 @@ use crate::{
         popup_list::{PopupKind, enqueue_popup_notification},
         room_filter_input_bar::RoomFilterAction,
     },
-    sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, submit_async_request},
+    sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, TimelineKind, submit_async_request},
     space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction}, utils::{RoomNameId, VecDiff},
 };
 
@@ -1457,9 +1457,10 @@ impl Widget for RoomsList {
                         // Paginate the room if it hasn't been paginated yet.
                         if PREPAGINATE_VISIBLE_ROOMS && !direct_room.has_been_paginated {
                             direct_room.has_been_paginated = true;
-                            submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                                room_id: direct_room.room_name_id.room_id().clone(),
-                                thread_root_event_id: None,
+                            submit_async_request(MatrixRequest::PaginateTimeline {
+                                timeline_kind: TimelineKind::MainRoom {
+                                    room_id: direct_room.room_name_id.room_id().clone(),
+                                },
                                 num_events: 50,
                                 direction: PaginationDirection::Backwards,
                             });
@@ -1493,9 +1494,10 @@ impl Widget for RoomsList {
                         // Paginate the room if it hasn't been paginated yet.
                         if PREPAGINATE_VISIBLE_ROOMS && !regular_room.has_been_paginated {
                             regular_room.has_been_paginated = true;
-                            submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                                room_id: regular_room.room_name_id.room_id().clone(),
-                                thread_root_event_id: None,
+                            submit_async_request(MatrixRequest::PaginateTimeline {
+                                timeline_kind: TimelineKind::MainRoom {
+                                    room_id: regular_room.room_name_id.room_id().clone(),
+                                },
                                 num_events: 50,
                                 direction: PaginationDirection::Backwards,
                             });

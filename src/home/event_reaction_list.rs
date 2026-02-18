@@ -1,6 +1,6 @@
 use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::profile::user_profile_cache;
-use crate::sliding_sync::{current_user_id, submit_async_request, MatrixRequest};
+use crate::sliding_sync::{current_user_id, submit_async_request, MatrixRequest, TimelineKind};
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
@@ -175,8 +175,9 @@ impl Widget for ReactionList {
                             return;
                         };
                         submit_async_request(MatrixRequest::ToggleReaction {
-                            room_id: room_id.clone(),
-                            thread_root_event_id: None,
+                            timeline_kind: TimelineKind::MainRoom {
+                                room_id: room_id.clone(),
+                            },
                             timeline_event_id: timeline_event_id.clone(),
                             reaction: reaction_data.reaction.clone(),
                         });

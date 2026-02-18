@@ -14,7 +14,10 @@ use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use ruma::OwnedMxcUri;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, profile::{user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, user_profile_cache}, sliding_sync::{submit_async_request, MatrixRequest}, utils
+    avatar_cache::{self, AvatarCacheEntry},
+    profile::{user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, user_profile_cache},
+    sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
+    utils,
 };
 
 live_design! {
@@ -296,8 +299,9 @@ impl Avatar {
             Some(TimelineDetails::Unavailable) => {
                 if let Some(event_id) = event_id {
                     submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                        room_id: room_id.to_owned(),
-                        thread_root_event_id: None,
+                        timeline_kind: TimelineKind::MainRoom {
+                            room_id: room_id.to_owned(),
+                        },
                         event_id: event_id.to_owned(),
                     });
                 }

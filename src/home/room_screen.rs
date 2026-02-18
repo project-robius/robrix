@@ -1,9 +1,10 @@
 //! A room screen is the UI view that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, cell::RefCell, collections::BTreeMap, ops::{DerefMut, Range}, sync::Arc};
+use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::Arc};
 
 use bytesize::ByteSize;
+use hashbrown::HashMap;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
@@ -22,7 +23,7 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MembershipChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
-use ruma::{OwnedUserId, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}};
+use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}, owned_room_id};
 
 use crate::{
     app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
@@ -33,7 +34,7 @@ use crate::{
     shared::{
         avatar::{AvatarState, AvatarWidgetRefExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -613,8 +614,8 @@ pub struct RoomScreen {
 
     /// The name and ID of the currently-shown room, if any.
     #[rust] room_name_id: Option<RoomNameId>,
-    /// If `Some`, this RoomScreen is showing a thread-focused timeline rooted at this event ID.
-    #[rust] thread_root_event_id: Option<OwnedEventId>,
+    /// The timeline currently displayed by this RoomScreen, if any.
+    #[rust] timeline_kind: Option<TimelineKind>,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
     /// The set of pinned events in this room.
@@ -754,7 +755,7 @@ impl Widget for RoomScreen {
                         } else {
                             user_id.as_str()
                         };
-                        let room_id = tl.room_id.clone();
+                        let room_id = tl.kind.room_id().clone();
                         let content = ConfirmationModalContent {
                             title_text: "Send Invitation".into(),
                             body_text: format!("Are you sure you want to invite {username} to this room?").into(),
@@ -776,8 +777,9 @@ impl Widget for RoomScreen {
                 if let Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, ..}) = action.downcast_ref() {
                     if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_name_id.room_id()) {
                         // `set_displayed_room()` does nothing if the room_name_id is unchanged, so we clear it first.
-                        let thread_root_event_id = self.thread_root_event_id.clone();
                         self.room_name_id = None;
+                        let thread_root_event_id = self.timeline_kind.as_ref()
+                            .and_then(|k| k.thread_root_event_id().cloned());
                         self.set_displayed_room(cx, room_name_id, thread_root_event_id);
                         return;
                     }
@@ -872,7 +874,8 @@ impl Widget for RoomScreen {
                 let rooms_list_ref = cx.get_global::<RoomsListRef>();
                 if rooms_list_ref.is_room_loaded(room_name_id.room_id()) {
                     let room_name_clone = room_name_id.clone();
-                    let thread_root_event_id = self.thread_root_event_id.clone();
+                    let thread_root_event_id = self.timeline_kind.as_ref()
+                        .and_then(|k| k.thread_root_event_id().cloned());
                     // This room has been loaded now, so we call `set_displayed_room()`.
                     // We first clear the `room_name_id`, otherwise that function will do nothing.
                     self.room_name_id = None;
@@ -883,7 +886,10 @@ impl Widget for RoomScreen {
                 }
             }
 
-            if self.tl_state.is_none() && self.room_name_id.is_some() {
+            // If this RoomScreen is waiting to show a thread timeline (not the main room timeline),
+            // then we need to retry showing the timeline now (upon a Signal),
+            // because the thread timeline may have been successfully created.
+            if self.tl_state.is_none() && self.timeline_kind.is_some() {
                 self.show_timeline(cx);
             }
 
@@ -930,7 +936,7 @@ impl Widget for RoomScreen {
             // Create a Scope with RoomScreenProps containing the room members.
             // This scope is needed by child widgets like MentionableTextInput during event handling.
             let room_props = if let Some(tl) = self.tl_state.as_ref() {
-                let room_id = tl.room_id.clone();
+                let room_id = tl.kind.room_id().clone();
                 let room_members = tl.room_members.clone();
 
                 // Fetch room data once to avoid duplicate expensive lookups
@@ -945,7 +951,7 @@ impl Widget for RoomScreen {
                 RoomScreenProps {
                     room_screen_widget_uid,
                     room_name_id: RoomNameId::new(room_display_name, room_id),
-                    thread_root_event_id: self.thread_root_event_id.clone(),
+                    timeline_kind: tl.kind.clone(),
                     room_members,
                     room_avatar_url,
                 }
@@ -954,24 +960,23 @@ impl Widget for RoomScreen {
                 RoomScreenProps {
                     room_screen_widget_uid,
                     room_name_id: room_name.clone(),
-                    thread_root_event_id: self.thread_root_event_id.clone(),
+                    timeline_kind: self.timeline_kind.clone()
+                        .expect("BUG: room_name_id was set but timeline_kind was missing"),
                     room_members: None,
                     room_avatar_url: None,
                 }
             } else {
                 // No room selected yet, skip event handling that requires room context
-                log!("RoomScreen handling event with no room_name_id and no tl_state, skipping room-dependent event handling");
                 if !is_pane_shown || !is_interactive_hit {
                     return;
                 }
+                log!("RoomScreen handling event with no room_name_id and no tl_state, skipping room-dependent event handling");
                 // Use a dummy room props for non-room-specific events
+                let room_id = owned_room_id!("!dummy:matrix.org");
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_name_id: RoomNameId::new(
-                        RoomDisplayName::Empty,
-                        matrix_sdk::ruma::OwnedRoomId::try_from("!dummy:matrix.org").unwrap(),
-                    ),
-                    thread_root_event_id: None,
+                    room_name_id: RoomNameId::empty(room_id.clone()),
+                    timeline_kind: TimelineKind::MainRoom { room_id },
                     room_members: None,
                     room_avatar_url: None,
                 }
@@ -1070,7 +1075,7 @@ impl Widget for RoomScreen {
             let Some(tl_state) = self.tl_state.as_mut() else {
                 return DrawStep::done();
             };
-            let room_id = &tl_state.room_id;
+            let room_id = tl_state.kind.room_id();
             let tl_items = &tl_state.items;
 
             // Set the portal list's range based on the number of timeline items.
@@ -1099,7 +1104,7 @@ impl Widget for RoomScreen {
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
                             TimelineItemContent::MsgLike(msg_like_content) => {
-                                if tl_state.thread_root.is_none()
+                                if tl_state.kind.thread_root_event_id().is_none()
                                     && msg_like_content.thread_root.is_some()
                                 {
                                     // Hide threaded replies from the main room timeline UI.
@@ -1115,7 +1120,7 @@ impl Widget for RoomScreen {
                                                 list,
                                                 item_id,
                                                 room_id,
-                                                tl_state.thread_root.as_ref(),
+                                                tl_state.kind.thread_root_event_id(),
                                                 event_tl_item,
                                                 msg_like_content,
                                                 prev_event,
@@ -1226,9 +1231,8 @@ impl Widget for RoomScreen {
             // until we have enough events items to fill the viewport.
             if !tl_state.fully_paginated && !list.is_filling_viewport() {
                 log!("Automatically paginating timeline to fill viewport for room {:?}", self.room_name_id);
-                submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                    room_id: room_id.clone(),
-                    thread_root_event_id: tl_state.thread_root.clone(),
+                submit_async_request(MatrixRequest::PaginateTimeline {
+                    timeline_kind: tl_state.kind.clone(),
                     num_events: 50,
                     direction: PaginationDirection::Backwards,
                 });
@@ -1275,7 +1279,7 @@ impl RoomScreen {
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
-                            log!("process_timeline_updates(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
+                            log!("process_timeline_updates(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.kind.room_id());
                             // For now, we paginate a cleared timeline in order to be able to show something at least.
                             // A proper solution would be what's described below, which would be to save a few event IDs
                             // and then either focus on them (if we're not close to the end of the timeline)
@@ -1347,8 +1351,7 @@ impl RoomScreen {
                         // Immediately show the unread badge with no count while we fetch the actual count in the background.
                         jump_to_bottom.show_unread_message_badge(cx, UnreadMessageCount::Unknown);
                         submit_async_request(MatrixRequest::GetNumberUnreadMessages{
-                            room_id: tl.room_id.clone(),
-                            thread_root_event_id: tl.thread_root.clone(),
+                            timeline_kind: tl.kind.clone(),
                         });
                     }
 
@@ -1391,9 +1394,9 @@ impl RoomScreen {
                     jump_to_bottom.show_unread_message_badge(cx, unread_messages_count);
                 }
                 TimelineUpdate::TargetEventFound { target_event_id, index } => {
-                    // log!("Target event found in room {}: {target_event_id}, index: {index}", tl.room_id);
+                    // log!("Target event found in room {}: {target_event_id}, index: {index}", tl.kind.room_id());
                     tl.request_sender.send_if_modified(|requests| {
-                        requests.retain(|r| r.room_id != tl.room_id);
+                        requests.retain(|r| &r.room_id != tl.kind.room_id());
                         // no need to notify/wake-up all receivers for a completed request
                         false
                     });
@@ -1406,7 +1409,7 @@ impl RoomScreen {
                     );
                     let loading_pane = self.view.loading_pane(ids!(loading_pane));
 
-                    // log!("TargetEventFound: is_valid? {is_valid}. room {}, event {target_event_id}, index {index} of {}\n  --> item: {item:?}", tl.room_id, tl.items.len());
+                    // log!("TargetEventFound: is_valid? {is_valid}. room {}, event {target_event_id}, index {index} of {}\n  --> item: {item:?}", tl.kind.room_id(), tl.items.len());
                     if is_valid {
                         // We successfully found the target event, so we can close the loading pane,
                         // reset the loading panestate to `None`, and stop issuing backwards pagination requests.
@@ -1430,7 +1433,7 @@ impl RoomScreen {
                         // Here, the target event was not found in the current timeline,
                         // or we found it previously but it is no longer in the timeline (or has moved),
                         // which means we encountered an error and are unable to jump to the target event.
-                        error!("Target event index {index} of {} is out of bounds for room {}", tl.items.len(), tl.room_id);
+                        error!("Target event index {index} of {} is out of bounds for room {}", tl.items.len(), tl.kind.room_id());
                         // Show this error in the loading pane, which should already be open.
                         loading_pane.set_state(cx, LoadingPaneState::Error(
                             String::from("Unable to find related message; it may have been deleted.")
@@ -1474,13 +1477,13 @@ impl RoomScreen {
                 }
                 TimelineUpdate::EventDetailsFetched {event_id, result } => {
                     if let Err(_e) = result {
-                        error!("Failed to fetch details fetched for event {event_id} in room {}. Error: {_e:?}", tl.room_id);
+                        error!("Failed to fetch details fetched for event {event_id} in room {}. Error: {_e:?}", tl.kind.room_id());
                     }
                     // Here, to be most efficient, we could redraw only the updated event,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
                 TimelineUpdate::RoomMembersSynced => {
-                    // log!("process_timeline_updates(): room members fetched for room {}", tl.room_id);
+                    // log!("process_timeline_updates(): room members fetched for room {}", tl.kind.room_id());
                     // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
@@ -1489,7 +1492,7 @@ impl RoomScreen {
                     tl.room_members = Some(Arc::new(members));
                 },
                 TimelineUpdate::MediaFetched(request) => {
-                    log!("process_timeline_updates(): media fetched for room {}", tl.room_id);
+                    log!("process_timeline_updates(): media fetched for room {}", tl.kind.room_id());
                     // Set Image to image viewer modal if the media is not a thumbnail.
                     if let (MediaFormat::File, media_source) = (request.format, request.source) {
                         populate_matrix_image_modal(cx, media_source, &mut tl.media_cache);
@@ -1497,7 +1500,7 @@ impl RoomScreen {
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
-                TimelineUpdate::MessageEdited { timeline_event_id, result } => {
+                TimelineUpdate::MessageEdited { timeline_event_item_id: timeline_event_id, result } => {
                     self.view.room_input_bar(ids!(room_input_bar))
                         .handle_edit_result(cx, timeline_event_id, result);
                 }
@@ -1544,7 +1547,7 @@ impl RoomScreen {
                         .update_user_power_levels(cx, user_power_levels);
                     // Update the @room mention capability based on the user's power level
                     cx.action(MentionableTextInputAction::PowerLevelsUpdated {
-                        room_id: tl.room_id.clone(),
+                        room_id: tl.kind.room_id().clone(),
                         can_notify_room: user_power_levels.can_notify_room(),
                     });
                     // We need to redraw all events in order to reflect the new power levels,
@@ -1557,7 +1560,7 @@ impl RoomScreen {
                 }
                 TimelineUpdate::Tombstoned(successor_room_details) => {
                     self.view.room_input_bar(ids!(room_input_bar))
-                        .update_tombstone_footer(cx, &tl.room_id, Some(&successor_room_details));
+                        .update_tombstone_footer(cx, tl.kind.room_id(), Some(&successor_room_details));
                     tl.tombstone_info = Some(successor_room_details);
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
@@ -1565,9 +1568,8 @@ impl RoomScreen {
         }
 
         if should_continue_backwards_pagination {
-            submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                room_id: tl.room_id.clone(),
-                thread_root_event_id: tl.thread_root.clone(),
+            submit_async_request(MatrixRequest::PaginateTimeline {
+                timeline_kind: tl.kind.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
             });
@@ -1584,7 +1586,7 @@ impl RoomScreen {
         }
 
         if num_updates > 0 {
-            // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.room_id, tl.items.len());
+            // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.kind.room_id(), tl.items.len());
             self.redraw(cx);
         }
     }
@@ -1736,7 +1738,7 @@ impl RoomScreen {
                 image_file_size,
                 timestamp: unix_time_millis_to_datetime(timestamp_millis),
                 avatar_parameter: Some((
-                    tl_state.room_id.clone(),
+                    tl_state.kind.room_id().clone(),
                     event_tl_item.clone(),
                 )),
             }),
@@ -1786,8 +1788,7 @@ impl RoomScreen {
                 MessageAction::React { details, reaction } => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     submit_async_request(MatrixRequest::ToggleReaction {
-                        room_id: tl.room_id.clone(),
-                        thread_root_event_id: tl.thread_root.clone(),
+                        timeline_kind: tl.kind.clone(),
                         timeline_event_id: details.timeline_event_id.clone(),
                         reaction: reaction.clone(),
                     });
@@ -1797,7 +1798,7 @@ impl RoomScreen {
                     if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details).cloned() {
                         let replied_to_info = EmbeddedEvent::from_timeline_item(&event_tl_item);
                         self.view.room_input_bar(ids!(room_input_bar))
-                            .show_replying_to(cx, (event_tl_item, replied_to_info), &tl.room_id);
+                            .show_replying_to(cx, (event_tl_item, replied_to_info), tl.kind.room_id());
                     }
                     else {
                         enqueue_popup_notification(
@@ -1819,8 +1820,7 @@ impl RoomScreen {
                             .show_editing_pane(
                                 cx,
                                 event_tl_item.clone(),
-                                tl.room_id.clone(),
-                                tl.thread_root.clone(),
+                                tl.kind.clone(),
                             );
                     }
                     else {
@@ -1848,8 +1848,7 @@ impl RoomScreen {
                             .show_editing_pane(
                                 cx,
                                 latest_sent_msg,
-                                tl.room_id.clone(),
-                                tl.thread_root.clone(),
+                                tl.kind.clone(),
                             );
                     }
                     else {
@@ -1864,9 +1863,8 @@ impl RoomScreen {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     if let Some(event_id) = details.event_id() {
                         submit_async_request(MatrixRequest::PinEvent {
+                            timeline_kind: tl.kind.clone(),
                             event_id: event_id.clone(),
-                            room_id: tl.room_id.clone(),
-                            thread_root_event_id: tl.thread_root.clone(),
                             pin: true,
                         });
                     } else {
@@ -1881,9 +1879,8 @@ impl RoomScreen {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     if let Some(event_id) = details.event_id() {
                         submit_async_request(MatrixRequest::PinEvent {
+                            timeline_kind: tl.kind.clone(),
                             event_id: event_id.clone(),
-                            room_id: tl.room_id.clone(),
-                            thread_root_event_id: tl.thread_root.clone(),
                             pin: false,
                         });
                     } else {
@@ -1908,7 +1905,7 @@ impl RoomScreen {
                         error!("MessageAction::CopyText: couldn't find event [{}] {:?} to copy text from in room {}",
                             details.item_id,
                             details.timeline_event_id,
-                            tl.room_id,
+                            tl.kind.room_id(),
                         );
                     }
                 }
@@ -1945,14 +1942,14 @@ impl RoomScreen {
                         error!("MessageAction::CopyHtml: couldn't find event [{}] {:?} to copy HTML from in room {}",
                             details.item_id,
                             details.timeline_event_id,
-                            tl.room_id,
+                            tl.kind.room_id(),
                         );
                     }
                 }
                 MessageAction::CopyLink(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     if let Some(event_id) = details.event_id() {
-                        let matrix_to_uri = tl.room_id.matrix_to_event_uri(event_id.clone());
+                        let matrix_to_uri = tl.kind.room_id().matrix_to_event_uri(event_id.clone());
                         cx.copy_to_clipboard(&matrix_to_uri.to_string());
                     } else {
                         enqueue_popup_notification(
@@ -1963,7 +1960,7 @@ impl RoomScreen {
                         error!("MessageAction::CopyLink: no `event_id`: [{}] {:?} in room {}",
                             details.item_id,
                             details.timeline_event_id,
-                            tl.room_id,
+                            tl.kind.room_id(),
                         );
                     }
                 }
@@ -1986,7 +1983,7 @@ impl RoomScreen {
                     let event_id = event_tl_item.event_id().map(|e| e.to_owned());
 
                     cx.action(super::event_source_modal::EventSourceModalAction::Open {
-                        room_id: tl.room_id.clone(),
+                        room_id: tl.kind.room_id().clone(),
                         event_id,
                         original_json,
                     });
@@ -2032,8 +2029,7 @@ impl RoomScreen {
                 MessageAction::Redact { details, reason } => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     let timeline_event_id = details.timeline_event_id.clone();
-                    let room_id = tl.room_id.clone();
-                    let thread_root_event_id = tl.thread_root.clone();
+                    let timeline_kind = tl.kind.clone();
                     let reason = reason.clone();
                     let content = ConfirmationModalContent {
                         title_text: "Delete Message".into(),
@@ -2041,8 +2037,7 @@ impl RoomScreen {
                         accept_button_text: Some("Delete".into()),
                         on_accept_clicked: Some(Box::new(move |_cx| {
                             submit_async_request(MatrixRequest::RedactMessage {
-                                room_id,
-                                thread_root_event_id,
+                                timeline_kind,
                                 timeline_event_id,
                                 reason,
                             });
@@ -2103,7 +2098,7 @@ impl RoomScreen {
             .map(|position| max_tl_idx.saturating_sub(position).saturating_sub(1));
 
         if let Some(index) = related_msg_tl_index {
-            // log!("The related message {replied_to_event} was immediately found in room {}, scrolling to from index {reply_message_item_id} --> {index} (first ID {}).", tl.room_id, portal_list.first_id());
+            // log!("The related message {replied_to_event} was immediately found in room {}, scrolling to from index {reply_message_item_id} --> {index} (first ID {}).", tl.kind.room_id(), portal_list.first_id());
             let speed = 50.0;
             // Scroll to the message right *before* the replied-to message.
             // FIXME: `smooth_scroll_to` should accept a "scroll offset" (first scroll) parameter too,
@@ -2115,7 +2110,7 @@ impl RoomScreen {
                 item_id: index
             };
         } else {
-            log!("The related event {target_event_id} wasn't immediately available in room {}, searching for it in the background...", tl.room_id);
+            log!("The related event {target_event_id} wasn't immediately available in room {}, searching for it in the background...", tl.kind.room_id());
             // Here, we set the state of the loading pane and display it to the user.
             // The main logic will be handled in `process_timeline_updates()`, which is the only
             // place where we can receive updates to the timeline from the background tasks.
@@ -2130,13 +2125,13 @@ impl RoomScreen {
             loading_pane.show(cx);
 
             tl.request_sender.send_if_modified(|requests| {
-                if let Some(existing) = requests.iter_mut().find(|r| r.room_id == tl.room_id) {
-                    warning!("Unexpected: room {} already had an existing timeline request in progress, event: {:?}", tl.room_id, existing.target_event_id);
+                if let Some(existing) = requests.iter_mut().find(|r| &r.room_id == tl.kind.room_id()) {
+                    warning!("Unexpected: room {} already had an existing timeline request in progress, event: {:?}", tl.kind.room_id(), existing.target_event_id);
                     // We might as well re-use this existing request...
                     existing.target_event_id = target_event_id.clone();
                 } else {
                     requests.push(BackwardsPaginateUntilEventRequest {
-                        room_id: tl.room_id.clone(),
+                        room_id: tl.kind.room_id().clone(),
                         target_event_id: target_event_id.clone(),
                         // avoid re-searching through items we already searched through.
                         starting_index: max_tl_idx.saturating_sub(num_items_searched),
@@ -2168,19 +2163,16 @@ impl RoomScreen {
     /// Invoke this when this timeline is being shown,
     /// e.g., when the user navigates to this timeline.
     fn show_timeline(&mut self, cx: &mut Cx) {
-        let room_id = self
-            .room_id()
-            .expect("BUG: Timeline::show_timeline(): no room_name was set.")
-            .clone();
-        let thread_root_event_id = self.thread_root_event_id.clone();
+        let kind = self.timeline_kind.clone()
+            .expect("BUG: Timeline::show_timeline(): no timeline_kind was set.");
+        let room_id = kind.room_id().clone();
 
-        let state_key = timeline_state_key(&room_id, thread_root_event_id.as_ref());
-        let state_opt = TIMELINE_STATES.with_borrow_mut(|ts| ts.remove(&state_key));
+        let state_opt = TIMELINE_STATES.with_borrow_mut(|ts| ts.remove(&kind));
         let (mut tl_state, mut is_first_time_being_loaded) = if let Some(existing) = state_opt {
             (existing, false)
         } else {
-            let Some(timeline_endpoints) = take_timeline_endpoints(&room_id, thread_root_event_id.as_ref()) else {
-                if let Some(thread_root_event_id) = thread_root_event_id.as_ref() {
+            let Some(timeline_endpoints) = take_timeline_endpoints(&kind) else {
+                if let Some(thread_root_event_id) = kind.thread_root_event_id() {
                     submit_async_request(MatrixRequest::CreateThreadTimeline {
                         room_id: room_id.clone(),
                         thread_root_event_id: thread_root_event_id.clone(),
@@ -2188,8 +2180,8 @@ impl RoomScreen {
                     return;
                 }
                 if !self.is_loaded && self.all_rooms_loaded {
-                    panic!("BUG: timeline is not loaded, but room_id {:?} \
-                    was not waiting for its timeline to be loaded.", room_id);
+                    panic!("BUG: timeline {kind} is not loaded, but its RoomScreen \
+                    was not waiting for its timeline to be loaded either.");
                 }
                 return;
             };
@@ -2212,8 +2204,7 @@ impl RoomScreen {
             };
 
             let tl_state = TimelineUiState {
-                room_id: room_id.clone(),
-                thread_root: thread_root_event_id.clone(),
+                kind,
                 // Initially, we assume the user has all power levels by default.
                 // This avoids unexpectedly hiding any UI elements that should be visible to the user.
                 // This doesn't mean that the user can actually perform all actions;
@@ -2255,9 +2246,7 @@ impl RoomScreen {
             let rooms_list_ref = cx.get_global::<RoomsListRef>();
             let is_loaded_now = rooms_list_ref.is_room_loaded(&room_id);
             if is_loaded_now && !self.is_loaded {
-                // log!("Detected that room {:?} is now loaded for the first time",
-                //     self.room_name_id
-                // );
+                // log!("Detected that {}} is now loaded for the first time", tl_state.kind);
                 is_first_time_being_loaded = true;
             }
             self.is_loaded = is_loaded_now;
@@ -2270,10 +2259,9 @@ impl RoomScreen {
         // when they first open the room, and there might not be any messages yet.
         if is_first_time_being_loaded {
             if !tl_state.fully_paginated {
-                log!("Sending a first-time backwards pagination request for room {:?}", self.room_name_id);
-                submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                    room_id: room_id.clone(),
-                    thread_root_event_id: tl_state.thread_root.clone(),
+                log!("Sending a first-time backwards pagination request for {}", tl_state.kind);
+                submit_async_request(MatrixRequest::PaginateTimeline {
+                    timeline_kind: tl_state.kind.clone(),
                     num_events: 50,
                     direction: PaginationDirection::Backwards,
                 });
@@ -2283,8 +2271,7 @@ impl RoomScreen {
             // the matrix server still doesn't consistently send them to our client properly.
             // So we kick off a request to fetch the room members here upon first viewing the room.
             submit_async_request(MatrixRequest::SyncRoomMemberList {
-                room_id: room_id.clone(),
-                thread_root_event_id: tl_state.thread_root.clone(),
+                timeline_kind: tl_state.kind.clone(),
             });
         }
 
@@ -2299,31 +2286,27 @@ impl RoomScreen {
         // 4. Subscribe to typing notices again, now that the room is being shown.
         if self.is_loaded {
             submit_async_request(MatrixRequest::GetRoomPowerLevels {
-                room_id: room_id.clone(),
-                thread_root_event_id: tl_state.thread_root.clone(),
+                timeline_kind: tl_state.kind.clone(),
             });
             submit_async_request(MatrixRequest::GetRoomMembers {
-                room_id: room_id.clone(),
-                thread_root_event_id: tl_state.thread_root.clone(),
+                timeline_kind: tl_state.kind.clone(),
                 memberships: matrix_sdk::RoomMemberships::JOIN,
                 // Fetch from the local cache, as we already requested to sync
                 // the room members from the homeserver above.
                 local_only: true,
             });
-            if tl_state.thread_root.is_none() {
+            submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
+                timeline_kind: tl_state.kind.clone(),
+                subscribe: true,
+            });
+            // Only main room timelines can subscribe to typing notices and pinned events.
+            if matches!(tl_state.kind, TimelineKind::MainRoom { .. }) {
                 submit_async_request(MatrixRequest::SubscribeToTypingNotices {
                     room_id: room_id.clone(),
-                    thread_root_event_id: tl_state.thread_root.clone(),
-                    subscribe: true,
-                });
-                submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
-                    room_id: room_id.clone(),
-                    thread_root_event_id: tl_state.thread_root.clone(),
                     subscribe: true,
                 });
                 submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
                     room_id: room_id.clone(),
-                    thread_root_event_id: tl_state.thread_root.clone(),
                     subscribe: true,
                 });
             }
@@ -2345,32 +2328,30 @@ impl RoomScreen {
 
     /// Invoke this when this RoomScreen/timeline is being hidden or no longer being shown.
     fn hide_timeline(&mut self) {
-        let Some(room_id) = self.room_id().cloned() else { return };
+        let Some(timeline_kind) = self.timeline_kind.clone() else { return };
 
         self.save_state();
 
-        // When closing a room view, we do the following with non-persistent states:
+        // When closing a room view, we do the following with non-persistent states.
+        // (This should be the inverse of what's done in `show_timeline()`.)
         // * Unsubscribe from typing notices, since we don't care about them
         //   when a given room isn't visible.
-        // * Unsubscribe from updates to our own user's read receipts, for the same reason.
         // * Unsubscribe from updates to this room's pinned events, for the same reason.
-        if self.thread_root_event_id.is_none() {
+        // * Unsubscribe from updates to our own user's read receipts, for the same reason.
+        if matches!(timeline_kind, TimelineKind::MainRoom { .. }) {
             submit_async_request(MatrixRequest::SubscribeToTypingNotices {
-                room_id: room_id.clone(),
-                thread_root_event_id: self.thread_root_event_id.clone(),
-                subscribe: false,
-            });
-            submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
-                room_id: room_id.clone(),
-                thread_root_event_id: self.thread_root_event_id.clone(),
+                room_id: timeline_kind.room_id().clone(),
                 subscribe: false,
             });
             submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
-                room_id,
-                thread_root_event_id: self.thread_root_event_id.clone(),
+                room_id: timeline_kind.room_id().clone(),
                 subscribe: false,
             });
         }
+        submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
+            timeline_kind,
+            subscribe: false,
+        });
     }
 
     /// Removes the current room's visual UI state from this widget
@@ -2392,8 +2373,7 @@ impl RoomScreen {
         // Clear room_members to avoid wasting memory (in case this room is never re-opened).
         tl.room_members = None;
         // Store this Timeline's `TimelineUiState` in the global map of states.
-        let state_key = timeline_state_key(&tl.room_id, tl.thread_root.as_ref());
-        TIMELINE_STATES.with_borrow_mut(|ts| ts.insert(state_key, tl));
+        TIMELINE_STATES.with_borrow_mut(|ts| ts.insert(tl.kind.clone(), tl));
     }
 
     /// Restores the previously-saved visual UI state of this room.
@@ -2420,8 +2400,7 @@ impl RoomScreen {
         let saved_room_input_bar_state = std::mem::take(room_input_bar_state);
         room_input_bar.restore_state(
             cx,
-            &tl_state.room_id,
-            tl_state.thread_root.clone(),
+            tl_state.kind.clone(),
             saved_room_input_bar_state,
             tl_state.user_power,
             tl_state.tombstone_info.as_ref(),
@@ -2435,10 +2414,19 @@ impl RoomScreen {
         room_name_id: &RoomNameId,
         thread_root_event_id: Option<OwnedEventId>,
     ) {
+        let timeline_kind = if let Some(thread_root_event_id) = thread_root_event_id {
+            TimelineKind::Thread {
+                room_id: room_name_id.room_id().clone(),
+                thread_root_event_id,
+            }
+        } else {
+            TimelineKind::MainRoom {
+                room_id: room_name_id.room_id().clone(),
+            }
+        };
+
         // If the room is already being displayed, then do nothing.
-        if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_name_id.room_id())
-            && self.thread_root_event_id == thread_root_event_id
-        {
+        if self.timeline_kind.as_ref().is_some_and(|kind| kind == &timeline_kind) {
             return;
         }
 
@@ -2446,15 +2434,14 @@ impl RoomScreen {
         // Reset the the state of the inner loading pane.
         self.loading_pane(ids!(loading_pane)).take_state();
 
-        let room_id = room_name_id.room_id().clone();
         self.room_name_id = Some(room_name_id.clone());
-        self.thread_root_event_id = thread_root_event_id;
+        self.timeline_kind = Some(timeline_kind.clone());
 
         // We initially tell every MentionableTextInput widget that the current user
         // *does not* have privileges to notify the entire room;
         // this gets properly updated when room PowerLevels get fetched.
         cx.action(MentionableTextInputAction::PowerLevelsUpdated {
-            room_id: room_id.clone(),
+            room_id: timeline_kind.room_id().clone(),
             can_notify_room: false,
         });
 
@@ -2493,15 +2480,15 @@ impl RoomScreen {
                         return;
                     };
                     submit_async_request(MatrixRequest::ReadReceipt {
-                        room_id: tl_state.room_id.clone(),
-                        thread_root_event_id: tl_state.thread_root.clone(),
+                        timeline_kind: tl_state.kind.clone(),
                         event_id: last_event_id.to_owned(),
+                        receipt_type: ReceiptType::Read,
                     });
                     if tl_state.scrolled_past_read_marker {
-                        submit_async_request(MatrixRequest::FullyReadReceipt {
-                            room_id: tl_state.room_id.clone(),
-                            thread_root_event_id: tl_state.thread_root.clone(),
+                        submit_async_request(MatrixRequest::ReadReceipt {
+                            timeline_kind: tl_state.kind.clone(),
                             event_id: last_event_id.to_owned(),
+                            receipt_type: ReceiptType::FullyRead,
                         });
                     } else {
                         if let Some(own_user_receipt_timestamp) = &tl_state.latest_own_user_receipt.clone()
@@ -2519,10 +2506,10 @@ impl RoomScreen {
                                 && own_user_receipt_timestamp <= &last_timestamp
                             {
                                 tl_state.scrolled_past_read_marker = true;
-                                submit_async_request(MatrixRequest::FullyReadReceipt {
-                                    room_id: tl_state.room_id.clone(),
-                                    thread_root_event_id: tl_state.thread_root.clone(),
+                                submit_async_request(MatrixRequest::ReadReceipt {
+                                    timeline_kind: tl_state.kind.clone(),
                                     event_id: last_event_id.to_owned(),
+                                    receipt_type: ReceiptType::FullyRead,
                                 });
                             }
 
@@ -2551,11 +2538,10 @@ impl RoomScreen {
         let first_index = portal_list.first_id();
         if first_index == 0 && tl.last_scrolled_index > 0 {
             log!("Scrolled up from item {} --> 0, sending back pagination request for room {}",
-                tl.last_scrolled_index, tl.room_id,
+                tl.last_scrolled_index, tl.kind,
             );
-            submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                room_id: tl.room_id.clone(),
-                thread_root_event_id: tl.thread_root.clone(),
+            submit_async_request(MatrixRequest::PaginateTimeline {
+                timeline_kind: tl.kind.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
             });
@@ -2582,7 +2568,7 @@ impl RoomScreenRef {
 pub struct RoomScreenProps {
     pub room_screen_widget_uid: WidgetUid,
     pub room_name_id: RoomNameId,
-    pub thread_root_event_id: Option<OwnedEventId>,
+    pub timeline_kind: TimelineKind,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
     pub room_avatar_url: Option<OwnedMxcUri>,
 }
@@ -2667,7 +2653,7 @@ pub enum TimelineUpdate {
     },
     /// The result of a request to edit a message in this timeline.
     MessageEdited {
-        timeline_event_id: TimelineEventItemId,
+        timeline_event_item_id: TimelineEventItemId,
         result: Result<(), matrix_sdk_ui::timeline::Error>,
     },
     /// A notice that the room's members have been fetched from the server,
@@ -2712,19 +2698,8 @@ thread_local! {
     /// The global set of all timeline states, one entry per room.
     ///
     /// This is only useful when accessed from the main UI thread.
-    static TIMELINE_STATES: RefCell<BTreeMap<String, TimelineUiState>> = const {
-        RefCell::new(BTreeMap::new())
-    };
-}
-
-fn timeline_state_key(
-    room_id: &OwnedRoomId,
-    thread_root_event_id: Option<&OwnedEventId>,
-) -> String {
-    match thread_root_event_id {
-        Some(thread_root_event_id) => format!("{room_id}::thread::{thread_root_event_id}"),
-        None => room_id.to_string(),
-    }
+    static TIMELINE_STATES: RefCell<HashMap<TimelineKind, TimelineUiState>> = 
+        RefCell::new(HashMap::new());
 }
 
 /// The UI-side state of a single room's timeline, which is only accessed/updated by the UI thread.
@@ -2734,11 +2709,8 @@ fn timeline_state_key(
 /// If a state is more temporary and shouldn't be persisted when the timeline is hidden,
 /// then it should be stored in the RoomScreen widget itself, not in this struct.
 struct TimelineUiState {
-    /// The ID of the room that this timeline is for.
-    room_id: OwnedRoomId,
-
-    /// If `Some`, this timeline is thread-focused and rooted at this event ID.
-    thread_root: Option<OwnedEventId>,
+    /// Info determining whether this is a main room timeline is a thread-focused timeline.
+    kind: TimelineKind,
 
     /// The power levels of the currently logged-in user in this room.
     user_power: UserPowerLevels,
@@ -4032,8 +4004,16 @@ fn draw_replied_to_message(
                 if matches!(td, TimelineDetails::Unavailable) {
                     if let Some(event_id) = message_event_id {
                         submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                            room_id: room_id.to_owned(),
-                            thread_root_event_id: thread_root_event_id.cloned(),
+                            timeline_kind: if let Some(thread_root_event_id) = thread_root_event_id.cloned() {
+                                TimelineKind::Thread {
+                                    room_id: room_id.to_owned(),
+                                    thread_root_event_id,
+                                }
+                            } else {
+                                TimelineKind::MainRoom {
+                                    room_id: room_id.to_owned(),
+                                }
+                            },
                             event_id: event_id.to_owned(),
                         });
                     }
@@ -4094,8 +4074,10 @@ fn populate_thread_root_summary(
                 if let Some(event_id) = msg_like_content.thread_root.clone() {
                     log!("Thread summary latest event is unavailable, submitting request to fetch details for event_id: {event_id}");
                     submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                        room_id: room_id.to_owned(),
-                        thread_root_event_id: None, // send response to this timeline, not the thread root's timeline
+                        // Send response to this timeline, not the thread root's timeline.
+                        timeline_kind: TimelineKind::MainRoom {
+                            room_id: room_id.to_owned(),
+                        },
                         event_id,
                     });
                 }
