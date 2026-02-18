@@ -790,10 +790,9 @@ async fn matrix_worker_task(
                             // error!("Error fetching details for event {event_id} in {timeline_kind}: {_e:?}");
                         }
                     }
-                    sender.send(TimelineUpdate::EventDetailsFetched {
-                        event_id,
-                        result,
-                    }).unwrap();
+                    if sender.send(TimelineUpdate::EventDetailsFetched { event_id, result }).is_err() {
+                        error!("Failed to send fetched event details to UI for {timeline_kind}");
+                    }
                     SignalToUI::set_ui_signal();
                 });
             }

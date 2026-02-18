@@ -1075,10 +1075,9 @@ impl Widget for RoomScreen {
             let Some(tl_state) = self.tl_state.as_mut() else {
                 return DrawStep::done();
             };
-            let room_id = tl_state.kind.room_id();
-            let tl_items = &tl_state.items;
 
             // Set the portal list's range based on the number of timeline items.
+            let tl_items = &tl_state.items;
             let last_item_id = tl_items.len();
 
             let list = list_ref.deref_mut();
@@ -1119,8 +1118,7 @@ impl Widget for RoomScreen {
                                                 cx,
                                                 list,
                                                 item_id,
-                                                room_id,
-                                                tl_state.kind.thread_root_event_id(),
+                                                &tl_state.kind,
                                                 event_tl_item,
                                                 msg_like_content,
                                                 prev_event,
@@ -1137,7 +1135,7 @@ impl Widget for RoomScreen {
                                             cx,
                                             list,
                                             item_id,
-                                            room_id,
+                                            &tl_state.kind,
                                             event_tl_item,
                                             poll_state,
                                             item_drawn_status,
@@ -1146,7 +1144,7 @@ impl Widget for RoomScreen {
                                             cx,
                                             list,
                                             item_id,
-                                            room_id,
+                                            &tl_state.kind,
                                             event_tl_item,
                                             utd,
                                             item_drawn_status,
@@ -1155,7 +1153,7 @@ impl Widget for RoomScreen {
                                             cx,
                                             list,
                                             item_id,
-                                            room_id,
+                                            &tl_state.kind,
                                             event_tl_item,
                                             other,
                                             item_drawn_status,
@@ -1167,7 +1165,7 @@ impl Widget for RoomScreen {
                                 cx,
                                 list,
                                 item_id,
-                                room_id,
+                                &tl_state.kind,
                                 event_tl_item,
                                 membership_change,
                                 item_drawn_status,
@@ -1176,7 +1174,7 @@ impl Widget for RoomScreen {
                                 cx,
                                 list,
                                 item_id,
-                                room_id,
+                                &tl_state.kind,
                                 event_tl_item,
                                 profile_change,
                                 item_drawn_status,
@@ -1185,7 +1183,7 @@ impl Widget for RoomScreen {
                                 cx,
                                 list,
                                 item_id,
-                                room_id,
+                                &tl_state.kind,
                                 event_tl_item,
                                 other,
                                 item_drawn_status,
@@ -1738,7 +1736,7 @@ impl RoomScreen {
                 image_file_size,
                 timestamp: unix_time_millis_to_datetime(timestamp_millis),
                 avatar_parameter: Some((
-                    tl_state.kind.room_id().clone(),
+                    tl_state.kind.clone(),
                     event_tl_item.clone(),
                 )),
             }),
@@ -1798,7 +1796,7 @@ impl RoomScreen {
                     if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details).cloned() {
                         let replied_to_info = EmbeddedEvent::from_timeline_item(&event_tl_item);
                         self.view.room_input_bar(ids!(room_input_bar))
-                            .show_replying_to(cx, (event_tl_item, replied_to_info), tl.kind.room_id());
+                            .show_replying_to(cx, (event_tl_item, replied_to_info), &tl.kind);
                     }
                     else {
                         enqueue_popup_notification(
@@ -2920,8 +2918,7 @@ fn populate_message_view(
     cx: &mut Cx2d,
     list: &mut PortalList,
     item_id: usize,
-    room_id: &OwnedRoomId,
-    thread_root_event_id: Option<&OwnedEventId>,
+    timeline_kind: &TimelineKind,
     event_tl_item: &EventTimelineItem,
     msg_like_content: &MsgLikeContent,
     prev_event: Option<&Arc<TimelineItem>>,
@@ -3084,7 +3081,7 @@ fn populate_message_view(
                         // Draw the profile up front here because we need the username for the emote body.
                         let (username, profile_drawn) = item.avatar(ids!(profile.avatar)).set_avatar_and_get_username(
                             cx,
-                            room_id,
+                            timeline_kind,
                             event_tl_item.sender(),
                             Some(event_tl_item.sender_profile()),
                             event_tl_item.event_id(),
@@ -3324,7 +3321,7 @@ fn populate_message_view(
                     cx,
                     &html_or_plaintext_ref,
                     event_tl_item,
-                    room_id,
+                    timeline_kind.room_id(),
                 );
                 (item, false)
             }
@@ -3353,32 +3350,24 @@ fn populate_message_view(
         item.reaction_list(ids!(content.reaction_list)).set_list(
             cx,
             event_tl_item.content().reactions(),
-            room_id.to_owned(),
+            timeline_kind.clone(),
             timeline_event_id.clone(),
             item_id,
         );
-        populate_read_receipts(&item, cx, room_id, event_tl_item);
+        populate_read_receipts(&item, cx, timeline_kind, event_tl_item);
         let (is_reply_fully_drawn, replied_to_event_id) = draw_replied_to_message(
             cx,
             &item.view(ids!(replied_to_message)),
-            room_id,
-            thread_root_event_id,
+            timeline_kind,
             msg_like_content.in_reply_to.as_ref(),
             event_tl_item.event_id(),
         );
-        let is_thread_summary_fully_drawn = if thread_root_event_id.is_some() {
-            // If `thread_root_event_id` is `Some`, then we're drawing this message
-            // inside of a thread-focused timeline, so it doesn't make sense to draw
-            // a redundant thread summary since we're already showing the thread content.
-            true
-        } else {
-            populate_thread_root_summary(
-                cx,
-                &item,
-                room_id,
-                msg_like_content,
-            )
-        };
+        let is_thread_summary_fully_drawn = populate_thread_root_summary(
+            cx,
+            &item,
+            timeline_kind,
+            msg_like_content,
+        );
 
         // Set the message details/metadata for the Message widget so that it can handle events.
         let message_details = MessageDetails {
@@ -3422,7 +3411,7 @@ fn populate_message_view(
             let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
                 item.avatar(ids!(profile.avatar)).set_avatar_and_get_username(
                     cx,
-                    room_id,
+                    timeline_kind,
                     event_tl_item.sender(),
                     Some(event_tl_item.sender_profile()),
                     event_tl_item.event_id(),
@@ -3923,6 +3912,7 @@ fn populate_redacted_message_content(
 ///
 /// ## Arguments
 /// * `replied_to_message_view`: the destination `RepliedToMessage` view that will be populated.
+/// * `timeline_kind`: the [`TimelineKind`] of the timeline that is being drawn.
 /// * `in_reply_to`: if `Some`, the details that will be used to populate the `replied_to_message_view`.
 ///   If `None`, this function will mark it as non-visible and consider it fully drawn.
 /// * `message_event_id`: the [`EventId`] of the message that is the reply itself (the response).
@@ -3933,8 +3923,7 @@ fn populate_redacted_message_content(
 fn draw_replied_to_message(
     cx: &mut Cx2d,
     replied_to_message_view: &ViewRef,
-    room_id: &OwnedRoomId,
-    thread_root_event_id: Option<&OwnedEventId>,
+    timeline_kind: &TimelineKind,
     in_reply_to: Option<&InReplyToDetails>,
     message_event_id: Option<&EventId>,
 ) -> (bool, Option<OwnedEventId>) {
@@ -3953,7 +3942,7 @@ fn draw_replied_to_message(
                         .avatar(ids!(replied_to_message_content.reply_preview_avatar))
                         .set_avatar_and_get_username(
                             cx,
-                            room_id,
+                            timeline_kind,
                             &replied_to_event.sender,
                             Some(&replied_to_event.sender_profile),
                             Some(in_reply_to_details.event_id.as_ref()),
@@ -4004,16 +3993,7 @@ fn draw_replied_to_message(
                 if matches!(td, TimelineDetails::Unavailable) {
                     if let Some(event_id) = message_event_id {
                         submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                            timeline_kind: if let Some(thread_root_event_id) = thread_root_event_id.cloned() {
-                                TimelineKind::Thread {
-                                    room_id: room_id.to_owned(),
-                                    thread_root_event_id,
-                                }
-                            } else {
-                                TimelineKind::MainRoom {
-                                    room_id: room_id.to_owned(),
-                                }
-                            },
+                            timeline_kind: timeline_kind.clone(),
                             event_id: event_id.to_owned(),
                         });
                     }
@@ -4037,10 +4017,16 @@ fn draw_replied_to_message(
 fn populate_thread_root_summary(
     cx: &mut Cx2d,
     item: &WidgetRef,
-    room_id: &OwnedRoomId,
+    timeline_kind: &TimelineKind,
     msg_like_content: &MsgLikeContent,
 ) -> bool {
     let fully_drawn: bool;
+    if matches!(timeline_kind, TimelineKind::Thread { .. }) {
+        // If we're already drawing a message in a thread-focused timeline,
+        // it doesn't make sense to show a redundant thread summary.
+        fully_drawn = true;
+        return fully_drawn;
+    }
 
     let thread_summary_view = item.view(ids!(thread_root_summary));
     let Some(thread_summary) = msg_like_content.thread_summary.as_ref() else {
@@ -4074,10 +4060,7 @@ fn populate_thread_root_summary(
                 if let Some(event_id) = msg_like_content.thread_root.clone() {
                     log!("Thread summary latest event is unavailable, submitting request to fetch details for event_id: {event_id}");
                     submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                        // Send response to this timeline, not the thread root's timeline.
-                        timeline_kind: TimelineKind::MainRoom {
-                            room_id: room_id.to_owned(),
-                        },
+                        timeline_kind: timeline_kind.clone(),
                         event_id,
                     });
                 }
@@ -4318,7 +4301,7 @@ fn populate_small_state_event(
     cx: &mut Cx,
     list: &mut PortalList,
     item_id: usize,
-    room_id: &OwnedRoomId,
+    timeline_kind: &TimelineKind,
     event_tl_item: &EventTimelineItem,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
@@ -4329,7 +4312,7 @@ fn populate_small_state_event(
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
     let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
     let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
-    populate_read_receipts(&item, cx, room_id, event_tl_item);
+    populate_read_receipts(&item, cx, timeline_kind, event_tl_item);
     if skip_redrawing_content {
         return (item, new_drawn_status);
     }
@@ -4346,7 +4329,7 @@ fn populate_small_state_event(
 
         let (username, profile_drawn) = avatar_ref.set_avatar_and_get_username(
             cx,
-            room_id,
+            timeline_kind,
             event_tl_item.sender(),
             Some(event_tl_item.sender_profile()),
             event_tl_item.event_id(),

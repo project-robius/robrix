@@ -384,7 +384,7 @@ impl RoomInputBar {
         &mut self,
         cx: &mut Cx,
         replying_to: (EventTimelineItem, EmbeddedEvent),
-        room_id: &OwnedRoomId,
+        timeline_kind: &TimelineKind,
         grab_key_focus: bool,
     ) {
         // When the user clicks the reply button next to a message, we need to:
@@ -394,7 +394,7 @@ impl RoomInputBar {
             .avatar(ids!(reply_preview_content.reply_preview_avatar))
             .set_avatar_and_get_username(
                 cx,
-                room_id,
+                timeline_kind,
                 replying_to.0.sender(),
                 Some(replying_to.0.sender_profile()),
                 replying_to.0.event_id(),
@@ -555,10 +555,10 @@ impl RoomInputBarRef {
         &self,
         cx: &mut Cx,
         replying_to: (EventTimelineItem, EmbeddedEvent),
-        room_id: &OwnedRoomId,
+        timeline_kind: &TimelineKind,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show_replying_to(cx, replying_to, room_id, true);
+        inner.show_replying_to(cx, replying_to, timeline_kind, true);
     }
 
     /// Shows the editing pane to allow the user to edit the given event.
@@ -656,7 +656,7 @@ impl RoomInputBarRef {
 
         // 2. Restore the state of the replying-to preview.
         if let Some(replying_to) = replying_to {
-            inner.show_replying_to(cx, replying_to, timeline_kind.room_id(), false);
+            inner.show_replying_to(cx, replying_to, &timeline_kind, false);
         } else {
             inner.clear_replying_to(cx);
         }

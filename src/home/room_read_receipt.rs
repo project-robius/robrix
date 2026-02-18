@@ -1,10 +1,11 @@
 use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::profile::user_profile_cache::get_user_display_name_for_room;
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
+use crate::sliding_sync::TimelineKind;
 use crate::utils::human_readable_list;
 use indexmap::IndexMap;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, OwnedRoomId, RoomId};
+use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, OwnedRoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
 
 use std::cmp;
@@ -159,7 +160,7 @@ impl AvatarRow {
     pub fn set_avatar_row(
         &mut self,
         cx: &mut Cx,
-        room_id: &RoomId,
+        timeline_kind: &TimelineKind,
         event_id: Option<&EventId>,
         receipts_map: &IndexMap<OwnedUserId, Receipt>,
     ) {
@@ -180,7 +181,7 @@ impl AvatarRow {
             if !*drawn {
                 let (_, drawn_status) = avatar_ref.set_avatar_and_get_username(
                     cx,
-                    room_id,
+                    timeline_kind,
                     user_id,
                     None,
                     event_id,
@@ -212,12 +213,12 @@ impl AvatarRowRef {
     pub fn set_avatar_row(
         &mut self,
         cx: &mut Cx,
-        room_id: &RoomId,
+        timeline_kind: &TimelineKind,
         event_id: Option<&EventId>,
         receipts_map: &IndexMap<OwnedUserId, Receipt>,
     ) {
         if let Some(ref mut inner) = self.borrow_mut() {
-            inner.set_avatar_row(cx, room_id, event_id, receipts_map);
+            inner.set_avatar_row(cx, timeline_kind, event_id, receipts_map);
         }
     }
 }
@@ -231,12 +232,12 @@ impl AvatarRowRef {
 pub fn populate_read_receipts(
     item: &WidgetRef,
     cx: &mut Cx,
-    room_id: &RoomId,
+    timeline_kind: &TimelineKind,
     event_tl_item: &EventTimelineItem,
 ) {
     item.avatar_row(ids!(avatar_row)).set_avatar_row(
         cx,
-        room_id,
+        timeline_kind,
         event_tl_item.event_id(),
         event_tl_item.read_receipts(),
     );

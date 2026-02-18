@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use makepad_widgets::*;
-use matrix_sdk::{ruma::{EventId, OwnedRoomId, OwnedUserId, RoomId, UserId}};
+use matrix_sdk::{ruma::{EventId, OwnedRoomId, OwnedUserId, UserId}};
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use ruma::OwnedMxcUri;
 
@@ -263,7 +263,7 @@ impl Avatar {
     pub fn set_avatar_and_get_username(
         &mut self,
         cx: &mut Cx,
-        room_id: &RoomId,
+        timeline_kind: &TimelineKind,
         avatar_user_id: &UserId,
         avatar_profile_opt: Option<&TimelineDetails<Profile>>,
         event_id: Option<&EventId>,
@@ -275,10 +275,10 @@ impl Avatar {
             user_profile_cache::with_user_profile(
                 cx,
                 avatar_user_id.to_owned(),
-                Some(&room_id.to_owned()),
+                Some(timeline_kind.room_id()),
                 true,
                 |profile, rooms| {
-                    rooms.get(room_id).map(|rm| {
+                    rooms.get(timeline_kind.room_id()).map(|rm| {
                         (
                             rm.display_name().map(|n| n.to_owned()),
                             AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
@@ -299,9 +299,7 @@ impl Avatar {
             Some(TimelineDetails::Unavailable) => {
                 if let Some(event_id) = event_id {
                     submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                        timeline_kind: TimelineKind::MainRoom {
-                            room_id: room_id.to_owned(),
-                        },
+                        timeline_kind: timeline_kind.clone(),
                         event_id: event_id.to_owned(),
                     });
                 }
@@ -337,7 +335,7 @@ impl Avatar {
                     is_clickable.then(|| AvatarImageInfo::from((
                         avatar_user_id.to_owned(),
                         username_opt.clone(),
-                        room_id.to_owned(),
+                        timeline_kind.room_id().to_owned(),
                         data.clone()
                     ))),
                     |cx, img| utils::load_png_or_jpg(&img, cx, &data),
@@ -351,7 +349,7 @@ impl Avatar {
                     is_clickable.then(|| AvatarTextInfo::from((
                         avatar_user_id.to_owned(),
                         username_opt,
-                        room_id.to_owned(),
+                        timeline_kind.room_id().to_owned(),
                     ))),
                     &username,
                 )
@@ -403,7 +401,7 @@ impl AvatarRef {
     pub fn set_avatar_and_get_username(
         &self,
         cx: &mut Cx,
-        room_id: &RoomId,
+        timeline_kind: &TimelineKind,
         avatar_user_id: &UserId,
         avatar_profile_opt: Option<&TimelineDetails<Profile>>,
         event_id: Option<&EventId>,
@@ -412,7 +410,7 @@ impl AvatarRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_avatar_and_get_username(
                 cx,
-                room_id,
+                timeline_kind,
                 avatar_user_id,
                 avatar_profile_opt,
                 event_id,
