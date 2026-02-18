@@ -884,6 +884,11 @@ async fn matrix_worker_task(
                                     .pending_thread_timelines
                                     .remove(&thread_root_event_id);
                             }
+                            enqueue_popup_notification(
+                                format!("Failed to create thread-focused timeline. Please retry opening the thread again later.\n\nError: {error}"),
+                                NotificationKind::Error,
+                                None,
+                            );
                         }
                     }
                 });
@@ -1988,8 +1993,6 @@ struct PerTimelineDetails {
 }
 
 struct JoinedRoomDetails {
-    #[allow(unused)]
-    room_id: OwnedRoomId,
     /// Details about the main timeline for this room.
     main_timeline: PerTimelineDetails,
     /// Thread-focused timelines for this room, keyed by thread root event ID.
@@ -2989,7 +2992,6 @@ async fn add_new_room(
     ALL_JOINED_ROOMS.lock().unwrap().insert(
         new_room.room_id.clone(),
         JoinedRoomDetails {
-            room_id: new_room.room_id.clone(),
             main_timeline: PerTimelineDetails {
                 timeline,
                 timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender)),

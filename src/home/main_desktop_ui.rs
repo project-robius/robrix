@@ -377,10 +377,7 @@ impl MainDesktopUI {
                                 space_name_id,
                             );
                         }
-                        Some(SelectedRoom::Thread {
-                            room_name_id,
-                            thread_root_event_id,
-                        }) => {
+                        Some(SelectedRoom::Thread { room_name_id, thread_root_event_id }) => {
                             widget.as_room_screen().set_displayed_room(
                                 cx,
                                 room_name_id,

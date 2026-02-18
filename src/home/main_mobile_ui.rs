@@ -109,10 +109,7 @@ impl Widget for MainMobileUI {
                     .space_lobby_screen(ids!(space_lobby_screen))
                     .set_displayed_space(cx, space_name_id);
             }
-            Some(SelectedRoom::Thread {
-                room_name_id,
-                thread_root_event_id,
-            }) => {
+            Some(SelectedRoom::Thread { room_name_id, thread_root_event_id }) => {
                 show_welcome = false;
                 show_room = true;
                 show_invite = false;
