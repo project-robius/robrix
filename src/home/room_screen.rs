@@ -3367,6 +3367,7 @@ fn populate_message_view(
             &item,
             timeline_kind,
             msg_like_content,
+            event_tl_item,
         );
 
         // Set the message details/metadata for the Message widget so that it can handle events.
@@ -4019,8 +4020,12 @@ fn populate_thread_root_summary(
     item: &WidgetRef,
     timeline_kind: &TimelineKind,
     msg_like_content: &MsgLikeContent,
+    _event_tl_item: &EventTimelineItem,
 ) -> bool {
+    let thread_summary_view = item.view(ids!(thread_root_summary));
+    thread_summary_view.set_visible(cx, false); // hide by default
     let fully_drawn: bool;
+
     if matches!(timeline_kind, TimelineKind::Thread { .. }) {
         // If we're already drawing a message in a thread-focused timeline,
         // it doesn't make sense to show a redundant thread summary.
@@ -4028,13 +4033,13 @@ fn populate_thread_root_summary(
         return fully_drawn;
     }
 
-    let thread_summary_view = item.view(ids!(thread_root_summary));
     let Some(thread_summary) = msg_like_content.thread_summary.as_ref() else {
-        thread_summary_view.set_visible(cx, false);
         // consider this as fully drawn since there's no thread summary to show.
         fully_drawn = true;
         return fully_drawn;
     };
+
+    // Here, we actually have a thread summary to show
     thread_summary_view.set_visible(cx, true);
 
     let latest_preview: Cow<str> = match &thread_summary.latest_event {
@@ -4056,14 +4061,16 @@ fn populate_thread_root_summary(
         }
         td @ TimelineDetails::Pending | td @ TimelineDetails::Unavailable => {
             fully_drawn = false;
-            if matches!(td, TimelineDetails::Unavailable) {
-                if let Some(event_id) = msg_like_content.thread_root.clone() {
-                    log!("Thread summary latest event is unavailable, submitting request to fetch details for event_id: {event_id}");
-                    submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                        timeline_kind: timeline_kind.clone(),
-                        event_id,
-                    });
-                }
+            if td.is_unavailable() {
+                // TODO: obtain the `thread_summary.latest_event` event ID so we can fetch its details
+                //
+                // if let Some(event_id) = get_thread_summary_latest_event(event_tl_item) {
+                //     log!("Thread summary latest event is unavailable, submitting request to fetch latest thread reply event details for event_id: {event_id}");
+                //     submit_async_request(MatrixRequest::FetchDetailsForEvent {
+                //         timeline_kind: timeline_kind.clone(),
+                //         event_id,
+                //     });
+                // }
             }
             "<i>Loading latest reply...</i>".into()
         }
