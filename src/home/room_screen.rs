@@ -4,7 +4,7 @@
 use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::Arc};
 
 use bytesize::ByteSize;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
@@ -119,7 +119,21 @@ live_design! {
             text: ""
         }
 
-        thread_summary_latest = <HtmlOrPlaintext> {}
+        thread_summary_latest = <HtmlOrPlaintext> {
+            plaintext_view = {
+                pt_label = {
+                    flow: Right,
+                    draw_text: {
+                        wrap: Ellipsis,
+                    }
+                }
+            }
+            html_view = {
+                html = {
+                    flow: Right,
+                }
+            }
+        }
     }
 
     // The view used for each text-based message event in a room's timeline.
@@ -1124,6 +1138,8 @@ impl Widget for RoomScreen {
                                                 prev_event,
                                                 &mut tl_state.media_cache,
                                                 &mut tl_state.link_preview_cache,
+                                                &tl_state.fetched_thread_summaries,
+                                                &mut tl_state.pending_thread_summary_fetches,
                                                 &tl_state.user_power,
                                                 &self.pinned_events,
                                                 item_drawn_status,
@@ -1479,6 +1495,32 @@ impl RoomScreen {
                     }
                     // Here, to be most efficient, we could redraw only the updated event,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                }
+                TimelineUpdate::ThreadSummaryDetailsFetched {
+                    thread_root_event_id,
+                    timeline_item_index,
+                    num_replies,
+                    latest_reply_preview_text,
+                } => {
+                    tl.pending_thread_summary_fetches.remove(&thread_root_event_id);
+                    tl.fetched_thread_summaries.insert(
+                        thread_root_event_id.clone(),
+                        FetchedThreadSummary {
+                            num_replies,
+                            latest_reply_preview_text,
+                        },
+                    );
+                    let event_id_matches_at_index = tl.items
+                        .get(timeline_item_index)
+                        .and_then(|item| item.as_event())
+                        .and_then(|ev| ev.event_id())
+                        .is_some_and(|id| id == thread_root_event_id);
+                    if event_id_matches_at_index {
+                        tl.content_drawn_since_last_update
+                            .remove(timeline_item_index .. timeline_item_index + 1);
+                    } else {
+                        tl.content_drawn_since_last_update.clear();
+                    }
                 }
                 TimelineUpdate::RoomMembersSynced => {
                     // log!("process_timeline_updates(): room members fetched for room {}", tl.kind.room_id());
@@ -2219,6 +2261,8 @@ impl RoomScreen {
                 request_sender,
                 media_cache: MediaCache::new(Some(update_sender.clone())),
                 link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
+                fetched_thread_summaries: HashMap::new(),
+                pending_thread_summary_fetches: HashSet::new(),
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
                 last_scrolled_index: usize::MAX,
@@ -2649,6 +2693,13 @@ pub enum TimelineUpdate {
         event_id: OwnedEventId,
         result: Result<(), matrix_sdk_ui::timeline::Error>,
     },
+    /// A notice that fresh thread-summary details were fetched for a thread root.
+    ThreadSummaryDetailsFetched {
+        thread_root_event_id: OwnedEventId,
+        timeline_item_index: usize,
+        num_replies: u32,
+        latest_reply_preview_text: Option<String>,
+    },
     /// The result of a request to edit a message in this timeline.
     MessageEdited {
         timeline_event_item_id: TimelineEventItemId,
@@ -2762,6 +2813,10 @@ struct TimelineUiState {
 
     /// Cache for link preview data indexed by URL to avoid redundant network requests.
     link_preview_cache: LinkPreviewCache,
+    /// Cached fetched thread-summary details, keyed by thread-root event ID.
+    fetched_thread_summaries: HashMap<OwnedEventId, FetchedThreadSummary>,
+    /// Set of thread roots currently being fetched to avoid duplicate in-flight requests.
+    pending_thread_summary_fetches: HashSet<OwnedEventId>,
 
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
@@ -2892,6 +2947,12 @@ struct ItemDrawnStatus {
     /// Whether the content of the item was drawn (e.g., the message text, image, video, sticker, etc).
     content_drawn: bool,
 }
+
+#[derive(Clone, Debug)]
+struct FetchedThreadSummary {
+    num_replies: u32,
+    latest_reply_preview_text: Option<String>,
+}
 impl ItemDrawnStatus {
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `false`.
     const fn new() -> Self {
@@ -2924,6 +2985,8 @@ fn populate_message_view(
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
     link_preview_cache: &mut LinkPreviewCache,
+    fetched_thread_summaries: &HashMap<OwnedEventId, FetchedThreadSummary>,
+    pending_thread_summary_fetches: &mut HashSet<OwnedEventId>,
     user_power_levels: &UserPowerLevels,
     pinned_events: &[OwnedEventId],
     item_drawn_status: ItemDrawnStatus,
@@ -3365,9 +3428,12 @@ fn populate_message_view(
         let is_thread_summary_fully_drawn = populate_thread_root_summary(
             cx,
             &item,
+            item_id,
             timeline_kind,
             msg_like_content,
             event_tl_item,
+            fetched_thread_summaries,
+            pending_thread_summary_fetches,
         );
 
         // Set the message details/metadata for the Message widget so that it can handle events.
@@ -4018,9 +4084,12 @@ fn draw_replied_to_message(
 fn populate_thread_root_summary(
     cx: &mut Cx2d,
     item: &WidgetRef,
+    timeline_item_index: usize,
     timeline_kind: &TimelineKind,
     msg_like_content: &MsgLikeContent,
-    _event_tl_item: &EventTimelineItem,
+    event_tl_item: &EventTimelineItem,
+    fetched_thread_summaries: &HashMap<OwnedEventId, FetchedThreadSummary>,
+    pending_thread_summary_fetches: &mut HashSet<OwnedEventId>,
 ) -> bool {
     let thread_summary_view = item.view(ids!(thread_root_summary));
     thread_summary_view.set_visible(cx, false); // hide by default
@@ -4039,8 +4108,16 @@ fn populate_thread_root_summary(
         return fully_drawn;
     };
 
-    // Here, we actually have a thread summary to show
+    // Here, we actually need to show the thread summary.
     thread_summary_view.set_visible(cx, true);
+    let local_num_replies = thread_summary.num_replies;
+    let thread_root_event_id = event_tl_item.event_id().map(|id| id.to_owned());
+    let fetched_summary = thread_root_event_id
+        .as_ref()
+        .and_then(|root_id| fetched_thread_summaries.get(root_id));
+    let replies_count = fetched_summary
+        .map(|f| f.num_replies)
+        .unwrap_or(local_num_replies);
 
     let latest_preview: Cow<str> = match &thread_summary.latest_event {
         TimelineDetails::Ready(embedded_event) => {
@@ -4060,26 +4137,29 @@ fn populate_thread_root_summary(
             utils::replace_linebreaks_separators(&preview).into()
         }
         td @ TimelineDetails::Pending | td @ TimelineDetails::Unavailable => {
-            fully_drawn = false;
-            if td.is_unavailable() {
-                // TODO: obtain the `thread_summary.latest_event` event ID so we can fetch its details
-                //
-                // if let Some(event_id) = get_thread_summary_latest_event(event_tl_item) {
-                //     log!("Thread summary latest event is unavailable, submitting request to fetch latest thread reply event details for event_id: {event_id}");
-                //     submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                //         timeline_kind: timeline_kind.clone(),
-                //         event_id,
-                //     });
-                // }
+            fully_drawn = true;
+            if td.is_unavailable()
+                && let Some(thread_root_event_id) = thread_root_event_id.clone()
+            {
+                let needs_refresh = fetched_summary
+                    .is_none_or(|fs| fs.latest_reply_preview_text.is_none());
+                if needs_refresh && pending_thread_summary_fetches.insert(thread_root_event_id.clone()) {
+                    submit_async_request(MatrixRequest::FetchThreadSummaryDetails {
+                        timeline_kind: timeline_kind.clone(),
+                        thread_root_event_id,
+                        timeline_item_index,
+                    });
+                }
             }
-            "<i>Loading latest reply...</i>".into()
+            fetched_summary.and_then(|fs| fs.latest_reply_preview_text.as_deref())
+                .unwrap_or("<i>Loading latest reply...</i>")
+                .into()
         }
         TimelineDetails::Error(_) => {
             fully_drawn = true; // consider this fully drawn since there's no point retrying.
             "<i>Unable to load latest reply</i>".into()
         }
     };
-    let replies_count = thread_summary.num_replies as u64;
 
     let replies_count_text = match replies_count {
         1 => Cow::Borrowed("1 reply"),

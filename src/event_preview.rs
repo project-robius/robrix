@@ -7,7 +7,7 @@
 
 use std::borrow::Cow;
 
-use matrix_sdk::{ruma::{events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent}, serde::Raw, UserId}};
+use matrix_sdk::{ruma::{OwnedUserId, events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent}, serde::Raw, UserId}};
 use matrix_sdk_base::crypto::types::events::UtdCause;
 use matrix_sdk_ui::timeline::{self, AnyOtherFullStateEventContent, EncryptedMessage, EventTimelineItem, MemberProfileChange, MembershipChange, MsgLikeKind, OtherMessageLike, RoomMembershipChange, TimelineItemContent};
 
@@ -69,7 +69,7 @@ pub fn text_preview_of_timeline_item(
     match content {
         TimelineItemContent::MsgLike(msg_like_content) => {
             match &msg_like_content.kind {
-                MsgLikeKind::Message(msg) => text_preview_of_message(msg, sender_username),
+                MsgLikeKind::Message(msg) => text_preview_of_message(msg.msgtype(), sender_username),
                 MsgLikeKind::Sticker(sticker) => TextPreview::from((
                     format!("[Sticker]: <i>{}</i>", htmlize::escape_text(&sticker.content().body)),
                     BeforeText::UsernameWithColon,
@@ -206,11 +206,11 @@ pub fn plaintext_body_of_timeline_item(
 
 
 /// Returns a text preview of the given message as an Html-formatted string.
-pub fn text_preview_of_message(
-    message: &timeline::Message,
+fn text_preview_of_message(
+    msg: &MessageType,
     sender_username: &str,
 ) -> TextPreview {
-    let text = match message.msgtype() {
+    let text = match msg {
         MessageType::Audio(audio) => format!(
             "[Audio]: <i>{}</i>",
             if let Some(formatted_body) = audio.formatted.as_ref() {
@@ -298,6 +298,34 @@ pub fn text_preview_of_message(
         ),
     };
     TextPreview::from((text, BeforeText::UsernameWithColon))
+}
+
+/// Returns a preview of the given raw timeline event.
+pub fn text_preview_of_raw_timeline_event(
+    raw_event: &Raw<AnySyncTimelineEvent>,
+    sender_username: &str,
+) -> Option<TextPreview> {
+    match raw_event.deserialize().ok()? {
+        AnySyncTimelineEvent::MessageLike(
+            AnySyncMessageLikeEvent::RoomMessage(SyncMessageLikeEvent::Original(ev))
+        ) => Some(text_preview_of_message(&ev.content.msgtype, sender_username)),
+
+        AnySyncTimelineEvent::MessageLike(
+            AnySyncMessageLikeEvent::RoomMessage(SyncMessageLikeEvent::Redacted(_))
+        ) => {
+            let sender_user_id = raw_event
+                .get_field::<OwnedUserId>("sender")
+                .ok()
+                .flatten()?;
+            Some(text_preview_of_redacted_message(
+                Some(raw_event),
+                sender_user_id.as_ref(),
+                sender_username,
+            ))
+        }
+
+        _ => None,
+    }
 }
 
 

@@ -8,12 +8,13 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, RoomMember}, ruma::{
-        api::client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, events::{
+    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, RelationsOptions, RoomMember}, ruma::{
+        api::{Direction, client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
+            relation::RelationType,
             room::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             }, MessageLikeEventType, StateEventType
-        }, matrix_uri::MatrixId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
+        }, matrix_uri::MatrixId, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, uint
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
 };
 use matrix_sdk_ui::{
@@ -30,14 +31,14 @@ use std::{cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHas
 use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
-    app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
+    app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
         add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
         avatar::AvatarState, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
-    }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, avatar_from_room_name, VecDiff}, verification::add_verification_event_handlers_and_sync_client
+    }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, VecDiff, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -381,6 +382,13 @@ pub enum MatrixRequest {
     FetchDetailsForEvent {
         timeline_kind: TimelineKind,
         event_id: OwnedEventId,
+    },
+    /// Request to fetch the latest thread-reply preview and latest reply count
+    /// for the given thread root.
+    FetchThreadSummaryDetails {
+        timeline_kind: TimelineKind,
+        thread_root_event_id: OwnedEventId,
+        timeline_item_index: usize,
     },
     /// Request to fetch profile information for all members of a room.
     ///
@@ -792,6 +800,36 @@ async fn matrix_worker_task(
                     }
                     if sender.send(TimelineUpdate::EventDetailsFetched { event_id, result }).is_err() {
                         error!("Failed to send fetched event details to UI for {timeline_kind}");
+                    }
+                    SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::FetchThreadSummaryDetails {
+                timeline_kind,
+                thread_root_event_id,
+                timeline_item_index,
+            } => {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                    log!("BUG: {timeline_kind} not found for fetch thread summary details request");
+                    continue;
+                };
+
+                let _fetch_task = Handle::current().spawn(async move {
+                    let (num_replies, latest_reply_event) = fetch_thread_summary_details(
+                        timeline.room(),
+                        &thread_root_event_id,
+                    ).await;
+                    let latest_reply_preview_text = latest_reply_event.as_ref()
+                        .and_then(build_latest_thread_reply_preview_text);
+
+                    if sender.send(TimelineUpdate::ThreadSummaryDetailsFetched {
+                        thread_root_event_id,
+                        timeline_item_index,
+                        num_replies,
+                        latest_reply_preview_text,
+                    }).is_err() {
+                        error!("Failed to send fetched thread summary details to UI for {timeline_kind}");
                     }
                     SignalToUI::set_ui_signal();
                 });
@@ -3256,6 +3294,116 @@ async fn fetch_room_preview_with_avatar(
         avatar_from_room_name(room_preview.name.as_deref())
     };
     Ok(FetchedRoomPreview::from(room_preview, room_avatar))
+}
+
+/// Fetches key details about the given thread root event.
+///
+/// Returns a tuple of:
+/// 1. the number of replies in the thread (excluding the root event itself),
+/// 2. the latest reply event, if it could be fetched.
+async fn fetch_thread_summary_details(
+    room: &Room,
+    thread_root_event_id: &EventId,
+) -> (u32, Option<matrix_sdk::deserialized_responses::TimelineEvent>) {
+    let mut num_replies = 0;
+    let mut latest_reply_event = None;
+
+    if let Ok(thread_root_event) = room.load_or_fetch_event(thread_root_event_id, None).await
+        && let Some(thread_summary) = thread_root_event.thread_summary.summary()
+    {
+        num_replies = thread_summary.num_replies;
+
+        if let Some(latest_reply_event_id) = thread_summary.latest_reply.as_ref()
+            && let Ok(latest_reply) = room.load_or_fetch_event(latest_reply_event_id, None).await
+        {
+            latest_reply_event = Some(latest_reply);
+        }
+    }
+
+    if latest_reply_event.is_none() {
+        latest_reply_event = fetch_latest_thread_reply_event(room, thread_root_event_id).await;
+    }
+
+    // Always compute the reply count directly from the fetched thread relations,
+    // for some reason we can't rely on the SDK-provided thread_summary to be accurate
+    // (it's almost always totally wrong or out-of-date...).
+    if let Some(count) = count_thread_replies(room, thread_root_event_id).await {
+        num_replies = count;
+    }
+
+    (num_replies, latest_reply_event)
+}
+
+/// Fetches the latest reply event in the thread rooted at `thread_root_event_id`.
+async fn fetch_latest_thread_reply_event(
+    room: &Room,
+    thread_root_event_id: &EventId,
+) -> Option<matrix_sdk::deserialized_responses::TimelineEvent> {
+    let options = RelationsOptions {
+        dir: Direction::Backward,
+        limit: Some(uint!(1)),
+        include_relations: IncludeRelations::RelationsOfType(RelationType::Thread),
+        ..Default::default()
+    };
+
+    room.relations(thread_root_event_id.to_owned(), options)
+        .await
+        .ok()
+        .and_then(|relations| relations.chunk.into_iter().next())
+}
+
+/// Counts all replies in the given thread by paginating `/relations` in batches.
+async fn count_thread_replies(
+    room: &Room,
+    thread_root_event_id: &EventId,
+) -> Option<u32> {
+    let mut total_replies: u32 = 0;
+    let mut next_batch_token = None;
+
+    loop {
+        let options = RelationsOptions {
+            from: next_batch_token.clone(),
+            dir: Direction::Backward,
+            limit: Some(uint!(100)),
+            include_relations: IncludeRelations::RelationsOfType(RelationType::Thread),
+            ..Default::default()
+        };
+
+        let relations = room.relations(thread_root_event_id.to_owned(), options).await.ok()?;
+        if relations.chunk.is_empty() {
+            break;
+        }
+        total_replies = total_replies.saturating_add(relations.chunk.len() as u32);
+
+        next_batch_token = relations.next_batch_token;
+        if next_batch_token.is_none() {
+            break;
+        }
+    }
+
+    Some(total_replies)
+}
+
+/// Returns an HTML-formatted text preview of the given latest thread reply event.
+fn build_latest_thread_reply_preview_text(
+    latest_reply_event: &matrix_sdk::deserialized_responses::TimelineEvent,
+) -> Option<String> {
+    let raw = latest_reply_event.raw();
+    let sender = raw.get_field::<OwnedUserId>("sender").ok().flatten()?;
+    let sender_name = sender.localpart().to_owned();
+
+    let text_preview = text_preview_of_raw_timeline_event(raw, &sender_name)
+        .unwrap_or_else(|| {
+            let event_type = raw.get_field::<String>("type").ok().flatten();
+            TextPreview::from((
+                event_type.unwrap_or_else(|| "unknown event type".to_string()),
+                BeforeText::UsernameWithColon,
+            ))
+        });
+
+    Some(utils::replace_linebreaks_separators(
+        &text_preview.format_with(&sender_name, true)
+    ))
 }
 
 
