@@ -2058,7 +2058,10 @@ impl RoomScreen {
                     );
                 }
                 MessageAction::OpenThread(thread_root_event_id) => {
-                    let Some(room_name_id) = self.room_name_id.as_ref().cloned() else { continue };
+                    let Some(room_name_id) = self.room_name_id.as_ref().cloned() else {
+                        error!("### ERROR: MessageAction::OpenThread: thread_root_event_id={thread_root_event_id}, but room_name_id was None!");
+                        continue
+                    };
                     cx.widget_action(
                         room_screen_widget_uid,
                         &HeapLiveIdPath::default(),
@@ -2469,8 +2472,10 @@ impl RoomScreen {
             }
         };
 
-        // If the room is already being displayed, then do nothing.
+        // If this timeline is already displayed, we don't need to do anything major,
+        // but we do need update the `room_name_id` in case it has changed, or it has been cleared.
         if self.timeline_kind.as_ref().is_some_and(|kind| kind == &timeline_kind) {
+            self.room_name_id = Some(room_name_id.clone());
             return;
         }
 
