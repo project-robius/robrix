@@ -27,7 +27,7 @@ use tokio::{
     sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
-use std::{cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
+use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
 use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
@@ -3417,10 +3417,11 @@ async fn text_preview_of_latest_thread_reply(
             BeforeText::UsernameWithColon,
         ))
     });
-
-    Some(utils::replace_linebreaks_separators(
-        &text_preview.format_with(sender_name, true)
-    ))
+    let preview_str = text_preview.format_with(sender_name, true);
+    match utils::replace_linebreaks_separators(&preview_str, true) {
+        Cow::Borrowed(_) => Some(preview_str),
+        Cow::Owned(replaced) => Some(replaced),
+    }
 }
 
 

@@ -172,11 +172,118 @@ pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Optio
 }
 
 /// Replaces all line breaks, tabs, paragraphs and other separators with a single space `' '`.
-pub fn replace_linebreaks_separators(s: &str) -> String {
-    s.replace(
-        ['\n', '\r', '\t', '\x0B', '\x0C', '\x0D'],
-        " ",
-    )
+///
+/// If `is_html` is true, it also removes line-breaking tags, e.g., `<br>`.
+pub fn replace_linebreaks_separators<'a>(s: &'a str, is_html: bool) -> Cow<'a, str> {
+    #[inline]
+    fn is_separator(byte: u8) -> bool {
+        matches!(byte, b'\n' | b'\r' | b'\t' | 0x0B | 0x0C)
+    }
+
+    #[inline]
+    fn is_html_break_tag(tag_name: &[u8]) -> bool {
+        tag_name.eq_ignore_ascii_case(b"br")
+            || tag_name.eq_ignore_ascii_case(b"p")
+            || tag_name.eq_ignore_ascii_case(b"hr")
+            || tag_name.eq_ignore_ascii_case(b"div")
+    }
+
+    #[inline]
+    fn html_tag_causes_break(tag_content: &[u8]) -> bool {
+        let mut i = 0;
+        while i < tag_content.len() && tag_content[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= tag_content.len() {
+            return false;
+        }
+
+        if tag_content[i] == b'/' {
+            i += 1;
+            while i < tag_content.len() && tag_content[i].is_ascii_whitespace() {
+                i += 1;
+            }
+        }
+
+        let name_start = i;
+        while i < tag_content.len() && tag_content[i].is_ascii_alphanumeric() {
+            i += 1;
+        }
+        if name_start == i {
+            return false;
+        }
+
+        is_html_break_tag(&tag_content[name_start..i])
+    }
+
+    let mut has_allocated = false;
+    let mut out = String::new();
+    let mut segment_start = 0;
+    let bytes = s.as_bytes();
+
+    if !is_html {
+        for (i, &byte) in bytes.iter().enumerate() {
+            if is_separator(byte) {
+                if !has_allocated {
+                    has_allocated = true;
+                    out = String::with_capacity(s.len());
+                }
+                out.push_str(&s[segment_start..i]);
+                out.push(' ');
+                segment_start = i + 1;
+            }
+        }
+    } else {
+        let mut i = 0;
+        while i < bytes.len() {
+            let byte = bytes[i];
+
+            if is_separator(byte) {
+                if !has_allocated {
+                    has_allocated = true;
+                    out = String::with_capacity(s.len());
+                }
+                out.push_str(&s[segment_start..i]);
+                out.push(' ');
+                i += 1;
+                segment_start = i;
+                continue;
+            }
+
+            if byte == b'<' {
+                let mut tag_end = i + 1;
+                while tag_end < bytes.len() && bytes[tag_end] != b'>' {
+                    tag_end += 1;
+                }
+
+                if tag_end < bytes.len() && html_tag_causes_break(&bytes[i + 1..tag_end]) {
+                    if !has_allocated {
+                        has_allocated = true;
+                        out = String::with_capacity(s.len());
+                    }
+                    out.push_str(&s[segment_start..i]);
+                    out.push(' ');
+                    i = tag_end + 1;
+                    segment_start = i;
+                    continue;
+                }
+
+                if tag_end < bytes.len() {
+                    i = tag_end + 1;
+                    continue;
+                }
+            }
+
+            i += 1;
+        }
+    }
+
+    if segment_start == 0 {
+        return Cow::Borrowed(s);
+    }
+
+    out.push_str(&s[segment_start..]);
+    Cow::Owned(out)
 }
 
 /// Looks for and removes the `<mx-reply>` element from the given HTML message body, if it exists.
