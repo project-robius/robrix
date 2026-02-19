@@ -3332,14 +3332,27 @@ async fn fetch_thread_summary_details(
         }
     }
 
-    if latest_reply_event.is_none() {
-        latest_reply_event = fetch_latest_thread_reply_event(room, thread_root_event_id).await;
+    // Parallelize the fetching of the latest reply event and the counting of thread replies.
+    // This significantly speeds up the time it takes to load thread details.
+    let (fetched_latest_reply, count_opt) = tokio::join!(
+        async {
+            if latest_reply_event.is_none() {
+                fetch_latest_thread_reply_event(room, thread_root_event_id).await
+            } else {
+                None
+            }
+        },
+        // Always compute the reply count directly from the fetched thread relations,
+        // for some reason we can't rely on the SDK-provided thread_summary to be accurate
+        // (it's almost always totally wrong or out-of-date...).
+        count_thread_replies(room, thread_root_event_id)
+    );
+
+    if let Some(event) = fetched_latest_reply {
+        latest_reply_event = Some(event);
     }
 
-    // Always compute the reply count directly from the fetched thread relations,
-    // for some reason we can't rely on the SDK-provided thread_summary to be accurate
-    // (it's almost always totally wrong or out-of-date...).
-    if let Some(count) = count_thread_replies(room, thread_root_event_id).await {
+    if let Some(count) = count_opt {
         num_replies = count;
     }
 
