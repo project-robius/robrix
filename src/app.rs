@@ -4,7 +4,7 @@
 
 use std::{cell::RefCell, collections::HashMap};
 use makepad_widgets::*;
-use matrix_sdk::{RoomState, ruma::{OwnedRoomId, RoomId}};
+use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, RoomId}};
 use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
@@ -374,18 +374,14 @@ impl MatchEvent for App {
                 continue;
             }
 
+            // A new room has been selected, update the app state and navigate to the main content view.
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
-                // A room has been selected, update the app state and navigate to the main content view.
-                let display_name = match &selected_room {
-                    SelectedRoom::JoinedRoom { room_name_id } => room_name_id.to_string(),
-                    SelectedRoom::InvitedRoom { room_name_id } => room_name_id.to_string(),
-                    SelectedRoom::Space { space_name_id } => format!("[Space] {}", space_name_id),
-                };
-                self.app_state.selected_room = Some(selected_room);
                 // Set the Stack Navigation header to show the name of the newly-selected room.
                 self.ui
                     .label(ids!(main_content_view.header.content.title_container.title))
-                    .set_text(cx, &display_name);
+                    .set_text(cx, &selected_room.display_name());
+
+                self.app_state.selected_room = Some(selected_room);
 
                 // Navigate to the main content view
                 cx.widget_action(
@@ -852,12 +848,29 @@ pub struct SavedDockState {
 
 /// Represents a room currently or previously selected by the user.
 ///
-/// One `SelectedRoom` is considered equal to another if their `room_id`s are equal.
+/// ## PartialEq/Eq equality comparison behavior
+/// Room/Space names are ignored for the purpose of equality comparison.
+/// Two `SelectedRoom`s are considered equal if their `room_id`s are equal,
+/// unless they are `Thread`s,` in which case their `thread_root_event_id`s
+/// are also compared for equality.
+/// A `Thread` is never considered equal to a non-`Thread`, even if their `room_id`s are equal.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SelectedRoom {
-    JoinedRoom { room_name_id: RoomNameId },
-    InvitedRoom { room_name_id: RoomNameId },
-    Space { space_name_id: RoomNameId },
+    JoinedRoom {
+        room_name_id: RoomNameId,
+    },
+    Thread {
+        room_name_id: RoomNameId,
+        /// The event ID of the root message of this thread,
+        /// which is used to distinguish this thread from the main room timeline.
+        thread_root_event_id: OwnedEventId,
+    },
+    InvitedRoom {
+        room_name_id: RoomNameId,
+    },
+    Space {
+        space_name_id: RoomNameId,
+    },
 }
 
 impl SelectedRoom {
@@ -866,6 +879,7 @@ impl SelectedRoom {
             SelectedRoom::JoinedRoom { room_name_id } => room_name_id.room_id(),
             SelectedRoom::InvitedRoom { room_name_id } => room_name_id.room_id(),
             SelectedRoom::Space { space_name_id } => space_name_id.room_id(),
+            SelectedRoom::Thread { room_name_id, .. } => room_name_id.room_id(),
         }
     }
 
@@ -874,6 +888,7 @@ impl SelectedRoom {
             SelectedRoom::JoinedRoom { room_name_id } => room_name_id,
             SelectedRoom::InvitedRoom { room_name_id } => room_name_id,
             SelectedRoom::Space { space_name_id } => space_name_id,
+            SelectedRoom::Thread { room_name_id, .. } => room_name_id,
         }
     }
 
@@ -895,10 +910,49 @@ impl SelectedRoom {
             _ => false,
         }
     }
+
+    /// Returns the `LiveId` of the room tab corresponding to this `SelectedRoom`.
+    pub fn tab_id(&self) -> LiveId {
+        match self {
+            SelectedRoom::Thread { room_name_id, thread_root_event_id } => {
+                LiveId::from_str(
+                    &format!("{}##{}", room_name_id.room_id(), thread_root_event_id)
+                )
+            }
+            other => LiveId::from_str(other.room_id().as_str()),
+        }
+    }
+
+    /// Returns the display name to be shown for this room in the UI.
+    pub fn display_name(&self) -> String {
+        match self {
+            SelectedRoom::JoinedRoom { room_name_id } => room_name_id.to_string(),
+            SelectedRoom::InvitedRoom { room_name_id } => room_name_id.to_string(),
+            SelectedRoom::Space { space_name_id } => format!("[Space] {space_name_id}"),
+            SelectedRoom::Thread { room_name_id, .. } => format!("[Thread] {room_name_id}"),
+        }
+    }
 }
+
 impl PartialEq for SelectedRoom {
     fn eq(&self, other: &Self) -> bool {
-        self.room_id() == other.room_id()
+        match (self, other) {
+            (
+                SelectedRoom::Thread {
+                    room_name_id: lhs_room_name_id,
+                    thread_root_event_id: lhs_thread_root_event_id,
+                },
+                SelectedRoom::Thread {
+                    room_name_id: rhs_room_name_id,
+                    thread_root_event_id: rhs_thread_root_event_id,
+                },
+            ) => {
+                lhs_room_name_id.room_id() == rhs_room_name_id.room_id()
+                    && lhs_thread_root_event_id == rhs_thread_root_event_id
+            }
+            (SelectedRoom::Thread { .. }, _) | (_, SelectedRoom::Thread { .. }) => false,
+            _ => self.room_id() == other.room_id(),
+        }
     }
 }
 impl Eq for SelectedRoom {}
