@@ -3405,11 +3405,11 @@ fn populate_message_view(
         }
     };
 
+    let timeline_event_id = event_tl_item.identifier();
+
     // If we didn't use a cached item, we need to draw all other message content:
     // the reactions, the read receipts avatar row, the reply preview.
-    // We also must set the message details/metadata for the `item` widget representing this message.
     if !used_cached_item {
-        let timeline_event_id = event_tl_item.identifier();
         item.reaction_list(ids!(content.reaction_list)).set_list(
             cx,
             event_tl_item.content().reactions(),
@@ -3418,7 +3418,7 @@ fn populate_message_view(
             item_id,
         );
         populate_read_receipts(&item, cx, timeline_kind, event_tl_item);
-        let (is_reply_fully_drawn, replied_to_event_id) = draw_replied_to_message(
+        let is_reply_fully_drawn = draw_replied_to_message(
             cx,
             &item.view(ids!(replied_to_message)),
             timeline_kind,
@@ -3436,33 +3436,36 @@ fn populate_message_view(
             pending_thread_summary_fetches,
         );
 
-        // Set the message details/metadata for the Message widget so that it can handle events.
-        let message_details = MessageDetails {
-            thread_root_event_id: msg_like_content.thread_root.clone().or_else(|| {
-                msg_like_content.thread_summary.as_ref()
-                    .and_then(|_| event_tl_item.event_id().map(|id| id.to_owned()))
-            }),
-            timeline_event_id,
-            item_id,
-            related_event_id: replied_to_event_id,
-            room_screen_widget_uid,
-            abilities: MessageAbilities::from_user_power_and_event(
-                user_power_levels,
-                event_tl_item,
-                msg_like_content,
-                pinned_events,
-                has_html_body,
-            ),
-            should_be_highlighted: event_tl_item.is_highlighted(),
-        };
-        item.as_message().set_data(message_details);
-
         // The content is only considered to be fully drawn if the logic above marked it as such
         // *and* if the reply preview was also fully drawn
         // *and* if the thread root summary (if applicable) was also fully drawn.
         new_drawn_status.content_drawn &= is_reply_fully_drawn;
         new_drawn_status.content_drawn &= is_thread_summary_fully_drawn;
     }
+
+
+    // We must always re-set the message details, even when re-using a cached portallist item,
+    // because the item type might be the same but for a different message entirely.
+    let message_details = MessageDetails {
+        thread_root_event_id: msg_like_content.thread_root.clone().or_else(|| {
+            msg_like_content.thread_summary.as_ref()
+                .and_then(|_| event_tl_item.event_id().map(|id| id.to_owned()))
+        }),
+        timeline_event_id,
+        item_id,
+        related_event_id: msg_like_content.in_reply_to.as_ref().map(|r| r.event_id.clone()),
+        room_screen_widget_uid,
+        abilities: MessageAbilities::from_user_power_and_event(
+            user_power_levels,
+            event_tl_item,
+            msg_like_content,
+            pinned_events,
+            has_html_body,
+        ),
+        should_be_highlighted: event_tl_item.is_highlighted(),
+    };
+    item.as_message().set_data(message_details);
+
 
     // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
     let skip_draw_profile =
@@ -3993,15 +3996,12 @@ fn draw_replied_to_message(
     timeline_kind: &TimelineKind,
     in_reply_to: Option<&InReplyToDetails>,
     message_event_id: Option<&EventId>,
-) -> (bool, Option<OwnedEventId>) {
+) -> bool {
     let fully_drawn: bool;
     let show_reply: bool;
-    let mut replied_to_event_id = None;
 
     if let Some(in_reply_to_details) = in_reply_to {
-        replied_to_event_id = Some(in_reply_to_details.event_id.to_owned());
         show_reply = true;
-
         match &in_reply_to_details.event {
             TimelineDetails::Ready(replied_to_event) => {
                 let (in_reply_to_username, is_avatar_fully_drawn) =
@@ -4074,7 +4074,7 @@ fn draw_replied_to_message(
     }
 
     replied_to_message_view.set_visible(cx, show_reply);
-    (fully_drawn, replied_to_event_id)
+    fully_drawn
 }
 
 /// Draws a one-line thread summary at the bottom of a message if it is the root of a thread.
@@ -4617,18 +4617,30 @@ impl Widget for Message {
         }
 
         // Handle clicks on the thread summary shown beneath a thread-root message.
-        if let Some(thread_root_event_id) = details.thread_root_event_id.as_ref() {
-            match event.hits(cx, self.view(ids!(thread_root_summary)).area()) {
-                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+        match event.hits(cx, self.view(ids!(thread_root_summary)).area()) {
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                if let Some(thread_root_event_id) = details.thread_root_event_id.as_ref() {
                     cx.widget_action(
                         details.room_screen_widget_uid,
                         &scope.path,
                         MessageAction::OpenThread(thread_root_event_id.clone()),
                     );
-                    return;
+                } else {
+                    error!(
+                        "Thread summary tapped but no thread root event ID. \
+                        timeline_event_id: {:?}, item_id: {}",
+                        details.timeline_event_id,
+                        details.item_id,
+                    );
+                    enqueue_popup_notification(
+                        "This thread is still syncing. Please try again in a moment.",
+                        PopupKind::Warning,
+                        Some(4.0),
+                    );
                 }
-                _ => { }
+                return;
             }
+            _ => { }
         }
 
         // Next, we forward the event to the child view such that it has the chance
