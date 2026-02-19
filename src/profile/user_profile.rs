@@ -106,6 +106,7 @@ live_design! {
 
             user_name = <Label> {
                 width: Fill, height: Fit
+                align: {x: 0.5}
                 draw_text: {
                     wrap: Word,
                     color: #000,
@@ -116,6 +117,7 @@ live_design! {
 
             user_id = <Label> {
                 width: Fill, height: Fit
+                align: {x: 0.5}
                 draw_text: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
