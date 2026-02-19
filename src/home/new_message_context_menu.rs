@@ -4,7 +4,7 @@
 use bitflags::bitflags;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedEventId;
-use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeContent};
+use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeContent, TimelineEventItemId};
 
 use crate::sliding_sync::UserPowerLevels;
 
@@ -276,13 +276,16 @@ impl MessageAbilities {
 /// Details about the message that define its context menu content.
 #[derive(Clone, Debug)]
 pub struct MessageDetails {
-    /// The Event ID of the message. If `None`, it is an unsent local event.
-    pub event_id: Option<OwnedEventId>,
     /// The index of this message in its room's timeline.
     pub item_id: usize,
+    /// The stable identifier of this event timeline item.
+    pub timeline_event_id: TimelineEventItemId,
     /// The event ID of the message that this message is related to, if any,
     /// such as the replied-to message.
     pub related_event_id: Option<OwnedEventId>,
+    /// The event ID of the thread root if this message is part of a thread
+    /// (or if this message is itself the thread root).
+    pub thread_root_event_id: Option<OwnedEventId>,
     /// The widget ID of the RoomScreen that contains this message.
     pub room_screen_widget_uid: WidgetUid,
     /// Whether this message should be highlighted, i.e.,
@@ -290,6 +293,15 @@ pub struct MessageDetails {
     pub should_be_highlighted: bool,
     /// The abilities that the user has on this message.
     pub abilities: MessageAbilities,
+}
+
+impl MessageDetails {
+    pub fn event_id(&self) -> Option<&OwnedEventId> {
+        match &self.timeline_event_id {
+            TimelineEventItemId::EventId(id) => Some(id),
+            TimelineEventItemId::TransactionId(_) => None,
+        }
+    }
 }
 
 #[derive(Live, LiveHook, Widget)]

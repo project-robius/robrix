@@ -171,6 +171,9 @@ pub async fn restore_session(
     let client = Client::builder()
         .homeserver_url(client_session.homeserver)
         .sqlite_store(client_session.db_path, Some(&client_session.passphrase))
+        .with_threading_support(matrix_sdk::ThreadingSupport::Enabled {
+            with_subscriptions: true,
+        })
         .handle_refresh_tokens()
         .build()
         .await?;
