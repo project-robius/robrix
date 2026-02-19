@@ -307,23 +307,25 @@ pub fn text_preview_of_raw_timeline_event(
 ) -> Option<TextPreview> {
     match raw_event.deserialize().ok()? {
         AnySyncTimelineEvent::MessageLike(
-            AnySyncMessageLikeEvent::RoomMessage(SyncMessageLikeEvent::Original(ev))
-        ) => Some(text_preview_of_message(&ev.content.msgtype, sender_username)),
-
+            AnySyncMessageLikeEvent::RoomMessage(
+                SyncMessageLikeEvent::Original(ev)
+            )
+        ) => Some(text_preview_of_message(
+            &ev.content.msgtype,
+            sender_username,
+        )),
         AnySyncTimelineEvent::MessageLike(
-            AnySyncMessageLikeEvent::RoomMessage(SyncMessageLikeEvent::Redacted(_))
+            AnySyncMessageLikeEvent::RoomMessage(
+                SyncMessageLikeEvent::Redacted(_)
+            )
         ) => {
-            let sender_user_id = raw_event
-                .get_field::<OwnedUserId>("sender")
-                .ok()
-                .flatten()?;
+            let sender_user_id = raw_event.get_field::<OwnedUserId>("sender").ok().flatten()?;
             Some(text_preview_of_redacted_message(
                 Some(raw_event),
                 sender_user_id.as_ref(),
                 sender_username,
             ))
         }
-
         _ => None,
     }
 }

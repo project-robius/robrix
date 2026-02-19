@@ -820,8 +820,10 @@ async fn matrix_worker_task(
                         timeline.room(),
                         &thread_root_event_id,
                     ).await;
-                    let latest_reply_preview_text = latest_reply_event.as_ref()
-                        .and_then(build_latest_thread_reply_preview_text);
+                    let latest_reply_preview_text = match latest_reply_event.as_ref() {
+                        Some(event) => text_preview_of_latest_thread_reply(&timeline.room(), event).await,
+                        None => None,
+                    };
 
                     if sender.send(TimelineUpdate::ThreadSummaryDetailsFetched {
                         thread_root_event_id,
@@ -3385,24 +3387,29 @@ async fn count_thread_replies(
 }
 
 /// Returns an HTML-formatted text preview of the given latest thread reply event.
-fn build_latest_thread_reply_preview_text(
+async fn text_preview_of_latest_thread_reply(
+    room: &Room,
     latest_reply_event: &matrix_sdk::deserialized_responses::TimelineEvent,
 ) -> Option<String> {
     let raw = latest_reply_event.raw();
-    let sender = raw.get_field::<OwnedUserId>("sender").ok().flatten()?;
-    let sender_name = sender.localpart().to_owned();
-
-    let text_preview = text_preview_of_raw_timeline_event(raw, &sender_name)
-        .unwrap_or_else(|| {
-            let event_type = raw.get_field::<String>("type").ok().flatten();
-            TextPreview::from((
-                event_type.unwrap_or_else(|| "unknown event type".to_string()),
-                BeforeText::UsernameWithColon,
-            ))
-        });
+    let sender_id = raw.get_field::<OwnedUserId>("sender").ok().flatten()?;
+    let sender_room_member = match room.get_member_no_sync(&sender_id).await {
+        Ok(Some(rm)) => Some(rm),
+        _ => room.get_member(&sender_id).await.ok().flatten(),
+    };
+    let sender_name = sender_room_member.as_ref()
+        .and_then(|rm| rm.display_name())
+        .unwrap_or(sender_id.as_str());
+    let text_preview = text_preview_of_raw_timeline_event(raw, sender_name).unwrap_or_else(|| {
+        let event_type = raw.get_field::<String>("type").ok().flatten();
+        TextPreview::from((
+            event_type.unwrap_or_else(|| "unknown event type".to_string()),
+            BeforeText::UsernameWithColon,
+        ))
+    });
 
     Some(utils::replace_linebreaks_separators(
-        &text_preview.format_with(&sender_name, true)
+        &text_preview.format_with(sender_name, true)
     ))
 }
 
