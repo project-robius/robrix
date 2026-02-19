@@ -802,7 +802,9 @@ impl From<&SpaceRoom> for SpaceRoomInfo {
         SpaceRoomInfo {
             id: space_room.room_id.clone(),
             name: space_room.display_name.clone(),
-            topic: space_room.topic.as_ref().map(|t| replace_linebreaks_separators(t.trim())),
+            topic: space_room.topic.as_ref().map(|t| {
+                replace_linebreaks_separators(t.trim(), false).into_owned()
+            }),
             avatar: AvatarState::Known(space_room.avatar_url.clone()),
             num_joined_members: space_room.num_joined_members,
             state: space_room.state,
@@ -817,7 +819,9 @@ impl From<SpaceRoom> for SpaceRoomInfo {
             children_count: space_room.is_space().then_some(space_room.children_count),
             id: space_room.room_id,
             name: space_room.display_name,
-            topic: space_room.topic.map(|t| replace_linebreaks_separators(t.trim())),
+            topic: space_room.topic.map(|t| {
+                replace_linebreaks_separators(t.trim(), false).into_owned()
+            }),
             avatar: AvatarState::Known(space_room.avatar_url),
             num_joined_members: space_room.num_joined_members,
             state: space_room.state,

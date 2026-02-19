@@ -653,7 +653,7 @@ impl UserProfileSlidingPane {
             }
         }
         info.avatar_state.update_from_cache(cx);
-        
+
         // If TSP is enabled, populate the TSP verification info for this user.
         #[cfg(feature = "tsp")] {
             use crate::tsp::verify_user::TspVerifyUserWidgetExt;

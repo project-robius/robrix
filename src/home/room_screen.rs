@@ -846,28 +846,6 @@ impl Widget for RoomScreen {
                         // portal_list.set_first_id_and_scroll(portal_list.first_id(), 15.0);
                     }
                 }
-
-                // Handle the action that requests to show the user profile sliding pane.
-                // TODO: move this into the `actions_generated_within_this_room_screen.retain(...)` code block,
-                //       where we won't need to bother checking if the room ID is the same as this RoomScreen,
-                //       because that block guarantees that it came from this RoomScreen.
-                if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
-                    // Only show the user profile in room that this avatar belongs to
-                    if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == &profile_and_room_id.room_id) {
-                        self.show_user_profile(
-                            cx,
-                            &user_profile_sliding_pane,
-                            UserProfilePaneInfo {
-                                profile_and_room_id,
-                                room_name: self.room_name_id.as_ref().map_or_else(
-                                    || UNNAMED_ROOM.to_string(),
-                                    |r| r.to_string(),
-                                ),
-                                room_member: None,
-                            },
-                        );
-                    }
-                }
             }
 
             /*
@@ -1020,6 +998,22 @@ impl Widget for RoomScreen {
             actions_generated_within_this_room_screen.retain(|action| {
                 if self.handle_link_clicked(cx, action, &user_profile_sliding_pane) {
                     return false;
+                }
+
+                // Handle the action that requests to show the user profile sliding pane.
+                if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
+                    self.show_user_profile(
+                        cx,
+                        &user_profile_sliding_pane,
+                        UserProfilePaneInfo {
+                            profile_and_room_id,
+                            room_name: self.room_name_id.as_ref().map_or_else(
+                                || UNNAMED_ROOM.to_string(),
+                                |r| r.to_string(),
+                            ),
+                            room_member: None,
+                        },
+                    );
                 }
 
                 /*
@@ -4150,7 +4144,10 @@ fn populate_thread_root_summary(
                 &embedded_event.sender,
                 sender_username,
             ).format_with(sender_username, true);
-            utils::replace_linebreaks_separators(&preview).into()
+            match utils::replace_linebreaks_separators(&preview, true) {
+                Cow::Borrowed(_) => Cow::Owned(preview),
+                Cow::Owned(replaced) => Cow::Owned(replaced),
+            }
         }
         td @ TimelineDetails::Pending | td @ TimelineDetails::Unavailable => {
             fully_drawn = true;
