@@ -94,7 +94,7 @@ live_design! {
     Empty = <View> { }
 
     // A summary at the bottom of a message that is the root of a thread.
-    ThreadRootSummary = <View> {
+    ThreadRootSummary = <RoundedView> {
         visible: false
         width: Fill,
         height: Fit
@@ -105,9 +105,11 @@ live_design! {
         // padding: { left: 8.0, right: 8.0, top: 6.0, bottom: 6.0 }
         padding: 20,
         cursor: Hand
+
         show_bg: true
         draw_bg: {
             color: #F00
+            border_radius: 4.0
         }
 
         thread_summary_count = <Label> {
@@ -4617,30 +4619,39 @@ impl Widget for Message {
         }
 
         // Handle clicks on the thread summary shown beneath a thread-root message.
-        match event.hits(cx, self.view(ids!(thread_root_summary)).area()) {
-            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                if let Some(thread_root_event_id) = details.thread_root_event_id.as_ref() {
+        if let Some(thread_root_event_id) = details.thread_root_event_id.as_ref() {
+            match event.hits(cx, self.view(ids!(thread_root_summary)).area()) {
+                Hit::FingerDown(fe) => {
+                    if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
+                        cx.widget_action(
+                            details.room_screen_widget_uid,
+                            &scope.path,
+                            MessageAction::OpenMessageContextMenu {
+                                details: details.clone(),
+                                abs_pos: fe.abs,
+                            }
+                        );
+                    }
+                }
+                Hit::FingerLongPress(lp) => {
+                    cx.widget_action(
+                        details.room_screen_widget_uid,
+                        &scope.path,
+                        MessageAction::OpenMessageContextMenu {
+                            details: details.clone(),
+                            abs_pos: lp.abs,
+                        }
+                    );
+                }
+                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                     cx.widget_action(
                         details.room_screen_widget_uid,
                         &scope.path,
                         MessageAction::OpenThread(thread_root_event_id.clone()),
                     );
-                } else {
-                    error!(
-                        "Thread summary tapped but no thread root event ID. \
-                        timeline_event_id: {:?}, item_id: {}",
-                        details.timeline_event_id,
-                        details.item_id,
-                    );
-                    enqueue_popup_notification(
-                        "This thread is still syncing. Please try again in a moment.",
-                        PopupKind::Warning,
-                        Some(4.0),
-                    );
                 }
-                return;
+                _ => { }
             }
-            _ => { }
         }
 
         // Next, we forward the event to the child view such that it has the chance
