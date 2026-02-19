@@ -1,5 +1,5 @@
-//! A room screen is the UI view that displays a single Room's timeline of events/messages
-//! along with a message input bar at the bottom.
+//! The `RoomScreen` widget is the UI view that displays a single room or thread's timeline
+//! of events (messages，state changes, etc.), along with an input bar at the bottom.
 
 use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::Arc};
 
@@ -57,6 +57,12 @@ const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
 
 static UNNAMED_ROOM: &str = "Unnamed Room";
 
+/// #FFF4E5
+const COLOR_THREAD_SUMMARY_BG: Vec4 = vec4(1.0, 0.957, 0.898, 1.0);
+/// #FFEACC
+const COLOR_THREAD_SUMMARY_BG_HOVER: Vec4 = vec4(1.0, 0.918, 0.8, 1.0);
+
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -89,6 +95,10 @@ live_design! {
 
     REACTION_TEXT_COLOR = #4c00b0
 
+    COLOR_THREAD_SUMMARY_BG = #FFF4E5
+    COLOR_THREAD_SUMMARY_BG_HOVER = #FFEACC
+    COLOR_THREAD_SUMMARY_BORDER = #E8C99A
+    COLOR_THREAD_SUMMARY_REPLY_COUNT = #A35A00
 
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
@@ -102,39 +112,38 @@ live_design! {
         align: {x: 0.0, y: 0.5}
         spacing: 5.0
         margin: { top: 5.0 }
-        // padding: { left: 8.0, right: 8.0, top: 6.0, bottom: 6.0 }
-        padding: 20,
+        padding: 12,
         cursor: Hand
 
         show_bg: true
         draw_bg: {
-            color: #F00
+            color: (COLOR_THREAD_SUMMARY_BG)
             border_radius: 4.0
+            border_size: 1.5
+            border_color: (COLOR_THREAD_SUMMARY_BORDER)
         }
 
         thread_summary_count = <Label> {
             width: Fit,
             draw_text: {
-                text_style: <SMALL_STATE_TEXT_STYLE> {}
-                color: #2d6fb9
+                text_style: <USERNAME_TEXT_STYLE> { font_size: 11 }
+                color: (COLOR_THREAD_SUMMARY_REPLY_COUNT)
             }
             text: ""
         }
 
-        thread_summary_latest = <HtmlOrPlaintext> {
-            plaintext_view = {
-                pt_label = {
-                    flow: Right,
-                    draw_text: {
-                        wrap: Ellipsis,
-                    }
-                }
+        <Icon> {
+            width: Fit, height: Fit,
+            align: {x: 0.5, y: 0.5}
+            draw_icon: {
+                svg_file: dep("crate://self/resources/icons/double_chat.svg")
+                color: (COLOR_THREAD_SUMMARY_REPLY_COUNT)
             }
-            html_view = {
-                html = {
-                    flow: Right,
-                }
-            }
+            icon_walk: { width: 25, height: 25, margin: {top: 7, right: 7} }
+        }
+
+        thread_summary_latest = <MessageHtml> {
+            flow: Right,
         }
     }
 
@@ -4174,8 +4183,8 @@ fn populate_thread_root_summary(
     };
     item.label(ids!(thread_summary_count))
         .set_text(cx, &replies_count_text);
-    item.html_or_plaintext(ids!(thread_summary_latest))
-        .show_html(cx, latest_preview);
+    item.html(ids!(thread_summary_latest))
+        .set_text(cx, &latest_preview);
     fully_drawn
 }
 
@@ -4625,8 +4634,17 @@ impl Widget for Message {
 
         // Handle clicks on the thread summary shown beneath a thread-root message.
         if let Some(thread_root_event_id) = details.thread_root_event_id.as_ref() {
-            match event.hits(cx, self.view(ids!(thread_root_summary)).area()) {
+            let thread_root_summary = self.view(ids!(thread_root_summary));
+            let apply_hover = |cx: &mut Cx, bg_color: Vec4| {
+                thread_root_summary.apply_over(cx, live! {
+                    draw_bg: {
+                        color: (bg_color)
+                    }
+                });
+            };
+            match event.hits(cx, thread_root_summary.area()) {
                 Hit::FingerDown(fe) => {
+                    apply_hover(cx, COLOR_THREAD_SUMMARY_BG_HOVER);
                     if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                         cx.widget_action(
                             details.room_screen_widget_uid,
@@ -4638,6 +4656,12 @@ impl Widget for Message {
                         );
                     }
                 }
+                Hit::FingerHoverIn(_) => {
+                    apply_hover(cx, COLOR_THREAD_SUMMARY_BG_HOVER);
+                }
+                Hit::FingerHoverOut(_) => {
+                    apply_hover(cx, COLOR_THREAD_SUMMARY_BG);
+                }
                 Hit::FingerLongPress(lp) => {
                     cx.widget_action(
                         details.room_screen_widget_uid,
@@ -4648,12 +4672,15 @@ impl Widget for Message {
                         }
                     );
                 }
-                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                    cx.widget_action(
-                        details.room_screen_widget_uid,
-                        &scope.path,
-                        MessageAction::OpenThread(thread_root_event_id.clone()),
-                    );
+                Hit::FingerUp(fe) => {
+                    apply_hover(cx, COLOR_THREAD_SUMMARY_BG);
+                    if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
+                        cx.widget_action(
+                            details.room_screen_widget_uid,
+                            &scope.path,
+                            MessageAction::OpenThread(thread_root_event_id.clone()),
+                        );
+                    }
                 }
                 _ => { }
             }

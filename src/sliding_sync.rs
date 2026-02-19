@@ -821,7 +821,7 @@ async fn matrix_worker_task(
                         &thread_root_event_id,
                     ).await;
                     let latest_reply_preview_text = match latest_reply_event.as_ref() {
-                        Some(event) => text_preview_of_latest_thread_reply(&timeline.room(), event).await,
+                        Some(event) => text_preview_of_latest_thread_reply(timeline.room(), event).await,
                         None => None,
                     };
 
