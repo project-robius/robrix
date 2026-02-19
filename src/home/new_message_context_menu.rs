@@ -283,6 +283,9 @@ pub struct MessageDetails {
     /// The event ID of the message that this message is related to, if any,
     /// such as the replied-to message.
     pub related_event_id: Option<OwnedEventId>,
+    /// The event ID of the thread root if this message is part of a thread
+    /// (or if this message is itself the thread root).
+    pub thread_root_event_id: Option<OwnedEventId>,
     /// The widget ID of the RoomScreen that contains this message.
     pub room_screen_widget_uid: WidgetUid,
     /// Whether this message should be highlighted, i.e.,

@@ -137,51 +137,40 @@ impl MainDesktopUI {
     /// Focuses on a room if it is already open, otherwise creates a new tab for the room.
     fn focus_or_create_tab(&mut self, cx: &mut Cx, room: SelectedRoom) {
         // Do nothing if the room to select is already created and focused.
-        if self.most_recently_selected_room.as_ref().is_some_and(|r| r == &room) {
+        if self.most_recently_selected_room.as_ref().is_some_and(|sr| sr == &room) {
             return;
         }
 
         let dock = self.view.dock(ids!(dock));
 
         // If the room is already open, select (jump to) its existing tab
-        let room_id_as_live_id = LiveId::from_str(room.room_id().as_str());
-        if self.open_rooms.contains_key(&room_id_as_live_id) {
-            dock.select_tab(cx, room_id_as_live_id);
+        let room_tab_id = room.tab_id();
+        if self.open_rooms.contains_key(&room_tab_id) {
+            dock.select_tab(cx, room_tab_id);
             self.most_recently_selected_room = Some(room);
             return;
         }
 
         // Create a new tab for the room
-        let (kind, name) = match &room {
-            SelectedRoom::JoinedRoom { room_name_id }  => (
-                id!(room_screen),
-                room_name_id.to_string(),
-            ),
-            SelectedRoom::InvitedRoom { room_name_id } => (
-                id!(invite_screen),
-                room_name_id.to_string(),
-            ),
-            SelectedRoom::Space { space_name_id } => (
-                id!(space_lobby_screen),
-                format!("[Space] {}", space_name_id),
-            ),
+        let kind = match &room {
+            SelectedRoom::JoinedRoom { .. }
+            | SelectedRoom::Thread { .. } => id!(room_screen),
+            SelectedRoom::InvitedRoom { .. } => id!(invite_screen),
+            SelectedRoom::Space { .. } => id!(space_lobby_screen),
         };
 
         // Insert the tab after the currently-selected room's tab, if possible.
         // Otherwise, insert it after the home tab, which should always exist.
         let (tab_bar, insert_after) = self.most_recently_selected_room.as_ref()
-            .and_then(|curr_room| {
-                let curr_room_id = LiveId::from_str(curr_room.room_id().as_str());
-                dock.find_tab_bar_of_tab(curr_room_id)
-            })
+            .and_then(|curr_room| dock.find_tab_bar_of_tab(curr_room.tab_id()))
             .unwrap_or_else(|| dock.find_tab_bar_of_tab(id!(home_tab)).unwrap());
 
         let new_tab_widget = dock.create_and_select_tab(
             cx,
             tab_bar,
-            room_id_as_live_id,
+            room_tab_id,
             kind,
-            name,
+            room.display_name(),
             id!(CloseableTab),
             Some(insert_after),
         );
@@ -194,6 +183,14 @@ impl MainDesktopUI {
                     new_widget.as_room_screen().set_displayed_room(
                         cx,
                         room_name_id,
+                        None,
+                    );
+                }
+                SelectedRoom::Thread { room_name_id, thread_root_event_id } => {
+                    new_widget.as_room_screen().set_displayed_room(
+                        cx,
+                        room_name_id,
+                        Some(thread_root_event_id.clone()),
                     );
                 }
                 SelectedRoom::InvitedRoom { room_name_id } => {
@@ -214,7 +211,7 @@ impl MainDesktopUI {
             error!("BUG: failed to create tab for {room:?}");
         }
 
-        self.open_rooms.insert(room_id_as_live_id, room.clone());
+        self.open_rooms.insert(room_tab_id, room.clone());
         self.most_recently_selected_room = Some(room);
     }
 
@@ -291,7 +288,7 @@ impl MainDesktopUI {
         // Set the info to be displayed in the newly-replaced RoomScreen..
         new_widget
             .as_room_screen()
-            .set_displayed_room(cx, room_name_id);
+            .set_displayed_room(cx, room_name_id, None);
 
         // Go through all existing `SelectedRoom` instances and replace the
         // `SelectedRoom::InvitedRoom`s with `SelectedRoom::JoinedRoom`s.
@@ -365,6 +362,7 @@ impl MainDesktopUI {
                             widget.as_room_screen().set_displayed_room(
                                 cx,
                                 room_name_id,
+                                None,
                             );
                         }
                         Some(SelectedRoom::InvitedRoom { room_name_id }) => {
@@ -377,6 +375,13 @@ impl MainDesktopUI {
                             widget.as_space_lobby_screen().set_displayed_space(
                                 cx,
                                 space_name_id,
+                            );
+                        }
+                        Some(SelectedRoom::Thread { room_name_id, thread_root_event_id }) => {
+                            widget.as_room_screen().set_displayed_room(
+                                cx,
+                                room_name_id,
+                                Some(thread_root_event_id.clone()),
                             );
                         }
                         None => { }
