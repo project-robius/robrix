@@ -1398,7 +1398,7 @@ impl RoomScreen {
                     enqueue_popup_notification(
                         utils::stringify_pagination_error(&error, room_name.as_deref().unwrap_or(UNNAMED_ROOM)),
                         PopupKind::Error,
-                        None,
+                        Some(10.0),
                     );
                     done_loading = true;
                 }
@@ -1577,8 +1577,8 @@ impl RoomScreen {
                     if self.room_name_id.as_ref().is_some_and(|r| r.room_id() == room_id) {
                         enqueue_popup_notification(
                             "You are already viewing that room.",
-                            PopupKind::Error,
-                            None,
+                            PopupKind::Info,
+                            Some(4.0),
                         );
                         return true;
                     }
@@ -1628,7 +1628,7 @@ impl RoomScreen {
                     enqueue_popup_notification(
                         format!("Could not open URL: {url}"),
                         PopupKind::Error,
-                        None,
+                        Some(10.0),
                     );
                 }
             }
@@ -1643,7 +1643,7 @@ impl RoomScreen {
                     enqueue_popup_notification(
                         format!("Could not open URL: {url}"),
                         PopupKind::Error,
-                        None,
+                        Some(10.0),
                     );
                 }
             }
@@ -1686,6 +1686,32 @@ impl RoomScreen {
         populate_matrix_image_modal(cx, media_source, &mut tl_state.media_cache);
     }
 
+    /// Looks up the event specified by the given message details in the given timeline.
+    ///
+    /// This will first try an instant index-based lookup via `details.item_id`,
+    /// and then fall back to searching the timeline in reverse for the `details.event_id`
+    /// if the index is "stale", meaning the timeline items have changed (e.g., due to pagination)
+    /// since the message context menu was opened or the `MessageAction` was received by the `RoomScreen`.
+    ///
+    /// We search in reverse because it is far more likely that the user is interacting
+    /// with an event that is close to the end of the timeline.
+    fn find_event_in_timeline<'a>(
+        items: &'a Vector<Arc<TimelineItem>>,
+        details: &MessageDetails,
+    ) -> Option<&'a EventTimelineItem> {
+        let target_event_id = details.event_id()?;
+        if let Some(event) = items.get(details.item_id)
+            .and_then(|item| item.as_event())
+            .filter(|ev| ev.event_id().is_some_and(|id| id == target_event_id))
+        {
+            return Some(event);
+        }
+        items.iter()
+            .rev()
+            .take(MAX_ITEMS_TO_SEARCH_THROUGH)
+            .filter_map(|item| item.as_event())
+            .find(|ev| ev.event_id().is_some_and(|id| id == target_event_id))
+    }
 
     /// Handles any [`MessageAction`]s received by this RoomScreen.
     fn handle_message_actions(
@@ -1697,77 +1723,50 @@ impl RoomScreen {
     ) {
         let room_screen_widget_uid = self.widget_uid();
         for action in actions {
-            match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
+            match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast_ref() {
                 MessageAction::React { details, reaction } => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    let mut success = false;
-                    if let Some(timeline_item) = tl.items.get(details.item_id) {
-                        if let Some(event_tl_item) = timeline_item.as_event() {
-                            if event_tl_item.event_id() == details.event_id.as_deref() {
-                                let timeline_event_id = event_tl_item.identifier();
-                                submit_async_request(MatrixRequest::ToggleReaction {
-                                    room_id: tl.room_id.clone(),
-                                    timeline_event_id,
-                                    reaction,
-                                });
-                                success = true;
-                            }
-                        }
-                    }
-                    if !success {
-                        enqueue_popup_notification(
-                            "Couldn't find message in timeline to react to.",
-                            PopupKind::Error,
-                            None,
-                        );
-                        error!("MessageAction::React: couldn't find event [{}] {:?} to react to in room {}",
-                            details.item_id,
-                            details.event_id.as_deref(),
-                            tl.room_id,
-                        );
-                    }
+                    submit_async_request(MatrixRequest::ToggleReaction {
+                        room_id: tl.room_id.clone(),
+                        timeline_event_id: details.timeline_event_id.clone(),
+                        reaction: reaction.clone(),
+                    });
                 }
                 MessageAction::Reply(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(event_tl_item) = tl.items.get(details.item_id)
-                        .and_then(|tl_item| tl_item.as_event().cloned())
-                        .filter(|ev| ev.event_id() == details.event_id.as_deref())
-                    {
+                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details).cloned() {
                         let replied_to_info = EmbeddedEvent::from_timeline_item(&event_tl_item);
                         self.view.room_input_bar(ids!(room_input_bar))
                             .show_replying_to(cx, (event_tl_item, replied_to_info), &tl.room_id);
                     }
                     else {
                         enqueue_popup_notification(
-                            "Could not find message in timeline to reply to. Please try again!",
+                            "Could not find message in timeline to reply to. Please try again.",
                             PopupKind::Error,
-                            None,
+                            Some(5.0),
                         );
                         error!("MessageAction::Reply: couldn't find event [{}] {:?} to reply to in room {:?}",
                             details.item_id,
-                            details.event_id.as_deref(),
+                            details.timeline_event_id,
                             self.room_id(),
                         );
                     }
                 }
                 MessageAction::Edit(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(event_tl_item) = tl.items.get(details.item_id)
-                        .and_then(|tl_item| tl_item.as_event().cloned())
-                        .filter(|ev| ev.event_id() == details.event_id.as_deref())
-                    {
+                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) {
                         self.view.room_input_bar(ids!(room_input_bar))
-                            .show_editing_pane(cx, event_tl_item, tl.room_id.clone());
+                            .show_editing_pane(cx, event_tl_item.clone(), tl.room_id.clone());
                     }
                     else {
                         enqueue_popup_notification(
-                            "Could not find message in timeline to edit. Please try again!",
+                            "Could not find message in timeline to edit. Please try again.",
                             PopupKind::Error,
-                            None,
+                            Some(5.0),
                         );
                         error!("MessageAction::Edit: couldn't find event [{}] {:?} to edit in room {:?}",
                             details.item_id,
-                            details.event_id.as_deref(),
+                            details.timeline_event_id,
                             self.room_id(),
                         );
                     }
@@ -1785,17 +1784,17 @@ impl RoomScreen {
                     }
                     else {
                         enqueue_popup_notification(
-                            "No recent message available to edit.",
+                            "No recent message available to edit. Please manually select a message to edit.",
                             PopupKind::Warning,
-                            Some(3.0),
+                            Some(5.0),
                         );
                     }
                 }
                 MessageAction::Pin(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(event_id) = details.event_id {
+                    if let Some(event_id) = details.event_id() {
                         submit_async_request(MatrixRequest::PinEvent {
-                            event_id,
+                            event_id: event_id.clone(),
                             room_id: tl.room_id.clone(),
                             pin: true,
                         });
@@ -1803,15 +1802,15 @@ impl RoomScreen {
                         enqueue_popup_notification(
                             "This event cannot be pinned.",
                             PopupKind::Error,
-                            None,
+                            Some(5.0),
                         );
                     }
                 }
                 MessageAction::Unpin(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(event_id) = details.event_id {
+                    if let Some(event_id) = details.event_id() {
                         submit_async_request(MatrixRequest::PinEvent {
-                            event_id,
+                            event_id: event_id.clone(),
                             room_id: tl.room_id.clone(),
                             pin: false,
                         });
@@ -1819,27 +1818,24 @@ impl RoomScreen {
                         enqueue_popup_notification(
                             "This event cannot be unpinned.",
                             PopupKind::Error,
-                            None,
+                            Some(5.0),
                         );
                     }
                 }
                 MessageAction::CopyText(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(text) = tl.items
-                        .get(details.item_id)
-                        .and_then(|tl_item| tl_item.as_event().map(plaintext_body_of_timeline_item))
-                    {
-                        cx.copy_to_clipboard(&text);
+                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) {
+                        cx.copy_to_clipboard(&plaintext_body_of_timeline_item(event_tl_item));
                     }
                     else {
                         enqueue_popup_notification(
-                            "Could not find message in timeline to copy text from. Please try again!",
+                            "Could not find message in timeline to copy text from. Please try again.",
                             PopupKind::Error,
-                            None,
+                            Some(5.0),
                         );
                         error!("MessageAction::CopyText: couldn't find event [{}] {:?} to copy text from in room {}",
                             details.item_id,
-                            details.event_id.as_deref(),
+                            details.timeline_event_id,
                             tl.room_id,
                         );
                     }
@@ -1849,11 +1845,7 @@ impl RoomScreen {
                     // The logic for getting the formatted body of a message is the same
                     // as the logic used in `populate_message_view()`.
                     let mut success = false;
-                    if let Some(event_tl_item) = tl.items
-                        .get(details.item_id)
-                        .and_then(|tl_item| tl_item.as_event())
-                        .filter(|ev| ev.event_id() == details.event_id.as_deref())
-                    {
+                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) {
                         if let Some(message) = event_tl_item.content().as_message() {
                             match message.msgtype() {
                                 MessageType::Text(TextMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
@@ -1874,50 +1866,45 @@ impl RoomScreen {
                     }
                     if !success {
                         enqueue_popup_notification(
-                            "Could not find message in timeline to copy HTML from. Please try again!",
+                            "Could not find message in timeline to copy HTML from. Please try again.",
                             PopupKind::Error,
-                            None,
+                            Some(5.0),
                         );
                         error!("MessageAction::CopyHtml: couldn't find event [{}] {:?} to copy HTML from in room {}",
                             details.item_id,
-                            details.event_id.as_deref(),
+                            details.timeline_event_id,
                             tl.room_id,
                         );
                     }
                 }
                 MessageAction::CopyLink(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(event_id) = details.event_id {
-                        let matrix_to_uri = tl.room_id.matrix_to_event_uri(event_id);
+                    if let Some(event_id) = details.event_id() {
+                        let matrix_to_uri = tl.room_id.matrix_to_event_uri(event_id.clone());
                         cx.copy_to_clipboard(&matrix_to_uri.to_string());
                     } else {
                         enqueue_popup_notification(
-                            "Couldn't create permalink to message.",
+                            "Couldn't create permalink to message. Please try again.",
                             PopupKind::Error,
-                            None,
+                            Some(5.0),
                         );
                         error!("MessageAction::CopyLink: no `event_id`: [{}] {:?} in room {}",
                             details.item_id,
-                            details.event_id.as_deref(),
+                            details.timeline_event_id,
                             tl.room_id,
                         );
                     }
                 }
                 MessageAction::ViewSource(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { continue };
-                    let Some(event_tl_item) = tl.items
-                        .get(details.item_id)
-                        .and_then(|tl_item| tl_item.as_event().cloned())
-                        .filter(|ev| ev.event_id() == details.event_id.as_deref())
-                    else {
+                    let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) else {
                         enqueue_popup_notification(
                             "Could not find message in timeline to view source.",
                             PopupKind::Error,
-                            None,
+                            Some(5.0),
                         );
                         continue;
                     };
-
                     // Get the original JSON from the event and pretty-print it
                     let original_json: Option<String> = event_tl_item
                         .original_json()
@@ -1935,6 +1922,11 @@ impl RoomScreen {
                 MessageAction::JumpToRelated(details) => {
                     let Some(related_event_id) = details.related_event_id.as_ref() else {
                         error!("BUG: MessageAction::JumpToRelated had no related event ID.\n{details:#?}");
+                        enqueue_popup_notification(
+                            "Could not find related message or event in timeline.",
+                            PopupKind::Error,
+                            Some(5.0),
+                        );
                         continue;
                     };
                     self.jump_to_event(
@@ -1948,7 +1940,7 @@ impl RoomScreen {
                 MessageAction::JumpToEvent(event_id) => {
                     self.jump_to_event(
                         cx,
-                        &event_id,
+                        event_id,
                         None,
                         portal_list,
                         loading_pane
@@ -1956,39 +1948,23 @@ impl RoomScreen {
                 }
                 MessageAction::Redact { details, reason } => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(timeline_item) = tl.items.get(details.item_id) {
-                        if let Some(event_tl_item) = timeline_item.as_event() {
-                            if event_tl_item.event_id() == details.event_id.as_deref() {
-                                let timeline_event_id = event_tl_item.identifier();
-                                let room_id = tl.room_id.clone();
-                                let content = ConfirmationModalContent {
-                                    title_text: "Delete Message".into(),
-                                    body_text: "Are you sure you want to delete this message? This cannot be undone.".into(),
-                                    accept_button_text: Some("Delete".into()),
-                                    on_accept_clicked: Some(Box::new(move |_cx| {
-                                        submit_async_request(MatrixRequest::RedactMessage {
-                                            room_id,
-                                            timeline_event_id,
-                                            reason,
-                                        });
-                                    })),
-                                    ..Default::default()
-                                };
-                                cx.action(ConfirmDeleteAction::Show(RefCell::new(Some(content))));
-                                continue;
-                            }
-                        }
-                    }
-                    enqueue_popup_notification(
-                        "Couldn't find message in timeline to delete.",
-                        PopupKind::Error,
-                        None,
-                    );
-                    error!("MessageAction::Redact: couldn't find event [{}] {:?} to delete in room {}",
-                        details.item_id,
-                        details.event_id.as_deref(),
-                        tl.room_id,
-                    );
+                    let timeline_event_id = details.timeline_event_id.clone();
+                    let room_id = tl.room_id.clone();
+                    let reason = reason.clone();
+                    let content = ConfirmationModalContent {
+                        title_text: "Delete Message".into(),
+                        body_text: "Are you sure you want to delete this message? This cannot be undone.".into(),
+                        accept_button_text: Some("Delete".into()),
+                        on_accept_clicked: Some(Box::new(move |_cx| {
+                            submit_async_request(MatrixRequest::RedactMessage {
+                                room_id,
+                                timeline_event_id,
+                                reason,
+                            });
+                        })),
+                        ..Default::default()
+                    };
+                    cx.action(ConfirmDeleteAction::Show(RefCell::new(Some(content))));
                 }
                 // MessageAction::Report(details) => {
                 //     // TODO
@@ -3281,7 +3257,7 @@ fn populate_message_view(
 
         // Set the message details/metadata for the Message widget so that it can handle events.
         let message_details = MessageDetails {
-            event_id: event_tl_item.event_id().map(|id| id.to_owned()),
+            timeline_event_id: event_tl_item.identifier(),
             item_id,
             related_event_id: replied_to_event_id,
             room_screen_widget_uid,
@@ -4402,8 +4378,8 @@ impl Widget for Message {
 
         if let Event::Actions(actions) = event {
             for action in actions {
-                match action.as_widget_action().cast() {
-                    MessageAction::HighlightMessage(id) if id == details.item_id => {
+                match action.as_widget_action().widget_uid_eq(details.room_screen_widget_uid).cast_ref() {
+                    MessageAction::HighlightMessage(id) if id == &details.item_id => {
                         self.animator_play(cx, ids!(highlight.on));
                         self.redraw(cx);
                     }

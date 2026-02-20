@@ -14,7 +14,7 @@ use crate::{
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, register::register_screen::RegisterAction, room::BasicRoomDetails, shared::{callout_tooltip::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}}, sliding_sync::current_user_id, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -161,6 +161,13 @@ live_design! {
                             }
                         }
 
+                        // A generic modal to confirm any positive action.
+                        positive_confirmation_modal = <Modal> {
+                            content: {
+                                positive_confirmation_modal_inner = <PositiveConfirmationModal> { }
+                            }
+                        }
+
                         // A modal to confirm any deletion/removal action.
                         delete_confirmation_modal = <Modal> {
                             content: {
@@ -292,39 +299,44 @@ impl MatchEvent for App {
             self.ui.modal(ids!(delete_confirmation_modal)).close(cx);
         }
 
+        let positive_confirmation_modal_inner = self.ui.confirmation_modal(ids!(positive_confirmation_modal_inner));
+        if let Some(_accepted) = positive_confirmation_modal_inner.closed(actions) {
+            self.ui.modal(ids!(positive_confirmation_modal)).close(cx);
+        }
+
         for action in actions {
-            if let Some(logout_modal_action) = action.downcast_ref::<LogoutConfirmModalAction>() {
-                match logout_modal_action {
-                    LogoutConfirmModalAction::Open => {
-                        self.ui.logout_confirm_modal(ids!(logout_confirm_modal_inner)).reset_state(cx);
-                        self.ui.modal(ids!(logout_confirm_modal)).open(cx);
-                        continue;
-                    },
-                    LogoutConfirmModalAction::Close { was_internal, .. } => {
-                        if *was_internal {
-                            self.ui.modal(ids!(logout_confirm_modal)).close(cx);
-                        }
-                        continue;
-                    },
-                    _ => {}
+            match action.downcast_ref() {
+                Some(LogoutConfirmModalAction::Open) => {
+                    self.ui.logout_confirm_modal(ids!(logout_confirm_modal_inner)).reset_state(cx);
+                    self.ui.modal(ids!(logout_confirm_modal)).open(cx);
+                    continue;
+                },
+                Some(LogoutConfirmModalAction::Close { was_internal, .. }) => {
+                    if *was_internal {
+                        self.ui.modal(ids!(logout_confirm_modal)).close(cx);
+                    }
+                    continue;
+                },
+                _ => {}
+            }
+
+            match action.downcast_ref() {
+                Some(LogoutAction::LogoutSuccess) => {
+                    self.app_state.logged_in = false;
+                    self.ui.modal(ids!(logout_confirm_modal)).close(cx);
+                    self.update_login_visibility(cx);
+                    self.ui.redraw(cx);
+                    continue;
                 }
-            }
-
-            if let Some(LogoutAction::LogoutSuccess) = action.downcast_ref() {
-                self.app_state.logged_in = false;
-                self.ui.modal(ids!(logout_confirm_modal)).close(cx);
-                self.update_login_visibility(cx);
-                self.ui.redraw(cx);
-                continue;
-            }
-
-            if let Some(LogoutAction::ClearAppState { on_clear_appstate }) = action.downcast_ref() {
-                // Clear user profile cache, invited_rooms timeline states 
-                clear_all_app_state(cx);
-                // Reset all app state to its default.
-                self.app_state = Default::default();
-                on_clear_appstate.notify_one();
-                continue;
+                Some(LogoutAction::ClearAppState { on_clear_appstate }) =>  {
+                    // Clear user profile cache, invited_rooms timeline states 
+                    clear_all_app_state(cx);
+                    // Reset all app state to its default.
+                    self.app_state = Default::default();
+                    on_clear_appstate.notify_one();
+                    continue;
+                }
+                _ => {}
             }
 
             // Handle login-related actions
@@ -575,6 +587,15 @@ impl MatchEvent for App {
                 continue;
             }
 
+            // Handle a request to show the generic positive confirmation modal.
+            if let Some(PositiveConfirmationModalAction::Show(content_opt)) = action.downcast_ref() {
+                if let Some(content) = content_opt.borrow_mut().take() {
+                    positive_confirmation_modal_inner.show(cx, content);
+                    self.ui.modal(ids!(positive_confirmation_modal)).open(cx);
+                }
+                continue;
+            }
+
             // Handle a request to show the delete confirmation modal.
             if let Some(ConfirmDeleteAction::Show(content_opt)) = action.downcast_ref() {
                 if let Some(content) = content_opt.borrow_mut().take() {
@@ -609,6 +630,61 @@ impl MatchEvent for App {
                 Some(EventSourceModalAction::Close) => {
                     self.ui.modal(ids!(event_source_modal)).close(cx);
                     continue;
+                }
+                _ => {}
+            }
+
+            // Handle DirectMessageRoomActions
+            match action.downcast_ref() {
+                Some(DirectMessageRoomAction::FoundExisting { room_name_id, .. }) => {
+                    self.navigate_to_room(cx, None, &BasicRoomDetails::RoomId(room_name_id.clone()));
+                }
+                Some(DirectMessageRoomAction::DidNotExist { user_profile }) => {
+                    let user_profile = user_profile.clone();
+                    let body_text = match &user_profile.username {
+                        Some(un) if !un.is_empty() => format!(
+                            "You don't have an existing direct message room with {} ({}).\n\n\
+                            Would you like to create one now?",
+                            un,
+                            user_profile.user_id,
+                        ),
+                        _ => format!(
+                            "You don't have an existing direct message room with {}.\n\n\
+                            Would you like to create one now?",
+                            user_profile.user_id,
+                        ),
+                    };
+                    positive_confirmation_modal_inner.show(
+                        cx,
+                        ConfirmationModalContent {
+                            title_text: "Create New Direct Message".into(),
+                            body_text: body_text.into(),
+                            accept_button_text: Some("Create DM".into()),
+                            on_accept_clicked: Some(Box::new(move |_cx| {
+                                submit_async_request(MatrixRequest::OpenOrCreateDirectMessage {
+                                    user_profile,
+                                    allow_create: true,
+                                });
+                                enqueue_popup_notification(
+                                    "Sending request to create DM room...\n\nThe room will be shown once it has been created by the homeserver.".to_string(),
+                                    PopupKind::Info,
+                                    Some(10.0),
+                                );
+                            })),
+                            ..Default::default()
+                        },
+                    );
+                    self.ui.modal(ids!(positive_confirmation_modal)).open(cx);
+                }
+                Some(DirectMessageRoomAction::FailedToCreate { user_profile, error }) => {
+                    enqueue_popup_notification(
+                        format!("Failed to create a new DM room with {}.\n\nError: {error}", user_profile.displayable_name()),
+                        PopupKind::Error,
+                        None,
+                    );
+                }
+                Some(DirectMessageRoomAction::NewlyCreated { room_name_id, .. }) => {
+                    self.navigate_to_room(cx, None, &BasicRoomDetails::RoomId(room_name_id.clone()));
                 }
                 _ => {}
             }
@@ -904,6 +980,19 @@ pub enum AppStateAction {
         destination_room: BasicRoomDetails,
     },
     None,
+}
+
+/// An action to show the generic top-level positive confirmation modal.
+///
+/// This is NOT a widget action.
+#[derive(Debug)]
+pub enum PositiveConfirmationModalAction {
+    /// Show the confirmation modal with the given content.
+    ///
+    /// The content is wrapped in a `RefCell` to ensure that only one entity handles it
+    /// and that that one entity can take ownership of the content object,
+    /// which avoids having to clone it.
+    Show(RefCell<Option<ConfirmationModalContent>>),
 }
 
 /// An action to show a deletion/removal confirmation modal.
