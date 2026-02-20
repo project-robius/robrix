@@ -33,6 +33,18 @@ pub fn live_design(cx: &mut Cx) {
     tsp_settings_screen::live_design(cx);
 }
 
+/// Supported DID types for creation.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DidType {
+    /// Standard DID Web type
+    #[default]
+    Web,
+    /// DID Web with Verifiable History
+    WebVh,
+    /// Peer DID type
+    Peer,
+}
+
 /// The sender used by [`submit_tsp_request()`] to send TSP requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
 static TSP_REQUEST_SENDER: OnceLock<UnboundedSender<TspRequest>> = OnceLock::new();
@@ -576,6 +588,7 @@ pub enum TspRequest {
         alias: Option<String>,
         server: String,
         did_server: String,
+        did_type: DidType,
     },
     /// Request to re-publish/re-upload our own DID back up to the DID server.
     ///
@@ -772,8 +785,8 @@ async fn async_tsp_worker(
             todo!("handle deleting a wallet");
         }
 
-        TspRequest::CreateDid { username, alias, server, did_server } => {
-            log!("Received TspRequest::CreateDid(username: {username}, alias: {alias:?}, server: {server}, did_server: {did_server})");
+        TspRequest::CreateDid { username, alias, server, did_server, did_type } => {
+            log!("Received TspRequest::CreateDid(username: {username}, alias: {alias:?}, server: {server}, did_server: {did_server}, did_type: {did_type:?})");
             let client = get_reqwest_client();
 
             Handle::current().spawn(async move {
@@ -783,6 +796,7 @@ async fn async_tsp_worker(
                     alias,
                     server,
                     did_server,
+                    did_type,
                 ).await;
                 Cx::post_action(TspIdentityAction::DidCreationResult(result));
             });
@@ -845,12 +859,17 @@ async fn create_did_and_add_to_wallet(
     alias: Option<String>,
     server: String,
     did_server: String,
+    did_type: DidType,
 ) -> Result<String, anyhow::Error> {
     let cw_db = tsp_state_ref().lock().unwrap()
         .current_wallet.as_ref()
         .map(|w| w.db.clone())
         .ok_or_else(|| anyhow!("Please choose a default TSP wallet to hold the DID."))?;
-    let (did, private_vid, metadata) = create_did_web(&did_server, &server, &username, client).await?;
+    let (did, private_vid, metadata) = match did_type {
+        DidType::Web => create_did_web(&did_server, &server, &username, client).await?,
+        DidType::WebVh => create_did_webvh(&did_server, &server, &username, client).await?,
+        DidType::Peer => return Err(anyhow!("Peer DID type is not yet implemented")),
+    };
     let new_vid = private_vid.identifier().to_string();
     log!("Successfully created & published new DID: {did}.\n\
         Adding private VID {new_vid} to current wallet...",
@@ -946,6 +965,106 @@ async fn create_did_web(
     log!("published DID document at {}",
         tsp_sdk::vid::did::get_resolve_url(&did)?.to_string()
     );
+
+    let (_vid, metadata) = verify_vid(private_vid.identifier())
+        .await
+        .map_err(|err| tsp_sdk::Error::Vid(VidError::InvalidVid(err.to_string())))?;
+
+    Ok((did, private_vid, metadata))
+}
+
+/// Creates a new WebVH DID on the given `did_server` and publishes it to the TSP `server`.
+///
+/// This function does not modify or add anything to the current TSP wallet.
+/// The caller must do that separately.
+///
+/// Returns a tuple of the DID string, the private VID, and optional metadata.
+async fn create_did_webvh(
+    did_server: &str,
+    server: &str,
+    username: &str,
+    client: &reqwest::Client,
+) -> Result<(String, OwnedVid, Option<serde_json::Value>), anyhow::Error> {
+    // The following code is based on the TSP SDK's CLI example for creating a WebVH DID.
+    let endpoint_url = format!("{}/endpoint/{}", did_server, username);
+    
+    let transport = Url::parse(
+        &format!("https://{}/endpoint/{}", server, username)
+    ).map_err(|e| anyhow!("Invalid transport URL: {e}"))?;
+
+    // Create WebVH DID using TSP SDK
+    let (private_vid, history, update_kid, update_key) = 
+        tsp_sdk::vid::did::webvh::create_webvh(&endpoint_url, transport).await
+            .map_err(|e| anyhow!("Failed to create WebVH DID: {e}"))?;
+
+    // Store the update key in the current wallet
+    let cw_db = tsp_state_ref().lock().unwrap()
+        .current_wallet.as_ref()
+        .map(|w| w.db.clone())
+        .ok_or_else(|| anyhow!("No current wallet available for storing update key"))?;
+    
+    cw_db.add_secret_key(update_kid, update_key)
+        .map_err(|e| anyhow!("Cannot store update key: {e}"))?;
+
+    let did = private_vid.identifier().to_string();
+    log!("created WebVH identity {}", did);
+
+    // Publish the VID to the DID server
+    let response = client
+        .post(format!("https://{did_server}/add-vid"))
+        .json(&private_vid.vid())
+        .send()
+        .await
+        .inspect(|r| log!("DID server responded with status code {}", r.status()))
+        .map_err(|e| anyhow!("Could not publish VID. The DID server responded with error: {e}"))?;
+
+    let vid_result: Result<Vid, anyhow::Error> = match response.status() {
+        r if r.is_success() => {
+            response.json().await
+                .map_err(|e| anyhow!("Could not decode response from DID server as a valid VID: {e}"))
+        }
+        r => {
+            let text = response.text().await.unwrap_or_else(|_| "[Unknown]".to_string());
+            if r.as_u16() == 500 {
+                return Err(anyhow!(
+                    "The DID server returned error code 500. The DID username may already exist, \
+                     or the server had another problem.\n\nResponse: \"{text}\"."
+                ));
+            } else {
+                return Err(anyhow!(
+                    "The DID server returned error code {}.\n\nResponse: \"{text}\".",
+                    r.as_u16()
+                ));
+            }
+        }
+    };
+
+    let _vid = vid_result?;
+    log!("published DID document at {}",
+        tsp_sdk::vid::did::get_resolve_url(&did)?.to_string()
+    );
+
+    // Publish the DID history to the DID server
+    let history_response = client
+        .post(format!("https://{did_server}/add-history/{}", did))
+        .json(&history)
+        .send()
+        .await
+        .inspect(|r| log!("DID server responded with status code {}", r.status()))
+        .map_err(|e| anyhow!("Could not publish DID history. The DID server responded with error: {e}"))?;
+
+    match history_response.status() {
+        r if r.is_success() => {
+            log!("published DID history");
+        }
+        r => {
+            let text = history_response.text().await.unwrap_or_else(|_| "[Unknown]".to_string());
+            return Err(anyhow!(
+                "Failed to publish DID history. The DID server returned error code {}.\n\nResponse: \"{text}\".",
+                r.as_u16()
+            ));
+        }
+    }
 
     let (_vid, metadata) = verify_vid(private_vid.identifier())
         .await
