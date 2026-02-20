@@ -269,6 +269,9 @@ jobs:
 
       - name: Package (desktop)
         uses: project-robius/makepad-packaging-action@v1
+        env:
+          CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
+          CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
         with:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: deb
@@ -291,6 +294,8 @@ jobs:
       - name: Package (macos)
         uses: project-robius/makepad-packaging-action@v1
         env:
+          CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
+          CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
@@ -318,6 +323,9 @@ jobs:
 
       - name: Package (windows)
         uses: project-robius/makepad-packaging-action@v1
+        env:
+          CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
+          CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
         with:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: nsis
